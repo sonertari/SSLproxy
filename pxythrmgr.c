@@ -42,20 +42,20 @@
  * The attach and detach functions are thread-safe.
  */
 
-typedef struct pxy_thr_ctx {
-	pthread_t thr;
-	size_t load;
-	struct event_base *evbase;
-	struct evdns_base *dnsbase;
-	int running;
-} pxy_thr_ctx_t;
-
-struct pxy_thrmgr_ctx {
-	int num_thr;
-	opts_t *opts;
-	pxy_thr_ctx_t **thr;
-	pthread_mutex_t mutex;
-};
+//typedef struct pxy_thr_ctx {
+//	pthread_t thr;
+//	size_t load;
+//	struct event_base *evbase;
+//	struct evdns_base *dnsbase;
+//	int running;
+//} pxy_thr_ctx_t;
+//
+//struct pxy_thrmgr_ctx {
+//	int num_thr;
+//	opts_t *opts;
+//	pxy_thr_ctx_t **thr;
+//	pthread_mutex_t mutex;
+//};
 
 /*
  * Dummy recurring timer event to prevent the event loops from exiting when
@@ -90,38 +90,14 @@ pxy_thrmgr_thr(void *arg)
 	return NULL;
 }
 
-/*
- * Create new thread manager but do not start any threads yet.
- * This gets called before forking to background.
- */
-pxy_thrmgr_ctx_t *
-pxy_thrmgr_new(opts_t *opts)
-{
-	pxy_thrmgr_ctx_t *ctx;
-
-	if (!(ctx = malloc(sizeof(pxy_thrmgr_ctx_t))))
-		return NULL;
-	memset(ctx, 0, sizeof(pxy_thrmgr_ctx_t));
-
-	ctx->opts = opts;
-	ctx->num_thr = 2 * sys_get_cpu_cores();
-	return ctx;
-}
-
-/*
- * Start the thread manager and associated threads.
- * This must be called after forking.
- *
- * Returns -1 on failure, 0 on success.
- */
 int
-pxy_thrmgr_run(pxy_thrmgr_ctx_t *ctx)
+pxy_thrmgr_init(pxy_thrmgr_ctx_t *ctx)
 {
 	int idx = -1, dns = 0;
 
 	dns = opts_has_dns_spec(ctx->opts);
 
-	pthread_mutex_init(&ctx->mutex, NULL);
+//	pthread_mutex_init(&ctx->mutex, NULL);
 
 	if (!(ctx->thr = malloc(ctx->num_thr * sizeof(pxy_thr_ctx_t*)))) {
 		log_dbg_printf("Failed to allocate memory\n");
@@ -156,6 +132,108 @@ pxy_thrmgr_run(pxy_thrmgr_ctx_t *ctx)
 
 	log_dbg_printf("Initialized %d connection handling threads\n",
 	               ctx->num_thr);
+
+	return 0;
+
+leave:
+	while (idx >= 0) {
+		if (ctx->thr[idx]) {
+			if (ctx->thr[idx]->dnsbase) {
+				evdns_base_free(ctx->thr[idx]->dnsbase, 0);
+			}
+			if (ctx->thr[idx]->evbase) {
+				event_base_free(ctx->thr[idx]->evbase);
+			}
+			free(ctx->thr[idx]);
+		}
+		idx--;
+	}
+	pthread_mutex_destroy(&ctx->mutex);
+	if (ctx->thr) {
+		free(ctx->thr);
+		ctx->thr = NULL;
+	}
+	return -1;
+}
+
+/*
+ * Create new thread manager but do not start any threads yet.
+ * This gets called before forking to background.
+ */
+pxy_thrmgr_ctx_t *
+pxy_thrmgr_new(opts_t *opts)
+{
+	pxy_thrmgr_ctx_t *ctx;
+
+	if (!(ctx = malloc(sizeof(pxy_thrmgr_ctx_t))))
+		return NULL;
+	memset(ctx, 0, sizeof(pxy_thrmgr_ctx_t));
+
+	ctx->opts = opts;
+//	ctx->num_thr = 2 * sys_get_cpu_cores();
+	ctx->num_thr = 1;
+	
+//	pxy_thrmgr_init(ctx);
+	return ctx;
+}
+
+/*
+ * Start the thread manager and associated threads.
+ * This must be called after forking.
+ *
+ * Returns -1 on failure, 0 on success.
+ */
+int
+pxy_thrmgr_run(pxy_thrmgr_ctx_t *ctx)
+{
+	int idx = -1, dns = 0;
+
+//	dns = opts_has_dns_spec(ctx->opts);
+
+//	pthread_mutexattr_t *attr;
+//	pthread_mutexattr_init(attr);
+//	pthread_mutexattr_settype(attr, PTHREAD_MUTEX_RECURSIVE);
+////	pthread_mutexattr_settype(attr, PTHREAD_MUTEX_ERRORCHECK);
+
+	pthread_mutex_init(&ctx->mutex, NULL);
+//	pthread_mutex_init(&ctx->mutex, attr);
+	pthread_mutex_init(&ctx->mutex2, NULL);
+
+//	if (!(ctx->thr = malloc(ctx->num_thr * sizeof(pxy_thr_ctx_t*)))) {
+//		log_dbg_printf("Failed to allocate memory\n");
+//		goto leave;
+//	}
+//	memset(ctx->thr, 0, ctx->num_thr * sizeof(pxy_thr_ctx_t*));
+//
+//	for (idx = 0; idx < ctx->num_thr; idx++) {
+//		if (!(ctx->thr[idx] = malloc(sizeof(pxy_thr_ctx_t)))) {
+//			log_dbg_printf("Failed to allocate memory\n");
+//			goto leave;
+//		}
+//		memset(ctx->thr[idx], 0, sizeof(pxy_thr_ctx_t));
+//		ctx->thr[idx]->evbase = event_base_new();
+//		if (!ctx->thr[idx]->evbase) {
+//			log_dbg_printf("Failed to create evbase %d\n", idx);
+//			goto leave;
+//		}
+//		if (dns) {
+//			/* only create dns base if we actually need it later */
+//			ctx->thr[idx]->dnsbase = evdns_base_new(
+//			                         ctx->thr[idx]->evbase, 1);
+//			if (!ctx->thr[idx]->dnsbase) {
+//				log_dbg_printf("Failed to create dnsbase %d\n",
+//				               idx);
+//				goto leave;
+//			}
+//		}
+//		ctx->thr[idx]->load = 0;
+//		ctx->thr[idx]->running = 0;
+//	}
+//
+//	log_dbg_printf("Initialized %d connection handling threads\n",
+//	               ctx->num_thr);
+
+	pxy_thrmgr_init(ctx);
 
 	for (idx = 0; idx < ctx->num_thr; idx++) {
 		if (pthread_create(&ctx->thr[idx]->thr, NULL,
@@ -240,16 +318,30 @@ int
 pxy_thrmgr_attach(pxy_thrmgr_ctx_t *ctx, struct event_base **evbase,
                   struct evdns_base **dnsbase)
 {
+	log_dbg_printf(">>>>> ENTER pxy_thrmgr_attach()\n");
+
 	int thridx;
 	size_t minload;
+	
+	int err = pthread_mutex_lock(&ctx->mutex);
+	log_dbg_printf(">>>>> load pxy_thrmgr_attach() err=%d\n", err);
 
 	thridx = 0;
-	pthread_mutex_lock(&ctx->mutex);
+
+	if (!ctx->thr) {
+		thridx= -1;
+		log_dbg_printf(">>>>> pxy_thrmgr_attach() goto exit_attach\n");
+		goto exit_attach;
+	}
+	
 	minload = ctx->thr[thridx]->load;
 #ifdef DEBUG_THREAD
 	log_dbg_printf("===> Proxy connection handler thread status:\n"
 	               "thr[%d]: %zu\n", thridx, minload);
 #endif /* DEBUG_THREAD */
+
+	log_dbg_printf(">>>>> for pxy_thrmgr_attach()\n");
+
 	for (int idx = 1; idx < ctx->num_thr; idx++) {
 #ifdef DEBUG_THREAD
 		log_dbg_printf("thr[%d]: %zu\n", idx, ctx->thr[idx]->load);
@@ -259,15 +351,18 @@ pxy_thrmgr_attach(pxy_thrmgr_ctx_t *ctx, struct event_base **evbase,
 			thridx = idx;
 		}
 	}
+	log_dbg_printf(">>>>> evbase pxy_thrmgr_attach()\n");
 	*evbase = ctx->thr[thridx]->evbase;
+	log_dbg_printf(">>>>> dnsbase pxy_thrmgr_attach()\n");
 	*dnsbase = ctx->thr[thridx]->dnsbase;
 	ctx->thr[thridx]->load++;
-	pthread_mutex_unlock(&ctx->mutex);
 
 #ifdef DEBUG_THREAD
 	log_dbg_printf("thridx: %d\n", thridx);
 #endif /* DEBUG_THREAD */
-
+exit_attach:
+	log_dbg_printf(">>>>> EXIT pxy_thrmgr_attach()\n");
+	pthread_mutex_unlock(&ctx->mutex);
 	return thridx;
 }
 
@@ -278,9 +373,15 @@ pxy_thrmgr_attach(pxy_thrmgr_ctx_t *ctx, struct event_base **evbase,
 void
 pxy_thrmgr_detach(pxy_thrmgr_ctx_t *ctx, int thridx)
 {
+	log_dbg_printf(">>>>> pxy_thrmgr_detach()\n");
 	pthread_mutex_lock(&ctx->mutex);
+//	int err = pthread_mutex_trylock(&ctx->mutex);
+//	log_dbg_printf(">>>>> pxy_thrmgr_detach() err=%d\n", err);
+
 	ctx->thr[thridx]->load--;
-	pthread_mutex_unlock(&ctx->mutex);
+//	if (!err) {
+		pthread_mutex_unlock(&ctx->mutex);
+//	}
 }
 
 /* vim: set noet ft=c: */

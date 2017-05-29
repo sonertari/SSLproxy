@@ -53,6 +53,12 @@ typedef struct proxyspec {
 	nat_lookup_cb_t natlookup;
 	nat_socket_cb_t natsocket;
 	struct proxyspec *next;
+
+	struct sockaddr_storage e2src_addr;
+	socklen_t e2src_addrlen;
+
+	struct sockaddr_storage e2dst_addr;
+	socklen_t e2dst_addrlen;
 } proxyspec_t;
 
 typedef struct opts {

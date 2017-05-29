@@ -68,16 +68,20 @@ struct proxy_ctx {
 };
 
 
-/*
- * Listener context.
- */
-typedef struct proxy_listener_ctx {
-	pxy_thrmgr_ctx_t *thrmgr;
-	proxyspec_t *spec;
-	opts_t *opts;
-	struct evconnlistener *evcl;
-	struct proxy_listener_ctx *next;
-} proxy_listener_ctx_t;
+///*
+// * Listener context.
+// */
+//typedef struct proxy_listener_ctx {
+//	pxy_thrmgr_ctx_t *thrmgr;
+//	proxyspec_t *spec;
+//	opts_t *opts;
+//	struct evconnlistener *evcl;
+//	struct evconnlistener *evcl_e2;
+//	struct proxy_listener_ctx *next;
+//	pxy_conn_ctx_t * ctx;
+//	evutil_socket_t fd2;
+//	int clisock;
+//} proxy_listener_ctx_t;
 
 static proxy_listener_ctx_t *
 proxy_listener_ctx_new(pxy_thrmgr_ctx_t *thrmgr, proxyspec_t *spec,
@@ -96,8 +100,8 @@ proxy_listener_ctx_new(pxy_thrmgr_ctx_t *thrmgr, proxyspec_t *spec,
 	return ctx;
 }
 
-static void
-proxy_listener_ctx_free(proxy_listener_ctx_t *ctx) NONNULL(1);
+//static void
+//proxy_listener_ctx_free(proxy_listener_ctx_t *ctx) NONNULL(1);
 static void
 proxy_listener_ctx_free(proxy_listener_ctx_t *ctx)
 {
@@ -111,31 +115,180 @@ proxy_listener_ctx_free(proxy_listener_ctx_t *ctx)
 }
 
 /*
+ * Callback for error events on the socket listener bufferevent.
+ */
+static void
+proxy_listener_errorcb(struct evconnlistener *listener, UNUSED void *ctx)
+{
+	log_dbg_printf(">############################# proxy_listener_errorcb: ERROR\n");
+	struct event_base *evbase = evconnlistener_get_base(listener);
+	int err = EVUTIL_SOCKET_ERROR();
+	log_err_printf("Error %d on listener: %s\n", err,
+	               evutil_socket_error_to_string(err));
+	event_base_loopbreak(evbase);
+}
+
+/*
  * Callback for accept events on the socket listener bufferevent.
  */
+static void
+proxy_listener_acceptcb_e2(UNUSED struct evconnlistener *listener,
+                        evutil_socket_t fd,
+                        struct sockaddr *peeraddr, int peeraddrlen,
+                        void *arg)
+{
+	
+//	pxy_conn_ctx_t *parent_ctx = arg;
+	proxy_conn_meta_ctx_t *mctx = arg;
+	if (!mctx) {
+		log_dbg_printf(">>>>>------------------------------------------------------------------------------------ proxy_listener_acceptcb_e2: NULL mctx <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< GONE\n");
+		return;
+	}
+
+	pthread_mutex_t *cmutex = &mctx->mutex;
+	int err = pthread_mutex_lock(cmutex);
+	log_dbg_printf(">>>>>------------------------------------------------------------------------------------ proxy_listener_acceptcb_e2() lock err=%d\n", err);
+
+	pxy_conn_ctx_t *parent_ctx = mctx->parent_ctx;
+
+//	pthread_mutex_t *cmutex = &parent_ctx->thrmgr->mutex2;
+
+	if (!parent_ctx) {
+		log_dbg_printf(">>>>>------------------------------------------------------------------------------------ proxy_listener_acceptcb_e2: NULL parent_ctx <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< GONE\n");
+		goto leave;
+	}
+
+	log_dbg_printf(">>>>>------------------------------------------------------------------------------------ proxy_listener_acceptcb_e2(): child fd=%d, parent fd=%d\n", fd, parent_ctx->fd);
+
+	char *host, *port;
+	if (sys_sockaddr_str(peeraddr, peeraddrlen, &host, &port) != 0) {
+		log_dbg_printf(">>>>>------------------------------------------------------------------------------------ proxy_listener_acceptcb_e2(): PEER failed\n");
+	} else {
+		log_dbg_printf(">>>>>------------------------------------------------------------------------------------ proxy_listener_acceptcb_e2(): PEER [%s]:%s <<<<< child fd=%d, parent fd=%d\n", host, port, fd, parent_ctx->fd);
+		free(host);
+		free(port);
+	}
+
+//	pxy_conn_setup_e2(fd, peeraddr, peeraddrlen, parent_ctx->lctx->thrmgr, parent_ctx->lctx->spec, parent_ctx->lctx->opts, mctx);
+//	pxy_conn_setup_e2(fd, peeraddr, peeraddrlen, mctx->lctx->thrmgr, mctx->lctx->spec, mctx->lctx->opts, mctx);
+//	pxy_conn_setup_e2(fd, peeraddr, peeraddrlen, mctx);
+	pxy_conn_setup_e2(fd, mctx);
+
+leave:
+	log_dbg_printf(">>>>>------------------------------------------------------------------------------------ proxy_listener_acceptcb_e2(): EXIT\n");
+	pthread_mutex_unlock(cmutex);
+}
+
+static proxy_conn_meta_ctx_t *
+pxy_conn_meta_ctx_new()
+{
+	log_dbg_printf(">>>>>................... pxy_conn_meta_ctx_new(): ENTER <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n");
+
+	proxy_conn_meta_ctx_t *ctx = malloc(sizeof(proxy_conn_meta_ctx_t));
+//	proxy_conn_meta_ctx_t *ctx = malloc(100);
+	if (!ctx)
+		return NULL;
+	memset(ctx, 0, sizeof(proxy_conn_meta_ctx_t));
+	log_dbg_printf(">>>>> !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! pxy_conn_meta_ctx_new: sizeof(proxy_conn_meta_ctx_t)=%d <<<<<<\n", sizeof(proxy_conn_meta_ctx_t));
+
+	ctx->next = NULL;
+	pthread_mutex_init(&ctx->mutex, NULL);
+	log_dbg_printf(">>>>>................... pxy_conn_meta_ctx_new(): EXIT <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n");
+	return ctx;
+}
+
+int remove_ctx(proxy_conn_meta_ctx_t **current) {
+//    if ((*current)->released) {
+		proxy_conn_meta_ctx_t *tmp = *current;
+
+		if (tmp->parent_ctx) {
+			log_dbg_printf(">>>>> !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! remove_ctx: PARENT NOT NULL !!!!!!!!!!!!!!!!!!! <<<<<<\n");
+			return 0;
+		}
+		if (tmp->child_ctx) {
+			log_dbg_printf(">>>>> !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! remove_ctx: CHILD NOT NULL !!!!!!!!!!!!!!!!!!! <<<<<<\n");
+			return 0;
+		}
+
+        *current = (*current)->next;
+		
+		log_dbg_printf(">>>>> !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! remove_ctx: FREEING META CTX, size=%d <<<<<<\n", sizeof(*tmp));
+		pthread_mutex_destroy(&tmp->mutex);
+		free(tmp);
+		tmp = NULL;
+		log_dbg_printf(">>>>> !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! remove_ctx: EXIT <<<<<<\n");
+        return 1;
+//    }
+//	log_dbg_printf(">>>>> !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! remove_ctx: NOT FREEING UNRELEASED META CTX <<<<<<\n");
+//	return 0;
+}
+
 static void
 proxy_listener_acceptcb(UNUSED struct evconnlistener *listener,
                         evutil_socket_t fd,
                         struct sockaddr *peeraddr, int peeraddrlen,
                         void *arg)
 {
-	proxy_listener_ctx_t *cfg = arg;
+	proxy_listener_ctx_t *lctx = arg;
 
-	pxy_conn_setup(fd, peeraddr, peeraddrlen, cfg->thrmgr,
-	               cfg->spec, cfg->opts);
-}
+	log_dbg_printf(">>>>> proxy_listener_acceptcb: <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< LOCK\n");
+//	pthread_mutex_t *tmutex = &lctx->thrmgr->mutex2;
+//	pthread_mutex_t *lmutex = &lctx->mutex;
+//	pthread_mutex_lock(lmutex);
+	
+//	int total = sizeof(pxy_conn_ctx_t *) + sizeof(pxy_conn_ctx_t *) + sizeof(pthread_mutex_t) + sizeof(unsigned int) + sizeof(proxy_conn_meta_ctx_t *);
+//	log_dbg_printf(">>>>> !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! proxy_listener_acceptcb: TOTAL SIZE=%d <<<<<<\n", total);
+//	log_dbg_printf(">>>>> !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! proxy_listener_acceptcb: sizeof(pthread_mutex_t)=%d <<<<<<\n", sizeof(pthread_mutex_t));
+		
+	proxy_conn_meta_ctx_t *mctx = pxy_conn_meta_ctx_new();
+	pthread_mutex_lock(&mctx->mutex);
 
-/*
- * Callback for error events on the socket listener bufferevent.
- */
-static void
-proxy_listener_errorcb(struct evconnlistener *listener, UNUSED void *ctx)
-{
-	struct event_base *evbase = evconnlistener_get_base(listener);
-	int err = EVUTIL_SOCKET_ERROR();
-	log_err_printf("Error %d on listener: %s\n", err,
-	               evutil_socket_error_to_string(err));
-	event_base_loopbreak(evbase);
+	mctx->lctx = lctx;
+
+	log_dbg_printf(">>>>>------------------------------------------------------------------------------------ proxy_listener_acceptcb(): fd=%d, previous fd2=%d\n", fd, lctx->fd2);
+
+	log_dbg_printf(">>>>> proxy_listener_acceptcb: SETTING UP E2\n");
+	evutil_socket_t fd2;
+	if ((fd2 = privsep_client_opensock_e2(lctx->clisock, lctx->spec)) == -1) {
+		log_err_printf("Error opening socket: %s (%i)\n",
+					   strerror(errno), errno);
+		return;
+	}
+
+	log_dbg_printf(">>>>> !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! proxy_listener_acceptcb: fd=%d, prev fd2=%d, NEW fd2=%d <<<<<<\n", fd, lctx->fd2, fd2);
+	lctx->fd2 = fd2;
+	mctx->fd2 = fd2;
+
+//	pxy_conn_ctx_t *parent_ctx = pxy_conn_setup(fd, peeraddr, peeraddrlen, lctx->thrmgr, lctx->spec, lctx->opts, fd2);
+	pxy_conn_ctx_t *parent_ctx = pxy_conn_setup(fd, peeraddr, peeraddrlen, mctx, fd2);
+
+	mctx->parent_ctx = parent_ctx;
+
+	struct evconnlistener *evcl2 = evconnlistener_new(evconnlistener_get_base(lctx->evcl), proxy_listener_acceptcb_e2,
+	                               mctx, LEV_OPT_CLOSE_ON_FREE, 1024, fd2);
+//	                               parent_ctx, LEV_OPT_CLOSE_ON_FREE, 1024, fd2);
+//	                               parent_ctx, LEV_OPT_CLOSE_ON_FREE|LEV_OPT_THREADSAFE, 1024, fd2);
+	
+//	lctx->evcl_e2 = evcl_e2;
+	if (!evcl2) {
+		log_err_printf("Error creating evconnlistener e2: %s\n",
+		               strerror(errno));
+		proxy_listener_ctx_free(evcl2);
+		evutil_closesocket(fd2);
+//		pthread_mutex_unlock(lmutex);
+		pthread_mutex_unlock(&mctx->mutex);
+		return;
+	}
+
+	mctx->evcl2 = evcl2;
+	evconnlistener_set_error_cb(evcl2, proxy_listener_errorcb);
+	
+	log_dbg_printf(">>>>> proxy_listener_acceptcb: <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< bufferevent_enable(parent_ctx->dst.bev)\n");
+	bufferevent_enable(parent_ctx->dst.bev, EV_READ|EV_WRITE);
+
+	log_dbg_printf(">>>>> proxy_listener_acceptcb: FINISHED SETTING UP E2 SUCCESS, parent fd=%d, NEW fd2=%d\n", fd, fd2);	
+//	pthread_mutex_unlock(lmutex);
+	pthread_mutex_unlock(&mctx->mutex);
 }
 
 /*
@@ -163,7 +316,9 @@ static proxy_listener_ctx_t *
 proxy_listener_setup(struct event_base *evbase, pxy_thrmgr_ctx_t *thrmgr,
                      proxyspec_t *spec, opts_t *opts, int clisock)
 {
-	proxy_listener_ctx_t *plc;
+	log_dbg_printf(">>>>> proxy_listener_setup\n");
+
+	proxy_listener_ctx_t *lctx;
 	int fd;
 
 	if ((fd = privsep_client_opensock(clisock, spec)) == -1) {
@@ -172,24 +327,30 @@ proxy_listener_setup(struct event_base *evbase, pxy_thrmgr_ctx_t *thrmgr,
 		return NULL;
 	}
 
-	plc = proxy_listener_ctx_new(thrmgr, spec, opts);
-	if (!plc) {
+	lctx = proxy_listener_ctx_new(thrmgr, spec, opts);
+	if (!lctx) {
 		log_err_printf("Error creating listener context\n");
 		evutil_closesocket(fd);
 		return NULL;
 	}
 
-	plc->evcl = evconnlistener_new(evbase, proxy_listener_acceptcb,
-	                               plc, LEV_OPT_CLOSE_ON_FREE, 1024, fd);
-	if (!plc->evcl) {
+	pthread_mutex_init(&lctx->mutex, NULL);
+	lctx->clisock = clisock;
+	
+	lctx->evcl = evconnlistener_new(evbase, proxy_listener_acceptcb,
+	                               lctx, LEV_OPT_CLOSE_ON_FREE, 1024, fd);
+//	                               lctx, LEV_OPT_CLOSE_ON_FREE|LEV_OPT_THREADSAFE, 1024, fd);
+	if (!lctx->evcl) {
 		log_err_printf("Error creating evconnlistener: %s\n",
 		               strerror(errno));
-		proxy_listener_ctx_free(plc);
+		proxy_listener_ctx_free(lctx);
 		evutil_closesocket(fd);
 		return NULL;
 	}
-	evconnlistener_set_error_cb(plc->evcl, proxy_listener_errorcb);
-	return plc;
+
+	evconnlistener_set_error_cb(lctx->evcl, proxy_listener_errorcb);
+
+	return lctx;
 }
 
 /*
@@ -322,6 +483,14 @@ proxy_new(opts_t *opts, int clisock)
 			goto leave2;
 		head->next = ctx->lctx;
 		ctx->lctx = head;
+
+		char *specstr = proxyspec_str(spec);
+		if (!specstr) {
+			fprintf(stderr, "out of memory\n");
+			exit(EXIT_FAILURE);
+		}
+		log_dbg_printf(">>>>> proxy_listener_setup - %s\n", specstr);
+		free(specstr);
 	}
 
 	for (size_t i = 0; i < (sizeof(signals) / sizeof(int)); i++) {
@@ -338,7 +507,8 @@ proxy_new(opts_t *opts, int clisock)
 		goto leave4;
 	evtimer_add(ctx->gcev, &gc_delay);
 
-	privsep_client_close(clisock);
+	// @attention Do not close privsep sock, the client binds to new sockets on the egress path 
+	//privsep_client_close(clisock);
 	return ctx;
 
 leave4:

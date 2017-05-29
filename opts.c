@@ -438,6 +438,16 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine)
 		exit(EXIT_FAILURE);
 	}
 
+	sys_sockaddr_parse(&spec->e2src_addr,
+						&spec->e2src_addrlen,
+						"127.0.0.1", "8080", AF_INET, 0);
+//						"127.0.0.1", "8128", AF_INET, 0);
+
+	sys_sockaddr_parse(&spec->e2dst_addr,
+						&spec->e2dst_addrlen,
+//						"127.0.0.1", "8128", AF_INET, 0);
+						"127.0.0.1", "0", AF_INET, 0);
+
 	return spec;
 }
 
@@ -467,6 +477,8 @@ proxyspec_str(proxyspec_t *spec)
 	char *s;
 	char *lhbuf, *lpbuf;
 	char *cbuf = NULL;
+	char *e2srcbuf = NULL;
+	char *e2dstbuf = NULL;
 	if (sys_sockaddr_str((struct sockaddr *)&spec->listen_addr,
 	                     spec->listen_addrlen, &lhbuf, &lpbuf) != 0) {
 		return NULL;
@@ -478,28 +490,60 @@ proxyspec_str(proxyspec_t *spec)
 		                     &chbuf, &cpbuf) != 0) {
 			return NULL;
 		}
-		if (asprintf(&cbuf, "[%s]:%s", chbuf, cpbuf) < 0) {
+		if (asprintf(&cbuf, "\nconnect= [%s]:%s", chbuf, cpbuf) < 0) {
+			return NULL;
+		}
+		free(chbuf);
+		free(cpbuf);
+	}
+	if (spec->e2src_addrlen) {
+		char *chbuf, *cpbuf;
+		if (sys_sockaddr_str((struct sockaddr *)&spec->e2src_addr,
+		                     spec->e2src_addrlen,
+		                     &chbuf, &cpbuf) != 0) {
+			return NULL;
+		}
+		if (asprintf(&e2srcbuf, "\ne2src= [%s]:%s", chbuf, cpbuf) < 0) {
+			return NULL;
+		}
+		free(chbuf);
+		free(cpbuf);
+	}
+	if (spec->e2dst_addrlen) {
+		char *chbuf, *cpbuf;
+		if (sys_sockaddr_str((struct sockaddr *)&spec->e2dst_addr,
+		                     spec->e2dst_addrlen,
+		                     &chbuf, &cpbuf) != 0) {
+			return NULL;
+		}
+		if (asprintf(&e2dstbuf, "\ne2dst= [%s]:%s", chbuf, cpbuf) < 0) {
 			return NULL;
 		}
 		free(chbuf);
 		free(cpbuf);
 	}
 	if (spec->sni_port) {
-		if (asprintf(&cbuf, "sni %i", spec->sni_port) < 0) {
+		if (asprintf(&cbuf, "\nsni %i", spec->sni_port) < 0) {
 			return NULL;
 		}
 	}
-	if (asprintf(&s, "[%s]:%s %s%s%s %s", lhbuf, lpbuf,
+	if (asprintf(&s, "listen=[%s]:%s %s%s%s %s%s%s", lhbuf, lpbuf,
 	             (spec->ssl ? "ssl" : "tcp"),
 	             (spec->upgrade ? "|upgrade" : ""),
 	             (spec->http ? "|http" : ""),
-	             (spec->natengine ? spec->natengine : cbuf)) < 0) {
+	             (spec->natengine ? spec->natengine : cbuf),
+	             (e2srcbuf),
+	             (e2dstbuf)) < 0) {
 		s = NULL;
 	}
 	free(lhbuf);
 	free(lpbuf);
 	if (cbuf)
 		free(cbuf);
+	if (e2srcbuf)
+		free(e2srcbuf);
+	if (e2dstbuf)
+		free(e2dstbuf);
 	return s;
 }
 

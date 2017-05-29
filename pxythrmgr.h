@@ -36,8 +36,25 @@
 
 #include <event2/event.h>
 #include <event2/dns.h>
+#include <pthread.h>
 
-typedef struct pxy_thrmgr_ctx pxy_thrmgr_ctx_t;
+typedef struct pxy_thr_ctx {
+	pthread_t thr;
+	size_t load;
+	struct event_base *evbase;
+	struct evdns_base *dnsbase;
+	int running;
+} pxy_thr_ctx_t;
+
+typedef struct pxy_thrmgr_ctx {
+	int num_thr;
+	opts_t *opts;
+	pxy_thr_ctx_t **thr;
+	pthread_mutex_t mutex;
+	pthread_mutex_t mutex2;
+} pxy_thrmgr_ctx_t;
+
+//typedef struct pxy_thrmgr_ctx pxy_thrmgr_ctx_t;
 
 pxy_thrmgr_ctx_t * pxy_thrmgr_new(opts_t *) MALLOC;
 int pxy_thrmgr_run(pxy_thrmgr_ctx_t *) NONNULL(1) WUNRES;

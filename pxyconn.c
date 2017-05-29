@@ -40,6 +40,7 @@
 #include "proc.h"
 
 #include <netinet/in.h>
+#include <arpa/inet.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -58,6 +59,7 @@
 #include <openssl/rand.h>
 #include <openssl/x509.h>
 #include <openssl/x509v3.h>
+#include <assert.h>
 
 
 /*
@@ -86,114 +88,18 @@ static unsigned long ssl_session_context = 0x31415926;
  * connection.
  */
 
-/* single dst or src socket bufferevent descriptor */
-typedef struct pxy_conn_desc {
-	struct bufferevent *bev;
-	SSL *ssl;
-	unsigned int closed : 1;
-} pxy_conn_desc_t;
-
-#ifdef HAVE_LOCAL_PROCINFO
-/* local process data - filled in iff pid != -1 */
-typedef struct pxy_conn_lproc_desc {
-	struct sockaddr_storage srcaddr;
-	socklen_t srcaddrlen;
-
-	pid_t pid;
-	uid_t uid;
-	gid_t gid;
-
-	/* derived log strings */
-	char *exec_path;
-	char *user;
-	char *group;
-} pxy_conn_lproc_desc_t;
-#endif /* HAVE_LOCAL_PROCINFO */
-
-/* actual proxy connection state consisting of two connection descriptors,
- * connection-wide state and the specs and options */
-typedef struct pxy_conn_ctx {
-	/* per-connection state */
-	struct pxy_conn_desc src;
-	struct pxy_conn_desc dst;
-
-	/* status flags */
-	unsigned int immutable_cert : 1;  /* 1 if the cert cannot be changed */
-	unsigned int generated_cert : 1;     /* 1 if we generated a new cert */
-	unsigned int connected : 1;       /* 0 until both ends are connected */
-	unsigned int seen_req_header : 1; /* 0 until request header complete */
-	unsigned int seen_resp_header : 1;  /* 0 until response hdr complete */
-	unsigned int sent_http_conn_close : 1;   /* 0 until Conn: close sent */
-	unsigned int passthrough : 1;      /* 1 if SSL passthrough is active */
-	unsigned int ocsp_denied : 1;                /* 1 if OCSP was denied */
-	unsigned int enomem : 1;                       /* 1 if out of memory */
-	unsigned int sni_peek_retries : 6;       /* max 64 SNI parse retries */
-	unsigned int clienthello_search : 1;       /* 1 if waiting for hello */
-	unsigned int clienthello_found : 1;      /* 1 if conn upgrade to SSL */
-
-	/* server name indicated by client in SNI TLS extension */
-	char *sni;
-
-	/* log strings from socket */
-	char *srchost_str;
-	char *srcport_str;
-	char *dsthost_str;
-	char *dstport_str;
-
-	/* log strings from HTTP request */
-	char *http_method;
-	char *http_uri;
-	char *http_host;
-	char *http_content_type;
-
-	/* log strings from HTTP response */
-	char *http_status_code;
-	char *http_status_text;
-	char *http_content_length;
-
-	/* log strings related to SSL */
-	char *ssl_names;
-	char *origcrtfpr;
-	char *usedcrtfpr;
-
-#ifdef HAVE_LOCAL_PROCINFO
-	/* local process information */
-	pxy_conn_lproc_desc_t lproc;
-#endif /* HAVE_LOCAL_PROCINFO */
-
-	/* content log context */
-	log_content_ctx_t *logctx;
-
-	/* store fd and fd event while connected is 0 */
-	evutil_socket_t fd;
-	struct event *ev;
-
-	/* original destination address, family and certificate */
-	struct sockaddr_storage addr;
-	socklen_t addrlen;
-	int af;
-	X509 *origcrt;
-
-	/* references to event base and configuration */
-	struct event_base *evbase;
-	struct evdns_base *dnsbase;
-	int thridx;
-	pxy_thrmgr_ctx_t *thrmgr;
-	proxyspec_t *spec;
-	opts_t *opts;
-} pxy_conn_ctx_t;
-
 #define WANT_CONNECT_LOG(ctx)	((ctx)->opts->connectlog||!(ctx)->opts->detach)
 #define WANT_CONTENT_LOG(ctx)	((ctx)->opts->contentlog&&!(ctx)->passthrough)
 
-static pxy_conn_ctx_t *
-pxy_conn_ctx_new(proxyspec_t *spec, opts_t *opts,
-                 pxy_thrmgr_ctx_t *thrmgr, evutil_socket_t fd)
-                 MALLOC NONNULL(1,2,3);
+static void
+pxy_conn_connect_e2(pxy_conn_ctx_t *ctx);
+
 static pxy_conn_ctx_t *
 pxy_conn_ctx_new(proxyspec_t *spec, opts_t *opts,
                  pxy_thrmgr_ctx_t *thrmgr, evutil_socket_t fd)
 {
+	log_dbg_printf(">>>>>................... pxy_conn_ctx_new: ENTER fd=%d, sizeof(pxy_conn_ctx_t)=%d\n", fd, sizeof(pxy_conn_ctx_t));
+
 	pxy_conn_ctx_t *ctx = malloc(sizeof(pxy_conn_ctx_t));
 	if (!ctx)
 		return NULL;
@@ -213,6 +119,35 @@ pxy_conn_ctx_new(proxyspec_t *spec, opts_t *opts,
 		               (void*)ctx);
 	}
 #endif /* DEBUG_PROXY */
+	log_dbg_printf(">>>>>................... pxy_conn_ctx_new: EXIT fd=%d\n", fd);
+	return ctx;
+}
+
+static pxy_conn_ctx_t *
+pxy_conn_ctx_reinit(pxy_conn_ctx_t *ctx, proxyspec_t *spec, opts_t *opts,
+                 pxy_thrmgr_ctx_t *thrmgr, evutil_socket_t fd)
+{
+	log_dbg_printf(">>>>>................... pxy_conn_ctx_reinit: ENTER fd=%d\n", fd);
+
+	if (!ctx)
+		return NULL;
+
+	ctx->spec = spec;
+	ctx->opts = opts;
+	ctx->clienthello_search = spec->upgrade;
+	ctx->fd = fd;
+	ctx->thridx = pxy_thrmgr_attach(thrmgr, &ctx->evbase, &ctx->dnsbase);
+	ctx->thrmgr = thrmgr;
+#ifdef HAVE_LOCAL_PROCINFO
+	ctx->lproc.pid = -1;
+#endif /* HAVE_LOCAL_PROCINFO */
+#ifdef DEBUG_PROXY
+	if (OPTS_DEBUG(opts)) {
+		log_dbg_printf("%p             pxy_conn_ctx_new\n",
+		               (void*)ctx);
+	}
+#endif /* DEBUG_PROXY */
+	log_dbg_printf(">>>>>................... pxy_conn_ctx_reinit: EXIT fd=%d\n", fd);
 	return ctx;
 }
 
@@ -299,8 +234,11 @@ pxy_conn_ctx_free(pxy_conn_ctx_t *ctx)
 
 /* forward declaration of libevent callbacks */
 static void pxy_bev_readcb(struct bufferevent *, void *);
+static void pxy_bev_readcb_e2(struct bufferevent *, void *);
 static void pxy_bev_writecb(struct bufferevent *, void *);
+static void pxy_bev_writecb_e2(struct bufferevent *, void *);
 static void pxy_bev_eventcb(struct bufferevent *, short, void *);
+static void pxy_bev_eventcb_e2(struct bufferevent *, short, void *);
 static void pxy_fd_readcb(evutil_socket_t, short, void *);
 
 /* forward declaration of OpenSSL callbacks */
@@ -1147,7 +1085,12 @@ bufferevent_free_and_close_fd(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	if (ssl) {
 		pxy_ssl_shutdown(ctx->opts, ctx->evbase, ssl, fd);
 	} else {
-		evutil_closesocket(fd);
+//		evutil_closesocket(fd);
+		if (evutil_closesocket(fd) == -1) {
+			log_dbg_printf(">############################# bufferevent_free_and_close_fd: evutil_closesocket FAILED, fd=%d\n", fd);
+		} else {
+			log_dbg_printf(">############################# bufferevent_free_and_close_fd: evutil_closesocket SUCCESS, fd=%d\n", fd);
+		}
 	}
 }
 
@@ -1167,14 +1110,16 @@ pxy_bufferevent_setup(pxy_conn_ctx_t *ctx, evutil_socket_t fd, SSL *ssl)
 {
 	struct bufferevent *bev;
 
+	log_dbg_printf(">>>>> pxy_bufferevent_setup(): ENTER fd=%d\n", (int)fd);
+
 	if (ssl) {
 		bev = bufferevent_openssl_socket_new(ctx->evbase, fd, ssl,
 				((fd == -1) ? BUFFEREVENT_SSL_CONNECTING
 				           : BUFFEREVENT_SSL_ACCEPTING),
 				BEV_OPT_DEFER_CALLBACKS);
 	} else {
-		bev = bufferevent_socket_new(ctx->evbase, fd,
-				BEV_OPT_DEFER_CALLBACKS);
+		bev = bufferevent_socket_new(ctx->evbase, fd, BEV_OPT_DEFER_CALLBACKS);
+//		bev = bufferevent_socket_new(ctx->evbase, fd, BEV_OPT_DEFER_CALLBACKS|BEV_OPT_THREADSAFE);
 	}
 	if (!bev) {
 		log_err_printf("Error creating bufferevent socket\n");
@@ -1189,13 +1134,39 @@ pxy_bufferevent_setup(pxy_conn_ctx_t *ctx, evutil_socket_t fd, SSL *ssl)
 #endif /* LIBEVENT_VERSION_NUMBER >= 0x02010000 */
 	bufferevent_setcb(bev, pxy_bev_readcb, pxy_bev_writecb,
 	                  pxy_bev_eventcb, ctx);
-	bufferevent_enable(bev, EV_READ|EV_WRITE);
+//	bufferevent_enable(bev, EV_READ|EV_WRITE);
 #ifdef DEBUG_PROXY
 	if (OPTS_DEBUG(ctx->opts)) {
 		log_dbg_printf("            %p pxy_bufferevent_setup\n",
 		               (void*)bev);
 	}
 #endif /* DEBUG_PROXY */
+	log_dbg_printf(">>>>> pxy_bufferevent_setup(): EXIT fd=%d, bev fd=%d\n", (int)fd, bufferevent_getfd(bev));
+	return bev;
+}
+
+static struct bufferevent *
+pxy_bufferevent_setup_e2(pxy_conn_ctx_t *ctx, evutil_socket_t fd, SSL *ssl)
+{
+	struct bufferevent *bev;
+
+	log_dbg_printf(">>>>> pxy_bufferevent_setup_e2(): ENTER %d\n", (int)fd);
+
+	bev = bufferevent_socket_new(ctx->evbase, fd, BEV_OPT_DEFER_CALLBACKS);
+//	bev = bufferevent_socket_new(ctx->evbase, fd, BEV_OPT_DEFER_CALLBACKS|BEV_OPT_THREADSAFE);
+
+	if (!bev) {
+		log_err_printf("Error creating bufferevent socket\n");
+		return NULL;
+	}
+
+#ifdef DEBUG_PROXY
+	if (OPTS_DEBUG(ctx->opts)) {
+		log_dbg_printf("            %p pxy_bufferevent_setup_e2\n",
+		               (void*)bev);
+	}
+#endif /* DEBUG_PROXY */
+	log_dbg_printf(">>>>> pxy_bufferevent_setup_e2(): EXIT %d\n", (int)fd);
 	return bev;
 }
 
@@ -1568,6 +1539,438 @@ pxy_conn_terminate_free(pxy_conn_ctx_t *ctx)
 	pxy_conn_ctx_free(ctx);
 }
 
+int
+pxy_conn_is_ready_to_free(pxy_conn_ctx_t *ctx)
+{
+	log_dbg_printf(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>> pxy_conn_is_ready_to_free: ENTER fd=%d\n", ctx->fd);
+
+	pxy_conn_desc_t *src = &ctx->src;
+	int src_closed = ctx->src_eof;
+
+	pxy_conn_desc_t *e2src = &ctx->e2src;
+	int e2src_closed = ctx->e2src_eof;
+
+	int src_inbuf_empty = 1;
+	int src_outbuf_empty = 1;
+	int e2src_inbuf_empty = 1;
+	int e2src_outbuf_empty = 1;
+
+	if ((!src->bev || !e2src->bev) && !src_closed && !e2src_closed) {
+		goto not_ready;
+	}
+	
+	if (!src->bev) {
+		goto ready;
+	}
+	
+	struct evbuffer *src_inbuf = bufferevent_get_input(src->bev);
+	src_inbuf_empty = evbuffer_get_length(src_inbuf) == 0;
+	
+	struct evbuffer *src_outbuf = bufferevent_get_output(src->bev);
+	src_outbuf_empty = evbuffer_get_length(src_outbuf) == 0;
+
+	struct evbuffer *e2src_inbuf = bufferevent_get_input(e2src->bev);
+	e2src_inbuf_empty = evbuffer_get_length(e2src_inbuf) == 0;
+	
+	struct evbuffer *e2src_outbuf = bufferevent_get_output(e2src->bev);
+	e2src_outbuf_empty = evbuffer_get_length(e2src_outbuf) == 0;
+
+	if (!src_closed) {
+		log_dbg_printf(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>> pxy_conn_is_ready_to_free: src_closed NOT CLOSED fd=%d\n", ctx->fd);
+	}
+	
+	if (!src_inbuf_empty) {
+		log_dbg_printf(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>> pxy_conn_is_ready_to_free: src_inbuf NOT EMPTY fd=%d\n", ctx->fd);
+	}
+	
+	if (!src_outbuf_empty) {
+		log_dbg_printf(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>> pxy_conn_is_ready_to_free: src_outbuf NOT EMPTY fd=%d\n", ctx->fd);
+	}
+	
+	if (!e2src_closed) {
+		log_dbg_printf(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>> pxy_conn_is_ready_to_free: e2src_closed NOT CLOSED fd=%d\n", ctx->fd);
+	}
+	
+	if (!e2src_inbuf_empty) {
+		log_dbg_printf(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>> pxy_conn_is_ready_to_free: e2src_inbuf NOT EMPTY fd=%d\n", ctx->fd);
+	}
+	
+	if (!e2src_outbuf_empty) {
+		log_dbg_printf(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>> pxy_conn_is_ready_to_free: e2src_outbuf NOT EMPTY fd=%d\n", ctx->fd);
+	}
+
+	if (src_closed && !src_inbuf_empty && !e2src_closed) {
+		log_dbg_printf(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>> pxy_conn_is_ready_to_free: src_closed && !src_inbuf_empty && !e2src_closed fd=%d\n", ctx->fd);
+		goto not_ready;
+	}
+	
+	if (e2src_closed && !e2src_inbuf_empty && !src_closed) {
+		log_dbg_printf(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>> pxy_conn_is_ready_to_free: e2src_closed && !e2src_inbuf_empty && !src_closed fd=%d\n", ctx->fd);
+		goto not_ready;
+	}
+	
+	if (src_closed && e2src_closed && !ctx->initialized) {
+		log_dbg_printf(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>> pxy_conn_is_ready_to_free: src_closed && e2src_closed && !ctx->initialized fd=%d\n", ctx->fd);
+		goto ready;
+	}
+	
+	if (e2src_closed && !ctx->initialized) {
+		log_dbg_printf(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>> pxy_conn_is_ready_to_free: e2src_closed && !ctx->initialized fd=%d\n", ctx->fd);
+		goto ready;
+	}
+	
+	if (src_closed && !ctx->initialized) {
+		log_dbg_printf(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>> pxy_conn_is_ready_to_free: (src_closed || e2src_closed) && !ctx->initialized fd=%d\n", ctx->fd);
+		goto not_ready;
+	}
+	
+	if ((src_closed && e2src_closed) || (src_closed && e2src_outbuf_empty) || (e2src_closed && src_outbuf_empty) ||
+			((src_closed || e2src_closed) && ctx->initialized && !ctx->mctx->child_ctx)) {
+//			((src_closed || e2src_closed) && ctx->initialized && !ctx->child_ctx)) {
+		ctx->src_eof = 1;
+		ctx->e2src_eof = 1;
+		goto ready;
+	}
+
+not_ready:
+	log_dbg_printf(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>> pxy_conn_is_ready_to_free: EXIT NOT READY, fd=%d\n", ctx->fd);
+	return 0;
+
+ready:
+	if (!src_inbuf_empty) {
+		log_dbg_printf(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>> pxy_conn_is_ready_to_free: src_inbuf DRAIN fd=%d\n", ctx->fd);
+		evbuffer_drain(src_inbuf, evbuffer_get_length(src_inbuf));
+	}
+	
+	if (!src_outbuf_empty) {
+		log_dbg_printf(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>> pxy_conn_is_ready_to_free: src_outbuf DRAIN fd=%d\n", ctx->fd);
+		evbuffer_drain(src_outbuf, evbuffer_get_length(src_outbuf));
+
+//		size_t packet_size = evbuffer_get_length(src_outbuf);
+//		char *packet = malloc(packet_size);
+//
+//		int bytes_read = evbuffer_remove(src_outbuf, packet, packet_size);
+//		if (bytes_read < 0) {
+//			log_err_printf("ERROR: evbuffer_remove cannot drain the buffer\n");
+//		}
+//
+//		log_dbg_printf(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>> pxy_conn_is_ready_to_free: DRAIN src_outbuf packet (size = %d):\n%.*s\n",
+//				(int) packet_size, (int) packet_size, packet);
+//
+//		if (evbuffer_get_length(src_outbuf) > 0) {
+//			if (evbuffer_drain(src_outbuf, evbuffer_get_length(src_outbuf)) == -1) {
+//				log_dbg_printf(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>> pxy_conn_is_ready_to_free: src_outbuf CANNOT DRAIN fd=%d\n", ctx->fd);
+//			} 
+//		}
+	}
+	
+	if (!e2src_inbuf_empty) {
+		log_dbg_printf(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>> pxy_conn_is_ready_to_free: e2src_inbuf DRAIN fd=%d\n", ctx->fd);
+		evbuffer_drain(e2src_inbuf, evbuffer_get_length(e2src_inbuf));
+	}
+	
+	if (!e2src_outbuf_empty) {
+		log_dbg_printf(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>> pxy_conn_is_ready_to_free: e2src_outbuf DRAIN fd=%d\n", ctx->fd);
+		evbuffer_drain(e2src_outbuf, evbuffer_get_length(e2src_outbuf));
+	}
+					   
+	log_dbg_printf(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>> pxy_conn_is_ready_to_free: EXIT READY, fd=%d\n", ctx->fd);
+	return 1;
+}
+
+int
+pxy_conn_is_ready_to_free_e2(pxy_conn_ctx_t *ctx)
+{
+	log_dbg_printf(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>> pxy_conn_is_ready_to_free_e2: ENTER fd=%d\n", ctx->fd);
+
+//	pxy_conn_ctx_t *parent_ctx = ctx->parent_ctx;
+	pxy_conn_ctx_t *parent_ctx;
+	if (ctx->mctx) {
+		parent_ctx = ctx->mctx->parent_ctx;
+	}
+
+	int e2_closed = ctx->e2dst_eof;
+
+	pxy_conn_desc_t *e2dst = &ctx->e2dst;
+	struct evbuffer *e2_inbuf = bufferevent_get_input(e2dst->bev);
+	int e2_inbuf_empty = evbuffer_get_length(e2_inbuf) == 0;
+	
+	struct evbuffer *e2_outbuf = bufferevent_get_output(e2dst->bev);
+	int e2_outbuf_empty = evbuffer_get_length(e2_outbuf) == 0;
+
+	int dst_closed = ctx->dst_eof;
+
+	pxy_conn_desc_t *dst = &ctx->dst;
+	struct evbuffer *dst_inbuf = bufferevent_get_input(dst->bev);
+	int dst_inbuf_empty = evbuffer_get_length(dst_inbuf) == 0;
+
+	struct evbuffer *dst_outbuf = bufferevent_get_output(dst->bev);
+	int dst_outbuf_empty = evbuffer_get_length(dst_outbuf) == 0;
+
+	if (!e2_closed) {
+		log_dbg_printf(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>> pxy_conn_is_ready_to_free_e2: e2_closed NOT CLOSED fd=%d\n", ctx->fd);
+	}
+	
+	if (!e2_inbuf_empty) {
+		log_dbg_printf(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>> pxy_conn_is_ready_to_free_e2: e2_inbuf NOT EMPTY fd=%d\n", ctx->fd);
+	}
+	
+	if (!e2_outbuf_empty) {
+		log_dbg_printf(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>> pxy_conn_is_ready_to_free_e2: e2_outbuf NOT EMPTY fd=%d\n", ctx->fd);
+	}
+	
+	if (!dst_closed) {
+		log_dbg_printf(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>> pxy_conn_is_ready_to_free_e2: dst_closed NOT CLOSED fd=%d\n", ctx->fd);
+	}
+	
+	if (!dst_inbuf_empty) {
+		log_dbg_printf(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>> pxy_conn_is_ready_to_free_e2: dst_inbuf NOT EMPTY fd=%d\n", ctx->fd);
+	}
+	
+	if (!dst_outbuf_empty) {
+		log_dbg_printf(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>> pxy_conn_is_ready_to_free_e2: dst_outbuf NOT EMPTY fd=%d\n", ctx->fd);
+	}
+	
+	if ((e2_closed && !e2_inbuf_empty && !dst_closed)) {
+		goto not_ready;
+	}
+	
+	if ((dst_closed && !dst_inbuf_empty && !e2_closed)) {
+		goto not_ready;
+	}
+	
+	int src_closed = 1;
+	int e2src_closed = 1;
+
+	if (parent_ctx) {
+		src_closed = parent_ctx->src_eof;
+		e2src_closed = parent_ctx->e2src_eof;
+	}
+	
+	if ((e2_closed && dst_closed) || (e2_closed && dst_inbuf_empty && dst_outbuf_empty) || (dst_closed && e2_inbuf_empty && e2_outbuf_empty) ||
+			((src_closed || e2src_closed) && e2_inbuf_empty && e2_outbuf_empty && dst_inbuf_empty && dst_outbuf_empty) ||
+			!parent_ctx) {
+		ctx->dst_eof = 1;
+		ctx->e2dst_eof = 1;
+		goto ready;
+	}
+
+not_ready:
+	log_dbg_printf(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>> pxy_conn_is_ready_to_free_e2: EXIT NOT READY, fd=%d\n", ctx->fd);
+	return 0;
+
+ready:
+	if (!e2_inbuf_empty) {
+		log_dbg_printf(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>> pxy_conn_is_ready_to_free_e2: e2_inbuf DRAIN fd=%d\n", ctx->fd);
+		evbuffer_drain(e2_inbuf, evbuffer_get_length(e2_inbuf));
+	}
+	
+	if (!e2_outbuf_empty) {
+		log_dbg_printf(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>> pxy_conn_is_ready_to_free_e2: e2_outbuf DRAIN fd=%d\n", ctx->fd);
+		evbuffer_drain(e2_outbuf, evbuffer_get_length(e2_outbuf));
+	}
+	
+	if (!dst_inbuf_empty) {
+		log_dbg_printf(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>> pxy_conn_is_ready_to_free_e2: dst_inbuf DRAIN fd=%d\n", ctx->fd);
+		evbuffer_drain(dst_inbuf, evbuffer_get_length(dst_inbuf));
+	}
+	
+	if (!dst_outbuf_empty) {
+		log_dbg_printf(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>> pxy_conn_is_ready_to_free_e2: dst_outbuf DRAIN fd=%d\n", ctx->fd);
+		evbuffer_drain(dst_outbuf, evbuffer_get_length(dst_outbuf));
+	}
+					   
+	log_dbg_printf(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>> pxy_conn_is_ready_to_free_e2: EXIT READY, fd=%d\n", ctx->fd);
+	return 1;
+}
+
+static int
+pxy_conn_free(pxy_conn_ctx_t *);
+
+void remove_node(pxy_conn_ctx_t *node, pxy_conn_ctx_t **head) {
+    if (node->fd == (*head)->fd) {
+        *head = (*head)->child_ctx;
+        return;
+    }
+
+    pxy_conn_ctx_t *current = (*head)->child_ctx;
+    pxy_conn_ctx_t *previous = *head;
+    while (current != NULL && previous != NULL) {
+        if (node->fd == current->fd) {
+            previous->child_ctx = current->child_ctx;
+            return;
+        }
+        previous = current;
+        current = current->child_ctx;
+    }
+    return;
+}
+
+static int
+pxy_conn_free_e2(pxy_conn_ctx_t *ctx)
+{
+	log_dbg_printf(">############################# pxy_conn_free_e2: ENTER\n");
+	evutil_socket_t fd = ctx->fd;
+
+//	pxy_conn_ctx_t *parent_ctx = ctx->parent_ctx;
+	pxy_conn_ctx_t *parent_ctx;
+	if (ctx->mctx) {
+		parent_ctx = ctx->mctx->parent_ctx;
+	}
+	
+	int pfd = -1;
+	if (parent_ctx) {
+		pfd = parent_ctx->fd;
+	}
+	
+	if (pxy_conn_is_ready_to_free_e2(ctx)) {
+		pxy_conn_desc_t *dst = &ctx->dst;
+		if (dst->bev) {
+			log_dbg_printf(">############################# pxy_conn_free_e2: evutil_closesocket dst->bev, fd=%d\n", bufferevent_getfd(dst->bev));
+			bufferevent_free_and_close_fd(dst->bev, ctx);
+			dst->bev = NULL;
+		}
+
+		pxy_conn_desc_t *e2dst = &ctx->e2dst;
+		if (e2dst->bev) {
+			log_dbg_printf(">############################# pxy_conn_free_e2: evutil_closesocket e2dst->bev, fd=%d\n", bufferevent_getfd(e2dst->bev));
+			bufferevent_free_and_close_fd(e2dst->bev, ctx);
+			e2dst->bev = NULL;
+		}
+		
+		int rv = 1;
+//		if (parent_ctx) {
+		if (ctx->mctx) {
+			log_dbg_printf(">############################# pxy_conn_free_e2: remove_node\n");
+			remove_node(ctx, &ctx->mctx->child_ctx);
+//			remove_node(ctx, &parent_ctx->child_ctx);
+
+			log_dbg_printf(">############################# pxy_conn_free_e2: CHECKING\n");
+//			pxy_conn_ctx_t *current_child_ctx = parent_ctx->child_ctx;
+			pxy_conn_ctx_t *current_child_ctx = ctx->mctx->child_ctx;
+			while (current_child_ctx) {
+				log_dbg_printf(">############################# pxy_conn_free_e2: NOT NULL CHILD, fd=%d\n", current_child_ctx->fd);
+				current_child_ctx = current_child_ctx->child_ctx;
+			}
+
+			if (!ctx->mctx->parent_ctx && !ctx->mctx->child_ctx) {
+				log_dbg_printf(">############################# pxy_conn_free_e2: FREEING evcl2, fd=%d, fd2=%d\n", fd, ctx->mctx->fd2);
+				evutil_closesocket(ctx->mctx->fd2);
+				evconnlistener_free(ctx->mctx->evcl2);
+
+				log_dbg_printf(">############################# pxy_conn_free_e2: RELEASING META CTX, fd=%d, parent fd=%d\n", fd, pfd);
+				ctx->mctx->released = 1;
+				rv = 2;
+			}
+		}
+
+		log_dbg_printf(">############################# pxy_conn_free_e2: FREEING CTX, fd=%d, parent fd=%d\n", fd, pfd);
+
+		pxy_conn_ctx_free(ctx);
+
+		log_dbg_printf(">############################# pxy_conn_free_e2: FREED CTX, fd=%d, parent fd=%d\n", fd, pfd);
+		return rv;
+	} else {
+		log_dbg_printf(">############################# pxy_conn_free_e2: CANNOT FREE CTX, fd=%d, parent fd=%d\n", fd, pfd);
+		return 0;
+	}
+}
+
+static int
+pxy_conn_free(pxy_conn_ctx_t *ctx)
+{
+	int fd = ctx->fd;
+
+	if (!ctx->mctx) {
+		goto leavefree;
+	}
+	
+	int cfd = -1;
+//	if (ctx->child_ctx) {
+	if (ctx->mctx->child_ctx) {
+		log_dbg_printf(">############################# pxy_conn_free: ctx->child_ctx NOT NULL\n");
+		cfd = ctx->mctx->child_ctx->fd;
+	}
+	
+	if (pxy_conn_is_ready_to_free(ctx)) {
+
+		if (ctx->initialized) {
+//			pxy_conn_ctx_t *current = ctx->child_ctx;
+			pxy_conn_ctx_t *current = ctx->mctx->child_ctx;
+			while (current) {
+				pxy_conn_ctx_t *next = current->child_ctx;
+				if (pxy_conn_free_e2(current)) {
+					log_dbg_printf(">############################# pxy_conn_free: FREE child SUCCESS, fd=%d, child fd=%d\n", fd, cfd);
+				}
+				current = next;
+			}
+		}
+
+leavefree:
+		log_dbg_printf(">############################# pxy_conn_free: TRY FREE ctx->src\n");
+		pxy_conn_desc_t *src = &ctx->src;
+		if (src->bev) {
+			log_dbg_printf(">############################# pxy_conn_free: evutil_closesocket src->bev, fd=%d\n", bufferevent_getfd(src->bev));
+			bufferevent_free_and_close_fd(src->bev, ctx);
+			src->bev = NULL;
+		}
+
+		pxy_conn_desc_t *dst = &ctx->dst;
+		if (dst->bev) {
+			log_dbg_printf(">############################# pxy_conn_free: evutil_closesocket dst->bev, fd=%d\n", bufferevent_getfd(dst->bev));
+			bufferevent_free_and_close_fd(dst->bev, ctx);
+			dst->bev = NULL;
+		}
+
+		pxy_conn_desc_t *e2src = &ctx->e2src;
+		if (e2src->bev) {
+			log_dbg_printf(">############################# pxy_conn_free: evutil_closesocket e2src->bev, fd=%d\n", bufferevent_getfd(e2src->bev));
+			bufferevent_free_and_close_fd(e2src->bev, ctx);
+			e2src->bev = NULL;
+		}
+
+		int rv = 1;
+		if (ctx->mctx) {
+//			if (!ctx->child_ctx) {
+//			if (!ctx->mctx->child_ctx) {
+//				log_dbg_printf(">############################# pxy_conn_free: FREEING evcl2, fd=%d, fd2=%d\n", fd, ctx->mctx->fd2);
+//				evutil_closesocket(ctx->mctx->fd2);
+//				evconnlistener_free(ctx->mctx->evcl2);
+//			}
+//			} else {
+//				log_dbg_printf(">############################# pxy_conn_free: NULLING CHILDREN\n");
+//				pxy_conn_ctx_t *current_child_ctx = NULL;
+////				current_child_ctx = ctx->child_ctx;
+//				current_child_ctx = ctx->mctx->child_ctx;
+//				while (current_child_ctx) {
+//					log_dbg_printf(">############################# pxy_conn_free: NULLING CHILD, fd=%d, child fd=%d\n", fd, current_child_ctx->fd);
+//					current_child_ctx->parent_ctx = NULL;
+//					current_child_ctx = current_child_ctx->child_ctx;
+//				}
+//			}
+		
+			ctx->mctx->parent_ctx = NULL;
+			if (!ctx->mctx->child_ctx) {
+				log_dbg_printf(">############################# pxy_conn_free: FREEING evcl2, fd=%d, fd2=%d\n", fd, ctx->mctx->fd2);
+				evutil_closesocket(ctx->mctx->fd2);
+				evconnlistener_free(ctx->mctx->evcl2);
+
+				log_dbg_printf(">############################# pxy_conn_free: RELEASING META CTX, fd=%d, child fd=%d\n", fd, cfd);
+				ctx->mctx->released = 1;
+				rv = 2;
+			}
+		}
+
+		log_dbg_printf(">############################# pxy_conn_free: FREEING ctx, fd=%d, child fd=%d\n", fd, cfd);
+		pxy_conn_ctx_free(ctx);
+		log_dbg_printf(">############################# pxy_conn_free: FREED CTX, fd=%d, child fd=%d\n", fd, cfd);
+		return rv;
+	} else {
+		log_dbg_printf(">############################# pxy_conn_free: CANNOT FREE CTX, fd=%d, child fd=%d\n", fd, cfd);
+		return 0;
+	}
+}
+
 /*
  * Callback for read events on the up- and downstream connection bufferevents.
  * Called when there is data ready in the input evbuffer.
@@ -1576,164 +1979,351 @@ static void
 pxy_bev_readcb(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
-	pxy_conn_desc_t *other = (bev==ctx->src.bev) ? &ctx->dst : &ctx->src;
-
-#ifdef DEBUG_PROXY
-	if (OPTS_DEBUG(ctx->opts)) {
-		log_dbg_printf("%p %p %s readcb\n", arg, (void*)bev,
-		               (bev == ctx->src.bev) ? "src" : "dst");
-	}
-#endif /* DEBUG_PROXY */
-
-	if (!ctx->connected) {
-		log_err_printf("readcb called when other end not connected - "
-		               "aborting.\n");
-		/* XXX should signal main loop instead of calling exit() */
-		log_fini();
-		exit(EXIT_FAILURE);
-	}
-
-	if (ctx->clienthello_search) {
-		if (pxy_conn_autossl_peek_and_upgrade(ctx)) {
-			return;
-		}
-	}
-
-	struct evbuffer *inbuf = bufferevent_get_input(bev);
-	if (other->closed) {
-		evbuffer_drain(inbuf, evbuffer_get_length(inbuf));
+	
+	if (!ctx) {
+		log_dbg_printf(">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: ctx NULL\n");
 		return;
 	}
-
-	struct evbuffer *outbuf = bufferevent_get_output(other->bev);
-
-	/* request header munging */
-	if (ctx->spec->http && !ctx->seen_req_header && (bev == ctx->src.bev)
-	    && !ctx->passthrough) {
-		logbuf_t *lb = NULL, *tail = NULL;
-		char *line;
-		while ((line = evbuffer_readln(inbuf, NULL,
-		                               EVBUFFER_EOL_CRLF))) {
-			char *replace;
-			if (WANT_CONTENT_LOG(ctx)) {
-				logbuf_t *tmp;
-				tmp = logbuf_new_printf(NULL, NULL,
-				                        "%s\r\n", line);
-				if (tail) {
-					if (tmp) {
-						tail->next = tmp;
-						tail = tail->next;
-					}
-				} else {
-					lb = tail = tmp;
-				}
-			}
-			replace = pxy_http_reqhdr_filter_line(line, ctx);
-			if (replace == line) {
-				evbuffer_add_printf(outbuf, "%s\r\n", line);
-			} else if (replace) {
-				evbuffer_add_printf(outbuf, "%s\r\n", replace);
-				free(replace);
-			}
-			free(line);
-			if (ctx->seen_req_header) {
-				/* request header complete */
-				if (ctx->opts->deny_ocsp) {
-					pxy_ocsp_deny(ctx);
-				}
-				break;
-			}
-		}
-		if (lb && WANT_CONTENT_LOG(ctx)) {
-			if (log_content_submit(ctx->logctx, lb,
-			                       1/*req*/) == -1) {
-				logbuf_free(lb);
-				log_err_printf("Warning: Content log "
-				               "submission failed\n");
-			}
-		}
-		if (!ctx->seen_req_header)
-			return;
-	} else
-	/* response header munging */
-	if (ctx->spec->http && !ctx->seen_resp_header && (bev == ctx->dst.bev)
-	    && !ctx->passthrough) {
-		logbuf_t *lb = NULL, *tail = NULL;
-		char *line;
-		while ((line = evbuffer_readln(inbuf, NULL,
-		                               EVBUFFER_EOL_CRLF))) {
-			char *replace;
-			if (WANT_CONTENT_LOG(ctx)) {
-				logbuf_t *tmp;
-				tmp = logbuf_new_printf(NULL, NULL,
-				                        "%s\r\n", line);
-				if (tail) {
-					if (tmp) {
-						tail->next = tmp;
-						tail = tail->next;
-					}
-				} else {
-					lb = tail = tmp;
-				}
-			}
-			replace = pxy_http_resphdr_filter_line(line, ctx);
-			if (replace == line) {
-				evbuffer_add_printf(outbuf, "%s\r\n", line);
-			} else if (replace) {
-				evbuffer_add_printf(outbuf, "%s\r\n", replace);
-				free(replace);
-			}
-			free(line);
-			if (ctx->seen_resp_header) {
-				/* response header complete: log connection */
-				if (WANT_CONNECT_LOG(ctx)) {
-					pxy_log_connect_http(ctx);
-				}
-				break;
-			}
-		}
-		if (lb && WANT_CONTENT_LOG(ctx)) {
-			if (log_content_submit(ctx->logctx, lb,
-			                       0/*resp*/) == -1) {
-				logbuf_free(lb);
-				log_err_printf("Warning: Content log "
-				               "submission failed\n");
-			}
-		}
-		if (!ctx->seen_resp_header)
-			return;
-	}
-
-	/* out of memory condition? */
-	if (ctx->enomem) {
-		pxy_conn_terminate_free(ctx);
+	if (!ctx->mctx) {
+		log_dbg_printf(">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: ctx->mctx NULL\n");
 		return;
 	}
+//	pthread_mutex_t *cmutex = &ctx->thrmgr->mutex2;
+	pthread_mutex_t *cmutex = &ctx->mctx->mutex;
+	pthread_mutex_lock(cmutex);
 
-	/* no data left after parsing headers? */
-	if (evbuffer_get_length(inbuf) == 0)
-		return;
+	if (!ctx || !ctx->src.bev || !ctx->e2src.bev) {
+		log_dbg_printf(">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: NULL ctx || bev <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< GONE\n");
+		goto leave;
+	}
+			
+	char event_name[6] = "\0\0\0\0\0\0";
+	if (bev == ctx->src.bev) {
+		strcpy(event_name, "src");
+	} else if (bev == ctx->dst.bev) {
+		strcpy(event_name, "dst");
+	} else if (bev == ctx->e2src.bev) {
+		strcpy(event_name, "e2src");
+	} else if (bev == ctx->e2dst.bev) {
+		strcpy(event_name, "e2dst");
+	} else if (bev == NULL) {
+		strcpy(event_name, "NULL");
+	} else {
+		strcpy(event_name, "UNKWN");
+	}
+	
+	log_dbg_printf(">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: %s, fd=%d\n", event_name, ctx->fd);
 
-	if (WANT_CONTENT_LOG(ctx)) {
-		logbuf_t *lb;
-		lb = logbuf_new_alloc(evbuffer_get_length(inbuf), NULL, NULL);
-		if (lb && (evbuffer_copyout(inbuf, lb->buf, lb->sz) != -1)) {
-			if (log_content_submit(ctx->logctx, lb,
-			                       (bev == ctx->src.bev)) == -1) {
-				logbuf_free(lb);
-				log_err_printf("Warning: Content log "
-				               "submission failed\n");
+	if (bev == ctx->src.bev) {
+		if (ctx->e2src.bev) {
+			struct evbuffer *inbuf = bufferevent_get_input(bev);
+
+			struct sockaddr_in e2listener_addr;
+			socklen_t e2listener_len;
+
+			e2listener_len = sizeof(e2listener_addr);
+			
+//			if (ctx->child_ctx) {
+			if (ctx->mctx->child_ctx) {
+				// @todo Check why this won't work
+				//getsockname(ctx->child_ctx->fd, &e2listener_addr, &e2listener_len);
+				log_dbg_printf(">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: %s, CALLING getsockname, fd=%d ,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,, fd_e2=%d\n", event_name, ctx->fd, ctx->mctx->fd2);
+				getsockname(ctx->mctx->fd2, &e2listener_addr, &e2listener_len);
+			} else {
+				log_dbg_printf(">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: %s, FIRST CALL getsockname, fd=%d ,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,, fd_e2=%d\n", event_name, ctx->fd, ctx->mctx->fd2);
+				// @todo Check if the fd is same for all children
+				getsockname(ctx->mctx->fd2, &e2listener_addr, &e2listener_len);
 			}
+
+			char *addr = inet_ntoa(e2listener_addr.sin_addr);
+			int addr_len = strlen(addr) + 5 + 3 + 1;
+
+			char *pxy_dst = malloc(addr_len);
+			snprintf(pxy_dst, addr_len, "[%s]:%d", addr, (int) ntohs(e2listener_addr.sin_port));
+
+			char *custom_key = "\r\nSSLproxy-Addr: ";
+			size_t custom_field_len = strlen(custom_key) + strlen(pxy_dst) + 1;
+
+			char *custom_field = malloc(custom_field_len);
+			snprintf(custom_field, custom_field_len, "%s%s", custom_key, pxy_dst);
+			free(pxy_dst);
+			
+			log_dbg_printf(">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: custom_field= %s\n", custom_field);
+			
+			size_t packet_size = evbuffer_get_length(inbuf);
+			char *packet = malloc(packet_size + custom_field_len);
+			if (!packet) {
+				ctx->enomem = 1;
+				goto leave;
+			}
+
+			int bytes_read = evbuffer_remove(inbuf, packet, packet_size);
+			if (bytes_read < 0) {
+				log_err_printf("ERROR: evbuffer_remove cannot drain the buffer\n");
+			}
+			
+			log_dbg_printf(">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: src ORIG packet (size = %d), fd=%d:\n%.*s\n",
+					(int) packet_size, ctx->fd, (int) packet_size, packet);
+
+			packet[packet_size] = '\0';
+			packet_size+= custom_field_len;
+
+			char *pos = strstr(packet, "\r\n\r\n");
+			if (pos) {
+				char *content = strdup(pos);
+				int header_len = pos - packet;
+				char *header = malloc(header_len + 1);
+				strncpy(header, packet, header_len);
+				header[header_len] = '\0';
+				
+				snprintf(packet, packet_size, "%s%s%s", header, custom_field, content);
+
+				free(header);
+				free(content);
+			}
+			free(custom_field);
+
+			struct evbuffer *e2outbuf = bufferevent_get_output(ctx->e2src.bev);
+
+			int add_result = evbuffer_add(e2outbuf, packet, packet_size - 1);
+			if (add_result < 0) {
+				log_err_printf("ERROR: evbuffer_add failed\n");
+			}
+
+			log_dbg_printf(">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: src packet (size = %d), fd=%d:\n%.*s\n",
+					(int) packet_size, ctx->fd, (int) packet_size, packet);
+//			log_dbg_printf(">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: src packet (size = %d)\n", (int) packet_size);
+
+			free(packet);
+		} else {
+			log_dbg_printf(">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: src ctx->e2src.bev NULL\n");
 		}
 	}
-	evbuffer_add_buffer(outbuf, inbuf);
-	if (evbuffer_get_length(outbuf) >= OUTBUF_LIMIT) {
-		/* temporarily disable data source;
-		 * set an appropriate watermark. */
-		bufferevent_setwatermark(other->bev, EV_WRITE,
-				OUTBUF_LIMIT/2, OUTBUF_LIMIT);
-		bufferevent_disable(bev, EV_READ);
+	else if (bev == ctx->e2src.bev) {
+		if (ctx->src.bev) {
+			struct evbuffer *inbuf = bufferevent_get_input(bev);
+
+			size_t packet_size = evbuffer_get_length(inbuf);
+			char *packet = malloc(packet_size);
+			if (!packet) {
+				ctx->enomem = 1;
+				goto leave;
+			}
+
+			int bytes_read = evbuffer_remove(inbuf, packet, packet_size);
+			if (bytes_read < 0) {
+				log_err_printf("ERROR: evbuffer_remove cannot drain the buffer\n");
+			}
+
+			struct evbuffer *outbuf = bufferevent_get_output(ctx->src.bev);
+
+			int add_result = evbuffer_add(outbuf, packet, packet_size);
+			if (add_result < 0) {
+				log_err_printf("ERROR: evbuffer_add failed\n");
+			}
+
+//			log_dbg_printf(">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: e2src packet (size = %d):\n%.*s\n",
+//					(int) packet_size, (int) packet_size, packet);
+			log_dbg_printf(">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: e2src packet (size = %d)\n", (int) packet_size);
+
+			free(packet);
+		} else {
+			log_dbg_printf(">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: e2src ctx->src.bev NULL\n");
+		}
 	}
+
+leave:
+	log_dbg_printf(">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: EXIT\n");
+	pthread_mutex_unlock(cmutex);
+}
+
+static void
+pxy_bev_readcb_e2(struct bufferevent *bev, void *arg)
+{
+	pxy_conn_ctx_t *ctx = arg;
+
+	if (!ctx) {
+		log_dbg_printf(">>>>>....................... pxy_bev_readcb_e2: ctx NULL\n");
+		return;
+	}
+	if (!ctx->mctx) {
+		log_dbg_printf(">>>>>....................... pxy_bev_readcb_e2: ctx->mctx NULL\n");
+		return;
+	}
+	
+//	pthread_mutex_t *cmutex = &ctx->thrmgr->mutex2;
+	pthread_mutex_t *cmutex = &ctx->mctx->mutex;
+	pthread_mutex_lock(cmutex);
+
+	if (!ctx || !ctx->e2dst.bev || !ctx->dst.bev) {
+		log_dbg_printf(">>>>>....................... pxy_bev_readcb_e2: NULL ctx || bev <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< GONE\n");
+		goto leave;
+	}
+	
+//	pxy_conn_ctx_t *parent_ctx = ctx->parent_ctx;
+	pxy_conn_ctx_t *parent_ctx = ctx->mctx->parent_ctx;
+	evutil_socket_t pfd = -1;
+	if (parent_ctx) {
+		pfd = parent_ctx->fd;
+	}
+
+	char event_name[6] = "\0\0\0\0\0\0";
+	if (bev == ctx->src.bev) {
+		strcpy(event_name, "src");
+	} else if (bev == ctx->dst.bev) {
+		strcpy(event_name, "dst");
+	} else if (bev == ctx->e2src.bev) {
+		strcpy(event_name, "e2src");
+	} else if (bev == ctx->e2dst.bev) {
+		strcpy(event_name, "e2dst");
+	} else if (bev == NULL) {
+		strcpy(event_name, "NULL");
+	} else {
+		strcpy(event_name, "UNKWN");
+	}
+	
+	log_dbg_printf(">>>>>....................... pxy_bev_readcb_e2: %s, fd=%d\n", event_name, ctx->fd);
+	
+	struct sockaddr_in peeraddr;
+	socklen_t peeraddrlen;
+
+	peeraddrlen = sizeof(peeraddr);
+	getpeername(ctx->fd, &peeraddr, &peeraddrlen);
+
+	if (bev == ctx->e2dst.bev) {
+		if (ctx->dst.bev) {
+
+			log_dbg_printf(">>>>>.................................................................................... pxy_bev_readcb_e2: PEER [%s]:%d <<<<< fd=%d, parent fd=%d\n", inet_ntoa(peeraddr.sin_addr), (int) ntohs(peeraddr.sin_port), ctx->fd, pfd);
+
+			struct evbuffer *e2outbuf = bufferevent_get_input(ctx->e2dst.bev);
+
+			char *custom_key = "SSLproxy-Addr: ";
+			struct evbuffer_ptr ebp = evbuffer_search(e2outbuf, custom_key, strlen(custom_key), NULL);
+			if (ebp.pos != -1) {
+				log_dbg_printf(">>>>>....................... pxy_bev_readcb_e2: evbuffer_search FOUND = %d\n", ebp.pos);
+			} else {
+				log_dbg_printf(">>>>>....................... pxy_bev_readcb_e2: evbuffer_search FAILED\n");
+			}
+			
+			size_t packet_size = evbuffer_get_length(e2outbuf);
+			char *packet = malloc(packet_size);
+			if (!packet) {
+				ctx->enomem = 1;
+				goto leave;
+			}
+
+			log_dbg_printf(">>>>>....................... pxy_bev_readcb_e2: packet_size\n");
+		
+			if (packet_size > 0) {
+				int bytes_read = evbuffer_remove(e2outbuf, packet, packet_size);
+				if (bytes_read < 0) {
+					log_err_printf("ERROR: evbuffer_remove cannot drain the buffer\n");
+				}
+
+				log_dbg_printf(">>>>>....................... pxy_bev_readcb_e2: bufferevent_get_output\n");
+		
+				struct evbuffer *outbuf = bufferevent_get_output(ctx->dst.bev);
+				int add_result = evbuffer_add(outbuf, packet, packet_size);
+				if (add_result < 0) {
+					log_err_printf("ERROR: evbuffer_add failed\n");
+				}
+				
+				log_dbg_printf(">>>>>....................... pxy_bev_readcb_e2: e2dst packet (size = %d), fd=%d, parent fd=%d:\n%.*s\n",
+						(int) packet_size, ctx->fd, pfd, (int) packet_size, packet);
+//				log_dbg_printf(">>>>>....................... pxy_bev_readcb_e2: e2dst packet (size = %d)\n", (int) packet_size);
+			}
+			free(packet);
+		} else {
+			log_dbg_printf(">>>>>....................... pxy_bev_readcb_e2: e2dst ctx->dst.bev NULL\n");
+		}
+	}
+	else if (bev == ctx->dst.bev) {
+		if (ctx->e2dst.bev) {
+			struct evbuffer *inbuf = bufferevent_get_input(bev);
+
+			size_t packet_size = evbuffer_get_length(inbuf);
+			char *packet = malloc(packet_size);
+			if (!packet) {
+				ctx->enomem = 1;
+				goto leave;
+//				return;
+			}
+
+			int bytes_read = evbuffer_remove(inbuf, packet, packet_size);
+
+			if (bytes_read < 0) {
+				log_err_printf("ERROR: evbuffer_remove cannot drain the buffer\n");
+			}
+			
+			struct evbuffer *e2outbuf = bufferevent_get_output(ctx->e2dst.bev);
+
+			int add_result = evbuffer_add(e2outbuf, packet, packet_size);
+			if (add_result < 0) {
+				log_err_printf("ERROR: evbuffer_add failed\n");
+			}
+
+//			log_dbg_printf(">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb_e2: dst packet (size = %d):\n%.*s\n",
+//					(int) packet_size, (int) packet_size, packet);
+			log_dbg_printf(">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb_e2: dst packet (size = %d)\n", (int) packet_size);
+
+			free(packet);
+		} else {
+			log_dbg_printf(">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb_e2: dst ctx->e2dst.bev NULL\n");
+		}
+	}
+
+leave:
+	log_dbg_printf(">>>>>....................... pxy_bev_readcb_e2: EXIT\n");
+	pthread_mutex_unlock(cmutex);
+}
+
+static int
+pxy_connected_enable(struct bufferevent *bev, pxy_conn_ctx_t *ctx, char *event_name)
+{
+	if (!ctx) {
+		log_dbg_printf(">>>>>=================================== pxy_connected_enable: ctx NULL\n");
+		return 0;
+	}
+	
+	log_dbg_printf(">>>>>=================================== pxy_connected_enable: CONNECTED %s fd=%d\n", event_name, ctx->fd);
+
+	if (bev == ctx->dst.bev && !ctx->dst_connected) {
+		ctx->dst_connected = 1;
+
+		log_dbg_printf(">>>>>=================================== pxy_connected_enable: pxy_bufferevent_setup for e2src fd=%d\n", ctx->fd);
+		ctx->e2src.ssl= NULL;
+		ctx->e2src.bev = pxy_bufferevent_setup(ctx, -1, ctx->e2src.ssl);
+
+		log_dbg_printf(">>>>>=================================== pxy_connected_enable: bufferevent_socket_connect for e2src fd=%d\n", ctx->fd);
+		if (bufferevent_socket_connect(ctx->e2src.bev,
+								   (struct sockaddr *)&ctx->spec->e2src_addr,
+								   ctx->spec->e2src_addrlen) == -1) {
+			log_dbg_printf(">>>>>=================================== pxy_connected_enable: FAILED bufferevent_socket_connect: e2src\n");
+		}
+		bufferevent_enable(ctx->e2src.bev, EV_READ|EV_WRITE);
+	}
+
+	if (bev == ctx->e2src.bev && !ctx->e2src_connected) {
+		ctx->e2src_connected = 1;
+	}
+
+	if (ctx->dst_connected && ctx->e2src_connected && !ctx->connected) {
+		ctx->connected = 1;
+
+		log_dbg_printf(">>>>>=================================== pxy_connected_enable: SETUP src.bev fd=%d\n", ctx->fd);
+		ctx->src.bev = pxy_bufferevent_setup(ctx, ctx->fd, ctx->src.ssl);
+		if (!ctx->src.bev) {
+			log_dbg_printf(">>>>>=================================== pxy_connected_enable: src.bev NULL FREEING\n");
+
+			bufferevent_free_and_close_fd(bev, ctx);
+			evutil_closesocket(ctx->fd);
+			pxy_conn_ctx_free(ctx);
+			return 0;
+		}
+		bufferevent_enable(ctx->src.bev, EV_READ|EV_WRITE);
+	}
+
+	return 1;
 }
 
 /*
@@ -1745,31 +2335,142 @@ static void
 pxy_bev_writecb(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
-	pxy_conn_desc_t *other = (bev==ctx->src.bev) ? &ctx->dst : &ctx->src;
-
-#ifdef DEBUG_PROXY
-	if (OPTS_DEBUG(ctx->opts)) {
-		log_dbg_printf("%p %p %s writecb\n", arg, (void*)bev,
-		               (bev == ctx->src.bev) ? "src" : "dst");
+	if (!ctx) {
+		log_dbg_printf(">>>>>+++++++++++++++++++++++++++++++++++ pxy_bev_writecb: ctx NULL\n");
+		return;
 	}
-#endif /* DEBUG_PROXY */
-
-	if (other->closed) {
-		struct evbuffer *outbuf = bufferevent_get_output(bev);
-		if (evbuffer_get_length(outbuf) == 0) {
-			/* finished writing and other end is closed;
-			 * close this end too and clean up memory */
-			bufferevent_free_and_close_fd(bev, ctx);
-			pxy_conn_ctx_free(ctx);
-		}
+	if (!ctx->mctx) {
+		log_dbg_printf(">>>>>+++++++++++++++++++++++++++++++++++ pxy_bev_writecb: ctx->mctx NULL\n");
 		return;
 	}
 
-	if (other->bev && !(bufferevent_get_enabled(other->bev) & EV_READ)) {
-		/* data source temporarily disabled;
-		 * re-enable and reset watermark to 0. */
-		bufferevent_setwatermark(bev, EV_WRITE, 0, 0);
-		bufferevent_enable(other->bev, EV_READ);
+//	pthread_mutex_t *cmutex = &ctx->thrmgr->mutex2;
+	proxy_conn_meta_ctx_t *mctx = ctx->mctx;
+	pthread_mutex_t *cmutex = &mctx->mutex;
+	pthread_mutex_lock(cmutex);
+	
+	int rv = 0;
+
+	char event_name[6] = "\0\0\0\0\0\0";
+	if (bev == ctx->src.bev) {
+		strcpy(event_name, "src");
+	} else if (bev == ctx->dst.bev) {
+		strcpy(event_name, "dst");
+	} else if (bev == ctx->e2src.bev) {
+		strcpy(event_name, "e2src");
+	} else if (bev == ctx->e2dst.bev) {
+		strcpy(event_name, "e2dst");
+	} else if (bev == NULL) {
+		strcpy(event_name, "NULL");
+	} else {
+		strcpy(event_name, "UNKWN");
+		log_dbg_printf(">>>>>+++++++++++++++++++++++++++++++++++ pxy_bev_writecb: event_name == UNKWN <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< NOT INIT\n");
+		goto leave;
+	}
+	
+	log_dbg_printf(">>>>>+++++++++++++++++++++++++++++++++++ pxy_bev_writecb: %s, %d\n", event_name, ctx->fd);
+
+	// XXX: For Squid's Zero Sized Reply
+	if ((bev == ctx->dst.bev) && !ctx->dst_connected) {
+		// @attention Do not call pxy_bev_eventcb() instead, that would cause deadlock
+		//pxy_bev_eventcb(bev, BEV_EVENT_CONNECTED, ctx);
+		pxy_connected_enable(bev, ctx, event_name);
+	}
+
+	if (!ctx) {
+		log_dbg_printf(">>>>>+++++++++++++++++++++++++++++++++++ pxy_bev_writecb: NULL ctx || bev <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< GONE\n");
+		goto leave;
+	}
+	
+	
+	if (ctx->src_eof || ctx->e2src_eof) {
+		log_dbg_printf(">>>>>+++++++++++++++++++++++++++++++++++ pxy_bev_writecb(): TRY CLOSING\n");
+		rv = pxy_conn_free(ctx);
+	}
+
+leave:
+	log_dbg_printf(">>>>>+++++++++++++++++++++++++++++++++++ pxy_bev_writecb: EXIT\n");
+	if (rv == 2) {
+		log_dbg_printf(">>>>>+++++++++++++++++++++++++++++++++++ pxy_bev_writecb: EXIT FREE META CTX\n");
+		pthread_mutex_destroy(cmutex);
+		free(mctx);
+	} else {
+		pthread_mutex_unlock(cmutex);
+	}
+}
+
+static void
+pxy_bev_writecb_e2(struct bufferevent *bev, void *arg)
+{
+	pxy_conn_ctx_t *ctx = arg;
+
+//	assert(ctx != NULL);
+	if (!ctx) {
+		log_dbg_printf(">>>>>??????????????????????????? pxy_bev_writecb_e2: ctx NULL\n");
+		return;
+	}
+	if (!ctx->mctx) {
+		log_dbg_printf(">>>>>??????????????????????????? pxy_bev_writecb_e2: ctx->mctx NULL\n");
+		return;
+	}
+
+//	pthread_mutex_t *cmutex = &ctx->thrmgr->mutex2;
+	proxy_conn_meta_ctx_t *mctx = ctx->mctx;
+	pthread_mutex_t *cmutex = &mctx->mutex;
+	pthread_mutex_lock(cmutex);
+
+//	pxy_conn_ctx_t *parent_ctx = ctx->parent_ctx;
+	pxy_conn_ctx_t *parent_ctx = ctx->mctx->parent_ctx;
+
+	int rv = 0;
+	if (!ctx) {
+		log_dbg_printf(">>>>>??????????????????????????? pxy_bev_writecb_e2: NULL ctx <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< GONE\n");
+		goto leave;
+	}
+
+	char event_name[6] = "\0\0\0\0\0\0";
+	if (bev == ctx->src.bev) {
+		strcpy(event_name, "src");
+	} else if (bev == ctx->dst.bev) {
+		strcpy(event_name, "dst");
+	} else if (bev == ctx->e2src.bev) {
+		strcpy(event_name, "e2src");
+	} else if (bev == ctx->e2dst.bev) {
+		strcpy(event_name, "e2dst");
+	} else if (bev == NULL) {
+		strcpy(event_name, "NULL");
+	} else {
+		strcpy(event_name, "UNKWN");
+	}
+	
+	log_dbg_printf(">>>>>??????????????????????????? pxy_bev_writecb_e2: %s, %d\n", event_name, ctx->fd);
+
+	evutil_socket_t fd = ctx->fd;
+
+	int src_eof = 1;
+	int e2src_eof = 1;
+	if (parent_ctx) {
+		src_eof = parent_ctx->src_eof;
+		e2src_eof = parent_ctx->e2src_eof;
+		log_dbg_printf(">>>>>??????????????????????????? pxy_bev_writecb_e2: %s, %d-%d-%d-%d, fd=%d\n", event_name,
+				src_eof, e2src_eof, ctx->e2dst_eof, ctx->dst_eof, fd);
+	} else {
+		log_dbg_printf(">>>>>??????????????????????????? pxy_bev_writecb_e2: ctx->parent_ctx NULL %s, %d\n", event_name, fd);
+	}
+
+	if (src_eof || e2src_eof || ctx->e2dst_eof || ctx->dst_eof) {
+		log_dbg_printf(">>>>>??????????????????????????? pxy_bev_writecb_e2: 1+ EOF ASSUME e2dst EOF: %d\n", fd);
+		rv = pxy_conn_free_e2(ctx);
+	}
+	
+leave:
+	log_dbg_printf(">>>>>??????????????????????????? pxy_bev_writecb_e2: EXIT\n");
+	if (rv == 2) {
+		log_dbg_printf(">>>>>??????????????????????????? pxy_bev_writecb_e2: EXIT FREE META CTX\n");
+		pthread_mutex_destroy(cmutex);
+		free(mctx);
+	} else {
+		pthread_mutex_unlock(cmutex);
 	}
 }
 
@@ -1781,346 +2482,184 @@ static void
 pxy_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
-	pxy_conn_desc_t *this = (bev==ctx->src.bev) ? &ctx->src : &ctx->dst;
-	pxy_conn_desc_t *other = (bev==ctx->src.bev) ? &ctx->dst : &ctx->src;
-
-#ifdef DEBUG_PROXY
-	if (OPTS_DEBUG(ctx->opts)) {
-		log_dbg_printf("%p %p eventcb %s %s%s%s%s\n", arg, (void*)bev,
-		               (bev == ctx->src.bev) ? "src" : "dst",
-		               events & BEV_EVENT_CONNECTED ? "connected" : "",
-		               events & BEV_EVENT_ERROR ? "error" : "",
-		               events & BEV_EVENT_TIMEOUT ? "timeout" : "",
-		               events & BEV_EVENT_EOF ? "eof" : "");
+	if (!ctx) {
+		log_dbg_printf(">>>>>=================================== pxy_bev_eventcb: ctx NULL\n");
+		return;
 	}
-#endif /* DEBUG_PROXY */
-
-	if (events & BEV_EVENT_CONNECTED) {
-		if (bev != ctx->dst.bev) {
-#ifdef DEBUG_PROXY
-			if (OPTS_DEBUG(ctx->opts)) {
-				log_dbg_printf("src buffer event connected: "
-				               "ignoring event\n");
-			}
-#endif /* DEBUG_PROXY */
-			goto connected;
-		}
-
-		/* dst has connected */
-		ctx->connected = 1;
-
-		/* wrap client-side socket in an eventbuffer */
-		if ((ctx->spec->ssl || ctx->clienthello_found) &&
-		    !ctx->passthrough) {
-			ctx->src.ssl = pxy_srcssl_create(ctx, this->ssl);
-			if (!ctx->src.ssl) {
-				bufferevent_free_and_close_fd(bev, ctx);
-				ctx->dst.bev = NULL;
-				ctx->dst.ssl = NULL;
-				if (ctx->opts->passthrough && !ctx->enomem) {
-					ctx->passthrough = 1;
-					ctx->connected = 0;
-					log_dbg_printf("No cert found; "
-					               "falling back "
-					               "to passthrough\n");
-					pxy_fd_readcb(ctx->fd, 0, ctx);
-					return;
-				}
-				evutil_closesocket(ctx->fd);
-				pxy_conn_ctx_free(ctx);
-				return;
-			}
-		}
-		if (ctx->clienthello_found) {
-			if (OPTS_DEBUG(ctx->opts)) {
-				log_dbg_printf("Completing autossl upgrade\n");
-			}
-			ctx->src.bev = bufferevent_openssl_filter_new(
-			               ctx->evbase, ctx->src.bev, ctx->src.ssl,
-			               BUFFEREVENT_SSL_ACCEPTING,
-			               BEV_OPT_DEFER_CALLBACKS);
-			bufferevent_setcb(ctx->src.bev, pxy_bev_readcb,
-			                  pxy_bev_writecb, pxy_bev_eventcb,
-			                  ctx);
-			bufferevent_enable(ctx->src.bev, EV_READ|EV_WRITE);
-		} else {
-			ctx->src.bev = pxy_bufferevent_setup(ctx, ctx->fd,
-			                                     ctx->src.ssl);
-		}
-		if (!ctx->src.bev) {
-			if (ctx->src.ssl) {
-				SSL_free(ctx->src.ssl);
-				ctx->src.ssl = NULL;
-			}
-			bufferevent_free_and_close_fd(bev, ctx);
-			evutil_closesocket(ctx->fd);
-			pxy_conn_ctx_free(ctx);
-			return;
-		}
-
-		/* prepare logging, part 2 */
-		if (WANT_CONNECT_LOG(ctx) || WANT_CONTENT_LOG(ctx)) {
-			if (sys_sockaddr_str((struct sockaddr *)
-			                     &ctx->addr, ctx->addrlen,
-			                     &ctx->dsthost_str,
-			                     &ctx->dstport_str) != 0) {
-				ctx->enomem = 1;
-				pxy_conn_terminate_free(ctx);
-				return;
-			}
-
-#ifdef HAVE_LOCAL_PROCINFO
-			if (ctx->opts->lprocinfo) {
-				/* fetch process info */
-				if (proc_pid_for_addr(&ctx->lproc.pid,
-				        (struct sockaddr*)&ctx->lproc.srcaddr,
-				        ctx->lproc.srcaddrlen) == 0 &&
-				    ctx->lproc.pid != -1 &&
-				    proc_get_info(ctx->lproc.pid,
-				                  &ctx->lproc.exec_path,
-				                  &ctx->lproc.uid,
-				                  &ctx->lproc.gid) == 0) {
-					/* fetch user/group names */
-					ctx->lproc.user = sys_user_str(
-					                ctx->lproc.uid);
-					ctx->lproc.group = sys_group_str(
-					                ctx->lproc.gid);
-					if (!ctx->lproc.user ||
-					    !ctx->lproc.group) {
-						ctx->enomem = 1;
-						pxy_conn_terminate_free(ctx);
-						return;
-					}
-				}
-			}
-#endif /* HAVE_LOCAL_PROCINFO */
-		}
-		if (WANT_CONTENT_LOG(ctx)) {
-			if (log_content_open(&ctx->logctx, ctx->opts,
-			                     ctx->srchost_str, ctx->srcport_str,
-			                     ctx->dsthost_str, ctx->dstport_str,
-#ifdef HAVE_LOCAL_PROCINFO
-			                     ctx->lproc.exec_path,
-			                     ctx->lproc.user,
-			                     ctx->lproc.group
-#else /* HAVE_LOCAL_PROCINFO */
-			                     NULL, NULL, NULL
-#endif /* HAVE_LOCAL_PROCINFO */
-			                    ) == -1) {
-				if (errno == ENOMEM)
-					ctx->enomem = 1;
-				pxy_conn_terminate_free(ctx);
-				return;
-			}
-		}
-
-connected:
-		/* log connection if we don't analyze any headers */
-		if ((!this->ssl || (bev == ctx->src.bev)) &&
-		    (!ctx->spec->http || ctx->passthrough) &&
-		    WANT_CONNECT_LOG(ctx)) {
-			pxy_log_connect_nonhttp(ctx);
-		}
-
-		/* write SSL certificates to gendir */
-		if (this->ssl && (bev == ctx->src.bev) &&
-		    ctx->opts->certgendir) {
-			pxy_srccert_write(ctx);
-		}
-
-		if (OPTS_DEBUG(ctx->opts)) {
-			if (this->ssl) {
-				/* for SSL, we get two connect events */
-				log_dbg_printf("SSL connected %s [%s]:%s"
-				               " %s %s\n",
-				               bev == ctx->dst.bev ?
-				               "to" : "from",
-				               bev == ctx->dst.bev ?
-				               ctx->dsthost_str :
-				               ctx->srchost_str,
-				               bev == ctx->dst.bev ?
-				               ctx->dstport_str :
-				               ctx->srcport_str,
-				               SSL_get_version(this->ssl),
-				               SSL_get_cipher(this->ssl));
-			} else {
-				/* for TCP, we get only a dst connect event,
-				 * since src was already connected from the
-				 * beginning; mirror SSL debug output anyway
-				 * in order not to confuse anyone who might be
-				 * looking closely at the output */
-				log_dbg_printf("TCP connected to [%s]:%s\n",
-				               ctx->dsthost_str,
-				               ctx->dstport_str);
-				log_dbg_printf("TCP connected from [%s]:%s\n",
-				               ctx->srchost_str,
-				               ctx->srcport_str);
-			}
-		}
-
+	if (!ctx->mctx) {
+		log_dbg_printf(">>>>>=================================== pxy_bev_eventcb: ctx->mctx NULL\n");
 		return;
 	}
 
-	if (events & BEV_EVENT_ERROR) {
-		unsigned long sslerr;
-		int have_sslerr = 0;
+//	pthread_mutex_t *cmutex = &ctx->thrmgr->mutex2;
+	proxy_conn_meta_ctx_t *mctx = ctx->mctx;
+	pthread_mutex_t *cmutex = &mctx->mutex;
+	pthread_mutex_lock(cmutex);
+	
+	int rv = 0;
 
-		/* Can happen for socket errs, ssl errs;
-		 * may happen for unclean ssl socket shutdowns. */
-		sslerr = bufferevent_get_openssl_error(bev);
-		if (sslerr)
-			have_sslerr = 1;
-		if (!errno && !sslerr) {
-#if LIBEVENT_VERSION_NUMBER >= 0x02010000
-			/* We have disabled notification for unclean shutdowns
-			 * so this should not happen; log a warning. */
-			log_err_printf("Warning: Spurious error from "
-			               "bufferevent (errno=0,sslerr=0)\n");
-#else /* LIBEVENT_VERSION_NUMBER < 0x02010000 */
-			/* Older versions of libevent will report these. */
-			if (OPTS_DEBUG(ctx->opts)) {
-				log_dbg_printf("Unclean SSL shutdown.\n");
-			}
-#endif /* LIBEVENT_VERSION_NUMBER < 0x02010000 */
-		} else if (ERR_GET_REASON(sslerr) ==
-		           SSL_R_SSLV3_ALERT_HANDSHAKE_FAILURE) {
-			/* these can happen due to client cert auth,
-			 * only log error if debugging is activated */
-			log_dbg_printf("Error from bufferevent: "
-			               "%i:%s %lu:%i:%s:%i:%s:%i:%s\n",
-			               errno,
-			               errno ? strerror(errno) : "-",
-			               sslerr,
-			               ERR_GET_REASON(sslerr),
-			               sslerr ?
-			               ERR_reason_error_string(sslerr) : "-",
-			               ERR_GET_LIB(sslerr),
-			               sslerr ?
-			               ERR_lib_error_string(sslerr) : "-",
-			               ERR_GET_FUNC(sslerr),
-			               sslerr ?
-			               ERR_func_error_string(sslerr) : "-");
-			while ((sslerr = bufferevent_get_openssl_error(bev))) {
-				log_dbg_printf("Additional SSL error: "
-				               "%lu:%i:%s:%i:%s:%i:%s\n",
-				               sslerr,
-				               ERR_GET_REASON(sslerr),
-				               ERR_reason_error_string(sslerr),
-				               ERR_GET_LIB(sslerr),
-				               ERR_lib_error_string(sslerr),
-				               ERR_GET_FUNC(sslerr),
-				               ERR_func_error_string(sslerr));
-			}
-		} else {
-			/* real errors */
-			log_err_printf("Error from bufferevent: "
-			               "%i:%s %lu:%i:%s:%i:%s:%i:%s\n",
-			               errno,
-			               errno ? strerror(errno) : "-",
-			               sslerr,
-			               ERR_GET_REASON(sslerr),
-			               sslerr ?
-			               ERR_reason_error_string(sslerr) : "-",
-			               ERR_GET_LIB(sslerr),
-			               sslerr ?
-			               ERR_lib_error_string(sslerr) : "-",
-			               ERR_GET_FUNC(sslerr),
-			               sslerr ?
-			               ERR_func_error_string(sslerr) : "-");
-			while ((sslerr = bufferevent_get_openssl_error(bev))) {
-				log_err_printf("Additional SSL error: "
-				               "%lu:%i:%s:%i:%s:%i:%s\n",
-				               sslerr,
-				               ERR_GET_REASON(sslerr),
-				               ERR_reason_error_string(sslerr),
-				               ERR_GET_LIB(sslerr),
-				               ERR_lib_error_string(sslerr),
-				               ERR_GET_FUNC(sslerr),
-				               ERR_func_error_string(sslerr));
-			}
-		}
-
-		if (!ctx->connected) {
-			/* the callout to the original destination failed,
-			 * e.g. because it asked for client cert auth, so
-			 * close the accepted socket and clean up */
-			if (bev == ctx->dst.bev && ctx->dst.ssl &&
-			    ctx->opts->passthrough && have_sslerr) {
-				/* ssl callout failed, fall back to plain
-				 * TCP passthrough of SSL connection */
-				bufferevent_free_and_close_fd(bev, ctx);
-				ctx->dst.bev = NULL;
-				ctx->dst.ssl = NULL;
-				ctx->passthrough = 1;
-				log_dbg_printf("SSL dst connection failed; fal"
-				               "ling back to passthrough\n");
-				pxy_fd_readcb(ctx->fd, 0, ctx);
-				return;
-			}
-			evutil_closesocket(ctx->fd);
-			other->closed = 1;
-		} else if (!other->closed) {
-			/* if the other end is still open and doesn't have data
-			 * to send, close it, otherwise its writecb will close
-			 * it after writing what's left in the output buffer */
-			struct evbuffer *outbuf;
-			outbuf = bufferevent_get_output(other->bev);
-			if (evbuffer_get_length(outbuf) == 0) {
-				bufferevent_free_and_close_fd(other->bev, ctx);
-				other->bev = NULL;
-				other->closed = 1;
-			}
-		}
+	evutil_socket_t fd = -1;
+	if (!ctx) {
+		log_dbg_printf(">>>>>=================================== pxy_bev_eventcb: NULL ctx <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< GONE\n");
 		goto leave;
+	}
+	fd = ctx->fd;
+	
+	log_dbg_printf(">>>>>=================================== pxy_bev_eventcb ENTER fd=%d\n", ctx->fd);
+
+	char event_name[6] = "\0\0\0\0\0\0";
+	if (bev == ctx->src.bev) {
+		strcpy(event_name, "src");
+	} else if (bev == ctx->dst.bev) {
+		strcpy(event_name, "dst");
+	} else if (bev == ctx->e2src.bev) {
+		strcpy(event_name, "e2src");
+	} else if (bev == ctx->e2dst.bev) {
+		strcpy(event_name, "e2dst");
+	} else if (bev == NULL) {
+		strcpy(event_name, "NULL");
+	} else {
+		strcpy(event_name, "UNKWN");
+		log_dbg_printf(">>>>>=================================== pxy_bev_eventcb: event_name == UNKWN <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< NOT INIT\n");
+		goto leave;
+	}
+
+	if (events & BEV_EVENT_CONNECTED) {
+		if (!pxy_connected_enable(bev, ctx, event_name)) {
+			goto leave;
+		}
+	}
+
+	if (events & BEV_EVENT_ERROR) {
+		log_dbg_printf(">>>>>=================================== pxy_bev_eventcb: ERROR %s fd=%d\n", event_name, ctx->fd);
 	}
 
 	if (events & BEV_EVENT_EOF) {
-		if (!ctx->connected) {
-			log_dbg_printf("EOF on inbound connection while "
-			               "connecting to original destination\n");
-			evutil_closesocket(ctx->fd);
-			other->closed = 1;
-		} else if (!other->closed) {
-			struct evbuffer *inbuf, *outbuf;
-			inbuf = bufferevent_get_input(bev);
-			outbuf = bufferevent_get_output(other->bev);
-			if (evbuffer_get_length(inbuf) > 0) {
-				evbuffer_add_buffer(outbuf, inbuf);
-			} else {
-				/* if the other end is still open and doesn't
-				 * have data to send, close it, otherwise its
-				 * writecb will close it after writing what's
-				 * left in the output buffer. */
-				if (evbuffer_get_length(outbuf) == 0) {
-					bufferevent_free_and_close_fd(
-							other->bev, ctx);
-					other->bev = NULL;
-					other->closed = 1;
-				}
-			}
+		if (bev == ctx->dst.bev) {
+			log_dbg_printf(">>>>>=================================== pxy_bev_eventcb: dst EOF: %d\n", ctx->fd);
+			ctx->dst_eof = 1;
+		} else if (bev == ctx->e2src.bev) {
+			log_dbg_printf(">>>>>=================================== pxy_bev_eventcb: e2src EOF: %d\n", ctx->fd);
+			ctx->e2src_eof = 1;
+		} else if (bev == ctx->src.bev) {
+			log_dbg_printf(">>>>>=================================== pxy_bev_eventcb: src EOF: %d\n", ctx->fd);
+			ctx->src_eof = 1;
 		}
+		log_dbg_printf(">>>>>=================================== pxy_bev_eventcb: EOF %s, %d-%d-%d-%d, fd=%d\n", event_name,
+				ctx->src_eof, ctx->e2src_eof, ctx->e2dst_eof, ctx->dst_eof, ctx->fd);
+	}
+
+	if (ctx->src_eof || ctx->e2src_eof) {
+		log_dbg_printf(">>>>>=================================== pxy_bev_eventcb(): 1+ EOF TRY FREEING fd=%d\n", ctx->fd);
+		rv = pxy_conn_free(ctx);
+		goto leave;
+	}
+		
+leave:
+	log_dbg_printf(">>>>>=================================== pxy_bev_eventcb EXIT fd=%d\n", fd);
+
+	if (rv == 2) {
+		log_dbg_printf(">>>>>=================================== pxy_bev_eventcb: EXIT FREE META CTX\n");
+		pthread_mutex_destroy(cmutex);
+		free(mctx);
+	} else {
+		pthread_mutex_unlock(cmutex);
+	}
+}
+
+static void
+pxy_bev_eventcb_e2(struct bufferevent *bev, short events, void *arg)
+{
+	pxy_conn_ctx_t *ctx = arg;
+	if (!ctx) {
+		log_dbg_printf(">>>>>--------------------- pxy_bev_eventcb_e2: ctx NULL\n");
+		return;
+	}
+	if (!ctx->mctx) {
+		log_dbg_printf(">>>>>--------------------- pxy_bev_eventcb_e2: ctx->mctx NULL\n");
+		return;
+	}
+
+//	pthread_mutex_t *cmutex = &ctx->thrmgr->mutex2;
+	proxy_conn_meta_ctx_t *mctx = ctx->mctx;
+	pthread_mutex_t *cmutex = &mctx->mutex;
+	pthread_mutex_lock(cmutex);
+
+	int rv = 0;
+
+	if (!ctx) {
+		log_dbg_printf(">>>>>--------------------- pxy_bev_eventcb_e2: NULL ctx <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< GONE\n");
 		goto leave;
 	}
 
-	log_err_printf("Unknown bufferevent 0x%02X\n", (int)events);
-	return;
+//	pxy_conn_ctx_t *parent_ctx = ctx->parent_ctx;
+	pxy_conn_ctx_t *parent_ctx = ctx->mctx->parent_ctx;
 
-leave:
-	/* we only get a single disconnect event here for both connections */
-	if (OPTS_DEBUG(ctx->opts)) {
-		log_dbg_printf("%s disconnected to [%s]:%s\n",
-		               this->ssl ? "SSL" : "TCP",
-		               ctx->dsthost_str, ctx->dstport_str);
-		log_dbg_printf("%s disconnected from [%s]:%s\n",
-		               this->ssl ? "SSL" : "TCP",
-		               ctx->srchost_str, ctx->srcport_str);
+	char event_name[6] = "\0\0\0\0\0\0";
+	if (bev == ctx->src.bev) {
+		strcpy(event_name, "src");
+	} else if (bev == ctx->dst.bev) {
+		strcpy(event_name, "dst");
+	} else if (bev == ctx->e2src.bev) {
+		strcpy(event_name, "e2src");
+	} else if (bev == ctx->e2dst.bev) {
+		strcpy(event_name, "e2dst");
+	} else if (bev == NULL) {
+		strcpy(event_name, "NULL");
+	} else {
+		strcpy(event_name, "UNKWN");
 	}
 
-	this->closed = 1;
-	bufferevent_free_and_close_fd(bev, ctx);
-	this->bev = NULL;
-	if (other->closed) {
-		pxy_conn_ctx_free(ctx);
+	log_dbg_printf(">>>>>--------------------- pxy_bev_eventcb_e2: ENTER %s fd=%d\n", event_name, ctx->fd);
+
+	if (events & BEV_EVENT_CONNECTED) {
+		log_dbg_printf(">>>>>--------------------- pxy_bev_eventcb_e2: CONNECTED %s fd=%d\n", event_name, ctx->fd);
+	}
+
+	int fd = ctx->fd;
+	
+	if (events & BEV_EVENT_EOF) {
+		int e2dst_eof = ctx->e2dst_eof;
+		int dst_eof = ctx->dst_eof;
+		
+		if (bev == ctx->e2dst.bev) {
+			log_dbg_printf(">>>>>--------------------- pxy_bev_eventcb_e2: e2dst EOF: %d\n", fd);
+
+			ctx->e2dst_eof = 1;
+
+			rv = pxy_conn_free_e2(ctx);
+		}
+		else if (bev == ctx->dst.bev) {
+			log_dbg_printf(">>>>>--------------------- pxy_bev_eventcb_e2: dst EOF: %d\n", fd);
+
+			ctx->dst_eof = 1;
+
+			rv = pxy_conn_free_e2(ctx);
+		}
+		if (parent_ctx) {
+			int src_eof = parent_ctx->src_eof;
+			int e2src_eof = parent_ctx->e2src_eof;
+			log_dbg_printf(">>>>>--------------------- pxy_bev_eventcb_e2: EOF %s, %d-%d-%d-%d, fd=%d\n", event_name,
+				src_eof, e2src_eof, e2dst_eof, dst_eof, fd);
+		} else {
+			log_dbg_printf(">>>>>--------------------- pxy_bev_eventcb_e2: EOF %s, NO PARENT, %d-%d, fd=%d\n", event_name,
+				e2dst_eof, dst_eof, fd);
+		}
+	}
+
+	if (events & BEV_EVENT_ERROR) {
+		log_dbg_printf(">>>>>--------------------- pxy_bev_eventcb_e2: ERROR\n");
+	}
+
+leave:
+	log_dbg_printf(">>>>>--------------------- pxy_bev_eventcb_e2: EXIT\n");
+
+	if (rv == 2) {
+		log_dbg_printf(">>>>>--------------------- pxy_bev_eventcb_e2: EXIT FREE META CTX\n");
+		pthread_mutex_destroy(cmutex);
+		free(mctx);
+	} else {
+		pthread_mutex_unlock(cmutex);
 	}
 }
 
@@ -2131,6 +2670,7 @@ leave:
 static void
 pxy_conn_connect(pxy_conn_ctx_t *ctx)
 {
+	log_dbg_printf(">>>>> pxy_conn_connect: ENTER fd=%d\n", ctx->fd);
 	if (!ctx->addrlen) {
 		log_err_printf("No target address; aborting connection\n");
 		evutil_closesocket(ctx->fd);
@@ -2148,6 +2688,8 @@ pxy_conn_connect(pxy_conn_ctx_t *ctx)
 			return;
 		}
 	}
+
+	log_dbg_printf(">>>>> pxy_conn_connect: pxy_bufferevent_setup for dst fd=%d\n", ctx->fd);
 	ctx->dst.bev = pxy_bufferevent_setup(ctx, -1, ctx->dst.ssl);
 	if (!ctx->dst.bev) {
 		if (ctx->dst.ssl) {
@@ -2172,9 +2714,12 @@ pxy_conn_connect(pxy_conn_ctx_t *ctx)
 	}
 
 	/* initiate connection */
+	log_dbg_printf(">>>>> pxy_conn_connect: bufferevent_socket_connect for dst fd=%d\n", ctx->fd);
 	bufferevent_socket_connect(ctx->dst.bev,
 	                           (struct sockaddr *)&ctx->addr,
 	                           ctx->addrlen);
+
+	log_dbg_printf(">>>>> pxy_conn_connect: EXIT fd=%d\n", ctx->fd);
 }
 
 #ifndef OPENSSL_NO_TLSEXT
@@ -2303,7 +2848,9 @@ pxy_fd_readcb(MAYBE_UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 	}
 #endif /* !OPENSSL_NO_TLSEXT */
 
+	log_dbg_printf(">>>>> pxy_fd_readcb() pxy_conn_connect\n");
 	pxy_conn_connect(ctx);
+	log_dbg_printf(">>>>> EXIT pxy_fd_readcb()\n");
 }
 
 /*
@@ -2317,21 +2864,30 @@ pxy_fd_readcb(MAYBE_UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
  * start reading from the client while waiting on the connection to
  * the server to connect.
  */
-void
+pxy_conn_ctx_t *
 pxy_conn_setup(evutil_socket_t fd,
                struct sockaddr *peeraddr, int peeraddrlen,
-               pxy_thrmgr_ctx_t *thrmgr,
-               proxyspec_t *spec, opts_t *opts)
+               proxy_conn_meta_ctx_t *mctx, int fd2)
+//               pxy_thrmgr_ctx_t *thrmgr,
+//               proxyspec_t *spec, opts_t *opts, int fd2)
 {
-	pxy_conn_ctx_t *ctx;
+	log_dbg_printf(">>>>> pxy_conn_setup(): fd=%d\n", fd);
+
+	pxy_thrmgr_ctx_t *thrmgr = mctx->lctx->thrmgr;
+	proxyspec_t *spec = mctx->lctx->spec;
+	opts_t *opts = mctx->lctx->opts;
 
 	/* create per connection pair state and attach to thread */
-	ctx = pxy_conn_ctx_new(spec, opts, thrmgr, fd);
+	pxy_conn_ctx_t *ctx = pxy_conn_ctx_new(spec, opts, thrmgr, fd);
 	if (!ctx) {
 		log_err_printf("Error allocating memory\n");
 		evutil_closesocket(fd);
-		return;
+		return NULL;
 	}
+	
+	ctx->mctx = mctx;
+	// Not to close the connection during initialization
+	ctx->initialized = 0;
 
 	ctx->af = peeraddr->sa_family;
 
@@ -2339,13 +2895,23 @@ pxy_conn_setup(evutil_socket_t fd,
 	if (spec->natlookup) {
 		/* NAT engine lookup */
 		ctx->addrlen = sizeof(struct sockaddr_storage);
+		log_dbg_printf(">>>>> pxy_conn_setup() natlookup\n");
 		if (spec->natlookup((struct sockaddr *)&ctx->addr, &ctx->addrlen,
 		                    fd, peeraddr, peeraddrlen) == -1) {
+			char *cbuf = NULL;
+			char *chbuf, *cpbuf;
+			
+			sys_sockipport_str(peeraddr, peeraddrlen, &chbuf, &cpbuf);
+			if (asprintf(&cbuf, "\naddr= [%s]:%s", chbuf, cpbuf) < 0) {
+				return NULL;
+			}
+
 			log_err_printf("Connection not found in NAT "
-			               "state table, aborting connection\n");
+			               "state table, aborting connection: %s\n", cbuf);
+
 			evutil_closesocket(fd);
 			pxy_conn_ctx_free(ctx);
-			return;
+			return NULL;
 		}
 	} else if (spec->connect_addrlen > 0) {
 		/* static forwarding */
@@ -2359,41 +2925,100 @@ pxy_conn_setup(evutil_socket_t fd,
 			               "aborting connection\n");
 			evutil_closesocket(fd);
 			pxy_conn_ctx_free(ctx);
-			return;
+			return NULL;
 		}
 	}
 
-	/* prepare logging, part 1 */
-	if (WANT_CONNECT_LOG(ctx) || WANT_CONTENT_LOG(ctx)) {
-		if (sys_sockaddr_str(peeraddr, peeraddrlen,
-		                     &ctx->srchost_str,
-		                     &ctx->srcport_str) != 0)
-			goto memout;
-#ifdef HAVE_LOCAL_PROCINFO
-		if (ctx->opts->lprocinfo) {
-			memcpy(&ctx->lproc.srcaddr, peeraddr, peeraddrlen);
-			ctx->lproc.srcaddrlen = peeraddrlen;
-		}
-#endif /* HAVE_LOCAL_PROCINFO */
+	log_dbg_printf(">>>>> pxy_conn_setup() pxy_fd_readcb\n");
+	pxy_fd_readcb(fd, 0, ctx);
+	
+	if (!ctx) {
+		log_dbg_printf(">>>>> pxy_conn_setup: NULL CTX\n");
 	}
-
-	/* for SSL, defer dst connection setup to initial_readcb */
-	if (ctx->spec->ssl) {
-		ctx->ev = event_new(ctx->evbase, fd, EV_READ, pxy_fd_readcb,
-		                    ctx);
-		if (!ctx->ev)
-			goto memout;
-		event_add(ctx->ev, NULL);
-	} else {
-		pxy_fd_readcb(fd, 0, ctx);
-	}
-	return;
-
-memout:
-	log_err_printf("Aborting connection setup (out of memory)!\n");
-	evutil_closesocket(fd);
-	pxy_conn_ctx_free(ctx);
-	return;
+	
+	log_dbg_printf(">>>>> EXIT pxy_conn_setup()\n");
+	return ctx;
 }
 
+void
+pxy_conn_setup_e2(evutil_socket_t fd,
+//               struct sockaddr *peeraddr, int peeraddrlen,
+               proxy_conn_meta_ctx_t *mctx)
+//               pxy_thrmgr_ctx_t *thrmgr,
+//               proxyspec_t *spec, opts_t *opts, proxy_conn_meta_ctx_t *mctx)
+{
+	log_dbg_printf(">>>>> pxy_conn_setup_e2: ENTER fd=%d\n", fd);
+
+	pxy_thrmgr_ctx_t *thrmgr = mctx->lctx->thrmgr;
+	proxyspec_t *spec = mctx->lctx->spec;
+	opts_t *opts = mctx->lctx->opts;
+
+	pxy_conn_ctx_t *parent_ctx = mctx->parent_ctx;
+	int pfd = -1;
+	if (!parent_ctx) {
+		log_dbg_printf(">>>>> pxy_conn_setup_e2: NULL parent_ctx <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< GONE\n");
+		goto leave;
+	}
+		
+	pfd = parent_ctx->fd;
+
+	pxy_conn_ctx_t *ctx = pxy_conn_ctx_new(spec, opts, thrmgr, fd);
+	if (!ctx) {
+		log_err_printf("Error allocating memory\n");
+		evutil_closesocket(fd);
+		goto leave;
+	}
+
+	ctx->mctx = mctx;
+	ctx->child_ctx = NULL;
+
+	log_dbg_printf(">>>>> pxy_conn_setup_e2: pxy_bufferevent_setup_e2 for dst.bev, fd=%d\n", fd);
+	ctx->dst.bev = pxy_bufferevent_setup_e2(ctx, -1, parent_ctx->dst.ssl);
+
+	/* initiate connection */
+	log_dbg_printf(">>>>> pxy_conn_setup_e2: bufferevent_socket_connect dst.bev\n");
+	bufferevent_socket_connect(ctx->dst.bev, (struct sockaddr *)&parent_ctx->addr, parent_ctx->addrlen);
+
+	log_dbg_printf(">>>>> pxy_conn_setup_e2: pxy_bufferevent_setup_e2 for e2dst.bev, fd=%d\n", fd);
+	ctx->e2dst.bev = pxy_bufferevent_setup_e2(ctx, fd, ctx->e2dst.ssl);
+
+	if (!parent_ctx) {
+		log_dbg_printf(">>>>> pxy_conn_setup_e2: parent_ctx NULL >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> fd=%d\n", fd);
+	} else if (!mctx->child_ctx) {
+		log_dbg_printf(">>>>> pxy_conn_setup_e2: parent_ctx->child_ctx NULL >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> fd=%d\n", fd);
+	}
+
+	// Handle first child, if the last child is deleted, the child_ctx becomes null again
+	if (!parent_ctx->initialized) {
+		log_dbg_printf(">>>>> pxy_conn_setup_e2: parent_ctx->e2dst FIRST CHILD >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> INITIALIZED\n");
+		parent_ctx->initialized = 1;
+	} else {
+		if (mctx->child_ctx) {
+			log_dbg_printf(">>>>> pxy_conn_setup_e2: parent_ctx->e2dst NEW CHILD >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> prev CHILD EXISTS\n");
+		} else {
+			log_dbg_printf(">>>>> pxy_conn_setup_e2: parent_ctx->e2dst NEW CHILD >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> fd=%d, NO PREV CHILD\n", fd);
+		}
+
+		ctx->child_ctx = mctx->child_ctx;
+	}
+
+	mctx->child_ctx = ctx;
+
+	log_dbg_printf(">>>>> pxy_conn_setup_e2: set callbacks for dst.bev\n");
+	bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb_e2, pxy_bev_writecb_e2, pxy_bev_eventcb_e2, ctx);
+//	bufferevent_enable(ctx->dst.bev, EV_READ|EV_WRITE);
+
+	log_dbg_printf(">>>>> pxy_conn_setup_e2: set callbacks for e2dst.bev\n");
+	bufferevent_setcb(ctx->e2dst.bev, pxy_bev_readcb_e2, pxy_bev_writecb_e2, pxy_bev_eventcb_e2, ctx);
+
+	// @todo Do we need a watermark?
+	//bufferevent_setwatermark(ctx->e2dst.bev, EV_READ, 200, OUTBUF_LIMIT);
+
+	log_dbg_printf(">>>>> pxy_conn_setup_e2: enable callbacks\n");
+	bufferevent_enable(ctx->dst.bev, EV_READ|EV_WRITE);
+	bufferevent_enable(ctx->e2dst.bev, EV_READ|EV_WRITE);
+
+leave:
+	log_dbg_printf(">>>>> pxy_conn_setup_e2(): EXIT fd=%d, parent fd=%d\n", fd, pfd);
+}
 /* vim: set noet ft=c: */

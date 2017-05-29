@@ -700,7 +700,9 @@ main(int argc, char *argv[])
 		fprintf(stderr, "%s: no proxyspec specified.\n", argv0);
 		exit(EXIT_FAILURE);
 	}
+	log_dbg_printf(">>>>> Enter spec for loop\n");
 	for (proxyspec_t *spec = opts->spec; spec; spec = spec->next) {
+		log_dbg_printf(">>>>> spec for loop: %s\n", spec->natengine);
 		if (spec->connect_addrlen || spec->sni_port)
 			continue;
 		if (!spec->natengine) {
@@ -716,6 +718,8 @@ main(int argc, char *argv[])
 			                argv0, spec->natengine);
 			exit(EXIT_FAILURE);
 		}
+		log_dbg_printf(">>>>> nat_getlookupcb: %s\n", spec->natengine);
+		fprintf(stderr, ">>>>> nat_getlookupcb: %s\n", spec->natengine);
 		spec->natlookup = nat_getlookupcb(spec->natengine);
 		spec->natsocket = nat_getsocketcb(spec->natengine);
 	}
@@ -966,7 +970,13 @@ main(int argc, char *argv[])
 	}
 	rv = EXIT_SUCCESS;
 
+	log_dbg_printf(">>>>> Enter proxy_run\n");
 	proxy_run(proxy);
+	log_dbg_printf(">>>>> Exit proxy_run\n");
+
+	log_dbg_printf(">>>>> main: EXIT closing privsep clisock=%d\n", clisock[0]);
+	privsep_client_close(clisock[0]);
+
 	proxy_free(proxy);
 	nat_fini();
 out_nat_failed:
