@@ -283,8 +283,8 @@ proxy_listener_acceptcb(UNUSED struct evconnlistener *listener,
 	mctx->evcl2 = evcl2;
 	evconnlistener_set_error_cb(evcl2, proxy_listener_errorcb);
 	
-	log_dbg_printf(">>>>> proxy_listener_acceptcb: <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< bufferevent_enable(parent_ctx->dst.bev)\n");
-	bufferevent_enable(parent_ctx->dst.bev, EV_READ|EV_WRITE);
+//	log_dbg_printf(">>>>> proxy_listener_acceptcb: <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< bufferevent_enable(parent_ctx->dst.bev)\n");
+//	bufferevent_enable(parent_ctx->dst.bev, EV_READ|EV_WRITE);
 
 	log_dbg_printf(">>>>> proxy_listener_acceptcb: FINISHED SETTING UP E2 SUCCESS, parent fd=%d, NEW fd2=%d\n", fd, fd2);	
 //	pthread_mutex_unlock(lmutex);

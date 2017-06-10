@@ -1113,9 +1113,9 @@ pxy_bufferevent_setup(pxy_conn_ctx_t *ctx, evutil_socket_t fd, SSL *ssl)
 	log_dbg_printf(">>>>> pxy_bufferevent_setup(): ENTER fd=%d\n", (int)fd);
 
 	if (ssl) {
+		log_dbg_printf(">>>>> pxy_bufferevent_setup(): bufferevent_openssl_socket_new <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< SSL\n");
 		bev = bufferevent_openssl_socket_new(ctx->evbase, fd, ssl,
-				((fd == -1) ? BUFFEREVENT_SSL_CONNECTING
-				           : BUFFEREVENT_SSL_ACCEPTING),
+				((fd == -1) ? BUFFEREVENT_SSL_CONNECTING : BUFFEREVENT_SSL_ACCEPTING),
 				BEV_OPT_DEFER_CALLBACKS);
 	} else {
 		bev = bufferevent_socket_new(ctx->evbase, fd, BEV_OPT_DEFER_CALLBACKS);
@@ -1127,6 +1127,7 @@ pxy_bufferevent_setup(pxy_conn_ctx_t *ctx, evutil_socket_t fd, SSL *ssl)
 	}
 #if LIBEVENT_VERSION_NUMBER >= 0x02010000
 	if (ssl) {
+		log_dbg_printf(">>>>> pxy_bufferevent_setup(): bufferevent_openssl_set_allow_dirty_shutdown <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< SSL\n");
 		/* Prevent unclean (dirty) shutdowns to cause error
 		 * events on the SSL socket bufferevent. */
 		bufferevent_openssl_set_allow_dirty_shutdown(bev, 1);
@@ -1152,9 +1153,16 @@ pxy_bufferevent_setup_e2(pxy_conn_ctx_t *ctx, evutil_socket_t fd, SSL *ssl)
 
 	log_dbg_printf(">>>>> pxy_bufferevent_setup_e2(): ENTER %d\n", (int)fd);
 
-	bev = bufferevent_socket_new(ctx->evbase, fd, BEV_OPT_DEFER_CALLBACKS);
-//	bev = bufferevent_socket_new(ctx->evbase, fd, BEV_OPT_DEFER_CALLBACKS|BEV_OPT_THREADSAFE);
+//	bev = bufferevent_socket_new(ctx->evbase, fd, BEV_OPT_DEFER_CALLBACKS);
+////	bev = bufferevent_socket_new(ctx->evbase, fd, BEV_OPT_DEFER_CALLBACKS|BEV_OPT_THREADSAFE);
 
+	if (ssl) {
+		bev = bufferevent_openssl_socket_new(ctx->evbase, fd, ssl,
+				((fd == -1) ? BUFFEREVENT_SSL_CONNECTING : BUFFEREVENT_SSL_ACCEPTING), BEV_OPT_DEFER_CALLBACKS);
+	} else {
+		bev = bufferevent_socket_new(ctx->evbase, fd, BEV_OPT_DEFER_CALLBACKS);
+//		bev = bufferevent_socket_new(ctx->evbase, fd, BEV_OPT_DEFER_CALLBACKS|BEV_OPT_THREADSAFE);
+	}
 	if (!bev) {
 		log_err_printf("Error creating bufferevent socket\n");
 		return NULL;
@@ -1502,6 +1510,7 @@ pxy_conn_autossl_peek_and_upgrade(pxy_conn_ctx_t *ctx)
 			bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb,
 			                  pxy_bev_writecb, pxy_bev_eventcb,
 			                  ctx);
+			log_dbg_printf(">>>>>----------------------- pxy_conn_autossl_peek_and_upgrade(): bufferevent_enable\n");
 			bufferevent_enable(ctx->dst.bev, EV_READ|EV_WRITE);
 			if(!ctx->dst.bev) {
 				return 0;
@@ -2015,6 +2024,13 @@ pxy_bev_readcb(struct bufferevent *bev, void *arg)
 	log_dbg_printf(">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: %s, fd=%d\n", event_name, ctx->fd);
 
 	if (bev == ctx->src.bev) {
+		if (ctx->clienthello_search) {
+			if (pxy_conn_autossl_peek_and_upgrade(ctx)) {
+				log_dbg_printf(">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: pxy_conn_autossl_peek_and_upgrade RETURNS\n");
+				return;
+			}
+		}
+	
 		if (ctx->e2src.bev) {
 			struct evbuffer *inbuf = bufferevent_get_input(bev);
 
@@ -2310,16 +2326,55 @@ pxy_connected_enable(struct bufferevent *bev, pxy_conn_ctx_t *ctx, char *event_n
 	if (ctx->dst_connected && ctx->e2src_connected && !ctx->connected) {
 		ctx->connected = 1;
 
-		log_dbg_printf(">>>>>=================================== pxy_connected_enable: SETUP src.bev fd=%d\n", ctx->fd);
-		ctx->src.bev = pxy_bufferevent_setup(ctx, ctx->fd, ctx->src.ssl);
-		if (!ctx->src.bev) {
-			log_dbg_printf(">>>>>=================================== pxy_connected_enable: src.bev NULL FREEING\n");
-
-			bufferevent_free_and_close_fd(bev, ctx);
-			evutil_closesocket(ctx->fd);
-			pxy_conn_ctx_free(ctx);
-			return 0;
+		pxy_conn_desc_t *dst_ctx = &ctx->dst;
+		if ((ctx->spec->ssl || ctx->clienthello_found) && !ctx->passthrough) {
+			log_dbg_printf(">>>>>=================================== pxy_srcssl_create <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< SSL\n");
+			ctx->src.ssl = pxy_srcssl_create(ctx, dst_ctx->ssl);
+//			if (!ctx->src.ssl) {
+//				bufferevent_free_and_close_fd(bev, ctx);
+//				ctx->dst.bev = NULL;
+//				ctx->dst.ssl = NULL;
+////				if (ctx->opts->passthrough && !ctx->enomem) {
+////					ctx->passthrough = 1;
+////					ctx->connected = 0;
+////					log_dbg_printf("No cert found; "
+////					               "falling back "
+////					               "to passthrough\n");
+////					pxy_fd_readcb(ctx->fd, 0, ctx);
+////					return;
+////				}
+//				evutil_closesocket(ctx->fd);
+//				pxy_conn_ctx_free(ctx);
+//				return;
+//			}
 		}
+		if (ctx->clienthello_found) {
+			if (OPTS_DEBUG(ctx->opts)) {
+				log_dbg_printf(">>>>>=================================== pxy_connected_enable: Completing autossl upgrade\n");
+			}
+			ctx->src.bev = bufferevent_openssl_filter_new(
+			               ctx->evbase, ctx->src.bev, ctx->src.ssl,
+			               BUFFEREVENT_SSL_ACCEPTING,
+			               BEV_OPT_DEFER_CALLBACKS);
+			bufferevent_setcb(ctx->src.bev, pxy_bev_readcb,
+			                  pxy_bev_writecb, pxy_bev_eventcb,
+			                  ctx);
+//			bufferevent_enable(ctx->src.bev, EV_READ|EV_WRITE);
+		} else {
+//			ctx->src.bev = pxy_bufferevent_setup(ctx, ctx->fd,
+//			                                     ctx->src.ssl);
+			log_dbg_printf(">>>>>=================================== pxy_connected_enable: SETUP src.bev fd=%d\n", ctx->fd);
+			ctx->src.bev = pxy_bufferevent_setup(ctx, ctx->fd, ctx->src.ssl);
+			if (!ctx->src.bev) {
+				log_dbg_printf(">>>>>=================================== pxy_connected_enable: src.bev NULL FREEING\n");
+
+				bufferevent_free_and_close_fd(bev, ctx);
+				evutil_closesocket(ctx->fd);
+				pxy_conn_ctx_free(ctx);
+				return 0;
+			}
+		}
+
 		bufferevent_enable(ctx->src.bev, EV_READ|EV_WRITE);
 	}
 
@@ -2528,10 +2583,146 @@ pxy_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 		if (!pxy_connected_enable(bev, ctx, event_name)) {
 			goto leave;
 		}
+
+//		log_dbg_printf(">>>>>=================================== pxy_bev_eventcb: WILL call pxy_srccert_write <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< SSL\n");
+		pxy_conn_desc_t *src_ctx = &ctx->src;
+
+		/* write SSL certificates to gendir */
+		if (src_ctx->ssl && (bev == ctx->src.bev) && ctx->opts->certgendir) {
+			log_dbg_printf(">>>>>=================================== pxy_bev_eventcb: pxy_srccert_write <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< SSL\n");
+			pxy_srccert_write(ctx);
+		}
+
+		if (OPTS_DEBUG(ctx->opts)) {
+			if (src_ctx->ssl) {
+				/* for SSL, we get two connect events */
+				log_dbg_printf("SSL connected %s [%s]:%s"
+				               " %s %s\n",
+				               bev == ctx->dst.bev ?
+				               "to" : "from",
+				               bev == ctx->dst.bev ?
+				               ctx->dsthost_str :
+				               ctx->srchost_str,
+				               bev == ctx->dst.bev ?
+				               ctx->dstport_str :
+				               ctx->srcport_str,
+				               SSL_get_version(src_ctx->ssl),
+				               SSL_get_cipher(src_ctx->ssl));
+			} else {
+				/* for TCP, we get only a dst connect event,
+				 * since src was already connected from the
+				 * beginning; mirror SSL debug output anyway
+				 * in order not to confuse anyone who might be
+				 * looking closely at the output */
+				log_dbg_printf("TCP connected to [%s]:%s\n",
+				               ctx->dsthost_str,
+				               ctx->dstport_str);
+				log_dbg_printf("TCP connected from [%s]:%s\n",
+				               ctx->srchost_str,
+				               ctx->srcport_str);
+			}
+		}
+
 	}
 
 	if (events & BEV_EVENT_ERROR) {
 		log_dbg_printf(">>>>>=================================== pxy_bev_eventcb: ERROR %s fd=%d\n", event_name, ctx->fd);
+
+		unsigned long sslerr;
+		int have_sslerr = 0;
+
+		/* Can happen for socket errs, ssl errs;
+		 * may happen for unclean ssl socket shutdowns. */
+		sslerr = bufferevent_get_openssl_error(bev);
+		if (sslerr)
+			have_sslerr = 1;
+		if (!errno && !sslerr) {
+#if LIBEVENT_VERSION_NUMBER >= 0x02010000
+			/* We have disabled notification for unclean shutdowns
+			 * so this should not happen; log a warning. */
+			log_err_printf("Warning: Spurious error from "
+			               "bufferevent (errno=0,sslerr=0)\n");
+#else /* LIBEVENT_VERSION_NUMBER < 0x02010000 */
+			/* Older versions of libevent will report these. */
+			if (OPTS_DEBUG(ctx->opts)) {
+				log_dbg_printf("Unclean SSL shutdown.\n");
+			}
+#endif /* LIBEVENT_VERSION_NUMBER < 0x02010000 */
+		} else if (ERR_GET_REASON(sslerr) ==
+		           SSL_R_SSLV3_ALERT_HANDSHAKE_FAILURE) {
+			/* these can happen due to client cert auth,
+			 * only log error if debugging is activated */
+			log_dbg_printf("Error from bufferevent: "
+			               "%i:%s %lu:%i:%s:%i:%s:%i:%s\n",
+			               errno,
+			               errno ? strerror(errno) : "-",
+			               sslerr,
+			               ERR_GET_REASON(sslerr),
+			               sslerr ?
+			               ERR_reason_error_string(sslerr) : "-",
+			               ERR_GET_LIB(sslerr),
+			               sslerr ?
+			               ERR_lib_error_string(sslerr) : "-",
+			               ERR_GET_FUNC(sslerr),
+			               sslerr ?
+			               ERR_func_error_string(sslerr) : "-");
+			while ((sslerr = bufferevent_get_openssl_error(bev))) {
+				log_dbg_printf("Additional SSL error: "
+				               "%lu:%i:%s:%i:%s:%i:%s\n",
+				               sslerr,
+				               ERR_GET_REASON(sslerr),
+				               ERR_reason_error_string(sslerr),
+				               ERR_GET_LIB(sslerr),
+				               ERR_lib_error_string(sslerr),
+				               ERR_GET_FUNC(sslerr),
+				               ERR_func_error_string(sslerr));
+			}
+		} else {
+			/* real errors */
+			log_err_printf("Error from bufferevent: "
+			               "%i:%s %lu:%i:%s:%i:%s:%i:%s\n",
+			               errno,
+			               errno ? strerror(errno) : "-",
+			               sslerr,
+			               ERR_GET_REASON(sslerr),
+			               sslerr ?
+			               ERR_reason_error_string(sslerr) : "-",
+			               ERR_GET_LIB(sslerr),
+			               sslerr ?
+			               ERR_lib_error_string(sslerr) : "-",
+			               ERR_GET_FUNC(sslerr),
+			               sslerr ?
+			               ERR_func_error_string(sslerr) : "-");
+			while ((sslerr = bufferevent_get_openssl_error(bev))) {
+				log_err_printf("Additional SSL error: "
+				               "%lu:%i:%s:%i:%s:%i:%s\n",
+				               sslerr,
+				               ERR_GET_REASON(sslerr),
+				               ERR_reason_error_string(sslerr),
+				               ERR_GET_LIB(sslerr),
+				               ERR_lib_error_string(sslerr),
+				               ERR_GET_FUNC(sslerr),
+				               ERR_func_error_string(sslerr));
+			}
+		}
+
+		pxy_conn_desc_t *src_ctx = &ctx->src;
+		/* we only get a single disconnect event here for both connections */
+		if (OPTS_DEBUG(ctx->opts)) {
+			log_dbg_printf("%s disconnected to [%s]:%s\n",
+						   src_ctx->ssl ? "SSL" : "TCP",
+						   ctx->dsthost_str, ctx->dstport_str);
+			log_dbg_printf("%s disconnected from [%s]:%s\n",
+						   src_ctx->ssl ? "SSL" : "TCP",
+						   ctx->srchost_str, ctx->srcport_str);
+		}
+
+//		this->closed = 1;
+//		bufferevent_free_and_close_fd(bev, ctx);
+//		this->bev = NULL;
+//		if (other->closed) {
+//			pxy_conn_ctx_free(ctx);
+//		}
 	}
 
 	if (events & BEV_EVENT_EOF) {
@@ -2649,6 +2840,84 @@ pxy_bev_eventcb_e2(struct bufferevent *bev, short events, void *arg)
 
 	if (events & BEV_EVENT_ERROR) {
 		log_dbg_printf(">>>>>--------------------- pxy_bev_eventcb_e2: ERROR\n");
+		unsigned long sslerr;
+		int have_sslerr = 0;
+
+		/* Can happen for socket errs, ssl errs;
+		 * may happen for unclean ssl socket shutdowns. */
+		sslerr = bufferevent_get_openssl_error(bev);
+		if (sslerr)
+			have_sslerr = 1;
+		if (!errno && !sslerr) {
+#if LIBEVENT_VERSION_NUMBER >= 0x02010000
+			/* We have disabled notification for unclean shutdowns
+			 * so this should not happen; log a warning. */
+			log_err_printf("Warning: Spurious error from "
+			               "bufferevent (errno=0,sslerr=0)\n");
+#else /* LIBEVENT_VERSION_NUMBER < 0x02010000 */
+			/* Older versions of libevent will report these. */
+			if (OPTS_DEBUG(ctx->opts)) {
+				log_dbg_printf("Unclean SSL shutdown.\n");
+			}
+#endif /* LIBEVENT_VERSION_NUMBER < 0x02010000 */
+		} else if (ERR_GET_REASON(sslerr) ==
+		           SSL_R_SSLV3_ALERT_HANDSHAKE_FAILURE) {
+			/* these can happen due to client cert auth,
+			 * only log error if debugging is activated */
+			log_dbg_printf("Error from bufferevent: "
+			               "%i:%s %lu:%i:%s:%i:%s:%i:%s\n",
+			               errno,
+			               errno ? strerror(errno) : "-",
+			               sslerr,
+			               ERR_GET_REASON(sslerr),
+			               sslerr ?
+			               ERR_reason_error_string(sslerr) : "-",
+			               ERR_GET_LIB(sslerr),
+			               sslerr ?
+			               ERR_lib_error_string(sslerr) : "-",
+			               ERR_GET_FUNC(sslerr),
+			               sslerr ?
+			               ERR_func_error_string(sslerr) : "-");
+			while ((sslerr = bufferevent_get_openssl_error(bev))) {
+				log_dbg_printf("Additional SSL error: "
+				               "%lu:%i:%s:%i:%s:%i:%s\n",
+				               sslerr,
+				               ERR_GET_REASON(sslerr),
+				               ERR_reason_error_string(sslerr),
+				               ERR_GET_LIB(sslerr),
+				               ERR_lib_error_string(sslerr),
+				               ERR_GET_FUNC(sslerr),
+				               ERR_func_error_string(sslerr));
+			}
+		} else {
+			/* real errors */
+			log_err_printf("Error from bufferevent: "
+			               "%i:%s %lu:%i:%s:%i:%s:%i:%s\n",
+			               errno,
+			               errno ? strerror(errno) : "-",
+			               sslerr,
+			               ERR_GET_REASON(sslerr),
+			               sslerr ?
+			               ERR_reason_error_string(sslerr) : "-",
+			               ERR_GET_LIB(sslerr),
+			               sslerr ?
+			               ERR_lib_error_string(sslerr) : "-",
+			               ERR_GET_FUNC(sslerr),
+			               sslerr ?
+			               ERR_func_error_string(sslerr) : "-");
+			while ((sslerr = bufferevent_get_openssl_error(bev))) {
+				log_err_printf("Additional SSL error: "
+				               "%lu:%i:%s:%i:%s:%i:%s\n",
+				               sslerr,
+				               ERR_GET_REASON(sslerr),
+				               ERR_reason_error_string(sslerr),
+				               ERR_GET_LIB(sslerr),
+				               ERR_lib_error_string(sslerr),
+				               ERR_GET_FUNC(sslerr),
+				               ERR_func_error_string(sslerr));
+			}
+		}
+
 	}
 
 leave:
@@ -2700,6 +2969,8 @@ pxy_conn_connect(pxy_conn_ctx_t *ctx)
 		pxy_conn_ctx_free(ctx);
 		return;
 	}
+	log_dbg_printf(">>>>> pxy_conn_connect: <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< bufferevent_enable(ctx->dst.bev)\n");
+	bufferevent_enable(ctx->dst.bev, EV_READ|EV_WRITE);
 
 	if (OPTS_DEBUG(ctx->opts)) {
 		char *host, *port;
@@ -2929,8 +3200,18 @@ pxy_conn_setup(evutil_socket_t fd,
 		}
 	}
 
-	log_dbg_printf(">>>>> pxy_conn_setup() pxy_fd_readcb\n");
-	pxy_fd_readcb(fd, 0, ctx);
+//	log_dbg_printf(">>>>> pxy_conn_setup() pxy_fd_readcb\n");
+//	pxy_fd_readcb(fd, 0, ctx);
+	/* for SSL, defer dst connection setup to initial_readcb */
+	if (ctx->spec->ssl) {
+		ctx->ev = event_new(ctx->evbase, fd, EV_READ, pxy_fd_readcb, ctx);
+//		if (!ctx->ev)
+//			goto memout;
+		event_add(ctx->ev, NULL);
+	} else {
+		log_dbg_printf(">>>>> pxy_conn_setup() pxy_fd_readcb\n");
+		pxy_fd_readcb(fd, 0, ctx);
+	}
 	
 	if (!ctx) {
 		log_dbg_printf(">>>>> pxy_conn_setup: NULL CTX\n");
@@ -2972,9 +3253,36 @@ pxy_conn_setup_e2(evutil_socket_t fd,
 	ctx->mctx = mctx;
 	ctx->child_ctx = NULL;
 
-	log_dbg_printf(">>>>> pxy_conn_setup_e2: pxy_bufferevent_setup_e2 for dst.bev, fd=%d\n", fd);
-	ctx->dst.bev = pxy_bufferevent_setup_e2(ctx, -1, parent_ctx->dst.ssl);
+//	log_dbg_printf(">>>>> pxy_conn_setup_e2: pxy_bufferevent_setup_e2 for dst.bev, fd=%d\n", fd);
+//	ctx->dst.bev = pxy_bufferevent_setup_e2(ctx, -1, parent_ctx->dst.ssl);
 
+	if (ctx->spec->ssl && !ctx->passthrough) {
+		ctx->dst.ssl = pxy_dstssl_create(ctx);
+		if (!ctx->dst.ssl) {
+			log_dbg_printf(">>>>> pxy_conn_setup_e2: ctx->dst.ssl NULL, fd=%d\n", fd);
+//			log_err_printf("Error creating SSL\n");
+//			evutil_closesocket(ctx->fd);
+//			pxy_conn_ctx_free(ctx);
+//			return;
+		}
+	}
+
+//	log_dbg_printf(">>>>> pxy_conn_connect: pxy_bufferevent_setup for dst fd=%d\n", ctx->fd);
+//	ctx->dst.bev = pxy_bufferevent_setup(ctx, -1, ctx->dst.ssl);
+	log_dbg_printf(">>>>> pxy_conn_setup_e2: pxy_bufferevent_setup_e2 for dst.bev, fd=%d\n", fd);
+	ctx->dst.bev = pxy_bufferevent_setup_e2(ctx, -1, ctx->dst.ssl);
+	if (!ctx->dst.bev) {
+		if (ctx->dst.ssl) {
+			SSL_free(ctx->dst.ssl);
+			ctx->dst.ssl = NULL;
+		}
+		evutil_closesocket(ctx->fd);
+		pxy_conn_ctx_free(ctx);
+		return;
+	}
+	log_dbg_printf(">>>>> pxy_conn_setup_e2: <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< bufferevent_enable(ctx->dst.bev)\n");
+	bufferevent_enable(ctx->dst.bev, EV_READ|EV_WRITE);
+	
 	/* initiate connection */
 	log_dbg_printf(">>>>> pxy_conn_setup_e2: bufferevent_socket_connect dst.bev\n");
 	bufferevent_socket_connect(ctx->dst.bev, (struct sockaddr *)&parent_ctx->addr, parent_ctx->addrlen);
