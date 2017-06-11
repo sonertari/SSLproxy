@@ -334,6 +334,17 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine)
 			case 1:
 				/* listenaddr */
 				addr = **argv;
+
+				/* XXX: E2 address defs */
+				/* TODO: Make this command line or conf file option */
+				sys_sockaddr_parse(&spec->e2src_addr,
+									&spec->e2src_addrlen,
+									"127.0.0.1", "8080", AF_INET, 0);
+
+				sys_sockaddr_parse(&spec->e2dst_addr,
+									&spec->e2dst_addrlen,
+									"127.0.0.1", "0", AF_INET, 0);
+	
 				state++;
 				break;
 			case 2:
@@ -438,15 +449,15 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine)
 		exit(EXIT_FAILURE);
 	}
 
-	sys_sockaddr_parse(&spec->e2src_addr,
-						&spec->e2src_addrlen,
-						"127.0.0.1", "8080", AF_INET, 0);
-//						"127.0.0.1", "8128", AF_INET, 0);
-
-	sys_sockaddr_parse(&spec->e2dst_addr,
-						&spec->e2dst_addrlen,
-//						"127.0.0.1", "8128", AF_INET, 0);
-						"127.0.0.1", "0", AF_INET, 0);
+//	sys_sockaddr_parse(&spec->e2src_addr,
+//						&spec->e2src_addrlen,
+//						"127.0.0.1", "8080", AF_INET, 0);
+////						"127.0.0.1", "8128", AF_INET, 0);
+//
+//	sys_sockaddr_parse(&spec->e2dst_addr,
+//						&spec->e2dst_addrlen,
+////						"127.0.0.1", "8128", AF_INET, 0);
+//						"127.0.0.1", "0", AF_INET, 0);
 
 	return spec;
 }

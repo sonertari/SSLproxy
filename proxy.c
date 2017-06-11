@@ -247,7 +247,7 @@ proxy_listener_acceptcb(UNUSED struct evconnlistener *listener,
 
 	log_dbg_printf(">>>>>------------------------------------------------------------------------------------ proxy_listener_acceptcb(): fd=%d, previous fd2=%d\n", fd, lctx->fd2);
 
-	log_dbg_printf(">>>>> proxy_listener_acceptcb: SETTING UP E2\n");
+	log_dbg_printf(">>>>> proxy_listener_acceptcb: SETTING UP E2, lctx->clisock=%d\n", lctx->clisock);
 	evutil_socket_t fd2;
 	if ((fd2 = privsep_client_opensock_e2(lctx->clisock, lctx->spec)) == -1) {
 		log_err_printf("Error opening socket: %s (%i)\n",
