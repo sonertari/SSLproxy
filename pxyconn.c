@@ -2084,23 +2084,37 @@ pxy_bev_readcb(struct bufferevent *bev, void *arg)
 			packet[packet_size] = '\0';
 			packet_size+= custom_field_len;
 
-			char *pos = strstr(packet, "\r\n\r\n");
-			if (pos) {
-				char *content = strdup(pos);
-				int header_len = pos - packet;
-				char *header = malloc(header_len + 1);
-				strncpy(header, packet, header_len);
-				header[header_len] = '\0';
-				
-				snprintf(packet, packet_size, "%s%s%s", header, custom_field, content);
+			// XXX: We insert our special header line to each packet we get, right after the first \r\n, hence the target may get multiple copies
+			// TODO: To our header line to the first packet, should we look for GET/POST or Host header lines to insert our header field?
+			// But there is no guarantie that they will exist, due to fragmentation
 
-				free(header);
-				free(content);
+			// ATTENTION: We cannot append the ssl proxy address at the end of the packet or in between the header and the content,
+			// because (1) the packet may be just the first fragment split somewhere not appropriate for appending a header,
+			// and (2) there may not be any content
+
+			char *pos2 = strstr(packet, "\r\n");
+			if (pos2) {
+				char *header_tail = strdup(pos2);
+				int header_head_len = pos2 - packet;
+				char *header_head = malloc(header_head_len + 1);
+				strncpy(header_head, packet, header_head_len);
+				header_head[header_head_len] = '\0';
+
+				snprintf(packet, packet_size, "%s%s%s", header_head, custom_field, header_tail);
+
+				free(header_head);
+				free(header_tail);
+			} else {
+				log_dbg_printf(">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: No CRNL in packet\n");
+				packet_size-= custom_field_len;
+				packet_size++;
 			}
+
 			free(custom_field);
 
 			struct evbuffer *e2outbuf = bufferevent_get_output(ctx->e2src.bev);
 
+			// Decrement packet_size to avoid copying the null termination
 			int add_result = evbuffer_add(e2outbuf, packet, packet_size - 1);
 			if (add_result < 0) {
 				log_err_printf("ERROR: evbuffer_add failed\n");
@@ -2222,7 +2236,8 @@ pxy_bev_readcb_e2(struct bufferevent *bev, void *arg)
 			}
 			
 			size_t packet_size = evbuffer_get_length(e2outbuf);
-			char *packet = malloc(packet_size);
+			// ATTENTION: +1 is for null termination
+			char *packet = malloc(packet_size + 1);
 			if (!packet) {
 				ctx->enomem = 1;
 				goto leave;
@@ -2236,6 +2251,32 @@ pxy_bev_readcb_e2(struct bufferevent *bev, void *arg)
 					log_err_printf("ERROR: evbuffer_remove cannot drain the buffer\n");
 				}
 
+				packet[packet_size] = '\0';
+
+				char *pos = strstr(packet, "SSLproxy-Addr: ");
+				if (pos) {
+					int header_head_len = pos - packet;
+					char *header_head = malloc(header_head_len + 1);
+					strncpy(header_head, packet, header_head_len);
+					header_head[header_head_len] = '\0';
+
+					char *pos2 = strstr(pos, "\r\n");
+					if (pos2) {
+						char *header_tail = strdup(pos2 + 2);
+						int header_tail_len = strlen(header_tail);
+
+						log_dbg_printf(">>>>>....................... pxy_bev_readcb_e2: REMOVED SSLproxy-Addr header field <<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n");
+						// ATTENTION: Do not add 1 to packet_size for null termination, do that in snprintf(),
+						// otherwise we get an extra byte in the outbuf
+						packet_size = header_head_len + header_tail_len;
+						snprintf(packet, packet_size + 1, "%s%s", header_head, header_tail);
+
+						free(header_tail);
+					}
+
+					free(header_head);
+				}
+				
 				log_dbg_printf(">>>>>....................... pxy_bev_readcb_e2: bufferevent_get_output\n");
 		
 				struct evbuffer *outbuf = bufferevent_get_output(ctx->dst.bev);
