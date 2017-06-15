@@ -303,7 +303,7 @@ main(int argc, char *argv[])
 	}
 
 	while ((ch = getopt(argc, argv, OPT_g OPT_G OPT_Z OPT_i "k:c:C:K:t:"
-	                    "OPs:r:R:e:Eu:m:j:p:l:L:S:F:dDVhW:w:")) != -1) {
+	                    "OPs:r:R:e:Eu:m:j:p:l:L:S:F:dD::VhW:w:")) != -1) {
 		switch (ch) {
 			case 'c':
 				if (opts->cacrt)
@@ -670,8 +670,19 @@ main(int argc, char *argv[])
 				opts->detach = 1;
 				break;
 			case 'D':
-				log_dbg_mode(LOG_DBG_MODE_ERRLOG);
 				opts->debug = 1;
+				
+				fprintf(stderr, "Debug optarg = %s.\n", optarg);
+
+				if (optarg && strncmp(optarg, "2", 1) == 0) {
+					log_dbg_mode(LOG_DBG_MODE_FINE);
+				} else if (optarg && strncmp(optarg, "3", 1) == 0) {
+					log_dbg_mode(LOG_DBG_MODE_FINER);
+				} else if (optarg && strncmp(optarg, "4", 1) == 0) {
+					log_dbg_mode(LOG_DBG_MODE_FINEST);
+				} else {
+					log_dbg_mode(LOG_DBG_MODE_ERRLOG);
+				}
 				break;
 			case 'V':
 				main_version();
@@ -700,9 +711,9 @@ main(int argc, char *argv[])
 		fprintf(stderr, "%s: no proxyspec specified.\n", argv0);
 		exit(EXIT_FAILURE);
 	}
-	log_dbg_printf(">>>>> Enter spec for loop\n");
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> Enter spec for loop\n");
 	for (proxyspec_t *spec = opts->spec; spec; spec = spec->next) {
-		log_dbg_printf(">>>>> spec for loop: %s\n", spec->natengine);
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> spec for loop: %s\n", spec->natengine);
 		if (spec->connect_addrlen || spec->sni_port)
 			continue;
 		if (!spec->natengine) {
@@ -718,7 +729,7 @@ main(int argc, char *argv[])
 			                argv0, spec->natengine);
 			exit(EXIT_FAILURE);
 		}
-		log_dbg_printf(">>>>> nat_getlookupcb: %s\n", spec->natengine);
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> nat_getlookupcb: %s\n", spec->natengine);
 		fprintf(stderr, ">>>>> nat_getlookupcb: %s\n", spec->natengine);
 		spec->natlookup = nat_getlookupcb(spec->natengine);
 		spec->natsocket = nat_getsocketcb(spec->natengine);
@@ -970,11 +981,11 @@ main(int argc, char *argv[])
 	}
 	rv = EXIT_SUCCESS;
 
-	log_dbg_printf(">>>>> Enter proxy_run\n");
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> Enter proxy_run\n");
 	proxy_run(proxy);
-	log_dbg_printf(">>>>> Exit proxy_run\n");
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> Exit proxy_run\n");
 
-	log_dbg_printf(">>>>> main: EXIT closing privsep clisock=%d\n", clisock[0]);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> main: EXIT closing privsep clisock=%d\n", clisock[0]);
 	privsep_client_close(clisock[0]);
 
 	proxy_free(proxy);

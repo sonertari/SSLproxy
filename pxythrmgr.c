@@ -318,19 +318,19 @@ int
 pxy_thrmgr_attach(pxy_thrmgr_ctx_t *ctx, struct event_base **evbase,
                   struct evdns_base **dnsbase)
 {
-	log_dbg_printf(">>>>> ENTER pxy_thrmgr_attach()\n");
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> ENTER pxy_thrmgr_attach()\n");
 
 	int thridx;
 	size_t minload;
 	
 	int err = pthread_mutex_lock(&ctx->mutex);
-	log_dbg_printf(">>>>> load pxy_thrmgr_attach() err=%d\n", err);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> load pxy_thrmgr_attach() err=%d\n", err);
 
 	thridx = 0;
 
 	if (!ctx->thr) {
 		thridx= -1;
-		log_dbg_printf(">>>>> pxy_thrmgr_attach() goto exit_attach\n");
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_thrmgr_attach() goto exit_attach\n");
 		goto exit_attach;
 	}
 	
@@ -340,7 +340,7 @@ pxy_thrmgr_attach(pxy_thrmgr_ctx_t *ctx, struct event_base **evbase,
 	               "thr[%d]: %zu\n", thridx, minload);
 #endif /* DEBUG_THREAD */
 
-	log_dbg_printf(">>>>> for pxy_thrmgr_attach()\n");
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> for pxy_thrmgr_attach()\n");
 
 	for (int idx = 1; idx < ctx->num_thr; idx++) {
 #ifdef DEBUG_THREAD
@@ -351,9 +351,9 @@ pxy_thrmgr_attach(pxy_thrmgr_ctx_t *ctx, struct event_base **evbase,
 			thridx = idx;
 		}
 	}
-	log_dbg_printf(">>>>> evbase pxy_thrmgr_attach()\n");
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> evbase pxy_thrmgr_attach()\n");
 	*evbase = ctx->thr[thridx]->evbase;
-	log_dbg_printf(">>>>> dnsbase pxy_thrmgr_attach()\n");
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> dnsbase pxy_thrmgr_attach()\n");
 	*dnsbase = ctx->thr[thridx]->dnsbase;
 	ctx->thr[thridx]->load++;
 
@@ -361,7 +361,7 @@ pxy_thrmgr_attach(pxy_thrmgr_ctx_t *ctx, struct event_base **evbase,
 	log_dbg_printf("thridx: %d\n", thridx);
 #endif /* DEBUG_THREAD */
 exit_attach:
-	log_dbg_printf(">>>>> EXIT pxy_thrmgr_attach()\n");
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> EXIT pxy_thrmgr_attach()\n");
 	pthread_mutex_unlock(&ctx->mutex);
 	return thridx;
 }
@@ -373,10 +373,10 @@ exit_attach:
 void
 pxy_thrmgr_detach(pxy_thrmgr_ctx_t *ctx, int thridx)
 {
-	log_dbg_printf(">>>>> pxy_thrmgr_detach()\n");
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_thrmgr_detach()\n");
 	pthread_mutex_lock(&ctx->mutex);
 //	int err = pthread_mutex_trylock(&ctx->mutex);
-//	log_dbg_printf(">>>>> pxy_thrmgr_detach() err=%d\n", err);
+//	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_thrmgr_detach() err=%d\n", err);
 
 	ctx->thr[thridx]->load--;
 //	if (!err) {

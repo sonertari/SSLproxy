@@ -244,7 +244,7 @@ privsep_server_opensock_e2(proxyspec_t *spec)
 	int on = 1;
 	int rv;
 
-	log_dbg_printf(">>>>> privsep_server_opensock_e2: ENTER\n");
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> privsep_server_opensock_e2: ENTER\n");
 
 	fd2 = socket(spec->e2dst_addr.ss_family, SOCK_STREAM, IPPROTO_TCP);
 	if (fd2 == -1) {
@@ -293,7 +293,7 @@ privsep_server_opensock_e2(proxyspec_t *spec)
 		return -1;
 	}
 
-	log_dbg_printf(">>>>> privsep_server_opensock_e2: >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> port = %d\n", ntohs(serv_addr.sin_port));
+	log_dbg_level_printf(LOG_DBG_MODE_FINER, ">>>>> privsep_server_opensock_e2: >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> port = %d\n", ntohs(serv_addr.sin_port));
 
 	return fd2;
 }
@@ -490,7 +490,7 @@ privsep_server_handle_req(opts_t *opts, int srvsock)
 		proxyspec_t *arg;
 		int s;
 
-		log_dbg_printf(">>>>> privsep_server_opensock_e2: PRIVSEP_REQ_OPENSOCK_E2\n");
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> privsep_server_opensock_e2: PRIVSEP_REQ_OPENSOCK_E2\n");
 		
 		if (n != sizeof(char) + sizeof(arg)) {
 			ans[0] = PRIVSEP_ANS_INVALID;
@@ -801,7 +801,7 @@ privsep_client_opensock(int clisock, const proxyspec_t *spec)
 int
 privsep_client_opensock_e2(int clisock, const proxyspec_t *spec)
 {
-	log_dbg_printf(">>>>> privsep_client_opensock_e2()\n");
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> privsep_client_opensock_e2()\n");
 
 	char ans[PRIVSEP_MAX_ANS_SIZE];
 	char req[1 + sizeof(spec)];

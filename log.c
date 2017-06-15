@@ -164,9 +164,28 @@ log_dbg_printf(const char *fmt, ...)
 	return log_dbg_print_free(buf);
 }
 
+int
+log_dbg_level_printf(int dbg_level, const char *fmt, ...)
+{
+	va_list ap;
+	char *buf;
+	int rv;
+
+	if (dbg_mode == LOG_DBG_MODE_NONE || dbg_mode < dbg_level)
+		return 0;
+
+	va_start(ap, fmt);
+	rv = vasprintf(&buf, fmt, ap);
+	va_end(ap);
+	if (rv < 0)
+		return -1;
+	return log_dbg_print_free(buf);
+}
+
 void
 log_dbg_mode(int mode)
 {
+	fprintf(stderr, "Setting debug level to %d.\n", mode);
 	dbg_mode = mode;
 }
 

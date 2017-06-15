@@ -39,11 +39,15 @@ void log_err_mode(int);
 #define LOG_ERR_MODE_SYSLOG 1
 
 int log_dbg_printf(const char *, ...) PRINTF(1,2);
+int log_dbg_level_printf(int, const char *, ...) PRINTF(2,3);
 int log_dbg_print_free(char *);
 int log_dbg_write_free(void *, size_t);
 void log_dbg_mode(int);
 #define LOG_DBG_MODE_NONE 0
 #define LOG_DBG_MODE_ERRLOG 1
+#define LOG_DBG_MODE_FINE 2
+#define LOG_DBG_MODE_FINER 3
+#define LOG_DBG_MODE_FINEST 4
 
 extern logger_t *connect_log;
 #define log_connect_printf(fmt, ...) \
