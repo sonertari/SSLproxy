@@ -2044,11 +2044,18 @@ pxy_bev_readcb(struct bufferevent *bev, void *arg)
 				// @todo Check why this won't work
 				//getsockname(ctx->child_ctx->fd, &e2listener_addr, &e2listener_len);
 				log_dbg_printf(">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: %s, CALLING getsockname, fd=%d ,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,, fd_e2=%d\n", event_name, ctx->fd, ctx->mctx->fd2);
-				getsockname(ctx->mctx->fd2, &e2listener_addr, &e2listener_len);
+//				getsockname(ctx->mctx->fd2, &e2listener_addr, &e2listener_len);
 			} else {
 				log_dbg_printf(">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: %s, FIRST CALL getsockname, fd=%d ,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,, fd_e2=%d\n", event_name, ctx->fd, ctx->mctx->fd2);
 				// @todo Check if the fd is same for all children
-				getsockname(ctx->mctx->fd2, &e2listener_addr, &e2listener_len);
+//				getsockname(ctx->mctx->fd2, &e2listener_addr, &e2listener_len);
+			}
+
+			if (getsockname(ctx->mctx->fd2, &e2listener_addr, &e2listener_len) < 0) {
+				log_dbg_printf(">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: %s, getsockname ERROR= %s, fd=%d ,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,, fd_e2=%d\n", event_name, strerror(errno), ctx->fd, ctx->mctx->fd2);
+				// @todo If getsockname() fails, terminate the connection instead?
+				// Leaving the packet in the buffer will eventually time out and drop the connection
+				goto leave;
 			}
 
 			char *addr = inet_ntoa(e2listener_addr.sin_addr);
@@ -2265,7 +2272,14 @@ pxy_bev_readcb_e2(struct bufferevent *bev, void *arg)
 						char *header_tail = strdup(pos2 + 2);
 						int header_tail_len = strlen(header_tail);
 
-						log_dbg_printf(">>>>>....................... pxy_bev_readcb_e2: REMOVED SSLproxy-Addr header field <<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n");
+						log_dbg_printf(">>>>>....................... pxy_bev_readcb_e2: REMOVED SSLproxy-Addr, packet_size old=%d, new=%d <<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n",
+								packet_size, header_head_len + header_tail_len);
+
+						log_dbg_printf(">>>>>....................... pxy_bev_readcb_e2: header_head (size = %d):\n%s\n",
+								header_head_len, header_head);
+						log_dbg_printf(">>>>>....................... pxy_bev_readcb_e2: header_tail (size = %d):\n%s\n",
+								header_tail_len, header_tail);
+
 						// ATTENTION: Do not add 1 to packet_size for null termination, do that in snprintf(),
 						// otherwise we get an extra byte in the outbuf
 						packet_size = header_head_len + header_tail_len;
