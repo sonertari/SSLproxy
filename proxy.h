@@ -48,12 +48,8 @@ typedef struct proxy_conn_meta_ctx {
 	struct evconnlistener *evcl2;
 	evutil_socket_t fd2;
 
-	unsigned int released;
-
 	proxy_conn_meta_ctx_t *next;
 } proxy_conn_meta_ctx_t;
-
-//typedef struct proxy_listener_ctx proxy_listener_ctx_t;
 
 /*
  * Listener context.
@@ -69,6 +65,7 @@ typedef struct proxy_listener_ctx {
 	pxy_conn_ctx_t *ctx;
 
 	evutil_socket_t fd2;
+	struct evconnlistener *evcl2;
 
 	int clisock;
 

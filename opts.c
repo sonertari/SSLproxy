@@ -335,8 +335,9 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine)
 				/* listenaddr */
 				addr = **argv;
 
-				/* XXX: E2 address defs */
-				/* TODO: Make this command line or conf file option */
+				// XXX: E2 address defs
+				// @todo Make this a command line or conf file option
+				// @todo IPv6
 				sys_sockaddr_parse(&spec->e2src_addr,
 									&spec->e2src_addrlen,
 									"127.0.0.1", "8080", AF_INET, 0);
@@ -448,16 +449,6 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine)
 		fprintf(stderr, "Incomplete proxyspec!\n");
 		exit(EXIT_FAILURE);
 	}
-
-//	sys_sockaddr_parse(&spec->e2src_addr,
-//						&spec->e2src_addrlen,
-//						"127.0.0.1", "8080", AF_INET, 0);
-////						"127.0.0.1", "8128", AF_INET, 0);
-//
-//	sys_sockaddr_parse(&spec->e2dst_addr,
-//						&spec->e2dst_addrlen,
-////						"127.0.0.1", "8128", AF_INET, 0);
-//						"127.0.0.1", "0", AF_INET, 0);
 
 	return spec;
 }

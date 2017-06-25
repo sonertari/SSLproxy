@@ -64,15 +64,6 @@ typedef struct pxy_conn_lproc_desc {
 #endif /* HAVE_LOCAL_PROCINFO */
 
 typedef struct pxy_conn_ctx pxy_conn_ctx_t;
-//typedef struct proxy_conn_meta_ctx proxy_conn_meta_ctx_t;
-
-//typedef struct proxy_conn_meta_ctx {
-//	pxy_conn_ctx_t *parent_ctx;
-//	pxy_conn_ctx_t *child_ctx;
-//	pthread_mutex_t mutex;
-//	unsigned int released;
-//	proxy_conn_meta_ctx_t *mctx;
-//} proxy_conn_meta_ctx_t;
 
 /* actual proxy connection state consisting of two connection descriptors,
  * connection-wide state and the specs and options */
@@ -170,12 +161,18 @@ typedef struct pxy_conn_ctx {
 } pxy_conn_ctx_t;
 
 pxy_conn_ctx_t *
-//pxy_conn_setup(evutil_socket_t, struct sockaddr *, int,
-//                    pxy_thrmgr_ctx_t *, proxyspec_t *, opts_t *, int)
-//                    NONNULL(2,4,5,6);
 pxy_conn_setup(evutil_socket_t, struct sockaddr *, int,
-                    proxy_conn_meta_ctx_t *, evutil_socket_t)
+                    proxy_conn_meta_ctx_t *)
                     NONNULL(2,4);
+
+int
+my_pthread_mutex_destroy(pthread_mutex_t *__mutex);
+
+int
+my_pthread_mutex_lock(pthread_mutex_t *__mutex);
+
+void
+my_pthread_mutex_unlock(pthread_mutex_t *__mutex);
 
 #endif /* !PXYCONN_H */
 

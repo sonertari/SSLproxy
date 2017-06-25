@@ -42,21 +42,6 @@
  * The attach and detach functions are thread-safe.
  */
 
-//typedef struct pxy_thr_ctx {
-//	pthread_t thr;
-//	size_t load;
-//	struct event_base *evbase;
-//	struct evdns_base *dnsbase;
-//	int running;
-//} pxy_thr_ctx_t;
-//
-//struct pxy_thrmgr_ctx {
-//	int num_thr;
-//	opts_t *opts;
-//	pxy_thr_ctx_t **thr;
-//	pthread_mutex_t mutex;
-//};
-
 /*
  * Dummy recurring timer event to prevent the event loops from exiting when
  * they run out of events.
@@ -170,8 +155,8 @@ pxy_thrmgr_new(opts_t *opts)
 	memset(ctx, 0, sizeof(pxy_thrmgr_ctx_t));
 
 	ctx->opts = opts;
-//	ctx->num_thr = 2 * sys_get_cpu_cores();
-	ctx->num_thr = 1;
+	ctx->num_thr = 2 * sys_get_cpu_cores();
+//	ctx->num_thr = 1;
 	
 //	pxy_thrmgr_init(ctx);
 	return ctx;
