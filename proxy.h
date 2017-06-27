@@ -48,6 +48,12 @@ typedef struct proxy_conn_meta_ctx {
 	struct evconnlistener *evcl2;
 	evutil_socket_t fd2;
 
+	/* server name indicated by client in SNI TLS extension */
+	char *sni;
+	/* original destination address, family and certificate */
+	struct sockaddr_storage addr;
+	socklen_t addrlen;
+
 	proxy_conn_meta_ctx_t *next;
 } proxy_conn_meta_ctx_t;
 

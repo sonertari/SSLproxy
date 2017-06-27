@@ -50,6 +50,7 @@
 #include <event2/bufferevent_ssl.h>
 #include <event2/buffer.h>
 #include <event2/thread.h>
+#include <assert.h>
 
 
 /*
@@ -133,8 +134,11 @@ proxy_listener_acceptcb_e2(UNUSED struct evconnlistener *listener,
 	pxy_conn_ctx_t *parent_ctx = mctx->parent_ctx;
 
 	if (!parent_ctx) {
-		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>------------------------------------------------------------------------------------ proxy_listener_acceptcb_e2: NULL parent_ctx <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< GONE\n");
-		goto leave;
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>------------------------------------------------------------------------------------ proxy_listener_acceptcb_e2: NULL parent_ctx, fd2=%d, fd=%d <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< GONE\n", mctx->fd2, fd);
+		/// @todo Remove the assertion
+		assert(parent_ctx != NULL);
+		return;
+//		goto leave;
 	}
 
 //	pthread_mutex_t *cmutex = &parent_ctx->thrmgr->mutex2;
@@ -154,6 +158,7 @@ proxy_listener_acceptcb_e2(UNUSED struct evconnlistener *listener,
 		free(port);
 	}
 
+//	pxy_conn_ctx_t *ctx = pxy_conn_setup_e2(fd, mctx);
 	pxy_conn_setup_e2(fd, mctx);
 
 leave:
@@ -198,63 +203,40 @@ proxy_listener_acceptcb(UNUSED struct evconnlistener *listener,
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>------------------------------------------------------------------------------------ proxy_listener_acceptcb(): fd=%d, previous fd2=%d\n", fd, lctx->fd2);
 
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> proxy_listener_acceptcb: SETTING UP E2, lctx->clisock=%d\n", lctx->clisock);
-	evutil_socket_t fd2;
-//	if ((fd2 = privsep_client_opensock_e2(lctx->clisock, lctx->spec)) == -1) {
-//		log_err_printf("Error opening socket: %s (%i)\n",
-//					   strerror(errno), errno);
-//		return;
-//	}
 	
 	pxy_conn_ctx_t *parent_ctx = pxy_conn_setup(fd, peeraddr, peeraddrlen, mctx);
 	mctx->parent_ctx = parent_ctx;
 
+	evutil_socket_t fd2;
 	struct evconnlistener *evcl2;
-//	if (lctx->fd2) {
-//		fd2 = lctx->fd2;
-//		evcl2 = lctx->evcl2;
-//	} else {
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! proxy_listener_acceptcb: FIRST E2 setup <<<<<<\n");
-		if ((fd2 = privsep_client_opensock_e2(lctx->clisock, lctx->spec)) == -1) {
-			log_err_printf("Error opening socket: %s (%i)\n",
-						   strerror(errno), errno);
-			return;
-		}
-		mctx->fd2 = fd2;
-		evcl2 = evconnlistener_new(evconnlistener_get_base(lctx->evcl), proxy_listener_acceptcb_e2,
-									   mctx, LEV_OPT_CLOSE_ON_FREE, 1024, fd2);
-		if (!evcl2) {
-			log_err_printf("Error creating evconnlistener e2: %s\n",
-						   strerror(errno));
-			proxy_listener_ctx_free(evcl2);
-			evutil_closesocket(fd2);
-			my_pthread_mutex_unlock(cmutex);
-			return;
-		}
-		evconnlistener_set_error_cb(evcl2, proxy_listener_errorcb);
-//	}
+
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! proxy_listener_acceptcb: FIRST E2 setup <<<<<<\n");
+	if ((fd2 = privsep_client_opensock_e2(lctx->clisock, lctx->spec)) == -1) {
+		log_err_printf("Error opening socket: %s (%i)\n",
+					   strerror(errno), errno);
+		return;
+	}
+
+	mctx->fd2 = fd2;
+	evcl2 = evconnlistener_new(evconnlistener_get_base(lctx->evcl), proxy_listener_acceptcb_e2,
+								   mctx, LEV_OPT_CLOSE_ON_FREE, 1024, fd2);
+	mctx->evcl2 = evcl2;
+
+	if (!evcl2) {
+		log_err_printf("Error creating evconnlistener e2: %s\n",
+					   strerror(errno));
+		proxy_listener_ctx_free(evcl2);
+		evutil_closesocket(fd2);
+		my_pthread_mutex_unlock(cmutex);
+		return;
+	}
+
+	evconnlistener_set_error_cb(evcl2, proxy_listener_errorcb);
 
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! proxy_listener_acceptcb: fd=%d, prev fd2=%d, NEW fd2=%d <<<<<<\n", fd, lctx->fd2, fd2);
+
 	lctx->fd2 = fd2;
-	mctx->fd2 = fd2;
 	lctx->evcl2 = evcl2;
-
-//	pxy_conn_ctx_t *parent_ctx = pxy_conn_setup(fd, peeraddr, peeraddrlen, mctx);
-//	mctx->parent_ctx = parent_ctx;
-
-//	struct evconnlistener *evcl2 = evconnlistener_new(evconnlistener_get_base(lctx->evcl), proxy_listener_acceptcb_e2,
-//	                               mctx, LEV_OPT_CLOSE_ON_FREE, 1024, fd2);
-	
-//	if (!evcl2) {
-//		log_err_printf("Error creating evconnlistener e2: %s\n",
-//		               strerror(errno));
-//		proxy_listener_ctx_free(evcl2);
-//		evutil_closesocket(fd2);
-//		my_pthread_mutex_unlock(cmutex);
-//		return;
-//	}
-
-	mctx->evcl2 = evcl2;
-//	evconnlistener_set_error_cb(evcl2, proxy_listener_errorcb);
 
 	log_dbg_level_printf(LOG_DBG_MODE_FINER, ">>>>> proxy_listener_acceptcb: FINISHED SETTING UP E2 SUCCESS, parent fd=%d, NEW fd2=%d\n", fd, fd2);	
 	my_pthread_mutex_unlock(cmutex);
