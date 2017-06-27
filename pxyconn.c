@@ -1205,6 +1205,31 @@ bufferevent_free_and_close_fd(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 }
 
 /*
+ * Free bufferenvent and close underlying socket properly.
+ * This is for non-OpenSSL bufferevents.
+ */
+static void
+bufferevent_free_and_close_fd_e2(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
+{
+	evutil_socket_t fd = bufferevent_getfd(bev);
+
+#ifdef DEBUG_PROXY
+	if (OPTS_DEBUG(ctx->opts)) {
+		log_dbg_printf("            %p free_and_close_fd = %d\n",
+		               (void*)bev, fd);
+	}
+#endif /* DEBUG_PROXY */
+
+	bufferevent_free(bev); /* does not free SSL unless the option
+	                          BEV_OPT_CLOSE_ON_FREE was set */
+	if (evutil_closesocket(fd) == -1) {
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">----------------------------- bufferevent_free_and_close_fd_e2: evutil_closesocket FAILED, fd=%d\n", fd);
+	} else {
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">----------------------------- bufferevent_free_and_close_fd_e2: evutil_closesocket SUCCESS, fd=%d\n", fd);
+	}
+}
+
+/*
  * Set up a bufferevent structure for either a dst or src connection,
  * optionally with or without SSL.  Sets all callbacks, enables read
  * and write events, but does not call bufferevent_socket_connect().
@@ -1967,7 +1992,7 @@ pxy_conn_free_e2(pxy_conn_ctx_t *ctx, int free)
 		pxy_conn_desc_t *e2dst = &ctx->e2dst;
 		if (e2dst->bev) {
 			log_dbg_level_printf(LOG_DBG_MODE_FINER, ">############################# pxy_conn_free_e2: evutil_closesocket e2dst->bev, fd=%d\n", bufferevent_getfd(e2dst->bev));
-			bufferevent_free_and_close_fd(e2dst->bev, ctx);
+			bufferevent_free_and_close_fd_e2(e2dst->bev, ctx);
 			e2dst->bev = NULL;
 		}
 		
@@ -2028,7 +2053,7 @@ pxy_mctx_free(proxy_conn_meta_ctx_t *mctx)
 		pxy_conn_desc_t *e2src = &mctx->parent_ctx->e2src;
 		if (e2src->bev) {
 			log_dbg_level_printf(LOG_DBG_MODE_FINER, ">############################# pxy_mctx_free: evutil_closesocket e2src->bev, fd=%d\n", bufferevent_getfd(e2src->bev));
-			bufferevent_free_and_close_fd(e2src->bev, mctx->parent_ctx);
+			bufferevent_free_and_close_fd_e2(e2src->bev, mctx->parent_ctx);
 			e2src->bev = NULL;
 		}
 
@@ -2089,7 +2114,7 @@ leavefree:
 		pxy_conn_desc_t *e2src = &ctx->e2src;
 		if (e2src->bev) {
 			log_dbg_level_printf(LOG_DBG_MODE_FINER, ">############################# pxy_conn_free: evutil_closesocket e2src->bev, fd=%d\n", bufferevent_getfd(e2src->bev));
-			bufferevent_free_and_close_fd(e2src->bev, ctx);
+			bufferevent_free_and_close_fd_e2(e2src->bev, ctx);
 			e2src->bev = NULL;
 		}
 
