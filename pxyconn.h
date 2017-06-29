@@ -70,16 +70,16 @@ typedef struct pxy_conn_ctx pxy_conn_ctx_t;
 typedef struct pxy_conn_ctx {
 	/* per-connection state */
 	struct pxy_conn_desc src;
-	unsigned int src_eof;
+	unsigned int src_eof : 1;
 	struct pxy_conn_desc dst;
-	unsigned int dst_eof;
+	unsigned int dst_eof : 1;
 
 	struct pxy_conn_desc e2src;
-	unsigned int e2src_eof;
+	unsigned int e2src_eof : 1;
 
 	struct pxy_conn_desc e2dst;
-	unsigned int e2dst_eof;
-	unsigned int e2dst_assigned;
+	unsigned int e2dst_eof : 1;
+//	unsigned int e2dst_assigned;
 	
 	struct pxy_conn_ctx *parent_ctx;
 	struct pxy_conn_ctx *child_ctx;

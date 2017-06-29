@@ -40,13 +40,32 @@ typedef struct proxy_conn_meta_ctx proxy_conn_meta_ctx_t;
 
 typedef struct proxy_conn_meta_ctx {
 	proxy_listener_ctx_t *lctx;
+
+	evutil_socket_t fd;
 	pxy_conn_ctx_t *parent_ctx;
+
+	evutil_socket_t src_fd;
+	evutil_socket_t e2src_fd;
+	evutil_socket_t dst_fd;
+
+	unsigned int src_eof : 1;
+	unsigned int e2src_eof : 1;
+	unsigned int dst_eof : 1;
+		
+	evutil_socket_t fd2;
+	struct evconnlistener *evcl2;
 	pxy_conn_ctx_t *child_ctx;
 
-	pthread_mutex_t mutex;
+	evutil_socket_t e2dst_fd;
+	evutil_socket_t dst2_fd;
 
-	struct evconnlistener *evcl2;
-	evutil_socket_t fd2;
+	unsigned int e2dst_eof : 1;
+	unsigned int dst2_eof : 1;
+
+	unsigned int initialized : 1;
+	unsigned int child_count;
+
+	pthread_mutex_t mutex;
 
 	/* server name indicated by client in SNI TLS extension */
 	char *sni;
@@ -54,8 +73,19 @@ typedef struct proxy_conn_meta_ctx {
 	struct sockaddr_storage addr;
 	socklen_t addrlen;
 
+	int thridx;
+//	unsigned long timestamp;
+	time_t access_time;
 	proxy_conn_meta_ctx_t *next;
+	proxy_conn_meta_ctx_t *delete;
 } proxy_conn_meta_ctx_t;
+
+//typedef struct proxy_conn_delete_node proxy_conn_delete_node_t;
+//
+//typedef struct proxy_conn_delete_node {
+//	proxy_conn_meta_ctx_t *mctx;
+//	proxy_conn_delete_node_t *next;
+//} proxy_conn_delete_node_t;
 
 /*
  * Listener context.
@@ -65,18 +95,18 @@ typedef struct proxy_listener_ctx {
 	proxyspec_t *spec;
 	opts_t *opts;
 	struct evconnlistener *evcl;
-	struct evconnlistener *evcl_e2;
+//	struct evconnlistener *evcl_e2;
 
 	struct proxy_listener_ctx *next;
 	pxy_conn_ctx_t *ctx;
 
-	evutil_socket_t fd2;
-	struct evconnlistener *evcl2;
+//	evutil_socket_t fd2;
+//	struct evconnlistener *evcl2;
 
 	int clisock;
 
-	pthread_mutex_t mutex;
-	proxy_conn_meta_ctx_t *mctx;
+//	pthread_mutex_t mutex;
+//	proxy_conn_meta_ctx_t *mctx;
 } proxy_listener_ctx_t;
 
 proxy_ctx_t * proxy_new(opts_t *, int) NONNULL(1) MALLOC;

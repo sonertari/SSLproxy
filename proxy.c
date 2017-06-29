@@ -105,7 +105,14 @@ proxy_listener_ctx_free(proxy_listener_ctx_t *ctx)
 static void
 proxy_listener_errorcb(struct evconnlistener *listener, UNUSED void *ctx)
 {
-	log_dbg_level_printf(LOG_DBG_MODE_FINE, ">############################# proxy_listener_errorcb: ERROR\n");
+	proxy_conn_meta_ctx_t *mctx = ctx;
+	
+	int fd2 = -1;
+	if (mctx) {
+		fd2 = mctx->fd2;
+	}
+
+	log_dbg_level_printf(LOG_DBG_MODE_FINE, ">############################# proxy_listener_errorcb: ERROR, fd2=%d\n", fd2);
 	struct event_base *evbase = evconnlistener_get_base(listener);
 	int err = EVUTIL_SOCKET_ERROR();
 	log_err_printf("Error %d on listener: %s\n", err,
@@ -125,26 +132,37 @@ proxy_listener_acceptcb_e2(UNUSED struct evconnlistener *listener,
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>------------------------------------------------------------------------------------ proxy_listener_acceptcb_e2() ENTER\n");
 
 	proxy_conn_meta_ctx_t *mctx = arg;
+//	assert(mctx != NULL);
+
 	if (!mctx) {
 		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>------------------------------------------------------------------------------------ proxy_listener_acceptcb_e2: NULL mctx <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< GONE\n");
 		return;
 	}
+
+	mctx->access_time = time(NULL);
+
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>------------------------------------------------------------------------------------ proxy_listener_acceptcb_e2(): ENTER1 mctx->fd2=%d\n", mctx->fd2);
 
 	pxy_conn_ctx_t *parent_ctx = mctx->parent_ctx;
+	/// @todo Remove this assertion later
+//	assert(parent_ctx != NULL);
 
-	if (!parent_ctx) {
-		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>------------------------------------------------------------------------------------ proxy_listener_acceptcb_e2: NULL parent_ctx, fd2=%d, fd=%d <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< GONE\n", mctx->fd2, fd);
-		/// @todo Remove the assertion
-		assert(parent_ctx != NULL);
-		return;
-//		goto leave;
-	}
+//	if (!parent_ctx) {
+//		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>------------------------------------------------------------------------------------ proxy_listener_acceptcb_e2: NULL parent_ctx, fd2=%d, fd=%d <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< GONE\n", mctx->fd2, fd);
+//		return;
+////		goto leave;
+//	}
 
 //	pthread_mutex_t *cmutex = &parent_ctx->thrmgr->mutex2;
 	pthread_mutex_t *cmutex = &mctx->mutex;
-	// @todo Enabling this lock causes ^C to fail: Cannot quit the program on the command line using ^C
+	// @todo Enabling this lock causes ^C to fail?: Cannot quit the program on the command line using ^C
 	int err = my_pthread_mutex_lock(cmutex);
+
+	if (!mctx) {
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>------------------------------------------------------------------------------------ proxy_listener_acceptcb_e2: NULL mctx <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< GONE after lock\n");
+		goto leave;
+	}
+
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>------------------------------------------------------------------------------------ proxy_listener_acceptcb_e2() lock err=%d\n", err);
 
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>------------------------------------------------------------------------------------ proxy_listener_acceptcb_e2(): child fd=%d, parent fd=%d\n", fd, parent_ctx->fd);
@@ -177,6 +195,8 @@ pxy_conn_meta_ctx_new()
 	memset(ctx, 0, sizeof(proxy_conn_meta_ctx_t));
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! pxy_conn_meta_ctx_new: sizeof(proxy_conn_meta_ctx_t)=%d <<<<<<\n", sizeof(proxy_conn_meta_ctx_t));
 
+	ctx->access_time = time(NULL);
+	
 	ctx->next = NULL;
 	pthread_mutex_init(&ctx->mutex, NULL);
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>................... pxy_conn_meta_ctx_new(): EXIT <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n");
@@ -191,7 +211,31 @@ proxy_listener_acceptcb(UNUSED struct evconnlistener *listener,
 {
 	proxy_listener_ctx_t *lctx = arg;
 
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> proxy_listener_acceptcb: <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< LOCK\n");
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! proxy_listener_acceptcb: <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< LOCK\n");
+
+	pthread_mutex_lock(&lctx->thrmgr->mutex);
+
+	time_t now = time(NULL);
+	proxy_conn_meta_ctx_t *new_delete_list = NULL;
+	pxy_thrmgr_get_elapsed_conns(lctx->thrmgr, &new_delete_list);
+
+	pthread_mutex_unlock(&lctx->thrmgr->mutex);
+
+	proxy_conn_meta_ctx_t *delete = new_delete_list;
+	while (delete) {
+		proxy_conn_meta_ctx_t *next = delete->delete;
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>> !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! proxy_listener_acceptcb(): DELETE thr=%d, fd=%d, fd2=%d, time=%d <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< TIMED OUT\n",
+				delete->thridx, delete->fd, delete->fd2, now - delete->access_time);
+
+		pthread_mutex_lock(&delete->mutex);
+		pxy_all_conn_free(delete);
+		pthread_mutex_unlock(&delete->mutex);
+		free(delete);
+
+		delete = next;
+	}
+//	pthread_mutex_unlock(&lctx->thrmgr->mutex);
+
 //	pthread_mutex_t *cmutex = &lctx->thrmgr->mutex2;
 			
 	proxy_conn_meta_ctx_t *mctx = pxy_conn_meta_ctx_new();
@@ -199,10 +243,9 @@ proxy_listener_acceptcb(UNUSED struct evconnlistener *listener,
 	my_pthread_mutex_lock(cmutex);
 
 	mctx->lctx = lctx;
+	mctx->fd = fd;
 
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>------------------------------------------------------------------------------------ proxy_listener_acceptcb(): fd=%d, previous fd2=%d\n", fd, lctx->fd2);
-
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> proxy_listener_acceptcb: SETTING UP E2, lctx->clisock=%d\n", lctx->clisock);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! proxy_listener_acceptcb: SETTING UP E2, fd=%d, lctx->clisock=%d\n", fd, lctx->clisock);
 	
 	pxy_conn_ctx_t *parent_ctx = pxy_conn_setup(fd, peeraddr, peeraddrlen, mctx);
 	mctx->parent_ctx = parent_ctx;
@@ -212,33 +255,25 @@ proxy_listener_acceptcb(UNUSED struct evconnlistener *listener,
 
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! proxy_listener_acceptcb: FIRST E2 setup <<<<<<\n");
 	if ((fd2 = privsep_client_opensock_e2(lctx->clisock, lctx->spec)) == -1) {
-		log_err_printf("Error opening socket: %s (%i)\n",
-					   strerror(errno), errno);
+		log_err_printf("Error opening socket: %s (%i)\n", strerror(errno), errno);
 		return;
 	}
-
 	mctx->fd2 = fd2;
-	evcl2 = evconnlistener_new(evconnlistener_get_base(lctx->evcl), proxy_listener_acceptcb_e2,
-								   mctx, LEV_OPT_CLOSE_ON_FREE, 1024, fd2);
-	mctx->evcl2 = evcl2;
 
+	evcl2 = evconnlistener_new(evconnlistener_get_base(lctx->evcl), proxy_listener_acceptcb_e2, mctx, LEV_OPT_CLOSE_ON_FREE, 1024, fd2);
 	if (!evcl2) {
-		log_err_printf("Error creating evconnlistener e2: %s\n",
-					   strerror(errno));
-		proxy_listener_ctx_free(evcl2);
+		log_err_printf("Error creating evconnlistener e2: %s, fd=%d, fd2=%d <<<<<<\n", strerror(errno), fd, fd2);
+//		proxy_listener_ctx_free(evcl2);
+		evconnlistener_free(evcl2);
 		evutil_closesocket(fd2);
 		my_pthread_mutex_unlock(cmutex);
 		return;
 	}
+	mctx->evcl2 = evcl2;
 
 	evconnlistener_set_error_cb(evcl2, proxy_listener_errorcb);
 
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! proxy_listener_acceptcb: fd=%d, prev fd2=%d, NEW fd2=%d <<<<<<\n", fd, lctx->fd2, fd2);
-
-	lctx->fd2 = fd2;
-	lctx->evcl2 = evcl2;
-
-	log_dbg_level_printf(LOG_DBG_MODE_FINER, ">>>>> proxy_listener_acceptcb: FINISHED SETTING UP E2 SUCCESS, parent fd=%d, NEW fd2=%d\n", fd, fd2);	
+	log_dbg_level_printf(LOG_DBG_MODE_FINER, ">>>>> !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! proxy_listener_acceptcb: FINISHED SETTING UP E2 SUCCESS, parent fd=%d, NEW fd2=%d\n", fd, fd2);	
 	my_pthread_mutex_unlock(cmutex);
 }
 
@@ -285,7 +320,7 @@ proxy_listener_setup(struct event_base *evbase, pxy_thrmgr_ctx_t *thrmgr,
 		return NULL;
 	}
 
-	pthread_mutex_init(&lctx->mutex, NULL);
+//	pthread_mutex_init(&lctx->mutex, NULL);
 	lctx->clisock = clisock;
 	
 	lctx->evcl = evconnlistener_new(evbase, proxy_listener_acceptcb,

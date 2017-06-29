@@ -38,12 +38,16 @@
 #include <event2/dns.h>
 #include <pthread.h>
 
+typedef struct proxy_conn_meta_ctx proxy_conn_meta_ctx_t;
+
 typedef struct pxy_thr_ctx {
 	pthread_t thr;
 	size_t load;
 	struct event_base *evbase;
 	struct evdns_base *dnsbase;
 	int running;
+
+	proxy_conn_meta_ctx_t *mctx;
 } pxy_thr_ctx_t;
 
 typedef struct pxy_thrmgr_ctx {
@@ -61,8 +65,11 @@ int pxy_thrmgr_run(pxy_thrmgr_ctx_t *) NONNULL(1) WUNRES;
 void pxy_thrmgr_free(pxy_thrmgr_ctx_t *) NONNULL(1);
 
 int pxy_thrmgr_attach(pxy_thrmgr_ctx_t *, struct event_base **,
-                      struct evdns_base **) WUNRES;
-void pxy_thrmgr_detach(pxy_thrmgr_ctx_t *, int);
+                      struct evdns_base **, proxy_conn_meta_ctx_t *) WUNRES;
+void pxy_thrmgr_detach(pxy_thrmgr_ctx_t *, int, proxy_conn_meta_ctx_t *);
+
+void pxy_thrmgr_print_thr_info(pxy_thrmgr_ctx_t *ctx);
+void pxy_thrmgr_get_elapsed_conns(pxy_thrmgr_ctx_t *ctx, proxy_conn_meta_ctx_t **delete_list);
 
 #endif /* !PXYTHRMGR_H */
 
