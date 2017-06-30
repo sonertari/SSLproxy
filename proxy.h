@@ -32,6 +32,7 @@
 #include "attrib.h"
 #include "pxythrmgr.h"
 #include <pthread.h>
+#include <uuid.h>
 
 typedef struct proxy_ctx proxy_ctx_t;
 typedef struct proxy_listener_ctx proxy_listener_ctx_t;
@@ -39,6 +40,8 @@ typedef struct pxy_conn_ctx pxy_conn_ctx_t;
 typedef struct proxy_conn_meta_ctx proxy_conn_meta_ctx_t;
 
 typedef struct proxy_conn_meta_ctx {
+	uuid_t *uuid;
+
 	proxy_listener_ctx_t *lctx;
 
 	evutil_socket_t fd;

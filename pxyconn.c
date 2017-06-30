@@ -2172,7 +2172,6 @@ pxy_child_conn_free(pxy_conn_ctx_t *ctx)
 		e2dst->bev = NULL;
 	}
 
-	int rv = 1;
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">############################# pxy_conn_free_e2: remove_node\n");
 	remove_node(ctx, &ctx->mctx->child_ctx);
 
@@ -2308,8 +2307,6 @@ pxy_bev_readcb(struct bufferevent *bev, void *arg)
 		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: NULL ctx || mctx <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< GONE\n");
 		return;
 	}
-	
-	ctx->mctx->access_time = time(NULL);
 
 //	pthread_mutex_t *cmutex = &ctx->thrmgr->mutex2;
 	pthread_mutex_t *cmutex = &ctx->mctx->mutex;
@@ -2318,7 +2315,11 @@ pxy_bev_readcb(struct bufferevent *bev, void *arg)
 	if (!ctx || !ctx->mctx) {
 		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: NULL ctx || mctx <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< GONE after lock\n");
 		goto leave;
+	} else {
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: ENTER fd=%d, fd2=%d\n", ctx->mctx->fd, ctx->mctx->fd2);
 	}
+	
+	ctx->mctx->access_time = time(NULL);
 	
 	char event_name[6] = "\0\0\0\0\0\0";
 	if (bev == ctx->src.bev) {
@@ -2491,8 +2492,6 @@ pxy_bev_readcb_e2(struct bufferevent *bev, void *arg)
 		return;
 	}
 
-	ctx->mctx->access_time = time(NULL);
-
 	//	pthread_mutex_t *cmutex = &ctx->thrmgr->mutex2;
 	pthread_mutex_t *cmutex = &ctx->mctx->mutex;
 	my_pthread_mutex_lock(cmutex);
@@ -2500,7 +2499,11 @@ pxy_bev_readcb_e2(struct bufferevent *bev, void *arg)
 	if (!ctx || !ctx->mctx) {
 		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>....................... pxy_bev_readcb_e2: NULL ctx || mctx <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< GONE after lock\n");
 		goto leave;
+	} else {
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>....................... pxy_bev_readcb_e2: ENTER fd=%d, fd2=%d\n", ctx->mctx->fd, ctx->mctx->fd2);
 	}
+
+	ctx->mctx->access_time = time(NULL);
 	
 	pxy_conn_ctx_t *parent_ctx = ctx->mctx->parent_ctx;
 	evutil_socket_t pfd = -1;
@@ -2804,8 +2807,6 @@ pxy_bev_writecb(struct bufferevent *bev, void *arg)
 		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>+++++++++++++++++++++++++++++++++++ pxy_bev_writecb: NULL ctx || mctx <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< GONE\n");
 		return;
 	}
-
-	ctx->mctx->access_time = time(NULL);
 	
 //	pthread_mutex_t *cmutex = &ctx->thrmgr->mutex2;
 	proxy_conn_meta_ctx_t *mctx = ctx->mctx;
@@ -2817,7 +2818,11 @@ pxy_bev_writecb(struct bufferevent *bev, void *arg)
 	if (!ctx || !ctx->mctx) {
 		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>+++++++++++++++++++++++++++++++++++ pxy_bev_writecb: NULL ctx || mctx <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< GONE after lock\n");
 		goto leave;
+	} else {
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>+++++++++++++++++++++++++++++++++++ pxy_bev_writecb: ENTER fd=%d, fd2=%d\n", ctx->mctx->fd, ctx->mctx->fd2);
 	}
+
+	ctx->mctx->access_time = time(NULL);
 	
 	char event_name[6] = "\0\0\0\0\0\0";
 	if (bev == ctx->src.bev) {
@@ -2875,8 +2880,6 @@ pxy_bev_writecb_e2(struct bufferevent *bev, void *arg)
 		return;
 	}
 
-	ctx->mctx->access_time = time(NULL);
-
 //	pthread_mutex_t *cmutex = &ctx->thrmgr->mutex2;
 	proxy_conn_meta_ctx_t *mctx = ctx->mctx;
 	pthread_mutex_t *cmutex = &mctx->mutex;
@@ -2887,7 +2890,11 @@ pxy_bev_writecb_e2(struct bufferevent *bev, void *arg)
 	if (!ctx || !ctx->mctx) {
 		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>??????????????????????????? pxy_bev_writecb_e2: NULL ctx || mctx <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< GONE after lock\n");
 		goto leave;
+	} else {
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>??????????????????????????? pxy_bev_writecb_e2: ENTER fd=%d, fd2=%d\n", ctx->mctx->fd, ctx->mctx->fd2);
 	}
+
+	ctx->mctx->access_time = time(NULL);
 
 	pxy_conn_ctx_t *parent_ctx = ctx->mctx->parent_ctx;
 
@@ -2969,8 +2976,6 @@ pxy_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 		return;
 	}
 
-	ctx->mctx->access_time = time(NULL);
-
 //	pthread_mutex_t *cmutex = &ctx->thrmgr->mutex2;
 	proxy_conn_meta_ctx_t *mctx = ctx->mctx;
 	pthread_mutex_t *cmutex = &mctx->mutex;
@@ -2981,13 +2986,17 @@ pxy_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 	if (!ctx || !ctx->mctx) {
 		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>=================================== pxy_bev_eventcb: NULL ctx || mctx <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< GONE after lock\n");
 		goto leave;
+	} else {
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>=================================== pxy_bev_eventcb: ENTER fd=%d, fd2=%d\n", ctx->mctx->fd, ctx->mctx->fd2);
 	}
 
+	ctx->mctx->access_time = time(NULL);
+
 	evutil_socket_t fd = -1;
-	if (!ctx) {
-		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>=================================== pxy_bev_eventcb: NULL ctx <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< GONE\n");
-		goto leave;
-	}
+//	if (!ctx) {
+//		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>=================================== pxy_bev_eventcb: NULL ctx <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< GONE\n");
+//		goto leave;
+//	}
 	fd = ctx->fd;
 	
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>=================================== pxy_bev_eventcb ENTER fd=%d\n", ctx->fd);
@@ -3209,8 +3218,6 @@ pxy_bev_eventcb_e2(struct bufferevent *bev, short events, void *arg)
 		return;
 	}
 
-	ctx->mctx->access_time = time(NULL);
-
 	proxy_conn_meta_ctx_t *mctx = ctx->mctx;
 	pthread_mutex_t *cmutex = &mctx->mutex;
 	my_pthread_mutex_lock(cmutex);
@@ -3220,7 +3227,11 @@ pxy_bev_eventcb_e2(struct bufferevent *bev, short events, void *arg)
 	if (!ctx || !ctx->mctx) {
 		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>--------------------- pxy_bev_eventcb_e2: NULL ctx || mctx <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< GONE after lock\n");
 		goto leave;
+	} else {
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>--------------------- pxy_bev_eventcb_e2: ENTER fd=%d, fd2=%d\n", ctx->mctx->fd, ctx->mctx->fd2);
 	}
+
+	ctx->mctx->access_time = time(NULL);
 
 	char event_name[6] = "\0\0\0\0\0\0";
 	if (bev == ctx->src.bev) {

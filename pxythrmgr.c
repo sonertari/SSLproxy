@@ -33,6 +33,7 @@
 
 #include <string.h>
 #include <pthread.h>
+#include <assert.h>
 
 /*
  * Proxy thread manager: manages the connection handling worker threads
@@ -295,9 +296,44 @@ pxy_thrmgr_free(pxy_thrmgr_ctx_t *ctx)
 	free(ctx);
 }
 
+//int 
+//pxy_thrmgr_is_same_mctx(proxy_conn_meta_ctx_t *mctx1, proxy_conn_meta_ctx_t *mctx2, int stop)
+//{
+//	if (!mctx1 && !mctx2) {
+//		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_thrmgr_is_same_mctx: SAME both NULL\n");
+//		return 1;
+////	} else if (mctx1 && mctx2) {
+////		if ((uuid_compare(mctx1->uuid, mctx2->uuid, NULL) == 0) && (mctx1->fd == mctx2->fd) && (mctx1->fd2 == mctx2->fd2) &&
+////				(mctx1->src_fd == mctx2->src_fd) && (mctx1->e2src_fd == mctx2->e2src_fd) &&
+////				(mctx1->e2dst_fd == mctx2->e2dst_fd) && (mctx1->dst_fd == mctx2->dst_fd) &&
+////				(mctx1->dst2_fd == mctx2->dst2_fd) && (mctx1->child_count == mctx2->child_count) &&
+//////				(mctx1->access_time == mctx2->access_time) && (mctx1->initialized == mctx2->initialized) &&
+////				// Stop recursion
+////				(stop || (pxy_thrmgr_is_same_mctx(mctx1->next, mctx2->next, 1))) ) {
+////			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_thrmgr_is_same_mctx: SAME match ALL, fd=%d, fd2=%d\n", mctx1->fd, mctx1->fd2);
+////			return 1;
+////		}
+////	}
+//	} else if ((mctx1 && mctx2) && (uuid_compare(mctx1->uuid, mctx2->uuid, NULL) == 0)) {
+//		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_thrmgr_is_same_mctx: UUIDs match, fd=%d, fd2=%d\n", mctx1->fd, mctx1->fd2);
+//		return 1;
+//	}
+//	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_thrmgr_is_same_mctx: NOT same, fd=%d, fd2=%d\n", mctx1->fd, mctx1->fd2);
+//	return 0;
+//}
+
 void 
-pxy_thrmgr_remove_node(proxy_conn_meta_ctx_t *node, proxy_conn_meta_ctx_t **head) {
-    if (node->fd == (*head)->fd) {
+pxy_thrmgr_remove_node(proxy_conn_meta_ctx_t *node, proxy_conn_meta_ctx_t **head)
+{
+	assert(node != NULL);
+	assert(*head != NULL);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_thrmgr_remove_node: DELETING, fd=%d, fd2=%d\n", node->fd, node->fd2);
+	
+	// XXX: Does (fd, fd2) pair uniquely define a connection? Just fd was supposed to be enough.
+	// @todo fd may be the same for multiple connections, and if fd2 is NULL, do we get a clash?
+//    if ((node->fd == (*head)->fd) && (node->fd2 == (*head)->fd2)) {
+//    if (pxy_thrmgr_is_same_mctx(node, *head, 0)) {
+    if (uuid_compare(node->uuid, (*head)->uuid, NULL) == 0) {
         *head = (*head)->next;
         return;
     }
@@ -305,7 +341,9 @@ pxy_thrmgr_remove_node(proxy_conn_meta_ctx_t *node, proxy_conn_meta_ctx_t **head
     proxy_conn_meta_ctx_t *current = (*head)->next;
     proxy_conn_meta_ctx_t *previous = *head;
     while (current != NULL && previous != NULL) {
-        if (node->fd == current->fd) {
+//        if ((node->fd == current->fd) && (node->fd2 == current->fd2)) {
+//        if (pxy_thrmgr_is_same_mctx(node, current, 0)) {
+        if (uuid_compare(node->uuid, current->uuid, NULL) == 0) {
             previous->next = current->next;
             return;
         }

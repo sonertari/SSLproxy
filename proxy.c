@@ -137,21 +137,9 @@ proxy_listener_acceptcb_e2(UNUSED struct evconnlistener *listener,
 	if (!mctx) {
 		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>------------------------------------------------------------------------------------ proxy_listener_acceptcb_e2: NULL mctx <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< GONE\n");
 		return;
+	} else {
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>------------------------------------------------------------------------------------ proxy_listener_acceptcb_e2: ENTER 1 fd=%d, fd2=%d\n", mctx->fd, mctx->fd2);
 	}
-
-	mctx->access_time = time(NULL);
-
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>------------------------------------------------------------------------------------ proxy_listener_acceptcb_e2(): ENTER1 mctx->fd2=%d\n", mctx->fd2);
-
-	pxy_conn_ctx_t *parent_ctx = mctx->parent_ctx;
-	/// @todo Remove this assertion later
-//	assert(parent_ctx != NULL);
-
-//	if (!parent_ctx) {
-//		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>------------------------------------------------------------------------------------ proxy_listener_acceptcb_e2: NULL parent_ctx, fd2=%d, fd=%d <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< GONE\n", mctx->fd2, fd);
-//		return;
-////		goto leave;
-//	}
 
 //	pthread_mutex_t *cmutex = &parent_ctx->thrmgr->mutex2;
 	pthread_mutex_t *cmutex = &mctx->mutex;
@@ -161,17 +149,27 @@ proxy_listener_acceptcb_e2(UNUSED struct evconnlistener *listener,
 	if (!mctx) {
 		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>------------------------------------------------------------------------------------ proxy_listener_acceptcb_e2: NULL mctx <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< GONE after lock\n");
 		goto leave;
+	} else {
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>------------------------------------------------------------------------------------ proxy_listener_acceptcb_e2: ENTER 2 fd=%d, fd2=%d\n", mctx->fd, mctx->fd2);
+	}
+
+	mctx->access_time = time(NULL);
+
+	pxy_conn_ctx_t *parent_ctx = mctx->parent_ctx;
+	evutil_socket_t pfd = -1;
+	if (parent_ctx) {
+		pfd = parent_ctx->fd;
 	}
 
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>------------------------------------------------------------------------------------ proxy_listener_acceptcb_e2() lock err=%d\n", err);
 
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>------------------------------------------------------------------------------------ proxy_listener_acceptcb_e2(): child fd=%d, parent fd=%d\n", fd, parent_ctx->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>------------------------------------------------------------------------------------ proxy_listener_acceptcb_e2(): child fd=%d, pfd=%d\n", fd, pfd);
 
 	char *host, *port;
 	if (sys_sockaddr_str(peeraddr, peeraddrlen, &host, &port) != 0) {
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>------------------------------------------------------------------------------------ proxy_listener_acceptcb_e2(): PEER failed\n");
 	} else {
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>------------------------------------------------------------------------------------ proxy_listener_acceptcb_e2(): PEER [%s]:%s <<<<< child fd=%d, parent fd=%d\n", host, port, fd, parent_ctx->fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>------------------------------------------------------------------------------------ proxy_listener_acceptcb_e2(): PEER [%s]:%s <<<<< child fd=%d, pfd=%d\n", host, port, fd, pfd);
 		free(host);
 		free(port);
 	}
@@ -193,8 +191,21 @@ pxy_conn_meta_ctx_new()
 	if (!ctx)
 		return NULL;
 	memset(ctx, 0, sizeof(proxy_conn_meta_ctx_t));
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! pxy_conn_meta_ctx_new: sizeof(proxy_conn_meta_ctx_t)=%d <<<<<<\n", sizeof(proxy_conn_meta_ctx_t));
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>................... pxy_conn_meta_ctx_new: sizeof(proxy_conn_meta_ctx_t)=%d <<<<<<\n", sizeof(proxy_conn_meta_ctx_t));
 
+	ctx->uuid = malloc(sizeof(uuid_t));
+#ifdef OPENBSD
+	uuid_create(ctx->uuid, NULL);
+	char *uuid_str;
+	uuid_to_string(ctx->uuid, &uuid_str, NULL);
+	if (uuid_str) {
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>................... pxy_conn_meta_ctx_new(): uuid = %s <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n", uuid_str);
+		free(uuid_str);
+	}
+#else
+	uuid_generate(ctx->uuid);
+#endif /* OPENBSD */
+	
 	ctx->access_time = time(NULL);
 	
 	ctx->next = NULL;
@@ -221,18 +232,20 @@ proxy_listener_acceptcb(UNUSED struct evconnlistener *listener,
 
 	pthread_mutex_unlock(&lctx->thrmgr->mutex);
 
-	proxy_conn_meta_ctx_t *delete = new_delete_list;
-	while (delete) {
-		proxy_conn_meta_ctx_t *next = delete->delete;
-		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>> !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! proxy_listener_acceptcb(): DELETE thr=%d, fd=%d, fd2=%d, time=%d <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< TIMED OUT\n",
-				delete->thridx, delete->fd, delete->fd2, now - delete->access_time);
+	proxy_conn_meta_ctx_t *conn2del = new_delete_list;
+	while (conn2del) {
+		proxy_conn_meta_ctx_t *next = conn2del->delete;
 
-		pthread_mutex_lock(&delete->mutex);
-		pxy_all_conn_free(delete);
-		pthread_mutex_unlock(&delete->mutex);
-		free(delete);
+		pthread_mutex_lock(&conn2del->mutex);
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>> !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! proxy_listener_acceptcb: DELETE thr=%d, fd=%d, fd2=%d, time=%d <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< TIMED OUT\n",
+				conn2del->thridx, conn2del->fd, conn2del->fd2, now - conn2del->access_time);
+		pxy_all_conn_free(conn2del);
+		// XXX: Releasing the lock causes callback functions to continue with a deleted mctx?
+		//pthread_mutex_unlock(&conn2del->mutex);
+		pthread_mutex_destroy(&conn2del->mutex);
+		free(conn2del);
 
-		delete = next;
+		conn2del = next;
 	}
 //	pthread_mutex_unlock(&lctx->thrmgr->mutex);
 
@@ -241,6 +254,15 @@ proxy_listener_acceptcb(UNUSED struct evconnlistener *listener,
 	proxy_conn_meta_ctx_t *mctx = pxy_conn_meta_ctx_new();
 	pthread_mutex_t *cmutex = &mctx->mutex;
 	my_pthread_mutex_lock(cmutex);
+
+	char *host, *port;
+	if (sys_sockaddr_str(peeraddr, peeraddrlen, &host, &port) != 0) {
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! proxy_listener_acceptcb: PEER failed\n");
+	} else {
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! proxy_listener_acceptcb: PEER [%s]:%s <<<<< fd=%d\n", host, port, fd);
+		free(host);
+		free(port);
+	}
 
 	mctx->lctx = lctx;
 	mctx->fd = fd;
