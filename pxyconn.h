@@ -152,11 +152,7 @@ typedef struct pxy_conn_ctx {
 	pxy_thrmgr_ctx_t *thrmgr;
 	proxyspec_t *spec;
 	opts_t *opts;
-
-	int clisock;
-	proxy_listener_ctx_t *lctx;
 	
-	pthread_mutex_t *mutex;
 	proxy_conn_meta_ctx_t *mctx;
 } pxy_conn_ctx_t;
 

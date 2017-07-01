@@ -55,10 +55,7 @@ typedef struct pxy_thrmgr_ctx {
 	opts_t *opts;
 	pxy_thr_ctx_t **thr;
 	pthread_mutex_t mutex;
-	pthread_mutex_t mutex2;
 } pxy_thrmgr_ctx_t;
-
-//typedef struct pxy_thrmgr_ctx pxy_thrmgr_ctx_t;
 
 pxy_thrmgr_ctx_t * pxy_thrmgr_new(opts_t *) MALLOC;
 int pxy_thrmgr_run(pxy_thrmgr_ctx_t *) NONNULL(1) WUNRES;
@@ -69,7 +66,7 @@ int pxy_thrmgr_attach(pxy_thrmgr_ctx_t *, struct event_base **,
 void pxy_thrmgr_detach(pxy_thrmgr_ctx_t *, int, proxy_conn_meta_ctx_t *);
 
 void pxy_thrmgr_print_thr_info(pxy_thrmgr_ctx_t *ctx);
-void pxy_thrmgr_get_elapsed_conns(pxy_thrmgr_ctx_t *ctx, proxy_conn_meta_ctx_t **delete_list);
+void pxy_thrmgr_get_expired_conns(pxy_thrmgr_ctx_t *ctx, proxy_conn_meta_ctx_t **delete_list);
 
 #endif /* !PXYTHRMGR_H */
 

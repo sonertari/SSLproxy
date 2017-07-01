@@ -50,8 +50,6 @@
 #include <event2/bufferevent_ssl.h>
 #include <event2/buffer.h>
 #include <event2/thread.h>
-#include <assert.h>
-
 
 /*
  * Proxy engine, built around libevent 2.x.
@@ -85,6 +83,7 @@ proxy_listener_ctx_new(pxy_thrmgr_ctx_t *thrmgr, proxyspec_t *spec,
 	return ctx;
 }
 
+// @todo Do we need this forward declaration?
 //static void
 //proxy_listener_ctx_free(proxy_listener_ctx_t *ctx) NONNULL(1);
 static void
@@ -132,7 +131,6 @@ proxy_listener_acceptcb_e2(UNUSED struct evconnlistener *listener,
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>------------------------------------------------------------------------------------ proxy_listener_acceptcb_e2() ENTER\n");
 
 	proxy_conn_meta_ctx_t *mctx = arg;
-//	assert(mctx != NULL);
 
 	if (!mctx) {
 		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>------------------------------------------------------------------------------------ proxy_listener_acceptcb_e2: NULL mctx <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< GONE\n");
@@ -141,9 +139,8 @@ proxy_listener_acceptcb_e2(UNUSED struct evconnlistener *listener,
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>------------------------------------------------------------------------------------ proxy_listener_acceptcb_e2: ENTER 1 fd=%d, fd2=%d\n", mctx->fd, mctx->fd2);
 	}
 
-//	pthread_mutex_t *cmutex = &parent_ctx->thrmgr->mutex2;
 	pthread_mutex_t *cmutex = &mctx->mutex;
-	// @todo Enabling this lock causes ^C to fail?: Cannot quit the program on the command line using ^C
+	// @todo Enabling this lock sometimes causes ^C to fail?: Cannot quit the program on the command line using ^C
 	int err = my_pthread_mutex_lock(cmutex);
 
 	if (!mctx) {
@@ -174,7 +171,7 @@ proxy_listener_acceptcb_e2(UNUSED struct evconnlistener *listener,
 		free(port);
 	}
 
-//	pxy_conn_ctx_t *ctx = pxy_conn_setup_e2(fd, mctx);
+	// @todo Check the return value of pxy_conn_setup_e2()
 	pxy_conn_setup_e2(fd, mctx);
 
 leave:
@@ -194,6 +191,8 @@ pxy_conn_meta_ctx_new()
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>................... pxy_conn_meta_ctx_new: sizeof(proxy_conn_meta_ctx_t)=%d <<<<<<\n", sizeof(proxy_conn_meta_ctx_t));
 
 	ctx->uuid = malloc(sizeof(uuid_t));
+
+// @todo Set this switch at compile time
 #ifdef OPENBSD
 	uuid_create(ctx->uuid, NULL);
 	char *uuid_str;
@@ -224,32 +223,30 @@ proxy_listener_acceptcb(UNUSED struct evconnlistener *listener,
 
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! proxy_listener_acceptcb: <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< LOCK\n");
 
-	pthread_mutex_lock(&lctx->thrmgr->mutex);
+	proxy_conn_meta_ctx_t *expired = NULL;
+	pxy_thrmgr_get_expired_conns(lctx->thrmgr, &expired);
 
 	time_t now = time(NULL);
-	proxy_conn_meta_ctx_t *new_delete_list = NULL;
-	pxy_thrmgr_get_elapsed_conns(lctx->thrmgr, &new_delete_list);
 
-	pthread_mutex_unlock(&lctx->thrmgr->mutex);
+	while (expired) {
+		proxy_conn_meta_ctx_t *next = expired->delete;
 
-	proxy_conn_meta_ctx_t *conn2del = new_delete_list;
-	while (conn2del) {
-		proxy_conn_meta_ctx_t *next = conn2del->delete;
+		int err = pthread_mutex_lock(&expired->mutex);
+		if (err != 0) {
+			// @attention The expired mctx may be gone by now, hence this check
+			// @todo What to do to prevent this case?
+			log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>> !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! proxy_listener_acceptcb: CANNOT LOCK expired conn, err=%d\n", err);
+		} else {
+			log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>> !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! proxy_listener_acceptcb: DELETE thr=%d, fd=%d, fd2=%d, time=%d <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< TIMED OUT\n",
+					expired->thridx, expired->fd, expired->fd2, now - expired->access_time);
+			pxy_all_conn_free(expired);
+			// XXX: Releasing the lock causes callback functions to continue with a deleted mctx?
+			//pthread_mutex_unlock(&expired->mutex);
+			pxy_conn_meta_ctx_free(expired);
+		}
 
-		pthread_mutex_lock(&conn2del->mutex);
-		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>> !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! proxy_listener_acceptcb: DELETE thr=%d, fd=%d, fd2=%d, time=%d <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< TIMED OUT\n",
-				conn2del->thridx, conn2del->fd, conn2del->fd2, now - conn2del->access_time);
-		pxy_all_conn_free(conn2del);
-		// XXX: Releasing the lock causes callback functions to continue with a deleted mctx?
-		//pthread_mutex_unlock(&conn2del->mutex);
-		pthread_mutex_destroy(&conn2del->mutex);
-		free(conn2del);
-
-		conn2del = next;
+		expired = next;
 	}
-//	pthread_mutex_unlock(&lctx->thrmgr->mutex);
-
-//	pthread_mutex_t *cmutex = &lctx->thrmgr->mutex2;
 			
 	proxy_conn_meta_ctx_t *mctx = pxy_conn_meta_ctx_new();
 	pthread_mutex_t *cmutex = &mctx->mutex;
@@ -285,7 +282,9 @@ proxy_listener_acceptcb(UNUSED struct evconnlistener *listener,
 	evcl2 = evconnlistener_new(evconnlistener_get_base(lctx->evcl), proxy_listener_acceptcb_e2, mctx, LEV_OPT_CLOSE_ON_FREE, 1024, fd2);
 	if (!evcl2) {
 		log_err_printf("Error creating evconnlistener e2: %s, fd=%d, fd2=%d <<<<<<\n", strerror(errno), fd, fd2);
-//		proxy_listener_ctx_free(evcl2);
+		// @attention Do not call proxy_listener_ctx_free() on evcl2, evcl2 does not have any next listener
+		// @todo Create a new struct for evcl2 and related functions
+		//proxy_listener_ctx_free(evcl2);
 		evconnlistener_free(evcl2);
 		evutil_closesocket(fd2);
 		my_pthread_mutex_unlock(cmutex);
@@ -342,13 +341,12 @@ proxy_listener_setup(struct event_base *evbase, pxy_thrmgr_ctx_t *thrmgr,
 		return NULL;
 	}
 
-//	pthread_mutex_init(&lctx->mutex, NULL);
 	lctx->clisock = clisock;
 	
+	// @todo Should we enable threadsafe event structs?
 	lctx->evcl = evconnlistener_new(evbase, proxy_listener_acceptcb,
 	                               lctx, LEV_OPT_CLOSE_ON_FREE, 1024, fd);
-	// @todo Should we enable threadsafe event structs?
-	//                             lctx, LEV_OPT_CLOSE_ON_FREE|LEV_OPT_THREADSAFE, 1024, fd);
+//	                               lctx, LEV_OPT_CLOSE_ON_FREE|LEV_OPT_THREADSAFE, 1024, fd);
 	if (!lctx->evcl) {
 		log_err_printf("Error creating evconnlistener: %s\n",
 		               strerror(errno));
@@ -516,7 +514,7 @@ proxy_new(opts_t *opts, int clisock)
 		goto leave4;
 	evtimer_add(ctx->gcev, &gc_delay);
 
-	// @attention Do not close privsep sock, the client binds to new sockets on the egress path 
+	// @attention Do not close privsep sock, we bind to new sockets on the egress path 
 	//privsep_client_close(clisock);
 	return ctx;
 
