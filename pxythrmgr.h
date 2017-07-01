@@ -46,7 +46,6 @@ typedef struct pxy_thr_ctx {
 	struct event_base *evbase;
 	struct evdns_base *dnsbase;
 	int running;
-
 	proxy_conn_meta_ctx_t *mctx;
 } pxy_thr_ctx_t;
 

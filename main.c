@@ -730,7 +730,6 @@ main(int argc, char *argv[])
 			exit(EXIT_FAILURE);
 		}
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> nat_getlookupcb: %s\n", spec->natengine);
-		fprintf(stderr, ">>>>> nat_getlookupcb: %s\n", spec->natengine);
 		spec->natlookup = nat_getlookupcb(spec->natengine);
 		spec->natsocket = nat_getsocketcb(spec->natengine);
 	}

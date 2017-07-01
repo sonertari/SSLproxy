@@ -98,7 +98,7 @@ static pxy_conn_ctx_t *
 pxy_conn_ctx_new(proxyspec_t *spec, opts_t *opts,
                  pxy_thrmgr_ctx_t *thrmgr, evutil_socket_t fd, proxy_conn_meta_ctx_t *mctx)
 {
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>................... pxy_conn_ctx_new: ENTER fd=%d, sizeof(pxy_conn_ctx_t)=%d\n", fd, sizeof(pxy_conn_ctx_t));
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>................... pxy_conn_ctx_new: ENTER fd=%d, sizeof(pxy_conn_ctx_t)=%lu\n", fd, sizeof(pxy_conn_ctx_t));
 	pxy_conn_ctx_t *ctx = malloc(sizeof(pxy_conn_ctx_t));
 	if (!ctx)
 		return NULL;
@@ -128,7 +128,7 @@ pxy_conn_ctx_new_e2(proxyspec_t *spec, opts_t *opts, pxy_thrmgr_ctx_t *thrmgr, e
 	assert(mctx != NULL);
 	assert(mctx->parent_ctx != NULL);
 
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>................... pxy_conn_ctx_new_e2: ENTER fd=%d, sizeof(pxy_conn_ctx_t)=%d\n", fd, sizeof(pxy_conn_ctx_t));
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>................... pxy_conn_ctx_new_e2: ENTER fd=%d, sizeof(pxy_conn_ctx_t)=%lu\n", fd, sizeof(pxy_conn_ctx_t));
 	pxy_conn_ctx_t *ctx = malloc(sizeof(pxy_conn_ctx_t));
 	if (!ctx)
 		return NULL;
@@ -1668,7 +1668,7 @@ pxy_conn_autossl_peek_and_upgrade(pxy_conn_ctx_t *ctx)
 			}
 			if( OPTS_DEBUG(ctx->opts)) {
 				log_err_printf("Replaced dst bufferevent, new "
-				               "one is %p\n", ctx->dst.bev);
+				               "one is %p\n", (void *)ctx->dst.bev);
 			}
 			ctx->clienthello_search = 0;
 			ctx->clienthello_found = 1;
@@ -2118,7 +2118,6 @@ pxy_conn_free(pxy_conn_ctx_t *ctx)
 			}
 //		}
 
-leavefree:
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">############################# pxy_conn_free: TRY FREE ctx->src\n");
 		pxy_conn_desc_t *src = &ctx->src;
 		if (src->bev) {
@@ -2558,7 +2557,7 @@ pxy_bev_readcb_e2(struct bufferevent *bev, void *arg)
 			char *custom_key = "SSLproxy-Addr: ";
 			struct evbuffer_ptr ebp = evbuffer_search(e2outbuf, custom_key, strlen(custom_key), NULL);
 			if (ebp.pos != -1) {
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>....................... pxy_bev_readcb_e2: evbuffer_search FOUND SSLproxy-Addr at %d\n", ebp.pos);
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>....................... pxy_bev_readcb_e2: evbuffer_search FOUND SSLproxy-Addr at %ld\n", ebp.pos);
 			} else {
 				log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>....................... pxy_bev_readcb_e2: evbuffer_search FAILED\n");
 			}
@@ -2593,7 +2592,7 @@ pxy_bev_readcb_e2(struct bufferevent *bev, void *arg)
 						char *header_tail = strdup(pos2 + 2);
 						int header_tail_len = strlen(header_tail);
 
-						log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>....................... pxy_bev_readcb_e2: REMOVED SSLproxy-Addr, packet_size old=%d, new=%d <<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n",
+						log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>....................... pxy_bev_readcb_e2: REMOVED SSLproxy-Addr, packet_size old=%lu, new=%d <<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n",
 								packet_size, header_head_len + header_tail_len);
 
 						log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>....................... pxy_bev_readcb_e2: header_head (size = %d):\n%s\n",
@@ -2713,11 +2712,11 @@ pxy_connected_enable(struct bufferevent *bev, pxy_conn_ctx_t *ctx, char *event_n
 					               "falling back "
 					               "to passthrough\n");
 					pxy_fd_readcb(ctx->fd, 0, ctx);
-					return;
+					return 0;
 				}
 				evutil_closesocket(ctx->fd);
 				pxy_conn_ctx_free(ctx);
-				return;
+				return 0;
 			}
 		}
 		if (ctx->clienthello_found) {

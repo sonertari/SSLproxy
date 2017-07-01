@@ -35,9 +35,19 @@
 #include <uuid.h>
 
 typedef struct proxy_ctx proxy_ctx_t;
-typedef struct proxy_listener_ctx proxy_listener_ctx_t;
 typedef struct pxy_conn_ctx pxy_conn_ctx_t;
-typedef struct proxy_conn_meta_ctx proxy_conn_meta_ctx_t;
+
+/*
+ * Listener context.
+ */
+typedef struct proxy_listener_ctx {
+	pxy_thrmgr_ctx_t *thrmgr;
+	proxyspec_t *spec;
+	opts_t *opts;
+	struct evconnlistener *evcl;
+	struct proxy_listener_ctx *next;
+	int clisock;
+} proxy_listener_ctx_t;
 
 typedef struct proxy_conn_meta_ctx {
 	uuid_t *uuid;
@@ -77,40 +87,11 @@ typedef struct proxy_conn_meta_ctx {
 	socklen_t addrlen;
 
 	int thridx;
-//	unsigned long timestamp;
+
 	time_t access_time;
 	proxy_conn_meta_ctx_t *next;
 	proxy_conn_meta_ctx_t *delete;
 } proxy_conn_meta_ctx_t;
-
-//typedef struct proxy_conn_delete_node proxy_conn_delete_node_t;
-//
-//typedef struct proxy_conn_delete_node {
-//	proxy_conn_meta_ctx_t *mctx;
-//	proxy_conn_delete_node_t *next;
-//} proxy_conn_delete_node_t;
-
-/*
- * Listener context.
- */
-typedef struct proxy_listener_ctx {
-	pxy_thrmgr_ctx_t *thrmgr;
-	proxyspec_t *spec;
-	opts_t *opts;
-	struct evconnlistener *evcl;
-//	struct evconnlistener *evcl_e2;
-
-	struct proxy_listener_ctx *next;
-	pxy_conn_ctx_t *ctx;
-
-//	evutil_socket_t fd2;
-//	struct evconnlistener *evcl2;
-
-	int clisock;
-
-//	pthread_mutex_t mutex;
-//	proxy_conn_meta_ctx_t *mctx;
-} proxy_listener_ctx_t;
 
 proxy_ctx_t * proxy_new(opts_t *, int) NONNULL(1) MALLOC;
 void proxy_run(proxy_ctx_t *) NONNULL(1);

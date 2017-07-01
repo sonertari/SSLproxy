@@ -63,8 +63,6 @@ typedef struct pxy_conn_lproc_desc {
 } pxy_conn_lproc_desc_t;
 #endif /* HAVE_LOCAL_PROCINFO */
 
-typedef struct pxy_conn_ctx pxy_conn_ctx_t;
-
 /* actual proxy connection state consisting of two connection descriptors,
  * connection-wide state and the specs and options */
 typedef struct pxy_conn_ctx {
@@ -79,7 +77,6 @@ typedef struct pxy_conn_ctx {
 
 	struct pxy_conn_desc e2dst;
 	unsigned int e2dst_eof : 1;
-//	unsigned int e2dst_assigned;
 	
 	struct pxy_conn_ctx *parent_ctx;
 	struct pxy_conn_ctx *child_ctx;
@@ -160,16 +157,18 @@ pxy_conn_ctx_t *
 pxy_conn_setup(evutil_socket_t, struct sockaddr *, int,
                     proxy_conn_meta_ctx_t *)
                     NONNULL(2,4);
-
+pxy_conn_ctx_t *
+pxy_conn_setup_e2(evutil_socket_t, proxy_conn_meta_ctx_t *) NONNULL(2);
 int
 my_pthread_mutex_destroy(pthread_mutex_t *__mutex);
-
 int
 my_pthread_mutex_lock(pthread_mutex_t *__mutex);
-
 void
 my_pthread_mutex_unlock(pthread_mutex_t *__mutex);
-
+void
+pxy_all_conn_free(proxy_conn_meta_ctx_t *);
+void
+pxy_conn_meta_ctx_free(proxy_conn_meta_ctx_t *) NONNULL(1);
 #endif /* !PXYCONN_H */
 
 /* vim: set noet ft=c: */

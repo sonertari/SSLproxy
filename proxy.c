@@ -34,6 +34,7 @@
 #include "opts.h"
 #include "log.h"
 #include "attrib.h"
+#include "sys.h"
 
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -83,9 +84,8 @@ proxy_listener_ctx_new(pxy_thrmgr_ctx_t *thrmgr, proxyspec_t *spec,
 	return ctx;
 }
 
-// @todo Do we need this forward declaration?
-//static void
-//proxy_listener_ctx_free(proxy_listener_ctx_t *ctx) NONNULL(1);
+static void
+proxy_listener_ctx_free(proxy_listener_ctx_t *ctx) NONNULL(1);
 static void
 proxy_listener_ctx_free(proxy_listener_ctx_t *ctx)
 {
@@ -188,7 +188,7 @@ pxy_conn_meta_ctx_new()
 	if (!ctx)
 		return NULL;
 	memset(ctx, 0, sizeof(proxy_conn_meta_ctx_t));
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>................... pxy_conn_meta_ctx_new: sizeof(proxy_conn_meta_ctx_t)=%d <<<<<<\n", sizeof(proxy_conn_meta_ctx_t));
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>................... pxy_conn_meta_ctx_new: sizeof(proxy_conn_meta_ctx_t)=%lu <<<<<<\n", sizeof(proxy_conn_meta_ctx_t));
 
 	ctx->uuid = malloc(sizeof(uuid_t));
 
@@ -237,8 +237,8 @@ proxy_listener_acceptcb(UNUSED struct evconnlistener *listener,
 			// @todo What to do to prevent this case?
 			log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>> !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! proxy_listener_acceptcb: CANNOT LOCK expired conn, err=%d\n", err);
 		} else {
-			log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>> !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! proxy_listener_acceptcb: DELETE thr=%d, fd=%d, fd2=%d, time=%d <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< TIMED OUT\n",
-					expired->thridx, expired->fd, expired->fd2, now - expired->access_time);
+			log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>> !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! proxy_listener_acceptcb: DELETE thr=%d, fd=%d, fd2=%d, time=%lld <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< TIMED OUT\n",
+					expired->thridx, expired->fd, expired->fd2, (long int) now - expired->access_time);
 			pxy_all_conn_free(expired);
 			// XXX: Releasing the lock causes callback functions to continue with a deleted mctx?
 			//pthread_mutex_unlock(&expired->mutex);
