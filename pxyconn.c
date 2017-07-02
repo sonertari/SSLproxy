@@ -156,6 +156,19 @@ pxy_conn_ctx_new_e2(proxyspec_t *spec, opts_t *opts, pxy_thrmgr_ctx_t *thrmgr, e
 	return ctx;
 }
 
+static pxy_conn_child_info_t *
+pxy_conn_new_client_info()
+{
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>................... pxy_conn_new_client_info: ENTER, sizeof(pxy_conn_child_info_t)=%lu\n", sizeof(pxy_conn_child_info_t));
+	pxy_conn_child_info_t *info = malloc(sizeof(pxy_conn_child_info_t));
+	if (!info)
+		return NULL;
+	memset(info, 0, sizeof(pxy_conn_child_info_t));
+
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>................... pxy_conn_new_client_info: EXIT\n");
+	return info;
+}
+
 static pxy_conn_ctx_t *
 pxy_conn_ctx_reinit(pxy_conn_ctx_t *ctx, proxyspec_t *spec, opts_t *opts,
                  pxy_thrmgr_ctx_t *thrmgr, evutil_socket_t fd)
@@ -275,6 +288,8 @@ pxy_conn_ctx_free_e2(pxy_conn_ctx_t *ctx)
 #endif /* DEBUG_PROXY */
 	// @todo Connections on the egress path should not detach, but update conn list
 	//pxy_thrmgr_detach(ctx->thrmgr, ctx->thridx);
+	pxy_thrmgr_detach_e2(ctx->thrmgr, ctx->thridx, ctx->mctx);
+	
 	if (ctx->srchost_str) {
 		free(ctx->srchost_str);
 	}
@@ -342,7 +357,17 @@ pxy_conn_ctx_free_e2(pxy_conn_ctx_t *ctx)
 			log_err_printf("Warning: Content log close failed\n");
 		}
 	}
+	ctx->child_info->freed = 1;
 	free(ctx);
+}
+
+static void NONNULL(1)
+pxy_conn_child_info_free(pxy_conn_child_info_t *info)
+{
+	if (info->next) {
+		pxy_conn_child_info_free(info->next);
+	}
+	free(info);
 }
 
 // @todo Do we need static here?
@@ -355,6 +380,9 @@ pxy_conn_meta_ctx_free(proxy_conn_meta_ctx_t *mctx)
 	}
 	if (mctx->sni) {
 		free(mctx->sni);
+	}
+	if (mctx->child_info) {
+		pxy_conn_child_info_free(mctx->child_info);
 	}
 	my_pthread_mutex_destroy(&mctx->mutex);
 	free(mctx);
@@ -3235,6 +3263,7 @@ pxy_bev_eventcb_e2(struct bufferevent *bev, short events, void *arg)
 
 			ctx->e2dst_eof = 1;
 			ctx->mctx->e2dst_eof = 1;
+			ctx->child_info->e2dst_eof = 1;
 
 			rv = pxy_conn_free_e2(ctx, 0);
 		}
@@ -3243,6 +3272,7 @@ pxy_bev_eventcb_e2(struct bufferevent *bev, short events, void *arg)
 
 			ctx->dst_eof = 1;
 			ctx->mctx->dst2_eof = 1;
+			ctx->child_info->dst2_eof = 1;
 
 			rv = pxy_conn_free_e2(ctx, 0);
 		}
@@ -3509,10 +3539,12 @@ pxy_conn_connect_e2(pxy_conn_ctx_t *ctx)
 	bufferevent_socket_connect(ctx->dst.bev, (struct sockaddr *)&ctx->mctx->addr, ctx->mctx->addrlen);
 	
 	if (ctx->e2dst.bev) {
-		ctx->mctx->e2dst_fd = bufferevent_getfd(ctx->e2dst.bev);
+		ctx->child_info->e2dst_fd = bufferevent_getfd(ctx->e2dst.bev);
+		ctx->mctx->e2dst_fd = ctx->child_info->e2dst_fd;
 	}
 	if (ctx->dst.bev) {
-		ctx->mctx->dst2_fd = bufferevent_getfd(ctx->dst.bev);
+		ctx->child_info->dst2_fd = bufferevent_getfd(ctx->dst.bev);
+		ctx->mctx->dst2_fd = ctx->child_info->dst2_fd;
 	}
 
 	if (OPTS_DEBUG(ctx->opts)) {
@@ -3826,6 +3858,11 @@ pxy_conn_setup_e2(evutil_socket_t fd, proxy_conn_meta_ctx_t *mctx)
 	ctx->mctx = mctx;
 	ctx->child_ctx = NULL;
 
+	pxy_conn_child_info_t *info = pxy_conn_new_client_info();
+	ctx->child_info = info;
+	info->next = mctx->child_info;
+	mctx->child_info = info;
+
 	pxy_conn_ctx_t *parent_ctx = mctx->parent_ctx;
 	int pfd = -1;
 	if (parent_ctx) {
@@ -3852,6 +3889,7 @@ pxy_conn_setup_e2(evutil_socket_t fd, proxy_conn_meta_ctx_t *mctx)
 		mctx->initialized = 1;
 	}
 	mctx->child_count++;
+	info->child_count = mctx->child_count;
 
 	if (mctx->child_ctx) {
 		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>> pxy_conn_setup_e2: parent_ctx->e2dst NEW CHILD >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> prev CHILD EXISTS\n");

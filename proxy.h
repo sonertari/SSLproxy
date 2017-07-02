@@ -36,6 +36,7 @@
 
 typedef struct proxy_ctx proxy_ctx_t;
 typedef struct pxy_conn_ctx pxy_conn_ctx_t;
+typedef struct pxy_conn_child_info pxy_conn_child_info_t;
 
 /*
  * Listener context.
@@ -68,6 +69,7 @@ typedef struct proxy_conn_meta_ctx {
 	evutil_socket_t fd2;
 	struct evconnlistener *evcl2;
 	pxy_conn_ctx_t *child_ctx;
+	pxy_conn_child_info_t *child_info;
 
 	evutil_socket_t e2dst_fd;
 	evutil_socket_t dst2_fd;

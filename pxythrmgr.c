@@ -32,6 +32,7 @@
 #include "pxyconn.h"
 
 #include <string.h>
+#include <event2/bufferevent.h>
 #include <pthread.h>
 #include <assert.h>
 
@@ -232,7 +233,8 @@ pxy_thrmgr_remove_node(proxy_conn_meta_ctx_t *node, proxy_conn_meta_ctx_t **head
 	assert(*head != NULL);
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_thrmgr_remove_node: DELETING, fd=%d, fd2=%d\n", node->fd, node->fd2);
 	
-	// XXX: (fd, fd2) pair does not uniquely define a connection, but just fd was supposed to be enough.
+	// @todo Why do we get multiple conns with the same fd? So fd or (fd, fd2) pair cannot uniquely define a connection, but just fd was supposed to be enough.
+	// Does libevent free the fd if it fails, and then reuse the same fd immediately?
     if (uuid_compare(node->uuid, (*head)->uuid, NULL) == 0) {
         *head = (*head)->next;
         return;
@@ -316,8 +318,13 @@ pxy_thrmgr_detach(pxy_thrmgr_ctx_t *ctx, int thridx, proxy_conn_meta_ctx_t *mctx
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_thrmgr_detach(): BEFORE pxy_thrmgr_remove_node\n");
 	pxy_thrmgr_print_thr_info(ctx);
 
-	pxy_thrmgr_remove_node(mctx, &ctx->thr[thridx]->mctx);
-	ctx->thr[thridx]->load--;
+	if (!mctx->child_ctx) {
+		pxy_thrmgr_remove_node(mctx, &ctx->thr[thridx]->mctx);
+		ctx->thr[thridx]->load--;
+	} else {
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>> pxy_thrmgr_detach(): parent ctx has an active child, will not remove from the list, fd=%d, fd2=%d <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n",
+				mctx->fd, mctx->fd2);
+	}
 
 	log_dbg_level_printf(LOG_DBG_MODE_FINER, ">>>>> pxy_thrmgr_detach(): AFTER pxy_thrmgr_remove_node\n");
 	pxy_thrmgr_print_thr_info(ctx);
@@ -326,45 +333,72 @@ pxy_thrmgr_detach(pxy_thrmgr_ctx_t *ctx, int thridx, proxy_conn_meta_ctx_t *mctx
 }
 
 void
+pxy_thrmgr_detach_e2(pxy_thrmgr_ctx_t *ctx, int thridx, proxy_conn_meta_ctx_t *mctx)
+{
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_thrmgr_detach_e2()\n");
+	pthread_mutex_lock(&ctx->mutex);
+
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_thrmgr_detach_e2(): BEFORE pxy_thrmgr_remove_node\n");
+	pxy_thrmgr_print_thr_info(ctx);
+
+	if (!mctx->parent_ctx) {
+		pxy_thrmgr_remove_node(mctx, &ctx->thr[thridx]->mctx);
+		ctx->thr[thridx]->load--;
+	} else {
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>> pxy_thrmgr_detach_e2(): child ctx has an active parent, will not remove from the list, fd=%d, fd2=%d <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n",
+				mctx->fd, mctx->fd2);
+	}
+
+	log_dbg_level_printf(LOG_DBG_MODE_FINER, ">>>>> pxy_thrmgr_detach_e2(): AFTER pxy_thrmgr_remove_node\n");
+	pxy_thrmgr_print_thr_info(ctx);
+
+	pthread_mutex_unlock(&ctx->mutex);
+}
+
+void
+pxy_thrmgr_print_child_info(pxy_conn_child_info_t *info)
+{
+	assert(info != NULL);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>> .......... pxy_thrmgr_print_child_info(): e2dst=%d, dst2=%d, c=%d-%d, cc=%d, f=%d\n",
+			info->e2dst_fd, info->dst2_fd, info->e2dst_eof, info->dst2_eof, info->child_count, info->freed);
+	if (info->next) {
+		pxy_thrmgr_print_child_info(info->next);
+	}
+}
+
+void
 pxy_thrmgr_print_thr_info(pxy_thrmgr_ctx_t *ctx)
 {
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>---------------------- pxy_thrmgr_print_thr_info(): ENTER\n");
-
-	proxy_conn_meta_ctx_t *delete_list = NULL;
 
 	time_t now = time(NULL);
 
 	for (int i = 0; i < ctx->num_thr; i++) {
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>> pxy_thrmgr_print_thr_info(): thr=%d, load=%lu\n", i, ctx->thr[i]->load);
 		
-		proxy_conn_meta_ctx_t *current = ctx->thr[i]->mctx;
+		proxy_conn_meta_ctx_t *mctx = ctx->thr[i]->mctx;
 		int count = 0;
-		while (current) {
-			int src_fd = current->src_fd;
-			int e2src_fd = current->e2src_fd;
-			int dst_fd = current->dst_fd;
-			int e2dst_fd = current->e2dst_fd;
-			int dst2_fd = current->dst2_fd;
-
-			unsigned long elapsed_time = now - current->access_time;
-			if (elapsed_time > 30) {
-				current->delete = delete_list;
-				delete_list = current;
-			}
-			
+		while (mctx) {
 			char *host, *port;
-			if (sys_sockaddr_str((struct sockaddr *)&current->addr, current->addrlen, &host, &port) != 0) {
+			if (sys_sockaddr_str((struct sockaddr *)&mctx->addr, mctx->addrlen, &host, &port) != 0) {
 				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>> pxy_thrmgr_print_thr_info(): sys_sockaddr_str FAILED\n");
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>> pxy_thrmgr_print_thr_info(): thr=%d, cont=%d, fd=%d, fd2=%d, src=%d, e2src=%d, dst=%d, e2dst=%d, dst2=%d, p=%d-%d-%d c=%d-%d, init=%d, cc=%d, time=%lld\n",
-						i, count, current->fd, current->fd2, src_fd, e2src_fd, dst_fd, e2dst_fd, dst2_fd, current->src_eof, current->e2src_eof, current->dst_eof, current->e2dst_eof, current->dst2_eof, current->initialized, current->child_count, (long int) now - current->access_time);
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>> pxy_thrmgr_print_thr_info(): thr=%d, cont=%d, fd=%d, fd2=%d, src=%d, e2src=%d, dst=%d, e2dst=%d, dst2=%d, p=%d-%d-%d c=%d-%d, init=%d, pe=%d ce=%d tcc=%d, time=%lld\n",
+						i, count, mctx->fd, mctx->fd2, mctx->src_fd, mctx->e2src_fd, mctx->dst_fd, mctx->e2dst_fd, mctx->dst2_fd,
+						mctx->src_eof, mctx->e2src_eof, mctx->dst_eof, mctx->e2dst_eof, mctx->dst2_eof, mctx->initialized, mctx->parent_ctx ? 1:0, mctx->child_ctx ? 1:0, mctx->child_count,(long int) now - mctx->access_time);
 			} else {
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>> pxy_thrmgr_print_thr_info(): thr=%d, cont=%d, fd=%d, fd2=%d, src=%d, e2src=%d, dst=%d, e2dst=%d, dst2=%d, p=%d-%d-%d c=%d-%d, init=%d, cc=%d, time=%lld, addr=%s:%s\n",
-						i, count, current->fd, current->fd2, src_fd, e2src_fd, dst_fd, e2dst_fd, dst2_fd, current->src_eof, current->e2src_eof, current->dst_eof, current->e2dst_eof, current->dst2_eof, current->initialized, current->child_count, (long int) now - current->access_time, host ? host : "?", port ? port : "?");
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>> pxy_thrmgr_print_thr_info(): thr=%d, cont=%d, fd=%d, fd2=%d, src=%d, e2src=%d, dst=%d, e2dst=%d, dst2=%d, p=%d-%d-%d c=%d-%d, init=%d, pe=%d ce=%d tcc=%d, time=%lld, addr=%s:%s\n",
+						i, count, mctx->fd, mctx->fd2, mctx->src_fd, mctx->e2src_fd, mctx->dst_fd, mctx->e2dst_fd, mctx->dst2_fd,
+						mctx->src_eof, mctx->e2src_eof, mctx->dst_eof, mctx->e2dst_eof, mctx->dst2_eof, mctx->initialized, mctx->parent_ctx ? 1:0, mctx->child_ctx ? 1:0, mctx->child_count, (long int) now - mctx->access_time, host ? host : "?", port ? port : "?");
 				free(host);
 				free(port);
 			}
+
+			if (mctx->child_info) {
+				pxy_thrmgr_print_child_info(mctx->child_info);
+			}
+
 			count++;
-			current = current->next;
+			mctx = mctx->next;
 		}
 	}
 		

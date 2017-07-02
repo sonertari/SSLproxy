@@ -46,6 +46,19 @@ typedef struct pxy_conn_desc {
 	unsigned int closed : 1;
 } pxy_conn_desc_t;
 
+typedef struct pxy_conn_child_info {
+	evutil_socket_t e2dst_fd;
+	evutil_socket_t dst2_fd;
+
+	unsigned int e2dst_eof : 1;
+	unsigned int dst2_eof : 1;
+
+	unsigned int freed : 1;
+	
+	unsigned int child_count;
+	pxy_conn_child_info_t *next;
+} pxy_conn_child_info_t;
+
 #ifdef HAVE_LOCAL_PROCINFO
 /* local process data - filled in iff pid != -1 */
 typedef struct pxy_conn_lproc_desc {
@@ -80,6 +93,7 @@ typedef struct pxy_conn_ctx {
 	
 	struct pxy_conn_ctx *parent_ctx;
 	struct pxy_conn_ctx *child_ctx;
+	pxy_conn_child_info_t *child_info;
 
 	/* status flags */
 	unsigned int immutable_cert : 1;  /* 1 if the cert cannot be changed */
