@@ -51,6 +51,7 @@ typedef struct proxy_listener_ctx {
 } proxy_listener_ctx_t;
 
 typedef struct proxy_conn_meta_ctx {
+	pxy_thr_ctx_t *thr;
 	uuid_t *uuid;
 
 	proxy_listener_ctx_t *lctx;

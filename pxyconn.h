@@ -174,11 +174,14 @@ pxy_conn_setup(evutil_socket_t, struct sockaddr *, int,
 pxy_conn_ctx_t *
 pxy_conn_setup_e2(evutil_socket_t, proxy_conn_meta_ctx_t *) NONNULL(2);
 int
-my_pthread_mutex_destroy(pthread_mutex_t *__mutex);
+//my_pthread_mutex_destroy(pthread_mutex_t *);
+my_pthread_mutex_destroy(proxy_conn_meta_ctx_t *);
 int
-my_pthread_mutex_lock(pthread_mutex_t *__mutex);
+//my_pthread_mutex_lock(pthread_mutex_t *);
+my_pthread_mutex_lock(proxy_conn_meta_ctx_t *);
 void
-my_pthread_mutex_unlock(pthread_mutex_t *__mutex);
+//my_pthread_mutex_unlock(pthread_mutex_t *__mutex);
+my_pthread_mutex_unlock(proxy_conn_meta_ctx_t *);
 void
 pxy_all_conn_free(proxy_conn_meta_ctx_t *);
 void
