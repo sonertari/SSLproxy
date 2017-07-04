@@ -391,8 +391,9 @@ pxy_thrmgr_detach_e2(pxy_thrmgr_ctx_t *ctx, int thridx, proxy_conn_meta_ctx_t *m
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_thrmgr_detach_e2()\n");
 	pthread_mutex_lock(&ctx->mutex);
 
-//	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_thrmgr_detach_e2(): BEFORE pxy_thrmgr_remove_node\n");
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_thrmgr_detach_e2(): BEFORE pxy_thrmgr_remove_node\n");
 //	pxy_thrmgr_print_thr_info(ctx);
+	pxy_thrmgr_print_thr_info(ctx->thr[thridx]);
 
 	ctx->thr[thridx]->load--;
 	
@@ -409,8 +410,9 @@ pxy_thrmgr_detach_e2(pxy_thrmgr_ctx_t *ctx, int thridx, proxy_conn_meta_ctx_t *m
 		}
 	}
 
-//	log_dbg_level_printf(LOG_DBG_MODE_FINER, ">>>>> pxy_thrmgr_detach_e2(): AFTER pxy_thrmgr_remove_node\n");
+	log_dbg_level_printf(LOG_DBG_MODE_FINER, ">>>>> pxy_thrmgr_detach_e2(): AFTER pxy_thrmgr_remove_node\n");
 //	pxy_thrmgr_print_thr_info(ctx);
+	pxy_thrmgr_print_thr_info(ctx->thr[thridx]);
 
 	pthread_mutex_unlock(&ctx->mutex);
 }
