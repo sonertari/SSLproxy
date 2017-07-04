@@ -49,7 +49,6 @@ typedef struct pxy_thr_ctx {
 	int running;
 	int timeout_count;
 	proxy_conn_meta_ctx_t *mctx;
-	pthread_mutex_t mutex;
 } pxy_thr_ctx_t;
 
 typedef struct pxy_thrmgr_ctx {
@@ -69,9 +68,7 @@ void pxy_thrmgr_attach_e2(pxy_thrmgr_ctx_t *ctx, int thridx);
 void pxy_thrmgr_detach(pxy_thrmgr_ctx_t *, int, proxy_conn_meta_ctx_t *);
 void pxy_thrmgr_detach_e2(pxy_thrmgr_ctx_t *, int, proxy_conn_meta_ctx_t *);
 
-//void pxy_thrmgr_print_thr_info(pxy_thrmgr_ctx_t *ctx, int thridx);
 void pxy_thrmgr_print_thr_info(pxy_thr_ctx_t *ctx);
-//void pxy_thrmgr_get_expired_conns(pxy_thrmgr_ctx_t *ctx, proxy_conn_meta_ctx_t **delete_list);
 void pxy_thrmgr_get_thr_expired_conns(pxy_thr_ctx_t *ctx, proxy_conn_meta_ctx_t **expired_conns);
 
 #endif /* !PXYTHRMGR_H */

@@ -81,8 +81,6 @@ typedef struct proxy_conn_meta_ctx {
 	unsigned int initialized : 1;
 	unsigned int child_count;
 
-	pthread_mutex_t mutex;
-
 	/* server name indicated by client in SNI TLS extension */
 	char *sni;
 	/* original destination address, family and certificate */
