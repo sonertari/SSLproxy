@@ -69,6 +69,8 @@ typedef struct proxy_conn_meta_ctx {
 		
 	evutil_socket_t fd2;
 	struct evconnlistener *evcl2;
+	char *pxy_dst;
+
 	pxy_conn_ctx_t *child_ctx;
 	pxy_conn_child_info_t *child_info;
 
@@ -98,6 +100,13 @@ proxy_ctx_t * proxy_new(opts_t *, int) NONNULL(1) MALLOC;
 void proxy_run(proxy_ctx_t *) NONNULL(1);
 void proxy_loopbreak(proxy_ctx_t *) NONNULL(1);
 void proxy_free(proxy_ctx_t *) NONNULL(1);
+void
+proxy_listener_errorcb(struct evconnlistener *listener, UNUSED void *ctx);
+void
+proxy_listener_acceptcb_e2(struct evconnlistener *listener,
+                        evutil_socket_t fd,
+                        struct sockaddr *peeraddr, int peeraddrlen,
+                        void *arg);
 
 #endif /* !PROXY_H */
 

@@ -101,7 +101,8 @@ proxy_listener_ctx_free(proxy_listener_ctx_t *ctx)
 /*
  * Callback for error events on the socket listener bufferevent.
  */
-static void
+//static void
+void
 proxy_listener_errorcb(struct evconnlistener *listener, UNUSED void *ctx)
 {
 	proxy_conn_meta_ctx_t *mctx = ctx;
@@ -117,7 +118,8 @@ proxy_listener_errorcb(struct evconnlistener *listener, UNUSED void *ctx)
 /*
  * Callback for accept events on the socket listener bufferevent.
  */
-static void
+//static void
+void
 proxy_listener_acceptcb_e2(UNUSED struct evconnlistener *listener,
                         evutil_socket_t fd,
                         struct sockaddr *peeraddr, int peeraddrlen,
@@ -225,22 +227,21 @@ proxy_listener_acceptcb(UNUSED struct evconnlistener *listener,
 	pxy_conn_ctx_t *parent_ctx = pxy_conn_setup(fd, peeraddr, peeraddrlen, mctx);
 	mctx->parent_ctx = parent_ctx;
 
-	// @attention Use the evbase of the mctx thread, otherwise we get multithreading issues
-	struct evconnlistener *evcl2 = evconnlistener_new(mctx->thr->evbase, proxy_listener_acceptcb_e2, mctx, LEV_OPT_CLOSE_ON_FREE, 1024, fd2);
-	if (!evcl2) {
-		log_err_printf("Error creating evconnlistener e2: %s, fd=%d, fd2=%d <<<<<<\n", strerror(errno), fd, fd2);
-		// @attention Do not call proxy_listener_ctx_free() on evcl2, evcl2 does not have any next listener
-		// @todo Create a new struct for evcl2 and related functions
-		//proxy_listener_ctx_free(evcl2);
-		evconnlistener_free(evcl2);
-		evutil_closesocket(fd2);
-		return;
-	}
-	mctx->evcl2 = evcl2;
-
-	evconnlistener_set_error_cb(evcl2, proxy_listener_errorcb);
-
-	log_dbg_level_printf(LOG_DBG_MODE_FINER, ">>>>> !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! proxy_listener_acceptcb: FINISHED SETTING UP E2 SUCCESS, parent fd=%d, NEW fd2=%d\n", fd, fd2);	
+//	// @attention Use the evbase of the mctx thread, otherwise we get multithreading issues
+//	struct evconnlistener *evcl2 = evconnlistener_new(mctx->thr->evbase, proxy_listener_acceptcb_e2, mctx, LEV_OPT_CLOSE_ON_FREE, 1024, fd2);
+//	if (!evcl2) {
+//		log_err_printf("Error creating evconnlistener e2: %s, fd=%d, fd2=%d <<<<<<\n", strerror(errno), fd, fd2);
+//		// @attention Cannot call proxy_listener_ctx_free() on evcl2, evcl2 does not have any ctx with next listener
+//		// @todo Create a new struct for evcl2 and related functions
+//		//proxy_listener_ctx_free(lctxe2);
+//		evutil_closesocket(fd2);
+//		return;
+//	}
+//	mctx->evcl2 = evcl2;
+//
+//	evconnlistener_set_error_cb(evcl2, proxy_listener_errorcb);
+//
+//	log_dbg_level_printf(LOG_DBG_MODE_FINER, ">>>>> !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! proxy_listener_acceptcb: FINISHED SETTING UP E2 SUCCESS, parent fd=%d, NEW fd2=%d\n", fd, fd2);	
 }
 
 /*
