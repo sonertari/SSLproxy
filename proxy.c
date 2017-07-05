@@ -101,6 +101,7 @@ proxy_listener_ctx_free(proxy_listener_ctx_t *ctx)
 /*
  * Callback for error events on the socket listener bufferevent.
  */
+// @todo Make this static
 //static void
 void
 proxy_listener_errorcb(struct evconnlistener *listener, UNUSED void *ctx)
@@ -118,6 +119,7 @@ proxy_listener_errorcb(struct evconnlistener *listener, UNUSED void *ctx)
 /*
  * Callback for accept events on the socket listener bufferevent.
  */
+// @todo Make this static
 //static void
 void
 proxy_listener_acceptcb_e2(UNUSED struct evconnlistener *listener,
@@ -212,36 +214,18 @@ proxy_listener_acceptcb(UNUSED struct evconnlistener *listener,
 	mctx->lctx = lctx;
 	mctx->fd = fd;
 
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! proxy_listener_acceptcb: SETTING UP E2, fd=%d, lctx->clisock=%d\n", fd, lctx->clisock);
-	
-	// @attention Get fd2 before calling pxy_conn_setup() for parent ctx, because the src readcb uses fd2 to build the header line for SSL proxy address
-	evutil_socket_t fd2;
-
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! proxy_listener_acceptcb: FIRST E2 setup <<<<<<\n");
-	if ((fd2 = privsep_client_opensock_e2(lctx->clisock, lctx->spec)) == -1) {
-		log_err_printf("Error opening socket: %s (%i)\n", strerror(errno), errno);
-		return;
-	}
-	mctx->fd2 = fd2;
+//	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! proxy_listener_acceptcb: SETTING UP E2, fd=%d, lctx->clisock=%d\n", fd, lctx->clisock);
+//	
+//	// @attention Get fd2 before calling pxy_conn_setup() for parent ctx, because the src readcb uses fd2 to build the header line for SSL proxy address
+//	evutil_socket_t fd2;
+//	if ((fd2 = privsep_client_opensock_e2(lctx->clisock, lctx->spec)) == -1) {
+//		log_err_printf("Error opening socket: %s (%i)\n", strerror(errno), errno);
+//		return;
+//	}
+//	mctx->fd2 = fd2;
 
 	pxy_conn_ctx_t *parent_ctx = pxy_conn_setup(fd, peeraddr, peeraddrlen, mctx);
 	mctx->parent_ctx = parent_ctx;
-
-//	// @attention Use the evbase of the mctx thread, otherwise we get multithreading issues
-//	struct evconnlistener *evcl2 = evconnlistener_new(mctx->thr->evbase, proxy_listener_acceptcb_e2, mctx, LEV_OPT_CLOSE_ON_FREE, 1024, fd2);
-//	if (!evcl2) {
-//		log_err_printf("Error creating evconnlistener e2: %s, fd=%d, fd2=%d <<<<<<\n", strerror(errno), fd, fd2);
-//		// @attention Cannot call proxy_listener_ctx_free() on evcl2, evcl2 does not have any ctx with next listener
-//		// @todo Create a new struct for evcl2 and related functions
-//		//proxy_listener_ctx_free(lctxe2);
-//		evutil_closesocket(fd2);
-//		return;
-//	}
-//	mctx->evcl2 = evcl2;
-//
-//	evconnlistener_set_error_cb(evcl2, proxy_listener_errorcb);
-//
-//	log_dbg_level_printf(LOG_DBG_MODE_FINER, ">>>>> !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! proxy_listener_acceptcb: FINISHED SETTING UP E2 SUCCESS, parent fd=%d, NEW fd2=%d\n", fd, fd2);	
 }
 
 /*

@@ -251,7 +251,7 @@ pxy_thrmgr_free(pxy_thrmgr_ctx_t *ctx)
 }
 
 void 
-pxy_thrmgr_remove_node(proxy_conn_meta_ctx_t *node, proxy_conn_meta_ctx_t **head)
+pxy_thrmgr_remove_mctx(proxy_conn_meta_ctx_t *node, proxy_conn_meta_ctx_t **head)
 {
 	assert(node != NULL);
 	assert(*head != NULL);
@@ -355,7 +355,7 @@ pxy_thrmgr_detach(pxy_thrmgr_ctx_t *ctx, int thridx, proxy_conn_meta_ctx_t *mctx
 	ctx->thr[thridx]->load--;
 
 	if (!mctx->child_ctx) {
-		pxy_thrmgr_remove_node(mctx, &ctx->thr[thridx]->mctx);
+		pxy_thrmgr_remove_mctx(mctx, &ctx->thr[thridx]->mctx);
 	} else {
 		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>> pxy_thrmgr_detach(): parent ctx has an active child, will not remove from the list, fd=%d, fd2=%d <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n",
 				mctx->fd, mctx->fd2);
@@ -379,7 +379,7 @@ pxy_thrmgr_detach_e2(pxy_thrmgr_ctx_t *ctx, int thridx, proxy_conn_meta_ctx_t *m
 	ctx->thr[thridx]->load--;
 	
 	if (!mctx->parent_ctx && !mctx->child_ctx) {
-		pxy_thrmgr_remove_node(mctx, &ctx->thr[thridx]->mctx);
+		pxy_thrmgr_remove_mctx(mctx, &ctx->thr[thridx]->mctx);
 	} else {
 		if (mctx->parent_ctx) {
 			log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>> pxy_thrmgr_detach_e2(): child ctx has an active parent, will not remove from the list, fd=%d, fd2=%d <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n",

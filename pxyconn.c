@@ -2304,8 +2304,10 @@ pxy_get_event_name(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	} else if (bev == ctx->e2dst.bev) {
 		return bev_names[3];
 	} else if (bev == NULL) {
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>+++++++++++++++++++++++++++++++++++ pxy_get_event_name: event_name == NULL <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n");
 		return bev_names[4];
 	} else {
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>+++++++++++++++++++++++++++++++++++ pxy_get_event_name: event_name == UNKWN <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n");
 		return bev_names[5];
 	}
 }
@@ -2329,21 +2331,6 @@ pxy_bev_readcb(struct bufferevent *bev, void *arg)
 	
 	ctx->mctx->access_time = time(NULL);
 	
-//	char event_name[6] = "\0\0\0\0\0\0";
-//	if (bev == ctx->src.bev) {
-//		strcpy(event_name, "src");
-//	} else if (bev == ctx->dst.bev) {
-//		strcpy(event_name, "dst");
-//	} else if (bev == ctx->e2src.bev) {
-//		strcpy(event_name, "e2src");
-//	} else if (bev == ctx->e2dst.bev) {
-//		strcpy(event_name, "e2dst");
-//	} else if (bev == NULL) {
-//		strcpy(event_name, "NULL");
-//	} else {
-//		strcpy(event_name, "UNKWN");
-//	}
-
 	char *event_name = pxy_get_event_name(bev, ctx);
 
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: %s, fd=%d\n", event_name, ctx->fd);
@@ -2364,32 +2351,11 @@ pxy_bev_readcb(struct bufferevent *bev, void *arg)
 				goto leave;
 			}
 
-//			struct sockaddr_in e2listener_addr;
-//			socklen_t e2listener_len;
-//
-//			e2listener_len = sizeof(e2listener_addr);
-//			
-//			// @todo Check if the fd is the same for all children
-//			if (getsockname(ctx->mctx->fd2, &e2listener_addr, &e2listener_len) < 0) {
-//				perror("getsockname");
-//				log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: %s, getsockname ERROR= %s, fd=%d ,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,, fd2=%d\n", event_name, strerror(errno), ctx->fd, ctx->mctx->fd2);
-//				// @todo If getsockname() fails, terminate the connection instead?
-//				// Leaving the packet in the buffer will eventually time out and drop the connection
-//				goto leave;
-//			}
-//
-//			char *addr = inet_ntoa(e2listener_addr.sin_addr);
-//			int addr_len = strlen(addr) + 5 + 3 + 1;
-//
-//			char *pxy_dst = malloc(addr_len);
-//			snprintf(pxy_dst, addr_len, "[%s]:%d", addr, (int) ntohs(e2listener_addr.sin_port));
-
 			char *custom_key = "\r\nSSLproxy-Addr: ";
 			size_t custom_field_len = strlen(custom_key) + strlen(ctx->mctx->pxy_dst) + 1;
 
 			char *custom_field = malloc(custom_field_len);
 			snprintf(custom_field, custom_field_len, "%s%s", custom_key, ctx->mctx->pxy_dst);
-//			free(pxy_dst);
 			
 			log_dbg_level_printf(LOG_DBG_MODE_FINER, ">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: custom_field= %s\n", custom_field);
 			
@@ -2451,7 +2417,7 @@ pxy_bev_readcb(struct bufferevent *bev, void *arg)
 			if (evbuffer_get_length(outbuf) >= OUTBUF_LIMIT) {
 				/* temporarily disable data source;
 				 * set an appropriate watermark. */
-				log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: setwatermark for e2src w, disable src r <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< WATERMARK");
+				log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: setwatermark for e2src w, disable src r <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< WATERMARK\n");
 				bufferevent_setwatermark(ctx->e2src.bev, EV_WRITE, OUTBUF_LIMIT/2, OUTBUF_LIMIT);
 				bufferevent_disable(ctx->src.bev, EV_READ);
 			}
@@ -2496,7 +2462,7 @@ pxy_bev_readcb(struct bufferevent *bev, void *arg)
 			if (evbuffer_get_length(outbuf) >= OUTBUF_LIMIT) {
 				/* temporarily disable data source;
 				 * set an appropriate watermark. */
-				log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: setwatermark for src w, disable e2src r <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< WATERMARK");
+				log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: setwatermark for src w, disable e2src r <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< WATERMARK\n");
 				bufferevent_setwatermark(ctx->src.bev, EV_WRITE, OUTBUF_LIMIT/2, OUTBUF_LIMIT);
 				bufferevent_disable(ctx->e2src.bev, EV_READ);
 			}
@@ -2531,20 +2497,6 @@ pxy_bev_readcb_e2(struct bufferevent *bev, void *arg)
 	
 	evutil_socket_t pfd = ctx->mctx->parent_ctx ? ctx->mctx->parent_ctx->fd : -1;
 
-//	char event_name[6] = "\0\0\0\0\0\0";
-//	if (bev == ctx->src.bev) {
-//		strcpy(event_name, "src");
-//	} else if (bev == ctx->dst.bev) {
-//		strcpy(event_name, "dst");
-//	} else if (bev == ctx->e2src.bev) {
-//		strcpy(event_name, "e2src");
-//	} else if (bev == ctx->e2dst.bev) {
-//		strcpy(event_name, "e2dst");
-//	} else if (bev == NULL) {
-//		strcpy(event_name, "NULL");
-//	} else {
-//		strcpy(event_name, "UNKWN");
-//	}
 	char *event_name = pxy_get_event_name(bev, ctx);
 	
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>....................... pxy_bev_readcb_e2: %s, fd=%d\n", event_name, ctx->fd);
@@ -2635,7 +2587,7 @@ pxy_bev_readcb_e2(struct bufferevent *bev, void *arg)
 				if (evbuffer_get_length(outbuf) >= OUTBUF_LIMIT) {
 					/* temporarily disable data source;
 					 * set an appropriate watermark. */
-					log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>....................... pxy_bev_readcb_e2: setwatermark for dst w, disable e2dst r <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< WATERMARK");
+					log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>....................... pxy_bev_readcb_e2: setwatermark for dst w, disable e2dst r <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< WATERMARK\n");
 					bufferevent_setwatermark(ctx->dst.bev, EV_WRITE, OUTBUF_LIMIT/2, OUTBUF_LIMIT);
 					bufferevent_disable(ctx->e2dst.bev, EV_READ);
 				}
@@ -2681,7 +2633,7 @@ pxy_bev_readcb_e2(struct bufferevent *bev, void *arg)
 			if (evbuffer_get_length(outbuf) >= OUTBUF_LIMIT) {
 				/* temporarily disable data source;
 				 * set an appropriate watermark. */
-				log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>....................... pxy_bev_readcb_e2: setwatermark for e2dst w, disable dst r <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< WATERMARK");
+				log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>....................... pxy_bev_readcb_e2: setwatermark for e2dst w, disable dst r <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< WATERMARK\n");
 				bufferevent_setwatermark(ctx->e2dst.bev, EV_WRITE, OUTBUF_LIMIT/2, OUTBUF_LIMIT);
 				bufferevent_disable(ctx->dst.bev, EV_READ);
 			}
@@ -2797,9 +2749,18 @@ pxy_connected_enable(struct bufferevent *bev, pxy_conn_ctx_t *ctx, char *event_n
 			dst->bev = NULL;
 		}
 
-		// @attention Defer evcl2 creation until parent init is complete, otherwise (1) causes multithreading issues (proxy_listener_acceptcb running on a different
+		// @attention Defer E2 setup and evcl2 creation until parent init is complete, otherwise (1) causes multithreading issues (proxy_listener_acceptcb running on a different
 		// thread from the conn, and we only have thrmgr mutex), and (2) we need to clean up less upon errors.
 		// evcl2 uses the evbase of the mctx thread, otherwise we would get multithreading issues.
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>=================================== pxy_connected_enable: SETTING UP E2, fd=%d, lctx->clisock=%d\n", ctx->fd, ctx->mctx->lctx->clisock);
+	
+		evutil_socket_t fd2;
+		if ((fd2 = privsep_client_opensock_e2(ctx->mctx->lctx->clisock, ctx->mctx->lctx->spec)) == -1) {
+			log_err_printf("Error opening socket: %s (%i)\n", strerror(errno), errno);
+			return;
+		}
+		ctx->mctx->fd2 = fd2;
+
 		struct evconnlistener *evcl2 = evconnlistener_new(ctx->mctx->thr->evbase, proxy_listener_acceptcb_e2, ctx->mctx, LEV_OPT_CLOSE_ON_FREE, 1024, ctx->mctx->fd2);
 		if (!evcl2) {
 			log_err_printf("Error creating evconnlistener e2: %s, fd=%d, fd2=%d <<<<<<\n", strerror(errno), ctx->mctx->fd, ctx->mctx->fd2);
@@ -2834,14 +2795,7 @@ pxy_connected_enable(struct bufferevent *bev, pxy_conn_ctx_t *ctx, char *event_n
 		ctx->mctx->pxy_dst = malloc(addr_len);
 		snprintf(ctx->mctx->pxy_dst, addr_len, "[%s]:%d", addr, (int) ntohs(e2listener_addr.sin_port));
 
-//		char *custom_key = "\r\nSSLproxy-Addr: ";
-//		size_t custom_field_len = strlen(custom_key) + strlen(ctx->mctx->pxy_dst) + 1;
-//
-//		char *custom_field = malloc(custom_field_len);
-//		snprintf(custom_field, custom_field_len, "%s%s", custom_key, ctx->mctx->pxy_dst);
-//		free(ctx->mctx->pxy_dst);
-
-		log_dbg_level_printf(LOG_DBG_MODE_FINER, ">>>>>=================================== pxy_connected_enable: pxy_dst= %s, fd=%d, fd2=%d\n", ctx->mctx->pxy_dst, ctx->mctx->fd, ctx->mctx->fd2);
+		log_dbg_level_printf(LOG_DBG_MODE_FINER, ">>>>>=================================== pxy_connected_enable: ENABLE src, pxy_dst= %s, fd=%d, fd2=%d\n", ctx->mctx->pxy_dst, ctx->mctx->fd, ctx->mctx->fd2);
 
 		// Now open the gates
 		bufferevent_enable(ctx->src.bev, EV_READ|EV_WRITE);
@@ -2886,40 +2840,16 @@ pxy_bev_writecb(struct bufferevent *bev, void *arg)
 
 	ctx->mctx->access_time = time(NULL);
 	
-//	char event_name[6] = "\0\0\0\0\0\0";
-//	if (bev == ctx->src.bev) {
-//		strcpy(event_name, "src");
-//	} else if (bev == ctx->dst.bev) {
-//		strcpy(event_name, "dst");
-//	} else if (bev == ctx->e2src.bev) {
-//		strcpy(event_name, "e2src");
-//	} else if (bev == ctx->e2dst.bev) {
-//		strcpy(event_name, "e2dst");
-//	} else if (bev == NULL) {
-//		strcpy(event_name, "NULL");
-//	} else {
-//		strcpy(event_name, "UNKWN");
-//		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>+++++++++++++++++++++++++++++++++++ pxy_bev_writecb: event_name == UNKWN <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< NOT INIT\n");
-//		goto leave;
-//	}
 	char *event_name = pxy_get_event_name(bev, ctx);
 	
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>+++++++++++++++++++++++++++++++++++ pxy_bev_writecb: %s, %d\n", event_name, ctx->fd);
-
-//	// @todo Remove this
-//	// XXX: For Squid's Zero Sized Reply
-//	if ((bev == ctx->dst.bev) && !ctx->dst_connected) {
-//		// @attention Do not call pxy_bev_eventcb() instead, that would cause deadlock? We don't use locks anymore.
-//		//pxy_bev_eventcb(bev, BEV_EVENT_CONNECTED, ctx);
-//		pxy_connected_enable(bev, ctx, event_name);
-//	}
 
 	if ((bev==ctx->src.bev) || (bev==ctx->e2src.bev)) {
 		pxy_conn_desc_t *other = (bev==ctx->src.bev) ? &ctx->e2src : &ctx->src;
 		if (other->bev && !(bufferevent_get_enabled(other->bev) & EV_READ)) {
 			/* data source temporarily disabled;
 			 * re-enable and reset watermark to 0. */
-			log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>+++++++++++++++++++++++++++++++++++ pxy_bev_writecb: remove watermark for w, disable r <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< WATERMARK");
+			log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>+++++++++++++++++++++++++++++++++++ pxy_bev_writecb: remove watermark for w, enable r <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< WATERMARK\n");
 			bufferevent_setwatermark(bev, EV_WRITE, 0, 0);
 			bufferevent_enable(other->bev, EV_READ);
 		}
@@ -2930,7 +2860,6 @@ pxy_bev_writecb(struct bufferevent *bev, void *arg)
 		rv = pxy_conn_free(ctx);
 	}
 
-leave:
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>+++++++++++++++++++++++++++++++++++ pxy_bev_writecb: EXIT\n");
 	if (rv == 2) {
 		log_dbg_level_printf(LOG_DBG_MODE_FINER, ">>>>>+++++++++++++++++++++++++++++++++++ pxy_bev_writecb: EXIT FREE META CTX\n");
@@ -2959,20 +2888,6 @@ pxy_bev_writecb_e2(struct bufferevent *bev, void *arg)
 
 	pxy_conn_ctx_t *parent_ctx = ctx->mctx->parent_ctx;
 
-//	char event_name[6] = "\0\0\0\0\0\0";
-//	if (bev == ctx->src.bev) {
-//		strcpy(event_name, "src");
-//	} else if (bev == ctx->dst.bev) {
-//		strcpy(event_name, "dst");
-//	} else if (bev == ctx->e2src.bev) {
-//		strcpy(event_name, "e2src");
-//	} else if (bev == ctx->e2dst.bev) {
-//		strcpy(event_name, "e2dst");
-//	} else if (bev == NULL) {
-//		strcpy(event_name, "NULL");
-//	} else {
-//		strcpy(event_name, "UNKWN");
-//	}
 	char *event_name = pxy_get_event_name(bev, ctx);
 	
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>??????????????????????????? pxy_bev_writecb_e2: %s, %d\n", event_name, ctx->fd);
@@ -2994,7 +2909,7 @@ pxy_bev_writecb_e2(struct bufferevent *bev, void *arg)
 	if (other->bev && !(bufferevent_get_enabled(other->bev) & EV_READ)) {
 		/* data source temporarily disabled;
 		 * re-enable and reset watermark to 0. */
-		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>??????????????????????????? pxy_bev_writecb_e2: remove watermark for w, disable r <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< WATERMARK");
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>??????????????????????????? pxy_bev_writecb_e2: remove watermark for w, enable r <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< WATERMARK\n");
 		bufferevent_setwatermark(bev, EV_WRITE, 0, 0);
 		bufferevent_enable(other->bev, EV_READ);
 	}
@@ -3004,7 +2919,6 @@ pxy_bev_writecb_e2(struct bufferevent *bev, void *arg)
 		rv = pxy_conn_free_e2(ctx, 0);
 	}
 	
-leave:
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>??????????????????????????? pxy_bev_writecb_e2: EXIT\n");
 	if (rv == 2) {
 		log_dbg_level_printf(LOG_DBG_MODE_FINER, ">>>>>??????????????????????????? pxy_bev_writecb_e2: EXIT FREE META CTX\n");
@@ -3039,22 +2953,6 @@ pxy_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 	
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>=================================== pxy_bev_eventcb ENTER fd=%d\n", ctx->fd);
 
-//	char event_name[6] = "\0\0\0\0\0\0";
-//	if (bev == ctx->src.bev) {
-//		strcpy(event_name, "src");
-//	} else if (bev == ctx->dst.bev) {
-//		strcpy(event_name, "dst");
-//	} else if (bev == ctx->e2src.bev) {
-//		strcpy(event_name, "e2src");
-//	} else if (bev == ctx->e2dst.bev) {
-//		strcpy(event_name, "e2dst");
-//	} else if (bev == NULL) {
-//		strcpy(event_name, "NULL");
-//	} else {
-//		strcpy(event_name, "UNKWN");
-//		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>=================================== pxy_bev_eventcb: event_name == UNKWN <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< NOT INIT\n");
-//		goto leave;
-//	}
 	char *event_name = pxy_get_event_name(bev, ctx);
 
 	if (events & BEV_EVENT_CONNECTED) {
@@ -3253,20 +3151,6 @@ pxy_bev_eventcb_e2(struct bufferevent *bev, short events, void *arg)
 
 	ctx->mctx->access_time = time(NULL);
 
-//	char event_name[6] = "\0\0\0\0\0\0";
-//	if (bev == ctx->src.bev) {
-//		strcpy(event_name, "src");
-//	} else if (bev == ctx->dst.bev) {
-//		strcpy(event_name, "dst");
-//	} else if (bev == ctx->e2src.bev) {
-//		strcpy(event_name, "e2src");
-//	} else if (bev == ctx->e2dst.bev) {
-//		strcpy(event_name, "e2dst");
-//	} else if (bev == NULL) {
-//		strcpy(event_name, "NULL");
-//	} else {
-//		strcpy(event_name, "UNKWN");
-//	}
 	char *event_name = pxy_get_event_name(bev, ctx);
 
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>--------------------- pxy_bev_eventcb_e2: ENTER %s fd=%d\n", event_name, ctx->fd);
