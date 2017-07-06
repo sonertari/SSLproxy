@@ -421,8 +421,8 @@ pxy_thrmgr_print_thr_info(pxy_thr_ctx_t *ctx)
 		int count = 0;
 		while (mctx) {
 			char *host, *port;
-			if (sys_sockaddr_str((struct sockaddr *)&mctx->addr, mctx->addrlen, &host, &port) != 0) {
-				log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>> pxy_thrmgr_print_thr_info(): sys_sockaddr_str FAILED\n");
+			if (mctx->addrlen == 0 || (sys_sockaddr_str((struct sockaddr *)&mctx->addr, mctx->addrlen, &host, &port) != 0)) {
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>> pxy_thrmgr_print_thr_info(): Cannot get host:port: thr=%d, cont=%d, fd=%d, fd2=%d\n", ctx->thridx, count, mctx->fd, mctx->fd2);
 				log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>> pxy_thrmgr_print_thr_info(): thr=%d, cont=%d, fd=%d, fd2=%d, src=%d, e2src=%d, dst=%d, e2dst=%d, dst2=%d, p=%d-%d-%d c=%d-%d, init=%d, pe=%d ce=%d tcc=%d, time=%lld\n",
 						ctx->thridx, count, mctx->fd, mctx->fd2, mctx->src_fd, mctx->e2src_fd, mctx->dst_fd, mctx->e2dst_fd, mctx->dst2_fd,
 						mctx->src_eof, mctx->e2src_eof, mctx->dst_eof, mctx->e2dst_eof, mctx->dst2_eof, mctx->initialized, mctx->parent_ctx ? 1:0, mctx->child_ctx ? 1:0, mctx->child_count,(long int) now - mctx->access_time);

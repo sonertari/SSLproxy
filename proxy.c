@@ -199,7 +199,7 @@ proxy_listener_acceptcb(UNUSED struct evconnlistener *listener,
 {
 	proxy_listener_ctx_t *lctx = arg;
 
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! proxy_listener_acceptcb: <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< LOCK\n");
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! proxy_listener_acceptcb: fd=%d <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< ENTER\n", fd);
 			
 	char *host, *port;
 	if (sys_sockaddr_str(peeraddr, peeraddrlen, &host, &port) != 0) {
@@ -214,18 +214,10 @@ proxy_listener_acceptcb(UNUSED struct evconnlistener *listener,
 	mctx->lctx = lctx;
 	mctx->fd = fd;
 
-//	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! proxy_listener_acceptcb: SETTING UP E2, fd=%d, lctx->clisock=%d\n", fd, lctx->clisock);
-//	
-//	// @attention Get fd2 before calling pxy_conn_setup() for parent ctx, because the src readcb uses fd2 to build the header line for SSL proxy address
-//	evutil_socket_t fd2;
-//	if ((fd2 = privsep_client_opensock_e2(lctx->clisock, lctx->spec)) == -1) {
-//		log_err_printf("Error opening socket: %s (%i)\n", strerror(errno), errno);
-//		return;
-//	}
-//	mctx->fd2 = fd2;
-
 	pxy_conn_ctx_t *parent_ctx = pxy_conn_setup(fd, peeraddr, peeraddrlen, mctx);
 	mctx->parent_ctx = parent_ctx;
+
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! proxy_listener_acceptcb: fd=%d <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< EXIT\n", fd);
 }
 
 /*

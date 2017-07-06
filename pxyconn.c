@@ -2047,11 +2047,13 @@ pxy_conn_free_e2(pxy_conn_ctx_t *ctx, int free)
 		}
 
 		if (!ctx->mctx->parent_ctx && !ctx->mctx->child_ctx) {
-			log_dbg_level_printf(LOG_DBG_MODE_FINE, ">############################# pxy_conn_free_e2: FREEING evcl2, pfd=%d, fd2=%d, cfd=%d\n", pfd, ctx->mctx->fd2, fd);
 			if (ctx->mctx->evcl2) {
+				log_dbg_level_printf(LOG_DBG_MODE_FINE, ">############################# pxy_conn_free_e2: FREEING evcl2, pfd=%d, fd2=%d, cfd=%d\n", pfd, ctx->mctx->fd2, fd);
+				// @todo Should we use evconnlistener_get_fd() instead of ctx->mctx->fd2?
+				//evutil_closesocket(evconnlistener_get_fd(ctx->mctx->evcl2));
 				evconnlistener_free(ctx->mctx->evcl2);
+				evutil_closesocket(ctx->mctx->fd2);
 			}
-			evutil_closesocket(ctx->mctx->fd2);
 
 			log_dbg_level_printf(LOG_DBG_MODE_FINER, ">############################# pxy_conn_free_e2: RELEASING META CTX, fd=%d, parent fd=%d\n", fd, pfd);
 			rv = 2;
@@ -2132,11 +2134,11 @@ pxy_conn_free(pxy_conn_ctx_t *ctx)
 		int rv = 1;
 		ctx->mctx->parent_ctx = NULL;
 		if (!ctx->mctx->child_ctx) {
-			log_dbg_level_printf(LOG_DBG_MODE_FINE, ">############################# pxy_conn_free: FREEING evcl2, pfd=%d, fd2=%d, cfd=%d\n", fd, ctx->mctx->fd2, cfd);
 			if (ctx->mctx->evcl2) {
+				log_dbg_level_printf(LOG_DBG_MODE_FINE, ">############################# pxy_conn_free: FREEING evcl2, pfd=%d, fd2=%d, cfd=%d\n", fd, ctx->mctx->fd2, cfd);
 				evconnlistener_free(ctx->mctx->evcl2);
+				evutil_closesocket(ctx->mctx->fd2);
 			}
-			evutil_closesocket(ctx->mctx->fd2);
 
 			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">############################# pxy_conn_free: RELEASING META CTX, fd=%d, child fd=%d\n", fd, cfd);
 			rv = 2;
@@ -2175,45 +2177,45 @@ pxy_child_conn_free(pxy_conn_ctx_t *ctx)
 
 	pxy_conn_desc_t *dst = &ctx->dst;
 	if (dst->bev) {
-		log_dbg_level_printf(LOG_DBG_MODE_FINER, ">############################# pxy_conn_free_e2: bufferevent_free_and_close_fd dst->bev, fd=%d\n", bufferevent_getfd(dst->bev));
+		log_dbg_level_printf(LOG_DBG_MODE_FINER, ">############################# pxy_child_conn_free: bufferevent_free_and_close_fd dst->bev, fd=%d\n", bufferevent_getfd(dst->bev));
 		bufferevent_free_and_close_fd(dst->bev, ctx);
 		dst->bev = NULL;
 	}
 
 	pxy_conn_desc_t *e2dst = &ctx->e2dst;
 	if (e2dst->bev) {
-		log_dbg_level_printf(LOG_DBG_MODE_FINER, ">############################# pxy_conn_free_e2: bufferevent_free_and_close_fd e2dst->bev, fd=%d\n", bufferevent_getfd(e2dst->bev));
+		log_dbg_level_printf(LOG_DBG_MODE_FINER, ">############################# pxy_child_conn_free: bufferevent_free_and_close_fd e2dst->bev, fd=%d\n", bufferevent_getfd(e2dst->bev));
 		bufferevent_free_and_close_fd_e2(e2dst->bev, ctx);
 		e2dst->bev = NULL;
 	}
 
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">############################# pxy_conn_free_e2: remove_node\n");
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">############################# pxy_child_conn_free: remove_node\n");
 	remove_child_ctx(ctx, &ctx->mctx->child_ctx);
 
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">############################# pxy_conn_free_e2: CHECKING\n");
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">############################# pxy_child_conn_free: CHECKING\n");
 	pxy_conn_ctx_t *current_child_ctx = ctx->mctx->child_ctx;
 	while (current_child_ctx) {
-		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">############################# pxy_conn_free_e2: NOT NULL CHILD, fd=%d\n", current_child_ctx->fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">############################# pxy_child_conn_free: NOT NULL CHILD, fd=%d\n", current_child_ctx->fd);
 		current_child_ctx = current_child_ctx->child_ctx;
 	}
 
 	if (!ctx->mctx->parent_ctx && !ctx->mctx->child_ctx) {
-		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">############################# pxy_conn_free_e2: FREEING evcl2, pfd=%d, fd2=%d, cfd=%d\n", pfd, ctx->mctx->fd2, fd);
 		if (ctx->mctx->evcl2) {
+			log_dbg_level_printf(LOG_DBG_MODE_FINE, ">############################# pxy_child_conn_free: FREEING evcl2, pfd=%d, fd2=%d, cfd=%d\n", pfd, ctx->mctx->fd2, fd);
 			evconnlistener_free(ctx->mctx->evcl2);
+			evutil_closesocket(ctx->mctx->fd2);
 		}
-		evutil_closesocket(ctx->mctx->fd2);
 
-		log_dbg_level_printf(LOG_DBG_MODE_FINER, ">############################# pxy_conn_free_e2: RELEASING META CTX, fd=%d, parent fd=%d\n", fd, pfd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINER, ">############################# pxy_child_conn_free: RELEASING META CTX, fd=%d, parent fd=%d\n", fd, pfd);
 	} else {
-		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">############################# pxy_conn_free_e2: CANNOT FREE evcl2, pfd=%d, fd2=%d, cfd=%d\n", pfd, ctx->mctx->fd2, fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">############################# pxy_child_conn_free: CANNOT FREE evcl2, pfd=%d, fd2=%d, cfd=%d\n", pfd, ctx->mctx->fd2, fd);
 	}
 
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">############################# pxy_conn_free_e2: FREEING CTX, fd=%d, parent fd=%d\n", fd, pfd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">############################# pxy_child_conn_free: FREEING CTX, fd=%d, parent fd=%d\n", fd, pfd);
 
 	pxy_conn_ctx_free_e2(ctx);
 
-	log_dbg_level_printf(LOG_DBG_MODE_FINER, ">############################# pxy_conn_free_e2: FREED CTX, fd=%d, parent fd=%d\n", fd, pfd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINER, ">############################# pxy_child_conn_free: FREED CTX, fd=%d, parent fd=%d\n", fd, pfd);
 }
 
 void
@@ -2249,11 +2251,11 @@ pxy_parent_conn_free(pxy_conn_ctx_t *ctx)
 
 	ctx->mctx->parent_ctx = NULL;
 	if (!ctx->mctx->child_ctx) {
-		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">############################# pxy_parent_conn_free: FREEING evcl2, pfd=%d, fd2=%d, cfd=%d\n", fd, ctx->mctx->fd2, cfd);
 		if (ctx->mctx->evcl2) {
+			log_dbg_level_printf(LOG_DBG_MODE_FINE, ">############################# pxy_parent_conn_free: FREEING evcl2, pfd=%d, fd2=%d, cfd=%d\n", fd, ctx->mctx->fd2, cfd);
 			evconnlistener_free(ctx->mctx->evcl2);
+			evutil_closesocket(ctx->mctx->fd2);
 		}
-		evutil_closesocket(ctx->mctx->fd2);
 
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">############################# pxy_parent_conn_free: RELEASING META CTX, fd=%d, child fd=%d\n", fd, cfd);
 	} else {
@@ -2749,6 +2751,10 @@ pxy_connected_enable(struct bufferevent *bev, pxy_conn_ctx_t *ctx, char *event_n
 			dst->bev = NULL;
 		}
 
+		// Child connections will use the addr info obtained by the parent connection
+		ctx->mctx->addrlen = ctx->addrlen;
+		memcpy(&ctx->mctx->addr, &ctx->addr, ctx->addrlen);
+
 		// @attention Defer E2 setup and evcl2 creation until parent init is complete, otherwise (1) causes multithreading issues (proxy_listener_acceptcb running on a different
 		// thread from the conn, and we only have thrmgr mutex), and (2) we need to clean up less upon errors.
 		// evcl2 uses the evbase of the mctx thread, otherwise we would get multithreading issues.
@@ -2757,9 +2763,10 @@ pxy_connected_enable(struct bufferevent *bev, pxy_conn_ctx_t *ctx, char *event_n
 		evutil_socket_t fd2;
 		if ((fd2 = privsep_client_opensock_e2(ctx->mctx->lctx->clisock, ctx->mctx->lctx->spec)) == -1) {
 			log_err_printf("Error opening socket: %s (%i)\n", strerror(errno), errno);
-			return;
+			return 0;
 		}
 		ctx->mctx->fd2 = fd2;
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>=================================== pxy_connected_enable: Opened fd2, fd=%d, fd2=%d\n", ctx->mctx->fd, ctx->mctx->fd2);
 
 		struct evconnlistener *evcl2 = evconnlistener_new(ctx->mctx->thr->evbase, proxy_listener_acceptcb_e2, ctx->mctx, LEV_OPT_CLOSE_ON_FREE, 1024, ctx->mctx->fd2);
 		if (!evcl2) {
@@ -3580,9 +3587,9 @@ pxy_fd_readcb(MAYBE_UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 	}
 #endif /* !OPENSSL_NO_TLSEXT */
 
-	// Child connections will use the addr info obtained by the parent connection
-	ctx->mctx->addrlen = ctx->addrlen;
-	memcpy(&ctx->mctx->addr, &ctx->addr, ctx->addrlen);
+//	// Child connections will use the addr info obtained by the parent connection
+//	ctx->mctx->addrlen = ctx->addrlen;
+//	memcpy(&ctx->mctx->addr, &ctx->addr, ctx->addrlen);
 
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_fd_readcb() pxy_conn_connect\n");
 	pxy_conn_connect(ctx);
