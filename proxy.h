@@ -66,13 +66,17 @@ typedef struct proxy_conn_meta_ctx {
 	unsigned int src_eof : 1;
 	unsigned int e2src_eof : 1;
 	unsigned int dst_eof : 1;
-		
-	evutil_socket_t fd2;
-	struct evconnlistener *evcl2;
-	char *pxy_dst;
 
-	pxy_conn_ctx_t *child_ctx;
-	pxy_conn_child_info_t *child_info;
+	// Fd of the listener event for the children
+	evutil_socket_t child_fd;
+	struct evconnlistener *child_evcl;
+	// SSL proxy return address: The IP:port address the children are listening to
+	char *child_addr;
+
+	// Child list of the conn
+	pxy_conn_ctx_t *child_list;
+	// Used to print child info, never deleted until the conn is freed
+	pxy_conn_child_info_t *child_info_list;
 
 	evutil_socket_t e2dst_fd;
 	evutil_socket_t dst2_fd;
@@ -80,6 +84,7 @@ typedef struct proxy_conn_meta_ctx {
 	unsigned int e2dst_eof : 1;
 	unsigned int dst2_eof : 1;
 
+	// Whether the conn has any child yet, set upon entry to child listener cb
 	unsigned int initialized : 1;
 	unsigned int child_count;
 
@@ -89,11 +94,17 @@ typedef struct proxy_conn_meta_ctx {
 	struct sockaddr_storage addr;
 	socklen_t addrlen;
 
+	// Index of the thread the conn is attached to
 	int thridx;
 
+	// Last access time, to determine expired conns
+	// Updated on entry to callback functions
 	time_t access_time;
+	
+	// Per-thread conn list
 	proxy_conn_meta_ctx_t *next;
-	proxy_conn_meta_ctx_t *delete;
+	// Expired conns are link-listed using this pointer
+	proxy_conn_meta_ctx_t *next_expired;
 } proxy_conn_meta_ctx_t;
 
 proxy_ctx_t * proxy_new(opts_t *, int) NONNULL(1) MALLOC;
@@ -102,11 +113,6 @@ void proxy_loopbreak(proxy_ctx_t *) NONNULL(1);
 void proxy_free(proxy_ctx_t *) NONNULL(1);
 void
 proxy_listener_errorcb(struct evconnlistener *listener, UNUSED void *ctx);
-void
-proxy_listener_acceptcb_e2(struct evconnlistener *listener,
-                        evutil_socket_t fd,
-                        struct sockaddr *peeraddr, int peeraddrlen,
-                        void *arg);
 
 #endif /* !PROXY_H */
 

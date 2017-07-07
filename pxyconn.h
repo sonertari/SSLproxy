@@ -40,6 +40,7 @@
 #include <event2/event.h>
 #include <event2/util.h>
 
+/* single socket bufferevent descriptor */
 typedef struct pxy_conn_desc {
 	struct bufferevent *bev;
 	SSL *ssl;
@@ -55,44 +56,20 @@ typedef struct pxy_conn_child_info {
 
 	unsigned int freed : 1;
 	
-	unsigned int child_count;
+	unsigned int child_idx;
 	pxy_conn_child_info_t *next;
 } pxy_conn_child_info_t;
-
-#ifdef HAVE_LOCAL_PROCINFO
-/* local process data - filled in iff pid != -1 */
-typedef struct pxy_conn_lproc_desc {
-	struct sockaddr_storage srcaddr;
-	socklen_t srcaddrlen;
-
-	pid_t pid;
-	uid_t uid;
-	gid_t gid;
-
-	/* derived log strings */
-	char *exec_path;
-	char *user;
-	char *group;
-} pxy_conn_lproc_desc_t;
-#endif /* HAVE_LOCAL_PROCINFO */
 
 /* actual proxy connection state consisting of two connection descriptors,
  * connection-wide state and the specs and options */
 typedef struct pxy_conn_ctx {
 	/* per-connection state */
 	struct pxy_conn_desc src;
-	unsigned int src_eof : 1;
 	struct pxy_conn_desc dst;
-	unsigned int dst_eof : 1;
-
 	struct pxy_conn_desc e2src;
-	unsigned int e2src_eof : 1;
-
 	struct pxy_conn_desc e2dst;
-	unsigned int e2dst_eof : 1;
 	
-	struct pxy_conn_ctx *parent_ctx;
-	struct pxy_conn_ctx *child_ctx;
+	struct pxy_conn_ctx *next_child_ctx;
 	pxy_conn_child_info_t *child_info;
 
 	/* status flags */
@@ -170,7 +147,7 @@ pxy_conn_setup(evutil_socket_t, struct sockaddr *, int,
                     proxy_conn_meta_ctx_t *)
                     NONNULL(2,4);
 pxy_conn_ctx_t *
-pxy_conn_setup_e2(evutil_socket_t, proxy_conn_meta_ctx_t *) NONNULL(2);
+pxy_conn_setup_child(evutil_socket_t, proxy_conn_meta_ctx_t *) NONNULL(2);
 void
 pxy_all_conn_free(proxy_conn_meta_ctx_t *);
 void

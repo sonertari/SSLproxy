@@ -64,7 +64,7 @@ void pxy_thrmgr_free(pxy_thrmgr_ctx_t *) NONNULL(1);
 
 int pxy_thrmgr_attach(pxy_thrmgr_ctx_t *, struct event_base **,
                       struct evdns_base **, proxy_conn_meta_ctx_t *) WUNRES;
-void pxy_thrmgr_attach_e2(pxy_thrmgr_ctx_t *ctx, int thridx);
+void pxy_thrmgr_attach_child(pxy_thrmgr_ctx_t *ctx, int thridx);
 void pxy_thrmgr_detach(pxy_thrmgr_ctx_t *, int, proxy_conn_meta_ctx_t *);
 void pxy_thrmgr_detach_e2(pxy_thrmgr_ctx_t *, int, proxy_conn_meta_ctx_t *);
 

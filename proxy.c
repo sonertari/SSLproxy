@@ -101,61 +101,19 @@ proxy_listener_ctx_free(proxy_listener_ctx_t *ctx)
 /*
  * Callback for error events on the socket listener bufferevent.
  */
-// @todo Make this static
+// @todo Make this static?
 //static void
 void
 proxy_listener_errorcb(struct evconnlistener *listener, UNUSED void *ctx)
 {
 	proxy_conn_meta_ctx_t *mctx = ctx;
 	
-	log_dbg_level_printf(LOG_DBG_MODE_FINE, ">############################# proxy_listener_errorcb: ERROR, fd2=%d\n", mctx ? mctx->fd2 : -1);
+	log_dbg_level_printf(LOG_DBG_MODE_FINE, ">############################# proxy_listener_errorcb: ERROR, fd2=%d\n", mctx ? mctx->child_fd : -1);
 	struct event_base *evbase = evconnlistener_get_base(listener);
 	int err = EVUTIL_SOCKET_ERROR();
 	log_err_printf("Error %d on listener: %s\n", err,
 	               evutil_socket_error_to_string(err));
 	event_base_loopbreak(evbase);
-}
-
-/*
- * Callback for accept events on the socket listener bufferevent.
- */
-// @todo Make this static
-//static void
-void
-proxy_listener_acceptcb_e2(UNUSED struct evconnlistener *listener,
-                        evutil_socket_t fd,
-                        struct sockaddr *peeraddr, int peeraddrlen,
-                        void *arg)
-{
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>------------------------------------------------------------------------------------ proxy_listener_acceptcb_e2() ENTER\n");
-
-	proxy_conn_meta_ctx_t *mctx = arg;
-	if (!mctx) {
-		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>------------------------------------------------------------------------------------ proxy_listener_acceptcb_e2: NULL mctx <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< GONE\n");
-		return;
-	} else {
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>------------------------------------------------------------------------------------ proxy_listener_acceptcb_e2: ENTER 1 fd=%d, fd2=%d\n", mctx->fd, mctx->fd2);
-	}
-
-	mctx->access_time = time(NULL);
-
-	evutil_socket_t pfd = mctx->parent_ctx ? mctx->parent_ctx->fd : -1;
-
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>------------------------------------------------------------------------------------ proxy_listener_acceptcb_e2(): child fd=%d, pfd=%d\n", fd, pfd);
-
-	char *host, *port;
-	if (sys_sockaddr_str(peeraddr, peeraddrlen, &host, &port) != 0) {
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>------------------------------------------------------------------------------------ proxy_listener_acceptcb_e2(): PEER failed\n");
-	} else {
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>------------------------------------------------------------------------------------ proxy_listener_acceptcb_e2(): PEER [%s]:%s <<<<< child fd=%d, pfd=%d\n", host, port, fd, pfd);
-		free(host);
-		free(port);
-	}
-
-	// @todo Check the return value of pxy_conn_setup_e2()
-	pxy_conn_setup_e2(fd, mctx);
-
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>------------------------------------------------------------------------------------ proxy_listener_acceptcb_e2(): EXIT\n");
 }
 
 static proxy_conn_meta_ctx_t *
@@ -191,6 +149,9 @@ pxy_conn_meta_ctx_new()
 	return ctx;
 }
 
+/*
+ * Callback for accept events on the socket listener bufferevent.
+ */
 static void
 proxy_listener_acceptcb(UNUSED struct evconnlistener *listener,
                         evutil_socket_t fd,
