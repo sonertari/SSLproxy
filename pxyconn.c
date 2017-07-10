@@ -1235,7 +1235,7 @@ bufferevent_free_and_close_fd(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	}
 #endif /* DEBUG_PROXY */
 
-	// @todo Check if we need to NULL all cbs.
+	// @todo Check if we need to NULL all cbs?
 	// @see https://stackoverflow.com/questions/31688709/knowing-all-callbacks-have-run-with-libevent-and-bufferevent-free
 	//bufferevent_setcb(bev, NULL, NULL, NULL, NULL);
 	bufferevent_free(bev); /* does not free SSL unless the option
@@ -2405,7 +2405,7 @@ pxy_bev_readcb(struct bufferevent *bev, void *arg)
 				free(header_head);
 				free(header_tail);
 			} else {
-				log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: No CRNL in packet\n");
+				log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: No CRLF in packet\n");
 				packet_size-= custom_field_len;
 				packet_size++;
 			}
@@ -2883,15 +2883,22 @@ pxy_bev_writecb(struct bufferevent *bev, void *arg)
 	
 	// @attention Get the mctx pointer now, because we may need to free it after freeing ctx
 	proxy_conn_meta_ctx_t *mctx = ctx->mctx;
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>+++++++++++++++++++++++++++++++++++ pxy_bev_writecb: ENTER fd=%d, fd2=%d\n", mctx->fd, mctx->child_fd);
+
+	char *event_name = pxy_get_event_name(bev, ctx);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>+++++++++++++++++++++++++++++++++++ pxy_bev_writecb: ENTER %s fd=%d, fd2=%d, cfd=%d\n", event_name, mctx->fd, mctx->child_fd, ctx->fd);
+
+	if (bev==ctx->dst.bev) {
+		// @attention Sometimes dst write cb fires but not event cb, especially if the listener cb is not finished yet, so the conn stalls. This is a workaround for this error condition, nothing else seems to work.
+		// XXX: Workaround, should find the real cause
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>+++++++++++++++++++++++++++++++++++ pxy_bev_writecb: pxy_all_conn_free %s fd=%d, fd2=%d, cfd=%d <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< DST W CB B4 CONNECTED\n", event_name, mctx->fd, mctx->child_fd, ctx->fd);
+		pxy_all_conn_free(mctx);
+		return;
+	}
 	
 	int rv = 0;
 
 	mctx->access_time = time(NULL);
 	
-	char *event_name = pxy_get_event_name(bev, ctx);
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>+++++++++++++++++++++++++++++++++++ pxy_bev_writecb: %s, %d\n", event_name, ctx->fd);
-
 	if ((bev==ctx->src.bev) || (bev==ctx->e2src.bev)) {
 		pxy_conn_desc_t *this = (bev==ctx->src.bev) ? &ctx->src : &ctx->e2src;
 		pxy_conn_desc_t *other = (bev==ctx->src.bev) ? &ctx->e2src : &ctx->src;
@@ -2940,14 +2947,13 @@ pxy_bev_writecb_child(struct bufferevent *bev, void *arg)
 
 	// @attention Get the mctx pointer now, because we may need to free it after freeing ctx
 	proxy_conn_meta_ctx_t *mctx = ctx->mctx;
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>??????????????????????????? pxy_bev_writecb_child: ENTER fd=%d, fd2=%d\n", mctx->fd, mctx->child_fd);
+
+	char *event_name = pxy_get_event_name(bev, ctx);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>??????????????????????????? pxy_bev_writecb_child: ENTER %s fd=%d, fd2=%d, cfd=%d\n", event_name, mctx->fd, mctx->child_fd, ctx->fd);
 
 	int rv = 0;
 	
 	mctx->access_time = time(NULL);
-
-	char *event_name = pxy_get_event_name(bev, ctx);
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>??????????????????????????? pxy_bev_writecb_child: %s, %d\n", event_name, ctx->fd);
 
 	pxy_conn_desc_t *this = (bev==ctx->e2dst.bev) ? &ctx->e2dst : &ctx->dst;
 	pxy_conn_desc_t *other = (bev==ctx->e2dst.bev) ? &ctx->dst : &ctx->e2dst;
@@ -3360,12 +3366,12 @@ pxy_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 			evutil_closesocket(ctx->fd);
 			other->closed = 1;
 		} else if (!other->closed) {
-			log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>=================================== pxy_bev_eventcb_child: !other->closed <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< CONN TERM\n");
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>=================================== pxy_bev_eventcb_child: !other->closed <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< CONN TERM\n");
 			struct evbuffer *inbuf, *outbuf;
 			inbuf = bufferevent_get_input(bev);
 			outbuf = bufferevent_get_output(other->bev);
 			if (evbuffer_get_length(inbuf) > 0) {
-				log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>=================================== pxy_bev_eventcb_child: evbuffer_get_length(inbuf) > 0 <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< CONN TERM\n");
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>=================================== pxy_bev_eventcb_child: evbuffer_get_length(inbuf) > 0 <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< CONN TERM\n");
 				pxy_bev_readcb_child(bev, ctx);
 			} else {
 				/* if the other end is still open and doesn't
@@ -3373,7 +3379,7 @@ pxy_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 				 * writecb will close it after writing what's
 				 * left in the output buffer. */
 				if (evbuffer_get_length(outbuf) == 0) {
-					log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>=================================== pxy_bev_eventcb_child: evbuffer_get_length(inbuf) == 0 <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< CONN TERM\n");
+					log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>=================================== pxy_bev_eventcb_child: evbuffer_get_length(inbuf) == 0 <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< CONN TERM\n");
 					other_free_and_close_fd_func(other->bev, ctx);
 					other->bev = NULL;
 					other->closed = 1;
@@ -3458,11 +3464,11 @@ pxy_conn_connect(pxy_conn_ctx_t *ctx)
 		return;
 	}
 	
-	// @attention Do not enable r/w cbs for dst: (1) We do nothing in those cbs for dst and (2) sometimes write cb fires before event cb,
-	// especially if this listener cb is not finished yet, then event cb never fires, so the conn stalls. Not enabling those cbs seems to solve the problem.
-	// @todo Why does event cb not fire? Why does not enabling r/w cbs solve the problem?
-	//log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_conn_connect: <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< bufferevent_enable(ctx->dst.bev)\n");
-	//bufferevent_enable(ctx->dst.bev, EV_READ|EV_WRITE);
+	// @attention Sometimes dst write cb fires but not event cb, especially if this listener cb is not finished yet, so the conn stalls.
+	// @todo Why does event cb not fire sometimes?
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_conn_connect: <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< bufferevent_enable(ctx->dst.bev)\n");
+	bufferevent_enable(ctx->dst.bev, EV_READ|EV_WRITE);
+	//bufferevent_setcb(ctx->dst.bev, NULL, NULL, pxy_bev_eventcb, ctx);
 
 	if (OPTS_DEBUG(ctx->opts)) {
 		char *host, *port;
