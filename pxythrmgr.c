@@ -47,7 +47,7 @@
 
 #define THR_TIMER_TIMEOUT 10
 #define THR_TIMER_PRINT_INFO_TIMEOUT 1*THR_TIMER_TIMEOUT
-#define CONN_EXPIRE_TIME 30
+#define CONN_EXPIRE_TIME 120
 
 /*
  * Dummy recurring timer event to prevent the event loops from exiting when
@@ -72,7 +72,6 @@ pxy_thrmgr_timer_cb(UNUSED evutil_socket_t fd, UNUSED short what,
 			log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>> !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! pxy_thrmgr_timer_cb: DELETE thr=%d, fd=%d, fd2=%d, time=%lld <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< TIMED OUT\n",
 					expired->thridx, expired->fd, expired->child_fd, (long int) now - expired->access_time);
 			pxy_all_conn_free(expired);
-			pxy_conn_meta_ctx_free(expired);
 
 			expired = next;
 		}
@@ -169,7 +168,7 @@ pxy_thrmgr_run(pxy_thrmgr_ctx_t *ctx)
 		}
 		ctx->thr[idx]->load = 0;
 		ctx->thr[idx]->running = 0;
-		ctx->thr[idx]->mctx = NULL;
+		ctx->thr[idx]->mctx_list = NULL;
 		ctx->thr[idx]->thridx = idx;
 		ctx->thr[idx]->timeout_count = 0;
 	}
@@ -250,7 +249,7 @@ pxy_thrmgr_free(pxy_thrmgr_ctx_t *ctx)
 	free(ctx);
 }
 
-void 
+static void 
 pxy_thrmgr_remove_mctx(proxy_conn_meta_ctx_t *node, proxy_conn_meta_ctx_t **head)
 {
 	assert(node != NULL);
@@ -315,10 +314,11 @@ pxy_thrmgr_attach(pxy_thrmgr_ctx_t *ctx, struct event_base **evbase,
 	mctx->thridx = thridx;
 	mctx->thr = ctx->thr[thridx];
 
-	mctx->next = ctx->thr[thridx]->mctx;
-	ctx->thr[thridx]->mctx = mctx;
+	mctx->next = ctx->thr[thridx]->mctx_list;
+	ctx->thr[thridx]->mctx_list = mctx;
 
-	pxy_thrmgr_print_thr_info(ctx->thr[thridx]);
+	// @todo Is it ok to call conn thread functions from another thread? We are running on the thrmgr thread now. No it is not anymore.
+	//pxy_thrmgr_print_thr_info(ctx->thr[thridx]);
 
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> EXIT pxy_thrmgr_attach()\n");
 	pthread_mutex_unlock(&ctx->mutex);
@@ -350,48 +350,56 @@ pxy_thrmgr_detach(pxy_thrmgr_ctx_t *ctx, int thridx, proxy_conn_meta_ctx_t *mctx
 	pthread_mutex_lock(&ctx->mutex);
 
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_thrmgr_detach(): BEFORE pxy_thrmgr_remove_node\n");
-	pxy_thrmgr_print_thr_info(ctx->thr[thridx]);
+//	pxy_thrmgr_print_thr_info(ctx->thr[thridx]);
+	pxy_thrmgr_print_thr_info(mctx->thr);
 
-	ctx->thr[thridx]->load--;
+//	ctx->thr[thridx]->load--;
+	mctx->thr->load--;
 
 	if (!mctx->child_list) {
-		pxy_thrmgr_remove_mctx(mctx, &ctx->thr[thridx]->mctx);
+//		pxy_thrmgr_remove_mctx(mctx, &ctx->thr[thridx]->mctx);
+		pxy_thrmgr_remove_mctx(mctx, &mctx->thr->mctx_list);
 	} else {
 		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>> pxy_thrmgr_detach(): parent ctx has an active child, will not remove from the list, fd=%d, fd2=%d <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n",
 				mctx->fd, mctx->child_fd);
 	}
 
 	log_dbg_level_printf(LOG_DBG_MODE_FINER, ">>>>> pxy_thrmgr_detach(): AFTER pxy_thrmgr_remove_node\n");
-	pxy_thrmgr_print_thr_info(ctx->thr[thridx]);
+//	pxy_thrmgr_print_thr_info(ctx->thr[thridx]);
+	pxy_thrmgr_print_thr_info(mctx->thr);
 
 	pthread_mutex_unlock(&ctx->mutex);
 }
 
 void
-pxy_thrmgr_detach_e2(pxy_thrmgr_ctx_t *ctx, int thridx, proxy_conn_meta_ctx_t *mctx)
+pxy_thrmgr_detach_child(pxy_thrmgr_ctx_t *ctx, int thridx, proxy_conn_meta_ctx_t *mctx)
 {
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_thrmgr_detach_e2()\n");
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_thrmgr_detach_child()\n");
 	pthread_mutex_lock(&ctx->mutex);
 
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_thrmgr_detach_e2(): BEFORE pxy_thrmgr_remove_node\n");
-	pxy_thrmgr_print_thr_info(ctx->thr[thridx]);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_thrmgr_detach_child(): BEFORE pxy_thrmgr_remove_node\n");
+//	pxy_thrmgr_print_thr_info(ctx->thr[thridx]);
+	pxy_thrmgr_print_thr_info(mctx->thr);
 
-	ctx->thr[thridx]->load--;
+//	ctx->thr[thridx]->load--;
+	mctx->thr->load--;
 	
 	if (!mctx->parent_ctx && !mctx->child_list) {
-		pxy_thrmgr_remove_mctx(mctx, &ctx->thr[thridx]->mctx);
+//		pxy_thrmgr_remove_mctx(mctx, &ctx->thr[thridx]->mctx);
+		pxy_thrmgr_remove_mctx(mctx, &mctx->thr->mctx_list);
 	} else {
 		if (mctx->parent_ctx) {
-			log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>> pxy_thrmgr_detach_e2(): child ctx has an active parent, will not remove from the list, fd=%d, fd2=%d <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n",
+			log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>> pxy_thrmgr_detach_child(): child ctx has an active parent, will not remove from the list, fd=%d, fd2=%d <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n",
 					mctx->fd, mctx->child_fd);
 		} else if (mctx->child_list) {
-			log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>> pxy_thrmgr_detach_e2(): conn has 1+ active child, will not remove from the list, fd=%d, fd2=%d <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n",
+			log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>> pxy_thrmgr_detach_child(): conn has 1+ active child, will not remove from the list, fd=%d, fd2=%d <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n",
 					mctx->fd, mctx->child_fd);
 		}
 	}
 
-	log_dbg_level_printf(LOG_DBG_MODE_FINER, ">>>>> pxy_thrmgr_detach_e2(): AFTER pxy_thrmgr_remove_node\n");
-	pxy_thrmgr_print_thr_info(ctx->thr[thridx]);
+	log_dbg_level_printf(LOG_DBG_MODE_FINER, ">>>>> pxy_thrmgr_detach_child(): AFTER pxy_thrmgr_remove_node\n");
+//	pxy_thrmgr_print_thr_info(ctx->thr[thridx]);
+	pxy_thrmgr_print_thr_info(mctx->thr);
 
 	pthread_mutex_unlock(&ctx->mutex);
 }
@@ -400,8 +408,10 @@ void
 pxy_thrmgr_print_child_info(pxy_conn_child_info_t *info, int thridx, int count)
 {
 	assert(info != NULL);
-	log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>> .......... pxy_thrmgr_print_child_info(): thr=%d, cont=%d, e2dst=%d, dst2=%d, c=%d-%d, ci=%d, f=%d\n",
-			thridx, count, info->e2dst_fd, info->dst2_fd, info->e2dst_eof, info->dst2_eof, info->child_idx, info->freed);
+//	log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>> .......... pxy_thrmgr_print_child_info(): thr=%d, cont=%d, e2dst=%d, dst2=%d, c=%d-%d, ci=%d, f=%d\n",
+//			thridx, count, info->e2dst_fd, info->dst2_fd, info->e2dst_eof, info->dst2_eof, info->child_idx, info->freed);
+	log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>> .......... pxy_thrmgr_print_child_info(): thr=%d, cont=%d, e2dst=%d, dst2=%d, c=%d-%d, ci=%d\n",
+			thridx, count, info->e2dst_fd, info->dst2_fd, info->e2dst_eof, info->dst2_eof, info->child_idx);
 	if (info->next) {
 		pxy_thrmgr_print_child_info(info->next, thridx, count);
 	}
@@ -414,10 +424,10 @@ pxy_thrmgr_print_thr_info(pxy_thr_ctx_t *ctx)
 
 	log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>> pxy_thrmgr_print_thr_info(): thr=%d, load=%lu\n", ctx->thridx, ctx->load);
 
-	if (ctx->mctx) {
+	if (ctx->mctx_list) {
 		time_t now = time(NULL);
 
-		proxy_conn_meta_ctx_t *mctx = ctx->mctx;
+		proxy_conn_meta_ctx_t *mctx = ctx->mctx_list;
 		int count = 0;
 		while (mctx) {
 			char *host, *port;
@@ -453,7 +463,7 @@ pxy_thrmgr_get_thr_expired_conns(pxy_thr_ctx_t *ctx, proxy_conn_meta_ctx_t **exp
 
 	time_t now = time(NULL);
 
-	proxy_conn_meta_ctx_t *mctx = ctx->mctx;
+	proxy_conn_meta_ctx_t *mctx = ctx->mctx_list;
 	while (mctx) {
 		unsigned long elapsed_time = now - mctx->access_time;
 		if (elapsed_time > CONN_EXPIRE_TIME) {

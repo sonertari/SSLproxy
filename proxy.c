@@ -129,7 +129,7 @@ pxy_conn_meta_ctx_new()
 
 	ctx->uuid = malloc(sizeof(uuid_t));
 
-// @todo Set this switch during compile time
+// @todo Set this switch at compile time
 #ifdef OPENBSD
 	uuid_create(ctx->uuid, NULL);
 	char *uuid_str;

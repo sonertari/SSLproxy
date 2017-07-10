@@ -48,7 +48,7 @@ typedef struct pxy_thr_ctx {
 	struct evdns_base *dnsbase;
 	int running;
 	int timeout_count;
-	proxy_conn_meta_ctx_t *mctx;
+	proxy_conn_meta_ctx_t *mctx_list;
 } pxy_thr_ctx_t;
 
 typedef struct pxy_thrmgr_ctx {
@@ -66,7 +66,7 @@ int pxy_thrmgr_attach(pxy_thrmgr_ctx_t *, struct event_base **,
                       struct evdns_base **, proxy_conn_meta_ctx_t *) WUNRES;
 void pxy_thrmgr_attach_child(pxy_thrmgr_ctx_t *ctx, int thridx);
 void pxy_thrmgr_detach(pxy_thrmgr_ctx_t *, int, proxy_conn_meta_ctx_t *);
-void pxy_thrmgr_detach_e2(pxy_thrmgr_ctx_t *, int, proxy_conn_meta_ctx_t *);
+void pxy_thrmgr_detach_child(pxy_thrmgr_ctx_t *, int, proxy_conn_meta_ctx_t *);
 
 void pxy_thrmgr_print_thr_info(pxy_thr_ctx_t *ctx);
 void pxy_thrmgr_get_thr_expired_conns(pxy_thr_ctx_t *ctx, proxy_conn_meta_ctx_t **expired_conns);
