@@ -256,8 +256,7 @@ pxy_thrmgr_remove_mctx(proxy_conn_meta_ctx_t *node, proxy_conn_meta_ctx_t **head
 	assert(*head != NULL);
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_thrmgr_remove_node: DELETING, fd=%d, fd2=%d\n", node->fd, node->child_fd);
 	
-	// @todo Why do we get multiple conns with the same fd? So fd or (fd, fd2) pair cannot uniquely define a connection, but just fd was supposed to be enough.
-	// Does libevent free the fd if it fails, and then reuse the same fd immediately? (040717: Perhaps fixed by now, after removing conn and thr mutexes.)
+	// @attention We may get multiple conns with the same fd combinations, so they cannot uniquely define a conn; hence the need for uuids.
     if (uuid_compare(node->uuid, (*head)->uuid, NULL) == 0) {
         *head = (*head)->next;
         return;
@@ -317,8 +316,8 @@ pxy_thrmgr_attach(pxy_thrmgr_ctx_t *ctx, struct event_base **evbase,
 	mctx->next = ctx->thr[thridx]->mctx_list;
 	ctx->thr[thridx]->mctx_list = mctx;
 
-	// @todo Is it ok to call conn thread functions from another thread? We are running on the thrmgr thread now. No it is not anymore.
-	//pxy_thrmgr_print_thr_info(ctx->thr[thridx]);
+	// @attention We are running on the thrmgr thread, do not call conn thread functions here.
+	//pxy_thrmgr_print_thr_info(mctx->thr);
 
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> EXIT pxy_thrmgr_attach()\n");
 	pthread_mutex_unlock(&ctx->mutex);
@@ -350,14 +349,11 @@ pxy_thrmgr_detach(pxy_thrmgr_ctx_t *ctx, int thridx, proxy_conn_meta_ctx_t *mctx
 	pthread_mutex_lock(&ctx->mutex);
 
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_thrmgr_detach(): BEFORE pxy_thrmgr_remove_node\n");
-//	pxy_thrmgr_print_thr_info(ctx->thr[thridx]);
 	pxy_thrmgr_print_thr_info(mctx->thr);
 
-//	ctx->thr[thridx]->load--;
 	mctx->thr->load--;
 
 	if (!mctx->child_list) {
-//		pxy_thrmgr_remove_mctx(mctx, &ctx->thr[thridx]->mctx);
 		pxy_thrmgr_remove_mctx(mctx, &mctx->thr->mctx_list);
 	} else {
 		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>> pxy_thrmgr_detach(): parent ctx has an active child, will not remove from the list, fd=%d, fd2=%d <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n",
@@ -365,7 +361,6 @@ pxy_thrmgr_detach(pxy_thrmgr_ctx_t *ctx, int thridx, proxy_conn_meta_ctx_t *mctx
 	}
 
 	log_dbg_level_printf(LOG_DBG_MODE_FINER, ">>>>> pxy_thrmgr_detach(): AFTER pxy_thrmgr_remove_node\n");
-//	pxy_thrmgr_print_thr_info(ctx->thr[thridx]);
 	pxy_thrmgr_print_thr_info(mctx->thr);
 
 	pthread_mutex_unlock(&ctx->mutex);
@@ -378,14 +373,11 @@ pxy_thrmgr_detach_child(pxy_thrmgr_ctx_t *ctx, int thridx, proxy_conn_meta_ctx_t
 	pthread_mutex_lock(&ctx->mutex);
 
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_thrmgr_detach_child(): BEFORE pxy_thrmgr_remove_node\n");
-//	pxy_thrmgr_print_thr_info(ctx->thr[thridx]);
 	pxy_thrmgr_print_thr_info(mctx->thr);
 
-//	ctx->thr[thridx]->load--;
 	mctx->thr->load--;
 	
 	if (!mctx->parent_ctx && !mctx->child_list) {
-//		pxy_thrmgr_remove_mctx(mctx, &ctx->thr[thridx]->mctx);
 		pxy_thrmgr_remove_mctx(mctx, &mctx->thr->mctx_list);
 	} else {
 		if (mctx->parent_ctx) {
@@ -398,7 +390,6 @@ pxy_thrmgr_detach_child(pxy_thrmgr_ctx_t *ctx, int thridx, proxy_conn_meta_ctx_t
 	}
 
 	log_dbg_level_printf(LOG_DBG_MODE_FINER, ">>>>> pxy_thrmgr_detach_child(): AFTER pxy_thrmgr_remove_node\n");
-//	pxy_thrmgr_print_thr_info(ctx->thr[thridx]);
 	pxy_thrmgr_print_thr_info(mctx->thr);
 
 	pthread_mutex_unlock(&ctx->mutex);
@@ -408,8 +399,6 @@ void
 pxy_thrmgr_print_child_info(pxy_conn_child_info_t *info, int thridx, int count)
 {
 	assert(info != NULL);
-//	log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>> .......... pxy_thrmgr_print_child_info(): thr=%d, cont=%d, e2dst=%d, dst2=%d, c=%d-%d, ci=%d, f=%d\n",
-//			thridx, count, info->e2dst_fd, info->dst2_fd, info->e2dst_eof, info->dst2_eof, info->child_idx, info->freed);
 	log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>> .......... pxy_thrmgr_print_child_info(): thr=%d, cont=%d, e2dst=%d, dst2=%d, c=%d-%d, ci=%d\n",
 			thridx, count, info->e2dst_fd, info->dst2_fd, info->e2dst_eof, info->dst2_eof, info->child_idx);
 	if (info->next) {

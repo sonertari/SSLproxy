@@ -54,8 +54,6 @@ typedef struct pxy_conn_child_info {
 	unsigned int e2dst_eof : 1;
 	unsigned int dst2_eof : 1;
 
-	unsigned int freed : 1;
-	
 	unsigned int child_idx;
 	pxy_conn_child_info_t *next;
 } pxy_conn_child_info_t;
