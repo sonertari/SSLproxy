@@ -47,7 +47,7 @@
 
 #define THR_TIMER_TIMEOUT 10
 #define THR_TIMER_PRINT_INFO_TIMEOUT 1*THR_TIMER_TIMEOUT
-#define CONN_EXPIRE_TIME 120
+#define CONN_EXPIRE_TIME 30
 
 /*
  * Dummy recurring timer event to prevent the event loops from exiting when
