@@ -416,39 +416,6 @@ sys_sockaddr_str(struct sockaddr *addr, socklen_t addrlen,
 	return 0;
 }
 
- /*
- * Converts an IPv4/IPv6 ip and port into a printable string representation.
- * Assigns to ip and port the allocated buffers which must be freed by caller.
- */
-void
-sys_sockipport_str(struct sockaddr *addr, socklen_t addrlen, char **ip, char **port)
-{
-	char host[INET6_ADDRSTRLEN], serv[6];
-	int rv;
-
-	rv = getnameinfo(addr, addrlen, host, sizeof(host), serv, sizeof(serv),
-	                 NI_NUMERICHOST | NI_NUMERICSERV);
-	if (rv != 0) {
-		log_err_printf("Cannot get nameinfo for socket address: %s\n",
-		               gai_strerror(rv));
-		return;
-	}
-
-	*ip = malloc(sizeof(host));
-	if (!*ip) {
-		log_err_printf("Cannot allocate memory\n");
-		return;
-	}
-	snprintf(*ip, INET6_ADDRSTRLEN, "%s", host);
-
-	*port = malloc(sizeof(serv));
-	if (!*port) {
-		log_err_printf("Cannot allocate memory\n");
-		return;
-	}
-	snprintf(*port, 6, "%s", serv);
-}
-
 /*
  * Sanitizes a valid IPv4 or IPv6 address for use in a filename, i.e. removes
  * characters that are invalid on NTFS and replaces them with more innocent

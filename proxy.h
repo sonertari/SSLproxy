@@ -36,6 +36,7 @@
 
 typedef struct proxy_ctx proxy_ctx_t;
 typedef struct pxy_conn_ctx pxy_conn_ctx_t;
+typedef struct pxy_conn_child_ctx pxy_conn_child_ctx_t;
 typedef struct pxy_conn_child_info pxy_conn_child_info_t;
 
 /*
@@ -45,18 +46,33 @@ typedef struct proxy_listener_ctx {
 	pxy_thrmgr_ctx_t *thrmgr;
 	proxyspec_t *spec;
 	opts_t *opts;
+	evutil_socket_t clisock;
 	struct evconnlistener *evcl;
 	struct proxy_listener_ctx *next;
-	int clisock;
 } proxy_listener_ctx_t;
 
 typedef struct proxy_conn_meta_ctx {
 	pxy_thr_ctx_t *thr;
 	uuid_t *uuid;
 
-	proxy_listener_ctx_t *lctx;
+	pxy_thrmgr_ctx_t *thrmgr;
+	proxyspec_t *spec;
+	opts_t *opts;
 
+#ifdef HAVE_LOCAL_PROCINFO
+	/* local process information */
+	pxy_conn_lproc_desc_t lproc;
+#endif /* HAVE_LOCAL_PROCINFO */
+
+	struct event_base *evbase;
+	struct evdns_base *dnsbase;
+	unsigned int passthrough : 1;      /* 1 if SSL passthrough is active */
+	
+	evutil_socket_t clisock;
+
+	/* store fd and fd event while connected is 0 */
 	evutil_socket_t fd;
+
 	pxy_conn_ctx_t *parent_ctx;
 
 	evutil_socket_t src_fd;
@@ -74,7 +90,7 @@ typedef struct proxy_conn_meta_ctx {
 	char *child_addr;
 
 	// Child list of the conn
-	pxy_conn_ctx_t *child_list;
+	pxy_conn_child_ctx_t *child_list;
 	// Used to print child info, never deleted until the conn is freed
 	pxy_conn_child_info_t *child_info_list;
 
@@ -84,8 +100,7 @@ typedef struct proxy_conn_meta_ctx {
 	unsigned int e2dst_eof : 1;
 	unsigned int dst2_eof : 1;
 
-	// Whether the conn has any child yet, set upon entry to child listener cb
-	unsigned int initialized : 1;
+	// Number of children, active or closed
 	unsigned int child_count;
 
 	/* server name indicated by client in SNI TLS extension */
@@ -100,7 +115,7 @@ typedef struct proxy_conn_meta_ctx {
 	// Last access time, to determine expired conns
 	// Updated on entry to callback functions
 	time_t access_time;
-	
+
 	// Per-thread conn list
 	proxy_conn_meta_ctx_t *next;
 	// Expired conns are link-listed using this pointer

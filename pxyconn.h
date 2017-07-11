@@ -67,7 +67,7 @@ typedef struct pxy_conn_ctx {
 	struct pxy_conn_desc e2src;
 	struct pxy_conn_desc e2dst;
 	
-	struct pxy_conn_ctx *next_child_ctx;
+	pxy_conn_ctx_t *next_child_ctx;
 	pxy_conn_child_info_t *child_info;
 
 	/* status flags */
@@ -140,16 +140,52 @@ typedef struct pxy_conn_ctx {
 	proxy_conn_meta_ctx_t *mctx;
 } pxy_conn_ctx_t;
 
-pxy_conn_ctx_t *
-pxy_conn_setup(evutil_socket_t, struct sockaddr *, int,
-                    proxy_conn_meta_ctx_t *)
-                    NONNULL(2,4);
-pxy_conn_ctx_t *
+/* actual proxy connection state consisting of two connection descriptors,
+ * connection-wide state and the specs and options */
+typedef struct pxy_conn_child_ctx {
+	/* per-connection state */
+	struct pxy_conn_desc src;
+	struct pxy_conn_desc dst;
+	
+	pxy_conn_child_ctx_t *next_child_ctx;
+	pxy_conn_child_info_t *child_info;
+
+	/* status flags */
+	unsigned int connected : 1;       /* 0 until both ends are connected */
+	unsigned int enomem : 1;                       /* 1 if out of memory */
+
+	/* server name indicated by client in SNI TLS extension */
+	char *sni;
+
+	/* log strings from socket */
+	char *srchost_str;
+	char *srcport_str;
+	char *dsthost_str;
+	char *dstport_str;
+
+	/* log strings related to SSL */
+	char *ssl_names;
+	char *origcrtfpr;
+	char *usedcrtfpr;
+
+	/* content log context */
+	log_content_ctx_t *logctx;
+
+	/* store fd and fd event while connected is 0 */
+	evutil_socket_t fd;
+
+	proxy_conn_meta_ctx_t *mctx;
+} pxy_conn_child_ctx_t;
+
+void pxy_conn_setup(evutil_socket_t, struct sockaddr *, int,
+                    pxy_thrmgr_ctx_t *, proxyspec_t *, opts_t *,
+					evutil_socket_t)
+                    NONNULL(2,4,5,6);
+void
 pxy_conn_setup_child(evutil_socket_t, proxy_conn_meta_ctx_t *) NONNULL(2);
 void
 pxy_all_conn_free(proxy_conn_meta_ctx_t *);
-void
-pxy_conn_meta_ctx_free(proxy_conn_meta_ctx_t *) NONNULL(1);
+
 #endif /* !PXYCONN_H */
 
 /* vim: set noet ft=c: */

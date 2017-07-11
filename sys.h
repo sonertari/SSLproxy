@@ -49,7 +49,6 @@ int sys_sockaddr_parse(struct sockaddr_storage *, socklen_t *,
                        char *, char *, int, int) NONNULL(1,2,3,4) WUNRES;
 int sys_sockaddr_str(struct sockaddr *, socklen_t,
                      char **, char **) NONNULL(1,3,4);
-void sys_sockipport_str(struct sockaddr *, socklen_t, char **, char **) NONNULL(1);
 char * sys_ip46str_sanitize(const char *) NONNULL(1) MALLOC;
 
 int sys_isdir(const char *) NONNULL(1) WUNRES;

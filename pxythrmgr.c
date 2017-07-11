@@ -422,13 +422,13 @@ pxy_thrmgr_print_thr_info(pxy_thr_ctx_t *ctx)
 			char *host, *port;
 			if (mctx->addrlen == 0 || (sys_sockaddr_str((struct sockaddr *)&mctx->addr, mctx->addrlen, &host, &port) != 0)) {
 				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>> pxy_thrmgr_print_thr_info(): Cannot get host:port: thr=%d, cont=%d, fd=%d, fd2=%d\n", ctx->thridx, count, mctx->fd, mctx->child_fd);
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>> pxy_thrmgr_print_thr_info(): thr=%d, cont=%d, fd=%d, fd2=%d, src=%d, e2src=%d, dst=%d, e2dst=%d, dst2=%d, p=%d-%d-%d c=%d-%d, init=%d, pe=%d ce=%d tcc=%d, time=%lld\n",
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>> pxy_thrmgr_print_thr_info(): thr=%d, cont=%d, fd=%d, fd2=%d, src=%d, e2src=%d, dst=%d, e2dst=%d, dst2=%d, p=%d-%d-%d c=%d-%d, pe=%d ce=%d tcc=%d, time=%lld\n",
 						ctx->thridx, count, mctx->fd, mctx->child_fd, mctx->src_fd, mctx->e2src_fd, mctx->dst_fd, mctx->e2dst_fd, mctx->dst2_fd,
-						mctx->src_eof, mctx->e2src_eof, mctx->dst_eof, mctx->e2dst_eof, mctx->dst2_eof, mctx->initialized, mctx->parent_ctx ? 1:0, mctx->child_list ? 1:0, mctx->child_count,(long int) now - mctx->access_time);
+						mctx->src_eof, mctx->e2src_eof, mctx->dst_eof, mctx->e2dst_eof, mctx->dst2_eof, mctx->parent_ctx ? 1:0, mctx->child_list ? 1:0, mctx->child_count,(long int) now - mctx->access_time);
 			} else {
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>> pxy_thrmgr_print_thr_info(): thr=%d, cont=%d, fd=%d, fd2=%d, src=%d, e2src=%d, dst=%d, e2dst=%d, dst2=%d, p=%d-%d-%d c=%d-%d, init=%d, pe=%d ce=%d tcc=%d, time=%lld, addr=%s:%s\n",
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>> pxy_thrmgr_print_thr_info(): thr=%d, cont=%d, fd=%d, fd2=%d, src=%d, e2src=%d, dst=%d, e2dst=%d, dst2=%d, p=%d-%d-%d c=%d-%d, pe=%d ce=%d tcc=%d, time=%lld, addr=%s:%s\n",
 						ctx->thridx, count, mctx->fd, mctx->child_fd, mctx->src_fd, mctx->e2src_fd, mctx->dst_fd, mctx->e2dst_fd, mctx->dst2_fd,
-						mctx->src_eof, mctx->e2src_eof, mctx->dst_eof, mctx->e2dst_eof, mctx->dst2_eof, mctx->initialized, mctx->parent_ctx ? 1:0, mctx->child_list ? 1:0, mctx->child_count, (long int) now - mctx->access_time, host ? host : "?", port ? port : "?");
+						mctx->src_eof, mctx->e2src_eof, mctx->dst_eof, mctx->e2dst_eof, mctx->dst2_eof, mctx->parent_ctx ? 1:0, mctx->child_list ? 1:0, mctx->child_count, (long int) now - mctx->access_time, host ? host : "?", port ? port : "?");
 				free(host);
 				free(port);
 			}
@@ -463,13 +463,15 @@ pxy_thrmgr_get_thr_expired_conns(pxy_thr_ctx_t *ctx, proxy_conn_meta_ctx_t **exp
 		mctx = mctx->next;
 	}
 	
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>> pxy_thrmgr_get_thr_expired_conns(): ----------------------------- Expired conns: thr=%d\n", ctx->thridx);
 	mctx = *expired_conns;
-	while (mctx) {
-		proxy_conn_meta_ctx_t *next = mctx->next_expired;
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>> pxy_thrmgr_get_expired_conns(): thr=%d, fd=%d, fd2=%d, time=%lld\n",
-				mctx->thridx, mctx->fd, mctx->child_fd, (long int) now - mctx->access_time);
-		mctx = next;
+	if (mctx) {
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>> pxy_thrmgr_get_thr_expired_conns(): ----------------------------- Expired conns: thr=%d\n", ctx->thridx);
+		while (mctx) {
+			proxy_conn_meta_ctx_t *next = mctx->next_expired;
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>> pxy_thrmgr_get_expired_conns(): thr=%d, fd=%d, fd2=%d, time=%lld\n",
+					mctx->thridx, mctx->fd, mctx->child_fd, (long int) now - mctx->access_time);
+			mctx = next;
+		}
 	}
 }
 

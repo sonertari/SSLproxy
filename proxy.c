@@ -116,39 +116,6 @@ proxy_listener_errorcb(struct evconnlistener *listener, UNUSED void *ctx)
 	event_base_loopbreak(evbase);
 }
 
-static proxy_conn_meta_ctx_t *
-pxy_conn_meta_ctx_new()
-{
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>................... pxy_conn_meta_ctx_new(): ENTER <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n");
-
-	proxy_conn_meta_ctx_t *ctx = malloc(sizeof(proxy_conn_meta_ctx_t));
-	if (!ctx)
-		return NULL;
-	memset(ctx, 0, sizeof(proxy_conn_meta_ctx_t));
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>................... pxy_conn_meta_ctx_new: sizeof(proxy_conn_meta_ctx_t)=%lu <<<<<<\n", sizeof(proxy_conn_meta_ctx_t));
-
-	ctx->uuid = malloc(sizeof(uuid_t));
-
-// @todo Set this switch at compile time
-#ifdef OPENBSD
-	uuid_create(ctx->uuid, NULL);
-	char *uuid_str;
-	uuid_to_string(ctx->uuid, &uuid_str, NULL);
-	if (uuid_str) {
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>................... pxy_conn_meta_ctx_new(): uuid = %s <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n", uuid_str);
-		free(uuid_str);
-	}
-#else
-	uuid_generate(ctx->uuid);
-#endif /* OPENBSD */
-	
-	ctx->access_time = time(NULL);
-	
-	ctx->next = NULL;
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>................... pxy_conn_meta_ctx_new(): EXIT <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n");
-	return ctx;
-}
-
 /*
  * Callback for accept events on the socket listener bufferevent.
  */
@@ -161,23 +128,8 @@ proxy_listener_acceptcb(UNUSED struct evconnlistener *listener,
 	proxy_listener_ctx_t *lctx = arg;
 
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! proxy_listener_acceptcb: fd=%d <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< ENTER\n", fd);
-			
-	char *host, *port;
-	if (sys_sockaddr_str(peeraddr, peeraddrlen, &host, &port) != 0) {
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! proxy_listener_acceptcb: PEER failed\n");
-	} else {
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! proxy_listener_acceptcb: PEER [%s]:%s <<<<< fd=%d\n", host, port, fd);
-		free(host);
-		free(port);
-	}
-
-	proxy_conn_meta_ctx_t *mctx = pxy_conn_meta_ctx_new();
-	mctx->lctx = lctx;
-	mctx->fd = fd;
-
-	pxy_conn_ctx_t *parent_ctx = pxy_conn_setup(fd, peeraddr, peeraddrlen, mctx);
-	mctx->parent_ctx = parent_ctx;
-
+	pxy_conn_setup(fd, peeraddr, peeraddrlen, lctx->thrmgr,
+				   lctx->spec, lctx->opts, lctx->clisock);
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! proxy_listener_acceptcb: fd=%d <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< EXIT\n", fd);
 }
 
@@ -204,7 +156,7 @@ proxy_debug_base(const struct event_base *ev_base)
  */
 static proxy_listener_ctx_t *
 proxy_listener_setup(struct event_base *evbase, pxy_thrmgr_ctx_t *thrmgr,
-                     proxyspec_t *spec, opts_t *opts, int clisock)
+                     proxyspec_t *spec, opts_t *opts, evutil_socket_t clisock)
 {
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> proxy_listener_setup\n");
 
