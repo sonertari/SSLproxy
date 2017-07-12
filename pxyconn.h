@@ -48,8 +48,8 @@ typedef struct pxy_conn_desc {
 } pxy_conn_desc_t;
 
 typedef struct pxy_conn_child_info {
-	evutil_socket_t e2dst_fd;
-	evutil_socket_t dst2_fd;
+	evutil_socket_t child_src_fd;
+	evutil_socket_t child_dst_fd;
 
 	unsigned int e2dst_eof : 1;
 	unsigned int dst2_eof : 1;
@@ -155,7 +155,7 @@ typedef struct pxy_conn_child_ctx {
 	unsigned int enomem : 1;                       /* 1 if out of memory */
 
 	/* server name indicated by client in SNI TLS extension */
-	char *sni;
+//	char *sni;
 
 	/* log strings from socket */
 	char *srchost_str;
@@ -184,7 +184,7 @@ void pxy_conn_setup(evutil_socket_t, struct sockaddr *, int,
 void
 pxy_conn_setup_child(evutil_socket_t, proxy_conn_meta_ctx_t *) NONNULL(2);
 void
-pxy_all_conn_free(proxy_conn_meta_ctx_t *);
+pxy_conn_free_all(proxy_conn_meta_ctx_t *);
 
 #endif /* !PXYCONN_H */
 

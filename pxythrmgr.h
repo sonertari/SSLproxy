@@ -62,11 +62,10 @@ pxy_thrmgr_ctx_t * pxy_thrmgr_new(opts_t *) MALLOC;
 int pxy_thrmgr_run(pxy_thrmgr_ctx_t *) NONNULL(1) WUNRES;
 void pxy_thrmgr_free(pxy_thrmgr_ctx_t *) NONNULL(1);
 
-int pxy_thrmgr_attach(pxy_thrmgr_ctx_t *, struct event_base **,
-                      struct evdns_base **, proxy_conn_meta_ctx_t *) WUNRES;
-void pxy_thrmgr_attach_child(pxy_thrmgr_ctx_t *ctx, int thridx);
-void pxy_thrmgr_detach(pxy_thrmgr_ctx_t *, int, proxy_conn_meta_ctx_t *);
-void pxy_thrmgr_detach_child(pxy_thrmgr_ctx_t *, int, proxy_conn_meta_ctx_t *);
+void pxy_thrmgr_attach(proxy_conn_meta_ctx_t *) NONNULL(1);
+void pxy_thrmgr_attach_child(proxy_conn_meta_ctx_t *) NONNULL(1);
+void pxy_thrmgr_detach(proxy_conn_meta_ctx_t *) NONNULL(1);
+void pxy_thrmgr_detach_child(proxy_conn_meta_ctx_t *) NONNULL(1);
 
 void pxy_thrmgr_print_thr_info(pxy_thr_ctx_t *ctx);
 void pxy_thrmgr_get_thr_expired_conns(pxy_thr_ctx_t *ctx, proxy_conn_meta_ctx_t **expired_conns);

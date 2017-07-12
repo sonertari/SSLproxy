@@ -52,17 +52,15 @@ typedef struct proxy_listener_ctx {
 } proxy_listener_ctx_t;
 
 typedef struct proxy_conn_meta_ctx {
+	// Thread that the conn is attached to
 	pxy_thr_ctx_t *thr;
+
+	// Unique id of the conn
 	uuid_t *uuid;
 
 	pxy_thrmgr_ctx_t *thrmgr;
 	proxyspec_t *spec;
 	opts_t *opts;
-
-#ifdef HAVE_LOCAL_PROCINFO
-	/* local process information */
-	pxy_conn_lproc_desc_t lproc;
-#endif /* HAVE_LOCAL_PROCINFO */
 
 	struct event_base *evbase;
 	struct evdns_base *dnsbase;
@@ -94,8 +92,8 @@ typedef struct proxy_conn_meta_ctx {
 	// Used to print child info, never deleted until the conn is freed
 	pxy_conn_child_info_t *child_info_list;
 
-	evutil_socket_t e2dst_fd;
-	evutil_socket_t dst2_fd;
+	evutil_socket_t child_src_fd;
+	evutil_socket_t child_dst_fd;
 
 	unsigned int e2dst_eof : 1;
 	unsigned int dst2_eof : 1;
@@ -105,12 +103,10 @@ typedef struct proxy_conn_meta_ctx {
 
 	/* server name indicated by client in SNI TLS extension */
 	char *sni;
+
 	/* original destination address, family and certificate */
 	struct sockaddr_storage addr;
 	socklen_t addrlen;
-
-	// Index of the thread the conn is attached to
-	int thridx;
 
 	// Last access time, to determine expired conns
 	// Updated on entry to callback functions
@@ -118,6 +114,7 @@ typedef struct proxy_conn_meta_ctx {
 
 	// Per-thread conn list
 	proxy_conn_meta_ctx_t *next;
+
 	// Expired conns are link-listed using this pointer
 	proxy_conn_meta_ctx_t *next_expired;
 } proxy_conn_meta_ctx_t;
