@@ -64,7 +64,7 @@
 #define PRIVSEP_REQ_OPENFILE_P	2	/* open content log file w/mkpath */
 #define PRIVSEP_REQ_OPENSOCK	3	/* open socket and pass fd */
 #define PRIVSEP_REQ_CERTFILE	4	/* open cert file in certgendir */
-#define PRIVSEP_REQ_OPENSOCK_E2	5	/* open e2 socket and pass fd */
+#define PRIVSEP_REQ_OPENSOCK_CHILD	5	/* open child socket and pass fd */
 /* response byte */
 #define PRIVSEP_ANS_SUCCESS	0	/* success */
 #define PRIVSEP_ANS_UNK_CMD	1	/* unknown command */
@@ -238,64 +238,62 @@ privsep_server_opensock(proxyspec_t *spec)
 }
 
 static int WUNRES
-privsep_server_opensock_e2(proxyspec_t *spec)
+privsep_server_opensock_child(proxyspec_t *spec)
 {
-	evutil_socket_t fd2;
+	evutil_socket_t fd;
 	int on = 1;
 	int rv;
 
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> privsep_server_opensock_e2: ENTER\n");
-
-	fd2 = socket(spec->e2dst_addr.ss_family, SOCK_STREAM, IPPROTO_TCP);
-	if (fd2 == -1) {
+	fd = socket(spec->child_src_addr.ss_family, SOCK_STREAM, IPPROTO_TCP);
+	if (fd == -1) {
 		log_err_printf("Error from socket() fd2: %s (%i)\n",
 		               strerror(errno), errno);
-		evutil_closesocket(fd2);
+		evutil_closesocket(fd);
 		return -1;
 	}
 
-	rv = evutil_make_socket_nonblocking(fd2);
+	rv = evutil_make_socket_nonblocking(fd);
 	if (rv == -1) {
 		log_err_printf("Error making socket nonblocking: %s (%i)\n",
 		               strerror(errno), errno);
-		evutil_closesocket(fd2);
+		evutil_closesocket(fd);
 		return -1;
 	}
 
-	rv = setsockopt(fd2, SOL_SOCKET, SO_KEEPALIVE, (void*)&on, sizeof(on));
+	rv = setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, (void*)&on, sizeof(on));
 	if (rv == -1) {
 		log_err_printf("Error from setsockopt(SO_KEEPALIVE): %s (%i)\n",
 		               strerror(errno), errno);
-		evutil_closesocket(fd2);
+		evutil_closesocket(fd);
 		return -1;
 	}
 
-	rv = evutil_make_listen_socket_reuseable(fd2);
+	rv = evutil_make_listen_socket_reuseable(fd);
 	if (rv == -1) {
 		log_err_printf("Error from setsockopt(SO_REUSABLE) fd2: %s\n",
 		               strerror(errno));
-		evutil_closesocket(fd2);
+		evutil_closesocket(fd);
 		return -1;
 	}
 
-	rv = bind(fd2, (struct sockaddr *)&spec->e2dst_addr,
-	          spec->e2dst_addrlen);
+	rv = bind(fd, (struct sockaddr *)&spec->child_src_addr,
+	          spec->child_src_addrlen);
 	if (rv == -1) {
 		log_err_printf("Error from bind(): %s\n", strerror(errno));
-		evutil_closesocket(fd2);
+		evutil_closesocket(fd);
 		return -1;
 	}
 
 	struct sockaddr_in serv_addr;
 	socklen_t len = sizeof(serv_addr);
-	if (getsockname(fd2, (struct sockaddr *)&serv_addr, &len) == -1) {
+	if (getsockname(fd, (struct sockaddr *)&serv_addr, &len) == -1) {
 		perror("getsockname");
 		return -1;
 	}
 
-	log_dbg_level_printf(LOG_DBG_MODE_FINER, ">>>>> privsep_server_opensock_e2: >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> port = %d\n", ntohs(serv_addr.sin_port));
+	log_dbg_level_printf(LOG_DBG_MODE_FINER, ">>>>> privsep_server_opensock_child: EXIT >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> port=%d\n", ntohs(serv_addr.sin_port));
 
-	return fd2;
+	return fd;
 }
 
 static int WUNRES
@@ -462,35 +460,14 @@ privsep_server_handle_req(opts_t *opts, int srvsock)
 			evutil_closesocket(s);
 			return 0;
 		}
-//		if ((s = privsep_server_opensock_e2(arg)) == -1) {
-//			ans[0] = PRIVSEP_ANS_SYS_ERR;
-//			*((int*)&ans[1]) = errno;
-//			if (sys_sendmsgfd(srvsock, ans, 1 + sizeof(int),
-//			                  -1) == -1) {
-//				log_err_printf("Sending message failed e2: %s (%i"
-//				               ")\n", strerror(errno), errno);
-//				return -1;
-//			}
-//			return 0;
-//		} else {
-//			ans[0] = PRIVSEP_ANS_SUCCESS;
-//			if (sys_sendmsgfd(srvsock, ans, 1, s) == -1) {
-//				evutil_closesocket(s);
-//				log_err_printf("Sending message failed e2: %s (%i"
-//				               ")\n", strerror(errno), errno);
-//				return -1;
-//			}
-//			evutil_closesocket(s);
-//			return 0;
-//		}
 		/* not reached */
 		break;
 	}
-	case PRIVSEP_REQ_OPENSOCK_E2: {
+	case PRIVSEP_REQ_OPENSOCK_CHILD: {
 		proxyspec_t *arg;
 		int s;
 
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> privsep_server_opensock_e2: PRIVSEP_REQ_OPENSOCK_E2\n");
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> privsep_server_handle_req: PRIVSEP_REQ_OPENSOCK_CHILD\n");
 		
 		if (n != sizeof(char) + sizeof(arg)) {
 			ans[0] = PRIVSEP_ANS_INVALID;
@@ -502,12 +479,12 @@ privsep_server_handle_req(opts_t *opts, int srvsock)
 			return 0;
 		}
 		arg = *(proxyspec_t**)(&req[1]);
-		if ((s = privsep_server_opensock_e2(arg)) == -1) {
+		if ((s = privsep_server_opensock_child(arg)) == -1) {
 			ans[0] = PRIVSEP_ANS_SYS_ERR;
 			*((int*)&ans[1]) = errno;
 			if (sys_sendmsgfd(srvsock, ans, 1 + sizeof(int),
 			                  -1) == -1) {
-				log_err_printf("Sending message failed e2: %s (%i"
+				log_err_printf("Sending message failed child: %s (%i"
 				               ")\n", strerror(errno), errno);
 				return -1;
 			}
@@ -516,7 +493,7 @@ privsep_server_handle_req(opts_t *opts, int srvsock)
 			ans[0] = PRIVSEP_ANS_SUCCESS;
 			if (sys_sendmsgfd(srvsock, ans, 1, s) == -1) {
 				evutil_closesocket(s);
-				log_err_printf("Sending message failed e2: %s (%i"
+				log_err_printf("Sending message failed child: %s (%i"
 				               ")\n", strerror(errno), errno);
 				return -1;
 			}
@@ -799,16 +776,16 @@ privsep_client_opensock(int clisock, const proxyspec_t *spec)
 }
 
 int
-privsep_client_opensock_e2(int clisock, const proxyspec_t *spec)
+privsep_client_opensock_child(int clisock, const proxyspec_t *spec)
 {
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> privsep_client_opensock_e2()\n");
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> privsep_client_opensock_child: ENTER\n");
 
 	char ans[PRIVSEP_MAX_ANS_SIZE];
 	char req[1 + sizeof(spec)];
 	int fd = -1;
 	ssize_t n;
 
-	req[0] = PRIVSEP_REQ_OPENSOCK_E2;
+	req[0] = PRIVSEP_REQ_OPENSOCK_CHILD;
 	*((const proxyspec_t **)&req[1]) = spec;
 
 	if (sys_sendmsgfd(clisock, req, sizeof(req), -1) == -1) {

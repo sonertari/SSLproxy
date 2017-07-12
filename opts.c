@@ -335,15 +335,14 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine)
 				/* listenaddr */
 				addr = **argv;
 
-				// XXX: E2 address defs
 				// @todo Make this a command line or conf file option
 				// @todo IPv6
-				sys_sockaddr_parse(&spec->e2src_addr,
-									&spec->e2src_addrlen,
+				sys_sockaddr_parse(&spec->parent_dst_addr,
+									&spec->parent_dst_addrlen,
 									"127.0.0.1", "8080", AF_INET, 0);
 
-				sys_sockaddr_parse(&spec->e2dst_addr,
-									&spec->e2dst_addrlen,
+				sys_sockaddr_parse(&spec->child_src_addr,
+									&spec->child_src_addrlen,
 									"127.0.0.1", "0", AF_INET, 0);
 	
 				state++;
@@ -479,8 +478,8 @@ proxyspec_str(proxyspec_t *spec)
 	char *s;
 	char *lhbuf, *lpbuf;
 	char *cbuf = NULL;
-	char *e2srcbuf = NULL;
-	char *e2dstbuf = NULL;
+	char *pdstbuf = NULL;
+	char *csrcbuf = NULL;
 	if (sys_sockaddr_str((struct sockaddr *)&spec->listen_addr,
 	                     spec->listen_addrlen, &lhbuf, &lpbuf) != 0) {
 		return NULL;
@@ -498,27 +497,27 @@ proxyspec_str(proxyspec_t *spec)
 		free(chbuf);
 		free(cpbuf);
 	}
-	if (spec->e2src_addrlen) {
+	if (spec->parent_dst_addrlen) {
 		char *chbuf, *cpbuf;
-		if (sys_sockaddr_str((struct sockaddr *)&spec->e2src_addr,
-		                     spec->e2src_addrlen,
+		if (sys_sockaddr_str((struct sockaddr *)&spec->parent_dst_addr,
+		                     spec->parent_dst_addrlen,
 		                     &chbuf, &cpbuf) != 0) {
 			return NULL;
 		}
-		if (asprintf(&e2srcbuf, "\ne2src= [%s]:%s", chbuf, cpbuf) < 0) {
+		if (asprintf(&pdstbuf, "\nparent dst addr= [%s]:%s", chbuf, cpbuf) < 0) {
 			return NULL;
 		}
 		free(chbuf);
 		free(cpbuf);
 	}
-	if (spec->e2dst_addrlen) {
+	if (spec->child_src_addrlen) {
 		char *chbuf, *cpbuf;
-		if (sys_sockaddr_str((struct sockaddr *)&spec->e2dst_addr,
-		                     spec->e2dst_addrlen,
+		if (sys_sockaddr_str((struct sockaddr *)&spec->child_src_addr,
+		                     spec->child_src_addrlen,
 		                     &chbuf, &cpbuf) != 0) {
 			return NULL;
 		}
-		if (asprintf(&e2dstbuf, "\ne2dst= [%s]:%s", chbuf, cpbuf) < 0) {
+		if (asprintf(&csrcbuf, "\nchild src addr= [%s]:%s", chbuf, cpbuf) < 0) {
 			return NULL;
 		}
 		free(chbuf);
@@ -534,18 +533,18 @@ proxyspec_str(proxyspec_t *spec)
 	             (spec->upgrade ? "|upgrade" : ""),
 	             (spec->http ? "|http" : ""),
 	             (spec->natengine ? spec->natengine : cbuf),
-	             (e2srcbuf),
-	             (e2dstbuf)) < 0) {
+	             (pdstbuf),
+	             (csrcbuf)) < 0) {
 		s = NULL;
 	}
 	free(lhbuf);
 	free(lpbuf);
 	if (cbuf)
 		free(cbuf);
-	if (e2srcbuf)
-		free(e2srcbuf);
-	if (e2dstbuf)
-		free(e2dstbuf);
+	if (pdstbuf)
+		free(pdstbuf);
+	if (csrcbuf)
+		free(csrcbuf);
 	return s;
 }
 

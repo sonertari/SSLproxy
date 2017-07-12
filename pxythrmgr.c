@@ -394,7 +394,7 @@ static void
 pxy_thrmgr_print_child(pxy_conn_child_ctx_t *child_ctx, int count)
 {
 	assert(child_ctx != NULL);
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>> .......... pxy_thrmgr_print_child: thr=%d, cont=%d, e2dst=%d, dst2=%d, c=%d-%d, ci=%d\n",
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>> .......... pxy_thrmgr_print_child: thr=%d, cont=%d, src=%d, dst=%d, c=%d-%d, ci=%d\n",
 			child_ctx->mctx->thr->thridx, count, child_ctx->src_fd, child_ctx->dst_fd, child_ctx->src.closed, child_ctx->dst.closed, child_ctx->idx);
 	if (child_ctx->next) {
 		pxy_thrmgr_print_child(child_ctx->next, count);
@@ -415,11 +415,11 @@ pxy_thrmgr_print_thr_info(pxy_thr_ctx_t *ctx)
 			char *host, *port;
 			if (mctx->addrlen == 0 || (sys_sockaddr_str((struct sockaddr *)&mctx->addr, mctx->addrlen, &host, &port) != 0)) {
 				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>> pxy_thrmgr_print_thr_info: Cannot get host:port: thr=%d, cont=%d, fd=%d, fd2=%d\n", ctx->thridx, count, mctx->fd, mctx->child_fd);
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>> pxy_thrmgr_print_thr_info: thr=%d, cont=%d, fd=%d, fd2=%d, src=%d, e2src=%d, dst=%d, e2dst=%d, dst2=%d, p=%d-%d-%d c=%d-%d, pe=%d ce=%d tcc=%d, time=%lld\n",
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>> pxy_thrmgr_print_thr_info: thr=%d, cont=%d, fd=%d, fd2=%d, src=%d, dst=%d, srv_dst=%d, child_src=%d, child_dst=%d, p=%d-%d-%d c=%d-%d, pe=%d ce=%d tcc=%d, time=%lld\n",
 						ctx->thridx, count, mctx->fd, mctx->child_fd, mctx->src_fd, mctx->dst_fd, mctx->srv_dst_fd, mctx->child_src_fd, mctx->child_dst_fd,
 						mctx->src_closed, mctx->dst_closed, mctx->srv_dst_closed, mctx->child_src_closed, mctx->child_dst_closed, mctx->parent ? 1:0, mctx->children ? 1:0, mctx->child_count,(long int) now - mctx->access_time);
 			} else {
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>> pxy_thrmgr_print_thr_info: thr=%d, cont=%d, fd=%d, fd2=%d, src=%d, e2src=%d, dst=%d, e2dst=%d, dst2=%d, p=%d-%d-%d c=%d-%d, pe=%d ce=%d tcc=%d, time=%lld, addr=%s:%s\n",
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>> pxy_thrmgr_print_thr_info: thr=%d, cont=%d, fd=%d, fd2=%d, src=%d, dst=%d, srv_dst=%d, child_src=%d, child_dst=%d, p=%d-%d-%d c=%d-%d, pe=%d ce=%d tcc=%d, time=%lld, addr=%s:%s\n",
 						ctx->thridx, count, mctx->fd, mctx->child_fd, mctx->src_fd, mctx->dst_fd, mctx->srv_dst_fd, mctx->child_src_fd, mctx->child_dst_fd,
 						mctx->src_closed, mctx->dst_closed, mctx->srv_dst_closed, mctx->child_src_closed, mctx->child_dst_closed, mctx->parent ? 1:0, mctx->children ? 1:0, mctx->child_count, (long int) now - mctx->access_time, host ? host : "?", port ? port : "?");
 				free(host);

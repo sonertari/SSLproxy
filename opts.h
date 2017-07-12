@@ -54,11 +54,12 @@ typedef struct proxyspec {
 	nat_socket_cb_t natsocket;
 	struct proxyspec *next;
 
-	struct sockaddr_storage e2src_addr;
-	socklen_t e2src_addrlen;
+	// @todo Make these config options
+	struct sockaddr_storage parent_dst_addr;
+	socklen_t parent_dst_addrlen;
 
-	struct sockaddr_storage e2dst_addr;
-	socklen_t e2dst_addrlen;
+	struct sockaddr_storage child_src_addr;
+	socklen_t child_src_addrlen;
 } proxyspec_t;
 
 typedef struct opts {
