@@ -64,22 +64,24 @@ typedef struct proxy_conn_meta_ctx {
 
 	struct event_base *evbase;
 	struct evdns_base *dnsbase;
+
 	unsigned int passthrough : 1;      /* 1 if SSL passthrough is active */
 	
-	evutil_socket_t clisock;
-
-	/* store fd and fd event while connected is 0 */
 	evutil_socket_t fd;
 
-	pxy_conn_ctx_t *parent_ctx;
+	// Parent ctx of the conn
+	pxy_conn_ctx_t *parent;
 
 	evutil_socket_t src_fd;
-	evutil_socket_t e2src_fd;
 	evutil_socket_t dst_fd;
+	evutil_socket_t srv_dst_fd;
 
-	unsigned int src_eof : 1;
-	unsigned int e2src_eof : 1;
-	unsigned int dst_eof : 1;
+	unsigned int src_closed : 1;
+	unsigned int dst_closed : 1;
+	unsigned int srv_dst_closed : 1;
+
+	// Priv sep socket to obtain a socket for children
+	evutil_socket_t clisock;
 
 	// Fd of the listener event for the children
 	evutil_socket_t child_fd;
@@ -88,18 +90,16 @@ typedef struct proxy_conn_meta_ctx {
 	char *child_addr;
 
 	// Child list of the conn
-	pxy_conn_child_ctx_t *child_list;
-	// Used to print child info, never deleted until the conn is freed
-	pxy_conn_child_info_t *child_info_list;
+	pxy_conn_child_ctx_t *children;
+
+	// Number of children, active or closed
+	unsigned int child_count;
 
 	evutil_socket_t child_src_fd;
 	evutil_socket_t child_dst_fd;
 
-	unsigned int e2dst_eof : 1;
-	unsigned int dst2_eof : 1;
-
-	// Number of children, active or closed
-	unsigned int child_count;
+	unsigned int child_src_closed : 1;
+	unsigned int child_dst_closed : 1;
 
 	/* server name indicated by client in SNI TLS extension */
 	char *sni;

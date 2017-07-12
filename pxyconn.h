@@ -47,35 +47,20 @@ typedef struct pxy_conn_desc {
 	unsigned int closed : 1;
 } pxy_conn_desc_t;
 
-typedef struct pxy_conn_child_info {
-	evutil_socket_t child_src_fd;
-	evutil_socket_t child_dst_fd;
-
-	unsigned int e2dst_eof : 1;
-	unsigned int dst2_eof : 1;
-
-	unsigned int child_idx;
-	pxy_conn_child_info_t *next;
-} pxy_conn_child_info_t;
-
-/* actual proxy connection state consisting of two connection descriptors,
+/* parent connection state consisting of three connection descriptors,
  * connection-wide state and the specs and options */
 typedef struct pxy_conn_ctx {
 	/* per-connection state */
 	struct pxy_conn_desc src;
+	struct pxy_conn_desc srv_dst;
 	struct pxy_conn_desc dst;
-	struct pxy_conn_desc e2src;
-	struct pxy_conn_desc e2dst;
 	
-	pxy_conn_ctx_t *next_child_ctx;
-	pxy_conn_child_info_t *child_info;
-
 	/* status flags */
 	unsigned int immutable_cert : 1;  /* 1 if the cert cannot be changed */
 	unsigned int generated_cert : 1;     /* 1 if we generated a new cert */
 	unsigned int connected : 1;       /* 0 until both ends are connected */
-	unsigned int dst_connected : 1;       /* 0 until both ends are connected */
-	unsigned int e2src_connected : 1;       /* 0 until both ends are connected */
+	unsigned int srv_dst_connected : 1;   /* 0 until server is connected */
+	unsigned int dst_connected : 1;          /* 0 until dst is connected */
 	unsigned int seen_req_header : 1; /* 0 until request header complete */
 	unsigned int seen_resp_header : 1;  /* 0 until response hdr complete */
 	unsigned int sent_http_conn_close : 1;   /* 0 until Conn: close sent */
@@ -85,9 +70,6 @@ typedef struct pxy_conn_ctx {
 	unsigned int sni_peek_retries : 6;       /* max 64 SNI parse retries */
 	unsigned int clienthello_search : 1;       /* 1 if waiting for hello */
 	unsigned int clienthello_found : 1;      /* 1 if conn upgrade to SSL */
-
-	/* server name indicated by client in SNI TLS extension */
-	char *sni;
 
 	/* log strings from socket */
 	char *srchost_str;
@@ -129,33 +111,24 @@ typedef struct pxy_conn_ctx {
 	int af;
 	X509 *origcrt;
 
-	/* references to event base and configuration */
-	struct event_base *evbase;
-	struct evdns_base *dnsbase;
-	int thridx;
-	pxy_thrmgr_ctx_t *thrmgr;
-	proxyspec_t *spec;
-	opts_t *opts;
-	
 	proxy_conn_meta_ctx_t *mctx;
 } pxy_conn_ctx_t;
 
-/* actual proxy connection state consisting of two connection descriptors,
- * connection-wide state and the specs and options */
+/* child connection state consisting of two connection descriptors,
+ * connection-wide state */
 typedef struct pxy_conn_child_ctx {
 	/* per-connection state */
 	struct pxy_conn_desc src;
 	struct pxy_conn_desc dst;
-	
-	pxy_conn_child_ctx_t *next_child_ctx;
-	pxy_conn_child_info_t *child_info;
+
+	evutil_socket_t fd;
+
+	evutil_socket_t src_fd;
+	evutil_socket_t dst_fd;
 
 	/* status flags */
 	unsigned int connected : 1;       /* 0 until both ends are connected */
 	unsigned int enomem : 1;                       /* 1 if out of memory */
-
-	/* server name indicated by client in SNI TLS extension */
-//	char *sni;
 
 	/* log strings from socket */
 	char *srchost_str;
@@ -171,10 +144,13 @@ typedef struct pxy_conn_child_ctx {
 	/* content log context */
 	log_content_ctx_t *logctx;
 
-	/* store fd and fd event while connected is 0 */
-	evutil_socket_t fd;
-
 	proxy_conn_meta_ctx_t *mctx;
+
+	// Child index
+	unsigned int idx;
+
+	// Children of the conn are link-listed using this pointer
+	pxy_conn_child_ctx_t *next;
 } pxy_conn_child_ctx_t;
 
 void pxy_conn_setup(evutil_socket_t, struct sockaddr *, int,
