@@ -246,7 +246,7 @@ privsep_server_opensock_child(proxyspec_t *spec)
 
 	fd = socket(spec->child_src_addr.ss_family, SOCK_STREAM, IPPROTO_TCP);
 	if (fd == -1) {
-		log_err_printf("Error from socket() fd2: %s (%i)\n",
+		log_err_printf("Error from socket() child_fd: %s (%i)\n",
 		               strerror(errno), errno);
 		evutil_closesocket(fd);
 		return -1;
@@ -270,7 +270,7 @@ privsep_server_opensock_child(proxyspec_t *spec)
 
 	rv = evutil_make_listen_socket_reuseable(fd);
 	if (rv == -1) {
-		log_err_printf("Error from setsockopt(SO_REUSABLE) fd2: %s\n",
+		log_err_printf("Error from setsockopt(SO_REUSABLE) child_fd: %s\n",
 		               strerror(errno));
 		evutil_closesocket(fd);
 		return -1;

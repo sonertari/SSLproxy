@@ -157,10 +157,7 @@ void pxy_conn_setup(evutil_socket_t, struct sockaddr *, int,
                     pxy_thrmgr_ctx_t *, proxyspec_t *, opts_t *,
 					evutil_socket_t)
                     NONNULL(2,4,5,6);
-void
-pxy_conn_setup_child(evutil_socket_t, proxy_conn_meta_ctx_t *) NONNULL(2);
-void
-pxy_conn_free_all(proxy_conn_meta_ctx_t *);
+void pxy_conn_free(pxy_conn_ctx_t *ctx) NONNULL(1);
 
 #endif /* !PXYCONN_H */
 

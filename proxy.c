@@ -108,7 +108,7 @@ proxy_listener_errorcb(struct evconnlistener *listener, UNUSED void *ctx)
 {
 	proxy_conn_meta_ctx_t *mctx = ctx;
 	
-	log_dbg_level_printf(LOG_DBG_MODE_FINE, ">############################# proxy_listener_errorcb: ERROR, fd2=%d\n", mctx ? mctx->child_fd : -1);
+	log_dbg_level_printf(LOG_DBG_MODE_FINE, ">############################# proxy_listener_errorcb: ERROR, fd=%d, child_fd=%d\n", mctx ? mctx->fd : -1, mctx ? mctx->child_fd : -1);
 	struct event_base *evbase = evconnlistener_get_base(listener);
 	int err = EVUTIL_SOCKET_ERROR();
 	log_err_printf("Error %d on listener: %s\n", err,

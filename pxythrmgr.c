@@ -47,18 +47,100 @@
 
 #define THR_TIMER_TIMEOUT 10
 #define THR_TIMER_PRINT_INFO_TIMEOUT 1*THR_TIMER_TIMEOUT
-#define CONN_EXPIRE_TIME 30
+#define CONN_EXPIRE_TIME 120
+
+static void
+pxy_thrmgr_get_thr_expired_conns(pxy_thr_ctx_t *ctx, proxy_conn_meta_ctx_t **expired_conns)
+{
+	*expired_conns = NULL;
+
+	time_t now = time(NULL);
+
+	proxy_conn_meta_ctx_t *mctx = ctx->mctx_list;
+	while (mctx) {
+		unsigned long elapsed_time = now - mctx->access_time;
+		if (elapsed_time > CONN_EXPIRE_TIME) {
+			mctx->next_expired = *expired_conns;
+			*expired_conns = mctx;
+		}
+
+		mctx = mctx->next;
+	}
+	
+	mctx = *expired_conns;
+	if (mctx) {
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>> pxy_thrmgr_get_thr_expired_conns: ----------------------------- Expired conns: thr=%d\n", ctx->thridx);
+		while (mctx) {
+			proxy_conn_meta_ctx_t *next = mctx->next_expired;
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>> pxy_thrmgr_get_expired_conns: thr=%d, fd=%d, child_fd=%d, time=%lld\n",
+					mctx->thr->thridx, mctx->fd, mctx->child_fd, (long int) now - mctx->access_time);
+			mctx = next;
+		}
+	}
+}
+
+static void
+pxy_thrmgr_print_child(pxy_conn_child_ctx_t *child_ctx, int count)
+{
+	assert(child_ctx != NULL);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>> .......... pxy_thrmgr_print_child: thr=%d, cont=%d, src=%d, dst=%d, c=%d-%d, ci=%d\n",
+			child_ctx->mctx->thr->thridx, count, child_ctx->src_fd, child_ctx->dst_fd, child_ctx->src.closed, child_ctx->dst.closed, child_ctx->idx);
+	if (child_ctx->next) {
+		pxy_thrmgr_print_child(child_ctx->next, count);
+	}
+}
+
+static void
+pxy_thrmgr_print_thr_info(pxy_thr_ctx_t *ctx)
+{
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>> pxy_thrmgr_print_thr_info: thr=%d, load=%lu\n", ctx->thridx, ctx->load);
+
+	if (ctx->mctx_list) {
+		time_t now = time(NULL);
+
+		proxy_conn_meta_ctx_t *mctx = ctx->mctx_list;
+		int count = 0;
+		while (mctx) {
+			char *host, *port;
+			if (mctx->addrlen == 0 || (sys_sockaddr_str((struct sockaddr *)&mctx->addr, mctx->addrlen, &host, &port) != 0)) {
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>> pxy_thrmgr_print_thr_info: Cannot get host:port: thr=%d, cont=%d, fd=%d, child_fd=%d\n", ctx->thridx, count, mctx->fd, mctx->child_fd);
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>> pxy_thrmgr_print_thr_info: thr=%d, cont=%d, fd=%d, child_fd=%d, src=%d, dst=%d, srv_dst=%d, child_src=%d, child_dst=%d, p=%d-%d-%d c=%d-%d, pe=%d ce=%d tcc=%d, time=%lld\n",
+						ctx->thridx, count, mctx->fd, mctx->child_fd, mctx->src_fd, mctx->dst_fd, mctx->srv_dst_fd, mctx->child_src_fd, mctx->child_dst_fd,
+						mctx->src_closed, mctx->dst_closed, mctx->srv_dst_closed, mctx->child_src_closed, mctx->child_dst_closed, mctx->parent ? 1:0, mctx->children ? 1:0, mctx->child_count,(long int) now - mctx->access_time);
+			} else {
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>> pxy_thrmgr_print_thr_info: thr=%d, cont=%d, fd=%d, child_fd=%d, src=%d, dst=%d, srv_dst=%d, child_src=%d, child_dst=%d, p=%d-%d-%d c=%d-%d, pe=%d ce=%d tcc=%d, time=%lld, addr=%s:%s\n",
+						ctx->thridx, count, mctx->fd, mctx->child_fd, mctx->src_fd, mctx->dst_fd, mctx->srv_dst_fd, mctx->child_src_fd, mctx->child_dst_fd,
+						mctx->src_closed, mctx->dst_closed, mctx->srv_dst_closed, mctx->child_src_closed, mctx->child_dst_closed, mctx->parent ? 1:0, mctx->children ? 1:0, mctx->child_count, (long int) now - mctx->access_time, host ? host : "?", port ? port : "?");
+				free(host);
+				free(port);
+			}
+
+			if (mctx->children) {
+				pxy_thrmgr_print_child(mctx->children, count);
+			}
+
+			count++;
+			mctx = mctx->next;
+		}
+	}
+		
+	log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>> pxy_thrmgr_print_thr_info: EXIT\n");
+}
 
 /*
- * Dummy recurring timer event to prevent the event loops from exiting when
+ * Recurring timer event to prevent the event loops from exiting when
  * they run out of events.
  */
 static void
 pxy_thrmgr_timer_cb(UNUSED evutil_socket_t fd, UNUSED short what,
                     UNUSED void *arg)
 {
-	/* do nothing */
 	pxy_thr_ctx_t *ctx = arg;
+
+	if (ctx->timer_cb_running) {
+		return;
+	}
+	ctx->timer_cb_running = 1;
 
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! pxy_thrmgr_timer_cb <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< THREAD TIMER thr=%d, load=%lu, to=%u\n", ctx->thridx, ctx->load, ctx->timeout_count);
 	proxy_conn_meta_ctx_t *expired = NULL;
@@ -69,9 +151,9 @@ pxy_thrmgr_timer_cb(UNUSED evutil_socket_t fd, UNUSED short what,
 		while (expired) {
 			proxy_conn_meta_ctx_t *next = expired->next_expired;
 
-			log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>> !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! pxy_thrmgr_timer_cb: DELETE thr=%d, fd=%d, fd2=%d, time=%lld <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< TIMED OUT\n",
+			log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>> !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! pxy_thrmgr_timer_cb: DELETE thr=%d, fd=%d, child_fd=%d, time=%lld <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< TIMED OUT\n",
 					expired->thr->thridx, expired->fd, expired->child_fd, (long int) now - expired->access_time);
-			pxy_conn_free_all(expired);
+			pxy_conn_free(expired->parent);
 
 			expired = next;
 		}
@@ -82,6 +164,8 @@ pxy_thrmgr_timer_cb(UNUSED evutil_socket_t fd, UNUSED short what,
 		ctx->timeout_count = 0;
 		pxy_thrmgr_print_thr_info(ctx);
 	}
+
+	ctx->timer_cb_running = 0;
 }
 
 /*
@@ -254,7 +338,7 @@ pxy_thrmgr_remove_mctx(proxy_conn_meta_ctx_t *node, proxy_conn_meta_ctx_t **head
 {
 	assert(node != NULL);
 	assert(*head != NULL);
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_thrmgr_remove_node: DELETING, fd=%d, fd2=%d\n", node->fd, node->child_fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_thrmgr_remove_mctx: DELETING, fd=%d, child_fd=%d\n", node->fd, node->child_fd);
 	
 	// @attention We may get multiple conns with the same fd combinations, so they cannot uniquely define a conn; hence the need for uuids.
     if (uuid_compare(node->uuid, (*head)->uuid, NULL) == 0) {
@@ -330,7 +414,7 @@ void
 pxy_thrmgr_attach_child(proxy_conn_meta_ctx_t *mctx)
 {
 	pthread_mutex_lock(&mctx->thrmgr->mutex);
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_thrmgr_attach_child: ENTER\n");
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_thrmgr_attach_child\n");
 	mctx->thr->load++;
 	pthread_mutex_unlock(&mctx->thrmgr->mutex);
 }
@@ -344,7 +428,7 @@ pxy_thrmgr_detach(proxy_conn_meta_ctx_t *mctx)
 {
 	pthread_mutex_lock(&mctx->thrmgr->mutex);
 
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_thrmgr_detach: BEFORE pxy_thrmgr_remove_node\n");
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_thrmgr_detach: BEFORE pxy_thrmgr_remove_mctx\n");
 	pxy_thrmgr_print_thr_info(mctx->thr);
 
 	mctx->thr->load--;
@@ -352,11 +436,11 @@ pxy_thrmgr_detach(proxy_conn_meta_ctx_t *mctx)
 	if (!mctx->children) {
 		pxy_thrmgr_remove_mctx(mctx, &mctx->thr->mctx_list);
 	} else {
-		log_dbg_level_printf(LOG_DBG_MODE_FINER, ">>>>> pxy_thrmgr_detach: parent ctx has an active child, will not remove from the list, fd=%d, fd2=%d <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n",
+		log_dbg_level_printf(LOG_DBG_MODE_FINER, ">>>>> pxy_thrmgr_detach: parent has an active child, will not remove from the list, fd=%d, child_fd=%d <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n",
 				mctx->fd, mctx->child_fd);
 	}
 
-	log_dbg_level_printf(LOG_DBG_MODE_FINER, ">>>>> pxy_thrmgr_detach: AFTER pxy_thrmgr_remove_node\n");
+	log_dbg_level_printf(LOG_DBG_MODE_FINER, ">>>>> pxy_thrmgr_detach: AFTER pxy_thrmgr_remove_mctx\n");
 	pxy_thrmgr_print_thr_info(mctx->thr);
 
 	pthread_mutex_unlock(&mctx->thrmgr->mutex);
@@ -366,106 +450,9 @@ void
 pxy_thrmgr_detach_child(proxy_conn_meta_ctx_t *mctx)
 {
 	pthread_mutex_lock(&mctx->thrmgr->mutex);
-
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_thrmgr_detach_child: BEFORE pxy_thrmgr_remove_node\n");
-	pxy_thrmgr_print_thr_info(mctx->thr);
-
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_thrmgr_detach_child\n");
 	mctx->thr->load--;
-	
-	if (!mctx->parent && !mctx->children) {
-		pxy_thrmgr_remove_mctx(mctx, &mctx->thr->mctx_list);
-	} else {
-		if (mctx->parent) {
-			log_dbg_level_printf(LOG_DBG_MODE_FINER, ">>>>> pxy_thrmgr_detach_child: child ctx has an active parent, will not remove from the list, fd=%d, fd2=%d <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n",
-					mctx->fd, mctx->child_fd);
-		} else if (mctx->children) {
-			log_dbg_level_printf(LOG_DBG_MODE_FINER, ">>>>> pxy_thrmgr_detach_child: conn has 1+ active child, will not remove from the list, fd=%d, fd2=%d <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n",
-					mctx->fd, mctx->child_fd);
-		}
-	}
-
-	log_dbg_level_printf(LOG_DBG_MODE_FINER, ">>>>> pxy_thrmgr_detach_child: AFTER pxy_thrmgr_remove_node\n");
-	pxy_thrmgr_print_thr_info(mctx->thr);
-
 	pthread_mutex_unlock(&mctx->thrmgr->mutex);
-}
-
-static void
-pxy_thrmgr_print_child(pxy_conn_child_ctx_t *child_ctx, int count)
-{
-	assert(child_ctx != NULL);
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>> .......... pxy_thrmgr_print_child: thr=%d, cont=%d, src=%d, dst=%d, c=%d-%d, ci=%d\n",
-			child_ctx->mctx->thr->thridx, count, child_ctx->src_fd, child_ctx->dst_fd, child_ctx->src.closed, child_ctx->dst.closed, child_ctx->idx);
-	if (child_ctx->next) {
-		pxy_thrmgr_print_child(child_ctx->next, count);
-	}
-}
-
-void
-pxy_thrmgr_print_thr_info(pxy_thr_ctx_t *ctx)
-{
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>> pxy_thrmgr_print_thr_info: thr=%d, load=%lu\n", ctx->thridx, ctx->load);
-
-	if (ctx->mctx_list) {
-		time_t now = time(NULL);
-
-		proxy_conn_meta_ctx_t *mctx = ctx->mctx_list;
-		int count = 0;
-		while (mctx) {
-			char *host, *port;
-			if (mctx->addrlen == 0 || (sys_sockaddr_str((struct sockaddr *)&mctx->addr, mctx->addrlen, &host, &port) != 0)) {
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>> pxy_thrmgr_print_thr_info: Cannot get host:port: thr=%d, cont=%d, fd=%d, fd2=%d\n", ctx->thridx, count, mctx->fd, mctx->child_fd);
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>> pxy_thrmgr_print_thr_info: thr=%d, cont=%d, fd=%d, fd2=%d, src=%d, dst=%d, srv_dst=%d, child_src=%d, child_dst=%d, p=%d-%d-%d c=%d-%d, pe=%d ce=%d tcc=%d, time=%lld\n",
-						ctx->thridx, count, mctx->fd, mctx->child_fd, mctx->src_fd, mctx->dst_fd, mctx->srv_dst_fd, mctx->child_src_fd, mctx->child_dst_fd,
-						mctx->src_closed, mctx->dst_closed, mctx->srv_dst_closed, mctx->child_src_closed, mctx->child_dst_closed, mctx->parent ? 1:0, mctx->children ? 1:0, mctx->child_count,(long int) now - mctx->access_time);
-			} else {
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>> pxy_thrmgr_print_thr_info: thr=%d, cont=%d, fd=%d, fd2=%d, src=%d, dst=%d, srv_dst=%d, child_src=%d, child_dst=%d, p=%d-%d-%d c=%d-%d, pe=%d ce=%d tcc=%d, time=%lld, addr=%s:%s\n",
-						ctx->thridx, count, mctx->fd, mctx->child_fd, mctx->src_fd, mctx->dst_fd, mctx->srv_dst_fd, mctx->child_src_fd, mctx->child_dst_fd,
-						mctx->src_closed, mctx->dst_closed, mctx->srv_dst_closed, mctx->child_src_closed, mctx->child_dst_closed, mctx->parent ? 1:0, mctx->children ? 1:0, mctx->child_count, (long int) now - mctx->access_time, host ? host : "?", port ? port : "?");
-				free(host);
-				free(port);
-			}
-
-			if (mctx->children) {
-				pxy_thrmgr_print_child(mctx->children, count);
-			}
-
-			count++;
-			mctx = mctx->next;
-		}
-	}
-		
-	log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>> pxy_thrmgr_print_thr_info: EXIT\n");
-}
-
-void
-pxy_thrmgr_get_thr_expired_conns(pxy_thr_ctx_t *ctx, proxy_conn_meta_ctx_t **expired_conns)
-{
-	*expired_conns = NULL;
-
-	time_t now = time(NULL);
-
-	proxy_conn_meta_ctx_t *mctx = ctx->mctx_list;
-	while (mctx) {
-		unsigned long elapsed_time = now - mctx->access_time;
-		if (elapsed_time > CONN_EXPIRE_TIME) {
-			mctx->next_expired = *expired_conns;
-			*expired_conns = mctx;
-		}
-
-		mctx = mctx->next;
-	}
-	
-	mctx = *expired_conns;
-	if (mctx) {
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>> pxy_thrmgr_get_thr_expired_conns: ----------------------------- Expired conns: thr=%d\n", ctx->thridx);
-		while (mctx) {
-			proxy_conn_meta_ctx_t *next = mctx->next_expired;
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>> pxy_thrmgr_get_expired_conns: thr=%d, fd=%d, fd2=%d, time=%lld\n",
-					mctx->thr->thridx, mctx->fd, mctx->child_fd, (long int) now - mctx->access_time);
-			mctx = next;
-		}
-	}
 }
 
 /* vim: set noet ft=c: */
