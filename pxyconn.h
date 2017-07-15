@@ -126,13 +126,8 @@ struct pxy_conn_ctx {
 	struct event_base *evbase;
 	struct evdns_base *dnsbase;
 
-	evutil_socket_t src_fd;
 	evutil_socket_t dst_fd;
 	evutil_socket_t srv_dst_fd;
-
-	unsigned int src_closed : 1;
-	unsigned int dst_closed : 1;
-	unsigned int srv_dst_closed : 1;
 
 	// Priv sep socket to obtain a socket for children
 	evutil_socket_t clisock;
@@ -152,19 +147,16 @@ struct pxy_conn_ctx {
 	evutil_socket_t child_src_fd;
 	evutil_socket_t child_dst_fd;
 
-	unsigned int child_src_closed : 1;
-	unsigned int child_dst_closed : 1;
-
 	/* server name indicated by client in SNI TLS extension */
 	char *sni;
 
-	// Last access time, to determine expired conns
-	// Updated on entry to callback functions
-	time_t access_time;
-	
-	// Signal children that the conn is closing, so they should be freed too
-	unsigned int closing : 1;
+	// Conn create time
+	time_t ctime;
 
+	// Conn last access time, to determine expired conns
+	// Updated on entry to callback functions, parent or child
+	time_t atime;
+	
 	// Per-thread conn list
 	pxy_conn_ctx_t *next;
 

@@ -178,7 +178,7 @@ proxy_listener_setup(struct event_base *evbase, pxy_thrmgr_ctx_t *thrmgr,
 	lctx->clisock = clisock;
 	
 	// @todo Should we enable threadsafe event structs?
-	// @attention Crashes if passed NULL as user-supplied pointer
+	// @attention Do not pass NULL as user-supplied pointer
 	lctx->evcl = evconnlistener_new(evbase, proxy_listener_acceptcb,
 	                               lctx, LEV_OPT_CLOSE_ON_FREE, 1024, fd);
 //	                               lctx, LEV_OPT_CLOSE_ON_FREE|LEV_OPT_THREADSAFE, 1024, fd);
