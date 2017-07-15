@@ -38,7 +38,7 @@
 #include <event2/dns.h>
 #include <pthread.h>
 
-typedef struct proxy_conn_meta_ctx proxy_conn_meta_ctx_t;
+typedef struct pxy_conn_ctx pxy_conn_ctx_t;
 
 typedef struct pxy_thr_ctx {
 	pthread_t thr;
@@ -49,7 +49,7 @@ typedef struct pxy_thr_ctx {
 	int running;
 	int timer_cb_running;
 	unsigned int timeout_count;
-	proxy_conn_meta_ctx_t *mctx_list;
+	pxy_conn_ctx_t *conns;
 } pxy_thr_ctx_t;
 
 typedef struct pxy_thrmgr_ctx {
@@ -63,10 +63,10 @@ pxy_thrmgr_ctx_t * pxy_thrmgr_new(opts_t *) MALLOC;
 int pxy_thrmgr_run(pxy_thrmgr_ctx_t *) NONNULL(1) WUNRES;
 void pxy_thrmgr_free(pxy_thrmgr_ctx_t *) NONNULL(1);
 
-void pxy_thrmgr_attach(proxy_conn_meta_ctx_t *) NONNULL(1);
-void pxy_thrmgr_attach_child(proxy_conn_meta_ctx_t *) NONNULL(1);
-void pxy_thrmgr_detach(proxy_conn_meta_ctx_t *) NONNULL(1);
-void pxy_thrmgr_detach_child(proxy_conn_meta_ctx_t *) NONNULL(1);
+void pxy_thrmgr_attach(pxy_conn_ctx_t *) NONNULL(1);
+void pxy_thrmgr_attach_child(pxy_conn_ctx_t *) NONNULL(1);
+void pxy_thrmgr_detach(pxy_conn_ctx_t *) NONNULL(1);
+void pxy_thrmgr_detach_child(pxy_conn_ctx_t *) NONNULL(1);
 
 #endif /* !PXYTHRMGR_H */
 

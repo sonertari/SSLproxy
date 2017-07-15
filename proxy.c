@@ -104,11 +104,10 @@ proxy_listener_ctx_free(proxy_listener_ctx_t *ctx)
 // @todo Make this static?
 //static void
 void
-proxy_listener_errorcb(struct evconnlistener *listener, UNUSED void *ctx)
+proxy_listener_errorcb(struct evconnlistener *listener, UNUSED void *arg)
 {
-	proxy_conn_meta_ctx_t *mctx = ctx;
-	
-	log_dbg_level_printf(LOG_DBG_MODE_FINE, ">############################# proxy_listener_errorcb: ERROR, fd=%d, child_fd=%d\n", mctx ? mctx->fd : -1, mctx ? mctx->child_fd : -1);
+	log_dbg_level_printf(LOG_DBG_MODE_FINE, ">############################# proxy_listener_errorcb: ERROR\n");
+
 	struct event_base *evbase = evconnlistener_get_base(listener);
 	int err = EVUTIL_SOCKET_ERROR();
 	log_err_printf("Error %d on listener: %s\n", err,
@@ -179,6 +178,7 @@ proxy_listener_setup(struct event_base *evbase, pxy_thrmgr_ctx_t *thrmgr,
 	lctx->clisock = clisock;
 	
 	// @todo Should we enable threadsafe event structs?
+	// @attention Crashes if passed NULL as user-supplied pointer
 	lctx->evcl = evconnlistener_new(evbase, proxy_listener_acceptcb,
 	                               lctx, LEV_OPT_CLOSE_ON_FREE, 1024, fd);
 //	                               lctx, LEV_OPT_CLOSE_ON_FREE|LEV_OPT_THREADSAFE, 1024, fd);

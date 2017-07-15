@@ -40,6 +40,8 @@
 #include <event2/event.h>
 #include <event2/util.h>
 
+typedef struct pxy_conn_child_ctx pxy_conn_child_ctx_t;
+
 /* single socket bufferevent descriptor */
 typedef struct pxy_conn_desc {
 	struct bufferevent *bev;
@@ -49,7 +51,7 @@ typedef struct pxy_conn_desc {
 
 /* parent connection state consisting of three connection descriptors,
  * connection-wide state and the specs and options */
-typedef struct pxy_conn_ctx {
+struct pxy_conn_ctx {
 	/* per-connection state */
 	struct pxy_conn_desc src;
 	struct pxy_conn_desc srv_dst;
@@ -111,12 +113,68 @@ typedef struct pxy_conn_ctx {
 	int af;
 	X509 *origcrt;
 
-	proxy_conn_meta_ctx_t *mctx;
-} pxy_conn_ctx_t;
+	// Thread that the conn is attached to
+	pxy_thr_ctx_t *thr;
+
+	// Unique id of the conn
+	uuid_t *uuid;
+
+	pxy_thrmgr_ctx_t *thrmgr;
+	proxyspec_t *spec;
+	opts_t *opts;
+
+	struct event_base *evbase;
+	struct evdns_base *dnsbase;
+
+	evutil_socket_t src_fd;
+	evutil_socket_t dst_fd;
+	evutil_socket_t srv_dst_fd;
+
+	unsigned int src_closed : 1;
+	unsigned int dst_closed : 1;
+	unsigned int srv_dst_closed : 1;
+
+	// Priv sep socket to obtain a socket for children
+	evutil_socket_t clisock;
+
+	// Fd of the listener event for the children
+	evutil_socket_t child_fd;
+	struct evconnlistener *child_evcl;
+	// SSL proxy return address: The IP:port address the children are listening to
+	char *child_addr;
+
+	// Child list of the conn
+	pxy_conn_child_ctx_t *children;
+
+	// Number of children, active or closed
+	unsigned int child_count;
+
+	evutil_socket_t child_src_fd;
+	evutil_socket_t child_dst_fd;
+
+	unsigned int child_src_closed : 1;
+	unsigned int child_dst_closed : 1;
+
+	/* server name indicated by client in SNI TLS extension */
+	char *sni;
+
+	// Last access time, to determine expired conns
+	// Updated on entry to callback functions
+	time_t access_time;
+	
+	// Signal children that the conn is closing, so they should be freed too
+	unsigned int closing : 1;
+
+	// Per-thread conn list
+	pxy_conn_ctx_t *next;
+
+	// Expired conns are link-listed using this pointer
+	pxy_conn_ctx_t *next_expired;
+};
 
 /* child connection state consisting of two connection descriptors,
  * connection-wide state */
-typedef struct pxy_conn_child_ctx {
+struct pxy_conn_child_ctx {
 	/* per-connection state */
 	struct pxy_conn_desc src;
 	struct pxy_conn_desc dst;
@@ -144,14 +202,14 @@ typedef struct pxy_conn_child_ctx {
 	/* content log context */
 	log_content_ctx_t *logctx;
 
-	proxy_conn_meta_ctx_t *mctx;
+	pxy_conn_ctx_t *parent;
 
 	// Child index
 	unsigned int idx;
 
 	// Children of the conn are link-listed using this pointer
 	pxy_conn_child_ctx_t *next;
-} pxy_conn_child_ctx_t;
+};
 
 void pxy_conn_setup(evutil_socket_t, struct sockaddr *, int,
                     pxy_thrmgr_ctx_t *, proxyspec_t *, opts_t *,

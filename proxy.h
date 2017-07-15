@@ -35,9 +35,6 @@
 #include <uuid.h>
 
 typedef struct proxy_ctx proxy_ctx_t;
-typedef struct pxy_conn_ctx pxy_conn_ctx_t;
-typedef struct pxy_conn_child_ctx pxy_conn_child_ctx_t;
-typedef struct pxy_conn_child_info pxy_conn_child_info_t;
 
 /*
  * Listener context.
@@ -50,74 +47,6 @@ typedef struct proxy_listener_ctx {
 	struct evconnlistener *evcl;
 	struct proxy_listener_ctx *next;
 } proxy_listener_ctx_t;
-
-typedef struct proxy_conn_meta_ctx {
-	// Thread that the conn is attached to
-	pxy_thr_ctx_t *thr;
-
-	// Unique id of the conn
-	uuid_t *uuid;
-
-	pxy_thrmgr_ctx_t *thrmgr;
-	proxyspec_t *spec;
-	opts_t *opts;
-
-	struct event_base *evbase;
-	struct evdns_base *dnsbase;
-
-	unsigned int passthrough : 1;      /* 1 if SSL passthrough is active */
-	
-	evutil_socket_t fd;
-
-	// Parent ctx of the conn
-	pxy_conn_ctx_t *parent;
-
-	evutil_socket_t src_fd;
-	evutil_socket_t dst_fd;
-	evutil_socket_t srv_dst_fd;
-
-	unsigned int src_closed : 1;
-	unsigned int dst_closed : 1;
-	unsigned int srv_dst_closed : 1;
-
-	// Priv sep socket to obtain a socket for children
-	evutil_socket_t clisock;
-
-	// Fd of the listener event for the children
-	evutil_socket_t child_fd;
-	struct evconnlistener *child_evcl;
-	// SSL proxy return address: The IP:port address the children are listening to
-	char *child_addr;
-
-	// Child list of the conn
-	pxy_conn_child_ctx_t *children;
-
-	// Number of children, active or closed
-	unsigned int child_count;
-
-	evutil_socket_t child_src_fd;
-	evutil_socket_t child_dst_fd;
-
-	unsigned int child_src_closed : 1;
-	unsigned int child_dst_closed : 1;
-
-	/* server name indicated by client in SNI TLS extension */
-	char *sni;
-
-	/* original destination address, family and certificate */
-	struct sockaddr_storage addr;
-	socklen_t addrlen;
-
-	// Last access time, to determine expired conns
-	// Updated on entry to callback functions
-	time_t access_time;
-
-	// Per-thread conn list
-	proxy_conn_meta_ctx_t *next;
-
-	// Expired conns are link-listed using this pointer
-	proxy_conn_meta_ctx_t *next_expired;
-} proxy_conn_meta_ctx_t;
 
 proxy_ctx_t * proxy_new(opts_t *, int) NONNULL(1) MALLOC;
 void proxy_run(proxy_ctx_t *) NONNULL(1);
