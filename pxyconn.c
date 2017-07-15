@@ -27,6 +27,7 @@
 
 #include "pxyconn.h"
 
+#include "privsep.h"
 #include "pxysslshut.h"
 #include "cachemgr.h"
 #include "ssl.h"
@@ -599,8 +600,8 @@ pxy_log_connect_nonhttp(pxy_conn_ctx_t *ctx)
 		              STRORDASH(ctx->ssl_names),
 		              SSL_get_version(ctx->src.ssl),
 		              SSL_get_cipher(ctx->src.ssl),
-		              SSL_get_version(ctx->srv_dst.ssl),
-		              SSL_get_cipher(ctx->srv_dst.ssl),
+		              !ctx->srv_dst.closed ? SSL_get_version(ctx->srv_dst.ssl):"?",
+		              !ctx->srv_dst.closed ? SSL_get_cipher(ctx->srv_dst.ssl):"?",
 		              STRORDASH(ctx->origcrtfpr),
 		              STRORDASH(ctx->usedcrtfpr)
 #ifdef HAVE_LOCAL_PROCINFO
@@ -704,8 +705,8 @@ pxy_log_connect_http(pxy_conn_ctx_t *ctx)
 		              STRORDASH(ctx->ssl_names),
 		              SSL_get_version(ctx->src.ssl),
 		              SSL_get_cipher(ctx->src.ssl),
-		              SSL_get_version(ctx->srv_dst.ssl),
-		              SSL_get_cipher(ctx->srv_dst.ssl),
+		              !ctx->srv_dst.closed ? SSL_get_version(ctx->srv_dst.ssl):"?",
+		              !ctx->srv_dst.closed ? SSL_get_cipher(ctx->srv_dst.ssl):"?",
 		              STRORDASH(ctx->origcrtfpr),
 		              STRORDASH(ctx->usedcrtfpr),
 #ifdef HAVE_LOCAL_PROCINFO
@@ -2301,16 +2302,12 @@ pxy_connected_enable(struct bufferevent *bev, pxy_conn_ctx_t *ctx, char *event_n
 	}
 
 	if (ctx->srv_dst_connected && ctx->dst_connected && !ctx->connected) {
-		if (ctx->connected) {
-			log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>=================================== pxy_connected_enable: <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< ctx->connected was already CONNECTED\n");
-		}
-
 		ctx->connected = 1;
 
-		pxy_conn_desc_t *dst_ctx = &ctx->srv_dst;
+		pxy_conn_desc_t *srv_dst_ctx = &ctx->srv_dst;
 		if ((ctx->spec->ssl || ctx->clienthello_found) && !ctx->passthrough) {
 			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>=================================== pxy_srcssl_create <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< SSL\n");
-			ctx->src.ssl = pxy_srcssl_create(ctx, dst_ctx->ssl);
+			ctx->src.ssl = pxy_srcssl_create(ctx, srv_dst_ctx->ssl);
 			if (!ctx->src.ssl) {
 				bufferevent_free_and_close_fd(ctx->srv_dst.bev, ctx);
 				ctx->srv_dst.bev = NULL;
@@ -2324,44 +2321,102 @@ pxy_connected_enable(struct bufferevent *bev, pxy_conn_ctx_t *ctx, char *event_n
 					pxy_fd_readcb(ctx->fd, 0, ctx);
 					return 0;
 				}
+				evutil_closesocket(ctx->fd);
 				pxy_conn_free(ctx);
 				return 0;
 			}
 		}
 		if (ctx->clienthello_found) {
 			if (OPTS_DEBUG(ctx->opts)) {
-				log_dbg_printf(">>>>>=================================== pxy_connected_enable: Completing autossl upgrade\n");
+				log_dbg_printf("Completing autossl upgrade\n");
 			}
 			ctx->src.bev = bufferevent_openssl_filter_new(
 			               ctx->evbase, ctx->src.bev, ctx->src.ssl,
 			               BUFFEREVENT_SSL_ACCEPTING,
 			               BEV_OPT_DEFER_CALLBACKS);
-			if (!ctx->src.bev) {
-				log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>=================================== pxy_connected_enable: src.bev ssl NULL FREEING\n");
-				pxy_conn_free(ctx);
-				return 0;
-			}
 			bufferevent_setcb(ctx->src.bev, pxy_bev_readcb,
 			                  pxy_bev_writecb, pxy_bev_eventcb,
 			                  ctx);
 		} else {
 			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>=================================== pxy_connected_enable: SETUP src.bev fd=%d\n", ctx->fd);
 			ctx->src.bev = pxy_bufferevent_setup(ctx, ctx->fd, ctx->src.ssl);
-			if (!ctx->src.bev) {
-				log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>=================================== pxy_connected_enable: src.bev NULL FREEING\n");
+		}
+		if (!ctx->src.bev) {
+			log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>=================================== pxy_connected_enable: src.bev NULL FREEING\n");
+			if (ctx->src.ssl) {
+				SSL_free(ctx->src.ssl);
+				ctx->src.ssl = NULL;
+			}
+			evutil_closesocket(ctx->fd);
+			pxy_conn_free(ctx);
+			return 0;
+		}
+
+		/* prepare logging, part 2 */
+		if (WANT_CONNECT_LOG(ctx) || WANT_CONTENT_LOG(ctx)) {
+			if (sys_sockaddr_str((struct sockaddr *)
+			                     &ctx->addr, ctx->addrlen,
+			                     &ctx->dsthost_str,
+			                     &ctx->dstport_str) != 0) {
+				ctx->enomem = 1;
+				pxy_conn_free(ctx);
+				return 0;
+			}
+
+#ifdef HAVE_LOCAL_PROCINFO
+			if (ctx->opts->lprocinfo) {
+				/* fetch process info */
+				if (proc_pid_for_addr(&ctx->lproc.pid,
+				        (struct sockaddr*)&ctx->lproc.srcaddr,
+				        ctx->lproc.srcaddrlen) == 0 &&
+				    ctx->lproc.pid != -1 &&
+				    proc_get_info(ctx->lproc.pid,
+				                  &ctx->lproc.exec_path,
+				                  &ctx->lproc.uid,
+				                  &ctx->lproc.gid) == 0) {
+					/* fetch user/group names */
+					ctx->lproc.user = sys_user_str(
+					                ctx->lproc.uid);
+					ctx->lproc.group = sys_group_str(
+					                ctx->lproc.gid);
+					if (!ctx->lproc.user ||
+					    !ctx->lproc.group) {
+						ctx->enomem = 1;
+						pxy_conn_free(ctx);
+						return 0;
+					}
+				}
+			}
+#endif /* HAVE_LOCAL_PROCINFO */
+		}
+		if (WANT_CONTENT_LOG(ctx)) {
+			if (log_content_open(&ctx->logctx, ctx->opts,
+			                     ctx->srchost_str, ctx->srcport_str,
+			                     ctx->dsthost_str, ctx->dstport_str,
+#ifdef HAVE_LOCAL_PROCINFO
+			                     ctx->lproc.exec_path,
+			                     ctx->lproc.user,
+			                     ctx->lproc.group
+#else /* HAVE_LOCAL_PROCINFO */
+			                     NULL, NULL, NULL
+#endif /* HAVE_LOCAL_PROCINFO */
+			                    ) == -1) {
+				if (errno == ENOMEM)
+					ctx->enomem = 1;
 				pxy_conn_free(ctx);
 				return 0;
 			}
 		}
 
+		// @todo Closing srv_dst causes TCP conns to stall sometimes (SSL cons were ok), so disabled for now
 		// @attention Free the dst of the parent ctx asap, we don't need it, but we need its fd
-		pxy_conn_desc_t *srv_dst = &ctx->srv_dst;
-		if (srv_dst->bev) {
-			log_dbg_level_printf(LOG_DBG_MODE_FINER, ">>>>>=================================== pxy_connected_enable: evutil_closesocket srv_dst->bev, fd=%d\n", bufferevent_getfd(srv_dst->bev));
-			bufferevent_free_and_close_fd(srv_dst->bev, ctx);
-			srv_dst->bev = NULL;
-			srv_dst->closed = 1;
-		}
+//		pxy_conn_desc_t *srv_dst = &ctx->srv_dst;
+//		if (srv_dst->bev) {
+//			log_dbg_level_printf(LOG_DBG_MODE_FINER, ">>>>>=================================== pxy_connected_enable: evutil_closesocket srv_dst->bev, fd=%d\n", bufferevent_getfd(srv_dst->bev));
+//			bufferevent_free_and_close_fd(srv_dst->bev, ctx);
+//			srv_dst->bev = NULL;
+//			srv_dst->closed = 1;
+//		}
 
 		// Child connections will use the addr info obtained by the parent connection
 		ctx->addrlen = ctx->addrlen;
@@ -2386,7 +2441,7 @@ pxy_connected_enable(struct bufferevent *bev, pxy_conn_ctx_t *ctx, char *event_n
 		if (!child_evcl) {
 			log_err_printf("Error creating child evconnlistener: %s, fd=%d, child_fd=%d <<<<<<\n", strerror(errno), ctx->fd, ctx->child_fd);
 			// @attention Cannot call proxy_listener_ctx_free() on child_evcl, child_evcl does not have any ctx with next listener
-			// @attention Close child fd separately, because child evcl does not exist yet, hence fd would not be closed by calling pxy_all_conn_free()
+			// @attention Close child fd separately, because child evcl does not exist yet, hence fd would not be closed by calling pxy_conn_free()
 			evutil_closesocket(ctx->child_fd);
 			pxy_conn_free(ctx);
 			return 0;
@@ -2417,6 +2472,62 @@ pxy_connected_enable(struct bufferevent *bev, pxy_conn_ctx_t *ctx, char *event_n
 
 		// Now open the gates
 		bufferevent_enable(ctx->src.bev, EV_READ|EV_WRITE);
+	}
+	
+	if ((bev==ctx->src.bev) || (bev==ctx->srv_dst.bev)) {
+		pxy_conn_desc_t *this;
+		if (ctx->srv_dst.bev) {
+			this = (bev==ctx->src.bev) ? &ctx->src : &ctx->srv_dst;
+		} else if (bev==ctx->src.bev) {
+			this = &ctx->src;
+		} else {
+			return 1;
+		}
+
+		/* log connection if we don't analyze any headers */
+		if ((!this->ssl || (bev == ctx->src.bev)) &&
+		    (!ctx->spec->http || ctx->passthrough) &&
+		    WANT_CONNECT_LOG(ctx)) {
+			log_dbg_level_printf(LOG_DBG_MODE_FINER, ">>>>>=================================== pxy_connected_enable: Log conn, fd=%d, child_fd=%d\n", ctx->fd, ctx->child_fd);
+			pxy_log_connect_nonhttp(ctx);
+		}
+
+		/* write SSL certificates to gendir */
+		if (this->ssl && (bev == ctx->src.bev) &&
+		    ctx->opts->certgendir) {
+			log_dbg_level_printf(LOG_DBG_MODE_FINER, ">>>>>=================================== pxy_connected_enable: Write SSL certificates to gendir, fd=%d, child_fd=%d\n", ctx->fd, ctx->child_fd);
+			pxy_srccert_write(ctx);
+		}
+
+		if (OPTS_DEBUG(ctx->opts)) {
+			if (this->ssl) {
+				/* for SSL, we get two connect events */
+				log_dbg_printf("SSL connected %s [%s]:%s"
+				               " %s %s\n",
+				               bev == ctx->srv_dst.bev ?
+				               "to" : "from",
+				               bev == ctx->srv_dst.bev ?
+				               ctx->dsthost_str :
+				               ctx->srchost_str,
+				               bev == ctx->srv_dst.bev ?
+				               ctx->dstport_str :
+				               ctx->srcport_str,
+				               SSL_get_version(this->ssl),
+				               SSL_get_cipher(this->ssl));
+			} else {
+				/* for TCP, we get only a dst connect event,
+				 * since src was already connected from the
+				 * beginning; mirror SSL debug output anyway
+				 * in order not to confuse anyone who might be
+				 * looking closely at the output */
+				log_dbg_printf("TCP connected to [%s]:%s\n",
+				               ctx->dsthost_str,
+				               ctx->dstport_str);
+				log_dbg_printf("TCP connected from [%s]:%s\n",
+				               ctx->srchost_str,
+				               ctx->srcport_str);
+			}
+		}
 	}
 	return 1;
 }
@@ -2452,7 +2563,7 @@ pxy_bev_writecb(struct bufferevent *bev, void *arg)
 //	if (bev==ctx->dst.bev) {
 //		// @attention Sometimes dst write cb fires but not event cb, especially if the listener cb is not finished yet, so the conn stalls. This is a workaround for this error condition, nothing else seems to work.
 //		// XXX: Workaround, should find the real cause
-//		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>+++++++++++++++++++++++++++++++++++ pxy_bev_writecb: pxy_all_conn_free %s fd=%d, child_fd=%d, cfd=%d <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< DST W CB B4 CONNECTED\n", event_name, ctx->fd, ctx->child_fd, ctx->fd);
+//		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>+++++++++++++++++++++++++++++++++++ pxy_bev_writecb: pxy_conn_free %s fd=%d, child_fd=%d, cfd=%d <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< DST W CB B4 CONNECTED\n", event_name, ctx->fd, ctx->child_fd, ctx->fd);
 //		pxy_conn_free(ctx);
 //		return;
 //	}
@@ -2687,7 +2798,7 @@ pxy_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 		}
 
 		// @todo Close and free the connections upon errors
-		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>=================================== pxy_bev_eventcb: ERROR pxy_all_conn_free %s fd=%d\n", event_name, ctx->fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>=================================== pxy_bev_eventcb: ERROR pxy_conn_free %s fd=%d\n", event_name, ctx->fd);
 		pxy_conn_free(ctx);
 		goto leave;
 	}
