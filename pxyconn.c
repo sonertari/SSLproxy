@@ -2173,7 +2173,9 @@ pxy_conn_connect_child(pxy_conn_child_ctx_t *ctx)
 	//bufferevent_setwatermark(ctx->src.bev, EV_READ, 200, OUTBUF_LIMIT);
 
 	/* create server-side socket and eventbuffer */
-	if (parent->spec->ssl && !parent->passthrough) {
+	// Children rely on the findings of parent
+	if ((parent->spec->ssl || parent->clienthello_found) && !parent->passthrough) {
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_conn_connect_child: pxy_srcssl_create <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< SSL\n");
 		ctx->dst.ssl = pxy_dstssl_create(parent);
 		if (!ctx->dst.ssl) {
 			log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>> pxy_conn_connect_child: Error creating SSL ctx->dst.ssl, fd=%d\n", ctx->fd);
@@ -2183,11 +2185,21 @@ pxy_conn_connect_child(pxy_conn_child_ctx_t *ctx)
 			return;
 		}
 	}
-
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_conn_connect_child: pxy_bufferevent_setup_child for dst.bev, fd=%d\n", ctx->fd);
-	ctx->dst.bev = pxy_bufferevent_setup_child(ctx, -1, ctx->dst.ssl);
+	if (parent->clienthello_found) {
+		if (OPTS_DEBUG(parent->opts)) {
+			log_dbg_printf("Completing autossl upgrade\n");
+		}
+		ctx->dst.bev = bufferevent_openssl_filter_new(
+					   parent->evbase, ctx->dst.bev, ctx->dst.ssl,
+					   BUFFEREVENT_SSL_ACCEPTING,
+					   BEV_OPT_DEFER_CALLBACKS);
+		bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb_child, pxy_bev_writecb_child, pxy_bev_eventcb_child, ctx);
+	} else {
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_conn_connect_child: SETUP dst.bev fd=%d\n", ctx->fd);
+		ctx->dst.bev = pxy_bufferevent_setup_child(ctx, -1, ctx->dst.ssl);
+	}
 	if (!ctx->dst.bev) {
-		log_err_printf("Error creating child dst\n");
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>> pxy_conn_connect_child: dst.bev NULL FREEING\n");
 		if (ctx->dst.ssl) {
 			SSL_free(ctx->dst.ssl);
 			ctx->dst.ssl = NULL;
@@ -2408,15 +2420,15 @@ pxy_connected_enable(struct bufferevent *bev, pxy_conn_ctx_t *ctx, char *event_n
 			}
 		}
 
-		// @todo Closing srv_dst causes TCP conns to stall sometimes (SSL cons were ok), so disabled for now
+		// @todo Closing srv_dst causes TCP conns to stall sometimes (SSL cons were ok)?
 		// @attention Free the dst of the parent ctx asap, we don't need it, but we need its fd
-//		pxy_conn_desc_t *srv_dst = &ctx->srv_dst;
-//		if (srv_dst->bev) {
-//			log_dbg_level_printf(LOG_DBG_MODE_FINER, ">>>>>=================================== pxy_connected_enable: evutil_closesocket srv_dst->bev, fd=%d\n", bufferevent_getfd(srv_dst->bev));
-//			bufferevent_free_and_close_fd(srv_dst->bev, ctx);
-//			srv_dst->bev = NULL;
-//			srv_dst->closed = 1;
-//		}
+		pxy_conn_desc_t *srv_dst = &ctx->srv_dst;
+		if (srv_dst->bev) {
+			log_dbg_level_printf(LOG_DBG_MODE_FINER, ">>>>>=================================== pxy_connected_enable: evutil_closesocket srv_dst->bev, fd=%d\n", bufferevent_getfd(srv_dst->bev));
+			bufferevent_free_and_close_fd(srv_dst->bev, ctx);
+			srv_dst->bev = NULL;
+			srv_dst->closed = 1;
+		}
 
 		// Child connections will use the addr info obtained by the parent connection
 		ctx->addrlen = ctx->addrlen;
