@@ -358,6 +358,8 @@ pxy_conn_ctx_free(pxy_conn_ctx_t *ctx)
 		                (void*)ctx);
 	}
 #endif /* DEBUG_PROXY */
+	pxy_thrmgr_detach(ctx);
+
 	if (ctx->srchost_str) {
 		free(ctx->srchost_str);
 	}
@@ -483,8 +485,6 @@ pxy_conn_free(pxy_conn_ctx_t *ctx)
 		evconnlistener_free(ctx->child_evcl);
 		ctx->child_evcl = NULL;
 	}
-
-	pxy_thrmgr_detach(ctx);
 
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">############################# pxy_conn_free: FREEING ctx, fd=%d, child_fd=%d\n", fd, child_fd);
 	pxy_conn_ctx_free(ctx);
@@ -3139,6 +3139,7 @@ static void
 pxy_sni_resolve_cb(int errcode, struct evutil_addrinfo *ai, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>=================================== pxy_sni_resolve_cb: ENTER fd=%d\n", ctx->fd);
 
 	if (errcode) {
 		log_err_printf("Cannot resolve SNI hostname '%s': %s\n",
@@ -3171,6 +3172,7 @@ pxy_fd_readcb(MAYBE_UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 #undef MAYBE_UNUSED
 {
 	pxy_conn_ctx_t *ctx = arg;
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>=================================== pxy_fd_readcb: ENTER fd=%d\n", ctx->fd);
 
 	ctx->atime = time(NULL);
 
@@ -3186,13 +3188,14 @@ pxy_fd_readcb(MAYBE_UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 		n = recv(fd, buf, sizeof(buf), MSG_PEEK);
 		if (n == -1) {
 			log_err_printf("Error peeking on fd, aborting "
-			               "connection\n");
+			               "connection, fd=%d\n", ctx->fd);
 			evutil_closesocket(fd);
 			pxy_conn_ctx_free(ctx);
 			return;
 		}
 		if (n == 0) {
 			/* socket got closed while we were waiting */
+			log_err_printf("Socket got closed while waiting, fd=%d\n", ctx->fd);
 			evutil_closesocket(fd);
 			pxy_conn_ctx_free(ctx);
 			return;
@@ -3202,16 +3205,16 @@ pxy_fd_readcb(MAYBE_UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 		if ((rv == 1) && !chello) {
 			log_err_printf("Peeking did not yield a (truncated) "
 			               "ClientHello message, "
-			               "aborting connection\n");
+			               "aborting connection, fd=%d\n", ctx->fd);
 			evutil_closesocket(fd);
 			pxy_conn_ctx_free(ctx);
 			return;
 		}
 		if (OPTS_DEBUG(ctx->opts)) {
-			log_dbg_printf("SNI peek: [%s] [%s]\n",
+			log_dbg_printf("SNI peek: [%s] [%s], fd=%d\n",
 			               ctx->sni ? ctx->sni : "n/a",
 			               ((rv == 1) && chello) ?
-			               "incomplete" : "complete");
+			               "incomplete" : "complete", ctx->fd);
 		}
 		if ((rv == 1) && chello && (ctx->sni_peek_retries++ < 50)) {
 			/* ssl_tls_clienthello_parse indicates that we
@@ -3230,7 +3233,7 @@ pxy_fd_readcb(MAYBE_UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 			if (!ctx->ev) {
 				log_err_printf("Error creating retry "
 				               "event, aborting "
-				               "connection\n");
+				               "connection, fd=%d\n", ctx->fd);
 				evutil_closesocket(fd);
 				pxy_conn_ctx_free(ctx);
 				return;
