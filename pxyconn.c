@@ -138,7 +138,7 @@ pxy_conn_ctx_new(evutil_socket_t fd,
 	char *uuid_str;
 	uuid_to_string(ctx->uuid, &uuid_str, NULL);
 	if (uuid_str) {
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>................... pxy_conn_meta_ctx_new: uuid = %s <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n", uuid_str);
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>................... pxy_conn_ctx_new: uuid = %s <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n", uuid_str);
 		free(uuid_str);
 	}
 #endif /* OPENBSD */
@@ -1344,7 +1344,9 @@ pxy_bufferevent_setup(pxy_conn_ctx_t *ctx, evutil_socket_t fd, SSL *ssl)
 				((fd == -1) ? BUFFEREVENT_SSL_CONNECTING : BUFFEREVENT_SSL_ACCEPTING),
 				BEV_OPT_DEFER_CALLBACKS);
 	} else {
+		// @todo Do we really need to defer callbacks? BEV_OPT_DEFER_CALLBACKS seems responsible for the issue with srv_dst: We get writecb sometimes, no eventcb for CONNECTED event
 		bev = bufferevent_socket_new(ctx->evbase, fd, BEV_OPT_DEFER_CALLBACKS);
+//		bev = bufferevent_socket_new(ctx->evbase, fd, 0);
 	}
 	if (!bev) {
 		log_err_printf("Error creating bufferevent socket\n");
@@ -2572,20 +2574,15 @@ pxy_bev_writecb(struct bufferevent *bev, void *arg)
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>+++++++++++++++++++++++++++++++++++ pxy_bev_writecb: ENTER %s fd=%d, child_fd=%d\n", event_name, ctx->fd, ctx->child_fd);
 
 	ctx->atime = time(NULL);
-	
-	// @attention This does not work, since the listener cb is not finished yet, trying to free the conn causes multithreading issues
-//	if (bev==ctx->srv_dst.bev) {
-//		// @attention Sometimes dst write cb fires but not event cb, especially if the listener cb is not finished yet, so the conn stalls. This is a workaround for this error condition, nothing else seems to work.
-//		// XXX: Workaround, should find the real cause
-//		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>+++++++++++++++++++++++++++++++++++ pxy_bev_writecb: pxy_conn_free %s fd=%d, child_fd=%d, cfd=%d <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< DST W CB B4 CONNECTED\n", event_name, ctx->fd, ctx->child_fd, ctx->fd);
-//		pxy_conn_free(ctx);
-//		return;
-//	}
 
 	// @todo Should enable the lines below to workaround eventcb issue? Would it help?
-//	if (bev == ctx->srv_dst.bev && !ctx->srv_dst_connected) {
-//		pxy_bev_eventcb(bev, BEV_EVENT_CONNECTED, ctx);
-//	}
+	// @attention Sometimes dst write cb fires but not event cb, especially if the listener cb is not finished yet, so the conn stalls. This is a workaround for this error condition, nothing else seems to work.
+	// @attention Do not try to free the conn here, since the listener cb may not be finished yet, causes multithreading issues
+	// XXX: Workaround, should find the real cause: BEV_OPT_DEFER_CALLBACKS?
+	if (bev == ctx->srv_dst.bev && !ctx->srv_dst_connected) {
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>+++++++++++++++++++++++++++++++++++ pxy_bev_writecb: pxy_bev_eventcb %s fd=%d, child_fd=%d <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< DST W CB B4 CONNECTED\n", event_name, ctx->fd, ctx->child_fd);
+		pxy_bev_eventcb(bev, BEV_EVENT_CONNECTED, ctx);
+	}
 			
 	if ((bev==ctx->src.bev) || (bev==ctx->dst.bev)) {
 		pxy_conn_desc_t *this = (bev==ctx->src.bev) ? &ctx->src : &ctx->dst;
@@ -3121,22 +3118,20 @@ pxy_conn_connect(pxy_conn_ctx_t *ctx)
 
 	// @attention Sometimes dst write cb fires but not event cb, especially if this listener cb is not finished yet, so the conn stalls.
 	// @todo Why does event cb not fire sometimes?
+	// @attention BEV_OPT_DEFER_CALLBACKS seems responsible for the issue with srv_dst, libevent acts as if we call event connect() ourselves.
+	// @see Launching connections on socket-based bufferevents at http://www.wangafu.net/~nickm/libevent-book/Ref6_bufferevent.html
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>=================================== pxy_conn_connect: bufferevent_setcb for srv_dst, fd=%d\n", fd);
-	// Disable and NULL r/w cbs, we do nothing for srv_dst in r/w cbs.
-	bufferevent_setcb(ctx->srv_dst.bev, NULL, NULL, pxy_bev_eventcb, ctx);
-//	bufferevent_setcb(ctx->srv_dst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
-//	bufferevent_enable(ctx->srv_dst.bev, EV_READ|EV_WRITE);
+	// Disable and NULL r cb, we do nothing for srv_dst in r cb.
+	bufferevent_setcb(ctx->srv_dst.bev, NULL, pxy_bev_writecb, pxy_bev_eventcb, ctx);
+	bufferevent_enable(ctx->srv_dst.bev, EV_READ|EV_WRITE);
 	
 	/* initiate connection */
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>=================================== pxy_conn_connect: bufferevent_socket_connect for srv_dst, fd=%d\n", fd);
 	if (bufferevent_socket_connect(ctx->srv_dst.bev, (struct sockaddr *)&ctx->addr, ctx->addrlen) == -1) {
 		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>=================================== pxy_conn_connect: FAILED bufferevent_socket_connect for srv_dst\n");
-		if (ctx->srv_dst.ssl) {
-			SSL_free(ctx->srv_dst.ssl);
-			ctx->srv_dst.ssl = NULL;
-		}
-		pxy_conn_free(ctx);
-		return;
+		// @attention Do not try to close the conn here , otherwise both pxy_conn_connect() and eventcb try to free the conn using pxy_conn_free(),
+		// they are running on different threads, causing multithreading issues, e.g. signal 10.
+		// @todo Should we use thrmgr->mutex? Can we?
 	}
 
 	// @attention Do not do anything else with the ctx after connecting socket, otherwise if pxy_bev_eventcb fires on error, such as due to "No route to host",
