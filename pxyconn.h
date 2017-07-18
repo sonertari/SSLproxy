@@ -52,26 +52,18 @@ typedef struct pxy_conn_desc {
 /* parent connection state consisting of three connection descriptors,
  * connection-wide state and the specs and options */
 struct pxy_conn_ctx {
+	// Common properties
 	/* per-connection state */
 	struct pxy_conn_desc src;
-	struct pxy_conn_desc srv_dst;
 	struct pxy_conn_desc dst;
-	
+
 	/* status flags */
-	unsigned int immutable_cert : 1;  /* 1 if the cert cannot be changed */
-	unsigned int generated_cert : 1;     /* 1 if we generated a new cert */
 	unsigned int connected : 1;       /* 0 until both ends are connected */
-	unsigned int srv_dst_connected : 1;   /* 0 until server is connected */
-	unsigned int dst_connected : 1;          /* 0 until dst is connected */
 	unsigned int seen_req_header : 1; /* 0 until request header complete */
 	unsigned int seen_resp_header : 1;  /* 0 until response hdr complete */
 	unsigned int sent_http_conn_close : 1;   /* 0 until Conn: close sent */
-	unsigned int passthrough : 1;      /* 1 if SSL passthrough is active */
 	unsigned int ocsp_denied : 1;                /* 1 if OCSP was denied */
 	unsigned int enomem : 1;                       /* 1 if out of memory */
-	unsigned int sni_peek_retries : 6;       /* max 64 SNI parse retries */
-	unsigned int clienthello_search : 1;       /* 1 if waiting for hello */
-	unsigned int clienthello_found : 1;      /* 1 if conn upgrade to SSL */
 
 	/* log strings from socket */
 	char *srchost_str;
@@ -95,16 +87,24 @@ struct pxy_conn_ctx {
 	char *origcrtfpr;
 	char *usedcrtfpr;
 
-#ifdef HAVE_LOCAL_PROCINFO
-	/* local process information */
-	pxy_conn_lproc_desc_t lproc;
-#endif /* HAVE_LOCAL_PROCINFO */
+	/* store fd and fd event while connected is 0 */
+	evutil_socket_t fd;
 
 	/* content log context */
 	log_content_ctx_t *logctx;
+	// End of common properties
 
-	/* store fd and fd event while connected is 0 */
-	evutil_socket_t fd;
+	unsigned int immutable_cert : 1;  /* 1 if the cert cannot be changed */
+	unsigned int generated_cert : 1;     /* 1 if we generated a new cert */
+	unsigned int srv_dst_connected : 1;   /* 0 until server is connected */
+	unsigned int dst_connected : 1;          /* 0 until dst is connected */
+	unsigned int passthrough : 1;      /* 1 if SSL passthrough is active */
+	unsigned int sni_peek_retries : 6;       /* max 64 SNI parse retries */
+	unsigned int clienthello_search : 1;       /* 1 if waiting for hello */
+	unsigned int clienthello_found : 1;      /* 1 if conn upgrade to SSL */
+
+	struct pxy_conn_desc srv_dst;
+
 	struct event *ev;
 
 	/* original destination address, family and certificate */
@@ -162,22 +162,27 @@ struct pxy_conn_ctx {
 
 	// Expired conns are link-listed using this pointer
 	pxy_conn_ctx_t *next_expired;
+
+#ifdef HAVE_LOCAL_PROCINFO
+	/* local process information */
+	pxy_conn_lproc_desc_t lproc;
+#endif /* HAVE_LOCAL_PROCINFO */
 };
 
 /* child connection state consisting of two connection descriptors,
  * connection-wide state */
 struct pxy_conn_child_ctx {
+	// Common properties
 	/* per-connection state */
 	struct pxy_conn_desc src;
 	struct pxy_conn_desc dst;
 
-	evutil_socket_t fd;
-
-	evutil_socket_t src_fd;
-	evutil_socket_t dst_fd;
-
 	/* status flags */
 	unsigned int connected : 1;       /* 0 until both ends are connected */
+	unsigned int seen_req_header : 1; /* 0 until request header complete */
+	unsigned int seen_resp_header : 1;  /* 0 until response hdr complete */
+	unsigned int sent_http_conn_close : 1;   /* 0 until Conn: close sent */
+	unsigned int ocsp_denied : 1;                /* 1 if OCSP was denied */
 	unsigned int enomem : 1;                       /* 1 if out of memory */
 
 	/* log strings from socket */
@@ -186,13 +191,31 @@ struct pxy_conn_child_ctx {
 	char *dsthost_str;
 	char *dstport_str;
 
+	/* log strings from HTTP request */
+	char *http_method;
+	char *http_uri;
+	char *http_host;
+	char *http_content_type;
+
+	/* log strings from HTTP response */
+	char *http_status_code;
+	char *http_status_text;
+	char *http_content_length;
+
 	/* log strings related to SSL */
 	char *ssl_names;
 	char *origcrtfpr;
 	char *usedcrtfpr;
 
+	/* store fd and fd event while connected is 0 */
+	evutil_socket_t fd;
+
 	/* content log context */
 	log_content_ctx_t *logctx;
+	// End of common properties
+
+	evutil_socket_t src_fd;
+	evutil_socket_t dst_fd;
 
 	pxy_conn_ctx_t *parent;
 
