@@ -148,9 +148,9 @@ retry:
 
 complete:
 	if (OPTS_DEBUG(ctx->opts)) {
-		log_dbg_printf("SSL_free() in state ");
+		log_dbg_printf(">>>> pxy_ssl_shutdown_cb: SSL_free() in state ");
 		log_dbg_print_free(ssl_ssl_state_to_str(ctx->ssl));
-		log_dbg_printf("\n");
+		log_dbg_printf(" fd=%d\n", fd);
 	}
 	SSL_free(ctx->ssl);
 	evutil_closesocket(fd);
@@ -172,9 +172,9 @@ pxy_ssl_shutdown(opts_t *opts, struct event_base *evbase, SSL *ssl,
 	sslshutctx = pxy_ssl_shutdown_ctx_new(opts, evbase, ssl);
 	if (!sslshutctx) {
 		if (OPTS_DEBUG(opts)) {
-			log_dbg_printf("SSL_free() in state ");
+			log_dbg_printf(">>>> pxy_ssl_shutdown: SSL_free() in state ");
 			log_dbg_print_free(ssl_ssl_state_to_str(ssl));
-			log_dbg_printf("\n");
+			log_dbg_printf(" fd=%d\n", fd);
 		}
 		SSL_free(ssl);
 		evutil_closesocket(fd);

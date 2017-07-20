@@ -136,7 +136,7 @@ struct pxy_conn_ctx {
 	evutil_socket_t child_fd;
 	struct evconnlistener *child_evcl;
 	// SSL proxy return address: The IP:port address the children are listening to
-	char *child_addr;
+	char *child_addr_str;
 
 	// Child list of the conn
 	pxy_conn_child_ctx_t *children;
