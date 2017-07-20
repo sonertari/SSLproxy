@@ -1957,7 +1957,7 @@ pxy_bev_readcb(struct bufferevent *bev, void *arg)
 				log_dbg_level_printf(LOG_DBG_MODE_FINER, ">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: custom_field= %s\n", ctx->child_addr_str);
 
 				size_t packet_size = evbuffer_get_length(inbuf);
-				char *packet = malloc(packet_size + strlen(ctx->child_addr_str) + 1);
+				char *packet = malloc(packet_size + strlen(ctx->child_addr_str) + 2 + 1);
 				if (!packet) {
 					ctx->enomem = 1;
 					goto leave;
@@ -1972,7 +1972,7 @@ pxy_bev_readcb(struct bufferevent *bev, void *arg)
 						(int) packet_size, ctx->fd, (int) packet_size, packet);
 
 				packet[packet_size] = '\0';
-				packet_size+= strlen(ctx->child_addr_str) + 1;
+				packet_size+= strlen(ctx->child_addr_str) + 2 + 1;
 
 				// XXX: We insert our special header line to each packet we get, right after the first \r\n, hence the target may get multiple copies
 				// TODO: To insert our header line to the first packet only, should we look for GET/POST or Host header lines to detect the first packet?
@@ -1996,7 +1996,7 @@ pxy_bev_readcb(struct bufferevent *bev, void *arg)
 					free(header_tail);
 				} else {
 					log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: No CRLF in packet\n");
-					packet_size-= strlen(ctx->child_addr_str) + 1;
+					packet_size-= strlen(ctx->child_addr_str) + 2 + 1;
 					packet_size++;
 				}
 
