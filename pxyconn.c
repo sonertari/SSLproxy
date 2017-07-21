@@ -1828,6 +1828,203 @@ pxy_get_event_name_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ctx)
 	}
 }
 
+static void
+pxy_http_reqhdr_filter(struct evbuffer *inbuf, struct evbuffer *outbuf, struct bufferevent *bev, pxy_conn_ctx_t *ctx, pxy_conn_ctx_t *parent, int child)
+{
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_http_reqhdr_filter: HTTP Request Header, fd=%d\n", ctx->fd);
+	logbuf_t *lb = NULL, *tail = NULL;
+	int inserted_sslproxy_addr = 0;
+	char *line;
+	while ((line = evbuffer_readln(inbuf, NULL, EVBUFFER_EOL_CRLF))) {
+		char *replace;
+		if (WANT_CONTENT_LOG(parent)) {
+			logbuf_t *tmp;
+			tmp = logbuf_new_printf(NULL, NULL,
+									"%s\r\n", line);
+			if (tail) {
+				if (tmp) {
+					tail->next = tmp;
+					tail = tail->next;
+				}
+			} else {
+				lb = tail = tmp;
+			}
+		}
+		replace = pxy_http_reqhdr_filter_line(line, ctx, child);
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_http_reqhdr_filter: src line, fd=%d: %s\n", ctx->fd, line);
+		if (replace == line) {
+			evbuffer_add_printf(outbuf, "%s\r\n", line);
+		} else if (replace) {
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_http_reqhdr_filter: src REPLACED line, fd=%d: %s\n", ctx->fd, replace);
+			evbuffer_add_printf(outbuf, "%s\r\n", replace);
+			free(replace);
+		} else {
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_http_reqhdr_filter: src REMOVED line, fd=%d: %s\n", ctx->fd, line);
+		}
+		free(line);
+
+		if (!child && !inserted_sslproxy_addr) {
+			inserted_sslproxy_addr = 1;
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_http_reqhdr_filter: src line, fd=%d: %s\n", ctx->fd, ctx->child_addr_str);
+			evbuffer_add_printf(outbuf, "%s\r\n", ctx->child_addr_str);
+		}
+
+		if (ctx->seen_req_header) {
+			/* request header complete */
+			if (parent->opts->deny_ocsp) {
+				pxy_ocsp_deny(ctx, 0);
+			}
+			break;
+		}
+	}
+	if (lb && WANT_CONTENT_LOG(parent)) {
+		if (log_content_submit(ctx->logctx, lb,
+							   1/*req*/) == -1) {
+			logbuf_free(lb);
+			log_err_printf("Warning: Content log "
+						   "submission failed\n");
+		}
+	}
+	if (!ctx->seen_req_header) {
+		goto leave;
+	}
+
+	// @todo Fix this
+	/* out of memory condition? */
+	if (ctx->enomem) {
+		pxy_conn_free(parent);
+		goto leave;
+	}
+
+	/* no data left after parsing headers? */
+	if (evbuffer_get_length(inbuf) == 0)
+		goto leave;
+
+	if (WANT_CONTENT_LOG(parent)) {
+		logbuf_t *lb;
+		lb = logbuf_new_alloc(evbuffer_get_length(inbuf), NULL, NULL);
+		if (lb && (evbuffer_copyout(inbuf, lb->buf, lb->sz) != -1)) {
+			if (log_content_submit(ctx->logctx, lb,
+								   (bev == ctx->src.bev)) == -1) {
+				logbuf_free(lb);
+				log_err_printf("Warning: Content log "
+							   "submission failed\n");
+			}
+		}
+	}
+	evbuffer_add_buffer(outbuf, inbuf);
+leave:
+	return;
+}
+
+static void
+pxy_http_resphdr_filter(struct evbuffer *inbuf, struct evbuffer *outbuf, struct bufferevent *bev, pxy_conn_ctx_t *ctx, pxy_conn_ctx_t *parent)
+{
+	logbuf_t *lb = NULL, *tail = NULL;
+	char *line;
+	while ((line = evbuffer_readln(inbuf, NULL,
+								   EVBUFFER_EOL_CRLF))) {
+		char *replace;
+		if (WANT_CONTENT_LOG(parent)) {
+			logbuf_t *tmp;
+			tmp = logbuf_new_printf(NULL, NULL,
+									"%s\r\n", line);
+			if (tail) {
+				if (tmp) {
+					tail->next = tmp;
+					tail = tail->next;
+				}
+			} else {
+				lb = tail = tmp;
+			}
+		}
+		replace = pxy_http_resphdr_filter_line(line, ctx);
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_http_resphdr_filter: dst line, fd=%d: %s\n", ctx->fd, line);
+		if (replace == line) {
+			evbuffer_add_printf(outbuf, "%s\r\n", line);
+		} else if (replace) {
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_http_resphdr_filter: dst REPLACED line, fd=%d: %s\n", ctx->fd, replace);
+			evbuffer_add_printf(outbuf, "%s\r\n", replace);
+			free(replace);
+		} else {
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_http_resphdr_filter: dst REMOVED line, fd=%d: %s\n", ctx->fd, line);
+		}
+		free(line);
+		if (ctx->seen_resp_header) {
+			/* response header complete: log connection */
+			if (WANT_CONNECT_LOG(parent)) {
+				pxy_log_connect_http(parent);
+			}
+			break;
+		}
+	}
+	if (lb && WANT_CONTENT_LOG(parent)) {
+		if (log_content_submit(ctx->logctx, lb,
+							   0/*resp*/) == -1) {
+			logbuf_free(lb);
+			log_err_printf("Warning: Content log "
+						   "submission failed\n");
+		}
+	}
+	if (!ctx->seen_resp_header) {
+		goto leave;
+	}
+
+	// @todo Fix this
+	/* out of memory condition? */
+	if (ctx->enomem) {
+		pxy_conn_free(parent);
+		goto leave;
+	}
+
+	/* no data left after parsing headers? */
+	if (evbuffer_get_length(inbuf) == 0)
+		goto leave;
+
+	if (WANT_CONTENT_LOG(parent)) {
+		logbuf_t *lb;
+		lb = logbuf_new_alloc(evbuffer_get_length(inbuf), NULL, NULL);
+		if (lb && (evbuffer_copyout(inbuf, lb->buf, lb->sz) != -1)) {
+			if (log_content_submit(ctx->logctx, lb,
+								   (bev == ctx->src.bev)) == -1) {
+				logbuf_free(lb);
+				log_err_printf("Warning: Content log "
+							   "submission failed\n");
+			}
+		}
+	}
+	evbuffer_add_buffer(outbuf, inbuf);
+leave:
+	return;
+}
+
+static void
+pxy_response(struct evbuffer *inbuf, struct evbuffer *outbuf, pxy_conn_ctx_t *ctx)
+{
+	size_t packet_size = evbuffer_get_length(inbuf);
+	char *packet = malloc(packet_size);
+	if (!packet) {
+		ctx->enomem = 1;
+		return;
+	}
+
+	int bytes_read = evbuffer_remove(inbuf, packet, packet_size);
+	if (bytes_read < 0) {
+		log_err_printf("ERROR: evbuffer_remove cannot drain the buffer\n");
+	}
+
+	int add_result = evbuffer_add(outbuf, packet, packet_size);
+	if (add_result < 0) {
+		log_err_printf("ERROR: evbuffer_add failed\n");
+	}
+
+//	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_response: dst packet (size = %d):\n%.*s\n",
+//			(int) packet_size, (int) packet_size, packet);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_response: dst packet (size = %d)\n", (int) packet_size);
+
+	free(packet);
+}
+
 /*
  * Callback for read events on the up- and downstream connection bufferevents.
  * Called when there is data ready in the input evbuffer.
@@ -1837,13 +2034,28 @@ pxy_bev_readcb(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
 
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: ENTER fd=%d, child_fd=%d\n", ctx->fd, ctx->child_fd);
-	
 	ctx->atime = time(NULL);
 	
 	char *event_name = pxy_get_event_name(bev, ctx);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: ENTER %s, fd=%d, child_fd=%d\n", event_name, ctx->fd, ctx->child_fd);
 
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: %s, fd=%d\n", event_name, ctx->fd);
+	if (!ctx->connected) {
+		log_err_printf("readcb called when other end not connected - "
+		               "aborting.\n");
+		/* XXX should signal main loop instead of calling exit() */
+		log_fini();
+		exit(EXIT_FAILURE);
+	}
+
+	// @attention srv_dst r cb is not set/enabled, so we only have src and dst at this point
+	pxy_conn_desc_t *other = (bev==ctx->src.bev) ? &ctx->dst : &ctx->src;
+	struct evbuffer *inbuf = bufferevent_get_input(bev);
+	struct evbuffer *outbuf = bufferevent_get_output(other->bev);
+
+	if (other->closed) {
+		evbuffer_drain(inbuf, evbuffer_get_length(inbuf));
+		return;
+	}
 
 	if (bev == ctx->src.bev) {
 		if (ctx->clienthello_search) {
@@ -1853,307 +2065,99 @@ pxy_bev_readcb(struct bufferevent *bev, void *arg)
 			}
 		}
 	
-		struct evbuffer *inbuf = bufferevent_get_input(bev);
-
-		if (ctx->dst.closed) {
-			evbuffer_drain(inbuf, evbuffer_get_length(inbuf));
-			goto leave;
-		}
-
-		if (ctx->dst.bev) {
-			struct evbuffer *outbuf = bufferevent_get_output(ctx->dst.bev);
-
-			/* request header munging */
-			if (ctx->spec->http && !ctx->seen_req_header && !ctx->passthrough) {
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_bev_readcb: HTTP Request Header, fd=%d\n", ctx->fd);
-				logbuf_t *lb = NULL, *tail = NULL;
-				int inserted_sslproxy_addr = 0;
-				char *line;
-				while ((line = evbuffer_readln(inbuf, NULL,
-											   EVBUFFER_EOL_CRLF))) {
-					char *replace;
-					if (WANT_CONTENT_LOG(ctx)) {
-						logbuf_t *tmp;
-						tmp = logbuf_new_printf(NULL, NULL,
-												"%s\r\n", line);
-						if (tail) {
-							if (tmp) {
-								tail->next = tmp;
-								tail = tail->next;
-							}
-						} else {
-							lb = tail = tmp;
-						}
-					}
-					replace = pxy_http_reqhdr_filter_line(line, ctx, 0);
-					log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_bev_readcb: src line, fd=%d: %s\n", ctx->fd, line);
-					if (replace == line) {
-						evbuffer_add_printf(outbuf, "%s\r\n", line);
-					} else if (replace) {
-						log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_bev_readcb: src REPLACED line, fd=%d: %s\n", ctx->fd, replace);
-						evbuffer_add_printf(outbuf, "%s\r\n", replace);
-						free(replace);
-					} else {
-						log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_bev_readcb: src REMOVED line, fd=%d: %s\n", ctx->fd, line);
-					}
-					free(line);
-					
-					if (!inserted_sslproxy_addr) {
-						inserted_sslproxy_addr = 1;
-						log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_bev_readcb: src line, fd=%d: %s\n", ctx->fd, ctx->child_addr_str);
-						evbuffer_add_printf(outbuf, "%s\r\n", ctx->child_addr_str);
-					}
-					
-					if (ctx->seen_req_header) {
-						/* request header complete */
-						if (ctx->opts->deny_ocsp) {
-							pxy_ocsp_deny(ctx, 0);
-						}
-						break;
-					}
-				}
-				if (lb && WANT_CONTENT_LOG(ctx)) {
-					if (log_content_submit(ctx->logctx, lb,
-										   1/*req*/) == -1) {
-						logbuf_free(lb);
-						log_err_printf("Warning: Content log "
-									   "submission failed\n");
-					}
-				}
-				if (!ctx->seen_req_header) {
-					goto leave;
-				}
-
-				// @todo Fix this
-				/* out of memory condition? */
-				if (ctx->enomem) {
-					pxy_conn_free(ctx);
-					goto leave;
-				}
-
-				/* no data left after parsing headers? */
-				if (evbuffer_get_length(inbuf) == 0)
-					goto leave;
-
-				if (WANT_CONTENT_LOG(ctx)) {
-					logbuf_t *lb;
-					lb = logbuf_new_alloc(evbuffer_get_length(inbuf), NULL, NULL);
-					if (lb && (evbuffer_copyout(inbuf, lb->buf, lb->sz) != -1)) {
-						if (log_content_submit(ctx->logctx, lb,
-											   (bev == ctx->src.bev)) == -1) {
-							logbuf_free(lb);
-							log_err_printf("Warning: Content log "
-										   "submission failed\n");
-						}
-					}
-				}
-				evbuffer_add_buffer(outbuf, inbuf);
-
-			} else if (ctx->spec->http && ctx->seen_req_header) {
+		/* request header munging */
+		if (ctx->spec->http) {
+			if (!ctx->seen_req_header) {
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_bev_readcb: HTTP Request Header size=%lu, fd=%d\n", evbuffer_get_length(inbuf), ctx->fd);
+				pxy_http_reqhdr_filter(inbuf, outbuf, bev, ctx, ctx, 0);
+			} else {
 				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_bev_readcb: HTTP Request Body size=%lu, fd=%d\n", evbuffer_get_length(inbuf), ctx->fd);
 				evbuffer_add_buffer(outbuf, inbuf);
+			}
+		} else {
+
+			log_dbg_level_printf(LOG_DBG_MODE_FINER, ">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: custom_field= %s\n", ctx->child_addr_str);
+
+			size_t packet_size = evbuffer_get_length(inbuf);
+			char *packet = malloc(packet_size + strlen(ctx->child_addr_str) + 2 + 1);
+			if (!packet) {
+				ctx->enomem = 1;
+				pxy_conn_free(ctx);
+				return;
+			}
+
+			int bytes_read = evbuffer_remove(inbuf, packet, packet_size);
+			if (bytes_read < 0) {
+				log_err_printf("ERROR: evbuffer_remove cannot drain the buffer\n");
+			}
+
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: src ORIG packet (size = %d), fd=%d:\n%.*s\n",
+					(int) packet_size, ctx->fd, (int) packet_size, packet);
+
+			packet[packet_size] = '\0';
+			packet_size+= strlen(ctx->child_addr_str) + 2 + 1;
+
+			// XXX: We insert our special header line to each packet we get, right after the first \r\n, hence the target may get multiple copies
+			// TODO: To insert our header line to the first packet only, should we look for GET/POST or Host header lines to detect the first packet?
+			// But there is no guarantie that they will exist, due to fragmentation
+
+			// ATTENTION: We cannot append the ssl proxy address at the end of the packet or in between the header and the content,
+			// because (1) the packet may be just the first fragment split somewhere not appropriate for appending a header,
+			// and (2) there may not be any content
+
+			char *pos = strstr(packet, "\r\n");
+			if (pos) {
+				char *header_tail = strdup(pos);
+				int header_head_len = pos - packet;
+				char *header_head = malloc(header_head_len + 1);
+				strncpy(header_head, packet, header_head_len);
+				header_head[header_head_len] = '\0';
+
+				snprintf(packet, packet_size, "%s\r\n%s%s", header_head, ctx->child_addr_str, header_tail);
+
+				free(header_head);
+				free(header_tail);
 			} else {
+				log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: No CRLF in packet\n");
+				packet_size-= strlen(ctx->child_addr_str) + 2 + 1;
+				packet_size++;
+			}
 
-				log_dbg_level_printf(LOG_DBG_MODE_FINER, ">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: custom_field= %s\n", ctx->child_addr_str);
+			// Decrement packet_size to avoid copying the null termination
+			int add_result = evbuffer_add(outbuf, packet, packet_size - 1);
+			if (add_result < 0) {
+				log_err_printf("ERROR: evbuffer_add failed\n");
+			}
 
-				size_t packet_size = evbuffer_get_length(inbuf);
-				char *packet = malloc(packet_size + strlen(ctx->child_addr_str) + 2 + 1);
-				if (!packet) {
-					ctx->enomem = 1;
-					goto leave;
-				}
-
-				int bytes_read = evbuffer_remove(inbuf, packet, packet_size);
-				if (bytes_read < 0) {
-					log_err_printf("ERROR: evbuffer_remove cannot drain the buffer\n");
-				}
-
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: src ORIG packet (size = %d), fd=%d:\n%.*s\n",
-						(int) packet_size, ctx->fd, (int) packet_size, packet);
-
-				packet[packet_size] = '\0';
-				packet_size+= strlen(ctx->child_addr_str) + 2 + 1;
-
-				// XXX: We insert our special header line to each packet we get, right after the first \r\n, hence the target may get multiple copies
-				// TODO: To insert our header line to the first packet only, should we look for GET/POST or Host header lines to detect the first packet?
-				// But there is no guarantie that they will exist, due to fragmentation
-
-				// ATTENTION: We cannot append the ssl proxy address at the end of the packet or in between the header and the content,
-				// because (1) the packet may be just the first fragment split somewhere not appropriate for appending a header,
-				// and (2) there may not be any content
-
-				char *pos2 = strstr(packet, "\r\n");
-				if (pos2) {
-					char *header_tail = strdup(pos2);
-					int header_head_len = pos2 - packet;
-					char *header_head = malloc(header_head_len + 1);
-					strncpy(header_head, packet, header_head_len);
-					header_head[header_head_len] = '\0';
-
-					snprintf(packet, packet_size, "%s\r\n%s%s", header_head, ctx->child_addr_str, header_tail);
-
-					free(header_head);
-					free(header_tail);
-				} else {
-					log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: No CRLF in packet\n");
-					packet_size-= strlen(ctx->child_addr_str) + 2 + 1;
-					packet_size++;
-				}
-
-				// Decrement packet_size to avoid copying the null termination
-				int add_result = evbuffer_add(outbuf, packet, packet_size - 1);
-				if (add_result < 0) {
-					log_err_printf("ERROR: evbuffer_add failed\n");
-				}
-
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: src packet (size = %d), fd=%d:\n%.*s\n",
-						(int) packet_size, ctx->fd, (int) packet_size, packet);
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: src packet (size = %d), fd=%d:\n%.*s\n",
+					(int) packet_size, ctx->fd, (int) packet_size, packet);
 //				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: src packet (size = %d)\n", (int) packet_size);
 
-				free(packet);
-			}
-
-
-			if (evbuffer_get_length(outbuf) >= OUTBUF_LIMIT) {
-				/* temporarily disable data source;
-				 * set an appropriate watermark. */
-				log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: setwatermark for dst w, disable src r <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< WATERMARK\n");
-				bufferevent_setwatermark(ctx->dst.bev, EV_WRITE, OUTBUF_LIMIT/2, OUTBUF_LIMIT);
-				bufferevent_disable(ctx->src.bev, EV_READ);
-			}
-			
-		} else {
-			log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: src ctx->dst.bev NULL\n");
+			free(packet);
 		}
 	}
 	else if (bev == ctx->dst.bev) {
-		struct evbuffer *inbuf = bufferevent_get_input(bev);
-
-		if (ctx->src.closed) {
-			evbuffer_drain(inbuf, evbuffer_get_length(inbuf));
-			goto leave;
-		}
-
-		if (ctx->src.bev) {
-			struct evbuffer *outbuf = bufferevent_get_output(ctx->src.bev);
-			
-			if (ctx->spec->http && !ctx->seen_resp_header && !ctx->passthrough) {
-				logbuf_t *lb = NULL, *tail = NULL;
-				char *line;
-				while ((line = evbuffer_readln(inbuf, NULL,
-											   EVBUFFER_EOL_CRLF))) {
-					char *replace;
-					if (WANT_CONTENT_LOG(ctx)) {
-						logbuf_t *tmp;
-						tmp = logbuf_new_printf(NULL, NULL,
-												"%s\r\n", line);
-						if (tail) {
-							if (tmp) {
-								tail->next = tmp;
-								tail = tail->next;
-							}
-						} else {
-							lb = tail = tmp;
-						}
-					}
-					replace = pxy_http_resphdr_filter_line(line, ctx);
-					log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_bev_readcb: dst line, fd=%d: %s\n", ctx->fd, line);
-					if (replace == line) {
-						evbuffer_add_printf(outbuf, "%s\r\n", line);
-					} else if (replace) {
-						log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_bev_readcb: dst REPLACED line, fd=%d: %s\n", ctx->fd, replace);
-						evbuffer_add_printf(outbuf, "%s\r\n", replace);
-						free(replace);
-					} else {
-						log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_bev_readcb: dst REMOVED line, fd=%d: %s\n", ctx->fd, line);
-					}
-					free(line);
-					if (ctx->seen_resp_header) {
-						/* response header complete: log connection */
-						if (WANT_CONNECT_LOG(ctx)) {
-							pxy_log_connect_http(ctx);
-						}
-						break;
-					}
-				}
-				if (lb && WANT_CONTENT_LOG(ctx)) {
-					if (log_content_submit(ctx->logctx, lb,
-										   0/*resp*/) == -1) {
-						logbuf_free(lb);
-						log_err_printf("Warning: Content log "
-									   "submission failed\n");
-					}
-				}
-				if (!ctx->seen_resp_header) {
-					goto leave;
-				}
-
-				// @todo Fix this
-				/* out of memory condition? */
-				if (ctx->enomem) {
-					pxy_conn_free(ctx);
-					goto leave;
-				}
-
-				/* no data left after parsing headers? */
-				if (evbuffer_get_length(inbuf) == 0)
-					goto leave;
-
-				if (WANT_CONTENT_LOG(ctx)) {
-					logbuf_t *lb;
-					lb = logbuf_new_alloc(evbuffer_get_length(inbuf), NULL, NULL);
-					if (lb && (evbuffer_copyout(inbuf, lb->buf, lb->sz) != -1)) {
-						if (log_content_submit(ctx->logctx, lb,
-											   (bev == ctx->src.bev)) == -1) {
-							logbuf_free(lb);
-							log_err_printf("Warning: Content log "
-										   "submission failed\n");
-						}
-					}
-				}
-				evbuffer_add_buffer(outbuf, inbuf);
-
-			} else if (ctx->spec->http && ctx->seen_resp_header) {
+		if (ctx->spec->http) {
+			if (!ctx->seen_resp_header) {
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_bev_readcb: HTTP Response Header size=%lu, fd=%d\n", evbuffer_get_length(inbuf), ctx->fd);
+				pxy_http_resphdr_filter(inbuf, outbuf, bev, ctx, ctx);
+			} else {
 				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_bev_readcb: HTTP Response Body size=%lu, fd=%d\n", evbuffer_get_length(inbuf), ctx->fd);
 				evbuffer_add_buffer(outbuf, inbuf);
-			} else {
-				size_t packet_size = evbuffer_get_length(inbuf);
-				char *packet = malloc(packet_size);
-				if (!packet) {
-					ctx->enomem = 1;
-					goto leave;
-				}
-
-				int bytes_read = evbuffer_remove(inbuf, packet, packet_size);
-				if (bytes_read < 0) {
-					log_err_printf("ERROR: evbuffer_remove cannot drain the buffer\n");
-				}
-
-				int add_result = evbuffer_add(outbuf, packet, packet_size);
-				if (add_result < 0) {
-					log_err_printf("ERROR: evbuffer_add failed\n");
-				}
-
-				if (evbuffer_get_length(outbuf) >= OUTBUF_LIMIT) {
-					/* temporarily disable data source;
-					 * set an appropriate watermark. */
-					log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: setwatermark for src w, disable dst r <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< WATERMARK\n");
-					bufferevent_setwatermark(ctx->src.bev, EV_WRITE, OUTBUF_LIMIT/2, OUTBUF_LIMIT);
-					bufferevent_disable(ctx->dst.bev, EV_READ);
-				}
-
-	//			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: dst packet (size = %d):\n%.*s\n",
-	//					(int) packet_size, (int) packet_size, packet);
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: dst packet (size = %d)\n", (int) packet_size);
-
-				free(packet);
 			}
 		} else {
-			log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: dst ctx->src.bev NULL\n");
+			pxy_response(inbuf, outbuf, ctx);
 		}
 	}
 
-leave:
+	if (evbuffer_get_length(outbuf) >= OUTBUF_LIMIT) {
+		/* temporarily disable data source;
+		 * set an appropriate watermark. */
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: setwatermark <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< WATERMARK\n");
+		bufferevent_setwatermark(other->bev, EV_WRITE, OUTBUF_LIMIT/2, OUTBUF_LIMIT);
+		bufferevent_disable(bev, EV_READ);
+	}
+
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: EXIT\n");
 }
 
@@ -2161,335 +2165,144 @@ static void
 pxy_bev_readcb_child(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_child_ctx_t *ctx = arg;
+
 	assert(ctx->parent != NULL);
 	pxy_conn_ctx_t *parent = ctx->parent;
-
-	char *event_name = pxy_get_event_name_child(bev, ctx);
 	
-	evutil_socket_t pfd = parent->fd;
-
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>....................... pxy_bev_readcb_child: ENTER %s fd=%d, pfd=%d\n", event_name, ctx->fd, pfd);
 	ctx->parent->atime = time(NULL);
-	
-	struct sockaddr_in peeraddr;
-	socklen_t peeraddrlen;
 
-	peeraddrlen = sizeof(peeraddr);
-	getpeername(ctx->fd, &peeraddr, &peeraddrlen);
+	evutil_socket_t pfd = parent->fd;
+	char *event_name = pxy_get_event_name_child(bev, ctx);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>....................... pxy_bev_readcb_child: ENTER %s fd=%d, pfd=%d\n", event_name, ctx->fd, pfd);
+	
+	if (!ctx->connected) {
+		log_err_printf("readcb called when other end not connected - "
+		               "aborting.\n");
+		/* XXX should signal main loop instead of calling exit() */
+		log_fini();
+		exit(EXIT_FAILURE);
+	}
+
+	pxy_conn_desc_t *other = (bev==ctx->src.bev) ? &ctx->dst : &ctx->src;
+	struct evbuffer *inbuf = bufferevent_get_input(bev);
+	struct evbuffer *outbuf = bufferevent_get_output(other->bev);
+
+	if (other->closed) {
+		evbuffer_drain(inbuf, evbuffer_get_length(inbuf));
+		return;
+	}
 
 	if (bev == ctx->src.bev) {
-		struct evbuffer *inbuf = bufferevent_get_input(ctx->src.bev);
+		struct sockaddr_in peeraddr;
+		socklen_t peeraddrlen = sizeof(peeraddr);
+		getpeername(ctx->fd, &peeraddr, &peeraddrlen);
 
-		if (ctx->dst.closed) {
-			evbuffer_drain(inbuf, evbuffer_get_length(inbuf));
-			goto leave;
-		}
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>.................................................................................... pxy_bev_readcb_child: PEER [%s]:%d <<<<< fd=%d, parent fd=%d\n", inet_ntoa(peeraddr.sin_addr), (int) ntohs(peeraddr.sin_port), ctx->fd, pfd);
 
-		if (ctx->dst.bev) {
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>.................................................................................... pxy_bev_readcb_child: PEER [%s]:%d <<<<< fd=%d, parent fd=%d\n", inet_ntoa(peeraddr.sin_addr), (int) ntohs(peeraddr.sin_port), ctx->fd, pfd);
-
-			struct evbuffer *outbuf = bufferevent_get_output(ctx->dst.bev);
-
-			/* request header munging */
-			if (parent->spec->http && !ctx->seen_req_header && !parent->passthrough) {
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_bev_readcb_child: HTTP Request Header, fd=%d\n", ctx->fd);
-				logbuf_t *lb = NULL, *tail = NULL;
-				char *line;
-				while ((line = evbuffer_readln(inbuf, NULL,
-											   EVBUFFER_EOL_CRLF))) {
-					char *replace;
-					if (WANT_CONTENT_LOG(parent)) {
-						logbuf_t *tmp;
-						tmp = logbuf_new_printf(NULL, NULL,
-												"%s\r\n", line);
-						if (tail) {
-							if (tmp) {
-								tail->next = tmp;
-								tail = tail->next;
-							}
-						} else {
-							lb = tail = tmp;
-						}
-					}
-
-					replace = pxy_http_reqhdr_filter_line(line, (pxy_conn_ctx_t *)ctx, 1);
-					log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_bev_readcb_child: src line, fd=%d: %s\n", ctx->fd, line);
-					if (replace == line) {
-						evbuffer_add_printf(outbuf, "%s\r\n", line);
-					} else if (replace) {
-						log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_bev_readcb_child: src REPLACED line, fd=%d: %s\n", ctx->fd, replace);
-						evbuffer_add_printf(outbuf, "%s\r\n", replace);
-						free(replace);
-					} else {
-						log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_bev_readcb_child: src REMOVED line, fd=%d: %s\n", ctx->fd, line);
-					}
-					free(line);
-					
-					if (ctx->seen_req_header) {
-						/* request header complete */
-						if (parent->opts->deny_ocsp) {
-							pxy_ocsp_deny((pxy_conn_ctx_t *)ctx, 1);
-						}
-						break;
-					}
-				}
-				if (lb && WANT_CONTENT_LOG(parent)) {
-					if (log_content_submit(ctx->logctx, lb,
-										   1/*req*/) == -1) {
-						logbuf_free(lb);
-						log_err_printf("Warning: Content log "
-									   "submission failed\n");
-					}
-				}
-				if (!ctx->seen_req_header) {
-					goto leave;
-				}
-
-				// @todo Fix this
-				/* out of memory condition? */
-				if (ctx->enomem) {
-					pxy_conn_free(parent);
-					goto leave;
-				}
-
-				/* no data left after parsing headers? */
-				if (evbuffer_get_length(inbuf) == 0)
-					goto leave;
-
-				if (WANT_CONTENT_LOG(parent)) {
-					logbuf_t *lb;
-					lb = logbuf_new_alloc(evbuffer_get_length(inbuf), NULL, NULL);
-					if (lb && (evbuffer_copyout(inbuf, lb->buf, lb->sz) != -1)) {
-						if (log_content_submit(ctx->logctx, lb,
-											   (bev == ctx->src.bev)) == -1) {
-							logbuf_free(lb);
-							log_err_printf("Warning: Content log "
-										   "submission failed\n");
-						}
-					}
-				}
-				evbuffer_add_buffer(outbuf, inbuf);
-
-			} else if (parent->spec->http && ctx->seen_req_header) {
+		/* request header munging */
+		if (parent->spec->http) {
+			if (!ctx->seen_req_header) {
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_bev_readcb_child: HTTP Request Header size=%lu, fd=%d\n", evbuffer_get_length(inbuf), ctx->fd);
+				pxy_http_reqhdr_filter(inbuf, outbuf, bev, (pxy_conn_ctx_t *)ctx, parent, 1);
+			} else {
 				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_bev_readcb_child: HTTP Request Body size=%lu, fd=%d\n", evbuffer_get_length(inbuf), ctx->fd);
 				evbuffer_add_buffer(outbuf, inbuf);
-			} else {
-
-				char *custom_key = "SSLproxy-Addr: ";
-				struct evbuffer_ptr ebp = evbuffer_search(inbuf, custom_key, strlen(custom_key), NULL);
-				if (ebp.pos != -1) {
-					log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>....................... pxy_bev_readcb_child: evbuffer_search FOUND SSLproxy-Addr at %ld\n", ebp.pos);
-				} else {
-					log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>....................... pxy_bev_readcb_child: evbuffer_search FAILED\n");
-				}
-
-				size_t packet_size = evbuffer_get_length(inbuf);
-				// ATTENTION: +1 is for null termination
-				char *packet = malloc(packet_size + 1);
-				if (!packet) {
-					ctx->enomem = 1;
-					goto leave;
-				}
-
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>....................... pxy_bev_readcb_child: packet_size\n");
-
-				if (packet_size > 0) {
-					int bytes_read = evbuffer_remove(inbuf, packet, packet_size);
-					if (bytes_read < 0) {
-						log_err_printf("ERROR: evbuffer_remove cannot drain the buffer\n");
-					}
-
-					packet[packet_size] = '\0';
-
-					char *pos = strstr(packet, "SSLproxy-Addr: ");
-					if (pos) {
-						int header_head_len = pos - packet;
-						char *header_head = malloc(header_head_len + 1);
-						strncpy(header_head, packet, header_head_len);
-						header_head[header_head_len] = '\0';
-
-						char *pos2 = strstr(pos, "\r\n");
-						if (pos2) {
-							char *header_tail = strdup(pos2 + 2);
-							int header_tail_len = strlen(header_tail);
-
-							log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>....................... pxy_bev_readcb_child: REMOVED SSLproxy-Addr, packet_size old=%lu, new=%d <<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n",
-									packet_size, header_head_len + header_tail_len);
-
-							log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>....................... pxy_bev_readcb_child: header_head (size = %d):\n%s\n",
-									header_head_len, header_head);
-							log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>....................... pxy_bev_readcb_child: header_tail (size = %d):\n%s\n",
-									header_tail_len, header_tail);
-
-							// ATTENTION: Do not add 1 to packet_size for null termination, do that in snprintf(),
-							// otherwise we get an extra byte in the outbuf
-							packet_size = header_head_len + header_tail_len;
-							snprintf(packet, packet_size + 1, "%s%s", header_head, header_tail);
-
-							free(header_tail);
-						}
-
-						free(header_head);
-					}
-
-					log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>....................... pxy_bev_readcb_child: bufferevent_get_output\n");
-
-					int add_result = evbuffer_add(outbuf, packet, packet_size);
-					if (add_result < 0) {
-						log_err_printf("ERROR: evbuffer_add failed\n");
-					}
-
-					log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>....................... pxy_bev_readcb_child: src packet (size = %d), fd=%d, parent fd=%d:\n%.*s\n",
-							(int) packet_size, ctx->fd, pfd, (int) packet_size, packet);
-	//				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>....................... pxy_bev_readcb_child: src packet (size = %d)\n", (int) packet_size);
-				}
-				free(packet);
-				
-				if (evbuffer_get_length(outbuf) >= OUTBUF_LIMIT) {
-					/* temporarily disable data source;
-					 * set an appropriate watermark. */
-					log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>....................... pxy_bev_readcb_child: setwatermark for dst w, disable src r <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< WATERMARK\n");
-					bufferevent_setwatermark(ctx->dst.bev, EV_WRITE, OUTBUF_LIMIT/2, OUTBUF_LIMIT);
-					bufferevent_disable(ctx->src.bev, EV_READ);
-				}
 			}
 		} else {
-			log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>....................... pxy_bev_readcb_child: src ctx->dst.bev NULL\n");
-		}
-	}
-	else if (bev == ctx->dst.bev) {
-		struct evbuffer *inbuf = bufferevent_get_input(bev);
-
-		if (ctx->src.closed) {
-			evbuffer_drain(inbuf, evbuffer_get_length(inbuf));
-			goto leave;
-		}
-
-		if (ctx->src.bev) {
-			struct evbuffer *outbuf = bufferevent_get_output(ctx->src.bev);
-
-			if (parent->spec->http && !ctx->seen_resp_header && !parent->passthrough) {
-				logbuf_t *lb = NULL, *tail = NULL;
-				char *line;
-				while ((line = evbuffer_readln(inbuf, NULL,
-											   EVBUFFER_EOL_CRLF))) {
-					char *replace;
-					if (WANT_CONTENT_LOG(parent)) {
-						logbuf_t *tmp;
-						tmp = logbuf_new_printf(NULL, NULL,
-												"%s\r\n", line);
-						if (tail) {
-							if (tmp) {
-								tail->next = tmp;
-								tail = tail->next;
-							}
-						} else {
-							lb = tail = tmp;
-						}
-					}
-
-					replace = pxy_http_resphdr_filter_line(line, (pxy_conn_ctx_t *)ctx);
-					log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_bev_readcb_child: dst line, fd=%d: %s\n", ctx->fd, line);
-					if (replace == line) {
-						log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_bev_readcb_child: dst SAME line, fd=%d: %s\n", ctx->fd, line);
-						evbuffer_add_printf(outbuf, "%s\r\n", line);
-					} else if (replace) {
-						log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_bev_readcb_child: dst REPLACED line, fd=%d: %s\n", ctx->fd, replace);
-						evbuffer_add_printf(outbuf, "%s\r\n", replace);
-						free(replace);
-					} else {
-						log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_bev_readcb_child: dst REMOVED line, fd=%d: %s\n", ctx->fd, line);
-					}
-					free(line);
-					if (ctx->seen_resp_header) {
-						/* response header complete: log connection */
-						if (WANT_CONNECT_LOG(parent)) {
-							pxy_log_connect_http(parent);
-						}
-						break;
-					}
-				}
-				if (lb && WANT_CONTENT_LOG(parent)) {
-					if (log_content_submit(ctx->logctx, lb,
-										   0/*resp*/) == -1) {
-						logbuf_free(lb);
-						log_err_printf("Warning: Content log "
-									   "submission failed\n");
-					}
-				}
-				if (!ctx->seen_resp_header) {
-					goto leave;
-				}
-				
-				// @todo Fix this
-				/* out of memory condition? */
-				if (ctx->enomem) {
-					pxy_conn_free(parent);
-					goto leave;
-				}
-
-				/* no data left after parsing headers? */
-				if (evbuffer_get_length(inbuf) == 0)
-					goto leave;
-
-				if (WANT_CONTENT_LOG(parent)) {
-					logbuf_t *lb;
-					lb = logbuf_new_alloc(evbuffer_get_length(inbuf), NULL, NULL);
-					if (lb && (evbuffer_copyout(inbuf, lb->buf, lb->sz) != -1)) {
-						if (log_content_submit(ctx->logctx, lb,
-											   (bev == ctx->src.bev)) == -1) {
-							logbuf_free(lb);
-							log_err_printf("Warning: Content log "
-										   "submission failed\n");
-						}
-					}
-				}
-				evbuffer_add_buffer(outbuf, inbuf);
-				
-			} else if (parent->spec->http && ctx->seen_resp_header) {
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_bev_readcb_child: HTTP Response Body size=%lu, fd=%d\n", evbuffer_get_length(inbuf), ctx->fd);
-				evbuffer_add_buffer(outbuf, inbuf);
+			char *custom_key = "SSLproxy-Addr: ";
+			struct evbuffer_ptr ebp = evbuffer_search(inbuf, custom_key, strlen(custom_key), NULL);
+			if (ebp.pos != -1) {
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>....................... pxy_bev_readcb_child: evbuffer_search FOUND SSLproxy-Addr at %ld\n", ebp.pos);
 			} else {
-				size_t packet_size = evbuffer_get_length(inbuf);
-				char *packet = malloc(packet_size);
-				if (!packet) {
-					ctx->enomem = 1;
-					goto leave;
-				}
+				log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>....................... pxy_bev_readcb_child: evbuffer_search FAILED\n");
+			}
 
+			size_t packet_size = evbuffer_get_length(inbuf);
+			// ATTENTION: +1 is for null termination
+			char *packet = malloc(packet_size + 1);
+			if (!packet) {
+				ctx->enomem = 1;
+				pxy_conn_free(parent);
+				return;
+			}
+
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>....................... pxy_bev_readcb_child: packet_size\n");
+
+			if (packet_size > 0) {
 				int bytes_read = evbuffer_remove(inbuf, packet, packet_size);
-
 				if (bytes_read < 0) {
 					log_err_printf("ERROR: evbuffer_remove cannot drain the buffer\n");
 				}
+
+				packet[packet_size] = '\0';
+
+				char *pos = strstr(packet, "SSLproxy-Addr: ");
+				if (pos) {
+					int header_head_len = pos - packet;
+					char *header_head = malloc(header_head_len + 1);
+					strncpy(header_head, packet, header_head_len);
+					header_head[header_head_len] = '\0';
+
+					char *pos2 = strstr(pos, "\r\n");
+					if (pos2) {
+						char *header_tail = strdup(pos2 + 2);
+						int header_tail_len = strlen(header_tail);
+
+						log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>....................... pxy_bev_readcb_child: REMOVED SSLproxy-Addr, packet_size old=%lu, new=%d <<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n",
+								packet_size, header_head_len + header_tail_len);
+
+						log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>....................... pxy_bev_readcb_child: header_head (size = %d):\n%s\n",
+								header_head_len, header_head);
+						log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>....................... pxy_bev_readcb_child: header_tail (size = %d):\n%s\n",
+								header_tail_len, header_tail);
+
+						// ATTENTION: Do not add 1 to packet_size for null termination, do that in snprintf(),
+						// otherwise we get an extra byte in the outbuf
+						packet_size = header_head_len + header_tail_len;
+						snprintf(packet, packet_size + 1, "%s%s", header_head, header_tail);
+
+						free(header_tail);
+					}
+
+					free(header_head);
+				}
+
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>....................... pxy_bev_readcb_child: bufferevent_get_output\n");
 
 				int add_result = evbuffer_add(outbuf, packet, packet_size);
 				if (add_result < 0) {
 					log_err_printf("ERROR: evbuffer_add failed\n");
 				}
 
-				// @todo Use a hexcode dump to print the packet?
-	//			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>....................... pxy_bev_readcb_child: dst packet (size = %d):\n%.*s\n",
-	//					(int) packet_size, (int) packet_size, packet);
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>....................... pxy_bev_readcb_child: dst packet (size = %d)\n", (int) packet_size);
-
-				free(packet);
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>....................... pxy_bev_readcb_child: src packet (size = %d), fd=%d, parent fd=%d:\n%.*s\n",
+						(int) packet_size, ctx->fd, pfd, (int) packet_size, packet);
+//				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>....................... pxy_bev_readcb_child: src packet (size = %d)\n", (int) packet_size);
 			}
-
-			if (evbuffer_get_length(outbuf) >= OUTBUF_LIMIT) {
-				/* temporarily disable data source;
-				 * set an appropriate watermark. */
-				log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>....................... pxy_bev_readcb_child: setwatermark for src w, disable dst r <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< WATERMARK\n");
-				bufferevent_setwatermark(ctx->src.bev, EV_WRITE, OUTBUF_LIMIT/2, OUTBUF_LIMIT);
-				bufferevent_disable(ctx->dst.bev, EV_READ);
+			free(packet);
+		}
+	}
+	else if (bev == ctx->dst.bev) {
+		if (parent->spec->http) {
+			if (!ctx->seen_resp_header) {
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_bev_readcb_child: HTTP Response Header size=%lu, fd=%d\n", evbuffer_get_length(inbuf), ctx->fd);
+				pxy_http_resphdr_filter(inbuf, outbuf, bev, (pxy_conn_ctx_t *)ctx, parent);
+			} else {
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_bev_readcb_child: HTTP Response Body size=%lu, fd=%d\n", evbuffer_get_length(inbuf), ctx->fd);
+				evbuffer_add_buffer(outbuf, inbuf);
 			}
-
 		} else {
-			log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>....................... pxy_bev_readcb_child: dst ctx->src.bev NULL\n");
+			pxy_response(inbuf, outbuf, (pxy_conn_ctx_t *)ctx);
 		}
 	}
 
-leave:
+	if (evbuffer_get_length(outbuf) >= OUTBUF_LIMIT) {
+		/* temporarily disable data source;
+		 * set an appropriate watermark. */
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>....................... pxy_bev_readcb_child: setwatermark <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< WATERMARK\n");
+		bufferevent_setwatermark(other->bev, EV_WRITE, OUTBUF_LIMIT/2, OUTBUF_LIMIT);
+		bufferevent_disable(bev, EV_READ);
+	}
+
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>....................... pxy_bev_readcb_child: EXIT\n");
 }
 
@@ -2901,20 +2714,6 @@ pxy_connected_enable(struct bufferevent *bev, pxy_conn_ctx_t *ctx, char *event_n
 	return 1;
 }
 
-static void
-pxy_connected_enable_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ctx, char *event_name)
-{
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_connected_enable_child: ENTER bev = %s\n", event_name);
-	
-	if (bev == ctx->dst.bev) {
-		ctx->connected = 1;
-
-		// @attention Create and enable src.bev before, but connect here, because we check if dst.bev is NULL elsewhere
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_connected_enable_child: enable callbacks for src.bev\n");
-		bufferevent_enable(ctx->src.bev, EV_READ|EV_WRITE);
-	}
-}
-
 /*
  * Callback for write events on the up- and downstream connection bufferevents.
  * Called when either all data from the output evbuffer has been written,
@@ -3012,6 +2811,85 @@ leave:
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>??????????????????????????? pxy_bev_writecb_child: EXIT\n");
 }
 
+static void
+pxy_print_ssl_error(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
+{
+	unsigned long sslerr;
+
+	/* Can happen for socket errs, ssl errs;
+	 * may happen for unclean ssl socket shutdowns. */
+	sslerr = bufferevent_get_openssl_error(bev);
+	if (!errno && !sslerr) {
+#if LIBEVENT_VERSION_NUMBER >= 0x02010000
+		/* We have disabled notification for unclean shutdowns
+		 * so this should not happen; log a warning. */
+		log_err_printf("Warning: Spurious error from "
+					   "bufferevent (errno=0,sslerr=0)\n");
+#else /* LIBEVENT_VERSION_NUMBER < 0x02010000 */
+		/* Older versions of libevent will report these. */
+		if (OPTS_DEBUG(ctx->opts)) {
+			log_dbg_printf("Unclean SSL shutdown, fd=%d\n", ctx->fd);
+		}
+#endif /* LIBEVENT_VERSION_NUMBER < 0x02010000 */
+	} else if (ERR_GET_REASON(sslerr) ==
+			   SSL_R_SSLV3_ALERT_HANDSHAKE_FAILURE) {
+		/* these can happen due to client cert auth,
+		 * only log error if debugging is activated */
+		log_dbg_printf("Error from bufferevent: "
+					   "%i:%s %lu:%i:%s:%i:%s:%i:%s\n",
+					   errno,
+					   errno ? strerror(errno) : "-",
+					   sslerr,
+					   ERR_GET_REASON(sslerr),
+					   sslerr ?
+					   ERR_reason_error_string(sslerr) : "-",
+					   ERR_GET_LIB(sslerr),
+					   sslerr ?
+					   ERR_lib_error_string(sslerr) : "-",
+					   ERR_GET_FUNC(sslerr),
+					   sslerr ?
+					   ERR_func_error_string(sslerr) : "-");
+		while ((sslerr = bufferevent_get_openssl_error(bev))) {
+			log_dbg_printf("Additional SSL error: "
+						   "%lu:%i:%s:%i:%s:%i:%s\n",
+						   sslerr,
+						   ERR_GET_REASON(sslerr),
+						   ERR_reason_error_string(sslerr),
+						   ERR_GET_LIB(sslerr),
+						   ERR_lib_error_string(sslerr),
+						   ERR_GET_FUNC(sslerr),
+						   ERR_func_error_string(sslerr));
+		}
+	} else {
+		/* real errors */
+		log_err_printf("Error from bufferevent: "
+					   "%i:%s %lu:%i:%s:%i:%s:%i:%s\n",
+					   errno,
+					   errno ? strerror(errno) : "-",
+					   sslerr,
+					   ERR_GET_REASON(sslerr),
+					   sslerr ?
+					   ERR_reason_error_string(sslerr) : "-",
+					   ERR_GET_LIB(sslerr),
+					   sslerr ?
+					   ERR_lib_error_string(sslerr) : "-",
+					   ERR_GET_FUNC(sslerr),
+					   sslerr ?
+					   ERR_func_error_string(sslerr) : "-");
+		while ((sslerr = bufferevent_get_openssl_error(bev))) {
+			log_err_printf("Additional SSL error: "
+						   "%lu:%i:%s:%i:%s:%i:%s\n",
+						   sslerr,
+						   ERR_GET_REASON(sslerr),
+						   ERR_reason_error_string(sslerr),
+						   ERR_GET_LIB(sslerr),
+						   ERR_lib_error_string(sslerr),
+						   ERR_GET_FUNC(sslerr),
+						   ERR_func_error_string(sslerr));
+		}
+	}
+}
+
 /*
  * Callback for meta events on the up- and downstream connection bufferevents.
  * Called when EOF has been reached, a connection has been made, and on errors.
@@ -3031,120 +2909,27 @@ pxy_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 	if (events & BEV_EVENT_CONNECTED) {
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>=================================== pxy_bev_eventcb: CONNECTED %s fd=%d\n", event_name, ctx->fd);
 		pxy_connected_enable(bev, ctx, event_name);
+		return;
 	}
+
+	// @attention If the bev is srv_dst.bev, these variables are initialized wrong, but they are not used in that case.
+	pxy_conn_desc_t *this = (bev==ctx->src.bev) ? &ctx->src : &ctx->dst;
+	pxy_conn_desc_t *other = (bev==ctx->src.bev) ? &ctx->dst : &ctx->src;
+
+	void (*this_free_and_close_fd_func)(struct bufferevent *, pxy_conn_ctx_t *) = (this->bev==ctx->src.bev) ? &bufferevent_free_and_close_fd : &bufferevent_free_and_close_fd_nonssl;
+	void (*other_free_and_close_fd_func)(struct bufferevent *, pxy_conn_ctx_t *) = (other->bev==ctx->dst.bev) ? &bufferevent_free_and_close_fd_nonssl : &bufferevent_free_and_close_fd;
 
 	if (events & BEV_EVENT_ERROR) {
 		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>=================================== pxy_bev_eventcb: ERROR %s fd=%d\n", event_name, ctx->fd);
-
-		unsigned long sslerr;
-		int have_sslerr = 0;
-
-		/* Can happen for socket errs, ssl errs;
-		 * may happen for unclean ssl socket shutdowns. */
-		sslerr = bufferevent_get_openssl_error(bev);
-		if (sslerr)
-			have_sslerr = 1;
-		if (!errno && !sslerr) {
-#if LIBEVENT_VERSION_NUMBER >= 0x02010000
-			/* We have disabled notification for unclean shutdowns
-			 * so this should not happen; log a warning. */
-			log_err_printf("Warning: Spurious error from "
-			               "bufferevent (errno=0,sslerr=0)\n");
-#else /* LIBEVENT_VERSION_NUMBER < 0x02010000 */
-			/* Older versions of libevent will report these. */
-			if (OPTS_DEBUG(ctx->opts)) {
-				log_dbg_printf("Unclean SSL shutdown., fd=%d\n", ctx->fd);
-			}
-#endif /* LIBEVENT_VERSION_NUMBER < 0x02010000 */
-		} else if (ERR_GET_REASON(sslerr) ==
-		           SSL_R_SSLV3_ALERT_HANDSHAKE_FAILURE) {
-			/* these can happen due to client cert auth,
-			 * only log error if debugging is activated */
-			log_dbg_printf("Error from bufferevent: "
-			               "%i:%s %lu:%i:%s:%i:%s:%i:%s\n",
-			               errno,
-			               errno ? strerror(errno) : "-",
-			               sslerr,
-			               ERR_GET_REASON(sslerr),
-			               sslerr ?
-			               ERR_reason_error_string(sslerr) : "-",
-			               ERR_GET_LIB(sslerr),
-			               sslerr ?
-			               ERR_lib_error_string(sslerr) : "-",
-			               ERR_GET_FUNC(sslerr),
-			               sslerr ?
-			               ERR_func_error_string(sslerr) : "-");
-			while ((sslerr = bufferevent_get_openssl_error(bev))) {
-				log_dbg_printf("Additional SSL error: "
-				               "%lu:%i:%s:%i:%s:%i:%s\n",
-				               sslerr,
-				               ERR_GET_REASON(sslerr),
-				               ERR_reason_error_string(sslerr),
-				               ERR_GET_LIB(sslerr),
-				               ERR_lib_error_string(sslerr),
-				               ERR_GET_FUNC(sslerr),
-				               ERR_func_error_string(sslerr));
-			}
-		} else {
-			/* real errors */
-			log_err_printf("Error from bufferevent: "
-			               "%i:%s %lu:%i:%s:%i:%s:%i:%s\n",
-			               errno,
-			               errno ? strerror(errno) : "-",
-			               sslerr,
-			               ERR_GET_REASON(sslerr),
-			               sslerr ?
-			               ERR_reason_error_string(sslerr) : "-",
-			               ERR_GET_LIB(sslerr),
-			               sslerr ?
-			               ERR_lib_error_string(sslerr) : "-",
-			               ERR_GET_FUNC(sslerr),
-			               sslerr ?
-			               ERR_func_error_string(sslerr) : "-");
-			while ((sslerr = bufferevent_get_openssl_error(bev))) {
-				log_err_printf("Additional SSL error: "
-				               "%lu:%i:%s:%i:%s:%i:%s\n",
-				               sslerr,
-				               ERR_GET_REASON(sslerr),
-				               ERR_reason_error_string(sslerr),
-				               ERR_GET_LIB(sslerr),
-				               ERR_lib_error_string(sslerr),
-				               ERR_GET_FUNC(sslerr),
-				               ERR_func_error_string(sslerr));
-			}
-		}
-
-		// @todo Close and free the connections upon errors
-		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>=================================== pxy_bev_eventcb: ERROR pxy_conn_free %s, fd=%d\n", event_name, ctx->fd);
-//		pxy_conn_free(ctx);
-
-		pxy_conn_desc_t *this = (bev==ctx->src.bev) ? &ctx->src : &ctx->dst;
-		pxy_conn_desc_t *other = (bev==ctx->src.bev) ? &ctx->dst : &ctx->src;
-
-		void (*this_free_and_close_fd_func)(struct bufferevent *, pxy_conn_ctx_t *) = (this->bev==ctx->src.bev) ? &bufferevent_free_and_close_fd : &bufferevent_free_and_close_fd_nonssl;
-		void (*other_free_and_close_fd_func)(struct bufferevent *, pxy_conn_ctx_t *) = (other->bev==ctx->dst.bev) ? &bufferevent_free_and_close_fd_nonssl : &bufferevent_free_and_close_fd;
+		pxy_print_ssl_error(bev, ctx);
 
 		if (bev == ctx->srv_dst.bev) {
 			if (!ctx->connected) {
 				/* the callout to the original destination failed,
 				 * e.g. because it asked for client cert auth, so
 				 * close the accepted socket and clean up */
-//				if (bev == ctx->srv_dst.bev && ctx->srv_dst.ssl &&
-//					ctx->opts->passthrough && have_sslerr) {
-//					/* ssl callout failed, fall back to plain
-//					 * TCP passthrough of SSL connection */
-//					bufferevent_free_and_close_fd(bev, ctx);
-//					ctx->srv_dst.bev = NULL;
-//					ctx->srv_dst.ssl = NULL;
-//					ctx->passthrough = 1;
-//					log_dbg_printf("SSL dst connection failed; fal"
-//								   "ling back to passthrough\n");
-//					pxy_fd_readcb(ctx->fd, 0, ctx);
-//					return;
-//				}
-				bufferevent_free_and_close_fd(bev, ctx);
-				ctx->srv_dst.bev = NULL;
-				ctx->srv_dst.ssl = NULL;
+				log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>=================================== pxy_bev_eventcb: ERROR !ctx->connected %s, fd=%d\n", event_name, ctx->fd);
+				pxy_conn_free(ctx);
 				return;
 			}
 		} else {
@@ -3163,45 +2948,18 @@ pxy_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 					other->closed = 1;
 				}
 			}
-
-			pxy_conn_desc_t *src_ctx = &ctx->src;
-			/* we only get a single disconnect event here for both connections */
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>=================================== pxy_bev_eventcb: ERROR disconnect <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< ERROR CONN TERM, fd=%d\n", ctx->fd);
-			if (OPTS_DEBUG(ctx->opts)) {
-				log_dbg_printf(">>>>>=================================== pxy_bev_eventcb: ERROR %s disconnected to [%s]:%s, fd=%d\n",
-							   src_ctx->ssl ? "SSL" : "TCP",
-							   ctx->dsthost_str, ctx->dstport_str, ctx->fd);
-				log_dbg_printf(">>>>>=================================== pxy_bev_eventcb: ERROR %s disconnected from [%s]:%s, fd=%d\n",
-							   src_ctx->ssl ? "SSL" : "TCP",
-							   ctx->srchost_str, ctx->srcport_str, ctx->fd);
-			}
-
-			this->closed = 1;
-			this_free_and_close_fd_func(bev, ctx);
-			this->bev = NULL;
-			if (other->closed) {
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>=================================== pxy_bev_eventcb: ERROR disconnect other->closed <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< ERROR CONN TERM, fd=%d\n", ctx->fd);
-				pxy_conn_free(ctx);
-			}
 		}
-
 		goto leave;
 	}
 
 	if (events & BEV_EVENT_EOF) {
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>=================================== pxy_bev_eventcb: EOF %s fd=%d\n", event_name, ctx->fd);
 
-		pxy_conn_desc_t *this = (bev==ctx->src.bev) ? &ctx->src : &ctx->dst;
-		pxy_conn_desc_t *other = (bev==ctx->src.bev) ? &ctx->dst : &ctx->src;
-
-		void (*this_free_and_close_fd_func)(struct bufferevent *, pxy_conn_ctx_t *) = (this->bev==ctx->src.bev) ? &bufferevent_free_and_close_fd : &bufferevent_free_and_close_fd_nonssl;
-		void (*other_free_and_close_fd_func)(struct bufferevent *, pxy_conn_ctx_t *) = (other->bev==ctx->dst.bev) ? &bufferevent_free_and_close_fd_nonssl : &bufferevent_free_and_close_fd;
-
 		if (bev == ctx->srv_dst.bev) {
 			bufferevent_free_and_close_fd(ctx->srv_dst.bev, ctx);
 			ctx->srv_dst.bev = NULL;
 			ctx->srv_dst.closed = 1;
-			goto leave;
+			return;
 		} else {
 			if (!ctx->connected) {
 				log_dbg_printf("EOF on inbound connection while "
@@ -3230,28 +2988,30 @@ pxy_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 				}
 			}
 
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>=================================== pxy_bev_eventcb: disconnect <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< CONN TERM, fd=%d\n", ctx->fd);
-			/* we only get a single disconnect event here for both connections */
-			if (OPTS_DEBUG(ctx->opts)) {
-				log_dbg_printf(">>>>>=================================== pxy_bev_eventcb: EOF %s disconnected to [%s]:%s, fd=%d\n",
-							   this->ssl ? "SSL" : "TCP",
-							   ctx->dsthost_str, ctx->dstport_str, ctx->fd);
-				log_dbg_printf(">>>>>=================================== pxy_bev_eventcb: EOF %s disconnected from [%s]:%s, fd=%d\n",
-							   this->ssl ? "SSL" : "TCP",
-							   ctx->srchost_str, ctx->srcport_str, ctx->fd);
-			}
-
-			this->closed = 1;
-			this_free_and_close_fd_func(bev, ctx);
-			this->bev = NULL;
-			if (other->closed) {
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>=================================== pxy_bev_eventcb: disconnect other->closed <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< CONN TERM, fd=%d\n", ctx->fd);
-				pxy_conn_free(ctx);
-			}
 		}
+		goto leave;
 	}
 
 leave:
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>=================================== pxy_bev_eventcb: disconnect <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< CONN TERM, fd=%d\n", ctx->fd);
+	/* we only get a single disconnect event here for both connections */
+	if (OPTS_DEBUG(ctx->opts)) {
+		log_dbg_printf(">>>>>=================================== pxy_bev_eventcb: %s disconnected to [%s]:%s, fd=%d\n",
+					   this->ssl ? "SSL" : "TCP",
+					   ctx->dsthost_str, ctx->dstport_str, ctx->fd);
+		log_dbg_printf(">>>>>=================================== pxy_bev_eventcb: %s disconnected from [%s]:%s, fd=%d\n",
+					   this->ssl ? "SSL" : "TCP",
+					   ctx->srchost_str, ctx->srcport_str, ctx->fd);
+	}
+
+	this->closed = 1;
+	this_free_and_close_fd_func(bev, ctx);
+	this->bev = NULL;
+	if (other->closed) {
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>=================================== pxy_bev_eventcb: disconnect other->closed <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< CONN TERM, fd=%d\n", ctx->fd);
+		pxy_conn_free(ctx);
+	}
+
 	// @attention ctx may have been freed now, so cannot use ctx->fd here
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>=================================== pxy_bev_eventcb EXIT fd=%d\n", fd);
 }
@@ -3270,119 +3030,33 @@ pxy_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 	char *event_name = pxy_get_event_name_child(bev, ctx);
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>--------------------- pxy_bev_eventcb_child: ENTER %s fd=%d, child_fd=%d\n", event_name, parent->fd, parent->child_fd);
 
+	pxy_conn_desc_t *this = (bev==ctx->src.bev) ? &ctx->src : &ctx->dst;
+	pxy_conn_desc_t *other = (bev==ctx->src.bev) ? &ctx->dst : &ctx->src;
+
+	void (*this_free_and_close_fd_func)(struct bufferevent *, pxy_conn_ctx_t *) = (this->bev==ctx->src.bev) ? &bufferevent_free_and_close_fd_nonssl : &bufferevent_free_and_close_fd;
+	void (*other_free_and_close_fd_func)(struct bufferevent *, pxy_conn_ctx_t *) = (other->bev==ctx->dst.bev) ? &bufferevent_free_and_close_fd : &bufferevent_free_and_close_fd_nonssl;
+
 	if (events & BEV_EVENT_CONNECTED) {
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>--------------------- pxy_bev_eventcb_child: CONNECTED %s fd=%d\n", event_name, fd);
-		pxy_connected_enable_child(bev, ctx, event_name);
+		if (bev == ctx->dst.bev) {
+			ctx->connected = 1;
+
+			// @attention Create and enable src.bev before, but connect here, because we check if dst.bev is NULL elsewhere
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_bev_eventcb_child: enable callbacks for src.bev fd=%d\n", fd);
+			bufferevent_enable(ctx->src.bev, EV_READ|EV_WRITE);
+		}
+		return;
 	}
 
 	if (events & BEV_EVENT_ERROR) {
 		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>--------------------- pxy_bev_eventcb_child: ERROR %s fd=%d\n", event_name, ctx->fd);
-
-		unsigned long sslerr;
-		int have_sslerr = 0;
-
-		// @todo Reuse this error printing code: Make a function?
-		/* Can happen for socket errs, ssl errs;
-		 * may happen for unclean ssl socket shutdowns. */
-		sslerr = bufferevent_get_openssl_error(bev);
-		if (sslerr)
-			have_sslerr = 1;
-		if (!errno && !sslerr) {
-#if LIBEVENT_VERSION_NUMBER >= 0x02010000
-			/* We have disabled notification for unclean shutdowns
-			 * so this should not happen; log a warning. */
-			log_err_printf("Warning: Spurious error from "
-			               "bufferevent (errno=0,sslerr=0)\n");
-#else /* LIBEVENT_VERSION_NUMBER < 0x02010000 */
-			/* Older versions of libevent will report these. */
-			if (OPTS_DEBUG(parent->opts)) {
-				log_dbg_printf("Unclean SSL shutdown. fd=%d, pfd=%d\n", ctx->fd, parent->fd);
-			}
-#endif /* LIBEVENT_VERSION_NUMBER < 0x02010000 */
-		} else if (ERR_GET_REASON(sslerr) ==
-		           SSL_R_SSLV3_ALERT_HANDSHAKE_FAILURE) {
-			/* these can happen due to client cert auth,
-			 * only log error if debugging is activated */
-			log_dbg_printf("Error from bufferevent: "
-			               "%i:%s %lu:%i:%s:%i:%s:%i:%s\n",
-			               errno,
-			               errno ? strerror(errno) : "-",
-			               sslerr,
-			               ERR_GET_REASON(sslerr),
-			               sslerr ?
-			               ERR_reason_error_string(sslerr) : "-",
-			               ERR_GET_LIB(sslerr),
-			               sslerr ?
-			               ERR_lib_error_string(sslerr) : "-",
-			               ERR_GET_FUNC(sslerr),
-			               sslerr ?
-			               ERR_func_error_string(sslerr) : "-");
-			while ((sslerr = bufferevent_get_openssl_error(bev))) {
-				log_dbg_printf("Additional SSL error: "
-				               "%lu:%i:%s:%i:%s:%i:%s\n",
-				               sslerr,
-				               ERR_GET_REASON(sslerr),
-				               ERR_reason_error_string(sslerr),
-				               ERR_GET_LIB(sslerr),
-				               ERR_lib_error_string(sslerr),
-				               ERR_GET_FUNC(sslerr),
-				               ERR_func_error_string(sslerr));
-			}
-		} else {
-			/* real errors */
-			log_err_printf("Error from bufferevent: "
-			               "%i:%s %lu:%i:%s:%i:%s:%i:%s\n",
-			               errno,
-			               errno ? strerror(errno) : "-",
-			               sslerr,
-			               ERR_GET_REASON(sslerr),
-			               sslerr ?
-			               ERR_reason_error_string(sslerr) : "-",
-			               ERR_GET_LIB(sslerr),
-			               sslerr ?
-			               ERR_lib_error_string(sslerr) : "-",
-			               ERR_GET_FUNC(sslerr),
-			               sslerr ?
-			               ERR_func_error_string(sslerr) : "-");
-			while ((sslerr = bufferevent_get_openssl_error(bev))) {
-				log_err_printf("Additional SSL error: "
-				               "%lu:%i:%s:%i:%s:%i:%s\n",
-				               sslerr,
-				               ERR_GET_REASON(sslerr),
-				               ERR_reason_error_string(sslerr),
-				               ERR_GET_LIB(sslerr),
-				               ERR_lib_error_string(sslerr),
-				               ERR_GET_FUNC(sslerr),
-				               ERR_func_error_string(sslerr));
-			}
-		}
+		pxy_print_ssl_error(bev, parent);
 
 		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>--------------------- pxy_bev_eventcb_child: ERROR pxy_conn_free_child, %s fd=%d\n", event_name, ctx->fd);
-//		pxy_conn_free_child(ctx);
-
-		pxy_conn_desc_t *this = (bev==ctx->src.bev) ? &ctx->src : &ctx->dst;
-		pxy_conn_desc_t *other = (bev==ctx->src.bev) ? &ctx->dst : &ctx->src;
-
-		void (*this_free_and_close_fd_func)(struct bufferevent *, pxy_conn_ctx_t *) = (this->bev==ctx->src.bev) ? &bufferevent_free_and_close_fd_nonssl : &bufferevent_free_and_close_fd;
-		void (*other_free_and_close_fd_func)(struct bufferevent *, pxy_conn_ctx_t *) = (other->bev==ctx->dst.bev) ? &bufferevent_free_and_close_fd : &bufferevent_free_and_close_fd_nonssl;
-
 		if (!ctx->connected) {
 			/* the callout to the original destination failed,
 			 * e.g. because it asked for client cert auth, so
 			 * close the accepted socket and clean up */
-//			if (bev == ctx->dst.bev && ctx->dst.ssl &&
-//			    ctx->parent->opts->passthrough && have_sslerr) {
-//				/* ssl callout failed, fall back to plain
-//				 * TCP passthrough of SSL connection */
-//				bufferevent_free_and_close_fd(bev, ctx);
-//				ctx->dst.bev = NULL;
-//				ctx->dst.ssl = NULL;
-//				ctx->parent->passthrough = 1;
-//				log_dbg_printf("SSL dst connection failed; fal"
-//				               "ling back to passthrough\n");
-//				pxy_fd_readcb(ctx->fd, 0, ctx);
-//				return;
-//			}
 			evutil_closesocket(ctx->fd);
 			other->closed = 1;
 		} else if (!other->closed) {
@@ -3397,36 +3071,11 @@ pxy_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 				other->closed = 1;
 			}
 		}
-
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>--------------------- pxy_bev_eventcb_child: ERROR disconnect <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< ERROR CHILD TERM, fd=%d, pfd=%d\n", ctx->fd, parent->fd);
-		/* we only get a single disconnect event here for both connections */
-		if (OPTS_DEBUG(ctx->parent->opts)) {
-			log_dbg_printf(">>>>>--------------------- pxy_bev_eventcb_child: ERROR %s disconnected to [%s]:%s, fd=%d, pfd=%d\n",
-						   this->ssl ? "SSL" : "TCP",
-						   parent->dsthost_str, parent->dstport_str, ctx->fd, parent->fd);
-			log_dbg_printf(">>>>>--------------------- pxy_bev_eventcb_child: ERROR %s disconnected from [%s]:%s, fd=%d, pfd=%d\n",
-						   this->ssl ? "SSL" : "TCP",
-						   parent->srchost_str, parent->srcport_str, ctx->fd, parent->fd);
-		}
-
-		this->closed = 1;
-		this_free_and_close_fd_func(bev, ctx->parent);
-		this->bev = NULL;
-		if (other->closed) {
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>--------------------- pxy_bev_eventcb_child: ERROR disconnect other->closed <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< ERROR CHILD TERM, fd=%d, pfd=%d\n", ctx->fd, parent->fd);
-			pxy_conn_free_child(ctx);
-		}
 		goto leave;
 	}
 
 	if (events & BEV_EVENT_EOF) {
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>--------------------- pxy_bev_eventcb_child: EOF %s fd=%d\n", event_name, fd);
-
-		pxy_conn_desc_t *this = (bev==ctx->src.bev) ? &ctx->src : &ctx->dst;
-		pxy_conn_desc_t *other = (bev==ctx->src.bev) ? &ctx->dst : &ctx->src;
-
-		void (*this_free_and_close_fd_func)(struct bufferevent *, pxy_conn_ctx_t *) = (this->bev==ctx->src.bev) ? &bufferevent_free_and_close_fd_nonssl : &bufferevent_free_and_close_fd;
-		void (*other_free_and_close_fd_func)(struct bufferevent *, pxy_conn_ctx_t *) = (other->bev==ctx->dst.bev) ? &bufferevent_free_and_close_fd : &bufferevent_free_and_close_fd_nonssl;
 
 		// @todo How to handle the following case?
 		if (!ctx->connected) {
@@ -3455,28 +3104,29 @@ pxy_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 				}
 			}
 		}
-
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>--------------------- pxy_bev_eventcb_child: disconnect <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< CHILD TERM, fd=%d, pfd=%d\n", ctx->fd, parent->fd);
-		/* we only get a single disconnect event here for both connections */
-		if (OPTS_DEBUG(parent->opts)) {
-			log_dbg_printf(">>>>>--------------------- pxy_bev_eventcb_child: EOF %s disconnected to [%s]:%s, fd=%d, pfd=%d\n",
-						   this->ssl ? "SSL" : "TCP",
-						   parent->dsthost_str, parent->dstport_str, ctx->fd, parent->fd);
-			log_dbg_printf(">>>>>--------------------- pxy_bev_eventcb_child: EOF %s disconnected from [%s]:%s, fd=%d, pfd=%d\n",
-						   this->ssl ? "SSL" : "TCP",
-						   parent->srchost_str, parent->srcport_str, ctx->fd, parent->fd);
-		}
-
-		this->closed = 1;
-		this_free_and_close_fd_func(bev, ctx->parent);
-		this->bev = NULL;
-		if (other->closed) {
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>--------------------- pxy_bev_eventcb_child: disconnect other->closed <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< CHILD TERM, fd=%d, pfd=%d\n", ctx->fd, parent->fd);
-			pxy_conn_free_child(ctx);
-		}
+		goto leave;
 	}
 
 leave:
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>--------------------- pxy_bev_eventcb_child: disconnect <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< CHILD TERM, fd=%d, pfd=%d\n", ctx->fd, parent->fd);
+	/* we only get a single disconnect event here for both connections */
+	if (OPTS_DEBUG(parent->opts)) {
+		log_dbg_printf(">>>>>--------------------- pxy_bev_eventcb_child: %s disconnected to [%s]:%s, fd=%d, pfd=%d\n",
+					   this->ssl ? "SSL" : "TCP",
+					   parent->dsthost_str, parent->dstport_str, ctx->fd, parent->fd);
+		log_dbg_printf(">>>>>--------------------- pxy_bev_eventcb_child: %s disconnected from [%s]:%s, fd=%d, pfd=%d\n",
+					   this->ssl ? "SSL" : "TCP",
+					   parent->srchost_str, parent->srcport_str, ctx->fd, parent->fd);
+	}
+
+	this->closed = 1;
+	this_free_and_close_fd_func(bev, ctx->parent);
+	this->bev = NULL;
+	if (other->closed) {
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>--------------------- pxy_bev_eventcb_child: disconnect other->closed <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< CHILD TERM, fd=%d, pfd=%d\n", ctx->fd, parent->fd);
+		pxy_conn_free_child(ctx);
+	}
+
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>--------------------- pxy_bev_eventcb_child: EXIT\n");
 }
 
@@ -3551,7 +3201,7 @@ pxy_conn_connect(pxy_conn_ctx_t *ctx)
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>=================================== pxy_conn_connect: bufferevent_setcb for srv_dst, fd=%d\n", fd);
 	// Disable and NULL r cb, we do nothing for srv_dst in r cb.
 	bufferevent_setcb(ctx->srv_dst.bev, NULL, pxy_bev_writecb, pxy_bev_eventcb, ctx);
-	bufferevent_enable(ctx->srv_dst.bev, EV_READ|EV_WRITE);
+	bufferevent_enable(ctx->srv_dst.bev, EV_WRITE);
 	
 	/* initiate connection */
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>=================================== pxy_conn_connect: bufferevent_socket_connect for srv_dst, fd=%d\n", fd);
