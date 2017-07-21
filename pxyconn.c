@@ -3053,7 +3053,7 @@ pxy_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 #else /* LIBEVENT_VERSION_NUMBER < 0x02010000 */
 			/* Older versions of libevent will report these. */
 			if (OPTS_DEBUG(ctx->opts)) {
-				log_dbg_printf("Unclean SSL shutdown.\n");
+				log_dbg_printf("Unclean SSL shutdown., fd=%d\n", ctx->fd);
 			}
 #endif /* LIBEVENT_VERSION_NUMBER < 0x02010000 */
 		} else if (ERR_GET_REASON(sslerr) ==
@@ -3114,20 +3114,77 @@ pxy_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 			}
 		}
 
-		pxy_conn_desc_t *src_ctx = &ctx->src;
-		/* we only get a single disconnect event here for both connections */
-		if (OPTS_DEBUG(ctx->opts)) {
-			log_dbg_printf(">>>>>=================================== pxy_bev_eventcb: ERROR %s disconnected to [%s]:%s\n",
-						   src_ctx->ssl ? "SSL" : "TCP",
-						   ctx->dsthost_str, ctx->dstport_str);
-			log_dbg_printf(">>>>>=================================== pxy_bev_eventcb: ERROR %s disconnected from [%s]:%s\n",
-						   src_ctx->ssl ? "SSL" : "TCP",
-						   ctx->srchost_str, ctx->srcport_str);
+		// @todo Close and free the connections upon errors
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>=================================== pxy_bev_eventcb: ERROR pxy_conn_free %s, fd=%d\n", event_name, ctx->fd);
+//		pxy_conn_free(ctx);
+
+		pxy_conn_desc_t *this = (bev==ctx->src.bev) ? &ctx->src : &ctx->dst;
+		pxy_conn_desc_t *other = (bev==ctx->src.bev) ? &ctx->dst : &ctx->src;
+
+		void (*this_free_and_close_fd_func)(struct bufferevent *, pxy_conn_ctx_t *) = (this->bev==ctx->src.bev) ? &bufferevent_free_and_close_fd : &bufferevent_free_and_close_fd_nonssl;
+		void (*other_free_and_close_fd_func)(struct bufferevent *, pxy_conn_ctx_t *) = (other->bev==ctx->dst.bev) ? &bufferevent_free_and_close_fd_nonssl : &bufferevent_free_and_close_fd;
+
+		if (bev == ctx->srv_dst.bev) {
+			if (!ctx->connected) {
+				/* the callout to the original destination failed,
+				 * e.g. because it asked for client cert auth, so
+				 * close the accepted socket and clean up */
+//				if (bev == ctx->srv_dst.bev && ctx->srv_dst.ssl &&
+//					ctx->opts->passthrough && have_sslerr) {
+//					/* ssl callout failed, fall back to plain
+//					 * TCP passthrough of SSL connection */
+//					bufferevent_free_and_close_fd(bev, ctx);
+//					ctx->srv_dst.bev = NULL;
+//					ctx->srv_dst.ssl = NULL;
+//					ctx->passthrough = 1;
+//					log_dbg_printf("SSL dst connection failed; fal"
+//								   "ling back to passthrough\n");
+//					pxy_fd_readcb(ctx->fd, 0, ctx);
+//					return;
+//				}
+				bufferevent_free_and_close_fd(bev, ctx);
+				ctx->srv_dst.bev = NULL;
+				ctx->srv_dst.ssl = NULL;
+				return;
+			}
+		} else {
+			if (!ctx->connected) {
+				evutil_closesocket(ctx->fd);
+				other->closed = 1;
+			} else if (!other->closed) {
+				/* if the other end is still open and doesn't have data
+				 * to send, close it, otherwise its writecb will close
+				 * it after writing what's left in the output buffer */
+				struct evbuffer *outbuf;
+				outbuf = bufferevent_get_output(other->bev);
+				if (evbuffer_get_length(outbuf) == 0) {
+					other_free_and_close_fd_func(other->bev, ctx);
+					other->bev = NULL;
+					other->closed = 1;
+				}
+			}
+
+			pxy_conn_desc_t *src_ctx = &ctx->src;
+			/* we only get a single disconnect event here for both connections */
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>=================================== pxy_bev_eventcb: ERROR disconnect <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< ERROR CONN TERM, fd=%d\n", ctx->fd);
+			if (OPTS_DEBUG(ctx->opts)) {
+				log_dbg_printf(">>>>>=================================== pxy_bev_eventcb: ERROR %s disconnected to [%s]:%s, fd=%d\n",
+							   src_ctx->ssl ? "SSL" : "TCP",
+							   ctx->dsthost_str, ctx->dstport_str, ctx->fd);
+				log_dbg_printf(">>>>>=================================== pxy_bev_eventcb: ERROR %s disconnected from [%s]:%s, fd=%d\n",
+							   src_ctx->ssl ? "SSL" : "TCP",
+							   ctx->srchost_str, ctx->srcport_str, ctx->fd);
+			}
+
+			this->closed = 1;
+			this_free_and_close_fd_func(bev, ctx);
+			this->bev = NULL;
+			if (other->closed) {
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>=================================== pxy_bev_eventcb: ERROR disconnect other->closed <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< ERROR CONN TERM, fd=%d\n", ctx->fd);
+				pxy_conn_free(ctx);
+			}
 		}
 
-		// @todo Close and free the connections upon errors
-		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>=================================== pxy_bev_eventcb: ERROR pxy_conn_free %s fd=%d\n", event_name, ctx->fd);
-		pxy_conn_free(ctx);
 		goto leave;
 	}
 
@@ -3152,12 +3209,12 @@ pxy_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 				evutil_closesocket(ctx->fd);
 				other->closed = 1;
 			} else if (!other->closed) {
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>=================================== pxy_bev_eventcb: !other->closed <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< CONN TERM\n");
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>=================================== pxy_bev_eventcb: !other->closed <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< CONN TERM, fd=%d\n", ctx->fd);
 				struct evbuffer *inbuf, *outbuf;
 				inbuf = bufferevent_get_input(bev);
 				outbuf = bufferevent_get_output(other->bev);
 				if (evbuffer_get_length(inbuf) > 0) {
-					log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>=================================== pxy_bev_eventcb: evbuffer_get_length(inbuf) > 0 <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< CONN TERM\n");
+					log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>=================================== pxy_bev_eventcb: evbuffer_get_length(inbuf) > 0 <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< CONN TERM, fd=%d\n", ctx->fd);
 					pxy_bev_readcb(bev, ctx);
 				} else {
 					/* if the other end is still open and doesn't
@@ -3165,7 +3222,7 @@ pxy_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 					 * writecb will close it after writing what's
 					 * left in the output buffer. */
 					if (evbuffer_get_length(outbuf) == 0) {
-						log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>=================================== pxy_bev_eventcb: evbuffer_get_length(inbuf) == 0 <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< CONN TERM\n");
+						log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>=================================== pxy_bev_eventcb: evbuffer_get_length(inbuf) == 0 <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< CONN TERM, fd=%d\n", ctx->fd);
 						other->closed = 1;
 						other_free_and_close_fd_func(other->bev, ctx);
 						other->bev = NULL;
@@ -3173,22 +3230,22 @@ pxy_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 				}
 			}
 
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>=================================== pxy_bev_eventcb: disconnect <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< CONN TERM\n");
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>=================================== pxy_bev_eventcb: disconnect <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< CONN TERM, fd=%d\n", ctx->fd);
 			/* we only get a single disconnect event here for both connections */
 			if (OPTS_DEBUG(ctx->opts)) {
-				log_dbg_printf(">>>>>=================================== pxy_bev_eventcb: EOF %s disconnected to [%s]:%s\n",
+				log_dbg_printf(">>>>>=================================== pxy_bev_eventcb: EOF %s disconnected to [%s]:%s, fd=%d\n",
 							   this->ssl ? "SSL" : "TCP",
-							   ctx->dsthost_str, ctx->dstport_str);
-				log_dbg_printf(">>>>>=================================== pxy_bev_eventcb: EOF %s disconnected from [%s]:%s\n",
+							   ctx->dsthost_str, ctx->dstport_str, ctx->fd);
+				log_dbg_printf(">>>>>=================================== pxy_bev_eventcb: EOF %s disconnected from [%s]:%s, fd=%d\n",
 							   this->ssl ? "SSL" : "TCP",
-							   ctx->srchost_str, ctx->srcport_str);
+							   ctx->srchost_str, ctx->srcport_str, ctx->fd);
 			}
 
 			this->closed = 1;
 			this_free_and_close_fd_func(bev, ctx);
 			this->bev = NULL;
 			if (other->closed) {
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>=================================== pxy_bev_eventcb: disconnect other->closed <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< CONN TERM\n");
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>=================================== pxy_bev_eventcb: disconnect other->closed <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< CONN TERM, fd=%d\n", ctx->fd);
 				pxy_conn_free(ctx);
 			}
 		}
@@ -3239,7 +3296,7 @@ pxy_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 #else /* LIBEVENT_VERSION_NUMBER < 0x02010000 */
 			/* Older versions of libevent will report these. */
 			if (OPTS_DEBUG(parent->opts)) {
-				log_dbg_printf("Unclean SSL shutdown.\n");
+				log_dbg_printf("Unclean SSL shutdown. fd=%d, pfd=%d\n", ctx->fd, parent->fd);
 			}
 #endif /* LIBEVENT_VERSION_NUMBER < 0x02010000 */
 		} else if (ERR_GET_REASON(sslerr) ==
@@ -3301,7 +3358,64 @@ pxy_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 		}
 
 		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>--------------------- pxy_bev_eventcb_child: ERROR pxy_conn_free_child, %s fd=%d\n", event_name, ctx->fd);
-		pxy_conn_free_child(ctx);
+//		pxy_conn_free_child(ctx);
+
+		pxy_conn_desc_t *this = (bev==ctx->src.bev) ? &ctx->src : &ctx->dst;
+		pxy_conn_desc_t *other = (bev==ctx->src.bev) ? &ctx->dst : &ctx->src;
+
+		void (*this_free_and_close_fd_func)(struct bufferevent *, pxy_conn_ctx_t *) = (this->bev==ctx->src.bev) ? &bufferevent_free_and_close_fd_nonssl : &bufferevent_free_and_close_fd;
+		void (*other_free_and_close_fd_func)(struct bufferevent *, pxy_conn_ctx_t *) = (other->bev==ctx->dst.bev) ? &bufferevent_free_and_close_fd : &bufferevent_free_and_close_fd_nonssl;
+
+		if (!ctx->connected) {
+			/* the callout to the original destination failed,
+			 * e.g. because it asked for client cert auth, so
+			 * close the accepted socket and clean up */
+//			if (bev == ctx->dst.bev && ctx->dst.ssl &&
+//			    ctx->parent->opts->passthrough && have_sslerr) {
+//				/* ssl callout failed, fall back to plain
+//				 * TCP passthrough of SSL connection */
+//				bufferevent_free_and_close_fd(bev, ctx);
+//				ctx->dst.bev = NULL;
+//				ctx->dst.ssl = NULL;
+//				ctx->parent->passthrough = 1;
+//				log_dbg_printf("SSL dst connection failed; fal"
+//				               "ling back to passthrough\n");
+//				pxy_fd_readcb(ctx->fd, 0, ctx);
+//				return;
+//			}
+			evutil_closesocket(ctx->fd);
+			other->closed = 1;
+		} else if (!other->closed) {
+			/* if the other end is still open and doesn't have data
+			 * to send, close it, otherwise its writecb will close
+			 * it after writing what's left in the output buffer */
+			struct evbuffer *outbuf;
+			outbuf = bufferevent_get_output(other->bev);
+			if (evbuffer_get_length(outbuf) == 0) {
+				other_free_and_close_fd_func(other->bev, ctx->parent);
+				other->bev = NULL;
+				other->closed = 1;
+			}
+		}
+
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>--------------------- pxy_bev_eventcb_child: ERROR disconnect <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< ERROR CHILD TERM, fd=%d, pfd=%d\n", ctx->fd, parent->fd);
+		/* we only get a single disconnect event here for both connections */
+		if (OPTS_DEBUG(ctx->parent->opts)) {
+			log_dbg_printf(">>>>>--------------------- pxy_bev_eventcb_child: ERROR %s disconnected to [%s]:%s, fd=%d, pfd=%d\n",
+						   this->ssl ? "SSL" : "TCP",
+						   parent->dsthost_str, parent->dstport_str, ctx->fd, parent->fd);
+			log_dbg_printf(">>>>>--------------------- pxy_bev_eventcb_child: ERROR %s disconnected from [%s]:%s, fd=%d, pfd=%d\n",
+						   this->ssl ? "SSL" : "TCP",
+						   parent->srchost_str, parent->srcport_str, ctx->fd, parent->fd);
+		}
+
+		this->closed = 1;
+		this_free_and_close_fd_func(bev, ctx->parent);
+		this->bev = NULL;
+		if (other->closed) {
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>--------------------- pxy_bev_eventcb_child: ERROR disconnect other->closed <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< ERROR CHILD TERM, fd=%d, pfd=%d\n", ctx->fd, parent->fd);
+			pxy_conn_free_child(ctx);
+		}
 		goto leave;
 	}
 
@@ -3321,12 +3435,12 @@ pxy_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 			evutil_closesocket(ctx->fd);
 			other->closed = 1;
 		} else if (!other->closed) {
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>=================================== pxy_bev_eventcb_child: !other->closed <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< CHILD TERM\n");
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>=================================== pxy_bev_eventcb_child: !other->closed <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< CHILD TERM, fd=%d, pfd=%d\n", ctx->fd, parent->fd);
 			struct evbuffer *inbuf, *outbuf;
 			inbuf = bufferevent_get_input(bev);
 			outbuf = bufferevent_get_output(other->bev);
 			if (evbuffer_get_length(inbuf) > 0) {
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>=================================== pxy_bev_eventcb_child: evbuffer_get_length(inbuf) > 0 <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< CHILD TERM\n");
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>=================================== pxy_bev_eventcb_child: evbuffer_get_length(inbuf) > 0 <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< CHILD TERM, fd=%d, pfd=%d\n", ctx->fd, parent->fd);
 				pxy_bev_readcb_child(bev, ctx);
 			} else {
 				/* if the other end is still open and doesn't
@@ -3334,7 +3448,7 @@ pxy_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 				 * writecb will close it after writing what's
 				 * left in the output buffer. */
 				if (evbuffer_get_length(outbuf) == 0) {
-					log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>=================================== pxy_bev_eventcb_child: evbuffer_get_length(inbuf) == 0 <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< CHILD TERM\n");
+					log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>=================================== pxy_bev_eventcb_child: evbuffer_get_length(inbuf) == 0 <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< CHILD TERM, fd=%d, pfd=%d\n", ctx->fd, parent->fd);
 					other->closed = 1;
 					other_free_and_close_fd_func(other->bev, ctx->parent);
 					other->bev = NULL;
@@ -3342,22 +3456,22 @@ pxy_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 			}
 		}
 
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>--------------------- pxy_bev_eventcb_child: disconnect <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< CHILD TERM\n");
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>--------------------- pxy_bev_eventcb_child: disconnect <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< CHILD TERM, fd=%d, pfd=%d\n", ctx->fd, parent->fd);
 		/* we only get a single disconnect event here for both connections */
 		if (OPTS_DEBUG(parent->opts)) {
-			log_dbg_printf(">>>>>--------------------- pxy_bev_eventcb_child: EOF %s disconnected to [%s]:%s\n",
+			log_dbg_printf(">>>>>--------------------- pxy_bev_eventcb_child: EOF %s disconnected to [%s]:%s, fd=%d, pfd=%d\n",
 						   this->ssl ? "SSL" : "TCP",
-						   ctx->dsthost_str, ctx->dstport_str);
-			log_dbg_printf(">>>>>--------------------- pxy_bev_eventcb_child: EOF %s disconnected from [%s]:%s\n",
+						   parent->dsthost_str, parent->dstport_str, ctx->fd, parent->fd);
+			log_dbg_printf(">>>>>--------------------- pxy_bev_eventcb_child: EOF %s disconnected from [%s]:%s, fd=%d, pfd=%d\n",
 						   this->ssl ? "SSL" : "TCP",
-						   ctx->srchost_str, ctx->srcport_str);
+						   parent->srchost_str, parent->srcport_str, ctx->fd, parent->fd);
 		}
 
 		this->closed = 1;
 		this_free_and_close_fd_func(bev, ctx->parent);
 		this->bev = NULL;
 		if (other->closed) {
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>--------------------- pxy_bev_eventcb_child: disconnect other->closed <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< CHILD TERM\n");
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>--------------------- pxy_bev_eventcb_child: disconnect other->closed <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< CHILD TERM, fd=%d, pfd=%d\n", ctx->fd, parent->fd);
 			pxy_conn_free_child(ctx);
 		}
 	}
