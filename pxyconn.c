@@ -436,6 +436,12 @@ pxy_conn_ctx_free(pxy_conn_ctx_t *ctx)
 	if (ctx->child_addr_str) {
 		free(ctx->child_addr_str);
 	}
+	if (ctx->srv_dst_ssl_version) {
+		free(ctx->srv_dst_ssl_version);
+	}
+	if (ctx->srv_dst_ssl_cipher) {
+		free(ctx->srv_dst_ssl_cipher);
+	}
 	free(ctx);
 }
 
@@ -603,8 +609,8 @@ pxy_log_connect_nonhttp(pxy_conn_ctx_t *ctx)
 		              STRORDASH(ctx->ssl_names),
 		              SSL_get_version(ctx->src.ssl),
 		              SSL_get_cipher(ctx->src.ssl),
-		              !ctx->srv_dst.closed ? SSL_get_version(ctx->srv_dst.ssl):"?",
-		              !ctx->srv_dst.closed ? SSL_get_cipher(ctx->srv_dst.ssl):"?",
+		              !ctx->srv_dst.closed ? SSL_get_version(ctx->srv_dst.ssl):ctx->srv_dst_ssl_version,
+		              !ctx->srv_dst.closed ? SSL_get_cipher(ctx->srv_dst.ssl):ctx->srv_dst_ssl_cipher,
 		              STRORDASH(ctx->origcrtfpr),
 		              STRORDASH(ctx->usedcrtfpr)
 #ifdef HAVE_LOCAL_PROCINFO
@@ -708,8 +714,8 @@ pxy_log_connect_http(pxy_conn_ctx_t *ctx)
 		              STRORDASH(ctx->ssl_names),
 		              SSL_get_version(ctx->src.ssl),
 		              SSL_get_cipher(ctx->src.ssl),
-		              !ctx->srv_dst.closed ? SSL_get_version(ctx->srv_dst.ssl):"?",
-		              !ctx->srv_dst.closed ? SSL_get_cipher(ctx->srv_dst.ssl):"?",
+		              !ctx->srv_dst.closed ? SSL_get_version(ctx->srv_dst.ssl):ctx->srv_dst_ssl_version,
+		              !ctx->srv_dst.closed ? SSL_get_cipher(ctx->srv_dst.ssl):ctx->srv_dst_ssl_cipher,
 		              STRORDASH(ctx->origcrtfpr),
 		              STRORDASH(ctx->usedcrtfpr),
 #ifdef HAVE_LOCAL_PROCINFO
@@ -1522,10 +1528,8 @@ pxy_http_reqhdr_filter_line(const char *line, pxy_conn_ctx_t *ctx, int child)
 static char *
 pxy_http_resphdr_filter_line(const char *line, pxy_conn_ctx_t *ctx)
 {
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_http_resphdr_filter_line: ENTER, fd=%d\n", ctx->fd);
 	/* parse information for connect log */
 	if (!ctx->http_status_code) {
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_http_resphdr_filter_line: first line, fd=%d\n", ctx->fd);
 		/* first line */
 		char *space1, *space2;
 
@@ -1534,9 +1538,7 @@ pxy_http_resphdr_filter_line(const char *line, pxy_conn_ctx_t *ctx)
 		if (!space1 || !!strncmp(line, "HTTP", 4)) {
 			/* not HTTP or HTTP/0.9 */
 			ctx->seen_resp_header = 1;
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_http_resphdr_filter_line: first line not HTTP or HTTP/0.9, fd=%d\n", ctx->fd);
 		} else {
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_http_resphdr_filter_line: first line else, fd=%d\n", ctx->fd);
 			size_t len_code, len_text;
 
 			if (space2) {
@@ -1561,7 +1563,6 @@ pxy_http_resphdr_filter_line(const char *line, pxy_conn_ctx_t *ctx)
 			ctx->http_status_text[len_text] = '\0';
 		}
 	} else {
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_http_resphdr_filter_line: NOT first line, fd=%d\n", ctx->fd);
 		/* not first line */
 		if (!ctx->http_content_length &&
 		    !strncasecmp(line, "Content-Length:", 15)) {
@@ -1569,7 +1570,6 @@ pxy_http_resphdr_filter_line(const char *line, pxy_conn_ctx_t *ctx)
 				strdup(util_skipws(line + 15));
 			if (!ctx->http_content_length) {
 				ctx->enomem = 1;
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_http_resphdr_filter_line: NOT first line http_content_length, fd=%d\n", ctx->fd);
 				return NULL;
 			}
 		} else if (
@@ -1584,13 +1584,10 @@ pxy_http_resphdr_filter_line(const char *line, pxy_conn_ctx_t *ctx)
 		    /* Alternate Protocol
 		     * remove to prevent switching to QUIC, SPDY et al */
 		    !strncasecmp(line, "Alternate-Protocol:", 19)) {
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_http_resphdr_filter_line: NOT first line HSTS, fd=%d\n", ctx->fd);
 			return NULL;
 		} else if (line[0] == '\0') {
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_http_resphdr_filter_line: NOT first line zero, fd=%d\n", ctx->fd);
 			ctx->seen_resp_header = 1;
 		}
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_http_resphdr_filter_line: NOT first line exit, fd=%d\n", ctx->fd);
 	}
 
 	return (char*)line;
@@ -1834,7 +1831,6 @@ pxy_get_event_name_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ctx)
 static void
 pxy_http_reqhdr_filter(struct evbuffer *inbuf, struct evbuffer *outbuf, struct bufferevent *bev, pxy_conn_ctx_t *ctx, pxy_conn_ctx_t *parent, int child)
 {
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_http_reqhdr_filter: HTTP Request Header, fd=%d\n", ctx->fd);
 	logbuf_t *lb = NULL, *tail = NULL;
 	int inserted_sslproxy_addr = 0;
 	char *line;
@@ -1868,7 +1864,7 @@ pxy_http_reqhdr_filter(struct evbuffer *inbuf, struct evbuffer *outbuf, struct b
 
 		if (!child && !inserted_sslproxy_addr) {
 			inserted_sslproxy_addr = 1;
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_http_reqhdr_filter: src line, fd=%d: %s\n", ctx->fd, ctx->child_addr_str);
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_http_reqhdr_filter: src INSERT sslproxy_addr line, fd=%d: %s\n", ctx->fd, ctx->child_addr_str);
 			evbuffer_add_printf(outbuf, "%s\r\n", ctx->child_addr_str);
 		}
 
@@ -1881,7 +1877,7 @@ pxy_http_reqhdr_filter(struct evbuffer *inbuf, struct evbuffer *outbuf, struct b
 		}
 	}
 	if (lb && WANT_CONTENT_LOG(parent)) {
-		if (log_content_submit(ctx->logctx, lb,
+		if (log_content_submit(parent->logctx, lb,
 							   1/*req*/) == -1) {
 			logbuf_free(lb);
 			log_err_printf("Warning: Content log "
@@ -1907,7 +1903,7 @@ pxy_http_reqhdr_filter(struct evbuffer *inbuf, struct evbuffer *outbuf, struct b
 		logbuf_t *lb;
 		lb = logbuf_new_alloc(evbuffer_get_length(inbuf), NULL, NULL);
 		if (lb && (evbuffer_copyout(inbuf, lb->buf, lb->sz) != -1)) {
-			if (log_content_submit(ctx->logctx, lb,
+			if (log_content_submit(parent->logctx, lb,
 								   (bev == ctx->src.bev)) == -1) {
 				logbuf_free(lb);
 				log_err_printf("Warning: Content log "
@@ -1921,7 +1917,7 @@ leave:
 }
 
 static void
-pxy_http_resphdr_filter(struct evbuffer *inbuf, struct evbuffer *outbuf, struct bufferevent *bev, pxy_conn_ctx_t *ctx, pxy_conn_ctx_t *parent)
+pxy_http_resphdr_filter(struct evbuffer *inbuf, struct evbuffer *outbuf, struct bufferevent *bev, pxy_conn_ctx_t *ctx, pxy_conn_ctx_t *parent, int child)
 {
 	logbuf_t *lb = NULL, *tail = NULL;
 	char *line;
@@ -1955,14 +1951,14 @@ pxy_http_resphdr_filter(struct evbuffer *inbuf, struct evbuffer *outbuf, struct 
 		free(line);
 		if (ctx->seen_resp_header) {
 			/* response header complete: log connection */
-			if (WANT_CONNECT_LOG(parent)) {
+			if (!child && WANT_CONNECT_LOG(parent)) {
 				pxy_log_connect_http(parent);
 			}
 			break;
 		}
 	}
 	if (lb && WANT_CONTENT_LOG(parent)) {
-		if (log_content_submit(ctx->logctx, lb,
+		if (log_content_submit(parent->logctx, lb,
 							   0/*resp*/) == -1) {
 			logbuf_free(lb);
 			log_err_printf("Warning: Content log "
@@ -1988,7 +1984,7 @@ pxy_http_resphdr_filter(struct evbuffer *inbuf, struct evbuffer *outbuf, struct 
 		logbuf_t *lb;
 		lb = logbuf_new_alloc(evbuffer_get_length(inbuf), NULL, NULL);
 		if (lb && (evbuffer_copyout(inbuf, lb->buf, lb->sz) != -1)) {
-			if (log_content_submit(ctx->logctx, lb,
+			if (log_content_submit(parent->logctx, lb,
 								   (bev == ctx->src.bev)) == -1) {
 				logbuf_free(lb);
 				log_err_printf("Warning: Content log "
@@ -2002,8 +1998,21 @@ leave:
 }
 
 static void
-pxy_process_response(struct evbuffer *inbuf, struct evbuffer *outbuf, pxy_conn_ctx_t *ctx)
+pxy_process_response(struct evbuffer *inbuf, struct evbuffer *outbuf, struct bufferevent *bev, pxy_conn_ctx_t *ctx, pxy_conn_ctx_t *parent)
 {
+	if (WANT_CONTENT_LOG(parent)) {
+		logbuf_t *lb;
+		lb = logbuf_new_alloc(evbuffer_get_length(inbuf), NULL, NULL);
+		if (lb && (evbuffer_copyout(inbuf, lb->buf, lb->sz) != -1)) {
+			if (log_content_submit(parent->logctx, lb,
+								   (bev == ctx->src.bev)) == -1) {
+				logbuf_free(lb);
+				log_err_printf("Warning: Content log "
+							   "submission failed\n");
+			}
+		}
+	}
+
 	size_t packet_size = evbuffer_get_length(inbuf);
 	char *packet = malloc(packet_size);
 	if (!packet) {
@@ -2075,9 +2084,22 @@ pxy_bev_readcb(struct bufferevent *bev, void *arg)
 				pxy_http_reqhdr_filter(inbuf, outbuf, bev, ctx, ctx, 0);
 			} else {
 				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_bev_readcb: HTTP Request Body size=%lu, fd=%d\n", evbuffer_get_length(inbuf), ctx->fd);
-				evbuffer_add_buffer(outbuf, inbuf);
+				goto leave;
 			}
 		} else {
+			if (WANT_CONTENT_LOG(ctx)) {
+				logbuf_t *lb;
+				lb = logbuf_new_alloc(evbuffer_get_length(inbuf), NULL, NULL);
+				if (lb && (evbuffer_copyout(inbuf, lb->buf, lb->sz) != -1)) {
+					if (log_content_submit(ctx->logctx, lb,
+										   (bev == ctx->src.bev)) == -1) {
+						logbuf_free(lb);
+						log_err_printf("Warning: Content log "
+									   "submission failed\n");
+					}
+				}
+			}
+
 			log_dbg_level_printf(LOG_DBG_MODE_FINER, ">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: custom_field= %s\n", ctx->child_addr_str);
 
 			size_t packet_size = evbuffer_get_length(inbuf);
@@ -2142,16 +2164,33 @@ pxy_bev_readcb(struct bufferevent *bev, void *arg)
 		if (ctx->spec->http) {
 			if (!ctx->seen_resp_header) {
 				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_bev_readcb: HTTP Response Header size=%lu, fd=%d\n", evbuffer_get_length(inbuf), ctx->fd);
-				pxy_http_resphdr_filter(inbuf, outbuf, bev, ctx, ctx);
+				pxy_http_resphdr_filter(inbuf, outbuf, bev, ctx, ctx, 0);
 			} else {
 				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_bev_readcb: HTTP Response Body size=%lu, fd=%d\n", evbuffer_get_length(inbuf), ctx->fd);
-				evbuffer_add_buffer(outbuf, inbuf);
+				goto leave;
 			}
 		} else {
-			pxy_process_response(inbuf, outbuf, ctx);
+			pxy_process_response(inbuf, outbuf, bev, ctx, ctx);
 		}
 	}
+	goto watermark;
 
+leave:
+	if (WANT_CONTENT_LOG(ctx)) {
+		logbuf_t *lb;
+		lb = logbuf_new_alloc(evbuffer_get_length(inbuf), NULL, NULL);
+		if (lb && (evbuffer_copyout(inbuf, lb->buf, lb->sz) != -1)) {
+			if (log_content_submit(ctx->logctx, lb,
+								   (bev == ctx->src.bev)) == -1) {
+				logbuf_free(lb);
+				log_err_printf("Warning: Content log "
+							   "submission failed\n");
+			}
+		}
+	}
+	evbuffer_add_buffer(outbuf, inbuf);
+
+watermark:
 	if (evbuffer_get_length(outbuf) >= OUTBUF_LIMIT) {
 		/* temporarily disable data source;
 		 * set an appropriate watermark. */
@@ -2202,9 +2241,22 @@ pxy_bev_readcb_child(struct bufferevent *bev, void *arg)
 				pxy_http_reqhdr_filter(inbuf, outbuf, bev, (pxy_conn_ctx_t *)ctx, parent, 1);
 			} else {
 				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_bev_readcb_child: HTTP Request Body size=%lu, fd=%d\n", evbuffer_get_length(inbuf), ctx->fd);
-				evbuffer_add_buffer(outbuf, inbuf);
+				goto leave;
 			}
 		} else {
+			if (WANT_CONTENT_LOG(parent)) {
+				logbuf_t *lb;
+				lb = logbuf_new_alloc(evbuffer_get_length(inbuf), NULL, NULL);
+				if (lb && (evbuffer_copyout(inbuf, lb->buf, lb->sz) != -1)) {
+					if (log_content_submit(parent->logctx, lb,
+										   (bev == ctx->src.bev)) == -1) {
+						logbuf_free(lb);
+						log_err_printf("Warning: Content log "
+									   "submission failed\n");
+					}
+				}
+			}
+
 			size_t packet_size = evbuffer_get_length(inbuf);
 			// ATTENTION: +1 is for null termination
 			char *packet = malloc(packet_size + 1);
@@ -2264,16 +2316,33 @@ pxy_bev_readcb_child(struct bufferevent *bev, void *arg)
 		if (parent->spec->http) {
 			if (!ctx->seen_resp_header) {
 				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_bev_readcb_child: HTTP Response Header size=%lu, fd=%d\n", evbuffer_get_length(inbuf), ctx->fd);
-				pxy_http_resphdr_filter(inbuf, outbuf, bev, (pxy_conn_ctx_t *)ctx, parent);
+				pxy_http_resphdr_filter(inbuf, outbuf, bev, (pxy_conn_ctx_t *)ctx, parent, 1);
 			} else {
 				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_bev_readcb_child: HTTP Response Body size=%lu, fd=%d\n", evbuffer_get_length(inbuf), ctx->fd);
-				evbuffer_add_buffer(outbuf, inbuf);
+				goto leave;
 			}
 		} else {
-			pxy_process_response(inbuf, outbuf, (pxy_conn_ctx_t *)ctx);
+			pxy_process_response(inbuf, outbuf, bev, (pxy_conn_ctx_t *)ctx, parent);
 		}
 	}
+	goto watermark;
 
+leave:
+	if (WANT_CONTENT_LOG(parent)) {
+		logbuf_t *lb;
+		lb = logbuf_new_alloc(evbuffer_get_length(inbuf), NULL, NULL);
+		if (lb && (evbuffer_copyout(inbuf, lb->buf, lb->sz) != -1)) {
+			if (log_content_submit(parent->logctx, lb,
+								   (bev == ctx->src.bev)) == -1) {
+				logbuf_free(lb);
+				log_err_printf("Warning: Content log "
+							   "submission failed\n");
+			}
+		}
+	}
+	evbuffer_add_buffer(outbuf, inbuf);
+
+watermark:
 	if (evbuffer_get_length(outbuf) >= OUTBUF_LIMIT) {
 		/* temporarily disable data source;
 		 * set an appropriate watermark. */
@@ -2569,8 +2638,13 @@ pxy_connected_enable(struct bufferevent *bev, pxy_conn_ctx_t *ctx, char *event_n
 			}
 		}
 
-		// @todo Closing srv_dst causes TCP conns to stall sometimes (SSL cons were ok)?
-		// @attention Free the dst of the parent ctx asap, we don't need it, but we need its fd
+		// @attention Free the srv_dst of the parent ctx asap, we don't need it, but we need its fd
+		// So save its ssl info for logging
+		if (ctx->srv_dst.ssl) {
+			ctx->srv_dst_ssl_version = strdup(SSL_get_version(ctx->srv_dst.ssl));
+			ctx->srv_dst_ssl_cipher = strdup(SSL_get_cipher(ctx->srv_dst.ssl));
+		}
+
 		pxy_conn_desc_t *srv_dst = &ctx->srv_dst;
 		if (srv_dst->bev) {
 			log_dbg_level_printf(LOG_DBG_MODE_FINER, ">>>>>=================================== pxy_connected_enable: evutil_closesocket srv_dst->bev, fd=%d\n", bufferevent_getfd(srv_dst->bev));

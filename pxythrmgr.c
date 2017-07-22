@@ -124,7 +124,7 @@ pxy_thrmgr_print_thr_info(pxy_thr_ctx_t *tctx)
 		}
 	}
 		
-	log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>> pxy_thrmgr_print_thr_info: EXIT\n");
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>> pxy_thrmgr_print_thr_info: EXIT\n");
 }
 
 /*

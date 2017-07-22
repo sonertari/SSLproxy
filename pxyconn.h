@@ -104,6 +104,8 @@ struct pxy_conn_ctx {
 	unsigned int clienthello_found : 1;      /* 1 if conn upgrade to SSL */
 
 	struct pxy_conn_desc srv_dst;
+	char *srv_dst_ssl_version;
+	char *srv_dst_ssl_cipher;
 
 	struct event *ev;
 
