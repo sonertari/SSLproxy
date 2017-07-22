@@ -335,15 +335,20 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine)
 				/* listenaddr */
 				addr = **argv;
 
-				// @todo Make this a command line or conf file option
-				// @todo IPv6
-				sys_sockaddr_parse(&spec->parent_dst_addr,
+				// @todo Make this a command line or conf file option?
+				// @todo Need IPv6?
+				int rv = sys_sockaddr_parse(&spec->parent_dst_addr,
 									&spec->parent_dst_addrlen,
 									"127.0.0.1", "8080", AF_INET, 0);
-
-				sys_sockaddr_parse(&spec->child_src_addr,
+				if (rv == -1) {
+					exit(EXIT_FAILURE);
+				}
+				rv = sys_sockaddr_parse(&spec->child_src_addr,
 									&spec->child_src_addrlen,
 									"127.0.0.1", "0", AF_INET, 0);
+				if (rv == -1) {
+					exit(EXIT_FAILURE);
+				}
 	
 				state++;
 				break;

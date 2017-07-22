@@ -109,6 +109,9 @@ typedef struct pxy_conn_lproc_desc {
 #define WANT_CONNECT_LOG(ctx)	((ctx)->opts->connectlog||!(ctx)->opts->detach)
 #define WANT_CONTENT_LOG(ctx)	((ctx)->opts->contentlog&&!(ctx)->passthrough)
 
+#define SSLPROXY_ADDR_KEY		"SSLproxy-Addr:"
+#define SSLPROXY_ADDR_KEY_LEN	strlen(SSLPROXY_ADDR_KEY)
+
 static pxy_conn_ctx_t * MALLOC NONNULL(2,3,4)
 pxy_conn_ctx_new(evutil_socket_t fd,
                  pxy_thrmgr_ctx_t *thrmgr,
@@ -1491,7 +1494,7 @@ pxy_http_reqhdr_filter_line(const char *line, pxy_conn_ctx_t *ctx, int child)
 		} else if (!strncasecmp(line, "Accept-Encoding:", 16) ||
 		           !strncasecmp(line, "Keep-Alive:", 11)) {
 			return NULL;
-		} else if (child && !strncasecmp(line, "SSLproxy-Addr:", 14)) {
+		} else if (child && !strncasecmp(line, SSLPROXY_ADDR_KEY, SSLPROXY_ADDR_KEY_LEN)) {
 			return NULL;
 		} else if (line[0] == '\0') {
 			ctx->seen_req_header = 1;
@@ -1999,7 +2002,7 @@ leave:
 }
 
 static void
-pxy_response(struct evbuffer *inbuf, struct evbuffer *outbuf, pxy_conn_ctx_t *ctx)
+pxy_process_response(struct evbuffer *inbuf, struct evbuffer *outbuf, pxy_conn_ctx_t *ctx)
 {
 	size_t packet_size = evbuffer_get_length(inbuf);
 	char *packet = malloc(packet_size);
@@ -2075,7 +2078,6 @@ pxy_bev_readcb(struct bufferevent *bev, void *arg)
 				evbuffer_add_buffer(outbuf, inbuf);
 			}
 		} else {
-
 			log_dbg_level_printf(LOG_DBG_MODE_FINER, ">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: custom_field= %s\n", ctx->child_addr_str);
 
 			size_t packet_size = evbuffer_get_length(inbuf);
@@ -2146,7 +2148,7 @@ pxy_bev_readcb(struct bufferevent *bev, void *arg)
 				evbuffer_add_buffer(outbuf, inbuf);
 			}
 		} else {
-			pxy_response(inbuf, outbuf, ctx);
+			pxy_process_response(inbuf, outbuf, ctx);
 		}
 	}
 
@@ -2195,9 +2197,15 @@ pxy_bev_readcb_child(struct bufferevent *bev, void *arg)
 	if (bev == ctx->src.bev) {
 		struct sockaddr_in peeraddr;
 		socklen_t peeraddrlen = sizeof(peeraddr);
-		getpeername(ctx->fd, &peeraddr, &peeraddrlen);
+		getpeername(ctx->fd, (struct sockaddr *)&peeraddr, &peeraddrlen);
 
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>.................................................................................... pxy_bev_readcb_child: PEER [%s]:%d <<<<< fd=%d, parent fd=%d\n", inet_ntoa(peeraddr.sin_addr), (int) ntohs(peeraddr.sin_port), ctx->fd, pfd);
+		char peer[INET_ADDRSTRLEN];
+		if (!inet_ntop(AF_INET, &peeraddr.sin_addr, peer, INET_ADDRSTRLEN)) {
+			pxy_conn_free(parent);
+			return;
+		}
+
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>.................................................................................... pxy_bev_readcb_child: PEER [%s]:%d <<<<< fd=%d, parent fd=%d\n", peer, (int)ntohs(peeraddr.sin_port), ctx->fd, pfd);
 
 		/* request header munging */
 		if (parent->spec->http) {
@@ -2209,8 +2217,7 @@ pxy_bev_readcb_child(struct bufferevent *bev, void *arg)
 				evbuffer_add_buffer(outbuf, inbuf);
 			}
 		} else {
-			char *custom_key = "SSLproxy-Addr: ";
-			struct evbuffer_ptr ebp = evbuffer_search(inbuf, custom_key, strlen(custom_key), NULL);
+			struct evbuffer_ptr ebp = evbuffer_search(inbuf, SSLPROXY_ADDR_KEY, SSLPROXY_ADDR_KEY_LEN, NULL);
 			if (ebp.pos != -1) {
 				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>....................... pxy_bev_readcb_child: evbuffer_search FOUND SSLproxy-Addr at %ld\n", ebp.pos);
 			} else {
@@ -2236,7 +2243,7 @@ pxy_bev_readcb_child(struct bufferevent *bev, void *arg)
 
 				packet[packet_size] = '\0';
 
-				char *pos = strstr(packet, "SSLproxy-Addr: ");
+				char *pos = strstr(packet, SSLPROXY_ADDR_KEY);
 				if (pos) {
 					int header_head_len = pos - packet;
 					char *header_head = malloc(header_head_len + 1);
@@ -2291,7 +2298,7 @@ pxy_bev_readcb_child(struct bufferevent *bev, void *arg)
 				evbuffer_add_buffer(outbuf, inbuf);
 			}
 		} else {
-			pxy_response(inbuf, outbuf, (pxy_conn_ctx_t *)ctx);
+			pxy_process_response(inbuf, outbuf, (pxy_conn_ctx_t *)ctx);
 		}
 	}
 
@@ -2630,7 +2637,7 @@ pxy_connected_enable(struct bufferevent *bev, pxy_conn_ctx_t *ctx, char *event_n
 		struct sockaddr_in child_listener_addr;
 		socklen_t child_listener_len = sizeof(child_listener_addr);
 
-		if (getsockname(ctx->child_fd, &child_listener_addr, &child_listener_len) < 0) {
+		if (getsockname(ctx->child_fd, (struct sockaddr *)&child_listener_addr, &child_listener_len) < 0) {
 			perror("getsockname");
 			log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>=================================== pxy_connected_enable: %s, getsockname ERROR=%s, fd=%d, child_fd=%d <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n", event_name, strerror(errno), fd, ctx->child_fd);
 			// @todo If getsockname() fails, should we really terminate the connection?
@@ -2638,17 +2645,21 @@ pxy_connected_enable(struct bufferevent *bev, pxy_conn_ctx_t *ctx, char *event_n
 			return 0;
 		}
 
-		// @todo Use inet_ntop() instead to support IPv6 too
-		char *addr = inet_ntoa(child_listener_addr.sin_addr);
-		int addr_len = 15 + strlen(addr) + 5 + 3 + 1;
+		// @attention Children are always listening on an IPv4 loopback address
+		char addr[INET_ADDRSTRLEN];
+		if (!inet_ntop(AF_INET, &child_listener_addr.sin_addr, addr, INET_ADDRSTRLEN)) {
+			pxy_conn_free(ctx);
+			return 0;
+		}
 
-		// @todo Check malloc retvals. Should we close the conn if malloc fails?
+		int addr_len = SSLPROXY_ADDR_KEY_LEN + 1 + strlen(addr) + 5 + 3 + 1;
+		// @todo Always check malloc retvals. Should we close the conn if malloc fails?
 		ctx->child_addr_str = malloc(addr_len);
 		if (!ctx->child_addr_str) {
 			pxy_conn_free(ctx);
 			return 0;
 		}
-		snprintf(ctx->child_addr_str, addr_len, "SSLproxy-Addr: [%s]:%d", addr, (int) ntohs(child_listener_addr.sin_port));
+		snprintf(ctx->child_addr_str, addr_len, "%s [%s]:%d", SSLPROXY_ADDR_KEY, addr, (int) ntohs(child_listener_addr.sin_port));
 
 		log_dbg_level_printf(LOG_DBG_MODE_FINER, ">>>>>=================================== pxy_connected_enable: ENABLE src, child_addr= %s, fd=%d, child_fd=%d\n", ctx->child_addr_str, fd, ctx->child_fd);
 
