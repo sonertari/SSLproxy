@@ -2120,9 +2120,9 @@ pxy_bev_readcb(struct bufferevent *bev, void *arg)
 				free(header_head);
 				free(header_tail);
 			} else {
-				log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: No CRLF in packet\n");
-				packet_size-= strlen(ctx->child_addr_str) + 2 + 1;
-				packet_size++;
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: No CRLF in packet\n");
+				// +2 is for \r\n
+				packet_size-= strlen(ctx->child_addr_str) + 2;
 			}
 
 			// Decrement packet_size to avoid copying the null termination
@@ -2195,18 +2195,6 @@ pxy_bev_readcb_child(struct bufferevent *bev, void *arg)
 	}
 
 	if (bev == ctx->src.bev) {
-		struct sockaddr_in peeraddr;
-		socklen_t peeraddrlen = sizeof(peeraddr);
-		getpeername(ctx->fd, (struct sockaddr *)&peeraddr, &peeraddrlen);
-
-		char peer[INET_ADDRSTRLEN];
-		if (!inet_ntop(AF_INET, &peeraddr.sin_addr, peer, INET_ADDRSTRLEN)) {
-			pxy_conn_free(parent);
-			return;
-		}
-
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>.................................................................................... pxy_bev_readcb_child: PEER [%s]:%d <<<<< fd=%d, parent fd=%d\n", peer, (int)ntohs(peeraddr.sin_port), ctx->fd, pfd);
-
 		/* request header munging */
 		if (parent->spec->http) {
 			if (!ctx->seen_req_header) {
@@ -2217,13 +2205,6 @@ pxy_bev_readcb_child(struct bufferevent *bev, void *arg)
 				evbuffer_add_buffer(outbuf, inbuf);
 			}
 		} else {
-			struct evbuffer_ptr ebp = evbuffer_search(inbuf, SSLPROXY_ADDR_KEY, SSLPROXY_ADDR_KEY_LEN, NULL);
-			if (ebp.pos != -1) {
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>....................... pxy_bev_readcb_child: evbuffer_search FOUND SSLproxy-Addr at %ld\n", ebp.pos);
-			} else {
-				log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>....................... pxy_bev_readcb_child: evbuffer_search FAILED\n");
-			}
-
 			size_t packet_size = evbuffer_get_length(inbuf);
 			// ATTENTION: +1 is for null termination
 			char *packet = malloc(packet_size + 1);
@@ -2232,8 +2213,6 @@ pxy_bev_readcb_child(struct bufferevent *bev, void *arg)
 				pxy_conn_free(parent);
 				return;
 			}
-
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>....................... pxy_bev_readcb_child: packet_size\n");
 
 			if (packet_size > 0) {
 				int bytes_read = evbuffer_remove(inbuf, packet, packet_size);
@@ -2255,13 +2234,8 @@ pxy_bev_readcb_child(struct bufferevent *bev, void *arg)
 						char *header_tail = strdup(pos2 + 2);
 						int header_tail_len = strlen(header_tail);
 
-						log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>....................... pxy_bev_readcb_child: REMOVED SSLproxy-Addr, packet_size old=%lu, new=%d <<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n",
+						log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>....................... pxy_bev_readcb_child: packet_size old=%lu, new=%d <<<<<<<<<<<<<<<<<<<<<<<<<<<<< REMOVED SSLproxy-Addr\n",
 								packet_size, header_head_len + header_tail_len);
-
-						log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>....................... pxy_bev_readcb_child: header_head (size = %d):\n%s\n",
-								header_head_len, header_head);
-						log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>....................... pxy_bev_readcb_child: header_tail (size = %d):\n%s\n",
-								header_tail_len, header_tail);
 
 						// ATTENTION: Do not add 1 to packet_size for null termination, do that in snprintf(),
 						// otherwise we get an extra byte in the outbuf
@@ -2273,8 +2247,6 @@ pxy_bev_readcb_child(struct bufferevent *bev, void *arg)
 
 					free(header_head);
 				}
-
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>....................... pxy_bev_readcb_child: bufferevent_get_output\n");
 
 				int add_result = evbuffer_add(outbuf, packet, packet_size);
 				if (add_result < 0) {
@@ -2364,7 +2336,9 @@ pxy_conn_connect_child(pxy_conn_child_ctx_t *ctx)
 					   parent->evbase, ctx->dst.bev, ctx->dst.ssl,
 					   BUFFEREVENT_SSL_ACCEPTING,
 					   BEV_OPT_DEFER_CALLBACKS);
-		bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb_child, pxy_bev_writecb_child, pxy_bev_eventcb_child, ctx);
+		if (ctx->dst.bev) {
+			bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb_child, pxy_bev_writecb_child, pxy_bev_eventcb_child, ctx);
+		}
 	} else {
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_conn_connect_child: SETUP dst.bev fd=%d\n", ctx->fd);
 		ctx->dst.bev = pxy_bufferevent_setup_child(ctx, -1, ctx->dst.ssl);

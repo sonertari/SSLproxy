@@ -333,23 +333,7 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine)
 				break;
 			case 1:
 				/* listenaddr */
-				addr = **argv;
-
-				// @todo Make this a command line or conf file option?
-				// @todo Need IPv6?
-				int rv = sys_sockaddr_parse(&spec->parent_dst_addr,
-									&spec->parent_dst_addrlen,
-									"127.0.0.1", "8080", AF_INET, 0);
-				if (rv == -1) {
-					exit(EXIT_FAILURE);
-				}
-				rv = sys_sockaddr_parse(&spec->child_src_addr,
-									&spec->child_src_addrlen,
-									"127.0.0.1", "0", AF_INET, 0);
-				if (rv == -1) {
-					exit(EXIT_FAILURE);
-				}
-	
+				addr = **argv;	
 				state++;
 				break;
 			case 2:
@@ -383,6 +367,27 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine)
 				state++;
 				break;
 			case 3:
+				/* UTM service port is mandatory */
+				// The UTM port is set/used in pf and UTM service config.
+				// @todo Make this a conf file option?
+				// @todo Need IPv6?
+				if (strstr(**argv, "up:")) {
+					af = sys_sockaddr_parse(&spec->parent_dst_addr,
+										&spec->parent_dst_addrlen,
+										"127.0.0.1", **argv+3, AF_INET, EVUTIL_AI_PASSIVE);
+					if (af == -1) {
+						exit(EXIT_FAILURE);
+					}
+					af = sys_sockaddr_parse(&spec->child_src_addr,
+										&spec->child_src_addrlen,
+										"127.0.0.1", "0", AF_INET, EVUTIL_AI_PASSIVE);
+					if (af == -1) {
+						exit(EXIT_FAILURE);
+					}
+					state++;
+				}
+				break;
+			case 4:
 				/* [ natengine | dstaddr ] */
 				if (!strcmp(**argv, "tcp") ||
 				    !strcmp(**argv, "ssl") ||
@@ -404,7 +409,7 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine)
 						        "\n");
 						exit(EXIT_FAILURE);
 					}
-					state = 5;
+					state = 6;
 				} else
 				if (nat_exist(**argv)) {
 					/* natengine */
@@ -425,7 +430,7 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine)
 					state++;
 				}
 				break;
-			case 4:
+			case 5:
 				/* dstport */
 				af = sys_sockaddr_parse(&spec->connect_addr,
 				                        &spec->connect_addrlen,
@@ -435,7 +440,7 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine)
 				}
 				state = 0;
 				break;
-			case 5:
+			case 6:
 				/* SNI dstport */
 				spec->sni_port = atoi(**argv);
 				if (!spec->sni_port) {
@@ -449,7 +454,7 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine)
 		}
 		(*argv)++;
 	}
-	if (state != 0 && state != 3) {
+	if (state != 0 && state != 4) {
 		fprintf(stderr, "Incomplete proxyspec!\n");
 		exit(EXIT_FAILURE);
 	}
