@@ -2000,19 +2000,6 @@ leave:
 static void
 pxy_process_response(struct evbuffer *inbuf, struct evbuffer *outbuf, struct bufferevent *bev, pxy_conn_ctx_t *ctx, pxy_conn_ctx_t *parent)
 {
-	if (WANT_CONTENT_LOG(parent)) {
-		logbuf_t *lb;
-		lb = logbuf_new_alloc(evbuffer_get_length(inbuf), NULL, NULL);
-		if (lb && (evbuffer_copyout(inbuf, lb->buf, lb->sz) != -1)) {
-			if (log_content_submit(parent->logctx, lb,
-								   (bev == ctx->src.bev)) == -1) {
-				logbuf_free(lb);
-				log_err_printf("Warning: Content log "
-							   "submission failed\n");
-			}
-		}
-	}
-
 	size_t packet_size = evbuffer_get_length(inbuf);
 	char *packet = malloc(packet_size);
 	if (!packet) {
@@ -2020,13 +2007,11 @@ pxy_process_response(struct evbuffer *inbuf, struct evbuffer *outbuf, struct buf
 		return;
 	}
 
-	int bytes_read = evbuffer_remove(inbuf, packet, packet_size);
-	if (bytes_read < 0) {
+	if (evbuffer_remove(inbuf, packet, packet_size) < 0) {
 		log_err_printf("ERROR: evbuffer_remove cannot drain the buffer\n");
 	}
 
-	int add_result = evbuffer_add(outbuf, packet, packet_size);
-	if (add_result < 0) {
+	if (evbuffer_add(outbuf, packet, packet_size) < 0) {
 		log_err_printf("ERROR: evbuffer_add failed\n");
 	}
 
@@ -2034,6 +2019,18 @@ pxy_process_response(struct evbuffer *inbuf, struct evbuffer *outbuf, struct buf
 //			(int) packet_size, (int) packet_size, packet);
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_response: dst packet (size = %d)\n", (int) packet_size);
 
+	if (WANT_CONTENT_LOG(parent)) {
+		logbuf_t *lb;
+		lb = logbuf_new_alloc(packet_size, NULL, NULL);
+		if (lb) {
+			memcpy(lb->buf, packet, lb->sz);
+			if (log_content_submit(parent->logctx, lb, (bev == ctx->src.bev)) == -1) {
+				logbuf_free(lb);
+				log_err_printf("Warning: Content log "
+							   "submission failed\n");
+			}
+		}
+	}
 	free(packet);
 }
 
@@ -2087,76 +2084,64 @@ pxy_bev_readcb(struct bufferevent *bev, void *arg)
 				goto leave;
 			}
 		} else {
+			log_dbg_level_printf(LOG_DBG_MODE_FINER, ">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: custom_field= %s\n", ctx->child_addr_str);
+
+			size_t child_addr_len = strlen(ctx->child_addr_str);
+			size_t packet_size = evbuffer_get_length(inbuf);
+			// +2 is for \r\n
+			char *packet = malloc(packet_size + child_addr_len + 2);
+			if (!packet) {
+				// @todo Should we just set enomem?
+				ctx->enomem = 1;
+				pxy_conn_free(ctx);
+				return;
+			}
+
+			if (evbuffer_remove(inbuf, packet, packet_size) < 0) {
+				log_err_printf("ERROR: evbuffer_remove cannot drain the buffer\n");
+			}
+
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: src ORIG packet (size = %d), fd=%d:\n%.*s\n",
+					(int)packet_size, ctx->fd, (int)packet_size, packet);
+
+			// XXX: We insert our special header line to each packet we get, right after the first \r\n, hence the target may get multiple copies
+			// TODO: To insert our header line to the first packet only, should we look for GET/POST or Host header lines to detect the first packet?
+			// But there is no guarantie that they will exist, due to fragmentation
+
+			// @attention We cannot append the ssl proxy address at the end of the packet or in between the header and the content,
+			// because (1) the packet may be just the first fragment split somewhere not appropriate for appending a header,
+			// and (2) there may not be any content
+
+			// @attention Cannot use string manipulation functions; we are dealing with binary arrays here, not NULL-terminated strings
+			char *pos = memmem(packet, packet_size, "\r\n", 2);
+			if (pos) {
+				memmove(pos + 2 + child_addr_len, pos, packet_size - (pos - packet));
+				memcpy(pos + 2, ctx->child_addr_str, child_addr_len);
+				packet_size+= child_addr_len + 2;
+			} else {
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: No CRLF in packet\n");
+			}
+
+			if (evbuffer_add(outbuf, packet, packet_size) < 0) {
+				log_err_printf("ERROR: evbuffer_add failed\n");
+			}
+
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: src packet (size = %d), fd=%d:\n%.*s\n",
+					(int)packet_size, ctx->fd, (int)packet_size, packet);
+//				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: src packet (size = %d)\n", (int) packet_size);
+
 			if (WANT_CONTENT_LOG(ctx)) {
 				logbuf_t *lb;
-				lb = logbuf_new_alloc(evbuffer_get_length(inbuf), NULL, NULL);
-				if (lb && (evbuffer_copyout(inbuf, lb->buf, lb->sz) != -1)) {
-					if (log_content_submit(ctx->logctx, lb,
-										   (bev == ctx->src.bev)) == -1) {
+				lb = logbuf_new_alloc(packet_size, NULL, NULL);
+				if (lb) {
+					memcpy(lb->buf, packet, lb->sz);
+					if (log_content_submit(ctx->logctx, lb, (bev == ctx->src.bev)) == -1) {
 						logbuf_free(lb);
 						log_err_printf("Warning: Content log "
 									   "submission failed\n");
 					}
 				}
 			}
-
-			log_dbg_level_printf(LOG_DBG_MODE_FINER, ">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: custom_field= %s\n", ctx->child_addr_str);
-
-			size_t packet_size = evbuffer_get_length(inbuf);
-			char *packet = malloc(packet_size + strlen(ctx->child_addr_str) + 2 + 1);
-			if (!packet) {
-				ctx->enomem = 1;
-				pxy_conn_free(ctx);
-				return;
-			}
-
-			int bytes_read = evbuffer_remove(inbuf, packet, packet_size);
-			if (bytes_read < 0) {
-				log_err_printf("ERROR: evbuffer_remove cannot drain the buffer\n");
-			}
-
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: src ORIG packet (size = %d), fd=%d:\n%.*s\n",
-					(int) packet_size, ctx->fd, (int) packet_size, packet);
-
-			packet[packet_size] = '\0';
-			packet_size+= strlen(ctx->child_addr_str) + 2 + 1;
-
-			// XXX: We insert our special header line to each packet we get, right after the first \r\n, hence the target may get multiple copies
-			// TODO: To insert our header line to the first packet only, should we look for GET/POST or Host header lines to detect the first packet?
-			// But there is no guarantie that they will exist, due to fragmentation
-
-			// ATTENTION: We cannot append the ssl proxy address at the end of the packet or in between the header and the content,
-			// because (1) the packet may be just the first fragment split somewhere not appropriate for appending a header,
-			// and (2) there may not be any content
-
-			char *pos = strstr(packet, "\r\n");
-			if (pos) {
-				char *header_tail = strdup(pos);
-				int header_head_len = pos - packet;
-				char *header_head = malloc(header_head_len + 1);
-				strncpy(header_head, packet, header_head_len);
-				header_head[header_head_len] = '\0';
-
-				snprintf(packet, packet_size, "%s\r\n%s%s", header_head, ctx->child_addr_str, header_tail);
-
-				free(header_head);
-				free(header_tail);
-			} else {
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: No CRLF in packet\n");
-				// +2 is for \r\n
-				packet_size-= strlen(ctx->child_addr_str) + 2;
-			}
-
-			// Decrement packet_size to avoid copying the null termination
-			int add_result = evbuffer_add(outbuf, packet, packet_size - 1);
-			if (add_result < 0) {
-				log_err_printf("ERROR: evbuffer_add failed\n");
-			}
-
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: src packet (size = %d), fd=%d:\n%.*s\n",
-					(int) packet_size, ctx->fd, (int) packet_size, packet);
-//				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: src packet (size = %d)\n", (int) packet_size);
-
 			free(packet);
 		}
 	}
@@ -2244,70 +2229,45 @@ pxy_bev_readcb_child(struct bufferevent *bev, void *arg)
 				goto leave;
 			}
 		} else {
-			if (WANT_CONTENT_LOG(parent)) {
-				logbuf_t *lb;
-				lb = logbuf_new_alloc(evbuffer_get_length(inbuf), NULL, NULL);
-				if (lb && (evbuffer_copyout(inbuf, lb->buf, lb->sz) != -1)) {
-					if (log_content_submit(parent->logctx, lb,
-										   (bev == ctx->src.bev)) == -1) {
-						logbuf_free(lb);
-						log_err_printf("Warning: Content log "
-									   "submission failed\n");
-					}
-				}
-			}
-
 			size_t packet_size = evbuffer_get_length(inbuf);
-			// ATTENTION: +1 is for null termination
-			char *packet = malloc(packet_size + 1);
+			char *packet = malloc(packet_size);
 			if (!packet) {
 				ctx->enomem = 1;
 				pxy_conn_free(parent);
 				return;
 			}
 
-			if (packet_size > 0) {
-				int bytes_read = evbuffer_remove(inbuf, packet, packet_size);
-				if (bytes_read < 0) {
-					log_err_printf("ERROR: evbuffer_remove cannot drain the buffer\n");
-				}
+			if (evbuffer_remove(inbuf, packet, packet_size) < 0) {
+				log_err_printf("ERROR: evbuffer_remove cannot drain the buffer\n");
+			}
 
-				packet[packet_size] = '\0';
+			size_t child_addr_len = strlen(parent->child_addr_str);
+			char *pos = memmem(packet, packet_size, parent->child_addr_str, child_addr_len);
+			if (pos) {
+				memmove(pos, pos + child_addr_len + 2, packet_size - (pos - packet) - (child_addr_len + 2));
+				packet_size-= child_addr_len + 2;
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>....................... pxy_bev_readcb_child: <<<<<<<<<<<<<<<<<<<<<<<<<<<<< REMOVED SSLproxy-Addr\n");
+			}
 
-				char *pos = strstr(packet, SSLPROXY_ADDR_KEY);
-				if (pos) {
-					int header_head_len = pos - packet;
-					char *header_head = malloc(header_head_len + 1);
-					strncpy(header_head, packet, header_head_len);
-					header_head[header_head_len] = '\0';
+			if (evbuffer_add(outbuf, packet, packet_size) < 0) {
+				log_err_printf("ERROR: evbuffer_add failed\n");
+			}
 
-					char *pos2 = strstr(pos, "\r\n");
-					if (pos2) {
-						char *header_tail = strdup(pos2 + 2);
-						int header_tail_len = strlen(header_tail);
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>....................... pxy_bev_readcb_child: src packet (size = %d), fd=%d, parent fd=%d:\n%.*s\n",
+					(int) packet_size, ctx->fd, pfd, (int) packet_size, packet);
+//			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>....................... pxy_bev_readcb_child: src packet (size = %d)\n", (int) packet_size);
 
-						log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>....................... pxy_bev_readcb_child: packet_size old=%lu, new=%d <<<<<<<<<<<<<<<<<<<<<<<<<<<<< REMOVED SSLproxy-Addr\n",
-								packet_size, header_head_len + header_tail_len);
-
-						// ATTENTION: Do not add 1 to packet_size for null termination, do that in snprintf(),
-						// otherwise we get an extra byte in the outbuf
-						packet_size = header_head_len + header_tail_len;
-						snprintf(packet, packet_size + 1, "%s%s", header_head, header_tail);
-
-						free(header_tail);
+			if (WANT_CONTENT_LOG(parent)) {
+				logbuf_t *lb;
+				lb = logbuf_new_alloc(packet_size, NULL, NULL);
+				if (lb) {
+					memcpy(lb->buf, packet, lb->sz);
+					if (log_content_submit(parent->logctx, lb, (bev == ctx->src.bev)) == -1) {
+						logbuf_free(lb);
+						log_err_printf("Warning: Content log "
+									   "submission failed\n");
 					}
-
-					free(header_head);
 				}
-
-				int add_result = evbuffer_add(outbuf, packet, packet_size);
-				if (add_result < 0) {
-					log_err_printf("ERROR: evbuffer_add failed\n");
-				}
-
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>....................... pxy_bev_readcb_child: src packet (size = %d), fd=%d, parent fd=%d:\n%.*s\n",
-						(int) packet_size, ctx->fd, pfd, (int) packet_size, packet);
-//				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>....................... pxy_bev_readcb_child: src packet (size = %d)\n", (int) packet_size);
 			}
 			free(packet);
 		}
