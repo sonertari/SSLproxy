@@ -34,7 +34,6 @@
 #include "opts.h"
 #include "log.h"
 #include "attrib.h"
-#include "sys.h"
 
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -52,11 +51,12 @@
 #include <event2/buffer.h>
 #include <event2/thread.h>
 
+
 /*
  * Proxy engine, built around libevent 2.x.
  */
 
-static int signals[] = { SIGQUIT, SIGHUP, SIGINT, SIGPIPE, SIGUSR1 };
+static int signals[] = { SIGTERM, SIGQUIT, SIGHUP, SIGINT, SIGPIPE, SIGUSR1 };
 
 struct proxy_ctx {
 	pxy_thrmgr_ctx_t *thrmgr;
@@ -99,23 +99,6 @@ proxy_listener_ctx_free(proxy_listener_ctx_t *ctx)
 }
 
 /*
- * Callback for error events on the socket listener bufferevent.
- */
-// @todo Make this static?
-//static void
-void
-proxy_listener_errorcb(struct evconnlistener *listener, UNUSED void *arg)
-{
-	log_dbg_level_printf(LOG_DBG_MODE_FINE, ">############################# proxy_listener_errorcb: ERROR\n");
-
-	struct event_base *evbase = evconnlistener_get_base(listener);
-	int err = EVUTIL_SOCKET_ERROR();
-	log_err_printf("Error %d on listener: %s\n", err,
-	               evutil_socket_error_to_string(err));
-	event_base_loopbreak(evbase);
-}
-
-/*
  * Callback for accept events on the socket listener bufferevent.
  */
 static void
@@ -130,6 +113,21 @@ proxy_listener_acceptcb(UNUSED struct evconnlistener *listener,
 	pxy_conn_setup(fd, peeraddr, peeraddrlen, lctx->thrmgr,
 				   lctx->spec, lctx->opts, lctx->clisock);
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! proxy_listener_acceptcb: fd=%d <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< EXIT\n", fd);
+}
+
+/*
+ * Callback for error events on the socket listener bufferevent.
+ */
+void
+proxy_listener_errorcb(struct evconnlistener *listener, UNUSED void *arg)
+{
+	log_dbg_level_printf(LOG_DBG_MODE_FINE, ">############################# proxy_listener_errorcb: ERROR\n");
+
+	struct event_base *evbase = evconnlistener_get_base(listener);
+	int err = EVUTIL_SOCKET_ERROR();
+	log_err_printf("Error %d on listener: %s\n", err,
+	               evutil_socket_error_to_string(err));
+	event_base_loopbreak(evbase);
 }
 
 /*
@@ -196,7 +194,7 @@ proxy_listener_setup(struct event_base *evbase, pxy_thrmgr_ctx_t *thrmgr,
 }
 
 /*
- * Signal handler for SIGQUIT, SIGINT, SIGHUP, SIGPIPE and SIGUSR1.
+ * Signal handler for SIGTERM, SIGQUIT, SIGINT, SIGHUP, SIGPIPE and SIGUSR1.
  */
 static void
 proxy_signal_cb(evutil_socket_t fd, UNUSED short what, void *arg)
@@ -208,6 +206,7 @@ proxy_signal_cb(evutil_socket_t fd, UNUSED short what, void *arg)
 	}
 
 	switch(fd) {
+	case SIGTERM:
 	case SIGQUIT:
 	case SIGINT:
 	case SIGHUP:

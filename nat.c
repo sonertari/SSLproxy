@@ -26,7 +26,6 @@
  */
 
 #include "nat.h"
-#include "sys.h"
 
 #include "log.h"
 #include "attrib.h"
@@ -43,7 +42,6 @@
 #include <sys/fcntl.h>
 #include <net/if.h>
 #include <netinet/in.h>
-#include <arpa/inet.h>
 #ifdef __APPLE__
 #define PRIVATE
 #endif /* __APPLE__ */

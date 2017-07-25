@@ -27,8 +27,8 @@
 
 #ifndef PXYCONN_H
 #define PXYCONN_H
-#include "proxy.h"
 
+#include "proxy.h"
 #include "opts.h"
 #include "attrib.h"
 #include "pxythrmgr.h"
@@ -53,17 +53,19 @@ typedef struct pxy_conn_desc {
  * connection-wide state and the specs and options */
 struct pxy_conn_ctx {
 	// Common properties
+	// @attention The order of these common vars should match with the ones in children
 	/* per-connection state */
 	struct pxy_conn_desc src;
 	struct pxy_conn_desc dst;
 
 	/* status flags */
 	unsigned int connected : 1;       /* 0 until both ends are connected */
+	unsigned int enomem : 1;                       /* 1 if out of memory */
+	/* http */
 	unsigned int seen_req_header : 1; /* 0 until request header complete */
 	unsigned int seen_resp_header : 1;  /* 0 until response hdr complete */
 	unsigned int sent_http_conn_close : 1;   /* 0 until Conn: close sent */
 	unsigned int ocsp_denied : 1;                /* 1 if OCSP was denied */
-	unsigned int enomem : 1;                       /* 1 if out of memory */
 
 	/* log strings from socket */
 	char *srchost_str;
@@ -89,17 +91,20 @@ struct pxy_conn_ctx {
 
 	/* store fd and fd event while connected is 0 */
 	evutil_socket_t fd;
+	// End of common properties
 
 	/* content log context */
 	log_content_ctx_t *logctx;
-	// End of common properties
 
-	unsigned int immutable_cert : 1;  /* 1 if the cert cannot be changed */
-	unsigned int generated_cert : 1;     /* 1 if we generated a new cert */
 	unsigned int srv_dst_connected : 1;   /* 0 until server is connected */
 	unsigned int dst_connected : 1;          /* 0 until dst is connected */
-	unsigned int passthrough : 1;      /* 1 if SSL passthrough is active */
+
+	/* ssl */
 	unsigned int sni_peek_retries : 6;       /* max 64 SNI parse retries */
+	unsigned int immutable_cert : 1;  /* 1 if the cert cannot be changed */
+	unsigned int generated_cert : 1;     /* 1 if we generated a new cert */
+	unsigned int passthrough : 1;      /* 1 if SSL passthrough is active */
+	/* autossl */
 	unsigned int clienthello_search : 1;       /* 1 if waiting for hello */
 	unsigned int clienthello_found : 1;      /* 1 if conn upgrade to SSL */
 
@@ -139,6 +144,7 @@ struct pxy_conn_ctx {
 	struct evconnlistener *child_evcl;
 	// SSL proxy return address: The IP:port address the children are listening to
 	char *child_addr_str;
+	char *src_addr_str;
 
 	// Child list of the conn
 	pxy_conn_child_ctx_t *children;
@@ -175,17 +181,19 @@ struct pxy_conn_ctx {
  * connection-wide state */
 struct pxy_conn_child_ctx {
 	// Common properties
+	// @attention The order of these common vars should match with the ones in parent
 	/* per-connection state */
 	struct pxy_conn_desc src;
 	struct pxy_conn_desc dst;
 
 	/* status flags */
 	unsigned int connected : 1;       /* 0 until both ends are connected */
+	unsigned int enomem : 1;                       /* 1 if out of memory */
+	/* http */
 	unsigned int seen_req_header : 1; /* 0 until request header complete */
 	unsigned int seen_resp_header : 1;  /* 0 until response hdr complete */
 	unsigned int sent_http_conn_close : 1;   /* 0 until Conn: close sent */
 	unsigned int ocsp_denied : 1;                /* 1 if OCSP was denied */
-	unsigned int enomem : 1;                       /* 1 if out of memory */
 
 	/* log strings from socket */
 	char *srchost_str;
@@ -211,9 +219,6 @@ struct pxy_conn_child_ctx {
 
 	/* store fd and fd event while connected is 0 */
 	evutil_socket_t fd;
-
-	/* content log context */
-	log_content_ctx_t *logctx;
 	// End of common properties
 
 	evutil_socket_t src_fd;
@@ -232,7 +237,7 @@ void pxy_conn_setup(evutil_socket_t, struct sockaddr *, int,
                     pxy_thrmgr_ctx_t *, proxyspec_t *, opts_t *,
 					evutil_socket_t)
                     NONNULL(2,4,5,6);
-void pxy_conn_free(pxy_conn_ctx_t *ctx) NONNULL(1);
+void pxy_conn_free(pxy_conn_ctx_t *ctx, int) NONNULL(1);
 
 #endif /* !PXYCONN_H */
 

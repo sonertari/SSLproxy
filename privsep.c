@@ -73,17 +73,23 @@
 #define PRIVSEP_ANS_SYS_ERR	4	/* system error; arg=errno */
 
 /* communication with signal handler */
-static int received_sighup;
-static int received_sigint;
-static int received_sigquit;
-static int received_sigchld;
-static int received_sigusr1;
-static int selfpipe_wrfd; /* write end of pipe used for unblocking select */
+static volatile sig_atomic_t received_sighup;
+static volatile sig_atomic_t received_sigint;
+static volatile sig_atomic_t received_sigquit;
+static volatile sig_atomic_t received_sigterm;
+static volatile sig_atomic_t received_sigchld;
+static volatile sig_atomic_t received_sigusr1;
+/* write end of pipe used for unblocking select */
+static volatile sig_atomic_t selfpipe_wrfd;
 
 static void
 privsep_server_signal_handler(int sig)
 {
 	int saved_errno;
+
+#ifdef DEBUG_PRIVSEP_SERVER
+	log_dbg_printf("privsep_server_signal_handler\n");
+#endif /* DEBUG_PRIVSEP_SERVER */
 
 	saved_errno = errno;
 	switch (sig) {
@@ -96,6 +102,9 @@ privsep_server_signal_handler(int sig)
 	case SIGQUIT:
 		received_sigquit = 1;
 		break;
+	case SIGTERM:
+		received_sigterm = 1;
+		break;
 	case SIGCHLD:
 		received_sigchld = 1;
 		break;
@@ -106,6 +115,9 @@ privsep_server_signal_handler(int sig)
 	if (selfpipe_wrfd != -1) {
 		ssize_t n;
 
+#ifdef DEBUG_PRIVSEP_SERVER
+		log_dbg_printf("writing to selfpipe_wrfd %i\n", selfpipe_wrfd);
+#endif /* DEBUG_PRIVSEP_SERVER */
 		do {
 			n = write(selfpipe_wrfd, "!", 1);
 		} while (n == -1 && errno == EINTR);
@@ -114,6 +126,10 @@ privsep_server_signal_handler(int sig)
 			               "%s (%i)\n", strerror(errno), errno);
 			/* ignore error */
 		}
+#ifdef DEBUG_PRIVSEP_SERVER
+	} else {
+		log_dbg_printf("selfpipe_wrfd is %i - not writing\n", selfpipe_wrfd);
+#endif /* DEBUG_PRIVSEP_SERVER */
 	}
 	errno = saved_errno;
 }
@@ -601,6 +617,9 @@ privsep_server(opts_t *opts, int sigpipe, int srvsock[], size_t nsrvsock,
 		fd_set readfds;
 		int maxfd, rv;
 
+#ifdef DEBUG_PRIVSEP_SERVER
+		log_dbg_printf("privsep_server select()\n");
+#endif /* DEBUG_PRIVSEP_SERVER */
 		do {
 			FD_ZERO(&readfds);
 			FD_SET(sigpipe, &readfds);
@@ -612,12 +631,18 @@ privsep_server(opts_t *opts, int sigpipe, int srvsock[], size_t nsrvsock,
 				}
 			}
 			rv = select(maxfd + 1, &readfds, NULL, NULL, NULL);
+#ifdef DEBUG_PRIVSEP_SERVER
+			log_dbg_printf("privsep_server woke up (1)\n");
+#endif /* DEBUG_PRIVSEP_SERVER */
 		} while (rv == -1 && errno == EINTR);
 		if (rv == -1) {
 			log_err_printf("Select failed: %s (%i)\n",
 			               strerror(errno), errno);
 			return -1;
 		}
+#ifdef DEBUG_PRIVSEP_SERVER
+		log_dbg_printf("privsep_server woke up (2)\n");
+#endif /* DEBUG_PRIVSEP_SERVER */
 
 		if (FD_ISSET(sigpipe, &readfds)) {
 			char buf[16];
@@ -625,22 +650,54 @@ privsep_server(opts_t *opts, int sigpipe, int srvsock[], size_t nsrvsock,
 			 * all the individual signal flags */
 			read(sigpipe, buf, sizeof(buf));
 			if (received_sigquit) {
-				kill(childpid, SIGQUIT);
+				if (kill(childpid, SIGQUIT) == -1) {
+					log_err_printf("kill(%i,SIGQUIT) "
+					               "failed: %s (%i)\n",
+					               childpid,
+					               strerror(errno), errno);
+				}
 				received_sigquit = 0;
 			}
+			if (received_sigterm) {
+				if (kill(childpid, SIGTERM) == -1) {
+					log_err_printf("kill(%i,SIGTERM) "
+					               "failed: %s (%i)\n",
+					               childpid,
+					               strerror(errno), errno);
+				}
+				received_sigterm = 0;
+			}
 			if (received_sighup) {
-				kill(childpid, SIGHUP);
+				if (kill(childpid, SIGHUP) == -1) {
+					log_err_printf("kill(%i,SIGHUP) "
+					               "failed: %s (%i)\n",
+					               childpid,
+					               strerror(errno), errno);
+				}
 				received_sighup = 0;
 			}
 			if (received_sigusr1) {
-				kill(childpid, SIGUSR1);
+				if (kill(childpid, SIGUSR1) == -1) {
+					log_err_printf("kill(%i,SIGUSR1) "
+					               "failed: %s (%i)\n",
+					               childpid,
+					               strerror(errno), errno);
+				}
 				received_sigusr1 = 0;
 			}
 			if (received_sigint) {
 				/* if we don't detach from the TTY, the
 				 * child process receives SIGINT directly */
-				if (opts->detach)
-					kill(childpid, SIGINT);
+				if (opts->detach) {
+					if (kill(childpid, SIGINT) == -1) {
+						log_err_printf("kill(%i,SIGINT"
+						               ") failed: "
+						               "%s (%i)\n",
+						               childpid,
+						               strerror(errno),
+						               errno);
+					}
+				}
 				received_sigint = 0;
 			}
 			if (received_sigchld) {
@@ -665,17 +722,20 @@ privsep_server(opts_t *opts, int sigpipe, int srvsock[], size_t nsrvsock,
 					               srvsock[i]);
 					return -1;
 				}
-				if (rv == 1)
+				if (rv == 1) {
+#ifdef DEBUG_PRIVSEP_SERVER
+					log_dbg_printf("srveof[%zu]=1\n", i);
+#endif /* DEBUG_PRIVSEP_SERVER */
 					srveof[i] = 1;
+				}
 			}
 		}
 
-		/* break if all server sockets received an EOF */
-		i = 0;
-		while (i < nsrvsock && srveof[i])
-			i++;
-		if (i == nsrvsock)
-			break;
+		/*
+		 * We cannot exit as long as we need the signal handling,
+		 * which is as long as the child process is running.
+		 * The only way out of here is receiving SIGCHLD.
+		 */
 	}
 
 	return 0;
@@ -992,6 +1052,11 @@ privsep_fork(opts_t *opts, int clisock[], size_t nclisock)
 		               strerror(errno), errno);
 		return -1;
 	}
+	if (signal(SIGTERM, privsep_server_signal_handler) == SIG_ERR) {
+		log_err_printf("Failed to install SIGTERM handler: %s (%i)\n",
+		               strerror(errno), errno);
+		return -1;
+	}
 	if (signal(SIGQUIT, privsep_server_signal_handler) == SIG_ERR) {
 		log_err_printf("Failed to install SIGQUIT handler: %s (%i)\n",
 		               strerror(errno), errno);
@@ -1020,6 +1085,9 @@ privsep_fork(opts_t *opts, int clisock[], size_t nclisock)
 		               strerror(errno), errno);
 		/* fall through */
 	}
+#ifdef DEBUG_PRIVSEP_SERVER
+	log_dbg_printf("privsep_server exited\n");
+#endif /* DEBUG_PRIVSEP_SERVER */
 
 	for (size_t i = 0; i < nclisock; i++)
 		close(sockcliv[i][0]);

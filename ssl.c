@@ -256,7 +256,10 @@ ssl_thr_dyn_create_cb(UNUSED const char *file, UNUSED int line)
 	struct CRYPTO_dynlock_value *dl;
 
 	if ((dl = malloc(sizeof(struct CRYPTO_dynlock_value)))) {
-		pthread_mutex_init(&dl->mutex, NULL);
+		if (pthread_mutex_init(&dl->mutex, NULL)) {
+			free(dl);
+			return NULL;
+		}
 	}
 	return dl;
 }
@@ -335,7 +338,10 @@ ssl_init(void)
 	ssl_mutex_num = CRYPTO_num_locks();
 	ssl_mutex = malloc(ssl_mutex_num * sizeof(*ssl_mutex));
 	for (int i = 0; i < ssl_mutex_num; i++) {
-		pthread_mutex_init(&ssl_mutex[i], NULL);
+		if (pthread_mutex_init(&ssl_mutex[i], NULL)) {
+			log_err_printf("Failed to initialize mutex\n");
+			return -1;
+		}
 	}
 	CRYPTO_set_locking_callback(ssl_thr_locking_cb);
 	CRYPTO_set_dynlock_create_callback(ssl_thr_dyn_create_cb);
@@ -389,19 +395,23 @@ ssl_init(void)
 }
 
 /*
- * Re-initialize OpenSSL after forking.
+ * Re-initialize OpenSSL after forking.  Returns 0 on success, -1 on failure.
  */
-void
+int
 ssl_reinit(void)
 {
 	if (!ssl_initialized)
-		return;
+		return 0;
 
 #ifdef OPENSSL_THREADS
 	for (int i = 0; i < ssl_mutex_num; i++) {
-		pthread_mutex_init(&ssl_mutex[i], NULL);
+		if (pthread_mutex_init(&ssl_mutex[i], NULL)) {
+			return -1;
+		}
 	}
 #endif /* OPENSSL_THREADS */
+
+	return 0;
 }
 
 /*
@@ -1325,8 +1335,10 @@ ssl_wildcardify(const char *hostname)
 	if (!(wildcarded = malloc(dotsz + 2)))
 		return NULL;
 	wildcarded[0] = '*';
-	strncpy(wildcarded + 1, dot, dotsz);
-	wildcarded[dotsz + 1] = '\0';
+	for (size_t i = 0; i < dotsz; i++) {
+		wildcarded[i+1] = dot[i];
+	}
+	wildcarded[dotsz+1] = '\0';
 	return wildcarded;
 }
 
@@ -1448,6 +1460,7 @@ ssl_x509_names(X509 *crt)
  * in the Subject DN CN and subjectAltNames extension, separated by slashes.
  * Caller must free returned buffer.
  * Embedded NULL characters in hostnames are replaced with '!'.
+ * If no CN and no subjectAltNames are found, returns "-".
  */
 char *
 ssl_x509_names_to_str(X509 *crt)
@@ -1458,7 +1471,7 @@ ssl_x509_names_to_str(X509 *crt)
 
 	names = ssl_x509_names(crt);
 	if (!names)
-		return NULL;
+		return strdup("-");
 
 	sz = 0;
 	for (char **p = names; *p; p++) {

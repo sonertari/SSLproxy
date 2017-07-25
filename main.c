@@ -215,8 +215,9 @@ main_usage(void)
 
 /*
  * Callback to load a cert/chain/key combo from a single PEM file.
+ * A return value of -1 indicates a fatal error to the file walker.
  */
-static void
+static int
 main_loadtgcrt(const char *filename, void *arg)
 {
 	opts_t *opts = arg;
@@ -227,15 +228,13 @@ main_loadtgcrt(const char *filename, void *arg)
 	if (!cert) {
 		log_err_printf("Failed to load cert and key from PEM file "
 		                "'%s'\n", filename);
-		log_fini();
-		exit(EXIT_FAILURE);
+		return -1;
 	}
 	if (X509_check_private_key(cert->crt, cert->key) != 1) {
 		log_err_printf("Cert does not match key in PEM file "
 		                "'%s':\n", filename);
 		ERR_print_errors_fp(stderr);
-		log_fini();
-		exit(EXIT_FAILURE);
+		return -1;
 	}
 
 #ifdef DEBUG_CERTIFICATE
@@ -265,6 +264,7 @@ main_loadtgcrt(const char *filename, void *arg)
 	}
 	free(names);
 	cert_free(cert);
+	return 0;
 }
 
 /*
@@ -303,7 +303,7 @@ main(int argc, char *argv[])
 	}
 
 	while ((ch = getopt(argc, argv, OPT_g OPT_G OPT_Z OPT_i "k:c:C:K:t:"
-	                    "OPs:r:R:e:Eu:m:j:p:l:L:S:F:dD::VhW:w:")) != -1) {
+	                    "OPs:r:R:e:Eu:m:j:p:l:L:S:F:dD::VhW:w:I:")) != -1) {
 		switch (ch) {
 			case 'c':
 				if (opts->cacrt)
@@ -544,6 +544,13 @@ main(int argc, char *argv[])
 				if (!opts->connectlog)
 					oom_die(argv0);
 				break;
+			case 'I':
+				if (opts->statslog)
+					free(opts->statslog);
+				opts->statslog = strdup(optarg);
+				if (!opts->statslog)
+					oom_die(argv0);
+				break;
 			case 'L':
 				if (opts->contentlog)
 					free(opts->contentlog);
@@ -711,9 +718,7 @@ main(int argc, char *argv[])
 		fprintf(stderr, "%s: no proxyspec specified.\n", argv0);
 		exit(EXIT_FAILURE);
 	}
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> Enter spec for loop\n");
 	for (proxyspec_t *spec = opts->spec; spec; spec = spec->next) {
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> spec for loop: %s\n", spec->natengine);
 		if (spec->connect_addrlen || spec->sni_port)
 			continue;
 		if (!spec->natengine) {
@@ -729,7 +734,6 @@ main(int argc, char *argv[])
 			                argv0, spec->natengine);
 			exit(EXIT_FAILURE);
 		}
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> nat_getlookupcb: %s\n", spec->natengine);
 		spec->natlookup = nat_getlookupcb(spec->natengine);
 		spec->natsocket = nat_getsocketcb(spec->natengine);
 	}
@@ -905,7 +909,12 @@ main(int argc, char *argv[])
 
 	/* Load certs before dropping privs but after cachemgr_preinit() */
 	if (opts->tgcrtdir) {
-		sys_dir_eachfile(opts->tgcrtdir, main_loadtgcrt, opts);
+		if (sys_dir_eachfile(opts->tgcrtdir,
+		                     main_loadtgcrt, opts) == -1) {
+			fprintf(stderr, "%s: failed to load certs from %s\n",
+			                argv0, opts->tgcrtdir);
+			exit(EXIT_FAILURE);
+		}
 	}
 
 	/* Detach from tty; from this point on, only canonicalized absolute
@@ -962,7 +971,10 @@ main(int argc, char *argv[])
 		               strerror(errno), errno);
 		exit(EXIT_FAILURE);
 	}
-	ssl_reinit();
+	if (ssl_reinit() == -1) {
+		fprintf(stderr, "%s: failed to reinit SSL\n", argv0);
+		goto out_sslreinit_failed;
+	}
 
 	/* Post-privdrop/chroot/detach initialization, thread spawning */
 	if (log_init(opts, proxy, clisock[1], clisock[2]) == -1) {
@@ -982,7 +994,6 @@ main(int argc, char *argv[])
 
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> Enter proxy_run\n");
 	proxy_run(proxy);
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> Exit proxy_run\n");
 
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> main: EXIT closing privsep clisock=%d\n", clisock[0]);
 	privsep_client_close(clisock[0]);
@@ -993,6 +1004,7 @@ out_nat_failed:
 	cachemgr_fini();
 out_cachemgr_failed:
 	log_fini();
+out_sslreinit_failed:
 out_log_failed:
 out_parent:
 	opts_free(opts);

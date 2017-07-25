@@ -31,7 +31,6 @@
 #include "opts.h"
 #include "attrib.h"
 #include "pxythrmgr.h"
-#include <pthread.h>
 #include <uuid.h>
 
 typedef struct proxy_ctx proxy_ctx_t;
@@ -52,8 +51,7 @@ proxy_ctx_t * proxy_new(opts_t *, int) NONNULL(1) MALLOC;
 void proxy_run(proxy_ctx_t *) NONNULL(1);
 void proxy_loopbreak(proxy_ctx_t *) NONNULL(1);
 void proxy_free(proxy_ctx_t *) NONNULL(1);
-void
-proxy_listener_errorcb(struct evconnlistener *listener, UNUSED void *ctx);
+void proxy_listener_errorcb(struct evconnlistener *, UNUSED void *);
 
 #endif /* !PROXY_H */
 

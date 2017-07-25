@@ -1,4 +1,26 @@
 
+### SSLsplit develop
+
+-   No longer assume an out of memory condition when a certificate contains
+    neither a CN nor a subjectAltName extension.
+-   Extend -L content logging with EOF message to allow log parsers to figure
+    out when a connection ends (issue #128 by @mattes).  Note that log parsers
+    need to be adjusted to handle the new EOF message.
+-   Add missing authors Maciej Kotowicz and Eun Soo Park to manual page.
+-   Fix multiple signal handling issues in the privilege separation parent
+    which led to the parent process being killed ungracefully (SIGTERM) or
+    being stuck in wait() while still having signals (SIGQUIT etc) queued up
+    for forwarding to the child process (issue #137).
+-   Fix SSL connections that result from autossl to shutdown cleanly.
+-   Fix data processing when EOF is received before all incoming data has been
+    processed.
+-   Fix parallel make build (-j) for the test target (issue #140).
+-   Do not set owner and group if install target is called by unprivileged
+    user (pull req #141 by @cgroschupp).
+-   Add XNU headers for Mac OS X 10.11.3, 10.11.4, 10.11.5, 10.11.6 and 10.12.
+-   Minor bugfixes and improvements.
+
+
 ### SSLsplit 0.5.0 2016-03-27
 
 -   Generically support STARTTLS through the new autossl proxyspec type that
@@ -34,9 +56,8 @@
     after throttling one direction (issue #109).
 -   Fix build with LibreSSL that lacks recent OpenSSL API additions.
 -   Fix build with OpenSSL versions that had SSLv3 support removed.
--   Fix a rare segmentation fault upon receiving EOF on the inbound connection
-    while the outbound connection has not been established yet (patch by
-    @eunsoopark, issue #124).
+-   Fix a rare segmentation fault upon receiving EOF on the outbound connection
+    while it has not been established yet (patch by @eunsoopark, issue #124).
 -   Fix SSL sessions to actually time out (patch by @eunsoopark, issue #115).
 -   Fix passthrough mode with -t and an empty directory (issue #92).
 -   Minor bugfixes and improvements.

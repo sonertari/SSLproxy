@@ -61,12 +61,16 @@ extern logger_t *connect_log;
 #define log_connect_write_free(buf, sz) \
         logger_write_freebuf(connect_log, NULL, 0, (buf), (sz))
 
+extern logger_t *stats_log;
+#define log_stats_print_free(s) \
+        logger_print_freebuf(stats_log, NULL, 0, (s))
+
 typedef struct log_content_ctx log_content_ctx_t;
 int log_content_open(log_content_ctx_t **, opts_t *, char *, char *, char *,
                      char *, char *, char *, char *) NONNULL(1,2,3) WUNRES;
 int log_content_submit(log_content_ctx_t *, logbuf_t *, int)
                        NONNULL(1,2) WUNRES;
-int log_content_close(log_content_ctx_t **) NONNULL(1) WUNRES;
+int log_content_close(log_content_ctx_t **, int) NONNULL(1) WUNRES;
 int log_content_split_pathspec(const char *, char **,
                                char **) NONNULL(1,2,3) WUNRES;
 
@@ -77,6 +81,7 @@ void log_preinit_undo(void);
 int log_init(opts_t *, proxy_ctx_t *, int, int) NONNULL(1,2) WUNRES;
 void log_fini(void);
 int log_reopen(void) WUNRES;
+void log_exceptcb(void);
 
 #endif /* !LOG_H */
 

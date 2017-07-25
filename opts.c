@@ -101,6 +101,9 @@ opts_free(opts_t *opts)
 	if (opts->connectlog) {
 		free(opts->connectlog);
 	}
+	if (opts->statslog) {
+		free(opts->statslog);
+	}
 	if (opts->contentlog) {
 		free(opts->contentlog);
 	}
@@ -295,7 +298,7 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine)
 		switch (state) {
 			default:
 			case 0:
-				/* tcp | ssl | http | https */
+				/* tcp | ssl | http | https | autossl */
 				curspec = malloc(sizeof(proxyspec_t));
 				memset(curspec, 0, sizeof(proxyspec_t));
 				curspec->next = spec;
@@ -333,7 +336,7 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine)
 				break;
 			case 1:
 				/* listenaddr */
-				addr = **argv;	
+				addr = **argv;
 				state++;
 				break;
 			case 2:

@@ -105,7 +105,8 @@ logger_free(logger_t *logger) {
  * Submit a buffer to be logged by the logger thread.
  * Calls the prep callback from within the calling tread before submission.
  * Buffer guaranteed to be freed after logging completes or on failure.
- * Returns -1 on error, 0 on success.
+ * Returns -1 on error, 0 on success (including logging a NULL logbuf, which
+ * is a no-op).
  */
 int
 logger_submit(logger_t *logger, void *fh, unsigned long prepflags,
@@ -114,7 +115,7 @@ logger_submit(logger_t *logger, void *fh, unsigned long prepflags,
 	if (logger->prep)
 		lb = logger->prep(fh, prepflags, lb);
 	if (!lb)
-		return -1;
+		return 0;
 	lb->fh = fh;
 	logbuf_ctl_clear(lb);
 	if (thrqueue_enqueue(logger->queue, lb)) {
@@ -313,7 +314,7 @@ logger_print(logger_t *logger, void *fh, unsigned long prepflags,
 {
 	logbuf_t *lb;
 
-	if (!(lb = logbuf_new_copy(s, s ? strlen(s) : 0, fh, NULL)))
+	if (!(lb = logbuf_new_copy(s, strlen(s), fh, NULL)))
 		return -1;
 	return logger_submit(logger, fh, prepflags, lb);
 }
@@ -333,7 +334,7 @@ logger_print_freebuf(logger_t *logger, void *fh, unsigned long prepflags,
 {
 	logbuf_t *lb;
 
-	if (!(lb = logbuf_new(s, s ? strlen(s) : 0, fh, NULL)))
+	if (!(lb = logbuf_new(s, strlen(s), fh, NULL)))
 		return -1;
 	return logger_submit(logger, fh, prepflags, lb);
 }

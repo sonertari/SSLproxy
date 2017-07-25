@@ -57,11 +57,12 @@
  */
 static proxy_ctx_t *proxy_ctx = NULL;
 
-static void
+void
 log_exceptcb(void)
 {
 	if (proxy_ctx) {
 		proxy_loopbreak(proxy_ctx);
+		proxy_ctx = NULL;
 	}
 }
 
@@ -269,6 +270,84 @@ log_connect_fini(void)
 	close(connect_fd);
 }
 
+/*
+ * Stats log.  Logs to a file-based connection log.
+ * Uses a logger thread.
+ */
+
+logger_t *stats_log = NULL;
+static int stats_fd = -1;
+static char *stats_fn = NULL;
+
+static int
+log_stats_preinit(const char *logfile)
+{
+	stats_fd = open(logfile, O_WRONLY|O_APPEND|O_CREAT, DFLT_FILEMODE);
+	if (stats_fd == -1) {
+		log_err_printf("Failed to open '%s' for writing: %s (%i)\n",
+		               logfile, strerror(errno), errno);
+		return -1;
+	}
+	if (!(stats_fn = realpath(logfile, NULL))) {
+		log_err_printf("Failed to realpath '%s': %s (%i)\n",
+		              logfile, strerror(errno), errno);
+		close(stats_fd);
+		stats_fd = -1;
+		return -1;
+	}
+	return 0;
+}
+
+static int
+log_stats_reopencb(void)
+{
+	close(stats_fd);
+	stats_fd = open(stats_fn, O_WRONLY|O_APPEND|O_CREAT, DFLT_FILEMODE);
+	if (stats_fd == -1) {
+		log_err_printf("Failed to open '%s' for writing: %s\n",
+		               stats_fn, strerror(errno));
+		free(stats_fn);
+		stats_fn = NULL;
+		return -1;
+	}
+	return 0;
+}
+
+/*
+ * Do the actual write to the open connection log file descriptor.
+ * We prepend a timestamp here, which means that timestamps are slightly
+ * delayed from the time of actual logging.  Since we only have second
+ * resolution that should not make any difference.
+ */
+static ssize_t
+log_stats_writecb(UNUSED void *fh, const void *buf, size_t sz)
+{
+	char timebuf[32];
+	time_t epoch;
+	struct tm *utc;
+	size_t n;
+
+	time(&epoch);
+	utc = gmtime(&epoch);
+	n = strftime(timebuf, sizeof(timebuf), "%Y-%m-%d %H:%M:%S UTC ", utc);
+	if (n == 0) {
+		log_err_printf("Error from strftime(): buffer too small\n");
+		return -1;
+	}
+	if ((write(stats_fd, timebuf, n) == -1) ||
+	    (write(stats_fd, buf, sz) == -1)) {
+		log_err_printf("Warning: Failed to write to stats log: %s\n",
+		               strerror(errno));
+		return -1;
+	}
+	return sz;
+}
+
+static void
+log_stats_fini(void)
+{
+	close(stats_fd);
+}
 
 /*
  * Content log.
@@ -281,6 +360,7 @@ log_connect_fini(void)
  */
 
 #define PREPFLAG_REQUEST 1
+#define PREPFLAG_EOF     2
 
 struct log_content_ctx {
 	unsigned int open : 1;
@@ -640,15 +720,23 @@ log_content_submit(log_content_ctx_t *ctx, logbuf_t *lb, int is_request)
 }
 
 int
-log_content_close(log_content_ctx_t **pctx)
+log_content_close(log_content_ctx_t **pctx, int by_requestor)
 {
 	int rv = 0;
+	unsigned long prepflags = PREPFLAG_EOF;
 
 	if (!(*pctx) || !(*pctx)->open)
 		return -1;
+	if (by_requestor)
+		prepflags |= PREPFLAG_REQUEST;
+	if (logger_submit(content_log, (*pctx), prepflags, NULL) == -1) {
+		rv = -1;
+		goto out;
+	}
 	if (logger_close(content_log, *pctx) == -1) {
 		rv = -1;
 	}
+out:
 	*pctx = NULL;
 	return rv;
 }
@@ -840,8 +928,13 @@ log_content_file_prepcb(void *fh, unsigned long prepflags, logbuf_t *lb)
 	                          : ctx->u.file.header_resp))
 		goto out;
 
-	/* prepend size tag and newline */
-	head = logbuf_new_printf(lb->fh, lb, " (%zu):\n", logbuf_size(lb));
+	/* prepend size tag or EOF, and newline */
+	if (prepflags & PREPFLAG_EOF) {
+		head = logbuf_new_printf(NULL, NULL, " (EOF)\n");
+	} else {
+		head = logbuf_new_printf(lb->fh, lb, " (%zu):\n",
+		                         logbuf_size(lb));
+	}
 	if (!head) {
 		log_err_printf("Failed to allocate memory\n");
 		logbuf_free(lb);
@@ -987,6 +1080,17 @@ log_preinit(opts_t *opts)
 			goto out;
 		}
 	}
+	if (opts->statslog) {
+		if (log_stats_preinit(opts->statslog) == -1)
+			goto out;
+		if (!(stats_log = logger_new(log_stats_reopencb,
+		                               NULL, NULL,
+		                               log_stats_writecb, NULL,
+		                               log_exceptcb))) {
+			log_stats_fini();
+			goto out;
+		}
+	}
 	if (opts->certgendir) {
 		if (!(cert_log = logger_new(NULL, NULL, NULL, log_cert_writecb,
 		                            NULL, log_exceptcb)))
@@ -1005,6 +1109,10 @@ out:
 	if (connect_log) {
 		log_connect_fini();
 		logger_free(connect_log);
+	}
+	if (stats_log) {
+		log_stats_fini();
+		logger_free(stats_log);
 	}
 	if (cert_log) {
 		logger_free(cert_log);
@@ -1027,6 +1135,10 @@ log_preinit_undo(void)
 		log_connect_fini();
 		logger_free(connect_log);
 	}
+	if (stats_log) {
+		log_stats_fini();
+		logger_free(stats_log);
+	}
 }
 
 /*
@@ -1045,6 +1157,9 @@ log_init(opts_t *opts, proxy_ctx_t *ctx, int clisock1, int clisock2)
 	}
 	if (connect_log)
 		if (logger_start(connect_log) == -1)
+			return -1;
+	if (stats_log)
+		if (logger_start(stats_log) == -1)
 			return -1;
 	if (content_log) {
 		content_clisock = clisock1;
@@ -1080,6 +1195,8 @@ log_fini(void)
 		logger_leave(content_log);
 	if (connect_log)
 		logger_leave(connect_log);
+	if (stats_log)
+		logger_leave(stats_log);
 	if (err_log)
 		logger_leave(err_log);
 
@@ -1089,6 +1206,8 @@ log_fini(void)
 		logger_join(content_log);
 	if (connect_log)
 		logger_join(connect_log);
+	if (stats_log)
+		logger_join(stats_log);
 	if (err_log)
 		logger_join(err_log);
 
@@ -1098,6 +1217,8 @@ log_fini(void)
 		logger_free(content_log);
 	if (connect_log)
 		logger_free(connect_log);
+	if (stats_log)
+		logger_free(stats_log);
 	if (err_log)
 		logger_free(err_log);
 
@@ -1105,6 +1226,8 @@ log_fini(void)
 		log_content_file_fini();
 	if (connect_log)
 		log_connect_fini();
+	if (stats_log)
+		log_stats_fini();
 
 	if (cert_clisock != -1)
 		privsep_client_close(cert_clisock);
@@ -1122,6 +1245,9 @@ log_reopen(void)
 			rv = -1;
 	if (connect_log)
 		if (logger_reopen(connect_log) == -1)
+			rv = -1;
+	if (stats_log)
+		if (logger_reopen(stats_log) == -1)
 			rv = -1;
 
 	return rv;
