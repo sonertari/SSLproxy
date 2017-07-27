@@ -455,7 +455,8 @@ pxy_conn_free(pxy_conn_ctx_t *ctx, int by_requestor)
 	pxy_conn_desc_t *src = &ctx->src;
 	if (!src->closed) {
 		if (src->bev) {
-			log_dbg_level_printf(LOG_DBG_MODE_FINER, ">############################# pxy_conn_free: bufferevent_free_and_close_fd src->bev, fd=%d\n", bufferevent_getfd(src->bev));
+			log_dbg_level_printf(LOG_DBG_MODE_FINER, ">############################# pxy_conn_free: bufferevent_free_and_close_fd src->bev, i:%zu o:%zu, fd=%d\n",
+					evbuffer_get_length(bufferevent_get_input(src->bev)), evbuffer_get_length(bufferevent_get_output(src->bev)), bufferevent_getfd(src->bev));
 			bufferevent_free_and_close_fd(src->bev, ctx);
 			src->bev = NULL;
 		} else {
@@ -474,7 +475,8 @@ pxy_conn_free(pxy_conn_ctx_t *ctx, int by_requestor)
 
 	pxy_conn_desc_t *dst = &ctx->dst;
 	if (dst->bev) {
-		log_dbg_level_printf(LOG_DBG_MODE_FINER, ">############################# pxy_conn_free: bufferevent_free_and_close_fd dst->bev, fd=%d\n", bufferevent_getfd(dst->bev));
+		log_dbg_level_printf(LOG_DBG_MODE_FINER, ">############################# pxy_conn_free: bufferevent_free_and_close_fd dst->bev, i:%zu o:%zu, fd=%d\n",
+				evbuffer_get_length(bufferevent_get_input(dst->bev)), evbuffer_get_length(bufferevent_get_output(dst->bev)), bufferevent_getfd(dst->bev));
 		bufferevent_free_and_close_fd_nonssl(dst->bev, ctx);
 		dst->bev = NULL;
 	}
@@ -1349,8 +1351,8 @@ pxy_bufferevent_setup(pxy_conn_ctx_t *ctx, evutil_socket_t fd, SSL *ssl)
 	if (ssl) {
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_bufferevent_setup: bufferevent_openssl_socket_new <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< SSL\n");
 		bev = bufferevent_openssl_socket_new(ctx->evbase, fd, ssl,
-				((fd == -1) ? BUFFEREVENT_SSL_CONNECTING : BUFFEREVENT_SSL_ACCEPTING),
-				BEV_OPT_DEFER_CALLBACKS);
+				((fd == -1) ? BUFFEREVENT_SSL_CONNECTING : BUFFEREVENT_SSL_ACCEPTING), BEV_OPT_DEFER_CALLBACKS);
+//				((fd == -1) ? BUFFEREVENT_SSL_CONNECTING : BUFFEREVENT_SSL_ACCEPTING), 0);
 	} else {
 		// @todo Do we really need to defer callbacks? BEV_OPT_DEFER_CALLBACKS seems responsible for the issue with srv_dst: We get writecb sometimes, no eventcb for CONNECTED event
 		bev = bufferevent_socket_new(ctx->evbase, fd, BEV_OPT_DEFER_CALLBACKS);
@@ -1395,8 +1397,10 @@ pxy_bufferevent_setup_child(pxy_conn_child_ctx_t *ctx, evutil_socket_t fd, SSL *
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_bufferevent_setup_child: bufferevent_openssl_socket_new <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< SSL child\n");
 		bev = bufferevent_openssl_socket_new(ctx->parent->evbase, fd, ssl,
 				((fd == -1) ? BUFFEREVENT_SSL_CONNECTING : BUFFEREVENT_SSL_ACCEPTING), BEV_OPT_DEFER_CALLBACKS);
+//				((fd == -1) ? BUFFEREVENT_SSL_CONNECTING : BUFFEREVENT_SSL_ACCEPTING), 0);
 	} else {
 		bev = bufferevent_socket_new(ctx->parent->evbase, fd, BEV_OPT_DEFER_CALLBACKS);
+//		bev = bufferevent_socket_new(ctx->parent->evbase, fd, 0);
 	}
 	if (!bev) {
 		log_err_printf("Error creating bufferevent socket\n");
@@ -1497,11 +1501,15 @@ pxy_http_reqhdr_filter_line(const char *line, pxy_conn_ctx_t *ctx, int child)
 			}
 			return newhdr;
 		} else if (!strncasecmp(line, "Accept-Encoding:", 16) ||
-		           !strncasecmp(line, "Keep-Alive:", 11)) {
+		           !strncasecmp(line, "Keep-Alive:", 11) ||
+				   // @attention flickr keeps redirecting to https with 301 unless we remove the Via line of squid
+				   // Apparently flickr assumes the existence of Via header field or squid keyword a sign of plain http, even if we are using https
+		           !strncasecmp(line, "Via:", 4) ||
+				   // Also do not send the loopback address to the Internet
+		           !strncasecmp(line, "X-Forwarded-For:", 16)) {
 			return NULL;
-		} else if (child && !strncasecmp(line, SSLPROXY_ADDR_KEY, SSLPROXY_ADDR_KEY_LEN)) {
-			return NULL;
-		} else if (child && !strncasecmp(line, SSLPROXY_SRCADDR_KEY, SSLPROXY_SRCADDR_KEY_LEN)) {
+		} else if (child && (!strncasecmp(line, SSLPROXY_ADDR_KEY, SSLPROXY_ADDR_KEY_LEN) ||
+				   !strncasecmp(line, SSLPROXY_SRCADDR_KEY, SSLPROXY_SRCADDR_KEY_LEN))) {
 			return NULL;
 		} else if (line[0] == '\0') {
 			ctx->seen_req_header = 1;
@@ -1763,6 +1771,7 @@ pxy_conn_autossl_peek_and_upgrade(pxy_conn_ctx_t *ctx)
 			               ctx->evbase, ctx->srv_dst.bev, ctx->srv_dst.ssl,
 			               BUFFEREVENT_SSL_CONNECTING,
 			               BEV_OPT_DEFER_CALLBACKS);
+//			               0);
 			bufferevent_setcb(ctx->srv_dst.bev, pxy_bev_readcb,
 			                  pxy_bev_writecb, pxy_bev_eventcb,
 			                  ctx);
@@ -2374,7 +2383,7 @@ pxy_conn_connect_child(pxy_conn_child_ctx_t *ctx)
 	/* create server-side socket and eventbuffer */
 	// Children rely on the findings of parent
 	if ((parent->spec->ssl || parent->clienthello_found) && !parent->passthrough) {
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_conn_connect_child: pxy_srcssl_create <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< SSL\n");
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_conn_connect_child: pxy_dstssl_create <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< SSL\n");
 		ctx->dst.ssl = pxy_dstssl_create(parent);
 		if (!ctx->dst.ssl) {
 			log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>> pxy_conn_connect_child: Error creating SSL ctx->dst.ssl, fd=%d\n", ctx->fd);
@@ -2392,6 +2401,7 @@ pxy_conn_connect_child(pxy_conn_child_ctx_t *ctx)
 					   parent->evbase, ctx->dst.bev, ctx->dst.ssl,
 					   BUFFEREVENT_SSL_ACCEPTING,
 					   BEV_OPT_DEFER_CALLBACKS);
+//					   0);
 		if (ctx->dst.bev) {
 			bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb_child, pxy_bev_writecb_child, pxy_bev_eventcb_child, ctx);
 		}
@@ -2553,6 +2563,7 @@ pxy_connected_enable(struct bufferevent *bev, pxy_conn_ctx_t *ctx, char *event_n
 			               ctx->evbase, ctx->src.bev, ctx->src.ssl,
 			               BUFFEREVENT_SSL_ACCEPTING,
 			               BEV_OPT_DEFER_CALLBACKS);
+//			               0);
 		} else {
 			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>=================================== pxy_connected_enable: SETUP src.bev fd=%d\n", fd);
 			ctx->src.bev = pxy_bufferevent_setup(ctx, fd, ctx->src.ssl);
@@ -2697,13 +2708,14 @@ pxy_connected_enable(struct bufferevent *bev, pxy_conn_ctx_t *ctx, char *event_n
 		}
 		snprintf(ctx->child_addr_str, addr_len, "%s [%s]:%u", SSLPROXY_ADDR_KEY, addr, ntohs(child_listener_addr.sin_port));
 
-		int src_addr_len = SSLPROXY_SRCADDR_KEY_LEN + 1 + strlen(ctx->srchost_str) + strlen(ctx->srcport_str) + 3 + 1;
+		// SSLproxy-SrcAddr: [192.168.3.23]:49260,s
+		int src_addr_len = SSLPROXY_SRCADDR_KEY_LEN + 2 + strlen(ctx->srchost_str) + 2 + strlen(ctx->srcport_str) + 1 + 1 + 1;
 		ctx->src_addr_str = malloc(src_addr_len);
 		if (!ctx->src_addr_str) {
 			pxy_conn_free(ctx, 1);
 			return 0;
 		}
-		snprintf(ctx->src_addr_str, src_addr_len, "%s [%s]:%s", SSLPROXY_SRCADDR_KEY, ctx->srchost_str, ctx->srcport_str);
+		snprintf(ctx->src_addr_str, src_addr_len, "%s [%s]:%s,%s", SSLPROXY_SRCADDR_KEY, ctx->srchost_str, ctx->srcport_str, ctx->spec->ssl ? "s":"p");
 
 		log_dbg_level_printf(LOG_DBG_MODE_FINER, ">>>>>=================================== pxy_connected_enable: ENABLE src, child_addr= %s, fd=%d, child_fd=%d\n", ctx->child_addr_str, fd, ctx->child_fd);
 
@@ -3179,7 +3191,7 @@ pxy_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 			 * handle it here, otherwise it will be lost. */
 			if (evbuffer_get_length(bufferevent_get_input(bev))) {
 				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>=================================== pxy_bev_eventcb_child: evbuffer_get_length(inbuf) > 0 <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< CHILD TERM, fd=%d, pfd=%d\n", ctx->fd, parent->fd);
-				pxy_bev_readcb(bev, ctx);
+				pxy_bev_readcb_child(bev, ctx);
 			}
 			/* if the other end is still open and doesn't
 			 * have data to send, close it, otherwise its

@@ -90,7 +90,7 @@ pxy_thrmgr_print_child(pxy_conn_child_ctx_t *child_ctx, int count)
 	rv = asprintf(&msg, "thr=%d, cont=%d, src=%d, dst=%d, c=%d-%d, i=%d\n", 
 			child_ctx->parent->thr->thridx, count, child_ctx->src_fd, child_ctx->dst_fd, child_ctx->src.closed, child_ctx->dst.closed, child_ctx->idx);
 
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>> .......... pxy_thrmgr_print_child: %s\n", msg);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>> .......... pxy_thrmgr_print_child: %s", msg);
 	if (child_ctx->parent->opts->statslog) {
 		if (log_stats_print_free(msg) == -1) {
 			free(msg);
@@ -141,7 +141,7 @@ pxy_thrmgr_print_thr_info(pxy_thr_ctx_t *tctx)
 				free(port);
 			}
 
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>> pxy_thrmgr_print_thr_info: %s\n", msg);
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>> pxy_thrmgr_print_thr_info: %s", msg);
 			
 			if (ctx->opts->statslog) {
 				if (log_stats_print_free(msg) == -1) {
