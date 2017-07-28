@@ -90,6 +90,7 @@ pxy_ssl_shutdown_cb(evutil_socket_t fd, UNUSED short what, void *arg)
 {
 	pxy_ssl_shutdown_ctx_t *ctx = arg;
 	struct timeval retry_delay = {0, 100};
+//	struct timeval retry_delay = {0, 500};
 	short want = 0;
 	int rv, sslerr;
 
@@ -116,18 +117,23 @@ pxy_ssl_shutdown_cb(evutil_socket_t fd, UNUSED short what, void *arg)
 	switch ((sslerr = SSL_get_error(ctx->ssl, rv))) {
 		case SSL_ERROR_WANT_READ:
 			want = EV_READ;
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_ssl_shutdown_cb: SSL_ERROR_WANT_READ, retries=%d, fd=%d\n", ctx->retries, fd);
 			goto retry;
 		case SSL_ERROR_WANT_WRITE:
 			want = EV_WRITE;
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_ssl_shutdown_cb: SSL_ERROR_WANT_WRITE, retries=%d, fd=%d\n", ctx->retries, fd);
 			goto retry;
 		case SSL_ERROR_ZERO_RETURN:
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_ssl_shutdown_cb: SSL_ERROR_ZERO_RETURN, retries=%d, fd=%d\n", ctx->retries, fd);
 			goto retry;
 		case SSL_ERROR_SYSCALL:
 		case SSL_ERROR_SSL:
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_ssl_shutdown_cb: SSL_ERROR_SYSCALL or SSL_ERROR_SSL, retries=%d, fd=%d\n", ctx->retries, fd);
 			goto complete;
 		default:
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_ssl_shutdown_cb: default, retries=%d, fd=%d\n", ctx->retries, fd);
 			log_err_printf("Unhandled SSL_shutdown() "
-			               "error %i.  Closing fd.\n", sslerr);
+			               "error %i.  Closing fd, fd=%d\n", sslerr, fd);
 			goto complete;
 	}
 	goto complete;
@@ -135,7 +141,7 @@ pxy_ssl_shutdown_cb(evutil_socket_t fd, UNUSED short what, void *arg)
 retry:
 	if (ctx->retries++ >= 50) {
 		log_err_printf("Failed to shutdown SSL connection cleanly: "
-		               "Max retries reached. Closing fd.\n");
+		               "Max retries reached. Closing fd, fd=%d\n", fd);
 		goto complete;
 	}
 	ctx->ev = event_new(ctx->evbase, fd, want, pxy_ssl_shutdown_cb, ctx);
@@ -144,7 +150,7 @@ retry:
 		return;
 	}
 	log_err_printf("Failed to shutdown SSL connection cleanly: "
-	               "Cannot create event. Closing fd.\n");
+	               "Cannot create event. Closing fd, fd=%d\n", fd);
 
 complete:
 	if (OPTS_DEBUG(ctx->opts)) {

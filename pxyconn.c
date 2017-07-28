@@ -1501,15 +1501,15 @@ pxy_http_reqhdr_filter_line(const char *line, pxy_conn_ctx_t *ctx, int child)
 			}
 			return newhdr;
 		} else if (!strncasecmp(line, "Accept-Encoding:", 16) ||
-		           !strncasecmp(line, "Keep-Alive:", 11) ||
+		           !strncasecmp(line, "Keep-Alive:", 11)) {
+			return NULL;
+		} else if (child && (!strncasecmp(line, SSLPROXY_ADDR_KEY, SSLPROXY_ADDR_KEY_LEN) ||
+				   !strncasecmp(line, SSLPROXY_SRCADDR_KEY, SSLPROXY_SRCADDR_KEY_LEN) ||
 				   // @attention flickr keeps redirecting to https with 301 unless we remove the Via line of squid
 				   // Apparently flickr assumes the existence of Via header field or squid keyword a sign of plain http, even if we are using https
 		           !strncasecmp(line, "Via:", 4) ||
 				   // Also do not send the loopback address to the Internet
-		           !strncasecmp(line, "X-Forwarded-For:", 16)) {
-			return NULL;
-		} else if (child && (!strncasecmp(line, SSLPROXY_ADDR_KEY, SSLPROXY_ADDR_KEY_LEN) ||
-				   !strncasecmp(line, SSLPROXY_SRCADDR_KEY, SSLPROXY_SRCADDR_KEY_LEN))) {
+		           !strncasecmp(line, "X-Forwarded-For:", 16))) {
 			return NULL;
 		} else if (line[0] == '\0') {
 			ctx->seen_req_header = 1;
@@ -2881,7 +2881,7 @@ leave:
 }
 
 static void
-pxy_print_ssl_error(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
+pxy_print_ssl_error(struct bufferevent *bev, UNUSED pxy_conn_ctx_t *ctx)
 {
 	unsigned long sslerr;
 
@@ -3026,28 +3026,31 @@ pxy_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 	if (events & BEV_EVENT_EOF) {
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>=================================== pxy_bev_eventcb: EOF %s fd=%d\n", event_name, ctx->fd);
 
-#ifdef DEBUG_PROXY
-		if (OPTS_DEBUG(ctx->opts)) {
-			log_dbg_printf("evbuffer size at EOF: "
-			               "i:%zu o:%zu i:%zu o:%zu\n",
-			                evbuffer_get_length(
-			                    bufferevent_get_input(bev)),
-			                evbuffer_get_length(
-			                    bufferevent_get_output(bev)),
-			                evbuffer_get_length(
-			                    bufferevent_get_input(other->bev)),
-			                evbuffer_get_length(
-			                    bufferevent_get_output(other->bev))
-			                );
-		}
-#endif /* DEBUG_PROXY */
-
 		if (bev == ctx->srv_dst.bev) {
-			bufferevent_free_and_close_fd(ctx->srv_dst.bev, ctx);
-			ctx->srv_dst.bev = NULL;
-			ctx->srv_dst.closed = 1;
+//			bufferevent_free_and_close_fd(ctx->srv_dst.bev, ctx);
+//			ctx->srv_dst.bev = NULL;
+//			ctx->srv_dst.closed = 1;
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>=================================== pxy_bev_eventcb: EOF on outbound connection before connection establishment, fd=%d\n", ctx->fd);
+			pxy_conn_free(ctx, 1);
 			return;
 		} else {
+#ifdef DEBUG_PROXY
+			if (OPTS_DEBUG(ctx->opts)) {
+				log_dbg_printf("evbuffer size at EOF: "
+							   "i:%zu o:%zu i:%zu o:%zu\n",
+								evbuffer_get_length(
+									bufferevent_get_input(bev)),
+								evbuffer_get_length(
+									bufferevent_get_output(bev)),
+								evbuffer_get_length(
+									bufferevent_get_input(other->bev)),
+								evbuffer_get_length(
+									bufferevent_get_output(other->bev))
+								);
+			}
+#endif /* DEBUG_PROXY */
+
+			// @todo How to handle the following case?
 			if (!ctx->connected) {
 				log_dbg_printf("EOF on outbound connection before "
 							   "connection establishment\n");
@@ -3183,6 +3186,7 @@ pxy_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 		if (!ctx->connected) {
 			log_dbg_printf("EOF on outbound connection before "
 			               "connection establishment\n");
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>=================================== pxy_bev_eventcb_child: EOF on outbound connection before connection establishment, fd=%d, pfd=%d\n", ctx->fd, parent->fd);
 			evutil_closesocket(ctx->fd);
 			other->closed = 1;
 		} else if (!other->closed) {
