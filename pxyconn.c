@@ -138,7 +138,6 @@ pxy_conn_ctx_new(evutil_socket_t fd,
 
 	uuid_create(ctx->uuid, NULL);
 
-// @todo Set this switch at compile time
 #ifdef OPENBSD
 	char *uuid_str;
 	uuid_to_string(ctx->uuid, &uuid_str, NULL);
@@ -277,7 +276,7 @@ bufferevent_free_and_close_fd(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
  * This is for non-OpenSSL bufferevents.
  */
 static void
-bufferevent_free_and_close_fd_nonssl(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
+bufferevent_free_and_close_fd_nonssl(struct bufferevent *bev, UNUSED pxy_conn_ctx_t *ctx)
 {
 	evutil_socket_t fd = bufferevent_getfd(bev);
 
