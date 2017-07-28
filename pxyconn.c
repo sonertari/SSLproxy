@@ -3174,9 +3174,9 @@ pxy_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 			                    bufferevent_get_input(bev)),
 			                evbuffer_get_length(
 			                    bufferevent_get_output(bev)),
-			                evbuffer_get_length(
+			                other->closed ? 0 : evbuffer_get_length(
 			                    bufferevent_get_input(other->bev)),
-			                evbuffer_get_length(
+			                other->closed ? 0 : evbuffer_get_length(
 			                    bufferevent_get_output(other->bev))
 			                );
 		}
