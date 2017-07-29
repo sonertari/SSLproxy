@@ -74,11 +74,6 @@ FEATURES+=	-DDEBUG_THREAD
 # Define to add privilege separation server event loop debugging.
 #FEATURES+=	-DDEBUG_PRIVSEP_SERVER
 
-# Define to add features specific to OpenBSD only, such as uuid_to_string().
-ifeq ($(shell uname),OpenBSD)
-FEATURES+=	-DOPENBSD
-endif
-
 # When debugging OpenSSL related issues, make sure you use a debug build of
 # OpenSSL and consider enabling its debugging options -DREF_PRINT -DREF_CHECK
 # for debugging reference counting of OpenSSL objects and/or
@@ -121,6 +116,11 @@ endif
 
 
 ### Autodetected features
+
+# Autodetect OpenBSD, for uuid_to_string().
+ifeq ($(shell uname),OpenBSD)
+FEATURES+=	-DOPENBSD
+endif
 
 # Autodetect pf
 ifneq ($(wildcard /usr/include/net/pfvar.h),)

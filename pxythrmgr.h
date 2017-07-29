@@ -39,24 +39,36 @@
 #include <pthread.h>
 
 typedef struct pxy_conn_ctx pxy_conn_ctx_t;
+typedef struct pxy_thrmgr_ctx pxy_thrmgr_ctx_t;
 
 typedef struct pxy_thr_ctx {
 	pthread_t thr;
 	int thridx;
+	pxy_thrmgr_ctx_t *thrmgr;
 	size_t load;
 	struct event_base *evbase;
 	struct evdns_base *dnsbase;
 	int running;
 	unsigned int timeout_count;
+	evutil_socket_t max_fd;
+	size_t max_load;
+	size_t timedout_conns;
+	size_t errors;
+	size_t set_watermarks;
+	size_t unset_watermarks;
+	long long unsigned int intif_in_bytes;
+	long long unsigned int intif_out_bytes;
+	long long unsigned int extif_in_bytes;
+	long long unsigned int extif_out_bytes;
 	pxy_conn_ctx_t *conns;
 } pxy_thr_ctx_t;
 
-typedef struct pxy_thrmgr_ctx {
+struct pxy_thrmgr_ctx {
 	int num_thr;
 	opts_t *opts;
 	pxy_thr_ctx_t **thr;
 	pthread_mutex_t mutex;
-} pxy_thrmgr_ctx_t;
+};
 
 pxy_thrmgr_ctx_t * pxy_thrmgr_new(opts_t *) MALLOC;
 int pxy_thrmgr_run(pxy_thrmgr_ctx_t *) NONNULL(1) WUNRES;

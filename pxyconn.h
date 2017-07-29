@@ -53,7 +53,7 @@ typedef struct pxy_conn_desc {
  * connection-wide state and the specs and options */
 struct pxy_conn_ctx {
 	// Common properties
-	// @attention The order of these common vars should match with the ones in children
+	// @attention The order of these common vars should match with their order in children
 	/* per-connection state */
 	struct pxy_conn_desc src;
 	struct pxy_conn_desc dst;
@@ -181,7 +181,7 @@ struct pxy_conn_ctx {
  * connection-wide state */
 struct pxy_conn_child_ctx {
 	// Common properties
-	// @attention The order of these common vars should match with the ones in parent
+	// @attention The order of these common vars should match with their order in parent
 	/* per-connection state */
 	struct pxy_conn_desc src;
 	struct pxy_conn_desc dst;

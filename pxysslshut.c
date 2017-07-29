@@ -89,8 +89,9 @@ static void
 pxy_ssl_shutdown_cb(evutil_socket_t fd, UNUSED short what, void *arg)
 {
 	pxy_ssl_shutdown_ctx_t *ctx = arg;
+	// @attention Increasing the delay to 500 or more fixes some ssl shutdown failures, they report SSL_ERROR_WANT_READ before eventually succeeding
+	// @todo Can/should we set an adaptive delay per conn here? Does it matter?
 	struct timeval retry_delay = {0, 100};
-//	struct timeval retry_delay = {0, 500};
 	short want = 0;
 	int rv, sslerr;
 
