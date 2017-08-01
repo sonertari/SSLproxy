@@ -992,7 +992,6 @@ main(int argc, char *argv[])
 	}
 	rv = EXIT_SUCCESS;
 
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> Enter proxy_run\n");
 	proxy_run(proxy);
 
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> main: EXIT closing privsep clisock=%d\n", clisock[0]);
