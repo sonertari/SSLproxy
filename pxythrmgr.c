@@ -511,16 +511,8 @@ pxy_thrmgr_detach(pxy_conn_ctx_t *ctx)
 	assert(ctx->children == NULL);
 
 	pthread_mutex_lock(&ctx->thrmgr->mutex);
-
-//	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_thrmgr_detach: BEFORE pxy_thrmgr_remove_conn\n");
-//	pxy_thrmgr_print_thr_info(ctx->thr);
-
 	ctx->thr->load--;
 	pxy_thrmgr_remove_conn(ctx, &ctx->thr->conns);
-
-//	log_dbg_level_printf(LOG_DBG_MODE_FINER, ">>>>> pxy_thrmgr_detach: AFTER pxy_thrmgr_remove_conn\n");
-//	pxy_thrmgr_print_thr_info(ctx->thr);
-
 	pthread_mutex_unlock(&ctx->thrmgr->mutex);
 }
 

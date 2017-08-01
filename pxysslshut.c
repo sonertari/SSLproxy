@@ -160,7 +160,6 @@ complete:
 		log_dbg_printf(" fd=%d\n", fd);
 	}
 	SSL_free(ctx->ssl);
-//	ctx->ssl = NULL;
 	evutil_closesocket(fd);
 	pxy_ssl_shutdown_ctx_free(ctx);
 }

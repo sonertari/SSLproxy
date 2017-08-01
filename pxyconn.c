@@ -299,35 +299,6 @@ bufferevent_free_and_close_fd_nonssl(struct bufferevent *bev, UNUSED pxy_conn_ct
 	}
 }
 
-//static void
-//bufferevent_close_fd(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
-//{
-//	evutil_socket_t fd = bufferevent_getfd(bev);
-//	SSL *ssl = NULL;
-//
-//	if ((ctx->spec->ssl || ctx->clienthello_found) && !ctx->passthrough) {
-//		ssl = bufferevent_openssl_get_ssl(bev); /* does not inc refc */
-//	}
-//
-//#ifdef DEBUG_PROXY
-//	if (OPTS_DEBUG(ctx->opts)) {
-//		log_dbg_printf("            %p close_fd = %d\n",
-//		               (void*)bev, fd);
-//	}
-//#endif /* DEBUG_PROXY */
-//
-//	if (ssl) {
-//		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">############################# bufferevent_close_fd: calling pxy_ssl_shutdown, fd=%d\n", fd);
-//		pxy_ssl_shutdown(ctx->opts, ctx->evbase, ssl, fd);
-//	} else {
-//		if (evutil_closesocket(fd) == -1) {
-//			log_dbg_level_printf(LOG_DBG_MODE_FINE, ">############################# bufferevent_close_fd: evutil_closesocket FAILED, fd=%d\n", fd);
-//		} else {
-//			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">############################# bufferevent_close_fd: evutil_closesocket SUCCESS, fd=%d\n", fd);
-//		}
-//	}
-//}
-
 static void NONNULL(1,2)
 pxy_conn_remove_child(pxy_conn_child_ctx_t *child, pxy_conn_child_ctx_t **head) {
     if (child->fd == (*head)->fd) {
@@ -501,13 +472,6 @@ pxy_conn_free(pxy_conn_ctx_t *ctx, int by_requestor)
 	if (srv_dst->bev) {
 		log_dbg_level_printf(LOG_DBG_MODE_FINER, ">############################# pxy_conn_free: bufferevent_free_and_close_fd srv_dst->bev, fd=%d\n", bufferevent_getfd(srv_dst->bev));
 		bufferevent_free_and_close_fd(srv_dst->bev, ctx);
-//		if (!srv_dst->closed) {
-//			log_dbg_level_printf(LOG_DBG_MODE_FINER, ">############################# pxy_conn_free: bufferevent_free_and_close_fd srv_dst->bev, fd=%d\n", bufferevent_getfd(srv_dst->bev));
-//			bufferevent_free_and_close_fd(srv_dst->bev, ctx);
-//		} else {
-//			log_dbg_level_printf(LOG_DBG_MODE_FINER, ">############################# pxy_conn_free: bufferevent_free srv_dst->bev, fd=%d\n", bufferevent_getfd(srv_dst->bev));
-//			bufferevent_free(srv_dst->bev);
-//		}
 		srv_dst->bev = NULL;
 	}
 
@@ -1390,11 +1354,9 @@ pxy_bufferevent_setup(pxy_conn_ctx_t *ctx, evutil_socket_t fd, SSL *ssl)
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_bufferevent_setup: bufferevent_openssl_socket_new <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< SSL\n");
 		bev = bufferevent_openssl_socket_new(ctx->evbase, fd, ssl,
 				((fd == -1) ? BUFFEREVENT_SSL_CONNECTING : BUFFEREVENT_SSL_ACCEPTING), BEV_OPT_DEFER_CALLBACKS);
-//				((fd == -1) ? BUFFEREVENT_SSL_CONNECTING : BUFFEREVENT_SSL_ACCEPTING), 0);
 	} else {
 		// @todo Do we really need to defer callbacks? BEV_OPT_DEFER_CALLBACKS seems responsible for the issue with srv_dst: We get writecb sometimes, no eventcb for CONNECTED event
 		bev = bufferevent_socket_new(ctx->evbase, fd, BEV_OPT_DEFER_CALLBACKS);
-//		bev = bufferevent_socket_new(ctx->evbase, fd, 0);
 	}
 	if (!bev) {
 		log_err_printf("Error creating bufferevent socket\n");
@@ -1435,10 +1397,8 @@ pxy_bufferevent_setup_child(pxy_conn_child_ctx_t *ctx, evutil_socket_t fd, SSL *
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_bufferevent_setup_child: bufferevent_openssl_socket_new <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< SSL child\n");
 		bev = bufferevent_openssl_socket_new(ctx->parent->evbase, fd, ssl,
 				((fd == -1) ? BUFFEREVENT_SSL_CONNECTING : BUFFEREVENT_SSL_ACCEPTING), BEV_OPT_DEFER_CALLBACKS);
-//				((fd == -1) ? BUFFEREVENT_SSL_CONNECTING : BUFFEREVENT_SSL_ACCEPTING), 0);
 	} else {
 		bev = bufferevent_socket_new(ctx->parent->evbase, fd, BEV_OPT_DEFER_CALLBACKS);
-//		bev = bufferevent_socket_new(ctx->parent->evbase, fd, 0);
 	}
 	if (!bev) {
 		log_err_printf("Error creating bufferevent socket\n");
@@ -1809,7 +1769,6 @@ pxy_conn_autossl_peek_and_upgrade(pxy_conn_ctx_t *ctx)
 			               ctx->evbase, ctx->srv_dst.bev, ctx->srv_dst.ssl,
 			               BUFFEREVENT_SSL_CONNECTING,
 			               BEV_OPT_DEFER_CALLBACKS);
-//			               0);
 			bufferevent_setcb(ctx->srv_dst.bev, pxy_bev_readcb,
 			                  pxy_bev_writecb, pxy_bev_eventcb,
 			                  ctx);
@@ -2109,12 +2068,6 @@ pxy_bev_readcb(struct bufferevent *bev, void *arg)
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: ENTER %s, fd=%d, child_fd=%d, size=%lu\n",
 			event_name, ctx->fd, ctx->child_fd, bytes);
 
-	// @todo Do we need this?
-//	if (bev == ctx->dst.bev && !ctx->dst_connected) {
-//		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>+++++++++++++++++++++++++++++++++++ pxy_bev_readcb: pxy_bev_eventcb %s fd=%d, child_fd=%d <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< DST R CB B4 CONNECTED\n", event_name, ctx->fd, ctx->child_fd);
-//		pxy_bev_eventcb(bev, BEV_EVENT_CONNECTED, ctx);
-//	}
-		
 	if (!ctx->connected) {
 		log_err_printf("readcb called when other end not connected - "
 		               "aborting.\n");
@@ -2279,12 +2232,6 @@ pxy_bev_readcb_child(struct bufferevent *bev, void *arg)
 
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>....................... pxy_bev_readcb_child: ENTER %s fd=%d, pfd=%d, size=%lu\n",
 			event_name, ctx->fd, pfd, bytes);
-	
-	// @todo Do we need this?
-//	if (bev == ctx->dst.bev && !ctx->connected) {
-//		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>+++++++++++++++++++++++++++++++++++ pxy_bev_readcb_child: pxy_bev_eventcb_child %s fd=%d, pfd=%d <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< CHILD DST R CB B4 CONNECTED\n", event_name, ctx->fd, ctx->parent->fd);
-//		pxy_bev_eventcb_child(bev, BEV_EVENT_CONNECTED, ctx);
-//	}
 		
 	if (!ctx->connected) {
 		log_err_printf("readcb called when other end not connected - "
@@ -2466,7 +2413,6 @@ pxy_conn_connect_child(pxy_conn_child_ctx_t *ctx)
 					   parent->evbase, ctx->dst.bev, ctx->dst.ssl,
 					   BUFFEREVENT_SSL_ACCEPTING,
 					   BEV_OPT_DEFER_CALLBACKS);
-//					   0);
 		if (ctx->dst.bev) {
 			bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb_child, pxy_bev_writecb_child, pxy_bev_eventcb_child, ctx);
 		}
@@ -2585,7 +2531,6 @@ pxy_connected_enable(struct bufferevent *bev, pxy_conn_ctx_t *ctx, char *event_n
 								   (struct sockaddr *)&ctx->spec->parent_dst_addr,
 								   ctx->spec->parent_dst_addrlen) == -1) {
 			log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>=================================== pxy_connected_enable: FAILED bufferevent_socket_connect for dst, fd=%d\n", fd);
-//			evutil_closesocket(fd);
 			pxy_conn_free(ctx, 1);
 			return 0;
 		}
@@ -2617,7 +2562,6 @@ pxy_connected_enable(struct bufferevent *bev, pxy_conn_ctx_t *ctx, char *event_n
 					pxy_fd_readcb(fd, 0, ctx);
 					return 0;
 				}
-//				evutil_closesocket(fd);
 				pxy_conn_free(ctx, 1);
 				return 0;
 			}
@@ -2630,7 +2574,6 @@ pxy_connected_enable(struct bufferevent *bev, pxy_conn_ctx_t *ctx, char *event_n
 			               ctx->evbase, ctx->src.bev, ctx->src.ssl,
 			               BUFFEREVENT_SSL_ACCEPTING,
 			               BEV_OPT_DEFER_CALLBACKS);
-//			               0);
 		} else {
 			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>=================================== pxy_connected_enable: SETUP src.bev fd=%d\n", fd);
 			ctx->src.bev = pxy_bufferevent_setup(ctx, fd, ctx->src.ssl);
@@ -2641,7 +2584,6 @@ pxy_connected_enable(struct bufferevent *bev, pxy_conn_ctx_t *ctx, char *event_n
 				SSL_free(ctx->src.ssl);
 				ctx->src.ssl = NULL;
 			}
-//			evutil_closesocket(fd);
 			pxy_conn_free(ctx, 1);
 			return 0;
 		}
@@ -2717,7 +2659,6 @@ pxy_connected_enable(struct bufferevent *bev, pxy_conn_ctx_t *ctx, char *event_n
 			// Otherwise, either eventcb or writecb may get a NULL srv_dst bev, causing a crash with signal 10. pxy_conn_free() will free its bev later on.
 			bufferevent_free_and_close_fd(srv_dst->bev, ctx);
 			srv_dst->bev = NULL;
-//			bufferevent_close_fd(srv_dst->bev, ctx);
 			srv_dst->closed = 1;
 		}
 
@@ -2881,7 +2822,7 @@ pxy_bev_writecb(struct bufferevent *bev, void *arg)
 		if (bev == ctx->dst.bev && !ctx->dst_connected) {
 			log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>+++++++++++++++++++++++++++++++++++ pxy_bev_writecb: pxy_bev_eventcb %s fd=%d, child_fd=%d <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< DST W CB B4 CONNECTED\n", event_name, ctx->fd, ctx->child_fd);
 			pxy_bev_eventcb(bev, BEV_EVENT_CONNECTED, ctx);
-//			goto leave;
+			// @todo Should return instead?
 		}
 		
 		pxy_conn_desc_t *this = (bev==ctx->src.bev) ? &ctx->src : &ctx->dst;
@@ -2940,7 +2881,6 @@ pxy_bev_writecb_child(struct bufferevent *bev, void *arg)
 	if (bev == ctx->dst.bev && !ctx->connected) {
 		log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>>+++++++++++++++++++++++++++++++++++ pxy_bev_writecb_child: pxy_bev_eventcb_child %s fd=%d, pfd=%d <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< CHILD DST W CB B4 CONNECTED\n", event_name, ctx->fd, ctx->parent->fd);
 		pxy_bev_eventcb_child(bev, BEV_EVENT_CONNECTED, ctx);
-//		goto leave;
 	}
 		
 	pxy_conn_desc_t *this = (bev==ctx->src.bev) ? &ctx->src : &ctx->dst;
@@ -3106,7 +3046,6 @@ pxy_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 			return;
 		} else {
 			if (!ctx->connected) {
-//				evutil_closesocket(ctx->fd);
 				other->closed = 1;
 			} else if (!other->closed) {
 				/* if the other end is still open and doesn't have data
@@ -3152,7 +3091,6 @@ pxy_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 			if (!ctx->connected) {
 				log_dbg_printf("EOF on outbound connection before "
 							   "connection establishment\n");
-//				evutil_closesocket(ctx->fd);
 				other->closed = 1;
 			} else if (!other->closed) {
 				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>=================================== pxy_bev_eventcb: !other->closed <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< CONN TERM, fd=%d\n", ctx->fd);
@@ -3249,7 +3187,6 @@ pxy_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 			/* the callout to the original destination failed,
 			 * e.g. because it asked for client cert auth, so
 			 * close the accepted socket and clean up */
-//			evutil_closesocket(ctx->fd);
 			other->closed = 1;
 		} else if (!other->closed) {
 			/* if the other end is still open and doesn't have data
@@ -3290,7 +3227,6 @@ pxy_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 			log_dbg_printf("EOF on outbound connection before "
 			               "connection establishment\n");
 			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>=================================== pxy_bev_eventcb_child: EOF on outbound connection before connection establishment, fd=%d, pfd=%d\n", ctx->fd, parent->fd);
-//			evutil_closesocket(ctx->fd);
 			other->closed = 1;
 		} else if (!other->closed) {
 			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>=================================== pxy_bev_eventcb_child: !other->closed <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< CHILD TERM, fd=%d, pfd=%d\n", ctx->fd, parent->fd);
