@@ -298,35 +298,38 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine)
 		switch (state) {
 			default:
 			case 0:
-				/* tcp | ssl | http | https | autossl */
+				/* tcp | ssl | http | https | autossl | mail | mails */
 				curspec = malloc(sizeof(proxyspec_t));
 				memset(curspec, 0, sizeof(proxyspec_t));
 				curspec->next = spec;
 				spec = curspec;
+				// Defaults
+				spec->ssl = 0;
+				spec->http = 0;
+				spec->upgrade = 0;
+				spec->mail = 0;
 				if (!strcmp(**argv, "tcp")) {
-					spec->ssl = 0;
-					spec->http = 0;
-					spec->upgrade = 0;
+					// use defaults
 				} else
 				if (!strcmp(**argv, "ssl")) {
 					spec->ssl = 1;
-					spec->http = 0;
-					spec->upgrade = 0;
 				} else
 				if (!strcmp(**argv, "http")) {
-					spec->ssl = 0;
 					spec->http = 1;
-					spec->upgrade = 0;
 				} else
 				if (!strcmp(**argv, "https")) {
 					spec->ssl = 1;
 					spec->http = 1;
-					spec->upgrade = 0;
 				} else
 				if (!strcmp(**argv, "autossl")) {
-					spec->ssl = 0;
-					spec->http = 0;
 					spec->upgrade = 1;
+				} else
+				if (!strcmp(**argv, "mail")) {
+					spec->mail = 1;
+				} else
+				if (!strcmp(**argv, "mails")) {
+					spec->ssl = 1;
+					spec->mail = 1;
 				} else {
 					fprintf(stderr, "Unknown connection "
 					                "type '%s'\n", **argv);
@@ -396,7 +399,9 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine)
 				    !strcmp(**argv, "ssl") ||
 				    !strcmp(**argv, "http") ||
 				    !strcmp(**argv, "https") ||
-				    !strcmp(**argv, "autossl")) {
+				    !strcmp(**argv, "autossl") ||
+				    !strcmp(**argv, "mail") ||
+				    !strcmp(**argv, "mails")) {
 					/* implicit default natengine */
 					(*argv)--; (*argc)++; /* rewind */
 					state = 0;
@@ -541,10 +546,11 @@ proxyspec_str(proxyspec_t *spec)
 			return NULL;
 		}
 	}
-	if (asprintf(&s, "listen=[%s]:%s %s%s%s %s%s%s", lhbuf, lpbuf,
+	if (asprintf(&s, "listen=[%s]:%s %s%s%s%s %s%s%s", lhbuf, lpbuf,
 	             (spec->ssl ? "ssl" : "tcp"),
 	             (spec->upgrade ? "|upgrade" : ""),
 	             (spec->http ? "|http" : ""),
+	             (spec->mail ? "|mail" : ""),
 	             (spec->natengine ? spec->natengine : cbuf),
 	             (pdstbuf),
 	             (csrcbuf)) < 0) {

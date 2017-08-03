@@ -145,6 +145,8 @@ struct pxy_conn_ctx {
 	// SSL proxy return address: The IP:port address the children are listening to
 	char *child_addr_str;
 	char *src_addr_str;
+	char *dst_addr_str;
+	int sent_addr_info;
 
 	// Child list of the conn
 	pxy_conn_child_ctx_t *children;

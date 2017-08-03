@@ -114,6 +114,8 @@ typedef struct pxy_conn_lproc_desc {
 #define SSLPROXY_ADDR_KEY_LEN	strlen(SSLPROXY_ADDR_KEY)
 #define SSLPROXY_SRCADDR_KEY	"SSLproxy-SrcAddr:"
 #define SSLPROXY_SRCADDR_KEY_LEN	strlen(SSLPROXY_SRCADDR_KEY)
+#define SSLPROXY_DSTADDR_KEY	"SSLproxy-DstAddr:"
+#define SSLPROXY_DSTADDR_KEY_LEN	strlen(SSLPROXY_DSTADDR_KEY)
 
 static pxy_conn_ctx_t * MALLOC NONNULL(2,3,4)
 pxy_conn_ctx_new(evutil_socket_t fd,
@@ -436,6 +438,9 @@ pxy_conn_ctx_free(pxy_conn_ctx_t *ctx, int by_requestor)
 	}
 	if (ctx->src_addr_str) {
 		free(ctx->src_addr_str);
+	}
+	if (ctx->dst_addr_str) {
+		free(ctx->dst_addr_str);
 	}
 	if (ctx->srv_dst_ssl_version) {
 		free(ctx->srv_dst_ssl_version);
@@ -1503,6 +1508,7 @@ pxy_http_reqhdr_filter_line(const char *line, pxy_conn_ctx_t *ctx, int child)
 			return NULL;
 		} else if (child && (!strncasecmp(line, SSLPROXY_ADDR_KEY, SSLPROXY_ADDR_KEY_LEN) ||
 				   !strncasecmp(line, SSLPROXY_SRCADDR_KEY, SSLPROXY_SRCADDR_KEY_LEN) ||
+				   !strncasecmp(line, SSLPROXY_DSTADDR_KEY, SSLPROXY_DSTADDR_KEY_LEN) ||
 				   // @attention flickr keeps redirecting to https with 301 unless we remove the Via line of squid
 				   // Apparently flickr assumes the existence of Via header field or squid keyword a sign of plain http, even if we are using https
 		           !strncasecmp(line, "Via:", 4) ||
@@ -2111,9 +2117,10 @@ pxy_bev_readcb(struct bufferevent *bev, void *arg)
 
 			size_t child_addr_len = strlen(ctx->child_addr_str);
 			size_t src_addr_len = strlen(ctx->src_addr_str);
+			size_t dst_addr_len = strlen(ctx->dst_addr_str);
 			size_t packet_size = evbuffer_get_length(inbuf);
 			// +2 is for \r\n
-			char *packet = malloc(packet_size + child_addr_len + 2 + src_addr_len + 2);
+			char *packet = malloc(packet_size + child_addr_len + 2 + src_addr_len + 2 + dst_addr_len + 2);
 			if (!packet) {
 				// @todo Should we just set enomem?
 				ctx->enomem = 1;
@@ -2128,24 +2135,39 @@ pxy_bev_readcb(struct bufferevent *bev, void *arg)
 			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: src ORIG packet (size=%lu), fd=%d:\n%.*s\n",
 					packet_size, ctx->fd, (int)packet_size, packet);
 
-			// XXX: We insert our special header line to each packet we get, right after the first \r\n, hence the target may get multiple copies
-			// @todo To insert our header line to the first packet only, should we look for GET/POST or Host header lines to detect the first packet?
-			// But there is no guarantie that they will exist, due to fragmentation
-
+			// We insert our special header line to the first packet we get, e.g. right after the first \r\n
+			// @todo Should we look for GET/POST or Host header lines to detect the first packet?
+			// But there is no guarantie that they will exist, due to fragmentation.
 			// @attention We cannot append the ssl proxy address at the end of the packet or in between the header and the content,
 			// because (1) the packet may be just the first fragment split somewhere not appropriate for appending a header,
-			// and (2) there may not be any content
+			// and (2) there may not be any content.
+			// And we are dealing pop3 and smtp also, not just http.
 
 			// @attention Cannot use string manipulation functions; we are dealing with binary arrays here, not NULL-terminated strings
-			char *pos = memmem(packet, packet_size, "\r\n", 2);
-			if (pos) {
-				memmove(pos + 2 + child_addr_len + 2 + src_addr_len, pos, packet_size - (pos - packet));
-				memcpy(pos + 2, ctx->child_addr_str, child_addr_len);
-				memcpy(pos + 2 + child_addr_len, "\r\n", 2);
-				memcpy(pos + 2 + child_addr_len + 2, ctx->src_addr_str, src_addr_len);
-				packet_size+= child_addr_len + 2 + src_addr_len + 2;
-			} else {
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: No CRLF in packet\n");
+			if (!ctx->sent_addr_info) {
+				if (ctx->spec->mail) {
+					memmove(packet + child_addr_len + 2 + src_addr_len + 2 + dst_addr_len + 2, packet, packet_size);
+					memcpy(packet, ctx->child_addr_str, child_addr_len);
+					memcpy(packet + child_addr_len, "\r\n", 2);
+					memcpy(packet + child_addr_len + 2, ctx->src_addr_str, src_addr_len);
+					memcpy(packet + child_addr_len + 2 + src_addr_len, "\r\n", 2);
+					memcpy(packet + child_addr_len + 2 + src_addr_len + 2, ctx->dst_addr_str, src_addr_len);
+					memcpy(packet + child_addr_len + 2 + src_addr_len + 2 + dst_addr_len, "\r\n", 2);
+					packet_size+= child_addr_len + 2 + src_addr_len + 2 + dst_addr_len + 2;
+					ctx->sent_addr_info = 1;
+				} else {
+					char *pos = memmem(packet, packet_size, "\r\n", 2);
+					if (pos) {
+						memmove(pos + 2 + child_addr_len + 2 + src_addr_len, pos, packet_size - (pos - packet));
+						memcpy(pos + 2, ctx->child_addr_str, child_addr_len);
+						memcpy(pos + 2 + child_addr_len, "\r\n", 2);
+						memcpy(pos + 2 + child_addr_len + 2, ctx->src_addr_str, src_addr_len);
+						packet_size+= child_addr_len + 2 + src_addr_len + 2;
+						ctx->sent_addr_info = 1;
+					} else {
+						log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: No CRLF in packet\n");
+					}
+				}
 			}
 
 			if (evbuffer_add(outbuf, packet, packet_size) < 0) {
@@ -2291,6 +2313,15 @@ pxy_bev_readcb_child(struct bufferevent *bev, void *arg)
 				memmove(pos, pos + src_addr_len + 2, packet_size - (pos - packet) - (src_addr_len + 2));
 				packet_size-= src_addr_len + 2;
 				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>....................... pxy_bev_readcb_child: <<<<<<<<<<<<<<<<<<<<<<<<<<<<< REMOVED SSLproxy-SrcAddr\n");
+			}
+
+			// @todo Combine dst_addr removal with src_addr removal?
+			size_t dst_addr_len = strlen(parent->dst_addr_str);
+			pos = memmem(packet, packet_size, parent->dst_addr_str, dst_addr_len);
+			if (pos) {
+				memmove(pos, pos + dst_addr_len + 2, packet_size - (pos - packet) - (dst_addr_len + 2));
+				packet_size-= dst_addr_len + 2;
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>....................... pxy_bev_readcb_child: <<<<<<<<<<<<<<<<<<<<<<<<<<<<< REMOVED SSLproxy-DstAddr\n");
 			}
 
 			if (evbuffer_add(outbuf, packet, packet_size) < 0) {
@@ -2655,8 +2686,8 @@ pxy_connected_enable(struct bufferevent *bev, pxy_conn_ctx_t *ctx, char *event_n
 		pxy_conn_desc_t *srv_dst = &ctx->srv_dst;
 		if (srv_dst->bev) {
 			log_dbg_level_printf(LOG_DBG_MODE_FINER, ">>>>>=================================== pxy_connected_enable: evutil_closesocket srv_dst->bev, fd=%d\n", bufferevent_getfd(srv_dst->bev));
-			// @attention Since both eventcb and writecb for srv_dst are enabled, never free srv_dst bev here. But, just close its fd.
-			// Otherwise, either eventcb or writecb may get a NULL srv_dst bev, causing a crash with signal 10. pxy_conn_free() will free its bev later on.
+			// @attention Since both eventcb and writecb for srv_dst are enabled, either eventcb or writecb may get a NULL srv_dst bev, causing a crash with signal 10.
+			// So, from this point on, we should check if srv_dst in NULL or not.
 			bufferevent_free_and_close_fd(srv_dst->bev, ctx);
 			srv_dst->bev = NULL;
 			srv_dst->closed = 1;
@@ -2730,6 +2761,15 @@ pxy_connected_enable(struct bufferevent *bev, pxy_conn_ctx_t *ctx, char *event_n
 			return 0;
 		}
 		snprintf(ctx->src_addr_str, src_addr_len, "%s [%s]:%s,%s", SSLPROXY_SRCADDR_KEY, ctx->srchost_str, ctx->srcport_str, ctx->spec->ssl ? "s":"p");
+
+		// SSLproxy-DstAddr: [192.168.3.23]:49260,s
+		int dst_addr_len = SSLPROXY_DSTADDR_KEY_LEN + 2 + strlen(ctx->dsthost_str) + 2 + strlen(ctx->dstport_str) + 1 + 1 + 1;
+		ctx->dst_addr_str = malloc(dst_addr_len);
+		if (!ctx->dst_addr_str) {
+			pxy_conn_free(ctx, 1);
+			return 0;
+		}
+		snprintf(ctx->dst_addr_str, dst_addr_len, "%s [%s]:%s,%s", SSLPROXY_DSTADDR_KEY, ctx->dsthost_str, ctx->dstport_str, ctx->spec->ssl ? "s":"p");
 
 		log_dbg_level_printf(LOG_DBG_MODE_FINER, ">>>>>=================================== pxy_connected_enable: ENABLE src, child_addr= %s, fd=%d, child_fd=%d\n", ctx->child_addr_str, fd, ctx->child_fd);
 
