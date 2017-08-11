@@ -85,7 +85,7 @@ main_version(void)
 		fprintf(stderr, "---------------------------------------"
 		                "---------------------------------------\n");
 		fprintf(stderr, "WARNING: Something is wrong with the "
-		                "version compiled into sslsplit!\n");
+		                "version compiled into sslproxy!\n");
 		fprintf(stderr, "The version should contain a release "
 		                "number and/or a git commit reference.\n");
 		fprintf(stderr, "If using a package, please report a bug "
@@ -190,11 +190,11 @@ main_usage(void)
 #endif /* HAVE_LOCAL_PROCINFO */
 "              %%%% - literal '%%'\n"
 #ifdef HAVE_LOCAL_PROCINFO
-"      e.g.    \"/var/log/sslsplit/%%X/%%u-%%s-%%d-%%T.log\"\n"
+"      e.g.    \"/var/log/sslproxy/%%X/%%u-%%s-%%d-%%T.log\"\n"
 "  -i          look up local process owning each connection for logging\n"
 #define OPT_i "i"
 #else /* !HAVE_LOCAL_PROCINFO */
-"      e.g.    \"/var/log/sslsplit/%%T-%%s-%%d.log\"\n"
+"      e.g.    \"/var/log/sslproxy/%%T-%%s-%%d.log\"\n"
 #define OPT_i 
 #endif /* HAVE_LOCAL_PROCINFO */
 "  -d          daemon mode: run in background, log error messages to syslog\n"

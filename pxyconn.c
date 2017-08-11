@@ -110,12 +110,8 @@ typedef struct pxy_conn_lproc_desc {
 #define WANT_CONNECT_LOG(ctx)	((ctx)->opts->connectlog||!(ctx)->opts->detach)
 #define WANT_CONTENT_LOG(ctx)	((ctx)->opts->contentlog&&!(ctx)->passthrough)
 
-#define SSLPROXY_ADDR_KEY		"SSLproxy-Addr:"
-#define SSLPROXY_ADDR_KEY_LEN	strlen(SSLPROXY_ADDR_KEY)
-#define SSLPROXY_SRCADDR_KEY	"SSLproxy-SrcAddr:"
-#define SSLPROXY_SRCADDR_KEY_LEN	strlen(SSLPROXY_SRCADDR_KEY)
-#define SSLPROXY_DSTADDR_KEY	"SSLproxy-DstAddr:"
-#define SSLPROXY_DSTADDR_KEY_LEN	strlen(SSLPROXY_DSTADDR_KEY)
+#define SSLPROXY_KEY		"SSLproxy:"
+#define SSLPROXY_KEY_LEN	strlen(SSLPROXY_KEY)
 
 static pxy_conn_ctx_t * MALLOC NONNULL(2,3,4)
 pxy_conn_ctx_new(evutil_socket_t fd,
@@ -433,14 +429,8 @@ pxy_conn_ctx_free(pxy_conn_ctx_t *ctx, int by_requestor)
 	if (ctx->sni) {
 		free(ctx->sni);
 	}
-	if (ctx->child_addr_str) {
-		free(ctx->child_addr_str);
-	}
-	if (ctx->src_addr_str) {
-		free(ctx->src_addr_str);
-	}
-	if (ctx->dst_addr_str) {
-		free(ctx->dst_addr_str);
+	if (ctx->header_str) {
+		free(ctx->header_str);
 	}
 	if (ctx->srv_dst_ssl_version) {
 		free(ctx->srv_dst_ssl_version);
@@ -1506,9 +1496,7 @@ pxy_http_reqhdr_filter_line(const char *line, pxy_conn_ctx_t *ctx, int child)
 		} else if (!strncasecmp(line, "Accept-Encoding:", 16) ||
 		           !strncasecmp(line, "Keep-Alive:", 11)) {
 			return NULL;
-		} else if (child && (!strncasecmp(line, SSLPROXY_ADDR_KEY, SSLPROXY_ADDR_KEY_LEN) ||
-				   !strncasecmp(line, SSLPROXY_SRCADDR_KEY, SSLPROXY_SRCADDR_KEY_LEN) ||
-				   !strncasecmp(line, SSLPROXY_DSTADDR_KEY, SSLPROXY_DSTADDR_KEY_LEN) ||
+		} else if (child && (!strncasecmp(line, SSLPROXY_KEY, SSLPROXY_KEY_LEN) ||
 				   // @attention flickr keeps redirecting to https with 301 unless we remove the Via line of squid
 				   // Apparently flickr assumes the existence of Via header field or squid keyword a sign of plain http, even if we are using https
 		           !strncasecmp(line, "Via:", 4) ||
@@ -1846,7 +1834,7 @@ static void
 pxy_http_reqhdr_filter(struct evbuffer *inbuf, struct evbuffer *outbuf, struct bufferevent *bev, pxy_conn_ctx_t *ctx, pxy_conn_ctx_t *parent, int child)
 {
 	logbuf_t *lb = NULL, *tail = NULL;
-	int inserted_sslproxy_addr = 0;
+	int inserted_header = 0;
 	char *line;
 	while ((line = evbuffer_readln(inbuf, NULL, EVBUFFER_EOL_CRLF))) {
 		char *replace;
@@ -1876,12 +1864,10 @@ pxy_http_reqhdr_filter(struct evbuffer *inbuf, struct evbuffer *outbuf, struct b
 		}
 		free(line);
 
-		if (!child && !inserted_sslproxy_addr) {
-			inserted_sslproxy_addr = 1;
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_http_reqhdr_filter: src INSERT sslproxy_addr line, fd=%d: %s\n", ctx->fd, ctx->child_addr_str);
-			evbuffer_add_printf(outbuf, "%s\r\n", ctx->child_addr_str);
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_http_reqhdr_filter: src INSERT sslproxy_srcaddr line, fd=%d: %s\n", ctx->fd, ctx->src_addr_str);
-			evbuffer_add_printf(outbuf, "%s\r\n", ctx->src_addr_str);
+		if (!child && !inserted_header) {
+			inserted_header = 1;
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_http_reqhdr_filter: src INSERT header_str line, fd=%d: %s\n", ctx->fd, ctx->header_str);
+			evbuffer_add_printf(outbuf, "%s\r\n", ctx->header_str);
 		}
 
 		if (ctx->seen_req_header) {
@@ -2113,14 +2099,12 @@ pxy_bev_readcb(struct bufferevent *bev, void *arg)
 				goto leave;
 			}
 		} else {
-			log_dbg_level_printf(LOG_DBG_MODE_FINER, ">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: custom_field= %s\n", ctx->child_addr_str);
+			log_dbg_level_printf(LOG_DBG_MODE_FINER, ">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: SSLproxy header= %s\n", ctx->header_str);
 
-			size_t child_addr_len = strlen(ctx->child_addr_str);
-			size_t src_addr_len = strlen(ctx->src_addr_str);
-			size_t dst_addr_len = strlen(ctx->dst_addr_str);
+			size_t header_len = strlen(ctx->header_str);
 			size_t packet_size = evbuffer_get_length(inbuf);
 			// +2 is for \r\n
-			char *packet = malloc(packet_size + child_addr_len + 2 + src_addr_len + 2 + dst_addr_len + 2);
+			char *packet = malloc(packet_size + header_len + 2);
 			if (!packet) {
 				// @todo Should we just set enomem?
 				ctx->enomem = 1;
@@ -2144,26 +2128,21 @@ pxy_bev_readcb(struct bufferevent *bev, void *arg)
 			// And we are dealing pop3 and smtp also, not just http.
 
 			// @attention Cannot use string manipulation functions; we are dealing with binary arrays here, not NULL-terminated strings
-			if (!ctx->sent_addr_info) {
+			if (!ctx->sent_header) {
 				if (ctx->spec->mail) {
-					memmove(packet + child_addr_len + 2 + src_addr_len + 2 + dst_addr_len + 2, packet, packet_size);
-					memcpy(packet, ctx->child_addr_str, child_addr_len);
-					memcpy(packet + child_addr_len, "\r\n", 2);
-					memcpy(packet + child_addr_len + 2, ctx->src_addr_str, src_addr_len);
-					memcpy(packet + child_addr_len + 2 + src_addr_len, "\r\n", 2);
-					memcpy(packet + child_addr_len + 2 + src_addr_len + 2, ctx->dst_addr_str, src_addr_len);
-					memcpy(packet + child_addr_len + 2 + src_addr_len + 2 + dst_addr_len, "\r\n", 2);
-					packet_size+= child_addr_len + 2 + src_addr_len + 2 + dst_addr_len + 2;
-					ctx->sent_addr_info = 1;
+					memmove(packet + header_len + 2, packet, packet_size);
+					memcpy(packet, ctx->header_str, header_len);
+					memcpy(packet + header_len, "\r\n", 2);
+					packet_size+= header_len + 2;
+					ctx->sent_header = 1;
 				} else {
 					char *pos = memmem(packet, packet_size, "\r\n", 2);
 					if (pos) {
-						memmove(pos + 2 + child_addr_len + 2 + src_addr_len, pos, packet_size - (pos - packet));
-						memcpy(pos + 2, ctx->child_addr_str, child_addr_len);
-						memcpy(pos + 2 + child_addr_len, "\r\n", 2);
-						memcpy(pos + 2 + child_addr_len + 2, ctx->src_addr_str, src_addr_len);
-						packet_size+= child_addr_len + 2 + src_addr_len + 2;
-						ctx->sent_addr_info = 1;
+						memmove(pos + 2 + header_len, pos, packet_size - (pos - packet));
+						memcpy(pos + 2, ctx->header_str, header_len);
+						memcpy(pos + 2 + header_len, "\r\n", 2);
+						packet_size+= header_len + 2;
+						ctx->sent_header = 1;
 					} else {
 						log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>,,,,,,,,,,,,,,,,,,,,,,, pxy_bev_readcb: No CRLF in packet\n");
 					}
@@ -2298,30 +2277,12 @@ pxy_bev_readcb_child(struct bufferevent *bev, void *arg)
 				log_err_printf("ERROR: evbuffer_remove cannot drain the buffer\n");
 			}
 
-			size_t child_addr_len = strlen(parent->child_addr_str);
-			char *pos = memmem(packet, packet_size, parent->child_addr_str, child_addr_len);
+			size_t header_len = strlen(parent->header_str);
+			char *pos = memmem(packet, packet_size, parent->header_str, header_len);
 			if (pos) {
-				memmove(pos, pos + child_addr_len + 2, packet_size - (pos - packet) - (child_addr_len + 2));
-				packet_size-= child_addr_len + 2;
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>....................... pxy_bev_readcb_child: <<<<<<<<<<<<<<<<<<<<<<<<<<<<< REMOVED SSLproxy-Addr\n");
-			}
-
-			// @todo Combine src_addr removal with child_addr removal?
-			size_t src_addr_len = strlen(parent->src_addr_str);
-			pos = memmem(packet, packet_size, parent->src_addr_str, src_addr_len);
-			if (pos) {
-				memmove(pos, pos + src_addr_len + 2, packet_size - (pos - packet) - (src_addr_len + 2));
-				packet_size-= src_addr_len + 2;
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>....................... pxy_bev_readcb_child: <<<<<<<<<<<<<<<<<<<<<<<<<<<<< REMOVED SSLproxy-SrcAddr\n");
-			}
-
-			// @todo Combine dst_addr removal with src_addr removal?
-			size_t dst_addr_len = strlen(parent->dst_addr_str);
-			pos = memmem(packet, packet_size, parent->dst_addr_str, dst_addr_len);
-			if (pos) {
-				memmove(pos, pos + dst_addr_len + 2, packet_size - (pos - packet) - (dst_addr_len + 2));
-				packet_size-= dst_addr_len + 2;
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>....................... pxy_bev_readcb_child: <<<<<<<<<<<<<<<<<<<<<<<<<<<<< REMOVED SSLproxy-DstAddr\n");
+				memmove(pos, pos + header_len + 2, packet_size - (pos - packet) - (header_len + 2));
+				packet_size-= header_len + 2;
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>>....................... pxy_bev_readcb_child: <<<<<<<<<<<<<<<<<<<<<<<<<<<<< REMOVED SSLproxy header\n");
 			}
 
 			if (evbuffer_add(outbuf, packet, packet_size) < 0) {
@@ -2743,35 +2704,21 @@ pxy_connected_enable(struct bufferevent *bev, pxy_conn_ctx_t *ctx, char *event_n
 			return 0;
 		}
 
+		// SSLproxy: [127.0.0.1]:34649,[192.168.3.24]:47286,[74.125.206.108]:465,s
 		// @todo Port may be less than 5 chars
-		int addr_len = SSLPROXY_ADDR_KEY_LEN + 1 + strlen(addr) + 5 + 3 + 1;
+		// SSLproxy:        +   + [ + addr         + ] + : + p + , + [ + srchost_str              + ] + : + srcport_str              + , + [ + dsthost_str              + ] + : + dstport_str              + , + s + NULL
+		// SSLPROXY_KEY_LEN + 1 + 1 + strlen(addr) + 1 + 1 + 5 + 1 + 1 + strlen(ctx->srchost_str) + 1 + 1 + strlen(ctx->srcport_str) + 1 + 1 + strlen(ctx->dsthost_str) + 1 + 1 + strlen(ctx->dstport_str) + 1 + 1 + 1
+		int header_len = SSLPROXY_KEY_LEN + strlen(addr) + strlen(ctx->srchost_str) + strlen(ctx->srcport_str) + strlen(ctx->dsthost_str) + strlen(ctx->dstport_str) + 20;
 		// @todo Always check malloc retvals. Should we close the conn if malloc fails?
-		ctx->child_addr_str = malloc(addr_len);
-		if (!ctx->child_addr_str) {
+		ctx->header_str = malloc(header_len);
+		if (!ctx->header_str) {
 			pxy_conn_free(ctx, 1);
 			return 0;
 		}
-		snprintf(ctx->child_addr_str, addr_len, "%s [%s]:%u", SSLPROXY_ADDR_KEY, addr, ntohs(child_listener_addr.sin_port));
+		snprintf(ctx->header_str, header_len, "%s [%s]:%u,[%s]:%s,[%s]:%s,%s",
+				SSLPROXY_KEY, addr, ntohs(child_listener_addr.sin_port), ctx->srchost_str, ctx->srcport_str, ctx->dsthost_str, ctx->dstport_str, ctx->spec->ssl ? "s":"p");
 
-		// SSLproxy-SrcAddr: [192.168.3.23]:49260,s
-		int src_addr_len = SSLPROXY_SRCADDR_KEY_LEN + 2 + strlen(ctx->srchost_str) + 2 + strlen(ctx->srcport_str) + 1 + 1 + 1;
-		ctx->src_addr_str = malloc(src_addr_len);
-		if (!ctx->src_addr_str) {
-			pxy_conn_free(ctx, 1);
-			return 0;
-		}
-		snprintf(ctx->src_addr_str, src_addr_len, "%s [%s]:%s,%s", SSLPROXY_SRCADDR_KEY, ctx->srchost_str, ctx->srcport_str, ctx->spec->ssl ? "s":"p");
-
-		// SSLproxy-DstAddr: [192.168.3.23]:49260,s
-		int dst_addr_len = SSLPROXY_DSTADDR_KEY_LEN + 2 + strlen(ctx->dsthost_str) + 2 + strlen(ctx->dstport_str) + 1 + 1 + 1;
-		ctx->dst_addr_str = malloc(dst_addr_len);
-		if (!ctx->dst_addr_str) {
-			pxy_conn_free(ctx, 1);
-			return 0;
-		}
-		snprintf(ctx->dst_addr_str, dst_addr_len, "%s [%s]:%s,%s", SSLPROXY_DSTADDR_KEY, ctx->dsthost_str, ctx->dstport_str, ctx->spec->ssl ? "s":"p");
-
-		log_dbg_level_printf(LOG_DBG_MODE_FINER, ">>>>>=================================== pxy_connected_enable: ENABLE src, child_addr= %s, fd=%d, child_fd=%d\n", ctx->child_addr_str, fd, ctx->child_fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINER, ">>>>>=================================== pxy_connected_enable: ENABLE src, SSLproxy header= %s, fd=%d, child_fd=%d\n", ctx->header_str, fd, ctx->child_fd);
 
 		// Now open the gates
 		bufferevent_enable(ctx->src.bev, EV_READ|EV_WRITE);

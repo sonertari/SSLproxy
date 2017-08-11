@@ -198,8 +198,8 @@ TAR?=		tar
 
 ### You should not need to touch anything below this line
 
-TARGET:=	sslsplit
-PNAME:=		SSLsplit
+TARGET:=	sslproxy
+PNAME:=		SSLproxy
 SRCS:=		$(filter-out $(wildcard *.t.c),$(wildcard *.c))
 HDRS:=		$(wildcard *.h)
 OBJS:=		$(SRCS:.c=.o)

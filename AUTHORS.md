@@ -25,3 +25,6 @@ See [issue tracker on Github][1], `NEWS.md` and `git log` for details.
 All your contributions are greatly appreciated; without you, SSLsplit would not
 be what it is today.
 
+SSLproxy is based on SSLsplit, and has been developed by
+[Soner Tari](https://github.com/sonertari).
+
