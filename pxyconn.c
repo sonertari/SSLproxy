@@ -2581,17 +2581,17 @@ pxy_connected_enable(struct bufferevent *bev, pxy_conn_ctx_t *ctx, char *event_n
 		}
 		bufferevent_setcb(ctx->src.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
 
+		if (sys_sockaddr_str((struct sockaddr *)
+							 &ctx->addr, ctx->addrlen,
+							 &ctx->dsthost_str,
+							 &ctx->dstport_str) != 0) {
+			ctx->enomem = 1;
+			pxy_conn_free(ctx, 1);
+			return 0;
+		}
+
 		/* prepare logging, part 2 */
 		if (WANT_CONNECT_LOG(ctx) || WANT_CONTENT_LOG(ctx)) {
-			if (sys_sockaddr_str((struct sockaddr *)
-			                     &ctx->addr, ctx->addrlen,
-			                     &ctx->dsthost_str,
-			                     &ctx->dstport_str) != 0) {
-				ctx->enomem = 1;
-				pxy_conn_free(ctx, 1);
-				return 0;
-			}
-
 #ifdef HAVE_LOCAL_PROCINFO
 			if (ctx->opts->lprocinfo) {
 				/* fetch process info */
@@ -3553,12 +3553,14 @@ pxy_conn_setup(evutil_socket_t fd,
 		}
 	}
 
+	if (sys_sockaddr_str(peeraddr, peeraddrlen,
+						 &ctx->srchost_str,
+						 &ctx->srcport_str) != 0) {
+		goto memout;
+	}
+
 	/* prepare logging, part 1 */
 	if (WANT_CONNECT_LOG(ctx) || WANT_CONTENT_LOG(ctx)) {
-		if (sys_sockaddr_str(peeraddr, peeraddrlen,
-		                     &ctx->srchost_str,
-		                     &ctx->srcport_str) != 0)
-			goto memout;
 #ifdef HAVE_LOCAL_PROCINFO
 		if (ctx->opts->lprocinfo) {
 			memcpy(&ctx->lproc.srcaddr, peeraddr, peeraddrlen);
