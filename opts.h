@@ -98,7 +98,7 @@ typedef struct opts {
 	char *jaildir;
 	char *pidfile;
 	char *connectlog;
-	char *statslog;
+	int statslog;
 	char *contentlog;
 	char *contentlog_basedir; /* static part of logspec, for privsep srv */
 	CONST_SSL_METHOD *(*sslmethod)(void);

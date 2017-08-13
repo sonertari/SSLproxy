@@ -101,9 +101,6 @@ opts_free(opts_t *opts)
 	if (opts->connectlog) {
 		free(opts->connectlog);
 	}
-	if (opts->statslog) {
-		free(opts->statslog);
-	}
 	if (opts->contentlog) {
 		free(opts->contentlog);
 	}

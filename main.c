@@ -226,12 +226,12 @@ main_loadtgcrt(const char *filename, void *arg)
 
 	cert = cert_new_load(filename);
 	if (!cert) {
-		log_err_printf("Failed to load cert and key from PEM file "
+		log_err_printf("ERROR: Failed to load cert and key from PEM file "
 		                "'%s'\n", filename);
 		return -1;
 	}
 	if (X509_check_private_key(cert->crt, cert->key) != 1) {
-		log_err_printf("Cert does not match key in PEM file "
+		log_err_printf("ERROR: Cert does not match key in PEM file "
 		                "'%s':\n", filename);
 		ERR_print_errors_fp(stderr);
 		return -1;
@@ -303,7 +303,7 @@ main(int argc, char *argv[])
 	}
 
 	while ((ch = getopt(argc, argv, OPT_g OPT_G OPT_Z OPT_i "k:c:C:K:t:"
-	                    "OPs:r:R:e:Eu:m:j:p:l:L:S:F:dD::VhW:w:I:")) != -1) {
+	                    "OPs:r:R:e:Eu:m:j:p:l:L:S:F:dD::VhW:w:I")) != -1) {
 		switch (ch) {
 			case 'c':
 				if (opts->cacrt)
@@ -545,11 +545,7 @@ main(int argc, char *argv[])
 					oom_die(argv0);
 				break;
 			case 'I':
-				if (opts->statslog)
-					free(opts->statslog);
-				opts->statslog = strdup(optarg);
-				if (!opts->statslog)
-					oom_die(argv0);
+				opts->statslog = 1;
 				break;
 			case 'L':
 				if (opts->contentlog)
@@ -933,7 +929,7 @@ main(int argc, char *argv[])
 	}
 
 	if (opts->pidfile && (sys_pidf_write(pidfd) == -1)) {
-		log_err_printf("Failed to write PID to PID file '%s': %s (%i)"
+		log_err_printf("ERROR: Failed to write PID to PID file '%s': %s (%i)"
 		               "\n", opts->pidfile, strerror(errno), errno);
 		return -1;
 	}
@@ -960,14 +956,14 @@ main(int argc, char *argv[])
 	/* Initialize proxy before dropping privs */
 	proxy_ctx_t *proxy = proxy_new(opts, clisock[0]);
 	if (!proxy) {
-		log_err_printf("Failed to initialize proxy.\n");
+		log_err_printf("ERROR: Failed to initialize proxy.\n");
 		exit(EXIT_FAILURE);
 	}
 
 	/* Drop privs, chroot */
 	if (sys_privdrop(opts->dropuser, opts->dropgroup,
 	                 opts->jaildir) == -1) {
-		log_err_printf("Failed to drop privileges: %s (%i)\n",
+		log_err_printf("ERROR: Failed to drop privileges: %s (%i)\n",
 		               strerror(errno), errno);
 		exit(EXIT_FAILURE);
 	}
@@ -983,18 +979,20 @@ main(int argc, char *argv[])
 		goto out_log_failed;
 	}
 	if (cachemgr_init() == -1) {
-		log_err_printf("Failed to init cache manager.\n");
+		log_err_printf("ERROR: Failed to init cache manager.\n");
 		goto out_cachemgr_failed;
 	}
 	if (nat_init() == -1) {
-		log_err_printf("Failed to init NAT state table lookup.\n");
+		log_err_printf("ERROR: Failed to init NAT state table lookup.\n");
 		goto out_nat_failed;
 	}
 	rv = EXIT_SUCCESS;
 
 	proxy_run(proxy);
 
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> main: EXIT closing privsep clisock=%d\n", clisock[0]);
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "main: EXIT closing privsep clisock=%d\n", clisock[0]);
+#endif /* DEBUG_PROXY */
 	privsep_client_close(clisock[0]);
 
 	proxy_free(proxy);

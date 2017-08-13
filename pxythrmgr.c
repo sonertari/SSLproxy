@@ -55,54 +55,91 @@ pxy_thrmgr_get_thr_expired_conns(pxy_thr_ctx_t *tctx, pxy_conn_ctx_t **expired_c
 {
 	*expired_conns = NULL;
 
-	time_t now = time(NULL);
+	if (tctx->conns) {
+		time_t now = time(NULL);
 
-	pxy_conn_ctx_t *ctx = tctx->conns;
-	while (ctx) {
-		unsigned long elapsed_time = now - ctx->atime;
-		if (elapsed_time > CONN_EXPIRE_TIME) {
-			ctx->next_expired = *expired_conns;
-			*expired_conns = ctx;
+		pxy_conn_ctx_t *ctx = tctx->conns;
+		while (ctx) {
+			unsigned long elapsed_time = now - ctx->atime;
+			if (elapsed_time > CONN_EXPIRE_TIME) {
+				ctx->next_expired = *expired_conns;
+				*expired_conns = ctx;
+			}
+
+			ctx = ctx->next;
 		}
 
-		ctx = ctx->next;
-	}
-	
-	ctx = *expired_conns;
-	if (ctx) {
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>> pxy_thrmgr_get_thr_expired_conns: ----------------------------- Expired conns: thr=%d\n", tctx->thridx);
-		while (ctx) {
-			pxy_conn_ctx_t *next = ctx->next_expired;
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>> pxy_thrmgr_get_expired_conns: thr=%d, fd=%d, child_fd=%d, time=%lld\n",
-					ctx->thr->thridx, ctx->fd, ctx->child_fd, (long int) now - ctx->atime);
-			ctx = next;
+		if (tctx->thrmgr->opts->statslog) {
+			char *src_addr = NULL;
+			char *dst_addr = NULL;
+
+			ctx = *expired_conns;
+			while (ctx) {
+				src_addr = NULL;
+				if (ctx->srchost_str) {
+					if (asprintf(&src_addr, ", src_addr=%s:%s", ctx->srchost_str, ctx->srcport_str) == -1) {
+						goto leave;
+					}
+				}
+
+				dst_addr = NULL;
+				if (ctx->dsthost_str) {
+					if (asprintf(&dst_addr, ", dst_addr=%s:%s", ctx->dsthost_str, ctx->dstport_str) == -1) {
+						goto leave;
+					}
+				}
+
+#ifdef DEBUG_PROXY
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_get_expired_conns: thr=%d, fd=%d, child_fd=%d, time=%lld%s%s\n",
+						ctx->thr->thridx, ctx->fd, ctx->child_fd, (long int) now - ctx->atime, src_addr, dst_addr);
+#endif /* DEBUG_PROXY */
+
+				char *msg;
+				if (asprintf(&msg, "expired conn thr=%d, time=%lld%s%s\n", 
+						ctx->thr->thridx, (long int) now - ctx->atime, src_addr, dst_addr)) {
+					goto leave;
+				}
+				free(src_addr);
+				src_addr = NULL;
+				free(dst_addr);
+				dst_addr = NULL;
+
+				if (log_stats(msg) == -1) {
+					log_err_printf("WARNING: Stats logging failed\n");
+				}
+				free(msg);
+
+				ctx = ctx->next_expired;
+			}
+leave:
+			if (src_addr) {
+				free(src_addr);
+			}
+			if (dst_addr) {
+				free(dst_addr);
+			}
 		}
 	}
 }
 
 static evutil_socket_t
-pxy_thrmgr_print_child(pxy_conn_child_ctx_t *child_ctx, unsigned int count, evutil_socket_t max_fd)
+pxy_thrmgr_print_child(pxy_conn_child_ctx_t *child_ctx, unsigned int parent_idx, evutil_socket_t max_fd)
 {
 	assert(child_ctx != NULL);
 
+	// @attention No need to log child stats
+#ifdef DEBUG_PROXY
 	char *msg;
-	if (asprintf(&msg, "thr=%d, count=%u, src=%d, dst=%d, c=%d-%d, i=%d\n", 
-			child_ctx->parent->thr->thridx, count, child_ctx->src_fd, child_ctx->dst_fd, child_ctx->src.closed, child_ctx->dst.closed, child_ctx->idx) < 0) {
+	if (asprintf(&msg, "child conn thr=%d, id=%d, pid=%u, src=%d, dst=%d, c=%d-%d\n", 
+			child_ctx->parent->thr->thridx, child_ctx->idx, parent_idx, child_ctx->src_fd, child_ctx->dst_fd, child_ctx->src.closed, child_ctx->dst.closed) == -1) {
 		return max_fd;
 	}
-
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>> .......... pxy_thrmgr_print_child: %s", msg);
-	if (child_ctx->parent->opts->statslog) {
-		if (log_stats_print_free(msg) == -1) {
-			free(msg);
-			log_err_printf("Warning: Stats logging failed\n");
-		}
-	} else {
-		free(msg);
-	}
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_print_child: %s", msg);
+	free(msg);
+#endif /* DEBUG_PROXY */
 
 	if (child_ctx->next) {
-		max_fd = pxy_thrmgr_print_child(child_ctx->next, count, max_fd);
+		max_fd = pxy_thrmgr_print_child(child_ctx->next, parent_idx, max_fd);
 	}
 
 	return MAX(max_fd, MAX(child_ctx->src_fd, child_ctx->dst_fd));
@@ -111,72 +148,99 @@ pxy_thrmgr_print_child(pxy_conn_child_ctx_t *child_ctx, unsigned int count, evut
 static void
 pxy_thrmgr_print_thr_info(pxy_thr_ctx_t *tctx)
 {
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>> pxy_thrmgr_print_thr_info: thr=%d, load=%lu\n", tctx->thridx, tctx->load);
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_print_thr_info: thr=%d, load=%lu\n", tctx->thridx, tctx->load);
+#endif /* DEBUG_PROXY */
 
-	char *msg;
-	int rv;
-
-	unsigned int count = 0;
+	unsigned int idx = 1;
 	evutil_socket_t max_fd = 0;
 	time_t max_atime = 0;
 	time_t max_ctime = 0;
+
+#ifdef DEBUG_PROXY
+	char *lmsg = NULL;
+#endif /* DEBUG_PROXY */
+	char *smsg = NULL;
+
+	char *src_addr = NULL;
+	char *dst_addr = NULL;
 
 	if (tctx->conns) {
 		time_t now = time(NULL);
 
 		pxy_conn_ctx_t *ctx = tctx->conns;
 		while (ctx) {
-			char *host, *port;
-			
 			time_t atime = now - ctx->atime;
 			time_t ctime = now - ctx->ctime;
-
-			if (ctx->addrlen == 0 || (sys_sockaddr_str((struct sockaddr *)&ctx->addr, ctx->addrlen, &host, &port) != 0)) {
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>> pxy_thrmgr_print_thr_info: Cannot get host:port: thr=%d, count=%u, fd=%d, child_fd=%d\n", tctx->thridx, count, ctx->fd, ctx->child_fd);
-				rv = asprintf(&msg, "thr=%d, count=%u, fd=%d, child_fd=%d, dst=%d, srv_dst=%d, child_src=%d, child_dst=%d, p=%d-%d-%d c=%d-%d, ce=%d cc=%d, at=%lld ct=%lld\n",
-						tctx->thridx, count, ctx->fd, ctx->child_fd, ctx->dst_fd, ctx->srv_dst_fd, ctx->child_src_fd, ctx->child_dst_fd,
-						ctx->src.closed, ctx->dst.closed, ctx->srv_dst.closed, ctx->children ? ctx->children->src.closed : 0, ctx->children ? ctx->children->dst.closed : 0, ctx->children ? 1:0, ctx->child_count, atime, ctime);
-			} else {
-				rv = asprintf(&msg, "thr=%d, count=%u, fd=%d, child_fd=%d, dst=%d, srv_dst=%d, child_src=%d, child_dst=%d, p=%d-%d-%d c=%d-%d, ce=%d cc=%d, at=%lld ct=%lld, addr=%s:%s\n",
-						tctx->thridx, count, ctx->fd, ctx->child_fd, ctx->dst_fd, ctx->srv_dst_fd, ctx->child_src_fd, ctx->child_dst_fd,
-						ctx->src.closed, ctx->dst.closed, ctx->srv_dst.closed, ctx->children ? ctx->children->src.closed : 0, ctx->children ? ctx->children->dst.closed : 0, ctx->children ? 1:0, ctx->child_count, atime, ctime, host ? host : "?", port ? port : "?");
-				free(host);
-				free(port);
-			}
-			if (rv == -1) {
-				return;
-			}
 			
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>> pxy_thrmgr_print_thr_info: %s", msg);
-			
-			if (ctx->opts->statslog) {
-				if (log_stats_print_free(msg) == -1) {
-					free(msg);
-					log_err_printf("Warning: Stats logging failed\n");
+			char *src_addr = NULL;
+			if (ctx->srchost_str) {
+				if (asprintf(&src_addr, ", src_addr=%s:%s", ctx->srchost_str, ctx->srcport_str) == -1) {
+					goto leave;
 				}
-			} else {
-				free(msg);
 			}
+			char *dst_addr = NULL;
+			if (ctx->dsthost_str) {
+				if (asprintf(&dst_addr, ", dst_addr=%s:%s", ctx->dsthost_str, ctx->dstport_str) == -1) {
+					goto leave;
+				}
+			}
+
+#ifdef DEBUG_PROXY
+			if (asprintf(&lmsg, "parent conn thr=%d, id=%u, fd=%d, child_fd=%d, dst=%d, srv_dst=%d, child_src=%d, child_dst=%d, p=%d-%d-%d c=%d-%d, ce=%d cc=%d, at=%lld ct=%lld%s%s\n",
+					tctx->thridx, idx, ctx->fd, ctx->child_fd, ctx->dst_fd, ctx->srv_dst_fd, ctx->child_src_fd, ctx->child_dst_fd,
+					ctx->src.closed, ctx->dst.closed, ctx->srv_dst.closed, ctx->children ? ctx->children->src.closed : 0, ctx->children ? ctx->children->dst.closed : 0,
+					ctx->children ? 1:0, ctx->child_count, atime, ctime, src_addr ? src_addr : "", dst_addr ? dst_addr : "") == -1) {
+				goto leave;
+			}
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_print_thr_info: %s", lmsg);
+			free(lmsg);
+			lmsg = NULL;
+#endif /* DEBUG_PROXY */
+
+			if (asprintf(&smsg, "conn thr=%d, id=%u, ce=%d cc=%d, at=%lld ct=%lld%s%s\n",
+					tctx->thridx, idx, ctx->children ? 1:0, ctx->child_count, atime, ctime, src_addr ? src_addr : "", dst_addr ? dst_addr : "") == -1) {
+				goto leave;
+			}
+			free(src_addr);
+			src_addr = NULL;
+			free(dst_addr);
+			dst_addr = NULL;
+			
+			if (log_stats(smsg) == -1) {
+				log_err_printf("WARNING: Stats logging failed\n");
+			}
+			free(smsg);
+			smsg = NULL;
 
 			max_fd = MAX(max_fd, MAX(ctx->fd, MAX(ctx->child_fd, MAX(ctx->dst_fd, MAX(ctx->srv_dst_fd, MAX(ctx->child_src_fd, ctx->child_dst_fd))))));
 			max_atime = MAX(max_atime, atime);
 			max_ctime = MAX(max_ctime, ctime);
 
 			if (ctx->children) {
-				max_fd = pxy_thrmgr_print_child(ctx->children, count, max_fd);
+				max_fd = pxy_thrmgr_print_child(ctx->children, idx, max_fd);
 			}
 
-			count++;
+			idx++;
 			ctx = ctx->next;
 		}
 	}
 
-	rv = asprintf(&msg, "thr=%d, max_load=%lu, max_fd=%d, max_atime=%lld, max_ctime=%lld, intif_in_bytes=%llu, intif_out_bytes=%llu, extif_in_bytes=%llu, extif_out_bytes=%llu, set_watermarks=%lu, unset_watermarks=%lu, timedout=%lu, errors=%lu\n",
+	if (asprintf(&smsg, "stats thr=%d, mld=%lu, mfd=%d, mat=%lld, mct=%lld, iib=%llu, iob=%llu, eib=%llu, eob=%llu, swm=%lu, uwm=%lu, to=%lu, err=%lu\n",
 			tctx->thridx, tctx->max_load, tctx->max_fd, max_atime, max_ctime, tctx->intif_in_bytes, tctx->intif_out_bytes, tctx->extif_in_bytes, tctx->extif_out_bytes,
-			tctx->set_watermarks, tctx->unset_watermarks, tctx->timedout_conns, tctx->errors);
-	if (rv == -1) {
-		return;
+			tctx->set_watermarks, tctx->unset_watermarks, tctx->timedout_conns, tctx->errors) == -1) {
+		goto leave;
 	}
+
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_print_thr_info: %s", smsg);
+#endif /* DEBUG_PROXY */
+
+	if (log_stats(smsg) == -1) {
+		log_err_printf("WARNING: Stats logging failed\n");
+	}
+	free(smsg);
+	smsg = NULL;
 
 	tctx->timedout_conns = 0;
 	tctx->errors = 0;
@@ -192,18 +256,21 @@ pxy_thrmgr_print_thr_info(pxy_thr_ctx_t *tctx)
 	tctx->max_fd = max_fd;
 	tctx->max_load = tctx->load;
 
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>> pxy_thrmgr_print_thr_info: %s", msg);
-
-	if (tctx->thrmgr->opts->statslog) {
-		if (log_stats_print_free(msg) == -1) {
-			free(msg);
-			log_err_printf("Warning: Stats logging failed\n");
-		}
-	} else {
-		free(msg);
+leave:
+	if (src_addr) {
+		free(src_addr);
 	}
-		
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>> pxy_thrmgr_print_thr_info: EXIT\n");
+	if (dst_addr) {
+		free(dst_addr);
+	}
+#ifdef DEBUG_PROXY
+	if (lmsg) {
+		free(lmsg);
+	}
+#endif /* DEBUG_PROXY */
+	if (smsg) {
+		free(smsg);
+	}
 }
 
 /*
@@ -216,17 +283,23 @@ pxy_thrmgr_timer_cb(UNUSED evutil_socket_t fd, UNUSED short what,
 {
 	pxy_thr_ctx_t *ctx = arg;
 
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! pxy_thrmgr_timer_cb <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< THREAD TIMER thr=%d, load=%lu, to=%u\n", ctx->thridx, ctx->load, ctx->timeout_count);
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_timer_cb: thr=%d, load=%lu, to=%u\n", ctx->thridx, ctx->load, ctx->timeout_count);
+#endif /* DEBUG_PROXY */
 	pxy_conn_ctx_t *expired = NULL;
 	pxy_thrmgr_get_thr_expired_conns(ctx, &expired);
 
 	if (expired) {
+#ifdef DEBUG_PROXY
 		time_t now = time(NULL);
+#endif /* DEBUG_PROXY */
 		while (expired) {
 			pxy_conn_ctx_t *next = expired->next_expired;
 
-			log_dbg_level_printf(LOG_DBG_MODE_FINE, ">>>>> !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! pxy_thrmgr_timer_cb: DELETE thr=%d, fd=%d, child_fd=%d, at=%lld ct=%lld <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< TIMED OUT\n",
+#ifdef DEBUG_PROXY
+			log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_thrmgr_timer_cb: Delete timed out conn thr=%d, fd=%d, child_fd=%d, at=%lld ct=%lld\n",
 					expired->thr->thridx, expired->fd, expired->child_fd, (long int) now - expired->atime, (long int) now - expired->ctime);
+#endif /* DEBUG_PROXY */
 			pxy_conn_free(expired, 1);
 			ctx->timedout_conns++;
 
@@ -234,10 +307,13 @@ pxy_thrmgr_timer_cb(UNUSED evutil_socket_t fd, UNUSED short what,
 		}
 	}
 	
-	ctx->timeout_count++;
-	if (ctx->timeout_count * THR_TIMER_TIMEOUT > THR_TIMER_PRINT_INFO_TIMEOUT) {
-		ctx->timeout_count = 0;
-		pxy_thrmgr_print_thr_info(ctx);
+	// @todo Print thread info only if stats logging is enabled, if disabled debug logs are not printed either
+	if (ctx->thrmgr->opts->statslog) {
+		ctx->timeout_count++;
+		if (ctx->timeout_count * THR_TIMER_TIMEOUT > THR_TIMER_PRINT_INFO_TIMEOUT) {
+			ctx->timeout_count = 0;
+			pxy_thrmgr_print_thr_info(ctx);
+		}
 	}
 }
 
@@ -415,9 +491,12 @@ pxy_thrmgr_remove_conn(pxy_conn_ctx_t *node, pxy_conn_ctx_t **head)
 {
 	assert(node != NULL);
 	assert(*head != NULL);
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_thrmgr_remove_conn: DELETING, fd=%d, child_fd=%d\n", node->fd, node->child_fd);
+
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_remove_conn: Removing conn, fd=%d, child_fd=%d\n", node->fd, node->child_fd);
+#endif /* DEBUG_PROXY */
 	
-	// @attention We may get multiple conns with the same fd combinations, so they cannot uniquely define a conn; hence the need for uuids.
+	// @attention We may get multiple conns with the same fd combinations, so fds cannot uniquely define a conn; hence the need for uuids.
     if (uuid_compare(node->uuid, (*head)->uuid, NULL) == 0) {
         *head = (*head)->next;
         return;
@@ -444,12 +523,12 @@ pxy_thrmgr_remove_conn(pxy_conn_ctx_t *node, pxy_conn_ctx_t **head)
 void
 pxy_thrmgr_attach(pxy_conn_ctx_t *ctx)
 {
-	int thridx;
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_attach: ENTER\n");
+#endif /* DEBUG_PROXY */
+
+	int thridx = 0;
 	size_t minload;
-
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_thrmgr_attach: ENTER\n");
-
-	thridx = 0;
 
 	pxy_thrmgr_ctx_t *tmctx = ctx->thrmgr;
 	pthread_mutex_lock(&tmctx->mutex);
@@ -484,8 +563,6 @@ pxy_thrmgr_attach(pxy_conn_ctx_t *ctx)
 	// @attention We are running on the thrmgr thread, do not call conn thread functions here.
 	//pxy_thrmgr_print_thr_info(ctx->thr);
 
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_thrmgr_attach: EXIT\n");
-
 #ifdef DEBUG_THREAD
 	log_dbg_printf("thridx: %d\n", thridx);
 #endif /* DEBUG_THREAD */
@@ -494,7 +571,10 @@ pxy_thrmgr_attach(pxy_conn_ctx_t *ctx)
 void
 pxy_thrmgr_attach_child(pxy_conn_ctx_t *ctx)
 {
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_thrmgr_attach_child\n");
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_attach_child: ENTER\n");
+#endif /* DEBUG_PROXY */
+
 	pthread_mutex_lock(&ctx->thrmgr->mutex);
 	ctx->thr->load++;
 	ctx->thr->max_load = MAX(ctx->thr->max_load, ctx->thr->load);
@@ -519,7 +599,10 @@ pxy_thrmgr_detach(pxy_conn_ctx_t *ctx)
 void
 pxy_thrmgr_detach_child(pxy_conn_ctx_t *ctx)
 {
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_thrmgr_detach_child\n");
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_detach_child: ENTER\n");
+#endif /* DEBUG_PROXY */
+
 	pthread_mutex_lock(&ctx->thrmgr->mutex);
 	ctx->thr->load--;
 	pthread_mutex_unlock(&ctx->thrmgr->mutex);

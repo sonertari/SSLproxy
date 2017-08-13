@@ -79,6 +79,35 @@ pxy_ssl_shutdown_ctx_free(pxy_ssl_shutdown_ctx_t *ctx)
 	free(ctx);
 }
 
+#ifdef DEBUG_PROXY
+char *sslerr_names[] = {
+	"SSL_ERROR_WANT_READ",
+	"SSL_ERROR_WANT_WRITE",
+	"SSL_ERROR_ZERO_RETURN",
+	"SSL_ERROR_SYSCALL",
+	"SSL_ERROR_SSL",
+	"UNKWN"
+	};
+
+static char *
+pxy_ssl_shutdown_get_sslerr_name(int sslerr)
+{
+	if (sslerr == SSL_ERROR_WANT_READ) {
+		return sslerr_names[0];
+	} else if (sslerr == SSL_ERROR_WANT_WRITE) {
+		return sslerr_names[1];
+	} else if (sslerr == SSL_ERROR_ZERO_RETURN) {
+		return sslerr_names[2];
+	} else if (sslerr == SSL_ERROR_SYSCALL) {
+		return sslerr_names[3];
+	} else if (sslerr == SSL_ERROR_SSL) {
+		return sslerr_names[4];
+	} else {
+		return sslerr_names[5];
+	}
+}
+#endif /* DEBUG_PROXY */
+
 /*
  * The shutdown socket event handler.  This is either
  * scheduled as a timeout-only event, or as a fd read or
@@ -115,25 +144,25 @@ pxy_ssl_shutdown_cb(evutil_socket_t fd, UNUSED short what, void *arg)
 	if (rv != -1) {
 		goto retry;
 	}
-	switch ((sslerr = SSL_get_error(ctx->ssl, rv))) {
+	
+	sslerr = SSL_get_error(ctx->ssl, rv);
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_ssl_shutdown_cb: %s, retries=%d, fd=%d\n", pxy_ssl_shutdown_get_sslerr_name(sslerr), ctx->retries, fd);
+#endif /* DEBUG_PROXY */
+	switch (sslerr) {
 		case SSL_ERROR_WANT_READ:
 			want = EV_READ;
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_ssl_shutdown_cb: SSL_ERROR_WANT_READ, retries=%d, fd=%d\n", ctx->retries, fd);
 			goto retry;
 		case SSL_ERROR_WANT_WRITE:
 			want = EV_WRITE;
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_ssl_shutdown_cb: SSL_ERROR_WANT_WRITE, retries=%d, fd=%d\n", ctx->retries, fd);
 			goto retry;
 		case SSL_ERROR_ZERO_RETURN:
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_ssl_shutdown_cb: SSL_ERROR_ZERO_RETURN, retries=%d, fd=%d\n", ctx->retries, fd);
 			goto retry;
 		case SSL_ERROR_SYSCALL:
 		case SSL_ERROR_SSL:
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_ssl_shutdown_cb: SSL_ERROR_SYSCALL or SSL_ERROR_SSL, retries=%d, fd=%d\n", ctx->retries, fd);
 			goto complete;
 		default:
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> pxy_ssl_shutdown_cb: default, retries=%d, fd=%d\n", ctx->retries, fd);
-			log_err_printf("Unhandled SSL_shutdown() "
+			log_err_printf("ERROR: Unhandled SSL_shutdown() "
 			               "error %i.  Closing fd, fd=%d\n", sslerr, fd);
 			goto complete;
 	}
@@ -141,7 +170,7 @@ pxy_ssl_shutdown_cb(evutil_socket_t fd, UNUSED short what, void *arg)
 
 retry:
 	if (ctx->retries++ >= 50) {
-		log_err_printf("Failed to shutdown SSL connection cleanly: "
+		log_err_printf("WARNING: Failed to shutdown SSL connection cleanly: "
 		               "Max retries reached. Closing fd, fd=%d\n", fd);
 		goto complete;
 	}
@@ -150,14 +179,16 @@ retry:
 		event_add(ctx->ev, &retry_delay);
 		return;
 	}
-	log_err_printf("Failed to shutdown SSL connection cleanly: "
+	log_err_printf("ERROR: Failed to shutdown SSL connection cleanly: "
 	               "Cannot create event. Closing fd, fd=%d\n", fd);
 
 complete:
 	if (OPTS_DEBUG(ctx->opts)) {
-		log_dbg_printf(">>>> pxy_ssl_shutdown_cb: SSL_free() in state ");
-		log_dbg_print_free(ssl_ssl_state_to_str(ctx->ssl));
-		log_dbg_printf(" fd=%d\n", fd);
+		char *msg;
+		if (asprintf(&msg, "pxy_ssl_shutdown_cb: fd=%d, SSL_free() in state ", fd) != -1) {
+			log_dbg_print_free(ssl_ssl_state_to_str(ctx->ssl, msg));
+			free(msg);
+		}
 	}
 	SSL_free(ctx->ssl);
 	evutil_closesocket(fd);
@@ -174,14 +205,20 @@ void
 pxy_ssl_shutdown(opts_t *opts, struct event_base *evbase, SSL *ssl,
                  evutil_socket_t fd)
 {
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_ssl_shutdown: ENTER fd=%d\n", fd);
+#endif /* DEBUG_PROXY */
+
 	pxy_ssl_shutdown_ctx_t *sslshutctx;
 
 	sslshutctx = pxy_ssl_shutdown_ctx_new(opts, evbase, ssl);
 	if (!sslshutctx) {
 		if (OPTS_DEBUG(opts)) {
-			log_dbg_printf(">>>> pxy_ssl_shutdown: SSL_free() in state ");
-			log_dbg_print_free(ssl_ssl_state_to_str(ssl));
-			log_dbg_printf(" fd=%d\n", fd);
+			char *msg;
+			if (asprintf(&msg, "pxy_ssl_shutdown: fd=%d, SSL_free() in state ", fd) != -1) {
+				log_dbg_print_free(ssl_ssl_state_to_str(ssl, msg));
+				free(msg);
+			}
 		}
 		SSL_free(ssl);
 		evutil_closesocket(fd);

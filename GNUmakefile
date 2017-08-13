@@ -365,7 +365,9 @@ endif
 
 # _FORTIFY_SOURCE requires -O on Linux
 ifeq (,$(findstring -O,$(CFLAGS)))
-CFLAGS+=	-O
+# TODO: -O w/o -g is failing bufferevent_socket_connect for parent dst,
+# so either enable -O w/ -g, or disable -O w/o -g (-O2 is failing too)
+#CFLAGS+=	-O
 endif
 
 export VERSION

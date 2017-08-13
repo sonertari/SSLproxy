@@ -478,15 +478,17 @@ ssl_sha1_to_str(unsigned char *rawhash, int colons)
 
 /*
  * Format SSL state into newly allocated string.
+ * Prepends the given string.
  * Returns pointer to string that must be freed by caller, or NULL on error.
  */
 char *
-ssl_ssl_state_to_str(SSL *ssl)
+ssl_ssl_state_to_str(SSL *ssl, const char *prepend)
 {
 	char *str = NULL;
 	int rv;
 
-	rv = asprintf(&str, "%08x = %s%s%s%04x = %s (%s) [%s]",
+	rv = asprintf(&str, "%s%08x = %s%s%s%04x = %s (%s) [%s]\n",
+	              prepend,
 	              ssl->state,
 	              (ssl->state & SSL_ST_CONNECT) ? "SSL_ST_CONNECT|" : "",
 	              (ssl->state & SSL_ST_ACCEPT) ? "SSL_ST_ACCEPT|" : "",

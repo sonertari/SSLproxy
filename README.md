@@ -2,7 +2,7 @@
 Copyright (C) 2009-2016, [Daniel Roethlisberger](//daniel.roe.ch/).  
 http://www.roe.ch/SSLsplit
 The modifications for SSLproxy are copyrighted to [Soner Tari](https://github.com/sonertari),
-and licensed under the same license as SSLsplit.
+and licensed under the same terms as SSLsplit.
 
 ## Overview
 

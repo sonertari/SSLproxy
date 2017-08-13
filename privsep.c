@@ -306,9 +306,6 @@ privsep_server_opensock_child(proxyspec_t *spec)
 		perror("getsockname");
 		return -1;
 	}
-
-	log_dbg_level_printf(LOG_DBG_MODE_FINER, ">>>>> privsep_server_opensock_child: EXIT >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> port=%d\n", ntohs(serv_addr.sin_port));
-
 	return fd;
 }
 
@@ -483,8 +480,6 @@ privsep_server_handle_req(opts_t *opts, int srvsock)
 		proxyspec_t *arg;
 		int s;
 
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> privsep_server_handle_req: PRIVSEP_REQ_OPENSOCK_CHILD\n");
-		
 		if (n != sizeof(char) + sizeof(arg)) {
 			ans[0] = PRIVSEP_ANS_INVALID;
 			if (sys_sendmsgfd(srvsock, ans, 1, -1) == -1) {
@@ -838,8 +833,6 @@ privsep_client_opensock(int clisock, const proxyspec_t *spec)
 int
 privsep_client_opensock_child(int clisock, const proxyspec_t *spec)
 {
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, ">>>>> privsep_client_opensock_child: ENTER\n");
-
 	char ans[PRIVSEP_MAX_ANS_SIZE];
 	char req[1 + sizeof(spec)];
 	int fd = -1;

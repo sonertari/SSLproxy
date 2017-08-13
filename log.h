@@ -61,9 +61,7 @@ extern logger_t *connect_log;
 #define log_connect_write_free(buf, sz) \
         logger_write_freebuf(connect_log, NULL, 0, (buf), (sz))
 
-extern logger_t *stats_log;
-#define log_stats_print_free(s) \
-        logger_print_freebuf(stats_log, NULL, 0, (s))
+int log_stats(const char *);
 
 typedef struct log_content_ctx log_content_ctx_t;
 int log_content_open(log_content_ctx_t **, opts_t *, char *, char *, char *,
