@@ -97,6 +97,7 @@ typedef struct opts {
 	char *dropgroup;
 	char *jaildir;
 	char *pidfile;
+	char *conffile;
 	char *connectlog;
 	int statslog;
 	char *contentlog;
@@ -113,6 +114,11 @@ typedef struct opts {
 	char *ecdhcurve;
 #endif /* !OPENSSL_NO_ECDH */
 	proxyspec_t *spec;
+	unsigned int conn_idle_timeout;
+	unsigned int expired_conn_check_period;
+	unsigned int ssl_shutdown_retry_delay;
+	int log_stats;
+	unsigned int stats_period;
 } opts_t;
 
 opts_t *opts_new(void) MALLOC;
@@ -124,7 +130,8 @@ void opts_proto_disable(opts_t *, const char *, const char *) NONNULL(1,2,3);
 void opts_proto_dbg_dump(opts_t *) NONNULL(1);
 #define OPTS_DEBUG(opts) unlikely((opts)->debug)
 
-proxyspec_t * proxyspec_parse(int *, char **[], const char *) MALLOC;
+void proxyspec_parse(int *, char **[], const char *, opts_t *);
+
 void proxyspec_free(proxyspec_t *) NONNULL(1);
 char * proxyspec_str(proxyspec_t *) NONNULL(1) MALLOC;
 

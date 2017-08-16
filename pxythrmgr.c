@@ -46,10 +46,6 @@
  * The attach and detach functions are thread-safe.
  */
 
-#define THR_TIMER_TIMEOUT 10
-#define THR_TIMER_PRINT_INFO_TIMEOUT 1*THR_TIMER_TIMEOUT
-#define CONN_EXPIRE_TIME 120
-
 static void
 pxy_thrmgr_get_thr_expired_conns(pxy_thr_ctx_t *tctx, pxy_conn_ctx_t **expired_conns)
 {
@@ -61,11 +57,10 @@ pxy_thrmgr_get_thr_expired_conns(pxy_thr_ctx_t *tctx, pxy_conn_ctx_t **expired_c
 		pxy_conn_ctx_t *ctx = tctx->conns;
 		while (ctx) {
 			unsigned long elapsed_time = now - ctx->atime;
-			if (elapsed_time > CONN_EXPIRE_TIME) {
+			if (elapsed_time > tctx->thrmgr->opts->conn_idle_timeout) {
 				ctx->next_expired = *expired_conns;
 				*expired_conns = ctx;
 			}
-
 			ctx = ctx->next;
 		}
 
@@ -307,10 +302,10 @@ pxy_thrmgr_timer_cb(UNUSED evutil_socket_t fd, UNUSED short what,
 		}
 	}
 	
-	// @todo Print thread info only if stats logging is enabled, if disabled debug logs are not printed either
+	// @attention Print thread info only if stats logging is enabled, if disabled debug logs are not printed either
 	if (ctx->thrmgr->opts->statslog) {
 		ctx->timeout_count++;
-		if (ctx->timeout_count * THR_TIMER_TIMEOUT > THR_TIMER_PRINT_INFO_TIMEOUT) {
+		if (ctx->timeout_count * ctx->thrmgr->opts->expired_conn_check_period >= ctx->thrmgr->opts->stats_period * ctx->thrmgr->opts->expired_conn_check_period) {
 			ctx->timeout_count = 0;
 			pxy_thrmgr_print_thr_info(ctx);
 		}
@@ -325,7 +320,7 @@ static void *
 pxy_thrmgr_thr(void *arg)
 {
 	pxy_thr_ctx_t *ctx = arg;
-	struct timeval timer_delay = {THR_TIMER_TIMEOUT, 0};
+	struct timeval timer_delay = {ctx->thrmgr->opts->expired_conn_check_period, 0};
 	struct event *ev;
 
 	ev = event_new(ctx->evbase, -1, EV_PERSIST, pxy_thrmgr_timer_cb, ctx);

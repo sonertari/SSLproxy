@@ -279,6 +279,307 @@ oom_die(const char *argv0)
 	exit(EXIT_FAILURE);
 }
 
+static void
+set_cacrt(opts_t *opts, const char *argv0, char *optarg)
+{
+	if (opts->cacrt)
+		X509_free(opts->cacrt);
+	opts->cacrt = ssl_x509_load(optarg);
+	if (!opts->cacrt) {
+		fprintf(stderr, "%s: error loading CA "
+						"cert from '%s':\n",
+						argv0, optarg);
+		if (errno) {
+			fprintf(stderr, "%s\n",
+					strerror(errno));
+		} else {
+			ERR_print_errors_fp(stderr);
+		}
+		exit(EXIT_FAILURE);
+	}
+	ssl_x509_refcount_inc(opts->cacrt);
+	sk_X509_insert(opts->chain, opts->cacrt, 0);
+	if (!opts->cakey) {
+		opts->cakey = ssl_key_load(optarg);
+	}
+#ifndef OPENSSL_NO_DH
+	if (!opts->dh) {
+		opts->dh = ssl_dh_load(optarg);
+	}
+#endif /* !OPENSSL_NO_DH */
+	fprintf(stderr, "cacrt: %s\n", optarg);
+}
+
+static void
+set_cakey(opts_t *opts, const char *argv0, char *optarg)
+{
+	if (opts->cakey)
+		EVP_PKEY_free(opts->cakey);
+	opts->cakey = ssl_key_load(optarg);
+	if (!opts->cakey) {
+		fprintf(stderr, "%s: error loading CA "
+						"key from '%s':\n",
+						argv0, optarg);
+		if (errno) {
+			fprintf(stderr, "%s\n",
+					strerror(errno));
+		} else {
+			ERR_print_errors_fp(stderr);
+		}
+		exit(EXIT_FAILURE);
+	}
+	if (!opts->cacrt) {
+		opts->cacrt = ssl_x509_load(optarg);
+		if (opts->cacrt) {
+			ssl_x509_refcount_inc(
+						   opts->cacrt);
+			sk_X509_insert(opts->chain,
+						   opts->cacrt, 0);
+		}
+	}
+#ifndef OPENSSL_NO_DH
+	if (!opts->dh) {
+		opts->dh = ssl_dh_load(optarg);
+	}
+#endif /* !OPENSSL_NO_DH */
+	fprintf(stderr, "cakey: %s\n", optarg);
+}
+
+static void
+set_user(opts_t *opts, const char *argv0, char *optarg)
+{
+	if (!sys_isuser(optarg)) {
+		fprintf(stderr, "%s: '%s' is not an "
+						"existing user\n",
+						argv0, optarg);
+		exit(EXIT_FAILURE);
+	}
+	if (opts->dropuser)
+		free(opts->dropuser);
+	opts->dropuser = strdup(optarg);
+	if (!opts->dropuser)
+		oom_die(argv0);
+	fprintf(stderr, "dropuser: %s\n", opts->dropuser);
+}
+
+static void
+set_group(opts_t *opts, const char *argv0, char *optarg)
+{
+	if (!sys_isgroup(optarg)) {
+		fprintf(stderr, "%s: '%s' is not an "
+						"existing group\n",
+						argv0, optarg);
+		exit(EXIT_FAILURE);
+	}
+	if (opts->dropgroup)
+		free(opts->dropgroup);
+	opts->dropgroup = strdup(optarg);
+	if (!opts->dropgroup)
+		oom_die(argv0);
+	fprintf(stderr, "dropgroup: %s\n", opts->dropgroup);
+}
+
+static void
+set_pidfile(opts_t *opts, const char *argv0, char *optarg)
+{
+	if (opts->pidfile)
+		free(opts->pidfile);
+	opts->pidfile = strdup(optarg);
+	if (!opts->pidfile)
+		oom_die(argv0);
+	fprintf(stderr, "pidfile: %s\n", opts->pidfile);
+}
+
+static int
+load_conffile(opts_t *opts, const char *argv0, const char *natengine)
+{
+	FILE *f;
+	int rv, line_num, found;
+	size_t line_len;
+	char *n, *value, *v, *value_end;
+	char *line, *name;
+
+	f = fopen(opts->conffile, "r");
+	if (!f) {
+		fprintf(stderr, "Error opening conf file %s: %s\n", opts->conffile, strerror(errno));
+		return -1;
+	}
+
+	line = NULL;
+	line_num = 0;
+	while (!feof(f)) {
+		rv = getline(&line, &line_len, f);
+		if (rv == -1) {
+			break;
+		}
+		if (line == NULL) {
+			fprintf(stderr, "getline() buf=NULL");
+			return -1;
+		}
+		line_num++;
+
+		// skip white space
+		for (name = line; *name == ' ' || *name == '\t'; name++); 
+
+		// skip comments and empty lines
+		if ((name[0] == '\0') || (name[0] == '#') || (name[0] == ';') ||
+			(name[0] == '\r') || (name[0] == '\n')) {
+			continue;
+		}
+
+		// skip to the end of option name and terminate it with '\0'
+		for (n = name;; n++) {
+			if (*n == ' ' || *n == '\t') {
+				*n = '\0';
+				n++;
+				break;
+			}
+			if (*n == '\0') {
+				n = NULL;
+				break;
+			}
+		}
+
+		// no value
+		if (n == NULL) {
+			fprintf(stderr, "Conf error at line %d\n", line_num);
+			fclose(f);
+			if (line) {
+				free(line);
+			}
+			return -1;
+		}
+		
+		// skip white space before value
+		while (*n == ' ' || *n == '\t') {
+			n++;
+		}
+
+		value = n;
+
+		// find end of value and terminate it with '\0'
+		// find first occurrence of trailing white space
+		value_end = NULL;
+		for (v = value;; v++) {
+			if (*v == '\0') {
+				break;
+			}
+			if (*v == '\r' || *v == '\n') {
+				*v = '\0';
+				break;
+			}
+			if (*v == ' ' || *v == '\t') {
+				if (!value_end) {
+					value_end = v;
+				}
+			} else {
+				value_end = NULL;
+			}
+		}
+
+		if (value_end) {
+			*value_end = '\0';
+		}
+
+		found = 0;
+		if (!strncasecmp(name, "CACert", 6)) {
+			set_cacrt(opts, argv0, value);
+			found = 1;
+		} else if (!strncasecmp(name, "CAKey", 5)) {
+			set_cakey(opts, argv0, value);
+			found = 1;
+		} else if (!strncasecmp(name, "ProxySpec", 9)) {
+			char **argv = malloc(strlen(value) + 1);
+			char **save_argv = argv;
+			int argc = 0;
+			char *p, *last;
+
+			for ((p = strtok_r(value, " ", &last)); p; (p = strtok_r(NULL, " ", &last))) {
+				// Limit max # token
+				if (argc < 10) {
+					argv[argc++] = p;
+				}
+			}
+			
+			proxyspec_parse(&argc, &argv, natengine, opts);
+			free(save_argv);
+			found = 1;
+		} else if (!strncasecmp(name, "ConnIdleTimeout", 15)) {
+			unsigned int rv = atoi(value);
+			if (rv >= 10 && rv <= 3600) {
+				opts->conn_idle_timeout = rv;
+			} else {
+				fprintf(stderr, "Invalid ConnIdleTimeout %s at line %d, use 10-3600\n", value, line_num);
+			}
+			fprintf(stderr, "ConnIdleTimeout: %u\n", opts->conn_idle_timeout);
+			found = 1;
+		} else if (!strncasecmp(name, "ExpiredConnCheckPeriod", 22)) {
+			unsigned int rv = atoi(value);
+			if (rv >= 10 && rv <= 60) {
+				opts->expired_conn_check_period = rv;
+			} else {
+				fprintf(stderr, "Invalid ExpiredConnCheckPeriod %s at line %d, use 10-60\n", value, line_num);
+			}
+			fprintf(stderr, "ExpiredConnCheckPeriod: %u\n", opts->expired_conn_check_period);
+			found = 1;
+		} else if (!strncasecmp(name, "SSLShutdownRetryDelay", 21)) {
+			unsigned int rv = atoi(value);
+			if (rv >= 100 && rv <= 10000) {
+				opts->ssl_shutdown_retry_delay = rv;
+			} else {
+				fprintf(stderr, "Invalid SSLShutdownRetryDelay %s at line %d, use 100-10000\n", value, line_num);
+			}
+			fprintf(stderr, "SSLShutdownRetryDelay: %u\n", opts->ssl_shutdown_retry_delay);
+			found = 1;
+		} else if (!strncasecmp(name, "PidFile", 7)) {
+			set_pidfile(opts, argv0, value);
+			found = 1;
+		} else if (!strncasecmp(name, "LogStats", 8)) {
+			if (!strncasecmp(value, "yes", 3)) {
+				opts->statslog = 1;
+			} else if (!strncasecmp(value, "no", 3)) {
+				opts->statslog = 0;
+			} else {
+				fprintf(stderr, "Invalid LogStats %s at line %d, use yes|no\n", value, line_num);
+			}
+			fprintf(stderr, "LogStats: %u\n", opts->statslog);
+			found = 1;
+		} else if (!strncasecmp(name, "StatsPeriod", 11)) {
+			unsigned int rv = atoi(value);
+			if (rv >= 1 && rv <= 10) {
+				opts->stats_period = rv;
+			} else {
+				fprintf(stderr, "Invalid StatsPeriod %s at line %d, use 1-10\n", value, line_num);
+			}
+			fprintf(stderr, "StatsPeriod: %u\n", opts->stats_period);
+			found = 1;
+		} else if (!strncasecmp(name, "User", 4)) {
+			set_user(opts, argv0, value);
+			found = 1;
+		} else if (!strncasecmp(name, "Group", 5)) {
+			set_group(opts, argv0, value);
+			found = 1;
+		}
+
+		if (found) {
+			continue;
+		}
+
+		fprintf(stderr, "Unknown option '%s' at %s line %d\n", name, opts->conffile, line_num);
+		fclose(f);
+		if (line) {
+			free(line);
+		}
+		return -1;
+	}
+
+	fclose(f);
+	if (line) {
+		free(line);
+	}
+	return 0;
+}
+
 /*
  * Main entry point.
  */
@@ -302,66 +603,29 @@ main(int argc, char *argv[])
 		natengine = NULL;
 	}
 
+	// Set defaults
+	opts->conn_idle_timeout = 120;
+	opts->expired_conn_check_period = 10;
+	opts->ssl_shutdown_retry_delay = 100;
+	opts->log_stats = 0;
+	opts->stats_period = 1;
+
 	while ((ch = getopt(argc, argv, OPT_g OPT_G OPT_Z OPT_i "k:c:C:K:t:"
-	                    "OPs:r:R:e:Eu:m:j:p:l:L:S:F:dD::VhW:w:I")) != -1) {
+	                    "OPs:r:R:e:Eu:m:j:p:l:L:S:F:dD::VhW:w:If:")) != -1) {
 		switch (ch) {
+			case 'f':
+				if (opts->conffile)
+					free(opts->conffile);
+				opts->conffile = strdup(optarg);
+				if (!opts->conffile)
+					oom_die(argv0);
+				fprintf(stderr, "Conf file: %s\n", opts->conffile);
+				break;
 			case 'c':
-				if (opts->cacrt)
-					X509_free(opts->cacrt);
-				opts->cacrt = ssl_x509_load(optarg);
-				if (!opts->cacrt) {
-					fprintf(stderr, "%s: error loading CA "
-					                "cert from '%s':\n",
-					                argv0, optarg);
-					if (errno) {
-						fprintf(stderr, "%s\n",
-						        strerror(errno));
-					} else {
-						ERR_print_errors_fp(stderr);
-					}
-					exit(EXIT_FAILURE);
-				}
-				ssl_x509_refcount_inc(opts->cacrt);
-				sk_X509_insert(opts->chain, opts->cacrt, 0);
-				if (!opts->cakey) {
-					opts->cakey = ssl_key_load(optarg);
-				}
-#ifndef OPENSSL_NO_DH
-				if (!opts->dh) {
-					opts->dh = ssl_dh_load(optarg);
-				}
-#endif /* !OPENSSL_NO_DH */
+				set_cacrt(opts, argv0, optarg);
 				break;
 			case 'k':
-				if (opts->cakey)
-					EVP_PKEY_free(opts->cakey);
-				opts->cakey = ssl_key_load(optarg);
-				if (!opts->cakey) {
-					fprintf(stderr, "%s: error loading CA "
-					                "key from '%s':\n",
-					                argv0, optarg);
-					if (errno) {
-						fprintf(stderr, "%s\n",
-						        strerror(errno));
-					} else {
-						ERR_print_errors_fp(stderr);
-					}
-					exit(EXIT_FAILURE);
-				}
-				if (!opts->cacrt) {
-					opts->cacrt = ssl_x509_load(optarg);
-					if (opts->cacrt) {
-						ssl_x509_refcount_inc(
-						               opts->cacrt);
-						sk_X509_insert(opts->chain,
-						               opts->cacrt, 0);
-					}
-				}
-#ifndef OPENSSL_NO_DH
-				if (!opts->dh) {
-					opts->dh = ssl_dh_load(optarg);
-				}
-#endif /* !OPENSSL_NO_DH */
+				set_cakey(opts, argv0, optarg);
 				break;
 			case 'C':
 				if (ssl_x509chain_load(NULL, &opts->chain,
@@ -486,37 +750,13 @@ main(int argc, char *argv[])
 				exit(EXIT_SUCCESS);
 				break;
 			case 'u':
-				if (!sys_isuser(optarg)) {
-					fprintf(stderr, "%s: '%s' is not an "
-					                "existing user\n",
-					                argv0, optarg);
-					exit(EXIT_FAILURE);
-				}
-				if (opts->dropuser)
-					free(opts->dropuser);
-				opts->dropuser = strdup(optarg);
-				if (!opts->dropuser)
-					oom_die(argv0);
+				set_user(opts, argv0, optarg);
 				break;
 			case 'm':
-				if (!sys_isgroup(optarg)) {
-					fprintf(stderr, "%s: '%s' is not an "
-					                "existing group\n",
-					                argv0, optarg);
-					exit(EXIT_FAILURE);
-				}
-				if (opts->dropgroup)
-					free(opts->dropgroup);
-				opts->dropgroup = strdup(optarg);
-				if (!opts->dropgroup)
-					oom_die(argv0);
+				set_group(opts, argv0, optarg);
 				break;
 			case 'p':
-				if (opts->pidfile)
-					free(opts->pidfile);
-				opts->pidfile = strdup(optarg);
-				if (!opts->pidfile)
-					oom_die(argv0);
+				set_pidfile(opts, argv0, optarg);
 				break;
 			case 'j':
 				if (!sys_isdir(optarg)) {
@@ -675,8 +915,6 @@ main(int argc, char *argv[])
 			case 'D':
 				opts->debug = 1;
 				
-				fprintf(stderr, "Debug optarg = %s.\n", optarg);
-
 				if (optarg && strncmp(optarg, "2", 1) == 0) {
 					log_dbg_mode(LOG_DBG_MODE_FINE);
 				} else if (optarg && strncmp(optarg, "3", 1) == 0) {
@@ -702,7 +940,13 @@ main(int argc, char *argv[])
 	}
 	argc -= optind;
 	argv += optind;
-	opts->spec = proxyspec_parse(&argc, &argv, natengine);
+	proxyspec_parse(&argc, &argv, natengine, opts);
+	
+	if (opts->conffile) {
+		if (load_conffile(opts, argv0, natengine) == -1) {
+			exit(EXIT_FAILURE);
+		}
+	}
 
 	/* usage checks before defaults */
 	if (opts->detach && OPTS_DEBUG(opts)) {

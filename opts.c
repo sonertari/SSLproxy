@@ -278,15 +278,13 @@ opts_proto_dbg_dump(opts_t *opts)
 	               "");
 }
 
-
 /*
  * Parse proxyspecs using a simple state machine.
- * Returns NULL if parsing failed.
  */
-proxyspec_t *
-proxyspec_parse(int *argc, char **argv[], const char *natengine)
+void
+proxyspec_parse(int *argc, char **argv[], const char *natengine, opts_t *opts)
 {
-	proxyspec_t *curspec, *spec = NULL;
+	proxyspec_t *curspec;
 	char *addr = NULL;
 	int af = AF_UNSPEC;
 	int state = 0;
@@ -298,35 +296,37 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine)
 				/* tcp | ssl | http | https | autossl | mail | mails */
 				curspec = malloc(sizeof(proxyspec_t));
 				memset(curspec, 0, sizeof(proxyspec_t));
-				curspec->next = spec;
-				spec = curspec;
+
+				curspec->next = opts->spec;
+				opts->spec = curspec;
+
 				// Defaults
-				spec->ssl = 0;
-				spec->http = 0;
-				spec->upgrade = 0;
-				spec->mail = 0;
+				curspec->ssl = 0;
+				curspec->http = 0;
+				curspec->upgrade = 0;
+				curspec->mail = 0;
 				if (!strcmp(**argv, "tcp")) {
 					// use defaults
 				} else
 				if (!strcmp(**argv, "ssl")) {
-					spec->ssl = 1;
+					curspec->ssl = 1;
 				} else
 				if (!strcmp(**argv, "http")) {
-					spec->http = 1;
+					curspec->http = 1;
 				} else
 				if (!strcmp(**argv, "https")) {
-					spec->ssl = 1;
-					spec->http = 1;
+					curspec->ssl = 1;
+					curspec->http = 1;
 				} else
 				if (!strcmp(**argv, "autossl")) {
-					spec->upgrade = 1;
+					curspec->upgrade = 1;
 				} else
 				if (!strcmp(**argv, "mail")) {
-					spec->mail = 1;
+					curspec->mail = 1;
 				} else
 				if (!strcmp(**argv, "mails")) {
-					spec->ssl = 1;
-					spec->mail = 1;
+					curspec->ssl = 1;
+					curspec->mail = 1;
 				} else {
 					fprintf(stderr, "Unknown connection "
 					                "type '%s'\n", **argv);
@@ -349,23 +349,23 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine)
 					af = AF_INET;
 				else
 					af = AF_UNSPEC;
-				af = sys_sockaddr_parse(&spec->listen_addr,
-				                        &spec->listen_addrlen,
+				af = sys_sockaddr_parse(&curspec->listen_addr,
+				                        &curspec->listen_addrlen,
 				                        addr, **argv, af,
 				                        EVUTIL_AI_PASSIVE);
 				if (af == -1) {
 					exit(EXIT_FAILURE);
 				}
 				if (natengine) {
-					spec->natengine = strdup(natengine);
-					if (!spec->natengine) {
+					curspec->natengine = strdup(natengine);
+					if (!curspec->natengine) {
 						fprintf(stderr,
 						        "Out of memory"
 						        "\n");
 						exit(EXIT_FAILURE);
 					}
 				} else {
-					spec->natengine = NULL;
+					curspec->natengine = NULL;
 				}
 				state++;
 				break;
@@ -375,14 +375,14 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine)
 				// @todo Make this a conf file option?
 				// @todo Need IPv6?
 				if (strstr(**argv, "up:")) {
-					af = sys_sockaddr_parse(&spec->parent_dst_addr,
-										&spec->parent_dst_addrlen,
-										"127.0.0.1", **argv+3, AF_INET, EVUTIL_AI_PASSIVE);
+					af = sys_sockaddr_parse(&curspec->parent_dst_addr,
+										&curspec->parent_dst_addrlen,
+										"127.0.0.1", **argv + 3, AF_INET, EVUTIL_AI_PASSIVE);
 					if (af == -1) {
 						exit(EXIT_FAILURE);
 					}
-					af = sys_sockaddr_parse(&spec->child_src_addr,
-										&spec->child_src_addrlen,
+					af = sys_sockaddr_parse(&curspec->child_src_addr,
+										&curspec->child_src_addrlen,
 										"127.0.0.1", "0", AF_INET, EVUTIL_AI_PASSIVE);
 					if (af == -1) {
 						exit(EXIT_FAILURE);
@@ -404,9 +404,9 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine)
 					state = 0;
 				} else
 				if (!strcmp(**argv, "sni")) {
-					free(spec->natengine);
-					spec->natengine = NULL;
-					if (!spec->ssl) {
+					free(curspec->natengine);
+					curspec->natengine = NULL;
+					if (!curspec->ssl) {
 						fprintf(stderr,
 						        "SNI hostname lookup "
 						        "only works for ssl "
@@ -418,9 +418,9 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine)
 				} else
 				if (nat_exist(**argv)) {
 					/* natengine */
-					free(spec->natengine);
-					spec->natengine = strdup(**argv);
-					if (!spec->natengine) {
+					free(curspec->natengine);
+					curspec->natengine = strdup(**argv);
+					if (!curspec->natengine) {
 						fprintf(stderr,
 						        "Out of memory"
 						        "\n");
@@ -429,16 +429,16 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine)
 					state = 0;
 				} else {
 					/* explicit target address */
-					free(spec->natengine);
-					spec->natengine = NULL;
+					free(curspec->natengine);
+					curspec->natengine = NULL;
 					addr = **argv;
 					state++;
 				}
 				break;
 			case 5:
 				/* dstport */
-				af = sys_sockaddr_parse(&spec->connect_addr,
-				                        &spec->connect_addrlen,
+				af = sys_sockaddr_parse(&curspec->connect_addr,
+				                        &curspec->connect_addrlen,
 				                        addr, **argv, af, 0);
 				if (af == -1) {
 					exit(EXIT_FAILURE);
@@ -447,13 +447,13 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine)
 				break;
 			case 6:
 				/* SNI dstport */
-				spec->sni_port = atoi(**argv);
-				if (!spec->sni_port) {
+				curspec->sni_port = atoi(**argv);
+				if (!curspec->sni_port) {
 					fprintf(stderr, "Invalid port '%s'\n",
 					                **argv);
 					exit(EXIT_FAILURE);
 				}
-				spec->dns = 1;
+				curspec->dns = 1;
 				state = 0;
 				break;
 		}
@@ -463,8 +463,6 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine)
 		fprintf(stderr, "Incomplete proxyspec!\n");
 		exit(EXIT_FAILURE);
 	}
-
-	return spec;
 }
 
 /*
