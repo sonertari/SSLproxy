@@ -581,12 +581,12 @@ pxy_log_connect_nonhttp(pxy_conn_ctx_t *ctx)
 #endif /* HAVE_LOCAL_PROCINFO */
 
 	if (!ctx->src.ssl) {
-		rv = asprintf(&msg, "%s %s %s %s %s"
+		rv = asprintf(&msg, "CONN: %s %s %s %s %s"
 #ifdef HAVE_LOCAL_PROCINFO
 		              " %s"
 #endif /* HAVE_LOCAL_PROCINFO */
 		              "\n",
-		              ctx->passthrough ? "passthrough" : "tcp",
+		              ctx->passthrough ? "passthrough" : (ctx->spec->pop3 ? "pop3" : (ctx->spec->smtp ? "smtp" : "tcp")),
 		              STRORDASH(ctx->srchost_str),
 		              STRORDASH(ctx->srcport_str),
 		              STRORDASH(ctx->dsthost_str),
@@ -596,7 +596,7 @@ pxy_log_connect_nonhttp(pxy_conn_ctx_t *ctx)
 #endif /* HAVE_LOCAL_PROCINFO */
 		             );
 	} else {
-		rv = asprintf(&msg, "%s %s %s %s %s "
+		rv = asprintf(&msg, "CONN: %s %s %s %s %s "
 		              "sni:%s names:%s "
 		              "sproto:%s:%s dproto:%s:%s "
 		              "origcrt:%s usedcrt:%s"
@@ -604,7 +604,7 @@ pxy_log_connect_nonhttp(pxy_conn_ctx_t *ctx)
 		              " %s"
 #endif /* HAVE_LOCAL_PROCINFO */
 		              "\n",
-		              ctx->clienthello_found ? "upgrade" : "ssl",
+		              ctx->clienthello_found ? "upgrade" : (ctx->spec->pop3 ? "pop3s" : (ctx->spec->smtp ? "smtps" : "ssl")),
 		              STRORDASH(ctx->srchost_str),
 		              STRORDASH(ctx->srcport_str),
 		              STRORDASH(ctx->dsthost_str),
@@ -627,7 +627,11 @@ pxy_log_connect_nonhttp(pxy_conn_ctx_t *ctx)
 		goto out;
 	}
 	if (!ctx->opts->detach) {
-		log_err_printf("INFO: %s", msg);
+		log_err_printf("%s", msg);
+	} else if (ctx->opts->statslog) {
+		if (log_stats(msg) == -1) {
+			log_err_printf("WARNING: Stats logging failed\n");
+		}
 	}
 	if (ctx->opts->connectlog) {
 		if (log_connect_print_free(msg) == -1) {
@@ -678,7 +682,7 @@ pxy_log_connect_http(pxy_conn_ctx_t *ctx)
 #endif /* HAVE_LOCAL_PROCINFO */
 
 	if (!ctx->spec->ssl) {
-		rv = asprintf(&msg, "http %s %s %s %s %s %s %s %s %s"
+		rv = asprintf(&msg, "CONN: http %s %s %s %s %s %s %s %s %s"
 #ifdef HAVE_LOCAL_PROCINFO
 		              " %s"
 #endif /* HAVE_LOCAL_PROCINFO */
@@ -697,7 +701,7 @@ pxy_log_connect_http(pxy_conn_ctx_t *ctx)
 #endif /* HAVE_LOCAL_PROCINFO */
 		              ctx->ocsp_denied ? " ocsp:denied" : "");
 	} else {
-		rv = asprintf(&msg, "https %s %s %s %s %s %s %s %s %s "
+		rv = asprintf(&msg, "CONN: https %s %s %s %s %s %s %s %s %s "
 		              "sni:%s names:%s "
 		              "sproto:%s:%s dproto:%s:%s "
 		              "origcrt:%s usedcrt:%s"
@@ -732,7 +736,11 @@ pxy_log_connect_http(pxy_conn_ctx_t *ctx)
 		goto out;
 	}
 	if (!ctx->opts->detach) {
-		log_err_printf("INFO: %s", msg);
+		log_err_printf("%s", msg);
+	} else if (ctx->opts->statslog) {
+		if (log_stats(msg) == -1) {
+			log_err_printf("WARNING: Stats logging failed\n");
+		}
 	}
 	if (ctx->opts->connectlog) {
 		if (log_connect_print_free(msg) == -1) {
@@ -1980,7 +1988,7 @@ pxy_http_resphdr_filter(struct evbuffer *inbuf, struct evbuffer *outbuf, struct 
 		free(line);
 		if (ctx->seen_resp_header) {
 			/* response header complete: log connection */
-			if (!child && WANT_CONNECT_LOG(parent)) {
+			if (!child && (WANT_CONNECT_LOG(parent) || ctx->opts->statslog)) {
 				pxy_log_connect_http(parent);
 			}
 			break;
@@ -2713,7 +2721,10 @@ pxy_connected_enable(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		// @attention Do not pass NULL as user-supplied pointer
 		struct evconnlistener *child_evcl = evconnlistener_new(ctx->thr->evbase, proxy_listener_acceptcb_child, ctx, LEV_OPT_CLOSE_ON_FREE, 1024, ctx->child_fd);
 		if (!child_evcl) {
-			log_err_printf("ERROR: Error creating child evconnlistener: %s, fd=%d, child_fd=%d\n", strerror(errno), fd, ctx->child_fd);
+			log_err_printf("ERROR: Error creating child evconnlistener: %s\n", strerror(errno));
+#ifdef DEBUG_PROXY
+			log_dbg_level_printf(LOG_DBG_MODE_FINER, "ERROR: Error creating child evconnlistener: %s, fd=%d, child_fd=%d\n", strerror(errno), fd, ctx->child_fd);
+#endif /* DEBUG_PROXY */
 			// @attention Cannot call proxy_listener_ctx_free() on child_evcl, child_evcl does not have any ctx with next listener
 			// @attention Close child fd separately, because child evcl does not exist yet, hence fd would not be closed by calling pxy_conn_free()
 			evutil_closesocket(ctx->child_fd);
@@ -2781,7 +2792,7 @@ pxy_connected_enable(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		/* log connection if we don't analyze any headers */
 		if ((!this->ssl || (bev == ctx->src.bev)) &&
 		    (!ctx->spec->http || ctx->passthrough) &&
-		    WANT_CONNECT_LOG(ctx)) {
+		    (WANT_CONNECT_LOG(ctx) || ctx->opts->statslog)) {
 			pxy_log_connect_nonhttp(ctx);
 		}
 
@@ -3057,7 +3068,10 @@ pxy_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 	void (*other_free_and_close_fd_func)(struct bufferevent *, pxy_conn_ctx_t *) = (other->bev==ctx->dst.bev) ? &bufferevent_free_and_close_fd_nonssl : &bufferevent_free_and_close_fd;
 
 	if (events & BEV_EVENT_ERROR) {
-		log_err_printf("ERROR: pxy_bev_eventcb error, fd=%d\n", ctx->fd);
+		log_err_printf("ERROR: BEV_EVENT_ERROR\n");
+#ifdef DEBUG_PROXY
+		log_dbg_level_printf(LOG_DBG_MODE_FINER, "ERROR: pxy_bev_eventcb error, fd=%d\n", ctx->fd);
+#endif /* DEBUG_PROXY */
 		pxy_print_ssl_error(bev, ctx);
 		ctx->thr->errors++;
 
@@ -3097,7 +3111,10 @@ pxy_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 #endif /* DEBUG_PROXY */
 
 		if (bev == ctx->srv_dst.bev) {
-			log_err_printf("WARNING: pxy_bev_eventcb: EOF on outbound connection before connection establishment, fd=%d\n", ctx->fd);
+			log_err_printf("WARNING: EOF on outbound connection before connection establishment\n");
+#ifdef DEBUG_PROXY
+			log_dbg_level_printf(LOG_DBG_MODE_FINER, "WARNING: pxy_bev_eventcb: EOF on outbound connection before connection establishment, fd=%d\n", ctx->fd);
+#endif /* DEBUG_PROXY */
 			pxy_conn_free(ctx, 1);
 			return;
 		} else {
@@ -3119,7 +3136,10 @@ pxy_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 
 			// @todo How to handle the following case?
 			if (!ctx->connected) {
-				log_err_printf("WARNING: pxy_bev_eventcb: EOF on outbound connection before connection establishment, fd=%d\n", ctx->fd);
+				log_err_printf("WARNING: EOF on outbound connection before connection establishment\n");
+#ifdef DEBUG_PROXY
+				log_dbg_level_printf(LOG_DBG_MODE_FINER, "WARNING: pxy_bev_eventcb: EOF on outbound connection before connection establishment, fd=%d\n", ctx->fd);
+#endif /* DEBUG_PROXY */
 				other->closed = 1;
 			} else if (!other->closed) {
 #ifdef DEBUG_PROXY
@@ -3210,7 +3230,10 @@ pxy_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 	}
 
 	if (events & BEV_EVENT_ERROR) {
-		log_err_printf("ERROR: pxy_bev_eventcb_child error, fd=%d\n", ctx->fd);
+		log_err_printf("ERROR: BEV_EVENT_ERROR\n");
+#ifdef DEBUG_PROXY
+		log_dbg_level_printf(LOG_DBG_MODE_FINER, "ERROR: pxy_bev_eventcb_child error, fd=%d\n", ctx->fd);
+#endif /* DEBUG_PROXY */
 		pxy_print_ssl_error(bev, parent);
 		parent->thr->errors++;
 
@@ -3255,7 +3278,10 @@ pxy_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 
 		// @todo How to handle the following case?
 		if (!ctx->connected) {
-			log_err_printf("WARNING: pxy_bev_eventcb_child: EOF on outbound connection before connection establishment, fd=%d, pfd=%d\n", ctx->fd, parent->fd);
+			log_err_printf("WARNING: EOF on outbound connection before connection establishment\n");
+#ifdef DEBUG_PROXY
+			log_dbg_level_printf(LOG_DBG_MODE_FINER, "WARNING: pxy_bev_eventcb_child: EOF on outbound connection before connection establishment, fd=%d, pfd=%d\n", ctx->fd, parent->fd);
+#endif /* DEBUG_PROXY */
 			other->closed = 1;
 		} else if (!other->closed) {
 #ifdef DEBUG_PROXY
@@ -3380,7 +3406,10 @@ pxy_conn_connect(pxy_conn_ctx_t *ctx)
 	
 	/* initiate connection */
 	if (bufferevent_socket_connect(ctx->srv_dst.bev, (struct sockaddr *)&ctx->addr, ctx->addrlen) == -1) {
-		log_err_printf("ERROR: pxy_conn_connect: bufferevent_socket_connect for srv_dst failed, fd=%d\n", fd);
+		log_err_printf("ERROR: pxy_conn_connect: bufferevent_socket_connect for srv_dst failed\n");
+#ifdef DEBUG_PROXY
+		log_dbg_level_printf(LOG_DBG_MODE_FINER, "ERROR: pxy_conn_connect: bufferevent_socket_connect for srv_dst failed, fd=%d\n", fd);
+#endif /* DEBUG_PROXY */
 		// @attention Do not try to close the conn here , otherwise both pxy_conn_connect() and eventcb try to free the conn using pxy_conn_free(),
 		// they are running on different threads, causing multithreading issues, e.g. signal 10.
 		// @todo Should we use thrmgr->mutex? Can we?
@@ -3451,15 +3480,20 @@ pxy_fd_readcb(MAYBE_UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 
 		n = recv(fd, buf, sizeof(buf), MSG_PEEK);
 		if (n == -1) {
-			log_err_printf("ERROR: Error peeking on fd, aborting "
-			               "connection, fd=%d\n", ctx->fd);
+			log_err_printf("ERROR: Error peeking on fd, aborting connection\n");
+#ifdef DEBUG_PROXY
+			log_dbg_level_printf(LOG_DBG_MODE_FINER, "ERROR: Error peeking on fd, aborting connection, fd=%d\n", ctx->fd);
+#endif /* DEBUG_PROXY */
 			evutil_closesocket(fd);
 			pxy_conn_ctx_free(ctx, 1);
 			return;
 		}
 		if (n == 0) {
 			/* socket got closed while we were waiting */
-			log_err_printf("ERROR: Socket got closed while waiting, fd=%d\n", ctx->fd);
+			log_err_printf("ERROR: Socket got closed while waiting\n");
+#ifdef DEBUG_PROXY
+			log_dbg_level_printf(LOG_DBG_MODE_FINER, "ERROR: Socket got closed while waiting, fd=%d\n", ctx->fd);
+#endif /* DEBUG_PROXY */
 			evutil_closesocket(fd);
 			pxy_conn_ctx_free(ctx, 1);
 			return;
@@ -3469,7 +3503,12 @@ pxy_fd_readcb(MAYBE_UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 		if ((rv == 1) && !chello) {
 			log_err_printf("ERROR: Peeking did not yield a (truncated) "
 			               "ClientHello message, "
+			               "aborting connection\n");
+#ifdef DEBUG_PROXY
+			log_dbg_level_printf(LOG_DBG_MODE_FINER, "ERROR: Peeking did not yield a (truncated) "
+			               "ClientHello message, "
 			               "aborting connection, fd=%d\n", ctx->fd);
+#endif /* DEBUG_PROXY */
 			evutil_closesocket(fd);
 			pxy_conn_ctx_free(ctx, 1);
 			return;
@@ -3495,9 +3534,10 @@ pxy_fd_readcb(MAYBE_UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 			ctx->ev = event_new(ctx->evbase, fd, 0,
 			                    pxy_fd_readcb, ctx);
 			if (!ctx->ev) {
-				log_err_printf("ERROR: Error creating retry "
-				               "event, aborting "
-				               "connection, fd=%d\n", ctx->fd);
+				log_err_printf("ERROR: Error creating retry event, aborting connection\n");
+#ifdef DEBUG_PROXY
+				log_dbg_level_printf(LOG_DBG_MODE_FINER, "ERROR: Error creating retry event, aborting connection, fd=%d\n", ctx->fd);
+#endif /* DEBUG_PROXY */
 				evutil_closesocket(fd);
 				pxy_conn_ctx_free(ctx, 1);
 				return;

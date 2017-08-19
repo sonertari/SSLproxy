@@ -162,16 +162,20 @@ pxy_ssl_shutdown_cb(evutil_socket_t fd, UNUSED short what, void *arg)
 		case SSL_ERROR_SSL:
 			goto complete;
 		default:
-			log_err_printf("ERROR: Unhandled SSL_shutdown() "
-			               "error %i.  Closing fd, fd=%d\n", sslerr, fd);
+			log_err_printf("ERROR: Unhandled SSL_shutdown() error %i. Closing fd\n", sslerr);
+#ifdef DEBUG_PROXY
+			log_dbg_level_printf(LOG_DBG_MODE_FINER, "ERROR: Unhandled SSL_shutdown() error %i. Closing fd, fd=%d\n", sslerr, fd);
+#endif /* DEBUG_PROXY */
 			goto complete;
 	}
 	goto complete;
 
 retry:
 	if (ctx->retries++ >= 50) {
-		log_err_printf("WARNING: Failed to shutdown SSL connection cleanly: "
-		               "Max retries reached. Closing fd, fd=%d\n", fd);
+		log_err_printf("WARNING: Failed to shutdown SSL connection cleanly: Max retries reached. Closing fd\n");
+#ifdef DEBUG_PROXY
+		log_dbg_level_printf(LOG_DBG_MODE_FINER, "WARNING: Failed to shutdown SSL connection cleanly: Max retries reached. Closing fd, fd=%d\n", fd);
+#endif /* DEBUG_PROXY */
 		goto complete;
 	}
 	ctx->ev = event_new(ctx->evbase, fd, want, pxy_ssl_shutdown_cb, ctx);
@@ -179,8 +183,10 @@ retry:
 		event_add(ctx->ev, &retry_delay);
 		return;
 	}
-	log_err_printf("ERROR: Failed to shutdown SSL connection cleanly: "
-	               "Cannot create event. Closing fd, fd=%d\n", fd);
+	log_err_printf("ERROR: Failed to shutdown SSL connection cleanly: Cannot create event. Closing fd\n");
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINER, "ERROR: Failed to shutdown SSL connection cleanly: Cannot create event. Closing fd, fd=%d\n", fd);
+#endif /* DEBUG_PROXY */
 
 complete:
 	if (OPTS_DEBUG(ctx->opts)) {

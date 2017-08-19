@@ -60,6 +60,7 @@ typedef struct pxy_thr_ctx {
 	long long unsigned int intif_out_bytes;
 	long long unsigned int extif_in_bytes;
 	long long unsigned int extif_out_bytes;
+	unsigned short stats_idx;
 	pxy_conn_ctx_t *conns;
 } pxy_thr_ctx_t;
 

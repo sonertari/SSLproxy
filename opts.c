@@ -293,7 +293,7 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine, opts_t *opts)
 		switch (state) {
 			default:
 			case 0:
-				/* tcp | ssl | http | https | autossl | mail | mails */
+				/* tcp | ssl | http | https | autossl | pop3 | pop3s | smtp | smtps */
 				curspec = malloc(sizeof(proxyspec_t));
 				memset(curspec, 0, sizeof(proxyspec_t));
 
@@ -305,6 +305,8 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine, opts_t *opts)
 				curspec->http = 0;
 				curspec->upgrade = 0;
 				curspec->mail = 0;
+				curspec->pop3 = 0;
+				curspec->smtp = 0;
 				if (!strcmp(**argv, "tcp")) {
 					// use defaults
 				} else
@@ -321,12 +323,23 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine, opts_t *opts)
 				if (!strcmp(**argv, "autossl")) {
 					curspec->upgrade = 1;
 				} else
-				if (!strcmp(**argv, "mail")) {
+				if (!strcmp(**argv, "pop3")) {
 					curspec->mail = 1;
+					curspec->pop3 = 1;
 				} else
-				if (!strcmp(**argv, "mails")) {
+				if (!strcmp(**argv, "pop3s")) {
 					curspec->ssl = 1;
 					curspec->mail = 1;
+					curspec->pop3 = 1;
+				} else
+				if (!strcmp(**argv, "smtp")) {
+					curspec->mail = 1;
+					curspec->smtp = 1;
+				} else
+				if (!strcmp(**argv, "smtps")) {
+					curspec->ssl = 1;
+					curspec->mail = 1;
+					curspec->smtp = 1;
 				} else {
 					fprintf(stderr, "Unknown connection "
 					                "type '%s'\n", **argv);
@@ -370,9 +383,8 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine, opts_t *opts)
 				state++;
 				break;
 			case 3:
-				/* UTM service port is mandatory */
+				// UTM port is mandatory
 				// The UTM port is set/used in pf and UTM service config.
-				// @todo Make this a conf file option?
 				// @todo Need IPv6?
 				if (strstr(**argv, "up:")) {
 					af = sys_sockaddr_parse(&curspec->parent_dst_addr,
@@ -397,8 +409,10 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine, opts_t *opts)
 				    !strcmp(**argv, "http") ||
 				    !strcmp(**argv, "https") ||
 				    !strcmp(**argv, "autossl") ||
-				    !strcmp(**argv, "mail") ||
-				    !strcmp(**argv, "mails")) {
+				    !strcmp(**argv, "pop3") ||
+				    !strcmp(**argv, "pop3s") ||
+				    !strcmp(**argv, "smtp") ||
+				    !strcmp(**argv, "smtps")) {
 					/* implicit default natengine */
 					(*argv)--; (*argc)++; /* rewind */
 					state = 0;
