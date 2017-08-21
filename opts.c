@@ -284,7 +284,7 @@ opts_proto_dbg_dump(opts_t *opts)
 void
 proxyspec_parse(int *argc, char **argv[], const char *natengine, opts_t *opts)
 {
-	proxyspec_t *curspec;
+	proxyspec_t *curspec = NULL;
 	char *addr = NULL;
 	int af = AF_UNSPEC;
 	int state = 0;
