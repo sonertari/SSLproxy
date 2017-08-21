@@ -162,9 +162,9 @@ pxy_ssl_shutdown_cb(evutil_socket_t fd, UNUSED short what, void *arg)
 		case SSL_ERROR_SSL:
 			goto complete;
 		default:
-			log_err_printf("ERROR: Unhandled SSL_shutdown() error %i. Closing fd\n", sslerr);
+			log_err_printf("CRITICAL: Unhandled SSL_shutdown() error %i. Closing fd\n", sslerr);
 #ifdef DEBUG_PROXY
-			log_dbg_level_printf(LOG_DBG_MODE_FINER, "ERROR: Unhandled SSL_shutdown() error %i. Closing fd, fd=%d\n", sslerr, fd);
+			log_dbg_level_printf(LOG_DBG_MODE_FINER, "CRITICAL: Unhandled SSL_shutdown() error %i. Closing fd, fd=%d\n", sslerr, fd);
 #endif /* DEBUG_PROXY */
 			goto complete;
 	}

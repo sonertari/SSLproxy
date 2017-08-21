@@ -226,12 +226,12 @@ main_loadtgcrt(const char *filename, void *arg)
 
 	cert = cert_new_load(filename);
 	if (!cert) {
-		log_err_printf("ERROR: Failed to load cert and key from PEM file "
+		log_err_printf("CRITICAL: Failed to load cert and key from PEM file "
 		                "'%s'\n", filename);
 		return -1;
 	}
 	if (X509_check_private_key(cert->crt, cert->key) != 1) {
-		log_err_printf("ERROR: Cert does not match key in PEM file "
+		log_err_printf("CRITICAL: Cert does not match key in PEM file "
 		                "'%s':\n", filename);
 		ERR_print_errors_fp(stderr);
 		return -1;
@@ -1173,7 +1173,7 @@ main(int argc, char *argv[])
 	}
 
 	if (opts->pidfile && (sys_pidf_write(pidfd) == -1)) {
-		log_err_printf("ERROR: Failed to write PID to PID file '%s': %s (%i)"
+		log_err_printf("CRITICAL: Failed to write PID to PID file '%s': %s (%i)"
 		               "\n", opts->pidfile, strerror(errno), errno);
 		return -1;
 	}
@@ -1200,14 +1200,14 @@ main(int argc, char *argv[])
 	/* Initialize proxy before dropping privs */
 	proxy_ctx_t *proxy = proxy_new(opts, clisock[0]);
 	if (!proxy) {
-		log_err_printf("ERROR: Failed to initialize proxy.\n");
+		log_err_printf("CRITICAL: Failed to initialize proxy.\n");
 		exit(EXIT_FAILURE);
 	}
 
 	/* Drop privs, chroot */
 	if (sys_privdrop(opts->dropuser, opts->dropgroup,
 	                 opts->jaildir) == -1) {
-		log_err_printf("ERROR: Failed to drop privileges: %s (%i)\n",
+		log_err_printf("CRITICAL: Failed to drop privileges: %s (%i)\n",
 		               strerror(errno), errno);
 		exit(EXIT_FAILURE);
 	}
@@ -1223,11 +1223,11 @@ main(int argc, char *argv[])
 		goto out_log_failed;
 	}
 	if (cachemgr_init() == -1) {
-		log_err_printf("ERROR: Failed to init cache manager.\n");
+		log_err_printf("CRITICAL: Failed to init cache manager.\n");
 		goto out_cachemgr_failed;
 	}
 	if (nat_init() == -1) {
-		log_err_printf("ERROR: Failed to init NAT state table lookup.\n");
+		log_err_printf("CRITICAL: Failed to init NAT state table lookup.\n");
 		goto out_nat_failed;
 	}
 	rv = EXIT_SUCCESS;

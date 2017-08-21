@@ -125,7 +125,7 @@ pxy_conn_ctx_new(evutil_socket_t fd,
 
 	pxy_conn_ctx_t *ctx = malloc(sizeof(pxy_conn_ctx_t));
 	if (!ctx) {
-		log_err_printf("ERROR: Error allocating memory\n");
+		log_err_printf("CRITICAL: Error allocating memory\n");
 		evutil_closesocket(fd);
 		return NULL;
 	}
@@ -133,7 +133,7 @@ pxy_conn_ctx_new(evutil_socket_t fd,
 
 	ctx->uuid = malloc(sizeof(uuid_t));
 	if (!ctx->uuid) {
-		log_err_printf("ERROR: Error allocating memory\n");
+		log_err_printf("CRITICAL: Error allocating memory\n");
 		evutil_closesocket(fd);
 		free(ctx);
 		return NULL;
@@ -1014,12 +1014,12 @@ pxy_srccert_write(pxy_conn_ctx_t *ctx)
 	if (ctx->opts->certgen_writeall || ctx->generated_cert) {
 		if (pxy_srccert_write_to_gendir(ctx,
 		                SSL_get_certificate(ctx->src.ssl), 0) == -1) {
-			log_err_printf("ERROR: Failed to write used certificate\n");
+			log_err_printf("CRITICAL: Failed to write used certificate\n");
 		}
 	}
 	if (ctx->opts->certgen_writeall) {
 		if (pxy_srccert_write_to_gendir(ctx, ctx->origcrt, 1) == -1) {
-			log_err_printf("ERROR: Failed to write orig certificate\n");
+			log_err_printf("CRITICAL: Failed to write orig certificate\n");
 		}
 	}
 }
@@ -1368,7 +1368,7 @@ pxy_bufferevent_setup(pxy_conn_ctx_t *ctx, evutil_socket_t fd, SSL *ssl)
 		bev = bufferevent_socket_new(ctx->evbase, fd, BEV_OPT_DEFER_CALLBACKS);
 	}
 	if (!bev) {
-		log_err_printf("ERROR: Error creating bufferevent socket\n");
+		log_err_printf("CRITICAL: Error creating bufferevent socket\n");
 		return NULL;
 	}
 #if LIBEVENT_VERSION_NUMBER >= 0x02010000
@@ -1412,7 +1412,7 @@ pxy_bufferevent_setup_child(pxy_conn_child_ctx_t *ctx, evutil_socket_t fd, SSL *
 		bev = bufferevent_socket_new(ctx->parent->evbase, fd, BEV_OPT_DEFER_CALLBACKS);
 	}
 	if (!bev) {
-		log_err_printf("ERROR: Error creating bufferevent socket\n");
+		log_err_printf("CRITICAL: Error creating bufferevent socket\n");
 		return NULL;
 	}
 
@@ -1771,7 +1771,7 @@ pxy_conn_autossl_peek_and_upgrade(pxy_conn_ctx_t *ctx)
 			}
 			ctx->srv_dst.ssl = pxy_dstssl_create(ctx);
 			if (!ctx->srv_dst.ssl) {
-				log_err_printf("ERROR: Error creating SSL for "
+				log_err_printf("CRITICAL: Error creating SSL for "
 				               "upgrade\n");
 				return 0;
 			}
@@ -2095,7 +2095,7 @@ pxy_bev_readcb(struct bufferevent *bev, void *arg)
 #endif /* DEBUG_PROXY */
 
 	if (!ctx->connected) {
-		log_err_printf("ERROR: readcb called when other end not connected - "
+		log_err_printf("CRITICAL: readcb called when other end not connected - "
 		               "aborting.\n");
 		log_exceptcb();
 		return;
@@ -2281,7 +2281,7 @@ pxy_bev_readcb_child(struct bufferevent *bev, void *arg)
 #endif /* DEBUG_PROXY */
 		
 	if (!ctx->connected) {
-		log_err_printf("ERROR: readcb called when other end not connected - "
+		log_err_printf("CRITICAL: readcb called when other end not connected - "
 		               "aborting.\n");
 		log_exceptcb();
 		return;
@@ -2420,7 +2420,7 @@ pxy_conn_connect_child(pxy_conn_child_ctx_t *ctx)
 	pxy_conn_ctx_t *parent = ctx->parent;
 
 	if (!parent->addrlen) {
-		log_err_printf("ERROR: Child no target address; aborting connection\n");
+		log_err_printf("CRITICAL: Child no target address; aborting connection\n");
 		evutil_closesocket(ctx->fd);
 		pxy_conn_free(parent, 1);
 		return;
@@ -2429,7 +2429,7 @@ pxy_conn_connect_child(pxy_conn_child_ctx_t *ctx)
 	ctx->src.ssl = NULL;
 	ctx->src.bev = pxy_bufferevent_setup_child(ctx, ctx->fd, ctx->src.ssl);
 	if (!ctx->src.bev) {
-		log_err_printf("ERROR: Error creating child src\n");
+		log_err_printf("CRITICAL: Error creating child src\n");
 		evutil_closesocket(ctx->fd);
 		pxy_conn_free(parent, 1);
 		return;
@@ -2448,7 +2448,7 @@ pxy_conn_connect_child(pxy_conn_child_ctx_t *ctx)
 	if ((parent->spec->ssl || parent->clienthello_found) && !parent->passthrough) {
 		ctx->dst.ssl = pxy_dstssl_create(parent);
 		if (!ctx->dst.ssl) {
-			log_err_printf("ERROR: Error creating SSL\n");
+			log_err_printf("CRITICAL: Error creating SSL\n");
 			// pxy_conn_free()>pxy_conn_free_child() will close the fd, since we have a non-NULL src.bev now
 			pxy_conn_free(parent, 1);
 			return;
@@ -2469,7 +2469,7 @@ pxy_conn_connect_child(pxy_conn_child_ctx_t *ctx)
 		ctx->dst.bev = pxy_bufferevent_setup_child(ctx, -1, ctx->dst.ssl);
 	}
 	if (!ctx->dst.bev) {
-		log_err_printf("ERROR: Error creating bufferevent\n");
+		log_err_printf("CRITICAL: Error creating bufferevent\n");
 		if (ctx->dst.ssl) {
 			SSL_free(ctx->dst.ssl);
 			ctx->dst.ssl = NULL;
@@ -2509,7 +2509,7 @@ pxy_conn_setup_child(evutil_socket_t fd, pxy_conn_ctx_t *parent)
 
 	pxy_conn_child_ctx_t *ctx = pxy_conn_ctx_new_child(fd, parent);
 	if (!ctx) {
-		log_err_printf("ERROR: Error allocating memory\n");
+		log_err_printf("CRITICAL: Error allocating memory\n");
 		evutil_closesocket(fd);
 		pxy_conn_free(parent, 1);
 		return;
@@ -2621,7 +2621,7 @@ pxy_connected_enable(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 			ctx->src.bev = pxy_bufferevent_setup(ctx, fd, ctx->src.ssl);
 		}
 		if (!ctx->src.bev) {
-			log_err_printf("ERROR: Error creating bufferevent\n");
+			log_err_printf("CRITICAL: Error creating bufferevent\n");
 			if (ctx->src.ssl) {
 				SSL_free(ctx->src.ssl);
 				ctx->src.ssl = NULL;
@@ -2711,7 +2711,7 @@ pxy_connected_enable(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		// Child evcls use the evbase of the parent thread, otherwise we would get multithreading issues.
 		evutil_socket_t cfd;
 		if ((cfd = privsep_client_opensock_child(ctx->clisock, ctx->spec)) == -1) {
-			log_err_printf("ERROR: Error opening socket: %s (%i)\n", strerror(errno), errno);
+			log_err_printf("CRITICAL: Error opening socket: %s (%i)\n", strerror(errno), errno);
 			pxy_conn_free(ctx, 1);
 			return 0;
 		}
@@ -2721,9 +2721,9 @@ pxy_connected_enable(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		// @attention Do not pass NULL as user-supplied pointer
 		struct evconnlistener *child_evcl = evconnlistener_new(ctx->thr->evbase, proxy_listener_acceptcb_child, ctx, LEV_OPT_CLOSE_ON_FREE, 1024, ctx->child_fd);
 		if (!child_evcl) {
-			log_err_printf("ERROR: Error creating child evconnlistener: %s\n", strerror(errno));
+			log_err_printf("CRITICAL: Error creating child evconnlistener: %s\n", strerror(errno));
 #ifdef DEBUG_PROXY
-			log_dbg_level_printf(LOG_DBG_MODE_FINER, "ERROR: Error creating child evconnlistener: %s, fd=%d, child_fd=%d\n", strerror(errno), fd, ctx->child_fd);
+			log_dbg_level_printf(LOG_DBG_MODE_FINER, "CRITICAL: Error creating child evconnlistener: %s, fd=%d, child_fd=%d\n", strerror(errno), fd, ctx->child_fd);
 #endif /* DEBUG_PROXY */
 			// @attention Cannot call proxy_listener_ctx_free() on child_evcl, child_evcl does not have any ctx with next listener
 			// @attention Close child fd separately, because child evcl does not exist yet, hence fd would not be closed by calling pxy_conn_free()
@@ -2743,7 +2743,7 @@ pxy_connected_enable(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 
 		if (getsockname(ctx->child_fd, (struct sockaddr *)&child_listener_addr, &child_listener_len) < 0) {
 			perror("getsockname");
-			log_err_printf("ERROR: pxy_connected_enable getsockname error=%s\n", strerror(errno));
+			log_err_printf("CRITICAL: pxy_connected_enable getsockname error=%s\n", strerror(errno));
 			// @todo If getsockname() fails, should we really terminate the connection?
 			// @attention Do not close the child fd here, because child evcl exists now, hence pxy_conn_free() will close it while freeing child_evcl
 			pxy_conn_free(ctx, 1);
@@ -3346,7 +3346,7 @@ pxy_conn_connect(pxy_conn_ctx_t *ctx)
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_connect: ENTER fd=%d\n", fd);
 #endif /* DEBUG_PROXY */
 	if (!ctx->addrlen) {
-		log_err_printf("ERROR: No target address; aborting connection\n");
+		log_err_printf("CRITICAL: No target address; aborting connection\n");
 		evutil_closesocket(fd);
 		pxy_conn_ctx_free(ctx, 1);
 		return;
@@ -3355,7 +3355,7 @@ pxy_conn_connect(pxy_conn_ctx_t *ctx)
 	ctx->dst.ssl= NULL;
 	ctx->dst.bev = pxy_bufferevent_setup(ctx, -1, ctx->dst.ssl);
 	if (!ctx->dst.bev) {
-		log_err_printf("ERROR: Error creating parent dst\n");
+		log_err_printf("CRITICAL: Error creating parent dst\n");
 		evutil_closesocket(fd);
 		pxy_conn_ctx_free(ctx, 1);
 		return;
@@ -3368,7 +3368,7 @@ pxy_conn_connect(pxy_conn_ctx_t *ctx)
 	if (ctx->spec->ssl && !ctx->passthrough) {
 		ctx->srv_dst.ssl = pxy_dstssl_create(ctx);
 		if (!ctx->srv_dst.ssl) {
-			log_err_printf("ERROR: Error creating SSL for srv_dst\n");
+			log_err_printf("CRITICAL: Error creating SSL for srv_dst\n");
 			pxy_conn_free(ctx, 1);
 			return;
 		}
@@ -3406,9 +3406,9 @@ pxy_conn_connect(pxy_conn_ctx_t *ctx)
 	
 	/* initiate connection */
 	if (bufferevent_socket_connect(ctx->srv_dst.bev, (struct sockaddr *)&ctx->addr, ctx->addrlen) == -1) {
-		log_err_printf("ERROR: pxy_conn_connect: bufferevent_socket_connect for srv_dst failed\n");
+		log_err_printf("CRITICAL: pxy_conn_connect: bufferevent_socket_connect for srv_dst failed\n");
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINER, "ERROR: pxy_conn_connect: bufferevent_socket_connect for srv_dst failed, fd=%d\n", fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINER, "CRITICAL: pxy_conn_connect: bufferevent_socket_connect for srv_dst failed, fd=%d\n", fd);
 #endif /* DEBUG_PROXY */
 		// @attention Do not try to close the conn here , otherwise both pxy_conn_connect() and eventcb try to free the conn using pxy_conn_free(),
 		// they are running on different threads, causing multithreading issues, e.g. signal 10.
@@ -3534,9 +3534,9 @@ pxy_fd_readcb(MAYBE_UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 			ctx->ev = event_new(ctx->evbase, fd, 0,
 			                    pxy_fd_readcb, ctx);
 			if (!ctx->ev) {
-				log_err_printf("ERROR: Error creating retry event, aborting connection\n");
+				log_err_printf("CRITICAL: Error creating retry event, aborting connection\n");
 #ifdef DEBUG_PROXY
-				log_dbg_level_printf(LOG_DBG_MODE_FINER, "ERROR: Error creating retry event, aborting connection, fd=%d\n", ctx->fd);
+				log_dbg_level_printf(LOG_DBG_MODE_FINER, "CRITICAL: Error creating retry event, aborting connection, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 				evutil_closesocket(fd);
 				pxy_conn_ctx_free(ctx, 1);
@@ -3601,7 +3601,7 @@ pxy_conn_setup(evutil_socket_t fd,
 	/* create per connection state and attach to thread */
 	pxy_conn_ctx_t *ctx = pxy_conn_ctx_new(fd, thrmgr, spec, opts, clisock);
 	if (!ctx) {
-		log_err_printf("ERROR: Error allocating memory\n");
+		log_err_printf("CRITICAL: Error allocating memory\n");
 		evutil_closesocket(fd);
 		return;
 	}
@@ -3665,7 +3665,7 @@ pxy_conn_setup(evutil_socket_t fd,
 	return;
 
 memout:
-	log_err_printf("ERROR: Aborting connection setup (out of memory)!\n");
+	log_err_printf("CRITICAL: Aborting connection setup (out of memory)!\n");
 	evutil_closesocket(fd);
 	pxy_conn_ctx_free(ctx, 1);
 }
