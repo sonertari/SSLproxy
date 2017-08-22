@@ -1,7 +1,10 @@
-.\" SSLsplit - transparent SSL/TLS interception
+.\" SSLproxy - transparent SSL/TLS proxy
 .\" Copyright (c) 2009-2016, Daniel Roethlisberger <daniel@roe.ch>
 .\" All rights reserved.
 .\" http://www.roe.ch/SSLsplit
+.\"
+.\" The modifications for SSLproxy are copyrighted to
+.\" Soner Tari <sonertari@gmail.com>
 .\"
 .\" Redistribution and use in source and binary forms, with or without
 .\" modification, are permitted provided that the following conditions
@@ -23,85 +26,91 @@
 .\" (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
 .\" THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 .\"
-.TH SSLSPLIT 1  "1 April 2012"
+.TH SSLPROXY 1  "22 August 2017"
 .SH NAME
-sslsplit \-\- transparent SSL/TLS interception
+sslproxy \-\- transparent SSL/TLS proxy for diverting packets to programs
 .SH SYNOPSIS
 .na
-.B sslsplit
-[\fB-kCKwWOPZdDgGsrReumjplLSFi\fP] \fB-c\fP \fIpem\fP
+.B sslproxy
+[\fB-kCKwWOPZdDgGsrReumjplLSFif\fP] \fB-c\fP \fIpem\fP
 \fIproxyspecs\fP [...]
 .br
-.B sslsplit
-[\fB-kCKwWOPZdDgGsrReumjplLSFi\fP] \fB-c\fP \fIpem\fP \fB-t\fP \fIdir\fP
+.B sslproxy
+[\fB-kCKwWOPZdDgGsrReumjplLSFif\fP] \fB-c\fP \fIpem\fP \fB-t\fP \fIdir\fP
 \fIproxyspecs\fP [...]
 .br
-.B sslsplit
-[\fB-OPZwWdDgGsrReumjplLSFi\fP] \fB-t\fP \fIdir\fP
+.B sslproxy
+[\fB-OPZwWdDgGsrReumjplLSFif\fP] \fB-t\fP \fIdir\fP
 \fIproxyspecs\fP [...]
 .br
-.B sslsplit -E
+.B sslproxy [\fB-kCKwWOPZdDgGsrReumjplLSFi\fP] -f \fIconffile\fP
 .br
-.B sslsplit -V
+.B sslproxy -E
 .br
-.B sslsplit -h
+.B sslproxy -V
+.br
+.B sslproxy -h
 .br
 .ad
 .SH DESCRIPTION
-SSLsplit is a tool for man-in-the-middle attacks against SSL/TLS encrypted
-network connections.  It is intended to be useful for network forensics,
-application security analysis and penetration testing.
+As SSLproxy is based on SSLsplit, this is a modified SSLsplit man page.
 .LP
-SSLsplit is designed to transparently terminate connections that are redirected
-to it using a network address translation engine.  SSLsplit then terminates
-SSL/TLS and initiates a new SSL/TLS connection to the original destination
-address, while logging all data transmitted.
-Besides NAT based operation, SSLsplit also supports static destinations and
-using the server name indicated by SNI as upstream destination.
-SSLsplit is purely a transparent proxy and cannot act as a HTTP or SOCKS proxy
-configured in a browser.
-See NAT ENGINES and PROXY SPECIFICATIONS below for specifics on the different
-modes of operation.
+SSLproxy is a proxy for SSL/TLS encrypted network connections.  It is intended t
+o be used for diverting network traffic to other programs, such as UTM services.
 .LP
-SSLsplit supports plain TCP, plain SSL, HTTP and HTTPS connections over both
-IPv4 and IPv6.
-SSLsplit fully supports Server Name Indication (SNI) and is able to work with
-RSA, DSA and ECDSA keys and DHE and ECDHE cipher suites.  Depending on the
-version of OpenSSL, SSLsplit supports SSL 3.0, TLS 1.0, TLS 1.1 and TLS 1.2,
-and optionally SSL 2.0 as well.
+SSLproxy is designed to transparently terminate connections that are redirected 
+to it using a network address translation engine.  SSLproxy then terminates SSL/
+TLS and initiates a new SSL/TLS connection to the original destination address. 
+ Packets received on the client side are decrypted and sent to the program liste
+ning on a port given in the proxy specification. SSLproxy inserts in the first p
+acket the address and port it is expecting to receive the packets back from the 
+program. Upon receiving the packets back, SSLproxy re-encrypts and sends them to
+ their original destination. The return traffic follows the same path back to th
+e client.
 .LP
-For SSL and HTTPS connections, SSLsplit generates and signs forged X509v3
-certificates on-the-fly, mimicking the original server certificate's subject
-DN, subjectAltName extension and other characteristics.
-SSLsplit has the ability to use existing certificates of which the private key
-is available, instead of generating forged ones.  SSLsplit supports NULL-prefix
-CN certificates but otherwise does not implement exploits against specific
-certificate verification vulnerabilities in SSL/TLS stacks.
+The program that packets are diverted to should support this mode of operation. 
+Specifically, it should be able to recognize the SSLproxy address in the first p
+acket, and give the first and subsequent packets back to SSLproxy listening on t
+hat address, instead of sending them to the original destination as it normally 
+would.
 .LP
-SSLsplit implements a number of defences against mechanisms which would
-normally prevent MitM attacks or make them more difficult.
-SSLsplit can deny OCSP requests in a generic way.
-For HTTP and HTTPS connections, SSLsplit removes response headers
-for HPKP in order to prevent server-instructed public key pinning,
-for HSTS to avoid the strict transport security restrictions,
-and Alternate Protocols to prevent switching to QUIC/SPDY.
-HTTP compression, encodings and keep-alive are disabled to make the logs more
-readable.
+SSLproxy supports plain TCP, plain SSL, HTTP, HTTPS, POP3, POP3S, SMTP, and SMTP
+S connections over both
+IPv4 and IPv6.  SSLproxy fully supports Server Name Indication (SNI) and is able
+ to work with RSA, DSA and ECDSA keys and DHE and ECDHE cipher suites.  Dependin
+g on the version of OpenSSL, SSLproxy supports SSL 3.0, TLS 1.0, TLS 1.1 and TLS
+ 1.2, and optionally SSL 2.0 as well.
 .LP
-As an experimental feature, SSLsplit supports STARTTLS and similar mechanisms,
-where a protocol starts on a plain text TCP connection and is later upgraded to
-SSL/TLS through protocol-specific means, such as the STARTTLS command in SMTP.
-SSLsplit supports generic upgrading of TCP connections to SSL.
+For SSL/TLS connections, SSLproxy generates and signs forged X509v3 certificates
+ on-the-fly, mimicking the original server certificate's subject DN, subjectAltN
+ame extension and other characteristics.  SSLproxy has the ability to use existi
+ng certificates of which the private key is available, instead of generating for
+ged ones.  SSLproxy supports NULL-prefix CN certificates but otherwise does not 
+implement exploits against specific certificate verification vulnerabilities in 
+SSL/TLS stacks.
+.LP
+SSLproxy implements a number of defences against mechanisms which would normally
+ prevent MitM attacks or make them more difficult.  SSLproxy can deny OCSP reque
+sts in a generic way.  For HTTP and HTTPS connections, SSLproxy removes response
+ headers for HPKP in order to prevent server-instructed public key pinning, for 
+HSTS to avoid the strict transport security restrictions, and Alternate Protocol
+s to prevent switching to QUIC/SPDY.  HTTP compression, encodings and keep-alive
+ are disabled to make the logs more readable.
+.LP
+Another reason to disable persistent connections is to reduce file descriptor us
+age. Accordingly, connections are closed if they remain idle for a certain perio
+d of time. The default timeout is 120 seconds, which can be changed in a configu
+ration file.
 .LP
 In order to maximize the chances that a connection can be successfully split,
-SSLsplit does not verify upstream server certificates.  Instead, all
+SSLproxy does not verify upstream server certificates.  Instead, all
 certificates including self-signed are accepted and if the expected hostname
 signalled in SNI is missing from the server certificate, it will be added to
 dynamically forged certificates.
 .LP
-SSLsplit does not automagically redirect any network traffic.  To actually
-implement an attack, you also need to redirect the traffic to the system
-running \fBsslsplit\fP.  Your options include running \fBsslsplit\fP on a
+SSLproxy does not automagically redirect any network traffic.  To actually
+implement a proxy, you also need to redirect the traffic to the system
+running \fBsslproxy\fP.  Your options include running \fBsslproxy\fP on a
 legitimate router, ARP spoofing, ND spoofing, DNS poisoning, deploying a rogue
 access point (e.g. using hostap mode), physical recabling, malicious VLAN
 reconfiguration or route injection, /etc/hosts modification and so on.
@@ -113,7 +122,7 @@ If \fIpemfile\fP also contains the matching CA private key, it is also loaded,
 otherwise it must be provided with \fB-k\fP.
 If \fIpemfile\fP also contains Diffie-Hellman group parameters, they are also
 loaded, otherwise they can be provided with \fB-g\fP.
-If \fB-t\fP is also given, SSLsplit will only forge a certificate if there is
+If \fB-t\fP is also given, SSLproxy will only forge a certificate if there is
 no matching certificate in the provided certificate directory.
 .TP
 .B \-C \fIpemfile\fP
@@ -126,9 +135,11 @@ be included in the certificate chain.
 Detach from TTY and run as a daemon, logging error messages to syslog instead
 of standard error.
 .TP
-.B \-D
+.B \-D \fIlevel\fP
 Run in debug mode, log lots of debugging information to standard error.  This
-also forces foreground mode and cannot be used with \fB-d\fP.
+also forces foreground mode and cannot be used with \fB-d\fP. Debug \fIlevel\fP 
+can be a number from 1 to 4, a higher number meaning more verbosity.
+
 .TP
 .B \-e \fIengine\fP
 Use \fIengine\fP as the default NAT engine for \fIproxyspecs\fP without
@@ -138,7 +149,11 @@ returned by \fB-E\fP.
 .TP
 .B \-E
 List all supported NAT engines available on the system and exit.  See
-NAT ENGINES for a list of NAT engines currently supported by SSLsplit.
+NAT ENGINES for a list of NAT engines currently supported by SSLproxy.
+.TP
+.B \-f \fIconffile\fP
+Read configuraion from \fIconffile\fP. Only certain configuration options can be
+ loaded from file.
 .TP
 .B \-F \fIlogspec\fP
 Log connection content to separate log files with the given path specification
@@ -148,18 +163,18 @@ Information about the connection will be contained in the filename only.
 .TP
 .B \-g \fIpemfile\fP
 Use Diffie-Hellman group parameters from \fIpemfile\fP for Ephemereal
-Diffie-Hellman (EDH/DHE) cipher suites.  If \fB-g\fP is not given, SSLsplit
+Diffie-Hellman (EDH/DHE) cipher suites.  If \fB-g\fP is not given, SSLproxy
 first tries to load DH parameters from the PEM files given by \fB-K\fP,
 \fB-k\fP or \fB-c\fP.  If no DH parameters are found in the key files, built-in
 group parameters are automatically used.
-The \fB-g\fP option is only available if SSLsplit was built against a version
+The \fB-g\fP option is only available if SSLproxy was built against a version
 of OpenSSL which supports Diffie-Hellman cipher suites.
 .TP
 .B \-G \fIcurve\fP
 Use the named \fIcurve\fP for Ephemereal Elliptic Curve Diffie-Hellman (ECDHE)
 cipher suites.  If \fB-G\fP is not given, a default curve (\fBprime256v1\fP) is
 used automatically.
-The \fB-G\fP option is only available if SSLsplit was built against a version
+The \fB-G\fP option is only available if SSLproxy was built against a version
 of OpenSSL which supports Elliptic Curve Diffie-Hellman cipher suites.
 .TP
 .B \-h
@@ -168,7 +183,7 @@ Display help on usage and exit.
 .B \-i
 For each connection, find the local process owning the connection.  This makes
 process information such as pid, owner:group and executable path for
-connections originating on the same system as SSLsplit available to the
+connections originating on the same system as SSLproxy available to the
 connect log and enables the respective \fB-F\fP path specification directives.
 \fB-i\fP is available on Mac OS X and FreeBSD; support for other platforms has
 not been implemented yet.
@@ -188,12 +203,12 @@ If \fIpemfile\fP also contains the matching CA certificate, it is also loaded,
 otherwise it must be provided with \fB-c\fP.
 If \fIpemfile\fP also contains Diffie-Hellman group parameters, they are also
 loaded, otherwise they can be provided with \fB-g\fP.
-If \fB-t\fP is also given, SSLsplit will only forge a certificate if there is
+If \fB-t\fP is also given, SSLproxy will only forge a certificate if there is
 no matching certificate in the provided certificate directory.
 .TP
 .B \-K \fIpemfile\fP
 Use private key from \fIpemfile\fP for the leaf certificates forged on-the-fly.
-If \fB-K\fP is not given, SSLsplit will generate a random 1024-bit RSA key.
+If \fB-K\fP is not given, SSLproxy will generate a random 1024-bit RSA key.
 .TP
 .B \-l \fIlogfile\fP
 Log connections to \fIlogfile\fP in a single line per connection format,
@@ -219,28 +234,14 @@ HTTP requests are being treated as OCSP requests if the method is \fBGET\fP
 and the URI contains a syntactically valid OCSPRequest ASN.1 structure
 parsable by OpenSSL, or if the method is \fBPOST\fP and the \fBContent-Type\fP
 is \fBapplication/ocsp-request\fP.
-For this to be effective, SSLsplit must be handling traffic destined to the
-port used by the OCSP server.  In particular, SSLsplit must be configured to
+For this to be effective, SSLproxy must be handling traffic destined to the
+port used by the OCSP server.  In particular, SSLproxy must be configured to
 receive traffic to all ports used by OCSP servers of targetted certificates
 within the \fIcertdir\fP specified by \fB-t\fP.
 .TP
 .B \-p \fIpidfile\fP
 Write the process ID to \fIpidfile\fP and refuse to run if the \fIpidfile\fP
 is already in use by another process.
-.TP
-.B \-P
-Passthrough SSL/TLS connections which cannot be split instead of dropping them.
-Connections cannot be split if \fB-c\fP and \fB-k\fP are not given and the
-site does not match any certificate loaded using \fB-t\fP, or if the connection
-to the original server gives SSL/TLS errors.  Specifically, this happens if the
-site requests a client certificate.
-In these situations, passthrough with \fB-P\fP results in uninterrupted service
-for the clients, while dropping is the more secure alternative if unmonitored
-connections must be prevented.
-Passthrough mode currently does not apply to SSL/TLS errors in the connection
-from the client, since the connection from the client cannot easily be retried.
-Specifically, \fB-P\fP does not currently work for clients that do not accept
-forged certificates.
 .TP
 .B \-r \fIproto\fP
 Force SSL/TLS protocol version on both client and server side to \fIproto\fP
@@ -275,7 +276,7 @@ used.
 Normally, SSL/TLS implementations choose the most secure cipher suites, not the
 fastest ones.  By specifying an appropriate OpenSSL cipher list, the set of
 cipher suites can be limited to fast algorithms, or \fBeNULL\fP cipher suites
-can be added.  Note that for connections to be successful, the SSLsplit cipher
+can be added.  Note that for connections to be successful, the SSLproxy cipher
 suites must include at least one cipher suite supported by both the client and
 the server of each connection.
 See ciphers(1) for details on how to construct OpenSSL cipher lists.
@@ -292,7 +293,7 @@ Use private key, certificate and certificate chain from PEM files in
 certificates, instead of using certificates forged on-the-fly.
 A single PEM file must contain a single private key, a single certificate and
 optionally intermediate and root CA certificates to use as certificate chain.
-When using \fB-t\fP, SSLsplit will first attempt to use a matching certificate
+When using \fB-t\fP, SSLproxy will first attempt to use a matching certificate
 loaded from \fIcertdir\fP.
 If \fB-c\fP and \fB-k\fP are also given, certificates will be forged
 on-the-fly for sites matching none of the common names in the certificates
@@ -303,7 +304,7 @@ Otherwise, connections matching no certificate will be dropped, or if
 .B \-u
 Drop privileges after opening sockets and files by setting the real,
 effective and stored user IDs to \fIuser\fP and loading the appropriate
-primary and ancillary groups.  If \fB-u\fP is not given, SSLsplit will drop
+primary and ancillary groups.  If \fB-u\fP is not given, SSLproxy will drop
 privileges to the stored UID if EUID != UID (setuid bit scenario), or to
 \fBnobody\fP if running with full \fBroot\fP privileges (EUID == UID == 0).
 Due to an Apple bug, \fB-u\fP cannot be used with \fBpf\fP proxyspecs on
@@ -328,33 +329,39 @@ newly generated, such as those loaded from \fB-t\fP.
 .B \-Z
 Disable SSL/TLS compression on all connections.  This is useful if your
 limiting factor is CPU, not network bandwidth.
-The \fB-Z\fP option is only available if SSLsplit was built against a version
+The \fB-Z\fP option is only available if SSLproxy was built against a version
 of OpenSSL which supports disabling compression.
 .SH "PROXY SPECIFICATIONS"
 Proxy specifications (\fIproxyspecs\fP) consist of the connection type, listen
-address and static forward address or address resolution mechanism (NAT engine,
-SNI DNS lookup):
+address and program port:
 .LP
 .na
-\fBhttps\fP \fIlistenaddr port\fP
-[\fInat-engine\fP|\fIfwdaddr port\fP|\fBsni\fP \fIport\fP]
+\fBhttps\fP \fIlistenaddr port\fP \fIup:port\fP
 .br
-\fBssl\fP   \fIlistenaddr port\fP
-[\fInat-engine\fP|\fIfwdaddr port\fP|\fBsni\fP \fIport\fP]
+\fBpop3s\fP \fIlistenaddr port\fP \fIup:port\fP
 .br
-\fBhttp\fP  \fIlistenaddr port\fP
-[\fInat-engine\fP|\fIfwdaddr port\fP]
+\fBsmtps\fP \fIlistenaddr port\fP \fIup:port\fP
 .br
-\fBtcp\fP   \fIlistenaddr port\fP
-[\fInat-engine\fP|\fIfwdaddr port\fP]
+\fBssl\fP   \fIlistenaddr port\fP \fIup:port\fP
 .br
-\fBautossl\fP \fIlistenaddr port\fP
-[\fInat-engine\fP|\fIfwdaddr port\fP]
+\fBhttp\fP  \fIlistenaddr port\fP \fIup:port\fP
+.br
+\fBpop3\fP  \fIlistenaddr port\fP \fIup:port\fP
+.br
+\fBsmtp\fP  \fIlistenaddr port\fP \fIup:port\fP
+.br
+\fBtcp\fP   \fIlistenaddr port\fP \fIup:port\fP
 .ad
 .TP
 \fBhttps\fP
 SSL/TLS interception with HTTP protocol decoding, including the removal of
 HPKP, HSTS and Alternate Protocol response headers.
+.TP
+\fBpop3s\fP
+SSL/TLS interception with POP3 protocol decoding.
+.TP
+\fBsmtps\fP
+SSL/TLS interception with SMTP protocol decoding.
 .TP
 \fBssl\fP
 SSL/TLS interception without any lower level protocol decoding; decrypted
@@ -364,58 +371,35 @@ connection content is treated as opaque stream of bytes and not modified.
 Plain TCP connection without SSL/TLS, with HTTP protocol decoding, including
 the removal of HPKP, HSTS and Alternate Protocol response headers.
 .TP
+\fBpop3\fP
+Plain POP3 connection without SSL/TLS and with POP3 protocol
+decoding.
+.TP
+\fBsmtp\fP
+Plain SMTP connection without SSL/TLS and with SMTP protocol
+decoding.
+.TP
 \fBtcp\fP
 Plain TCP connection without SSL/TLS and without any lower level protocol
 decoding; decrypted connection content is treated as opaque stream of bytes
 and not modified.
 .TP
-\fBautossl\fP
-Plain TCP connection until a Client Hello SSL/TLS message appears in the byte
-stream, then automatic upgrade to SSL/TLS interception.
-This is generic, protocol-independent STARTTLS support, that may erroneously
-trigger on byte sequences that look like Client Hello messages even though
-there was no actual STARTTLS command issued.
-This is an experimental feature and may in its current state miss some Client
-Hello messages depending on circumstances.  YMMV.
-Testing and patches highly welcome.
-.TP
 .I listenaddr port
 IPv4 or IPv6 address and port or service name to listen on.  This is the
 address and port where the NAT engine should redirect connections to.
 .TP
-.I nat-engine
-NAT engine to query for determining the original destination address and port
-of transparently redirected connections.
-If no engine is given, the default engine is used, unless overridden with
-\fB-e\fP.  When using a NAT engine, \fBsslsplit\fP needs to run on the same
-system as the NAT rules redirecting the traffic to \fBsslsplit\fP.
-See NAT ENGINES for a list of supported NAT engines.
-.TP
-.I fwdaddr port
-Static destination address, IPv4 or IPv6, with port or service name.  When this
-is used, connections are forwarded to the given server address and port.
-If \fIfwdaddr\fP is a hostname, it will be resolved to an IP address.
-.TP
-\fBsni\fP \fIport\fP
-Use the Server Name Indication (SNI) hostname sent by the client in the
-Client Hello SSL/TLS message to determine the IP address of the server to
-connect to.  This only works for \fBssl\fP and \fBhttps\fP \fIproxyspecs\fP and
-needs a port or service name as an argument.
-Because this requires DNS lookups, it is preferrable to use NAT engine
-lookups (see above), except when that is not possible, such as when there is
-no supported NAT engine or when running \fBsslsplit\fP on a different system
-than the NAT rules redirecting the actual connections.
-Note that when using \fB-j\fP with \fBsni\fP, you may need to prepare
-\fIjaildir\fP to make name resolution work from within the chroot directory.
+.I up:port
+Port or service name that the program is listening for connections.  This is the
+port where the traffic should be diverted to.
 .SH SIGNALS
-A running \fBsslsplit\fP accepts SIGINT and SIGQUIT for a clean shutdown and
+A running \fBsslproxy\fP accepts SIGINT and SIGQUIT for a clean shutdown and
 SIGUSR1 to re-open the long-living log files (\fB-l\fP and \fB-L\fP).
 Per-connection log files (\fB-S\fP and \fB-F\fP) are not re-opened because
 their filename is specific to the connection.
 .SH "LOG SPECIFICATIONS"
 Log specifications are composed of zero or more printf-style directives;
 ordinary characters are included directly in the output path.
-SSLsplit current supports the following directives:
+SSLproxy current supports the following directives:
 .TP
 .I %T
 The initial connection time as an ISO 8601 UTC timestamp.
@@ -468,13 +452,13 @@ this directive will be omitted from the output path.
 A literal '%' character.
 .LP
 .SH "NAT ENGINES"
-SSLsplit currently supports the following NAT engines:
+SSLproxy currently supports the following NAT engines:
 .TP
 .B pf
 OpenBSD packet filter (pf) \fBrdr\fP/\fBrdr-to\fP NAT redirects, also available
 on FreeBSD, NetBSD and Mac OS X.
 Fully supported, including IPv6.
-Note that SSLsplit needs permission to open \fB/dev/pf\fP for reading, which by
+Note that SSLproxy needs permission to open \fB/dev/pf\fP for reading, which by
 default means that it needs to run under \fBroot\fP privileges.
 Assuming inbound interface \fBem0\fP, first in old (FreeBSD, Mac OS X),
 then in new (OpenBSD 4.7+) syntax:
@@ -537,7 +521,7 @@ First in IPFW, then in pf \fBdivert-to\fP syntax:
 .B ipfilter
 IPFilter (ipfilter, ipf), available on many systems, including FreeBSD, NetBSD,
 Linux and Solaris.
-Note that SSLsplit needs permission to open \fB/dev/ipnat\fP for reading, which
+Note that SSLproxy needs permission to open \fB/dev/ipnat\fP for reading, which
 by default means that it needs to run under \fBroot\fP privileges.
 Only supports IPv4 due to limitations in the SIOCGNATL ioctl(2) interface.
 Assuming inbound interface \fBbge0\fP:
@@ -564,7 +548,7 @@ interface.
          -j REDIRECT --to-ports 10443\fP
 .fi
 .LP
-Note that SSLsplit is only able to accept incoming connections if it binds
+Note that SSLproxy is only able to accept incoming connections if it binds
 to the correct IP address (e.g. 192.0.2.1) or on all interfaces (0.0.0.0).
 REDIRECT uses the local interface address of the incoming interface as
 target IP address, or 127.0.0.1 for locally generated packets.
@@ -607,66 +591,20 @@ Note that return path filtering (rp_filter) also needs to be disabled on
 interfaces which handle TPROXY redirected traffic.
 .RE
 .SH EXAMPLES
-Matching the above NAT engine configuration samples, intercept HTTP and HTTPS
-over IPv4 and IPv6 using forged certificates with CA private key \fBca.key\fP
+With configuraion similar to the above NAT engine samples, intercept HTTPS and P
+OP3S
+over IPv4 using forged certificates with CA private key \fBca.key\fP
 and certificate \fBca.crt\fP, logging connections to \fBconnect.log\fP and
 connection data into separate files under \fB/tmp\fP (add \fB-e\fP
 \fInat-engine\fP to select the appropriate engine if multiple engines are
-available on your system):
+available on your system) and diverting packets to a program running on address 
+127.0.0.1 and port 8080 for HTTPS and to another program running on address 127.
+0.0.1 and port 8110 for POP3S:
 .LP
 .nf
-\fBsslsplit -k ca.key -c ca.crt -l connect.log -L /tmp \\
-         https ::1 10443  https 127.0.0.1 10443 \\
-         http  ::1 10080  http  127.0.0.1 10080\fP
-.fi
-.LP
-If the Linux netfilter engine is used with the iptables REDIRECT target, it is
-important to listen to the correct IP address (e.g. 192.0.2.1) or on all
-interfaces (0.0.0.0), otherwise SSLsplit is not able to accept incoming
-connections.
-.LP
-Intercepting IMAP/IMAPS using the same settings:
-.LP
-.nf
-\fBsslsplit -k ca.key -c ca.crt -l connect.log -L /tmp \\
-         ssl ::1 10993  ssl 127.0.0.1 10993 \\
-         tcp ::1 10143  tcp 127.0.0.1 10143\fP
-.fi
-.LP
-A more targetted setup, HTTPS only, using certificate/chain/key files from
-\fB/path/to/cert.d\fP and statically redirecting to \fBwww.example.org\fP
-instead of querying a NAT engine:
-.LP
-.nf
-\fBsslsplit -t /path/to/cert.d -l connect.log -L /tmp \\
-         https ::1       10443 www.example.org 443 \\
-         https 127.0.0.1 10443 www.example.org 443\fP
-.fi
-.LP
-The original example, but using SSL options optimized for speed by disabling
-compression and selecting only fast cipher cipher suites and using a
-precomputed private key \fBleaf.key\fP for the forged certificates.  Most
-significant speed increase is gained by choosing fast algorithms and small
-keysizes for the CA and leaf private keys.  Check \fBopenssl speed\fP for
-algorithm performance on your system.  Note that clients may not support all
-algorithms and key sizes.  Also, some clients warn their users about cipher
-suites they consider weak.
-.LP
-.nf
-\fBsslsplit -Z -s NULL:RC4:AES128:-DHE -K leaf.key \\
-         -k ca.key -c ca.crt -l connect.log -L /tmp \\
-         https ::1 10443  https 127.0.0.1 10443 \\
-         http  ::1 10080  http  127.0.0.1 10080\fP
-.fi
-.LP
-The original example, but running as a daemon under user \fBsslsplit\fP and
-writing a PID file:
-.LP
-.nf
-\fBsslsplit -d -p /var/run/sslsplit.pid -u sslsplit \\
-         -k ca.key -c ca.crt -l connect.log -L /tmp \\
-         https ::1 10443  https 127.0.0.1 10443 \\
-         http  ::1 10080  http  127.0.0.1 10080\fP
+\fBsslproxy -k ca.key -c ca.crt -l connect.log -L /tmp \\
+         https 127.0.0.1 8443 up:8080 \\
+         pop3s 127.0.0.1 8995 up:8110\fP
 .fi
 .LP
 To generate a CA private key \fBca.key\fP  and certificate \fBca.crt\fP using
@@ -688,11 +626,11 @@ authorityKeyIdentifier  = keyid:always,issuer:always
 \fBopenssl genrsa -out ca.key 2048\fP
 \fBopenssl req -new -nodes -x509 -sha256 -out ca.crt -key ca.key \\
         -config x509v3ca.cnf -extensions v3_ca \\
-        -subj '/O=SSLsplit Root CA/CN=SSLsplit Root CA/' \\
+        -subj '/O=SSLproxy Root CA/CN=SSLproxy Root CA/' \\
         -set_serial 0 -days 3650\fP
 .fi
 .SH NOTES
-SSLsplit is able to handle a relatively high number of listeners and
+SSLproxy is able to handle a relatively high number of listeners and
 connections due to a multithreaded, event based architecture based on libevent,
 taking advantage of platform specific select() replacements such as kqueue.
 The main thread handles the listeners and signalling, while a number of worker
@@ -705,19 +643,22 @@ certificates and SSL sessions.  Logging is implemented in separate disk writer
 threads to ensure that socket event handling threads don't have to block on
 disk I/O.
 DNS lookups are performed asynchroniously.
-SSLsplit uses SSL session caching on both ends to minimize the amount of full
+SSLproxy uses SSL session caching on both ends to minimize the amount of full
 SSL handshakes, but even then, the limiting factor in handling SSL connections
 are the actual bignum computations.
 .SH "SEE ALSO"
 openssl(1), ciphers(1), speed(1),
 pf(4), ipfw(8), iptables(8), ip6tables(8), ip(8),
 hostapd(8), arpspoof(8), parasite6(8), yersinia(8),
-.I https://www.roe.ch/SSLsplit
+.I https://www.roe.ch/SSLsplit, 
+.I https://github.com/sonertari/SSLproxy
 .SH AUTHORS
 SSLsplit was written by Daniel Roethlisberger <daniel@roe.ch>.
-
-The following individuals have contributed code or documentation, in
-chronological order of their first contribution:
+.LP
+SSLproxy has been developed by Soner Tari <sonertari@gmail.com>.
+.LP
+The following individuals have contributed code or documentation to the SSLsplit
+ project, in chronological order of their first contribution:
 Steve Wills, Landon Fuller, Wayne Jensen, Rory McNamara, Alexander Neumann,
 Adam Jacob Muller, Richard Poole, Maciej Kotowicz, Eun Soo Park and Christian
 Groschupp.
@@ -726,5 +667,7 @@ Use Github for submission of bug reports or patches:
 .LP
 .RS
 .I https://github.com/droe/sslsplit
+.LP
+.I https://github.com/sonertari/sslproxy
 .RE
 .LP
