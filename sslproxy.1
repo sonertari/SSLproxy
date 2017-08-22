@@ -1,10 +1,12 @@
 .\" SSLproxy - transparent SSL/TLS proxy
+.\" Copyright (c) 2017, Soner Tari <sonertari@gmail.com> 
 .\" Copyright (c) 2009-2016, Daniel Roethlisberger <daniel@roe.ch>
 .\" All rights reserved.
+.\" https://github.com/sonertari/SSLproxy
 .\" http://www.roe.ch/SSLsplit
 .\"
-.\" The modifications for SSLproxy are copyrighted to
-.\" Soner Tari <sonertari@gmail.com>
+.\" The modifications for SSLproxy are licensed under the same terms as
+.\" SSLsplit.
 .\"
 .\" Redistribution and use in source and binary forms, with or without
 .\" modification, are permitted provided that the following conditions
@@ -55,57 +57,57 @@ sslproxy \-\- transparent SSL/TLS proxy for diverting packets to programs
 .SH DESCRIPTION
 As SSLproxy is based on SSLsplit, this is a modified SSLsplit man page.
 .LP
-SSLproxy is a proxy for SSL/TLS encrypted network connections.  It is intended t
-o be used for diverting network traffic to other programs, such as UTM services.
+SSLproxy is a proxy for SSL/TLS encrypted network connections.  It is intended 
+to be used for diverting network traffic to other programs, such as UTM 
+services.
 .LP
 SSLproxy is designed to transparently terminate connections that are redirected 
-to it using a network address translation engine.  SSLproxy then terminates SSL/
-TLS and initiates a new SSL/TLS connection to the original destination address. 
- Packets received on the client side are decrypted and sent to the program liste
-ning on a port given in the proxy specification. SSLproxy inserts in the first p
-acket the address and port it is expecting to receive the packets back from the 
-program. Upon receiving the packets back, SSLproxy re-encrypts and sends them to
- their original destination. The return traffic follows the same path back to th
-e client.
+to it using a network address translation engine.  SSLproxy then terminates 
+SSL/TLS and initiates a new SSL/TLS connection to the original destination 
+address. Packets received on the client side are decrypted and sent to the 
+program listening on a port given in the proxy specification. SSLproxy inserts 
+in the first packet the address and port it is expecting to receive the packets 
+back from the program. Upon receiving the packets back, SSLproxy re-encrypts 
+and sends them to their original destination. The return traffic follows the 
+same path back to the client.
 .LP
 The program that packets are diverted to should support this mode of operation. 
-Specifically, it should be able to recognize the SSLproxy address in the first p
-acket, and give the first and subsequent packets back to SSLproxy listening on t
-hat address, instead of sending them to the original destination as it normally 
-would.
+Specifically, it should be able to recognize the SSLproxy address in the first 
+packet, and give the first and subsequent packets back to SSLproxy listening on 
+that address, instead of sending them to the original destination as it 
+normally would.
 .LP
-SSLproxy supports plain TCP, plain SSL, HTTP, HTTPS, POP3, POP3S, SMTP, and SMTP
-S connections over both
-IPv4 and IPv6.  SSLproxy fully supports Server Name Indication (SNI) and is able
- to work with RSA, DSA and ECDSA keys and DHE and ECDHE cipher suites.  Dependin
-g on the version of OpenSSL, SSLproxy supports SSL 3.0, TLS 1.0, TLS 1.1 and TLS
- 1.2, and optionally SSL 2.0 as well.
+SSLproxy supports plain TCP, plain SSL, HTTP, HTTPS, POP3, POP3S, SMTP, and 
+SMTPS connections over both IPv4 and IPv6.  SSLproxy fully supports Server Name 
+Indication (SNI) and is able to work with RSA, DSA and ECDSA keys and DHE and 
+ECDHE cipher suites.  Depending on the version of OpenSSL, SSLproxy supports 
+SSL 3.0, TLS 1.0, TLS 1.1 and TLS 1.2, and optionally SSL 2.0 as well.
 .LP
-For SSL/TLS connections, SSLproxy generates and signs forged X509v3 certificates
- on-the-fly, mimicking the original server certificate's subject DN, subjectAltN
-ame extension and other characteristics.  SSLproxy has the ability to use existi
-ng certificates of which the private key is available, instead of generating for
-ged ones.  SSLproxy supports NULL-prefix CN certificates but otherwise does not 
-implement exploits against specific certificate verification vulnerabilities in 
-SSL/TLS stacks.
+For SSL/TLS connections, SSLproxy generates and signs forged X509v3 
+certificates on-the-fly, mimicking the original server certificate's subject 
+DN, subjectAltName extension and other characteristics.  SSLproxy has the 
+ability to use existing certificates of which the private key is available, 
+instead of generating forged ones.  SSLproxy supports NULL-prefix CN 
+certificates but otherwise does not implement exploits against specific 
+certificate verification vulnerabilities in SSL/TLS stacks.
 .LP
-SSLproxy implements a number of defences against mechanisms which would normally
- prevent MitM attacks or make them more difficult.  SSLproxy can deny OCSP reque
-sts in a generic way.  For HTTP and HTTPS connections, SSLproxy removes response
- headers for HPKP in order to prevent server-instructed public key pinning, for 
-HSTS to avoid the strict transport security restrictions, and Alternate Protocol
-s to prevent switching to QUIC/SPDY.  HTTP compression, encodings and keep-alive
- are disabled to make the logs more readable.
+SSLproxy implements a number of defences against mechanisms which would 
+normally prevent MitM attacks or make them more difficult.  SSLproxy can deny 
+OCSP requests in a generic way.  For HTTP and HTTPS connections, SSLproxy 
+removes response headers for HPKP in order to prevent server-instructed public 
+key pinning, for HSTS to avoid the strict transport security restrictions, and 
+Alternate Protocols to prevent switching to QUIC/SPDY.  HTTP compression, 
+encodings and keep-alive are disabled to make the logs more readable.
 .LP
-Another reason to disable persistent connections is to reduce file descriptor us
-age. Accordingly, connections are closed if they remain idle for a certain perio
-d of time. The default timeout is 120 seconds, which can be changed in a configu
-ration file.
+Another reason to disable persistent connections is to reduce file descriptor 
+usage. Accordingly, connections are closed if they remain idle for a certain 
+period of time. The default timeout is 120 seconds, which can be changed in a 
+configuration file.
 .LP
-In order to maximize the chances that a connection can be successfully split,
-SSLproxy does not verify upstream server certificates.  Instead, all
-certificates including self-signed are accepted and if the expected hostname
-signalled in SNI is missing from the server certificate, it will be added to
+In order to maximize the chances that a connection can be successfully split, 
+SSLproxy does not verify upstream server certificates.  Instead, all 
+certificates including self-signed are accepted and if the expected hostname 
+signalled in SNI is missing from the server certificate, it will be added to 
 dynamically forged certificates.
 .LP
 SSLproxy does not automagically redirect any network traffic.  To actually
@@ -152,8 +154,8 @@ List all supported NAT engines available on the system and exit.  See
 NAT ENGINES for a list of NAT engines currently supported by SSLproxy.
 .TP
 .B \-f \fIconffile\fP
-Read configuraion from \fIconffile\fP. Only certain configuration options can be
- loaded from file.
+Read configuraion from \fIconffile\fP. Only certain configuration options can 
+be loaded from file.
 .TP
 .B \-F \fIlogspec\fP
 Log connection content to separate log files with the given path specification
@@ -591,15 +593,14 @@ Note that return path filtering (rp_filter) also needs to be disabled on
 interfaces which handle TPROXY redirected traffic.
 .RE
 .SH EXAMPLES
-With configuraion similar to the above NAT engine samples, intercept HTTPS and P
-OP3S
-over IPv4 using forged certificates with CA private key \fBca.key\fP
-and certificate \fBca.crt\fP, logging connections to \fBconnect.log\fP and
-connection data into separate files under \fB/tmp\fP (add \fB-e\fP
-\fInat-engine\fP to select the appropriate engine if multiple engines are
+With configuraion similar to the above NAT engine samples, intercept HTTPS and 
+POP3S over IPv4 using forged certificates with CA private key \fBca.key\fP and 
+certificate \fBca.crt\fP, logging connections to \fBconnect.log\fP and 
+connection data into separate files under \fB/tmp\fP (add \fB-e\fP 
+\fInat-engine\fP to select the appropriate engine if multiple engines are 
 available on your system) and diverting packets to a program running on address 
-127.0.0.1 and port 8080 for HTTPS and to another program running on address 127.
-0.0.1 and port 8110 for POP3S:
+127.0.0.1 and port 8080 for HTTPS and to another program running on address 
+127.0.0.1 and port 8110 for POP3S:
 .LP
 .nf
 \fBsslproxy -k ca.key -c ca.crt -l connect.log -L /tmp \\
@@ -657,8 +658,8 @@ SSLsplit was written by Daniel Roethlisberger <daniel@roe.ch>.
 .LP
 SSLproxy has been developed by Soner Tari <sonertari@gmail.com>.
 .LP
-The following individuals have contributed code or documentation to the SSLsplit
- project, in chronological order of their first contribution:
+The following individuals have contributed code or documentation to the 
+SSLsplit project, in chronological order of their first contribution:
 Steve Wills, Landon Fuller, Wayne Jensen, Rory McNamara, Alexander Neumann,
 Adam Jacob Muller, Richard Poole, Maciej Kotowicz, Eun Soo Park and Christian
 Groschupp.

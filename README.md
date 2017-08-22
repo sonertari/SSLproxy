@@ -1,64 +1,104 @@
-# SSLsplit - transparent SSL/TLS interception [![Build Status](https://travis-ci.org/droe/sslsplit.svg?branch=master)](https://travis-ci.org/droe/sslsplit)
+# SSLproxy - transparent SSL/TLS proxy for diverting packets to other programs
+
+Copyright (C) 2017, [Soner Tari](https://github.com/sonertari).  
+https://github.com/sonertari/SSLproxy
+
 Copyright (C) 2009-2016, [Daniel Roethlisberger](//daniel.roe.ch/).  
 http://www.roe.ch/SSLsplit
-The modifications for SSLproxy are copyrighted to [Soner Tari](https://github.com/sonertari),
-and licensed under the same terms as SSLsplit.
 
 ## Overview
 
-SSLproxy is based on SSLsplit.
+SSLproxy is a proxy for SSL/TLS encrypted network connections.  It is intended 
+to be used for diverting network traffic to other programs, such as UTM 
+services.
 
-SSLsplit is a tool for man-in-the-middle attacks against SSL/TLS encrypted
-network connections.  It is intended to be useful for network forensics,
-application security analysis and penetration testing.
+SSLproxy is designed to transparently terminate connections that are redirected 
+to it using a network address translation engine.  SSLproxy then terminates 
+SSL/TLS and initiates a new SSL/TLS connection to the original destination 
+address. Packets received on the client side are decrypted and sent to the 
+program listening on a port given in the proxy specification. SSLproxy inserts 
+in the first packet the address and port it is expecting to receive the packets 
+back from the program. Upon receiving the packets back, SSLproxy re-encrypts 
+and sends them to their original destination. The return traffic follows the 
+same path back to the client.
 
-SSLsplit is designed to transparently terminate connections that are redirected
-to it using a network address translation engine.  SSLsplit then terminates
-SSL/TLS and initiates a new SSL/TLS connection to the original destination
-address, while logging all data transmitted.  Besides NAT based operation,
-SSLsplit also supports static destinations and using the server name indicated
-by SNI as upstream destination.  SSLsplit is purely a transparent proxy and
-cannot act as a HTTP or SOCKS proxy configured in a browser.
+For example, given the following proxy specification:
 
-SSLsplit supports plain TCP, plain SSL, HTTP and HTTPS connections over both
-IPv4 and IPv6.  SSLsplit fully supports Server Name Indication (SNI) and is
-able to work with RSA, DSA and ECDSA keys and DHE and ECDHE cipher suites.
-Depending on the version of OpenSSL built against, SSLsplit supports SSL 3.0,
-TLS 1.0, TLS 1.1 and TLS 1.2, and optionally SSL 2.0 as well.
+	https 127.0.0.1 8443 up:8080
 
-For SSL and HTTPS connections, SSLsplit generates and signs forged X509v3
-certificates on-the-fly, mimicking the original server certificate's subject
-DN, subjectAltName extension and other  characteristics.  SSLsplit has the
-ability to use existing certificates of which the private key is available,
-instead of generating forged ones.  SSLsplit supports NULL-prefix CN
-certificates but otherwise does not implement exploits against specific
+The SSLproxy listens for HTTPS connections on 127.0.0.1:8443. Upon receiving a 
+connection from the Client, it decrypts and diverts the packets to a Program 
+listening on 127.0.0.1:8080. After processing the packets, the Program gives 
+them back to the SSLproxy listening on a dynamically assigned address, which 
+the Program obtains from the first packet in the connection. Then the SSLproxy 
+re-encrypts and sends the packets to the Server. The response from the Server 
+follows the same path to the Client in reverse order:
+
+	            Program
+	              ^^
+	             /  \
+	            v    v
+	Client <-> SSLproxy <-> Server   
+
+The program that packets are diverted to should support this mode of operation.
+Specifically, it should be able to recognize the SSLproxy address in the first
+packet, and give the first and subsequent packets back to SSLproxy listening on
+that address, instead of sending them to the original destination as it
+normally would.
+
+SSLproxy supports plain TCP, plain SSL, HTTP, HTTPS, POP3, POP3S, SMTP, and 
+SMTPS connections over both IPv4 and IPv6.  SSLproxy fully supports Server Name 
+Indication (SNI) and is able to work with RSA, DSA and ECDSA keys and DHE and 
+ECDHE cipher suites.  Depending on the version of OpenSSL, SSLproxy supports 
+SSL 3.0, TLS 1.0, TLS 1.1 and TLS 1.2, and optionally SSL 2.0 as well.
+
+For SSL/TLS connections, SSLproxy generates and signs forged X509v3 
+certificates on-the-fly, mimicking the original server certificate's subject 
+DN, subjectAltName extension and other characteristics.  SSLproxy has the 
+ability to use existing certificates of which the private key is available, 
+instead of generating forged ones.  SSLproxy supports NULL-prefix CN 
+certificates but otherwise does not implement exploits against specific 
 certificate verification vulnerabilities in SSL/TLS stacks.
 
-SSLsplit implements a number of defences against mechanisms which would
-normally prevent MitM attacks or make them more difficult.  SSLsplit can deny
-OCSP requests in a generic way.  For HTTP and HTTPS connections, SSLsplit
-removes response headers for HPKP in order to prevent server-instructed public
-key pinning, for HSTS to avoid the strict transport security restrictions, and
-Alternate Protocols to prevent switching to QUIC/SPDY.  HTTP compression,
+SSLproxy implements a number of defences against mechanisms which would 
+normally prevent MitM attacks or make them more difficult.  SSLproxy can deny 
+OCSP requests in a generic way.  For HTTP and HTTPS connections, SSLproxy 
+removes response headers for HPKP in order to prevent server-instructed public 
+key pinning, for HSTS to avoid the strict transport security restrictions, and 
+Alternate Protocols to prevent switching to QUIC/SPDY.  HTTP compression, 
 encodings and keep-alive are disabled to make the logs more readable.
 
-As an experimental feature, SSLsplit supports STARTTLS and similar mechanisms,
-where a protocol starts on a plain text TCP connection and is later upgraded to
-SSL/TLS through protocol-specific means, such as the STARTTLS command in SMTP.
-SSLsplit supports generic upgrading of TCP connections to SSL.
+Another reason to disable persistent connections is to reduce file descriptor 
+usage. Accordingly, connections are closed if they remain idle for a certain 
+period of time. The default timeout is 120 seconds, which can be changed in a 
+configuration file.
 
-See the manual page sslsplit(1) for details on using SSLsplit and setting up
+In order to maximize the chances that a connection can be successfully split, 
+SSLproxy does not verify upstream server certificates.  Instead, all 
+certificates including self-signed are accepted and if the expected hostname 
+signalled in SNI is missing from the server certificate, it will be added to 
+dynamically forged certificates.
+
+SSLproxy does not automagically redirect any network traffic.  To actually
+implement a proxy, you also need to redirect the traffic to the system
+running \fBsslproxy\fP.  Your options include running \fBsslproxy\fP on a
+legitimate router, ARP spoofing, ND spoofing, DNS poisoning, deploying a rogue
+access point (e.g. using hostap mode), physical recabling, malicious VLAN
+reconfiguration or route injection, /etc/hosts modification and so on.
+
+As SSLproxy is based on SSLsplit, this is a modified SSLsplit README file.
+See the manual page sslproxy(1) for details on using SSLproxy and setting up
 the various NAT engines.
 
 
 ## Requirements
 
-SSLsplit depends on the OpenSSL and libevent 2.x libraries.
+SSLproxy depends on the OpenSSL and libevent 2.x libraries.
 The build depends on GNU make and a POSIX.2 environment in `PATH`.
 If available, pkg-config is used to locate and configure the dependencies.
 The optional unit tests depend on the check library.
 
-SSLsplit currently supports the following operating systems and NAT mechanisms:
+SSLproxy currently supports the following operating systems and NAT mechanisms:
 
 -   FreeBSD: pf rdr and divert-to, ipfw fwd, ipfilter rdr
 -   OpenBSD: pf rdr-to and divert-to
@@ -70,7 +110,7 @@ and FreeBSD.
 
 SSL/TLS features and compatibility greatly depend on the version of OpenSSL
 linked against; for optimal results, use a recent release of OpenSSL proper.
-OpenSSL forks like LibreSSL and BoringSSL may or may not work.
+OpenSSL forks like BoringSSL may or may not work.
 
 
 ## Installation
@@ -102,11 +142,5 @@ See `AUTHORS.md` for the list of contributors.
 SSLsplit is provided under a 2-clause BSD license.
 SSLsplit contains components licensed under the MIT and APSL licenses.
 See `LICENSE.md` and the respective source file headers for details.
-
-
-## Credits
-
-SSLsplit was inspired by `mitm-ssl` by Claes M. Nyberg and `sslsniff` by Moxie
-Marlinspike, but shares no source code with them.
-
+The modifications for SSLproxy are licensed under the same terms as SSLsplit.
 
