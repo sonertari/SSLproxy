@@ -26,10 +26,10 @@ This is similar in principle to [divert
 sockets](https://man.openbsd.org/divert.4), where the packet filter diverts the 
 packets to a program listening on a divert socket, and after processing the 
 packets the program reinjects them into the kernel. If there is no program 
-listening on that divert socket or the program does not reinject the packets to 
-the kernel, the connection is effectively blocked. In the case of SSLproxy, 
-SSLproxy acts as both the packet filter and the kernel, and the communication 
-occurs over networking sockets.
+listening on that divert socket or the program does not reinject the packets 
+into the kernel, the connection is effectively blocked. In the case of 
+SSLproxy, SSLproxy acts as both the packet filter and the kernel, and the 
+communication occurs over networking sockets.
 
 For example, given the following proxy specification:
 
