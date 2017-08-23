@@ -1,6 +1,6 @@
 # SSLproxy - transparent SSL/TLS proxy for diverting packets to other programs
 
-Copyright (C) 2017, [Soner Tari](https://github.com/sonertari).  
+Copyright (C) 2017, [Soner Tari](http://comixwall.org).  
 https://github.com/sonertari/SSLproxy
 
 Copyright (C) 2009-2016, [Daniel Roethlisberger](//daniel.roe.ch/).  
@@ -69,7 +69,7 @@ instead of generating forged ones.  SSLproxy supports NULL-prefix CN
 certificates but otherwise does not implement exploits against specific 
 certificate verification vulnerabilities in SSL/TLS stacks.
 
-SSLproxy implements a number of defences against mechanisms which would 
+SSLproxy implements a number of defenses against mechanisms which would 
 normally prevent MitM attacks or make them more difficult.  SSLproxy can deny 
 OCSP requests in a generic way.  For HTTP and HTTPS connections, SSLproxy 
 removes response headers for HPKP in order to prevent server-instructed public 
@@ -85,14 +85,14 @@ configuration file.
 In order to maximize the chances that a connection can be successfully split, 
 SSLproxy does not verify upstream server certificates.  Instead, all 
 certificates including self-signed are accepted and if the expected hostname 
-signalled in SNI is missing from the server certificate, it will be added to 
+signaled in SNI is missing from the server certificate, it will be added to 
 dynamically forged certificates.
 
 SSLproxy does not automagically redirect any network traffic.  To actually
 implement a proxy, you also need to redirect the traffic to the system
-running \fBsslproxy\fP.  Your options include running \fBsslproxy\fP on a
-legitimate router, ARP spoofing, ND spoofing, DNS poisoning, deploying a rogue
-access point (e.g. using hostap mode), physical recabling, malicious VLAN
+running SSLproxy.  Your options include running SSLproxy on a legitimate
+router, ARP spoofing, ND spoofing, DNS poisoning, deploying a rogue access 
+point (e.g. using hostap mode), physical recabling, malicious VLAN 
 reconfiguration or route injection, /etc/hosts modification and so on.
 
 As SSLproxy is based on SSLsplit, this is a modified SSLsplit README file.
