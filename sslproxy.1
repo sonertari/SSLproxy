@@ -58,18 +58,27 @@ sslproxy \-\- transparent SSL/TLS proxy for diverting packets to programs
 As SSLproxy is based on SSLsplit, this is a modified SSLsplit man page.
 .LP
 SSLproxy is a proxy for SSL/TLS encrypted network connections.  It is intended 
-to be used for diverting network traffic to other programs, such as UTM 
-services.
+to be used for decrypting and diverting network traffic to other programs, such 
+as UTM services.
 .LP
 SSLproxy is designed to transparently terminate connections that are redirected 
 to it using a network address translation engine.  SSLproxy then terminates 
 SSL/TLS and initiates a new SSL/TLS connection to the original destination 
-address. Packets received on the client side are decrypted and sent to the 
-program listening on a port given in the proxy specification. SSLproxy inserts 
-in the first packet the address and port it is expecting to receive the packets 
-back from the program. Upon receiving the packets back, SSLproxy re-encrypts 
-and sends them to their original destination. The return traffic follows the 
-same path back to the client.
+address. Packets received on the client side are decrypted and sent to a 
+program listening on the port given in the proxy specification. SSLproxy 
+inserts in the first packet the address and port it is expecting to receive the 
+packets back from the program. Upon receiving the packets back, SSLproxy 
+re-encrypts and sends them to their original destination. The return traffic 
+follows the same path back to the client.
+.LP
+This is similar in principle to divert sockets
+.I https://man.openbsd.org/divert.4
+where the packet filter diverts the packets to a program listening on a divert 
+socket, and after processing the packets the program reinjects them into the 
+kernel. If there is no program listening on that divert socket or the program 
+does not reinject the packets into the kernel, the connection is effectively 
+blocked. In the case of SSLproxy, SSLproxy acts as both the packet filter and 
+the kernel, and the communication occurs over networking sockets.
 .LP
 The program that packets are diverted to should support this mode of operation. 
 Specifically, it should be able to recognize the SSLproxy address in the first 
