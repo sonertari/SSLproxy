@@ -22,6 +22,15 @@ back from the program. Upon receiving the packets back, SSLproxy re-encrypts
 and sends them to their original destination. The return traffic follows the 
 same path back to the client.
 
+This is similar in principle to [divert 
+sockets](https://man.openbsd.org/divert.4), where the packet filter diverts the 
+packets to a program listening on a divert socket, and after processing the 
+packets the program reinjects them into the kernel. If there is no program 
+listening on that divert socket or the program does not reinject the packets to 
+the kernel, the connection is effectively blocked. In the case of SSLproxy, 
+SSLproxy acts as both the packet filter and the kernel, and the communication 
+occurs over networking sockets.
+
 For example, given the following proxy specification:
 
 	https 127.0.0.1 8443 up:8080
@@ -32,7 +41,7 @@ listening on 127.0.0.1:8080. After processing the packets, the Program gives
 them back to the SSLproxy listening on a dynamically assigned address, which 
 the Program obtains from the first packet in the connection. Then the SSLproxy 
 re-encrypts and sends the packets to the Server. The response from the Server 
-follows the same path to the Client in reverse order:
+follows the same path to the Client in reverse order.
 
 	            Program
 	              ^^
@@ -42,9 +51,9 @@ follows the same path to the Client in reverse order:
 
 The program that packets are diverted to should support this mode of operation.
 Specifically, it should be able to recognize the SSLproxy address in the first
-packet, and give the first and subsequent packets back to SSLproxy listening on
-that address, instead of sending them to the original destination as it
-normally would.
+packet, and give the first and subsequent packets back to the SSLproxy 
+listening on that address, instead of sending them to the original destination 
+as it normally would.
 
 SSLproxy supports plain TCP, plain SSL, HTTP, HTTPS, POP3, POP3S, SMTP, and 
 SMTPS connections over both IPv4 and IPv6.  SSLproxy fully supports Server Name 
