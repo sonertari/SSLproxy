@@ -91,7 +91,7 @@ instead of generating forged ones.  SSLproxy supports NULL-prefix CN
 certificates but otherwise does not implement exploits against specific 
 certificate verification vulnerabilities in SSL/TLS stacks.
 .LP
-SSLproxy implements a number of defences against mechanisms which would 
+SSLproxy implements a number of defenses against mechanisms which would 
 normally prevent MitM attacks or make them more difficult.  SSLproxy can deny 
 OCSP requests in a generic way.  For HTTP and HTTPS connections, SSLproxy 
 removes response headers for HPKP in order to prevent server-instructed public 
@@ -107,7 +107,7 @@ configuration file.
 In order to maximize the chances that a connection can be successfully split, 
 SSLproxy does not verify upstream server certificates.  Instead, all 
 certificates including self-signed are accepted and if the expected hostname 
-signalled in SNI is missing from the server certificate, it will be added to 
+signaled in SNI is missing from the server certificate, it will be added to 
 dynamically forged certificates.
 .LP
 SSLproxy does not automagically redirect any network traffic.  To actually
@@ -593,7 +593,7 @@ Note that return path filtering (rp_filter) also needs to be disabled on
 interfaces which handle TPROXY redirected traffic.
 .RE
 .SH EXAMPLES
-With configuraion similar to the above NAT engine samples, intercept HTTPS and 
+With configuration similar to the above NAT engine samples, intercept HTTPS and 
 POP3S over IPv4 using forged certificates with CA private key \fBca.key\fP and 
 certificate \fBca.crt\fP, logging connections to \fBconnect.log\fP and 
 connection data into separate files under \fB/tmp\fP (add \fB-e\fP 
@@ -634,7 +634,7 @@ authorityKeyIdentifier  = keyid:always,issuer:always
 SSLproxy is able to handle a relatively high number of listeners and
 connections due to a multithreaded, event based architecture based on libevent,
 taking advantage of platform specific select() replacements such as kqueue.
-The main thread handles the listeners and signalling, while a number of worker
+The main thread handles the listeners and signaling, while a number of worker
 threads equal to twice the number of CPU cores is used for handling the actual
 connections in separate event bases, including the CPU-intensive SSL/TLS
 handling.
@@ -643,7 +643,7 @@ Care has been taken to choose well-performing data structures for caching
 certificates and SSL sessions.  Logging is implemented in separate disk writer
 threads to ensure that socket event handling threads don't have to block on
 disk I/O.
-DNS lookups are performed asynchroniously.
+DNS lookups are performed asynchronously.
 SSLproxy uses SSL session caching on both ends to minimize the amount of full
 SSL handshakes, but even then, the limiting factor in handling SSL connections
 are the actual bignum computations.
