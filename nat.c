@@ -88,7 +88,7 @@ nat_pf_preinit(void)
 {
 	nat_pf_fd = open("/dev/pf", O_RDONLY);
 	if (nat_pf_fd < 0) {
-		log_err_printf("Error opening '/dev/pf': %s\n",
+		log_err_printf("CRITICAL: Error opening '/dev/pf': %s\n",
 		               strerror(errno));
 		return -1;
 	}
@@ -102,7 +102,7 @@ nat_pf_init(void)
 
 	rv = fcntl(nat_pf_fd, F_SETFD, fcntl(nat_pf_fd, F_GETFD) | FD_CLOEXEC);
 	if (rv == -1) {
-		log_err_printf("Error setting FD_CLOEXEC on '/dev/pf': %s\n",
+		log_err_printf("CRITICAL: Error setting FD_CLOEXEC on '/dev/pf': %s\n",
 		               strerror(errno));
 		return -1;
 	}
@@ -121,7 +121,7 @@ nat_pf_lookup_cb(struct sockaddr *dst_addr, socklen_t *dst_addrlen,
                  UNUSED struct sockaddr *src_addr, UNUSED socklen_t src_addrlen)
 {
 	if (getsockname(s, dst_addr, dst_addrlen) == -1) {
-		log_err_printf("Error from getsockname(): %s\n",
+		log_err_printf("CRITICAL: Error from getsockname(): %s\n",
 		               strerror(errno));
 		return -1;
 	}
@@ -309,7 +309,7 @@ nat_getsockname_lookup_cb(struct sockaddr *dst_addr, socklen_t *dst_addrlen,
                           UNUSED socklen_t src_addrlen)
 {
 	if (getsockname(s, dst_addr, dst_addrlen) == -1) {
-		log_err_printf("Error from getsockname(): %s\n",
+		log_err_printf("CRITICAL: Error from getsockname(): %s\n",
 		               strerror(errno));
 		return -1;
 	}

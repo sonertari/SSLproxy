@@ -2728,7 +2728,7 @@ pxy_connected_enable(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		if (!child_evcl) {
 			log_err_printf("CRITICAL: Error creating child evconnlistener: %s\n", strerror(errno));
 #ifdef DEBUG_PROXY
-			log_dbg_level_printf(LOG_DBG_MODE_FINER, "CRITICAL: Error creating child evconnlistener: %s, fd=%d, child_fd=%d\n", strerror(errno), fd, ctx->child_fd);
+			log_dbg_level_printf(LOG_DBG_MODE_FINER, "Error creating child evconnlistener: %s, fd=%d, child_fd=%d\n", strerror(errno), fd, ctx->child_fd);
 #endif /* DEBUG_PROXY */
 			// @attention Cannot call proxy_listener_ctx_free() on child_evcl, child_evcl does not have any ctx with next listener
 			// @attention Close child fd separately, because child evcl does not exist yet, hence fd would not be closed by calling pxy_conn_free()
@@ -3413,7 +3413,7 @@ pxy_conn_connect(pxy_conn_ctx_t *ctx)
 	if (bufferevent_socket_connect(ctx->srv_dst.bev, (struct sockaddr *)&ctx->addr, ctx->addrlen) == -1) {
 		log_err_printf("CRITICAL: pxy_conn_connect: bufferevent_socket_connect for srv_dst failed\n");
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINER, "CRITICAL: pxy_conn_connect: bufferevent_socket_connect for srv_dst failed, fd=%d\n", fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_conn_connect: bufferevent_socket_connect for srv_dst failed, fd=%d\n", fd);
 #endif /* DEBUG_PROXY */
 		// @attention Do not try to close the conn here , otherwise both pxy_conn_connect() and eventcb try to free the conn using pxy_conn_free(),
 		// they are running on different threads, causing multithreading issues, e.g. signal 10.
@@ -3541,7 +3541,7 @@ pxy_fd_readcb(MAYBE_UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 			if (!ctx->ev) {
 				log_err_printf("CRITICAL: Error creating retry event, aborting connection\n");
 #ifdef DEBUG_PROXY
-				log_dbg_level_printf(LOG_DBG_MODE_FINER, "CRITICAL: Error creating retry event, aborting connection, fd=%d\n", ctx->fd);
+				log_dbg_level_printf(LOG_DBG_MODE_FINER, "Error creating retry event, aborting connection, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 				evutil_closesocket(fd);
 				pxy_conn_ctx_free(ctx, 1);
