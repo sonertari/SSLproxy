@@ -121,6 +121,7 @@ typedef struct opts {
 	unsigned int ssl_shutdown_retry_delay;
 	int log_stats;
 	unsigned int stats_period;
+	int remove_http_accept_encoding;
 } opts_t;
 
 opts_t *opts_new(void) MALLOC;

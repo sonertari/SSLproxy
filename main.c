@@ -559,6 +559,16 @@ load_conffile(opts_t *opts, const char *argv0, const char *natengine)
 		} else if (!strncasecmp(name, "Group", 5)) {
 			set_group(opts, argv0, value);
 			found = 1;
+		} else if (!strncasecmp(name, "RemoveHTTPAcceptEncoding", 24)) {
+			if (!strncasecmp(value, "yes", 3)) {
+				opts->remove_http_accept_encoding = 1;
+			} else if (!strncasecmp(value, "no", 3)) {
+				opts->remove_http_accept_encoding = 0;
+			} else {
+				fprintf(stderr, "Invalid RemoveHTTPAcceptEncoding %s at line %d, use yes|no\n", value, line_num);
+			}
+			fprintf(stderr, "RemoveHTTPAcceptEncoding: %u\n", opts->remove_http_accept_encoding);
+			found = 1;
 		}
 
 		if (found) {
@@ -609,6 +619,7 @@ main(int argc, char *argv[])
 	opts->ssl_shutdown_retry_delay = 100;
 	opts->log_stats = 0;
 	opts->stats_period = 1;
+	opts->remove_http_accept_encoding = 1;
 
 	while ((ch = getopt(argc, argv, OPT_g OPT_G OPT_Z OPT_i "k:c:C:K:t:"
 	                    "OPs:r:R:e:Eu:m:j:p:l:L:S:F:dD::VhW:w:If:")) != -1) {

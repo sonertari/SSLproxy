@@ -1509,8 +1509,13 @@ pxy_http_reqhdr_filter_line(const char *line, pxy_conn_ctx_t *ctx, int child)
 				return NULL;
 			}
 			return newhdr;
-		} else if (!strncasecmp(line, "Accept-Encoding:", 16) ||
-		           !strncasecmp(line, "Keep-Alive:", 11)) {
+		// @attention Beware, child ctx does not have opts, see the comments in pxy_conn_child_ctx
+		// XXX: Does not look nice, but C does not have polymorphism similar to OOP
+		} else if (((!child && ctx->opts->remove_http_accept_encoding) ||
+					 (child && ((pxy_conn_child_ctx_t *) ctx)->parent->opts->remove_http_accept_encoding)) &&
+				!strncasecmp(line, "Accept-Encoding:", 16)) {
+			return NULL;
+		} else if (!strncasecmp(line, "Keep-Alive:", 11)) {
 			return NULL;
 		} else if (child && (!strncasecmp(line, SSLPROXY_KEY, SSLPROXY_KEY_LEN) ||
 				   // @attention flickr keeps redirecting to https with 301 unless we remove the Via line of squid
