@@ -149,6 +149,7 @@ endif
 
 PREFIX?=	/usr/local
 MANDIR?=	share/man
+EXAMPLESDIR?=	share/examples
 
 INSTALLUID?=	0
 INSTALLGID?=	0
@@ -158,6 +159,7 @@ BINMODE?=	0755
 MANUID?=	$(INSTALLUID)
 MANGID?=	$(INSTALLGID)
 MANMODE?=	0644
+EXAMPLESMODE?=	0444
 ifeq ($(shell id -u),0)
 BINOWNERFLAGS?=	-o $(BINUID) -g $(BINGID)
 MANOWNERFLAGS?=	-o $(MANUID) -g $(MANGID)
@@ -441,13 +443,23 @@ install: $(TARGET)
 	test -d $(DESTDIR)$(PREFIX)/bin || $(MKDIR) -p $(DESTDIR)$(PREFIX)/bin
 	test -d $(DESTDIR)$(PREFIX)/$(MANDIR)/man1 || \
 		$(MKDIR) -p $(DESTDIR)$(PREFIX)/$(MANDIR)/man1
+	test -d $(DESTDIR)$(PREFIX)/$(MANDIR)/man5 || \
+		$(MKDIR) -p $(DESTDIR)$(PREFIX)/$(MANDIR)/man5
+	test -d $(DESTDIR)$(PREFIX)/$(EXAMPLESDIR)/sslproxy || \
+		$(MKDIR) -p $(DESTDIR)$(PREFIX)/$(EXAMPLESDIR)/sslproxy
 	$(INSTALL) $(BINOWNERFLAGS) -m $(BINMODE) \
 		$(TARGET) $(DESTDIR)$(PREFIX)/bin/
 	$(INSTALL) $(MANOWNERFLAGS) -m $(MANMODE) \
 		$(TARGET).1 $(DESTDIR)$(PREFIX)/$(MANDIR)/man1/
+	$(INSTALL) $(MANOWNERFLAGS) -m $(MANMODE) \
+		$(TARGET).conf.5 $(DESTDIR)$(PREFIX)/$(MANDIR)/man5/
+	$(INSTALL) $(MANOWNERFLAGS) -m $(EXAMPLESMODE) \
+		$(TARGET).conf $(DESTDIR)$(PREFIX)/$(EXAMPLESDIR)/sslproxy/
 
 deinstall:
-	$(RM) -f $(DESTDIR)$(PREFIX)/bin/$(TARGET) $(DESTDIR)$(PREFIX)/$(MANDIR)/man1/$(TARGET).1
+	$(RM) -f $(DESTDIR)$(PREFIX)/bin/$(TARGET) $(DESTDIR)$(PREFIX)/$(MANDIR)/man1/$(TARGET).1 \
+		$(DESTDIR)$(PREFIX)/$(MANDIR)/man5/$(TARGET).conf.5
+	$(RM) -rf $(DESTDIR)$(PREFIX)/$(EXAMPLESDIR)/sslproxy/
 
 ifdef GITDIR
 lint:

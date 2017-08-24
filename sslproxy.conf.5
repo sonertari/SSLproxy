@@ -1,0 +1,82 @@
+.TH "sslproxy.conf" "5" "August 22, 2017" "sslproxy 0.5.0" "SSLproxy"
+.SH "NAME"
+.LP 
+\fBsslproxy.conf\fR \- Configuration file for SSLproxy
+.SH "DESCRIPTION"
+.LP 
+The file sslproxy.conf configures SSLproxy, sslproxy(1).
+.SH "FILE FORMAT"
+The file consists of comments and options with arguments. Each line which starts with a hash (\fB#\fR) symbol is ignored by the parser. Options and arguments are of the form \fBOption Argument\fR. The arguments are of the following types:
+.TP
+\fBBOOL\fR 
+Boolean value (yes/no).
+.TP 
+\fBSTRING\fR
+String.
+.TP 
+\fBNUMBER\fR
+Unsigned integer.
+.SH "DIRECTIVES"
+.LP 
+When an option is not used (hashed or doesn't exist in the configuration file) sslproxy takes a default action.
+.TP 
+\fBCACert STRING\fR
+Use CA cert (and key) to sign forged certs.
+.TP
+\fBCAKey STRING\fR
+Use CA key (and cert) to sign forged certs.
+.TP
+\fBConnIdleTimeout NUMBER\fR
+Close connections after this many seconds of idle time.
+.br
+Default: 120
+.TP
+\fBExpiredConnCheckPeriod NUMBER\fR
+Check for expired connections every this many seconds.
+.br 
+Default: 10.
+.TP 
+\fBSSLShutdownRetryDelay NUMBER\fR
+Retry to shut ssl conns down after this many micro seconds. Increasing this delay may avoid dirty shutdowns on slow connections, but increases resource usage, such as file desriptors and memory.
+.br 
+Default: 100
+.TP 
+\fBPidFile STRING\fR
+Write pid to file.
+.TP
+\fBLogStats BOOL\fR
+Log statistics to syslog.
+.br
+Default: yes
+.TP 
+\fBStatsPeriod NUMBER\fR
+Log statistics every this many ExpiredConnCheckPeriod periods.
+.br 
+Default: 1
+.TP 
+\fBUser STRING\fR
+Drop privileges to user.
+.br 
+Default: _sslproxy
+.TP
+\fBGroup STRING\fR
+Drop privileges to group.
+.br
+Default: _sslproxy
+.TP
+\fBRemoveHTTPAcceptEncoding BOOL\fR
+Remove HTTP header line for Accept-Encoding.
+.br
+Default: yes
+.TP 
+\fBProxySpec STRING\fR
+Proxy specification: type listenaddr+port up:utmport. Multiple specs are allowed, one on each line.
+.SH "FILES"
+.LP 
+/etc/sslproxy/sslproxy.conf
+.SH "AUTHOR"
+.LP 
+Soner Tari <sonertari@gmail.com>
+.SH "SEE ALSO"
+.LP 
+sslproxy(1)
