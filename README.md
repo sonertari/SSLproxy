@@ -10,7 +10,7 @@ http://www.roe.ch/SSLsplit
 
 SSLproxy is a proxy for SSL/TLS encrypted network connections.  It is intended 
 to be used for decrypting and diverting network traffic to other programs, such 
-as UTM services.
+as UTM services, for deep SSL inspection.
 
 SSLproxy is designed to transparently terminate connections that are redirected 
 to it using a network address translation engine.  SSLproxy then terminates 
@@ -54,6 +54,21 @@ Specifically, it should be able to recognize the SSLproxy address in the first
 packet, and give the first and subsequent packets back to the SSLproxy 
 listening on that address, instead of sending them to the original destination 
 as it normally would.
+
+A sample line SSLproxy inserts into the first packet in the connection is the 
+following:
+
+	SSLproxy: [127.0.0.1]:34649,[192.168.3.24]:47286,[192.168.111.130]:443,s
+
+The first IP:port pair is a dynamically assigned address that the SSLproxy 
+expects the program send the packets back to it. The second and third IP:port 
+pairs are the actual source and destination addresses of the connection. Since 
+the program receives the packets from the SSLproxy, it cannot determine the 
+source and destination addresses of the packets by itself, hence must rely on 
+the information in this SSLproxy line. The last letter is either s or p, for 
+SSL/TLS encrypted or plain traffic respectively. This information is also 
+important for the program, because it cannot reliably determine if the actual 
+network traffic it is processing was encrypted or not.
 
 SSLproxy supports plain TCP, plain SSL, HTTP, HTTPS, POP3, POP3S, SMTP, and 
 SMTPS connections over both IPv4 and IPv6.  SSLproxy fully supports Server Name 
