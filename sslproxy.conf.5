@@ -23,7 +23,7 @@
 .\" (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
 .\" THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 .\"
-.TH "sslproxy.conf" "5" "August 24, 2017" "sslproxy 0.5.0" "SSLproxy"
+.TH "sslproxy.conf" "5" "September 03, 2017" "sslproxy 0.5.0" "SSLproxy"
 .SH "NAME"
 .LP 
 \fBsslproxy.conf\fR \- Configuration file for SSLproxy
@@ -91,6 +91,11 @@ Default: Primary group of user
 .TP
 \fBRemoveHTTPAcceptEncoding BOOL\fR
 Remove HTTP header line for Accept-Encoding.
+.br
+Default: yes
+.TP
+\fBRemoveHTTPReferer BOOL\fR
+Remove HTTP header line for Referer.
 .br
 Default: yes
 .TP 

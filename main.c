@@ -569,6 +569,16 @@ load_conffile(opts_t *opts, const char *argv0, const char *natengine)
 			}
 			fprintf(stderr, "RemoveHTTPAcceptEncoding: %u\n", opts->remove_http_accept_encoding);
 			found = 1;
+		} else if (!strncasecmp(name, "RemoveHTTPReferer", 17)) {
+			if (!strncasecmp(value, "yes", 3)) {
+				opts->remove_http_referer = 1;
+			} else if (!strncasecmp(value, "no", 3)) {
+				opts->remove_http_referer = 0;
+			} else {
+				fprintf(stderr, "Invalid RemoveHTTPReferer %s at line %d, use yes|no\n", value, line_num);
+			}
+			fprintf(stderr, "RemoveHTTPReferer: %u\n", opts->remove_http_referer);
+			found = 1;
 		}
 
 		if (found) {
@@ -620,6 +630,7 @@ main(int argc, char *argv[])
 	opts->log_stats = 0;
 	opts->stats_period = 1;
 	opts->remove_http_accept_encoding = 1;
+	opts->remove_http_referer = 1;
 
 	while ((ch = getopt(argc, argv, OPT_g OPT_G OPT_Z OPT_i "k:c:C:K:t:"
 	                    "OPs:r:R:e:Eu:m:j:p:l:L:S:F:dD::VhW:w:If:")) != -1) {

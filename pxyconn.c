@@ -1515,6 +1515,10 @@ pxy_http_reqhdr_filter_line(const char *line, pxy_conn_ctx_t *ctx, int child)
 					 (child && ((pxy_conn_child_ctx_t *) ctx)->parent->opts->remove_http_accept_encoding)) &&
 				!strncasecmp(line, "Accept-Encoding:", 16)) {
 			return NULL;
+		} else if (((!child && ctx->opts->remove_http_referer) ||
+					 (child && ((pxy_conn_child_ctx_t *) ctx)->parent->opts->remove_http_referer)) &&
+				!strncasecmp(line, "Referer:", 8)) {
+			return NULL;
 		} else if (!strncasecmp(line, "Keep-Alive:", 11)) {
 			return NULL;
 		} else if (child && (!strncasecmp(line, SSLPROXY_KEY, SSLPROXY_KEY_LEN) ||

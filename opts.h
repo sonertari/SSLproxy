@@ -122,6 +122,7 @@ typedef struct opts {
 	int log_stats;
 	unsigned int stats_period;
 	int remove_http_accept_encoding;
+	int remove_http_referer;
 } opts_t;
 
 opts_t *opts_new(void) MALLOC;
