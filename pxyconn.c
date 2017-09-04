@@ -3605,7 +3605,17 @@ pxy_conn_setup(evutil_socket_t fd,
 		free(host);
 		free(port);
 	}
+
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_setup: descriptor_table_size=%d, current fd count=%d, reserve=%d\n", descriptor_table_size, getdtablecount(), FD_RESERVE);
 #endif /* DEBUG_PROXY */
+
+	// Close the conn if we are out of file descriptors, or libevent will crash us
+	if (getdtablecount() + FD_RESERVE >= descriptor_table_size) {
+		errno = EMFILE;
+		log_err_printf("CRITICAL: Out of file descriptors\n");
+		evutil_closesocket(fd);
+		return;
+	}
 
 	/* create per connection state and attach to thread */
 	pxy_conn_ctx_t *ctx = pxy_conn_ctx_new(fd, thrmgr, spec, opts, clisock);

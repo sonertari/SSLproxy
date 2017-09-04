@@ -38,6 +38,9 @@
 #include <event2/dns.h>
 #include <pthread.h>
 
+extern int descriptor_table_size;
+#define FD_RESERVE 10
+
 typedef struct pxy_conn_ctx pxy_conn_ctx_t;
 typedef struct pxy_thrmgr_ctx pxy_thrmgr_ctx_t;
 

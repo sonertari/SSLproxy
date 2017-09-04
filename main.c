@@ -62,6 +62,7 @@
 extern int daemon(int, int);
 #endif /* __APPLE__ */
 
+int descriptor_table_size = 0;
 
 /*
  * Print version information to stderr.
@@ -1199,6 +1200,8 @@ main(int argc, char *argv[])
 		               "\n", opts->pidfile, strerror(errno), errno);
 		return -1;
 	}
+
+	descriptor_table_size = getdtablesize();
 
 	/* Fork into parent monitor process and (potentially unprivileged)
 	 * child process doing the actual work.  We request 3 privsep client
