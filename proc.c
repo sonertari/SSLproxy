@@ -158,7 +158,7 @@ proc_freebsd_gettcppcblist(struct xinpgen **pxig, struct xinpgen **pexig)
 
 	/* check if first and last record are from same generation */
 	if ((*pxig)->xig_gen != (*pexig)->xig_gen) {
-		log_err_printf("Warning: data inconsistent "
+		log_err_level_printf(LOG_WARNING, "Data inconsistent "
 		               "(xig->xig_gen != exig->xig_gen)\n");
 	}
 

@@ -137,7 +137,7 @@ logger_reopen(logger_t *logger)
 	if (!logger->reopen)
 		return 0;
 
-	lb = logbuf_new(NULL, 0, NULL, NULL);
+	lb = logbuf_new(0, NULL, 0, NULL, NULL);
 	logbuf_ctl_set(lb, LBFLAG_REOPEN);
 	return thrqueue_enqueue(logger->queue, lb) ? 0 : -1;
 }
@@ -156,7 +156,7 @@ logger_open(logger_t *logger, void *fh)
 	if (!logger->open)
 		return 0;
 
-	lb = logbuf_new(NULL, 0, NULL, NULL);
+	lb = logbuf_new(0, NULL, 0, NULL, NULL);
 	lb->fh = fh;
 	logbuf_ctl_set(lb, LBFLAG_OPEN);
 	return thrqueue_enqueue(logger->queue, lb) ? 0 : -1;
@@ -175,7 +175,7 @@ logger_close(logger_t *logger, void *fh)
 	if (!logger->close)
 		return 0;
 
-	lb = logbuf_new(NULL, 0, NULL, NULL);
+	lb = logbuf_new(0, NULL, 0, NULL, NULL);
 	lb->fh = fh;
 	logbuf_ctl_set(lb, LBFLAG_CLOSE);
 	return thrqueue_enqueue(logger->queue, lb) ? 0 : -1;
@@ -286,7 +286,7 @@ logger_printf(logger_t *logger, void *fh, unsigned long prepflags,
 	va_list ap;
 	logbuf_t *lb;
 
-	lb = logbuf_new(NULL, 0, fh, NULL);
+	lb = logbuf_new(0, NULL, 0, fh, NULL);
 	if (!lb)
 		return -1;
 	va_start(ap, fmt);
@@ -319,12 +319,12 @@ logger_print(logger_t *logger, void *fh, unsigned long prepflags,
 	return logger_submit(logger, fh, prepflags, lb);
 }
 int
-logger_write_freebuf(logger_t *logger, void *fh, unsigned long prepflags,
+logger_write_freebuf(logger_t *logger, int level, void *fh, unsigned long prepflags,
                      void *buf, size_t sz)
 {
 	logbuf_t *lb;
 
-	if (!(lb = logbuf_new(buf, sz, fh, NULL)))
+	if (!(lb = logbuf_new(level, buf, sz, fh, NULL)))
 		return -1;
 	return logger_submit(logger, fh, prepflags, lb);
 }
@@ -334,7 +334,7 @@ logger_print_freebuf(logger_t *logger, void *fh, unsigned long prepflags,
 {
 	logbuf_t *lb;
 
-	if (!(lb = logbuf_new(s, strlen(s), fh, NULL)))
+	if (!(lb = logbuf_new(0, s, strlen(s), fh, NULL)))
 		return -1;
 	return logger_submit(logger, fh, prepflags, lb);
 }

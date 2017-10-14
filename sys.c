@@ -80,7 +80,7 @@ sys_privdrop(const char *username, const char *groupname, const char *jaildir)
 	if (groupname) {
 		errno = 0;
 		if (!(gr = getgrnam(groupname))) {
-			log_err_printf("CRITICAL: Failed to getgrnam group '%s': %s\n",
+			log_err_level_printf(LOG_CRIT, "Failed to getgrnam group '%s': %s\n",
 			               groupname, strerror(errno));
 			goto error;
 		}
@@ -89,7 +89,7 @@ sys_privdrop(const char *username, const char *groupname, const char *jaildir)
 	if (username) {
 		errno = 0;
 		if (!(pw = getpwnam(username))) {
-			log_err_printf("CRITICAL: Failed to getpwnam user '%s': %s\n",
+			log_err_level_printf(LOG_CRIT, "Failed to getpwnam user '%s': %s\n",
 			               username, strerror(errno));
 			goto error;
 		}
@@ -99,7 +99,7 @@ sys_privdrop(const char *username, const char *groupname, const char *jaildir)
 		}
 
 		if (initgroups(username, pw->pw_gid) == -1) {
-			log_err_printf("CRITICAL: Failed to initgroups user '%s': %s\n",
+			log_err_level_printf(LOG_CRIT, "Failed to initgroups user '%s': %s\n",
 			               username, strerror(errno));
 			goto error;
 		}
@@ -107,12 +107,12 @@ sys_privdrop(const char *username, const char *groupname, const char *jaildir)
 
 	if (jaildir) {
 		if (chroot(jaildir) == -1) {
-			log_err_printf("CRITICAL: Failed to chroot to '%s': %s\n",
+			log_err_level_printf(LOG_CRIT, "Failed to chroot to '%s': %s\n",
 			               jaildir, strerror(errno));
 			goto error;
 		}
 		if (chdir("/") == -1) {
-			log_err_printf("CRITICAL: Failed to chdir to '/': %s\n",
+			log_err_level_printf(LOG_CRIT, "Failed to chdir to '/': %s\n",
 			               strerror(errno));
 			goto error;
 		}
@@ -120,18 +120,18 @@ sys_privdrop(const char *username, const char *groupname, const char *jaildir)
 
 	if (username) {
 		if (setgid(pw->pw_gid) == -1) {
-			log_err_printf("CRITICAL: Failed to setgid to %i: %s\n",
+			log_err_level_printf(LOG_CRIT, "Failed to setgid to %i: %s\n",
 			               pw->pw_gid, strerror(errno));
 			goto error;
 		}
 		if (setuid(pw->pw_uid) == -1) {
-			log_err_printf("CRITICAL: Failed to setuid to %i: %s\n",
+			log_err_level_printf(LOG_CRIT, "Failed to setuid to %i: %s\n",
 			               pw->pw_uid, strerror(errno));
 			goto error;
 		}
 	} else if (getuid() != geteuid()) {
 		if (setuid(getuid()) == -1) {
-			log_err_printf("CRITICAL: Failed to setuid(getuid()): %s\n",
+			log_err_level_printf(LOG_CRIT, "Failed to setuid(getuid()): %s\n",
 			               strerror(errno));
 			goto error;
 		}
@@ -154,7 +154,7 @@ sys_isuser(const char *username)
 	errno = 0;
 	if (!getpwnam(username)) {
 		if (errno != 0 && errno != ENOENT) {
-			log_err_printf("CRITICAL: Failed to load user '%s': %s (%i)\n",
+			log_err_level_printf(LOG_CRIT, "Failed to load user '%s': %s (%i)\n",
 			               username, strerror(errno), errno);
 		}
 		return 0;
@@ -173,7 +173,7 @@ sys_isgroup(const char *groupname)
 	errno = 0;
 	if (!getgrnam(groupname)) {
 		if (errno != 0 && errno != ENOENT) {
-			log_err_printf("CRITICAL: Failed to load group '%s': %s (%i)\n",
+			log_err_level_printf(LOG_CRIT, "Failed to load group '%s': %s (%i)\n",
 			               groupname, strerror(errno), errno);
 		}
 		return 0;
@@ -191,12 +191,12 @@ sys_pidf_open(const char *fn)
 	int fd;
 
 	if ((fd = open(fn, O_RDWR|O_CREAT, DFLT_PIDFMODE)) == -1) {
-		log_err_printf("CRITICAL: Failed to open '%s': %s\n", fn,
+		log_err_level_printf(LOG_CRIT, "Failed to open '%s': %s\n", fn,
 		               strerror(errno));
 		return -1;
 	}
 	if (flock(fd, LOCK_EX|LOCK_NB) == -1) {
-		log_err_printf("CRITICAL: Failed to lock '%s': %s\n", fn,
+		log_err_level_printf(LOG_CRIT, "Failed to lock '%s': %s\n", fn,
 		               strerror(errno));
 		close(fd);
 		return -1;
@@ -286,7 +286,7 @@ sys_user_str(uid_t uid)
 	} while (rv == ERANGE);
 
 	free(buf);
-	log_err_printf("CRITICAL: Failed to lookup uid: %s (%i)\n", strerror(rv), rv);
+	log_err_level_printf(LOG_CRIT, "Failed to lookup uid: %s (%i)\n", strerror(rv), rv);
 	return NULL;
 }
 
@@ -339,7 +339,7 @@ sys_group_str(gid_t gid)
 	} while (rv == ERANGE);
 
 	free(buf);
-	log_err_printf("CRITICAL: Failed to lookup gid: %s (%i)\n", strerror(rv), rv);
+	log_err_level_printf(LOG_CRIT, "Failed to lookup gid: %s (%i)\n", strerror(rv), rv);
 	return NULL;
 }
 
@@ -363,7 +363,7 @@ sys_sockaddr_parse(struct sockaddr_storage *addr, socklen_t *addrlen,
 	hints.ai_flags = EVUTIL_AI_ADDRCONFIG | flags;
 	rv = evutil_getaddrinfo(naddr, nport, &hints, &ai);
 	if (rv != 0) {
-		log_err_printf("CRITICAL: Cannot resolve address '%s' port '%s': %s\n",
+		log_err_level_printf(LOG_CRIT, "Cannot resolve address '%s' port '%s': %s\n",
 		               naddr, nport, gai_strerror(rv));
 		return -1;
 	}
@@ -392,7 +392,7 @@ sys_sockaddr_str(struct sockaddr *addr, socklen_t addrlen,
 
 	*serv = malloc(6); /* max decimal digits of short plus terminator */
 	if (!*serv) {
-		log_err_printf("CRITICAL: Cannot allocate memory\n");
+		log_err_level_printf(LOG_CRIT, "Cannot allocate memory\n");
 		return -1;
 	}
 	rv = getnameinfo(addr, addrlen,
@@ -400,7 +400,7 @@ sys_sockaddr_str(struct sockaddr *addr, socklen_t addrlen,
 	                 *serv, 6,
 	                 NI_NUMERICHOST | NI_NUMERICSERV);
 	if (rv != 0) {
-		log_err_printf("CRITICAL: Cannot get nameinfo for socket address: %s\n",
+		log_err_level_printf(LOG_CRIT, "Cannot get nameinfo for socket address: %s\n",
 		               gai_strerror(rv));
 		free(*serv);
 		return -1;
@@ -408,7 +408,7 @@ sys_sockaddr_str(struct sockaddr *addr, socklen_t addrlen,
 	hostsz = strlen(tmphost) + 1; /* including terminator */
 	*host = malloc(hostsz);
 	if (!*host) {
-		log_err_printf("CRITICAL: Cannot allocate memory\n");
+		log_err_level_printf(LOG_CRIT, "Cannot allocate memory\n");
 		free(*serv);
 		return -1;
 	}
@@ -460,7 +460,7 @@ sys_isdir(const char *path)
 
 	if (stat(path, &s) == -1) {
 		if (errno != ENOENT) {
-			log_err_printf("CRITICAL: Error stating file: %s (%i)\n",
+			log_err_level_printf(LOG_CRIT, "Error stating file: %s (%i)\n",
 			               strerror(errno), errno);
 		}
 		return 0;
@@ -537,7 +537,7 @@ sys_dir_eachfile(const char *dirname, sys_dir_eachfile_cb_t cb, void *arg)
 
 	tree = fts_open(paths, FTS_NOCHDIR | FTS_LOGICAL, NULL);
 	if (!tree) {
-		log_err_printf("CRITICAL: Cannot open directory '%s': %s\n",
+		log_err_level_printf(LOG_CRIT, "Cannot open directory '%s': %s\n",
 		               dirname, strerror(errno));
 		rv = -1;
 		goto out1;
@@ -553,7 +553,7 @@ sys_dir_eachfile(const char *dirname, sys_dir_eachfile_cb_t cb, void *arg)
 		}
 	}
 	if (errno) {
-		log_err_printf("CRITICAL: Error reading directory entry: %s\n",
+		log_err_level_printf(LOG_CRIT, "Error reading directory entry: %s\n",
 		               strerror(errno));
 		rv = -1;
 		goto out2;

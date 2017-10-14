@@ -122,7 +122,7 @@ privsep_server_signal_handler(int sig)
 			n = write(selfpipe_wrfd, "!", 1);
 		} while (n == -1 && errno == EINTR);
 		if (n == -1) {
-			log_err_printf("CRITICAL: Failed to write from signal handler: "
+			log_err_level_printf(LOG_CRIT, "Failed to write from signal handler: "
 			               "%s (%i)\n", strerror(errno), errno);
 			/* ignore error */
 		}
@@ -158,19 +158,19 @@ privsep_server_openfile(char *fn, int mkpath)
 
 		fn2 = strdup(fn);
 		if (!fn2) {
-			log_err_printf("CRITICAL: Could not duplicate filname: %s (%i)\n",
+			log_err_level_printf(LOG_CRIT, "Could not duplicate filname: %s (%i)\n",
 			               strerror(errno), errno);
 			return -1;
 		}
 		filedir = dirname(fn2);
 		if (!filedir) {
-			log_err_printf("CRITICAL: Could not get dirname: %s (%i)\n",
+			log_err_level_printf(LOG_CRIT, "Could not get dirname: %s (%i)\n",
 			               strerror(errno), errno);
 			free(fn2);
 			return -1;
 		}
 		if (sys_mkpath(filedir, DFLT_DIRMODE) == -1) {
-			log_err_printf("CRITICAL: Could not create directory '%s': %s (%i)\n",
+			log_err_level_printf(LOG_CRIT, "Could not create directory '%s': %s (%i)\n",
 			               filedir, strerror(errno), errno);
 			free(fn2);
 			return -1;
@@ -180,7 +180,7 @@ privsep_server_openfile(char *fn, int mkpath)
 
 	fd = open(fn, O_WRONLY|O_APPEND|O_CREAT, DFLT_FILEMODE);
 	if (fd == -1) {
-		log_err_printf("CRITICAL: Failed to open '%s': %s (%i)\n",
+		log_err_level_printf(LOG_CRIT, "Failed to open '%s': %s (%i)\n",
 		               fn, strerror(errno), errno);
 		return -1;
 	}
@@ -206,7 +206,7 @@ privsep_server_opensock(proxyspec_t *spec)
 
 	fd = socket(spec->listen_addr.ss_family, SOCK_STREAM, IPPROTO_TCP);
 	if (fd == -1) {
-		log_err_printf("CRITICAL: Error from socket(): %s (%i)\n",
+		log_err_level_printf(LOG_CRIT, "Error from socket(): %s (%i)\n",
 		               strerror(errno), errno);
 		evutil_closesocket(fd);
 		return -1;
@@ -214,7 +214,7 @@ privsep_server_opensock(proxyspec_t *spec)
 
 	rv = evutil_make_socket_nonblocking(fd);
 	if (rv == -1) {
-		log_err_printf("CRITICAL: Error making socket nonblocking: %s (%i)\n",
+		log_err_level_printf(LOG_CRIT, "Error making socket nonblocking: %s (%i)\n",
 		               strerror(errno), errno);
 		evutil_closesocket(fd);
 		return -1;
@@ -222,7 +222,7 @@ privsep_server_opensock(proxyspec_t *spec)
 
 	rv = setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, (void*)&on, sizeof(on));
 	if (rv == -1) {
-		log_err_printf("CRITICAL: Error from setsockopt(SO_KEEPALIVE): %s (%i)\n",
+		log_err_level_printf(LOG_CRIT, "Error from setsockopt(SO_KEEPALIVE): %s (%i)\n",
 		               strerror(errno), errno);
 		evutil_closesocket(fd);
 		return -1;
@@ -230,14 +230,14 @@ privsep_server_opensock(proxyspec_t *spec)
 
 	rv = evutil_make_listen_socket_reuseable(fd);
 	if (rv == -1) {
-		log_err_printf("CRITICAL: Error from setsockopt(SO_REUSABLE): %s\n",
+		log_err_level_printf(LOG_CRIT, "Error from setsockopt(SO_REUSABLE): %s\n",
 		               strerror(errno));
 		evutil_closesocket(fd);
 		return -1;
 	}
 
 	if (spec->natsocket && (spec->natsocket(fd) == -1)) {
-		log_err_printf("CRITICAL: Error from spec->natsocket()\n");
+		log_err_level_printf(LOG_CRIT, "Error from spec->natsocket()\n");
 		evutil_closesocket(fd);
 		return -1;
 	}
@@ -245,7 +245,7 @@ privsep_server_opensock(proxyspec_t *spec)
 	rv = bind(fd, (struct sockaddr *)&spec->listen_addr,
 	          spec->listen_addrlen);
 	if (rv == -1) {
-		log_err_printf("CRITICAL: Error from bind(): %s\n", strerror(errno));
+		log_err_level_printf(LOG_CRIT, "Error from bind(): %s\n", strerror(errno));
 		evutil_closesocket(fd);
 		return -1;
 	}
@@ -262,7 +262,7 @@ privsep_server_opensock_child(proxyspec_t *spec)
 
 	fd = socket(spec->child_src_addr.ss_family, SOCK_STREAM, IPPROTO_TCP);
 	if (fd == -1) {
-		log_err_printf("CRITICAL: Error from socket() child_fd: %s (%i)\n",
+		log_err_level_printf(LOG_CRIT, "Error from socket() child_fd: %s (%i)\n",
 		               strerror(errno), errno);
 		evutil_closesocket(fd);
 		return -1;
@@ -270,7 +270,7 @@ privsep_server_opensock_child(proxyspec_t *spec)
 
 	rv = evutil_make_socket_nonblocking(fd);
 	if (rv == -1) {
-		log_err_printf("CRITICAL: Error making socket nonblocking: %s (%i)\n",
+		log_err_level_printf(LOG_CRIT, "Error making socket nonblocking: %s (%i)\n",
 		               strerror(errno), errno);
 		evutil_closesocket(fd);
 		return -1;
@@ -278,7 +278,7 @@ privsep_server_opensock_child(proxyspec_t *spec)
 
 	rv = setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, (void*)&on, sizeof(on));
 	if (rv == -1) {
-		log_err_printf("CRITICAL: Error from setsockopt(SO_KEEPALIVE): %s (%i)\n",
+		log_err_level_printf(LOG_CRIT, "Error from setsockopt(SO_KEEPALIVE): %s (%i)\n",
 		               strerror(errno), errno);
 		evutil_closesocket(fd);
 		return -1;
@@ -286,7 +286,7 @@ privsep_server_opensock_child(proxyspec_t *spec)
 
 	rv = evutil_make_listen_socket_reuseable(fd);
 	if (rv == -1) {
-		log_err_printf("CRITICAL: Error from setsockopt(SO_REUSABLE) child_fd: %s\n",
+		log_err_level_printf(LOG_CRIT, "Error from setsockopt(SO_REUSABLE) child_fd: %s\n",
 		               strerror(errno));
 		evutil_closesocket(fd);
 		return -1;
@@ -295,7 +295,7 @@ privsep_server_opensock_child(proxyspec_t *spec)
 	rv = bind(fd, (struct sockaddr *)&spec->child_src_addr,
 	          spec->child_src_addrlen);
 	if (rv == -1) {
-		log_err_printf("CRITICAL: Error from bind(): %s\n", strerror(errno));
+		log_err_level_printf(LOG_CRIT, "Error from bind(): %s\n", strerror(errno));
 		evutil_closesocket(fd);
 		return -1;
 	}
@@ -320,7 +320,7 @@ privsep_server_certfile(char *fn)
 
 	fd = open(fn, O_WRONLY|O_CREAT|O_EXCL, DFLT_FILEMODE);
 	if (fd == -1 && errno != EEXIST) {
-		log_err_printf("CRITICAL: Failed to open '%s': %s (%i)\n",
+		log_err_level_printf(LOG_CRIT, "Failed to open '%s': %s (%i)\n",
 		               fn, strerror(errno), errno);
 		return -1;
 	}
@@ -345,7 +345,7 @@ privsep_server_handle_req(opts_t *opts, int srvsock)
 			/* unfriendly EOF, leave server */
 			return 1;
 		}
-		log_err_printf("CRITICAL: Failed to receive msg: %s (%i)\n",
+		log_err_level_printf(LOG_CRIT, "Failed to receive msg: %s (%i)\n",
 		               strerror(errno), errno);
 		return -1;
 	}
@@ -369,7 +369,7 @@ privsep_server_handle_req(opts_t *opts, int srvsock)
 		if (n < 2) {
 			ans[0] = PRIVSEP_ANS_INVALID;
 			if (sys_sendmsgfd(srvsock, ans, 1, -1) == -1) {
-				log_err_printf("CRITICAL: Sending message failed: %s (%i"
+				log_err_level_printf(LOG_CRIT, "Sending message failed: %s (%i"
 				               ")\n", strerror(errno), errno);
 				return -1;
 			}
@@ -379,7 +379,7 @@ privsep_server_handle_req(opts_t *opts, int srvsock)
 			*((int*)&ans[1]) = errno;
 			if (sys_sendmsgfd(srvsock, ans, 1 + sizeof(int),
 			                  -1) == -1) {
-				log_err_printf("CRITICAL: Sending message failed: %s (%i"
+				log_err_level_printf(LOG_CRIT, "Sending message failed: %s (%i"
 				               ")\n", strerror(errno), errno);
 				return -1;
 			}
@@ -391,7 +391,7 @@ privsep_server_handle_req(opts_t *opts, int srvsock)
 			free(fn);
 			ans[0] = PRIVSEP_ANS_DENIED;
 			if (sys_sendmsgfd(srvsock, ans, 1, -1) == -1) {
-				log_err_printf("CRITICAL: Sending message failed: %s (%i"
+				log_err_level_printf(LOG_CRIT, "Sending message failed: %s (%i"
 				               ")\n", strerror(errno), errno);
 				return -1;
 			}
@@ -403,7 +403,7 @@ privsep_server_handle_req(opts_t *opts, int srvsock)
 			*((int*)&ans[1]) = errno;
 			if (sys_sendmsgfd(srvsock, ans, 1 + sizeof(int),
 			                  -1) == -1) {
-				log_err_printf("CRITICAL: Sending message failed: %s (%i"
+				log_err_level_printf(LOG_CRIT, "Sending message failed: %s (%i"
 				               ")\n", strerror(errno), errno);
 				return -1;
 			}
@@ -413,7 +413,7 @@ privsep_server_handle_req(opts_t *opts, int srvsock)
 			ans[0] = PRIVSEP_ANS_SUCCESS;
 			if (sys_sendmsgfd(srvsock, ans, 1, fd) == -1) {
 				close(fd);
-				log_err_printf("CRITICAL: Sending message failed: %s (%i"
+				log_err_level_printf(LOG_CRIT, "Sending message failed: %s (%i"
 				               ")\n", strerror(errno), errno);
 				return -1;
 			}
@@ -430,7 +430,7 @@ privsep_server_handle_req(opts_t *opts, int srvsock)
 		if (n != sizeof(char) + sizeof(arg)) {
 			ans[0] = PRIVSEP_ANS_INVALID;
 			if (sys_sendmsgfd(srvsock, ans, 1, -1) == -1) {
-				log_err_printf("CRITICAL: Sending message failed: %s (%i"
+				log_err_level_printf(LOG_CRIT, "Sending message failed: %s (%i"
 				               ")\n", strerror(errno), errno);
 				return -1;
 			}
@@ -440,7 +440,7 @@ privsep_server_handle_req(opts_t *opts, int srvsock)
 		if (privsep_server_opensock_verify(opts, arg) == -1) {
 			ans[0] = PRIVSEP_ANS_DENIED;
 			if (sys_sendmsgfd(srvsock, ans, 1, -1) == -1) {
-				log_err_printf("CRITICAL: Sending message failed: %s (%i"
+				log_err_level_printf(LOG_CRIT, "Sending message failed: %s (%i"
 				               ")\n", strerror(errno), errno);
 				return -1;
 			}
@@ -451,7 +451,7 @@ privsep_server_handle_req(opts_t *opts, int srvsock)
 			*((int*)&ans[1]) = errno;
 			if (sys_sendmsgfd(srvsock, ans, 1 + sizeof(int),
 			                  -1) == -1) {
-				log_err_printf("CRITICAL: Sending message failed: %s (%i"
+				log_err_level_printf(LOG_CRIT, "Sending message failed: %s (%i"
 				               ")\n", strerror(errno), errno);
 				return -1;
 			}
@@ -460,7 +460,7 @@ privsep_server_handle_req(opts_t *opts, int srvsock)
 			ans[0] = PRIVSEP_ANS_SUCCESS;
 			if (sys_sendmsgfd(srvsock, ans, 1, s) == -1) {
 				evutil_closesocket(s);
-				log_err_printf("CRITICAL: Sending message failed: %s (%i"
+				log_err_level_printf(LOG_CRIT, "Sending message failed: %s (%i"
 				               ")\n", strerror(errno), errno);
 				return -1;
 			}
@@ -477,7 +477,7 @@ privsep_server_handle_req(opts_t *opts, int srvsock)
 		if (n != sizeof(char) + sizeof(arg)) {
 			ans[0] = PRIVSEP_ANS_INVALID;
 			if (sys_sendmsgfd(srvsock, ans, 1, -1) == -1) {
-				log_err_printf("CRITICAL: Sending message failed: %s (%i"
+				log_err_level_printf(LOG_CRIT, "Sending message failed: %s (%i"
 				               ")\n", strerror(errno), errno);
 				return -1;
 			}
@@ -489,7 +489,7 @@ privsep_server_handle_req(opts_t *opts, int srvsock)
 			*((int*)&ans[1]) = errno;
 			if (sys_sendmsgfd(srvsock, ans, 1 + sizeof(int),
 			                  -1) == -1) {
-				log_err_printf("CRITICAL: Sending message failed child: %s (%i"
+				log_err_level_printf(LOG_CRIT, "Sending message failed child: %s (%i"
 				               ")\n", strerror(errno), errno);
 				return -1;
 			}
@@ -498,7 +498,7 @@ privsep_server_handle_req(opts_t *opts, int srvsock)
 			ans[0] = PRIVSEP_ANS_SUCCESS;
 			if (sys_sendmsgfd(srvsock, ans, 1, s) == -1) {
 				evutil_closesocket(s);
-				log_err_printf("CRITICAL: Sending message failed child: %s (%i"
+				log_err_level_printf(LOG_CRIT, "Sending message failed child: %s (%i"
 				               ")\n", strerror(errno), errno);
 				return -1;
 			}
@@ -515,7 +515,7 @@ privsep_server_handle_req(opts_t *opts, int srvsock)
 		if (n < 2) {
 			ans[0] = PRIVSEP_ANS_INVALID;
 			if (sys_sendmsgfd(srvsock, ans, 1, -1) == -1) {
-				log_err_printf("CRITICAL: Sending message failed: %s (%i"
+				log_err_level_printf(LOG_CRIT, "Sending message failed: %s (%i"
 				               ")\n", strerror(errno), errno);
 				return -1;
 			}
@@ -525,7 +525,7 @@ privsep_server_handle_req(opts_t *opts, int srvsock)
 			*((int*)&ans[1]) = errno;
 			if (sys_sendmsgfd(srvsock, ans, 1 + sizeof(int),
 			                  -1) == -1) {
-				log_err_printf("CRITICAL: Sending message failed: %s (%i"
+				log_err_level_printf(LOG_CRIT, "Sending message failed: %s (%i"
 				               ")\n", strerror(errno), errno);
 				return -1;
 			}
@@ -537,7 +537,7 @@ privsep_server_handle_req(opts_t *opts, int srvsock)
 			free(fn);
 			ans[0] = PRIVSEP_ANS_DENIED;
 			if (sys_sendmsgfd(srvsock, ans, 1, -1) == -1) {
-				log_err_printf("CRITICAL: Sending message failed: %s (%i"
+				log_err_level_printf(LOG_CRIT, "Sending message failed: %s (%i"
 				               ")\n", strerror(errno), errno);
 				return -1;
 			}
@@ -549,7 +549,7 @@ privsep_server_handle_req(opts_t *opts, int srvsock)
 			*((int*)&ans[1]) = errno;
 			if (sys_sendmsgfd(srvsock, ans, 1 + sizeof(int),
 			                  -1) == -1) {
-				log_err_printf("CRITICAL: Sending message failed: %s (%i"
+				log_err_level_printf(LOG_CRIT, "Sending message failed: %s (%i"
 				               ")\n", strerror(errno), errno);
 				return -1;
 			}
@@ -559,7 +559,7 @@ privsep_server_handle_req(opts_t *opts, int srvsock)
 			ans[0] = PRIVSEP_ANS_SUCCESS;
 			if (sys_sendmsgfd(srvsock, ans, 1, fd) == -1) {
 				close(fd);
-				log_err_printf("CRITICAL: Sending message failed: %s (%i"
+				log_err_level_printf(LOG_CRIT, "Sending message failed: %s (%i"
 				               ")\n", strerror(errno), errno);
 				return -1;
 			}
@@ -572,7 +572,7 @@ privsep_server_handle_req(opts_t *opts, int srvsock)
 	default:
 		ans[0] = PRIVSEP_ANS_UNK_CMD;
 		if (sys_sendmsgfd(srvsock, ans, 1, -1) == -1) {
-			log_err_printf("CRITICAL: Sending message failed: %s (%i"
+			log_err_level_printf(LOG_CRIT, "Sending message failed: %s (%i"
 			               ")\n", strerror(errno), errno);
 			return -1;
 		}
@@ -625,7 +625,7 @@ privsep_server(opts_t *opts, int sigpipe, int srvsock[], size_t nsrvsock,
 #endif /* DEBUG_PRIVSEP_SERVER */
 		} while (rv == -1 && errno == EINTR);
 		if (rv == -1) {
-			log_err_printf("CRITICAL: Select failed: %s (%i)\n",
+			log_err_level_printf(LOG_CRIT, "Select failed: %s (%i)\n",
 			               strerror(errno), errno);
 			return -1;
 		}
@@ -640,7 +640,7 @@ privsep_server(opts_t *opts, int sigpipe, int srvsock[], size_t nsrvsock,
 			read(sigpipe, buf, sizeof(buf));
 			if (received_sigquit) {
 				if (kill(childpid, SIGQUIT) == -1) {
-					log_err_printf("CRITICAL: kill(%i,SIGQUIT) "
+					log_err_level_printf(LOG_CRIT, "kill(%i,SIGQUIT) "
 					               "failed: %s (%i)\n",
 					               childpid,
 					               strerror(errno), errno);
@@ -649,7 +649,7 @@ privsep_server(opts_t *opts, int sigpipe, int srvsock[], size_t nsrvsock,
 			}
 			if (received_sigterm) {
 				if (kill(childpid, SIGTERM) == -1) {
-					log_err_printf("CRITICAL: kill(%i,SIGTERM) "
+					log_err_level_printf(LOG_CRIT, "kill(%i,SIGTERM) "
 					               "failed: %s (%i)\n",
 					               childpid,
 					               strerror(errno), errno);
@@ -658,7 +658,7 @@ privsep_server(opts_t *opts, int sigpipe, int srvsock[], size_t nsrvsock,
 			}
 			if (received_sighup) {
 				if (kill(childpid, SIGHUP) == -1) {
-					log_err_printf("CRITICAL: kill(%i,SIGHUP) "
+					log_err_level_printf(LOG_CRIT, "kill(%i,SIGHUP) "
 					               "failed: %s (%i)\n",
 					               childpid,
 					               strerror(errno), errno);
@@ -667,7 +667,7 @@ privsep_server(opts_t *opts, int sigpipe, int srvsock[], size_t nsrvsock,
 			}
 			if (received_sigusr1) {
 				if (kill(childpid, SIGUSR1) == -1) {
-					log_err_printf("CRITICAL: kill(%i,SIGUSR1) "
+					log_err_level_printf(LOG_CRIT, "kill(%i,SIGUSR1) "
 					               "failed: %s (%i)\n",
 					               childpid,
 					               strerror(errno), errno);
@@ -679,7 +679,7 @@ privsep_server(opts_t *opts, int sigpipe, int srvsock[], size_t nsrvsock,
 				 * child process receives SIGINT directly */
 				if (opts->detach) {
 					if (kill(childpid, SIGINT) == -1) {
-						log_err_printf("CRITICAL: kill(%i,SIGINT"
+						log_err_level_printf(LOG_CRIT, "kill(%i,SIGINT"
 						               ") failed: "
 						               "%s (%i)\n",
 						               childpid,
@@ -705,7 +705,7 @@ privsep_server(opts_t *opts, int sigpipe, int srvsock[], size_t nsrvsock,
 				int rv = privsep_server_handle_req(opts,
 				                                   srvsock[i]);
 				if (rv == -1) {
-					log_err_printf("CRITICAL: Failed to handle "
+					log_err_level_printf(LOG_CRIT, "Failed to handle "
 					               "privsep req "
 					               "on srvsock %i\n",
 					               srvsock[i]);
@@ -956,7 +956,7 @@ privsep_fork(opts_t *opts, int clisock[], size_t nclisock)
 	received_sigusr1 = 0;
 
 	if (pipe(selfpipev) == -1) {
-		log_err_printf("CRITICAL: Failed to create self-pipe: %s (%i)\n",
+		log_err_level_printf(LOG_CRIT, "Failed to create self-pipe: %s (%i)\n",
 		               strerror(errno), errno);
 		return -1;
 	}
@@ -964,7 +964,7 @@ privsep_fork(opts_t *opts, int clisock[], size_t nclisock)
 	               selfpipev[0], selfpipev[1]);
 
 	if (pipe(chldpipev) == -1) {
-		log_err_printf("CRITICAL: Failed to create chld-pipe: %s (%i)\n",
+		log_err_level_printf(LOG_CRIT, "Failed to create chld-pipe: %s (%i)\n",
 		               strerror(errno), errno);
 		return -1;
 	}
@@ -973,7 +973,7 @@ privsep_fork(opts_t *opts, int clisock[], size_t nclisock)
 
 	for (size_t i = 0; i < nclisock; i++) {
 		if (socketpair(AF_UNIX, SOCK_DGRAM, 0, sockcliv[i]) == -1) {
-			log_err_printf("CRITICAL: Failed to create socket pair %zu: "
+			log_err_level_printf(LOG_CRIT, "Failed to create socket pair %zu: "
 			               "%s (%i)\n", i, strerror(errno), errno);
 			return -1;
 		}
@@ -983,7 +983,7 @@ privsep_fork(opts_t *opts, int clisock[], size_t nclisock)
 
 	pid = fork();
 	if (pid == -1) {
-		log_err_printf("CRITICAL: Failed to fork: %s (%i)\n",
+		log_err_level_printf(LOG_CRIT, "Failed to fork: %s (%i)\n",
 		               strerror(errno), errno);
 		close(selfpipev[0]);
 		close(selfpipev[1]);
@@ -1030,32 +1030,32 @@ privsep_fork(opts_t *opts, int clisock[], size_t nclisock)
 	 * here, we have a race condition; this is solved by the client
 	 * blocking on the reading end of a pipe (chldpipev[0]). */
 	if (signal(SIGHUP, privsep_server_signal_handler) == SIG_ERR) {
-		log_err_printf("CRITICAL: Failed to install SIGHUP handler: %s (%i)\n",
+		log_err_level_printf(LOG_CRIT, "Failed to install SIGHUP handler: %s (%i)\n",
 		               strerror(errno), errno);
 		return -1;
 	}
 	if (signal(SIGINT, privsep_server_signal_handler) == SIG_ERR) {
-		log_err_printf("CRITICAL: Failed to install SIGINT handler: %s (%i)\n",
+		log_err_level_printf(LOG_CRIT, "Failed to install SIGINT handler: %s (%i)\n",
 		               strerror(errno), errno);
 		return -1;
 	}
 	if (signal(SIGTERM, privsep_server_signal_handler) == SIG_ERR) {
-		log_err_printf("CRITICAL: Failed to install SIGTERM handler: %s (%i)\n",
+		log_err_level_printf(LOG_CRIT, "Failed to install SIGTERM handler: %s (%i)\n",
 		               strerror(errno), errno);
 		return -1;
 	}
 	if (signal(SIGQUIT, privsep_server_signal_handler) == SIG_ERR) {
-		log_err_printf("CRITICAL: Failed to install SIGQUIT handler: %s (%i)\n",
+		log_err_level_printf(LOG_CRIT, "Failed to install SIGQUIT handler: %s (%i)\n",
 		               strerror(errno), errno);
 		return -1;
 	}
 	if (signal(SIGUSR1, privsep_server_signal_handler) == SIG_ERR) {
-		log_err_printf("CRITICAL: Failed to install SIGUSR1 handler: %s (%i)\n",
+		log_err_level_printf(LOG_CRIT, "Failed to install SIGUSR1 handler: %s (%i)\n",
 		               strerror(errno), errno);
 		return -1;
 	}
 	if (signal(SIGCHLD, privsep_server_signal_handler) == SIG_ERR) {
-		log_err_printf("CRITICAL: Failed to install SIGCHLD handler: %s (%i)\n",
+		log_err_level_printf(LOG_CRIT, "Failed to install SIGCHLD handler: %s (%i)\n",
 		               strerror(errno), errno);
 		return -1;
 	}
@@ -1068,7 +1068,7 @@ privsep_fork(opts_t *opts, int clisock[], size_t nclisock)
 	for (size_t i = 0; i < nclisock; i++)
 		socksrv[i] = sockcliv[i][0];
 	if (privsep_server(opts, selfpipev[0], socksrv, nclisock, pid) == -1) {
-		log_err_printf("CRITICAL: Privsep server failed: %s (%i)\n",
+		log_err_level_printf(LOG_CRIT, "Privsep server failed: %s (%i)\n",
 		               strerror(errno), errno);
 		/* fall through */
 	}
@@ -1086,17 +1086,17 @@ privsep_fork(opts_t *opts, int clisock[], size_t nclisock)
 	wait(&status);
 	if (WIFEXITED(status)) {
 		if (WEXITSTATUS(status) != 0) {
-			log_err_printf("CRITICAL: Child proc %lld exited with status %d\n",
+			log_err_level_printf(LOG_CRIT, "Child proc %lld exited with status %d\n",
 			               (long long)pid, WEXITSTATUS(status));
 		} else {
 			log_dbg_printf("Child proc %lld exited with status %d\n",
 			               (long long)pid, WEXITSTATUS(status));
 		}
 	} else if (WIFSIGNALED(status)) {
-		log_err_printf("CRITICAL: Child proc %lld killed by signal %d\n",
+		log_err_level_printf(LOG_CRIT, "Child proc %lld killed by signal %d\n",
 		               (long long)pid, WTERMSIG(status));
 	} else {
-		log_err_printf("CRITICAL: Child proc %lld neither exited nor killed\n",
+		log_err_level_printf(LOG_CRIT, "Child proc %lld neither exited nor killed\n",
 		               (long long)pid);
 	}
 

@@ -125,7 +125,7 @@ pxy_conn_ctx_new(evutil_socket_t fd,
 
 	pxy_conn_ctx_t *ctx = malloc(sizeof(pxy_conn_ctx_t));
 	if (!ctx) {
-		log_err_printf("CRITICAL: Error allocating memory\n");
+		log_err_level_printf(LOG_CRIT, "Error allocating memory\n");
 		evutil_closesocket(fd);
 		return NULL;
 	}
@@ -133,7 +133,7 @@ pxy_conn_ctx_new(evutil_socket_t fd,
 
 	ctx->uuid = malloc(sizeof(uuid_t));
 	if (!ctx->uuid) {
-		log_err_printf("CRITICAL: Error allocating memory\n");
+		log_err_level_printf(LOG_CRIT, "Error allocating memory\n");
 		evutil_closesocket(fd);
 		free(ctx);
 		return NULL;
@@ -369,7 +369,7 @@ pxy_conn_ctx_free(pxy_conn_ctx_t *ctx, int by_requestor)
 #endif /* DEBUG_PROXY */
 	if (WANT_CONTENT_LOG(ctx) && ctx->logctx) {
 		if (log_content_close(&ctx->logctx, by_requestor) == -1) {
-			log_err_printf("WARNING: Content log close failed\n");
+			log_err_level_printf(LOG_WARNING, "Content log close failed\n");
 		}
 	}
 	pxy_thrmgr_detach(ctx);
@@ -542,7 +542,7 @@ pxy_debug_crt(X509 *crt)
 
 	char *fpr;
 	if (!(fpr = ssl_x509_fingerprint(crt, 1))) {
-		log_err_printf("WARNING: Error generating X509 fingerprint\n");
+		log_err_level_printf(LOG_WARNING, "Error generating X509 fingerprint\n");
 	} else {
 		log_dbg_printf("Fingerprint: %s\n", fpr);
 		free(fpr);
@@ -630,13 +630,13 @@ pxy_log_connect_nonhttp(pxy_conn_ctx_t *ctx)
 		log_err_printf("%s", msg);
 	} else if (ctx->opts->statslog) {
 		if (log_stats(msg) == -1) {
-			log_err_printf("WARNING: Stats logging failed\n");
+			log_err_level_printf(LOG_WARNING, "Stats logging failed\n");
 		}
 	}
 	if (ctx->opts->connectlog) {
 		if (log_connect_print_free(msg) == -1) {
 			free(msg);
-			log_err_printf("WARNING: Connection logging failed\n");
+			log_err_level_printf(LOG_WARNING, "Connection logging failed\n");
 		}
 	} else {
 		free(msg);
@@ -661,7 +661,7 @@ pxy_log_connect_http(pxy_conn_ctx_t *ctx)
 
 #ifdef DEBUG_PROXY
 	if (ctx->passthrough) {
-		log_err_printf("WARNING: pxy_log_connect_http called while in "
+		log_err_level_printf(LOG_WARNING, "pxy_log_connect_http called while in "
 		               "passthrough mode\n");
 		return;
 	}
@@ -739,13 +739,13 @@ pxy_log_connect_http(pxy_conn_ctx_t *ctx)
 		log_err_printf("%s", msg);
 	} else if (ctx->opts->statslog) {
 		if (log_stats(msg) == -1) {
-			log_err_printf("WARNING: Stats logging failed\n");
+			log_err_level_printf(LOG_WARNING, "Stats logging failed\n");
 		}
 	}
 	if (ctx->opts->connectlog) {
 		if (log_connect_print_free(msg) == -1) {
 			free(msg);
-			log_err_printf("WARNING: Connection logging failed\n");
+			log_err_level_printf(LOG_WARNING, "Connection logging failed\n");
 		}
 	} else {
 		free(msg);
@@ -787,7 +787,7 @@ pxy_ossl_sessnew_cb(MAYBE_UNUSED SSL *ssl, SSL_SESSION *sess)
 	/* Session resumption seems to fail for SSLv2 with protocol
 	 * parsing errors, so we disable caching for SSLv2. */
 	if (SSL_version(ssl) == SSL2_VERSION) {
-		log_err_printf("WARNING: Session resumption denied to SSLv2"
+		log_err_level_printf(LOG_WARNING, "Session resumption denied to SSLv2"
 		               "client.\n");
 		return 0;
 	}
@@ -1014,12 +1014,12 @@ pxy_srccert_write(pxy_conn_ctx_t *ctx)
 	if (ctx->opts->certgen_writeall || ctx->generated_cert) {
 		if (pxy_srccert_write_to_gendir(ctx,
 		                SSL_get_certificate(ctx->src.ssl), 0) == -1) {
-			log_err_printf("CRITICAL: Failed to write used certificate\n");
+			log_err_level_printf(LOG_CRIT, "Failed to write used certificate\n");
 		}
 	}
 	if (ctx->opts->certgen_writeall) {
 		if (pxy_srccert_write_to_gendir(ctx, ctx->origcrt, 1) == -1) {
-			log_err_printf("CRITICAL: Failed to write orig certificate\n");
+			log_err_level_printf(LOG_CRIT, "Failed to write orig certificate\n");
 		}
 	}
 }
@@ -1368,7 +1368,7 @@ pxy_bufferevent_setup(pxy_conn_ctx_t *ctx, evutil_socket_t fd, SSL *ssl)
 		bev = bufferevent_socket_new(ctx->evbase, fd, BEV_OPT_DEFER_CALLBACKS);
 	}
 	if (!bev) {
-		log_err_printf("CRITICAL: Error creating bufferevent socket\n");
+		log_err_level_printf(LOG_CRIT, "Error creating bufferevent socket\n");
 		return NULL;
 	}
 #if LIBEVENT_VERSION_NUMBER >= 0x02010000
@@ -1412,7 +1412,7 @@ pxy_bufferevent_setup_child(pxy_conn_child_ctx_t *ctx, evutil_socket_t fd, SSL *
 		bev = bufferevent_socket_new(ctx->parent->evbase, fd, BEV_OPT_DEFER_CALLBACKS);
 	}
 	if (!bev) {
-		log_err_printf("CRITICAL: Error creating bufferevent socket\n");
+		log_err_level_printf(LOG_CRIT, "Error creating bufferevent socket\n");
 		return NULL;
 	}
 
@@ -1719,7 +1719,7 @@ deny:
 				if (log_content_submit(ctx->logctx, lb,
 				                       1/*req*/) == -1) {
 					logbuf_free(lb);
-					log_err_printf("WARNING: Content log "
+					log_err_level_printf(LOG_WARNING, "Content log "
 					               "submission failed\n");
 				}
 			}
@@ -1739,7 +1739,7 @@ deny:
 			if (log_content_submit(ctx->logctx, lb,
 			                       0/*resp*/) == -1) {
 				logbuf_free(lb);
-				log_err_printf("WARNING: Content log "
+				log_err_level_printf(LOG_WARNING, "Content log "
 				               "submission failed\n");
 			}
 		}
@@ -1780,7 +1780,7 @@ pxy_conn_autossl_peek_and_upgrade(pxy_conn_ctx_t *ctx)
 			}
 			ctx->srv_dst.ssl = pxy_dstssl_create(ctx);
 			if (!ctx->srv_dst.ssl) {
-				log_err_printf("CRITICAL: Error creating SSL for "
+				log_err_level_printf(LOG_CRIT, "Error creating SSL for "
 				               "upgrade\n");
 				return 0;
 			}
@@ -1800,7 +1800,7 @@ pxy_conn_autossl_peek_and_upgrade(pxy_conn_ctx_t *ctx)
 				return 0;
 			}
 			if (OPTS_DEBUG(ctx->opts)) {
-				log_err_printf("INFO: Replaced dst bufferevent, new "
+				log_err_level_printf(LOG_INFO, "Replaced dst bufferevent, new "
 				               "one is %p\n", (void *)ctx->srv_dst.bev);
 			}
 			ctx->clienthello_search = 0;
@@ -1920,7 +1920,7 @@ pxy_http_reqhdr_filter(struct evbuffer *inbuf, struct evbuffer *outbuf, struct b
 		if (log_content_submit(parent->logctx, lb,
 							   1/*req*/) == -1) {
 			logbuf_free(lb);
-			log_err_printf("WARNING: Content log "
+			log_err_level_printf(LOG_WARNING, "Content log "
 						   "submission failed\n");
 		}
 	}
@@ -1946,7 +1946,7 @@ pxy_http_reqhdr_filter(struct evbuffer *inbuf, struct evbuffer *outbuf, struct b
 			if (log_content_submit(parent->logctx, lb,
 								   (bev == ctx->src.bev)) == -1) {
 				logbuf_free(lb);
-				log_err_printf("WARNING: Content log "
+				log_err_level_printf(LOG_WARNING, "Content log "
 							   "submission failed\n");
 			}
 		}
@@ -2007,7 +2007,7 @@ pxy_http_resphdr_filter(struct evbuffer *inbuf, struct evbuffer *outbuf, struct 
 		if (log_content_submit(parent->logctx, lb,
 							   0/*resp*/) == -1) {
 			logbuf_free(lb);
-			log_err_printf("WARNING: Content log "
+			log_err_level_printf(LOG_WARNING, "Content log "
 						   "submission failed\n");
 		}
 	}
@@ -2033,7 +2033,7 @@ pxy_http_resphdr_filter(struct evbuffer *inbuf, struct evbuffer *outbuf, struct 
 			if (log_content_submit(parent->logctx, lb,
 								   (bev == ctx->src.bev)) == -1) {
 				logbuf_free(lb);
-				log_err_printf("WARNING: Content log "
+				log_err_level_printf(LOG_WARNING, "Content log "
 							   "submission failed\n");
 			}
 		}
@@ -2054,11 +2054,11 @@ pxy_process_response(struct evbuffer *inbuf, struct evbuffer *outbuf, struct buf
 	}
 
 	if (evbuffer_remove(inbuf, packet, packet_size) < 0) {
-		log_err_printf("ERROR: evbuffer_remove cannot drain the buffer\n");
+		log_err_printf("evbuffer_remove cannot drain the buffer\n");
 	}
 
 	if (evbuffer_add(outbuf, packet, packet_size) < 0) {
-		log_err_printf("ERROR: evbuffer_add failed\n");
+		log_err_printf("evbuffer_add failed\n");
 	}
 
 #ifdef DEBUG_PROXY
@@ -2072,7 +2072,7 @@ pxy_process_response(struct evbuffer *inbuf, struct evbuffer *outbuf, struct buf
 			memcpy(lb->buf, packet, lb->sz);
 			if (log_content_submit(parent->logctx, lb, (bev == ctx->src.bev)) == -1) {
 				logbuf_free(lb);
-				log_err_printf("WARNING: Content log "
+				log_err_level_printf(LOG_WARNING, "Content log "
 							   "submission failed\n");
 			}
 		}
@@ -2104,7 +2104,7 @@ pxy_bev_readcb(struct bufferevent *bev, void *arg)
 #endif /* DEBUG_PROXY */
 
 	if (!ctx->connected) {
-		log_err_printf("CRITICAL: readcb called when other end not connected - "
+		log_err_level_printf(LOG_CRIT, "readcb called when other end not connected - "
 		               "aborting.\n");
 		log_exceptcb();
 		return;
@@ -2157,7 +2157,7 @@ pxy_bev_readcb(struct bufferevent *bev, void *arg)
 			}
 
 			if (evbuffer_remove(inbuf, packet, packet_size) < 0) {
-				log_err_printf("ERROR: evbuffer_remove cannot drain the buffer\n");
+				log_err_printf("evbuffer_remove cannot drain the buffer\n");
 			}
 
 #ifdef DEBUG_PROXY
@@ -2167,7 +2167,7 @@ pxy_bev_readcb(struct bufferevent *bev, void *arg)
 
 			// We insert our special header line to the first packet we get, e.g. right after the first \r\n
 			// @todo Should we look for GET/POST or Host header lines to detect the first packet?
-			// But there is no guarantie that they will exist, due to fragmentation.
+			// But there is no guarantee that they will exist, due to fragmentation.
 			// @attention We cannot append the ssl proxy address at the end of the packet or in between the header and the content,
 			// because (1) the packet may be just the first fragment split somewhere not appropriate for appending a header,
 			// and (2) there may not be any content.
@@ -2198,7 +2198,7 @@ pxy_bev_readcb(struct bufferevent *bev, void *arg)
 			}
 
 			if (evbuffer_add(outbuf, packet, packet_size) < 0) {
-				log_err_printf("ERROR: evbuffer_add failed\n");
+				log_err_printf("evbuffer_add failed\n");
 			}
 
 #ifdef DEBUG_PROXY
@@ -2213,7 +2213,7 @@ pxy_bev_readcb(struct bufferevent *bev, void *arg)
 					memcpy(lb->buf, packet, lb->sz);
 					if (log_content_submit(ctx->logctx, lb, (bev == ctx->src.bev)) == -1) {
 						logbuf_free(lb);
-						log_err_printf("WARNING: Content log "
+						log_err_level_printf(LOG_WARNING, "Content log "
 									   "submission failed\n");
 					}
 				}
@@ -2250,7 +2250,7 @@ leave:
 			if (log_content_submit(ctx->logctx, lb,
 								   (bev == ctx->src.bev)) == -1) {
 				logbuf_free(lb);
-				log_err_printf("WARNING: Content log "
+				log_err_level_printf(LOG_WARNING, "Content log "
 							   "submission failed\n");
 			}
 		}
@@ -2290,7 +2290,7 @@ pxy_bev_readcb_child(struct bufferevent *bev, void *arg)
 #endif /* DEBUG_PROXY */
 		
 	if (!ctx->connected) {
-		log_err_printf("CRITICAL: readcb called when other end not connected - "
+		log_err_level_printf(LOG_CRIT, "readcb called when other end not connected - "
 		               "aborting.\n");
 		log_exceptcb();
 		return;
@@ -2333,7 +2333,7 @@ pxy_bev_readcb_child(struct bufferevent *bev, void *arg)
 			}
 
 			if (evbuffer_remove(inbuf, packet, packet_size) < 0) {
-				log_err_printf("ERROR: evbuffer_remove cannot drain the buffer\n");
+				log_err_printf("evbuffer_remove cannot drain the buffer\n");
 			}
 
 			size_t header_len = strlen(parent->header_str);
@@ -2347,7 +2347,7 @@ pxy_bev_readcb_child(struct bufferevent *bev, void *arg)
 			}
 
 			if (evbuffer_add(outbuf, packet, packet_size) < 0) {
-				log_err_printf("ERROR: evbuffer_add failed\n");
+				log_err_printf("evbuffer_add failed\n");
 			}
 
 #ifdef DEBUG_PROXY
@@ -2362,7 +2362,7 @@ pxy_bev_readcb_child(struct bufferevent *bev, void *arg)
 					memcpy(lb->buf, packet, lb->sz);
 					if (log_content_submit(parent->logctx, lb, (bev == ctx->src.bev)) == -1) {
 						logbuf_free(lb);
-						log_err_printf("WARNING: Content log "
+						log_err_level_printf(LOG_WARNING, "Content log "
 									   "submission failed\n");
 					}
 				}
@@ -2399,7 +2399,7 @@ leave:
 			if (log_content_submit(parent->logctx, lb,
 								   (bev == ctx->src.bev)) == -1) {
 				logbuf_free(lb);
-				log_err_printf("WARNING: Content log "
+				log_err_level_printf(LOG_WARNING, "Content log "
 							   "submission failed\n");
 			}
 		}
@@ -2429,7 +2429,7 @@ pxy_conn_connect_child(pxy_conn_child_ctx_t *ctx)
 	pxy_conn_ctx_t *parent = ctx->parent;
 
 	if (!parent->addrlen) {
-		log_err_printf("CRITICAL: Child no target address; aborting connection\n");
+		log_err_level_printf(LOG_CRIT, "Child no target address; aborting connection\n");
 		evutil_closesocket(ctx->fd);
 		pxy_conn_free(parent, 1);
 		return;
@@ -2438,7 +2438,7 @@ pxy_conn_connect_child(pxy_conn_child_ctx_t *ctx)
 	ctx->src.ssl = NULL;
 	ctx->src.bev = pxy_bufferevent_setup_child(ctx, ctx->fd, ctx->src.ssl);
 	if (!ctx->src.bev) {
-		log_err_printf("CRITICAL: Error creating child src\n");
+		log_err_level_printf(LOG_CRIT, "Error creating child src\n");
 		evutil_closesocket(ctx->fd);
 		pxy_conn_free(parent, 1);
 		return;
@@ -2457,7 +2457,7 @@ pxy_conn_connect_child(pxy_conn_child_ctx_t *ctx)
 	if ((parent->spec->ssl || parent->clienthello_found) && !parent->passthrough) {
 		ctx->dst.ssl = pxy_dstssl_create(parent);
 		if (!ctx->dst.ssl) {
-			log_err_printf("CRITICAL: Error creating SSL\n");
+			log_err_level_printf(LOG_CRIT, "Error creating SSL\n");
 			// pxy_conn_free()>pxy_conn_free_child() will close the fd, since we have a non-NULL src.bev now
 			pxy_conn_free(parent, 1);
 			return;
@@ -2478,7 +2478,7 @@ pxy_conn_connect_child(pxy_conn_child_ctx_t *ctx)
 		ctx->dst.bev = pxy_bufferevent_setup_child(ctx, -1, ctx->dst.ssl);
 	}
 	if (!ctx->dst.bev) {
-		log_err_printf("CRITICAL: Error creating bufferevent\n");
+		log_err_level_printf(LOG_CRIT, "Error creating bufferevent\n");
 		if (ctx->dst.ssl) {
 			SSL_free(ctx->dst.ssl);
 			ctx->dst.ssl = NULL;
@@ -2518,7 +2518,7 @@ pxy_conn_setup_child(evutil_socket_t fd, pxy_conn_ctx_t *parent)
 
 	pxy_conn_child_ctx_t *ctx = pxy_conn_ctx_new_child(fd, parent);
 	if (!ctx) {
-		log_err_printf("CRITICAL: Error allocating memory\n");
+		log_err_level_printf(LOG_CRIT, "Error allocating memory\n");
 		evutil_closesocket(fd);
 		pxy_conn_free(parent, 1);
 		return;
@@ -2630,7 +2630,7 @@ pxy_connected_enable(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 			ctx->src.bev = pxy_bufferevent_setup(ctx, fd, ctx->src.ssl);
 		}
 		if (!ctx->src.bev) {
-			log_err_printf("CRITICAL: Error creating bufferevent\n");
+			log_err_level_printf(LOG_CRIT, "Error creating bufferevent\n");
 			if (ctx->src.ssl) {
 				SSL_free(ctx->src.ssl);
 				ctx->src.ssl = NULL;
@@ -2720,7 +2720,7 @@ pxy_connected_enable(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		// Child evcls use the evbase of the parent thread, otherwise we would get multithreading issues.
 		evutil_socket_t cfd;
 		if ((cfd = privsep_client_opensock_child(ctx->clisock, ctx->spec)) == -1) {
-			log_err_printf("CRITICAL: Error opening socket: %s (%i)\n", strerror(errno), errno);
+			log_err_level_printf(LOG_CRIT, "Error opening socket: %s (%i)\n", strerror(errno), errno);
 			pxy_conn_free(ctx, 1);
 			return 0;
 		}
@@ -2730,7 +2730,7 @@ pxy_connected_enable(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		// @attention Do not pass NULL as user-supplied pointer
 		struct evconnlistener *child_evcl = evconnlistener_new(ctx->thr->evbase, proxy_listener_acceptcb_child, ctx, LEV_OPT_CLOSE_ON_FREE, 1024, ctx->child_fd);
 		if (!child_evcl) {
-			log_err_printf("CRITICAL: Error creating child evconnlistener: %s\n", strerror(errno));
+			log_err_level_printf(LOG_CRIT, "Error creating child evconnlistener: %s\n", strerror(errno));
 #ifdef DEBUG_PROXY
 			log_dbg_level_printf(LOG_DBG_MODE_FINER, "Error creating child evconnlistener: %s, fd=%d, child_fd=%d\n", strerror(errno), fd, ctx->child_fd);
 #endif /* DEBUG_PROXY */
@@ -2752,7 +2752,7 @@ pxy_connected_enable(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 
 		if (getsockname(ctx->child_fd, (struct sockaddr *)&child_listener_addr, &child_listener_len) < 0) {
 			perror("getsockname");
-			log_err_printf("CRITICAL: pxy_connected_enable getsockname error=%s\n", strerror(errno));
+			log_err_level_printf(LOG_CRIT, "pxy_connected_enable getsockname error=%s\n", strerror(errno));
 			// @todo If getsockname() fails, should we really terminate the connection?
 			// @attention Do not close the child fd here, because child evcl exists now, hence pxy_conn_free() will close it while freeing child_evcl
 			pxy_conn_free(ctx, 1);
@@ -2979,7 +2979,7 @@ pxy_print_ssl_error(struct bufferevent *bev, UNUSED pxy_conn_ctx_t *ctx)
 #if LIBEVENT_VERSION_NUMBER >= 0x02010000
 		/* We have disabled notification for unclean shutdowns
 		 * so this should not happen; log a warning. */
-		log_err_printf("WARNING: Spurious error from "
+		log_err_level_printf(LOG_WARNING, "Spurious error from "
 					   "bufferevent (errno=0,sslerr=0)\n");
 #else /* LIBEVENT_VERSION_NUMBER < 0x02010000 */
 		/* Older versions of libevent will report these. */
@@ -3018,7 +3018,7 @@ pxy_print_ssl_error(struct bufferevent *bev, UNUSED pxy_conn_ctx_t *ctx)
 		}
 	} else {
 		/* real errors */
-		log_err_printf("ERROR: Error from bufferevent: "
+		log_err_printf("Error from bufferevent: "
 					   "%i:%s %lu:%i:%s:%i:%s:%i:%s\n",
 					   errno,
 					   errno ? strerror(errno) : "-",
@@ -3033,7 +3033,7 @@ pxy_print_ssl_error(struct bufferevent *bev, UNUSED pxy_conn_ctx_t *ctx)
 					   sslerr ?
 					   ERR_func_error_string(sslerr) : "-");
 		while ((sslerr = bufferevent_get_openssl_error(bev))) {
-			log_err_printf("ERROR: Additional SSL error: "
+			log_err_printf("Additional SSL error: "
 						   "%lu:%i:%s:%i:%s:%i:%s\n",
 						   sslerr,
 						   ERR_GET_REASON(sslerr),
@@ -3077,7 +3077,7 @@ pxy_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 	void (*other_free_and_close_fd_func)(struct bufferevent *, pxy_conn_ctx_t *) = (other->bev==ctx->dst.bev) ? &bufferevent_free_and_close_fd_nonssl : &bufferevent_free_and_close_fd;
 
 	if (events & BEV_EVENT_ERROR) {
-		log_err_printf("ERROR: BEV_EVENT_ERROR\n");
+		log_err_printf("BEV_EVENT_ERROR\n");
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINER, "ERROR: pxy_bev_eventcb error, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
@@ -3120,7 +3120,7 @@ pxy_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 #endif /* DEBUG_PROXY */
 
 		if (bev == ctx->srv_dst.bev) {
-			log_err_printf("WARNING: EOF on outbound connection before connection establishment\n");
+			log_err_level_printf(LOG_WARNING, "EOF on outbound connection before connection establishment\n");
 #ifdef DEBUG_PROXY
 			log_dbg_level_printf(LOG_DBG_MODE_FINER, "WARNING: pxy_bev_eventcb: EOF on outbound connection before connection establishment, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
@@ -3145,7 +3145,7 @@ pxy_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 
 			// @todo How to handle the following case?
 			if (!ctx->connected) {
-				log_err_printf("WARNING: EOF on outbound connection before connection establishment\n");
+				log_err_level_printf(LOG_WARNING, "EOF on outbound connection before connection establishment\n");
 #ifdef DEBUG_PROXY
 				log_dbg_level_printf(LOG_DBG_MODE_FINER, "WARNING: pxy_bev_eventcb: EOF on outbound connection before connection establishment, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
@@ -3239,7 +3239,7 @@ pxy_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 	}
 
 	if (events & BEV_EVENT_ERROR) {
-		log_err_printf("ERROR: BEV_EVENT_ERROR\n");
+		log_err_printf("BEV_EVENT_ERROR\n");
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINER, "ERROR: pxy_bev_eventcb_child error, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
@@ -3287,7 +3287,7 @@ pxy_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 
 		// @todo How to handle the following case?
 		if (!ctx->connected) {
-			log_err_printf("WARNING: EOF on outbound connection before connection establishment\n");
+			log_err_level_printf(LOG_WARNING, "EOF on outbound connection before connection establishment\n");
 #ifdef DEBUG_PROXY
 			log_dbg_level_printf(LOG_DBG_MODE_FINER, "WARNING: pxy_bev_eventcb_child: EOF on outbound connection before connection establishment, fd=%d, pfd=%d\n", ctx->fd, parent->fd);
 #endif /* DEBUG_PROXY */
@@ -3355,7 +3355,7 @@ pxy_conn_connect(pxy_conn_ctx_t *ctx)
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_connect: ENTER fd=%d\n", fd);
 #endif /* DEBUG_PROXY */
 	if (!ctx->addrlen) {
-		log_err_printf("CRITICAL: No target address; aborting connection\n");
+		log_err_level_printf(LOG_CRIT, "No target address; aborting connection\n");
 		evutil_closesocket(fd);
 		pxy_conn_ctx_free(ctx, 1);
 		return;
@@ -3364,7 +3364,7 @@ pxy_conn_connect(pxy_conn_ctx_t *ctx)
 	ctx->dst.ssl= NULL;
 	ctx->dst.bev = pxy_bufferevent_setup(ctx, -1, ctx->dst.ssl);
 	if (!ctx->dst.bev) {
-		log_err_printf("CRITICAL: Error creating parent dst\n");
+		log_err_level_printf(LOG_CRIT, "Error creating parent dst\n");
 		evutil_closesocket(fd);
 		pxy_conn_ctx_free(ctx, 1);
 		return;
@@ -3377,7 +3377,7 @@ pxy_conn_connect(pxy_conn_ctx_t *ctx)
 	if (ctx->spec->ssl && !ctx->passthrough) {
 		ctx->srv_dst.ssl = pxy_dstssl_create(ctx);
 		if (!ctx->srv_dst.ssl) {
-			log_err_printf("CRITICAL: Error creating SSL for srv_dst\n");
+			log_err_level_printf(LOG_CRIT, "Error creating SSL for srv_dst\n");
 			pxy_conn_free(ctx, 1);
 			return;
 		}
@@ -3415,7 +3415,7 @@ pxy_conn_connect(pxy_conn_ctx_t *ctx)
 	
 	/* initiate connection */
 	if (bufferevent_socket_connect(ctx->srv_dst.bev, (struct sockaddr *)&ctx->addr, ctx->addrlen) == -1) {
-		log_err_printf("CRITICAL: pxy_conn_connect: bufferevent_socket_connect for srv_dst failed\n");
+		log_err_level_printf(LOG_CRIT, "pxy_conn_connect: bufferevent_socket_connect for srv_dst failed\n");
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_conn_connect: bufferevent_socket_connect for srv_dst failed, fd=%d\n", fd);
 #endif /* DEBUG_PROXY */
@@ -3442,7 +3442,7 @@ pxy_sni_resolve_cb(int errcode, struct evutil_addrinfo *ai, void *arg)
 #endif /* DEBUG_PROXY */
 
 	if (errcode) {
-		log_err_printf("ERROR: Cannot resolve SNI hostname '%s': %s\n",
+		log_err_printf("Cannot resolve SNI hostname '%s': %s\n",
 		               ctx->sni, evutil_gai_strerror(errcode));
 		evutil_closesocket(ctx->fd);
 		pxy_conn_ctx_free(ctx, 1);
@@ -3489,7 +3489,7 @@ pxy_fd_readcb(MAYBE_UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 
 		n = recv(fd, buf, sizeof(buf), MSG_PEEK);
 		if (n == -1) {
-			log_err_printf("ERROR: Error peeking on fd, aborting connection\n");
+			log_err_printf("Error peeking on fd, aborting connection\n");
 #ifdef DEBUG_PROXY
 			log_dbg_level_printf(LOG_DBG_MODE_FINER, "ERROR: Error peeking on fd, aborting connection, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
@@ -3499,7 +3499,7 @@ pxy_fd_readcb(MAYBE_UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 		}
 		if (n == 0) {
 			/* socket got closed while we were waiting */
-			log_err_printf("ERROR: Socket got closed while waiting\n");
+			log_err_printf("Socket got closed while waiting\n");
 #ifdef DEBUG_PROXY
 			log_dbg_level_printf(LOG_DBG_MODE_FINER, "ERROR: Socket got closed while waiting, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
@@ -3510,7 +3510,7 @@ pxy_fd_readcb(MAYBE_UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 
 		rv = ssl_tls_clienthello_parse(buf, n, 0, &chello, &ctx->sni);
 		if ((rv == 1) && !chello) {
-			log_err_printf("ERROR: Peeking did not yield a (truncated) "
+			log_err_printf("Peeking did not yield a (truncated) "
 			               "ClientHello message, "
 			               "aborting connection\n");
 #ifdef DEBUG_PROXY
@@ -3543,7 +3543,7 @@ pxy_fd_readcb(MAYBE_UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 			ctx->ev = event_new(ctx->evbase, fd, 0,
 			                    pxy_fd_readcb, ctx);
 			if (!ctx->ev) {
-				log_err_printf("CRITICAL: Error creating retry event, aborting connection\n");
+				log_err_level_printf(LOG_CRIT, "Error creating retry event, aborting connection\n");
 #ifdef DEBUG_PROXY
 				log_dbg_level_printf(LOG_DBG_MODE_FINER, "Error creating retry event, aborting connection, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
@@ -3612,7 +3612,7 @@ pxy_conn_setup(evutil_socket_t fd,
 	// Close the conn if we are out of file descriptors, or libevent will crash us
 	if (getdtablecount() + FD_RESERVE >= descriptor_table_size) {
 		errno = EMFILE;
-		log_err_printf("CRITICAL: Out of file descriptors\n");
+		log_err_level_printf(LOG_CRIT, "Out of file descriptors\n");
 		evutil_closesocket(fd);
 		return;
 	}
@@ -3620,7 +3620,7 @@ pxy_conn_setup(evutil_socket_t fd,
 	/* create per connection state and attach to thread */
 	pxy_conn_ctx_t *ctx = pxy_conn_ctx_new(fd, thrmgr, spec, opts, clisock);
 	if (!ctx) {
-		log_err_printf("CRITICAL: Error allocating memory\n");
+		log_err_level_printf(LOG_CRIT, "Error allocating memory\n");
 		evutil_closesocket(fd);
 		return;
 	}
@@ -3634,7 +3634,7 @@ pxy_conn_setup(evutil_socket_t fd,
 		ctx->addrlen = sizeof(struct sockaddr_storage);
 		if (spec->natlookup((struct sockaddr *)&ctx->addr, &ctx->addrlen,
 		                    fd, peeraddr, peeraddrlen) == -1) {
-			log_err_printf("ERROR: Connection not found in NAT "
+			log_err_printf("Connection not found in NAT "
 			               "state table, aborting connection\n");
 			evutil_closesocket(fd);
 			pxy_conn_ctx_free(ctx, 1);
@@ -3648,7 +3648,7 @@ pxy_conn_setup(evutil_socket_t fd,
 		/* SNI mode */
 		if (!ctx->spec->ssl) {
 			/* if this happens, the proxyspec parser is broken */
-			log_err_printf("ERROR: SNI mode used for non-SSL connection; "
+			log_err_printf("SNI mode used for non-SSL connection; "
 			               "aborting connection\n");
 			evutil_closesocket(fd);
 			pxy_conn_ctx_free(ctx, 1);
@@ -3684,7 +3684,7 @@ pxy_conn_setup(evutil_socket_t fd,
 	return;
 
 memout:
-	log_err_printf("CRITICAL: Aborting connection setup (out of memory)!\n");
+	log_err_level_printf(LOG_CRIT, "Aborting connection setup (out of memory)!\n");
 	evutil_closesocket(fd);
 	pxy_conn_ctx_free(ctx, 1);
 }

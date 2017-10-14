@@ -31,6 +31,7 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <string.h>
+#include <sys/syslog.h>
 
 /*
  * Dynamic log buffer with zero-copy chaining, generic void * file handle
@@ -43,12 +44,13 @@
  * The provided buffer will be freed by logbuf_free() if non-NULL.
  */
 logbuf_t *
-logbuf_new(void *buf, size_t sz, void *fh, logbuf_t *next)
+logbuf_new(int level, void *buf, size_t sz, void *fh, logbuf_t *next)
 {
 	logbuf_t *lb;
 
 	if (!(lb = malloc(sizeof(logbuf_t))))
 		return NULL;
+	lb->prio = level;
 	lb->buf = buf;
 	lb->sz = sz;
 	lb->fh = fh;
@@ -149,7 +151,7 @@ logbuf_write_free(logbuf_t *lb, writefunc_t writefunc)
 {
 	ssize_t rv1, rv2 = 0;
 
-	rv1 = writefunc(lb->fh, lb->buf, lb->sz);
+	rv1 = writefunc(lb->prio, lb->fh, lb->buf, lb->sz);
 	if (lb->buf) {
 		free(lb->buf);
 	}

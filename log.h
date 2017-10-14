@@ -34,6 +34,7 @@
 #include "attrib.h"
 
 int log_err_printf(const char *, ...) PRINTF(1,2);
+int log_err_level_printf(int, const char *, ...) PRINTF(2,3);
 void log_err_mode(int);
 #define LOG_ERR_MODE_STDERR 0
 #define LOG_ERR_MODE_SYSLOG 1
@@ -59,7 +60,7 @@ extern logger_t *connect_log;
 #define log_connect_print_free(s) \
         logger_print_freebuf(connect_log, NULL, 0, (s))
 #define log_connect_write_free(buf, sz) \
-        logger_write_freebuf(connect_log, NULL, 0, (buf), (sz))
+        logger_write_freebuf(connect_log, 0, NULL, 0, (buf), (sz))
 
 int log_stats(const char *);
 

@@ -100,7 +100,7 @@ pxy_thrmgr_get_thr_expired_conns(pxy_thr_ctx_t *tctx, pxy_conn_ctx_t **expired_c
 				dst_addr = NULL;
 
 				if (log_stats(msg) == -1) {
-					log_err_printf("WARNING: Stats logging failed\n");
+					log_err_level_printf(LOG_WARNING, "Stats logging failed\n");
 				}
 				free(msg);
 
@@ -201,7 +201,7 @@ pxy_thrmgr_print_thr_info(pxy_thr_ctx_t *tctx)
 				}
 
 				if (log_stats(smsg) == -1) {
-					log_err_printf("WARNING: Stats logging failed\n");
+					log_err_level_printf(LOG_WARNING, "Stats logging failed\n");
 				}
 				free(smsg);
 				smsg = NULL;
@@ -236,7 +236,7 @@ pxy_thrmgr_print_thr_info(pxy_thr_ctx_t *tctx)
 #endif /* DEBUG_PROXY */
 
 	if (log_stats(smsg) == -1) {
-		log_err_printf("WARNING: Stats logging failed\n");
+		log_err_level_printf(LOG_WARNING, "Stats logging failed\n");
 	}
 	free(smsg);
 	smsg = NULL;

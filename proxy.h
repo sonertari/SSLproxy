@@ -31,6 +31,8 @@
 #include "opts.h"
 #include "attrib.h"
 #include "pxythrmgr.h"
+
+#include <sys/syslog.h>
 #include <uuid.h>
 
 typedef struct proxy_ctx proxy_ctx_t;

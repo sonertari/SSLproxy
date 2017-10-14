@@ -77,13 +77,13 @@ static int err_shortcut_logger = 0;
 static int err_mode = LOG_ERR_MODE_STDERR;
 
 static ssize_t
-log_err_writecb(UNUSED void *fh, const void *buf, size_t sz)
+log_err_writecb(int level, UNUSED void *fh, const void *buf, size_t sz)
 {
 	switch (err_mode) {
 		case LOG_ERR_MODE_STDERR:
 			return fwrite(buf, sz - 1, 1, stderr);
 		case LOG_ERR_MODE_SYSLOG:
-			syslog(LOG_ERR, "%s", (const char *)buf);
+			syslog(level, "%s", (const char *)buf);
 			return sz;
 	}
 	return -1;
@@ -102,10 +102,32 @@ log_err_printf(const char *fmt, ...)
 	if (rv < 0)
 		return -1;
 	if (err_shortcut_logger) {
-		return logger_write_freebuf(err_log, NULL, 0,
+		return logger_write_freebuf(err_log, LOG_ERR, NULL, 0,
 		                            buf, strlen(buf) + 1);
 	} else {
-		log_err_writecb(NULL, (unsigned char*)buf, strlen(buf) + 1);
+		log_err_writecb(LOG_ERR, NULL, (unsigned char*)buf, strlen(buf) + 1);
+		free(buf);
+	}
+	return 0;
+}
+
+int
+log_err_level_printf(int level, const char *fmt, ...)
+{
+	va_list ap;
+	char *buf;
+	int rv;
+
+	va_start(ap, fmt);
+	rv = vasprintf(&buf, fmt, ap);
+	va_end(ap);
+	if (rv < 0)
+		return -1;
+	if (err_shortcut_logger) {
+		return logger_write_freebuf(err_log, level, NULL, 0,
+		                            buf, strlen(buf) + 1);
+	} else {
+		log_err_writecb(level, NULL, (unsigned char*)buf, strlen(buf) + 1);
 		free(buf);
 	}
 	return 0;
@@ -133,9 +155,9 @@ log_dbg_write_free(void *buf, size_t sz)
 		return 0;
 
 	if (err_shortcut_logger) {
-		return logger_write_freebuf(err_log, NULL, 0, buf, sz);
+		return logger_write_freebuf(err_log, LOG_DEBUG, NULL, 0, buf, sz);
 	} else {
-		log_err_writecb(NULL, buf, sz);
+		log_err_writecb(LOG_DEBUG, NULL, buf, sz);
 		free(buf);
 	}
 	return 0;
@@ -166,13 +188,13 @@ log_dbg_printf(const char *fmt, ...)
 }
 
 int
-log_dbg_level_printf(int dbg_level, const char *fmt, ...)
+log_dbg_level_printf(int level, const char *fmt, ...)
 {
 	va_list ap;
 	char *buf;
 	int rv;
 
-	if (dbg_mode == LOG_DBG_MODE_NONE || dbg_mode < dbg_level)
+	if (dbg_mode == LOG_DBG_MODE_NONE || dbg_mode < level)
 		return 0;
 
 	va_start(ap, fmt);
@@ -205,12 +227,12 @@ log_connect_preinit(const char *logfile)
 {
 	connect_fd = open(logfile, O_WRONLY|O_APPEND|O_CREAT, DFLT_FILEMODE);
 	if (connect_fd == -1) {
-		log_err_printf("CRITICAL: Failed to open '%s' for writing: %s (%i)\n",
+		log_err_level_printf(LOG_CRIT, "Failed to open '%s' for writing: %s (%i)\n",
 		               logfile, strerror(errno), errno);
 		return -1;
 	}
 	if (!(connect_fn = realpath(logfile, NULL))) {
-		log_err_printf("CRITICAL: Failed to realpath '%s': %s (%i)\n",
+		log_err_level_printf(LOG_CRIT, "Failed to realpath '%s': %s (%i)\n",
 		              logfile, strerror(errno), errno);
 		close(connect_fd);
 		connect_fd = -1;
@@ -225,7 +247,7 @@ log_connect_reopencb(void)
 	close(connect_fd);
 	connect_fd = open(connect_fn, O_WRONLY|O_APPEND|O_CREAT, DFLT_FILEMODE);
 	if (connect_fd == -1) {
-		log_err_printf("CRITICAL: Failed to open '%s' for writing: %s\n",
+		log_err_level_printf(LOG_CRIT, "Failed to open '%s' for writing: %s\n",
 		               connect_fn, strerror(errno));
 		free(connect_fn);
 		connect_fn = NULL;
@@ -241,7 +263,7 @@ log_connect_reopencb(void)
  * resolution that should not make any difference.
  */
 static ssize_t
-log_connect_writecb(UNUSED void *fh, const void *buf, size_t sz)
+log_connect_writecb(UNUSED int level, UNUSED void *fh, const void *buf, size_t sz)
 {
 	char timebuf[32];
 	time_t epoch;
@@ -252,12 +274,12 @@ log_connect_writecb(UNUSED void *fh, const void *buf, size_t sz)
 	utc = gmtime(&epoch);
 	n = strftime(timebuf, sizeof(timebuf), "%Y-%m-%d %H:%M:%S UTC ", utc);
 	if (n == 0) {
-		log_err_printf("CRITICAL: Error from strftime(): buffer too small\n");
+		log_err_level_printf(LOG_CRIT, "Error from strftime(): buffer too small\n");
 		return -1;
 	}
 	if ((write(connect_fd, timebuf, n) == -1) ||
 	    (write(connect_fd, buf, sz) == -1)) {
-		log_err_printf("CRITICAL: Failed to write to connect log: %s\n",
+		log_err_level_printf(LOG_CRIT, "CRITICAL: Failed to write to connect log: %s\n",
 		               strerror(errno));
 		return -1;
 	}
@@ -393,7 +415,7 @@ log_content_format_pathspec(const char *logspec,
 	size_t path_buflen = PATH_BUF_INC;
 	char *path_buf = malloc(path_buflen);
 	if (path_buf == NULL) {
-		log_err_printf("CRITICAL: failed to allocate path buffer\n");
+		log_err_level_printf(LOG_CRIT, "failed to allocate path buffer\n");
 		return NULL;
 	}
 
@@ -512,7 +534,7 @@ log_content_format_pathspec(const char *logspec,
 				path_buflen += elem_len + PATH_BUF_INC;
 				char *newbuf = realloc(path_buf, path_buflen);
 				if (newbuf == NULL) {
-					log_err_printf("CRITICAL: failed to reallocate"
+					log_err_level_printf(LOG_CRIT, "failed to reallocate"
 					               " path buffer\n");
 					free(path_buf);
 					return NULL;
@@ -555,28 +577,28 @@ log_content_open(log_content_ctx_t **pctx, opts_t *opts,
 		char *dsthost_clean, *srchost_clean;
 
 		if (time(&epoch) == -1) {
-			log_err_printf("CRITICAL: Failed to get time\n");
+			log_err_level_printf(LOG_CRIT, "Failed to get time\n");
 			goto errout;
 		}
 		if ((utc = gmtime(&epoch)) == NULL) {
-			log_err_printf("CRITICAL: Failed to convert time: %s (%i)\n",
+			log_err_level_printf(LOG_CRIT, "Failed to convert time: %s (%i)\n",
 			               strerror(errno), errno);
 			goto errout;
 		}
 		if (!strftime(timebuf, sizeof(timebuf),
 		              "%Y%m%dT%H%M%SZ", utc)) {
-			log_err_printf("CRITICAL: Failed to format time: %s (%i)\n",
+			log_err_level_printf(LOG_CRIT, "Failed to format time: %s (%i)\n",
 			               strerror(errno), errno);
 			goto errout;
 		}
 		srchost_clean = sys_ip46str_sanitize(srchost);
 		if (!srchost_clean) {
-			log_err_printf("CRITICAL: Failed to sanitize srchost\n");
+			log_err_level_printf(LOG_CRIT, "Failed to sanitize srchost\n");
 			goto errout;
 		}
 		dsthost_clean = sys_ip46str_sanitize(dsthost);
 		if (!dsthost_clean) {
-			log_err_printf("CRITICAL: Failed to sanitize dsthost\n");
+			log_err_level_printf(LOG_CRIT, "Failed to sanitize dsthost\n");
 			free(srchost_clean);
 			goto errout;
 		}
@@ -584,7 +606,7 @@ log_content_open(log_content_ctx_t **pctx, opts_t *opts,
 		             opts->contentlog, timebuf,
 		             srchost_clean, srcport,
 		             dsthost_clean, dstport) < 0) {
-			log_err_printf("CRITICAL: Failed to format filename: %s (%i)\n",
+			log_err_level_printf(LOG_CRIT, "Failed to format filename: %s (%i)\n",
 			               strerror(errno), errno);
 			free(srchost_clean);
 			free(dsthost_clean);
@@ -597,12 +619,12 @@ log_content_open(log_content_ctx_t **pctx, opts_t *opts,
 		char *dsthost_clean, *srchost_clean;
 		srchost_clean = sys_ip46str_sanitize(srchost);
 		if (!srchost_clean) {
-			log_err_printf("CRITICAL: Failed to sanitize srchost\n");
+			log_err_level_printf(LOG_CRIT, "Failed to sanitize srchost\n");
 			goto errout;
 		}
 		dsthost_clean = sys_ip46str_sanitize(dsthost);
 		if (!dsthost_clean) {
-			log_err_printf("CRITICAL: Failed to sanitize dsthost\n");
+			log_err_level_printf(LOG_CRIT, "Failed to sanitize dsthost\n");
 			free(srchost_clean);
 			goto errout;
 		}
@@ -646,7 +668,7 @@ log_content_submit(log_content_ctx_t *ctx, logbuf_t *lb, int is_request)
 	unsigned long prepflags = 0;
 
 	if (!ctx->open) {
-		log_err_printf("CRITICAL: log_content_submit called on closed ctx\n");
+		log_err_level_printf(LOG_CRIT, "log_content_submit called on closed ctx\n");
 		return -1;
 	}
 
@@ -692,7 +714,7 @@ log_content_dir_opencb(void *fh)
 	if ((ctx->u.dir.fd = privsep_client_openfile(content_clisock,
 	                                             ctx->u.dir.filename,
 	                                             0)) == -1) {
-		log_err_printf("CRITICAL: Opening logdir file '%s' failed: %s (%i)\n",
+		log_err_level_printf(LOG_CRIT, "Opening logdir file '%s' failed: %s (%i)\n",
 		               ctx->u.dir.filename, strerror(errno), errno);
 		return -1;
 	}
@@ -712,12 +734,12 @@ log_content_dir_closecb(void *fh)
 }
 
 static ssize_t
-log_content_dir_writecb(void *fh, const void *buf, size_t sz)
+log_content_dir_writecb(UNUSED int level, void *fh, const void *buf, size_t sz)
 {
 	log_content_ctx_t *ctx = fh;
 
 	if (write(ctx->u.dir.fd, buf, sz) == -1) {
-		log_err_printf("CRITICAL: Failed to write to content log: %s\n",
+		log_err_level_printf(LOG_CRIT, "Failed to write to content log: %s\n",
 		               strerror(errno));
 		return -1;
 	}
@@ -732,7 +754,7 @@ log_content_spec_opencb(void *fh)
 	if ((ctx->u.spec.fd = privsep_client_openfile(content_clisock,
 	                                              ctx->u.spec.filename,
 	                                              1)) == -1) {
-		log_err_printf("CRITICAL: Opening logspec file '%s' failed: %s (%i)\n",
+		log_err_level_printf(LOG_CRIT, "Opening logspec file '%s' failed: %s (%i)\n",
 		               ctx->u.spec.filename, strerror(errno), errno);
 		return -1;
 	}
@@ -752,12 +774,12 @@ log_content_spec_closecb(void *fh)
 }
 
 static ssize_t
-log_content_spec_writecb(void *fh, const void *buf, size_t sz)
+log_content_spec_writecb(UNUSED int level, void *fh, const void *buf, size_t sz)
 {
 	log_content_ctx_t *ctx = fh;
 
 	if (write(ctx->u.spec.fd, buf, sz) == -1) {
-		log_err_printf("CRITICAL: Failed to write to content log: %s\n",
+		log_err_level_printf(LOG_CRIT, "Failed to write to content log: %s\n",
 		               strerror(errno));
 		return -1;
 	}
@@ -773,12 +795,12 @@ log_content_file_preinit(const char *logfile)
 	content_file_fd = open(logfile, O_WRONLY|O_APPEND|O_CREAT,
 	                       DFLT_FILEMODE);
 	if (content_file_fd == -1) {
-		log_err_printf("CRITICAL: Failed to open '%s' for writing: %s (%i)\n",
+		log_err_level_printf(LOG_CRIT, "Failed to open '%s' for writing: %s (%i)\n",
 		               logfile, strerror(errno), errno);
 		return -1;
 	}
 	if (!(content_file_fn = realpath(logfile, NULL))) {
-		log_err_printf("CRITICAL: Failed to realpath '%s': %s (%i)\n",
+		log_err_level_printf(LOG_CRIT, "Failed to realpath '%s': %s (%i)\n",
 		              logfile, strerror(errno), errno);
 		close(content_file_fd);
 		connect_fd = -1;
@@ -807,7 +829,7 @@ log_content_file_reopencb(void)
 	content_file_fd = open(content_file_fn,
 	                       O_WRONLY|O_APPEND|O_CREAT, DFLT_FILEMODE);
 	if (content_file_fd == -1) {
-		log_err_printf("CRITICAL: Failed to open '%s' for writing: %s (%i)\n",
+		log_err_level_printf(LOG_CRIT, "Failed to open '%s' for writing: %s (%i)\n",
 		               content_file_fn, strerror(errno), errno);
 		return -1;
 	}
@@ -838,12 +860,12 @@ log_content_file_closecb(void *fh)
 }
 
 static ssize_t
-log_content_file_writecb(void *fh, const void *buf, size_t sz)
+log_content_file_writecb(UNUSED int level, void *fh, const void *buf, size_t sz)
 {
 	UNUSED log_content_ctx_t *ctx = fh;
 
 	if (write(content_file_fd, buf, sz) == -1) {
-		log_err_printf("CRITICAL: Failed to write to content log: %s\n",
+		log_err_level_printf(LOG_CRIT, "Failed to write to content log: %s\n",
 		               strerror(errno));
 		return -1;
 	}
@@ -872,7 +894,7 @@ log_content_file_prepcb(void *fh, unsigned long prepflags, logbuf_t *lb)
 		                         logbuf_size(lb));
 	}
 	if (!head) {
-		log_err_printf("CRITICAL: Failed to allocate memory\n");
+		log_err_level_printf(LOG_CRIT, "Failed to allocate memory\n");
 		logbuf_free(lb);
 		return NULL;
 	}
@@ -881,7 +903,7 @@ log_content_file_prepcb(void *fh, unsigned long prepflags, logbuf_t *lb)
 	/* prepend header */
 	head = logbuf_new_copy(header, strlen(header), lb->fh, lb);
 	if (!head) {
-		log_err_printf("CRITICAL: Failed to allocate memory\n");
+		log_err_level_printf(LOG_CRIT, "Failed to allocate memory\n");
 		logbuf_free(lb);
 		return NULL;
 	}
@@ -890,7 +912,7 @@ log_content_file_prepcb(void *fh, unsigned long prepflags, logbuf_t *lb)
 	/* prepend timestamp */
 	head = logbuf_new_alloc(32, lb->fh, lb);
 	if (!head) {
-		log_err_printf("CRITICAL: Failed to allocate memory\n");
+		log_err_level_printf(LOG_CRIT, "Failed to allocate memory\n");
 		logbuf_free(lb);
 		return NULL;
 	}
@@ -922,7 +944,7 @@ log_cert_submit(const char *fn, X509 *crt)
 		goto errout1;
 	if (!(pem = ssl_x509_to_pem(crt)))
 		goto errout2;
-	if (!(lb = logbuf_new(pem, strlen(pem), NULL, NULL)))
+	if (!(lb = logbuf_new(0, pem, strlen(pem), NULL, NULL)))
 		goto errout3;
 	return logger_submit(cert_log, fh, 0, lb);
 errout3:
@@ -934,21 +956,21 @@ errout1:
 }
 
 static ssize_t
-log_cert_writecb(void *fh, const void *buf, size_t sz)
+log_cert_writecb(UNUSED int level, void *fh, const void *buf, size_t sz)
 {
 	char *fn = fh;
 	int fd;
 
 	if ((fd = privsep_client_certfile(cert_clisock, fn)) == -1) {
 		if (errno != EEXIST) {
-			log_err_printf("CRITICAL: Failed to open '%s': %s (%i)\n",
+			log_err_level_printf(LOG_CRIT, "Failed to open '%s': %s (%i)\n",
 			               fn, strerror(errno), errno);
 			return -1;
 		}
 		return sz;
 	}
 	if (write(fd, buf, sz) == -1) {
-		log_err_printf("CRITICAL: Failed to write to '%s': %s (%i)\n",
+		log_err_level_printf(LOG_CRIT, "Failed to write to '%s': %s (%i)\n",
 		               fn, strerror(errno), errno);
 		close(fd);
 		return -1;

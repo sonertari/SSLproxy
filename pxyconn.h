@@ -142,7 +142,7 @@ struct pxy_conn_ctx {
 	// Fd of the listener event for the children
 	evutil_socket_t child_fd;
 	struct evconnlistener *child_evcl;
-	// SSL proxy return address: The IP:port address the children are listening to, orig client addr, and orig target addr
+	// SSL proxy specific info: The IP:port address the children are listening on, orig client addr, and orig target addr
 	char *header_str;
 	int sent_header;
 

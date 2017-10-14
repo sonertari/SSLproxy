@@ -376,7 +376,7 @@ ssl_init(void)
 		return -1;
 	}
 #else /* PURIFY */
-	log_err_printf("Warning: not seeding OpenSSL RAND due to PURITY!\n");
+	log_err_level_printf(LOG_WARNING, "Not seeding OpenSSL RAND due to PURITY!\n");
 	memset(buf, 0, sizeof(buf));
 	while (!RAND_status()) {
 		RAND_seed(buf, sizeof(buf));

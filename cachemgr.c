@@ -132,35 +132,35 @@ cachemgr_gc(void)
 	rv = pthread_create(&fkcrt_thr, NULL, cachemgr_gc_thread,
 	                    cachemgr_fkcrt);
 	if (rv) {
-		log_err_printf("CRITICAL: cachemgr_gc: pthread_create failed: %s\n",
+		log_err_level_printf(LOG_CRIT, "cachemgr_gc: pthread_create failed: %s\n",
 		               strerror(rv));
 	}
 	rv = pthread_create(&ssess_thr, NULL, cachemgr_gc_thread,
 	                    cachemgr_ssess);
 	if (rv) {
-		log_err_printf("CRITICAL: cachemgr_gc: pthread_create failed: %s\n",
+		log_err_level_printf(LOG_CRIT, "cachemgr_gc: pthread_create failed: %s\n",
 		               strerror(rv));
 	}
 	rv = pthread_create(&dsess_thr, NULL, cachemgr_gc_thread,
 	                    cachemgr_dsess);
 	if (rv) {
-		log_err_printf("CRITICAL: cachemgr_gc: pthread_create failed: %s\n",
+		log_err_level_printf(LOG_CRIT, "cachemgr_gc: pthread_create failed: %s\n",
 		               strerror(rv));
 	}
 
 	rv = pthread_join(fkcrt_thr, NULL);
 	if (rv) {
-		log_err_printf("CRITICAL: cachemgr_gc: pthread_join failed: %s\n",
+		log_err_level_printf(LOG_CRIT, "cachemgr_gc: pthread_join failed: %s\n",
 		               strerror(rv));
 	}
 	rv = pthread_join(ssess_thr, NULL);
 	if (rv) {
-		log_err_printf("CRITICAL: cachemgr_gc: pthread_join failed: %s\n",
+		log_err_level_printf(LOG_CRIT, "cachemgr_gc: pthread_join failed: %s\n",
 		               strerror(rv));
 	}
 	rv = pthread_join(dsess_thr, NULL);
 	if (rv) {
-		log_err_printf("CRITICAL: cachemgr_gc: pthread_join failed: %s\n",
+		log_err_level_printf(LOG_CRIT, "cachemgr_gc: pthread_join failed: %s\n",
 		               strerror(rv));
 	}
 }

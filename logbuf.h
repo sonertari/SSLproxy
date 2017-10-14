@@ -34,6 +34,7 @@
 #include <unistd.h>
 
 typedef struct logbuf {
+	int prio;
 	unsigned char *buf;
 	ssize_t sz;
 	void *fh;
@@ -41,9 +42,9 @@ typedef struct logbuf {
 	struct logbuf *next;
 } logbuf_t;
 
-typedef ssize_t (*writefunc_t)(void *, const void *, size_t);
+typedef ssize_t (*writefunc_t)(int, void *, const void *, size_t);
 
-logbuf_t * logbuf_new(void *, size_t, void *, logbuf_t *) MALLOC;
+logbuf_t * logbuf_new(int, void *, size_t, void *, logbuf_t *) MALLOC;
 logbuf_t * logbuf_new_alloc(size_t, void *, logbuf_t *) MALLOC;
 logbuf_t * logbuf_new_copy(const void *, size_t, void *, logbuf_t *) MALLOC;
 logbuf_t * logbuf_new_printf(void *, logbuf_t *, const char *, ...)
