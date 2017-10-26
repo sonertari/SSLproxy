@@ -503,11 +503,11 @@ pxy_thrmgr_remove_conn(pxy_conn_ctx_t *node, pxy_conn_ctx_t **head)
 	assert(*head != NULL);
 
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_remove_conn: Removing conn, fd=%d, child_fd=%d\n", node->fd, node->child_fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_remove_conn: Removing conn, id=%llu, fd=%d, child_fd=%d\n", node->id, node->fd, node->child_fd);
 #endif /* DEBUG_PROXY */
 	
-	// @attention We may get multiple conns with the same fd combinations, so fds cannot uniquely define a conn; hence the need for uuids.
-    if (uuid_compare(node->uuid, (*head)->uuid, NULL) == 0) {
+	// @attention We may get multiple conns with the same fd combinations, so fds cannot uniquely define a conn; hence the need for unique ids.
+    if (node->id == (*head)->id) {
         *head = (*head)->next;
         return;
     }
@@ -515,7 +515,7 @@ pxy_thrmgr_remove_conn(pxy_conn_ctx_t *node, pxy_conn_ctx_t **head)
     pxy_conn_ctx_t *current = (*head)->next;
     pxy_conn_ctx_t *previous = *head;
     while (current != NULL && previous != NULL) {
-        if (uuid_compare(node->uuid, current->uuid, NULL) == 0) {
+        if (node->id == current->id) {
             previous->next = current->next;
             return;
         }

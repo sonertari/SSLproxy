@@ -117,11 +117,6 @@ endif
 
 ### Autodetected features
 
-# Autodetect OpenBSD, for uuid_to_string().
-ifeq ($(shell uname),OpenBSD)
-FEATURES+=	-DOPENBSD
-endif
-
 # Autodetect pf
 ifneq ($(wildcard /usr/include/net/pfvar.h),)
 FEATURES+=	-DHAVE_PF

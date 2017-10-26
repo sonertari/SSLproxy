@@ -72,6 +72,7 @@ struct pxy_thrmgr_ctx {
 	opts_t *opts;
 	pxy_thr_ctx_t **thr;
 	pthread_mutex_t mutex;
+	long long unsigned int conn_count;
 };
 
 pxy_thrmgr_ctx_t * pxy_thrmgr_new(opts_t *) MALLOC;

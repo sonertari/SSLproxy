@@ -130,7 +130,7 @@ struct pxy_conn_ctx {
 	pxy_thr_ctx_t *thr;
 
 	// Unique id of the conn
-	uuid_t *uuid;
+	long long unsigned int id;
 
 	pxy_thrmgr_ctx_t *thrmgr;
 	proxyspec_t *spec;

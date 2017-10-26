@@ -126,24 +126,11 @@ pxy_conn_ctx_new(evutil_socket_t fd,
 	}
 	memset(ctx, 0, sizeof(pxy_conn_ctx_t));
 
-	ctx->uuid = malloc(sizeof(uuid_t));
-	if (!ctx->uuid) {
-		log_err_level_printf(LOG_CRIT, "Error allocating memory\n");
-		evutil_closesocket(fd);
-		free(ctx);
-		return NULL;
-	}
+	ctx->id = thrmgr->conn_count++;
 
-	uuid_create(ctx->uuid, NULL);
-
-#if defined (DEBUG_PROXY) && defined (OPENBSD)
-	char *uuid_str;
-	uuid_to_string(ctx->uuid, &uuid_str, NULL);
-	if (uuid_str) {
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_new: uuid=%s, fd=%d\n", uuid_str, fd);
-		free(uuid_str);
-	}
-#endif /* OPENBSD && DEBUG_PROXY */
+#if defined (DEBUG_PROXY)
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_new: id=%llu, fd=%d\n", ctx->id, fd);
+#endif /* DEBUG_PROXY */
 	
 	ctx->fd = fd;
 	ctx->thrmgr = thrmgr;
@@ -426,9 +413,6 @@ pxy_conn_ctx_free(pxy_conn_ctx_t *ctx, int by_requestor)
 	}
 	if (ctx->ev) {
 		event_free(ctx->ev);
-	}
-	if (ctx->uuid) {
-		free(ctx->uuid);
 	}
 	if (ctx->sni) {
 		free(ctx->sni);
