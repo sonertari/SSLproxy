@@ -40,6 +40,12 @@
 #include <event2/event.h>
 #include <event2/util.h>
 
+/*
+ * Print helper for logging code.
+ */
+#define STRORDASH(x)	(((x)&&*(x))?(x):"-")
+#define STRORNONE(x)	(((x)&&*(x))?(x):"")
+
 typedef struct pxy_conn_child_ctx pxy_conn_child_ctx_t;
 
 /* single socket bufferevent descriptor */

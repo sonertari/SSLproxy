@@ -71,14 +71,14 @@ pxy_thrmgr_get_thr_expired_conns(pxy_thr_ctx_t *tctx, pxy_conn_ctx_t **expired_c
 			ctx = *expired_conns;
 			while (ctx) {
 				src_addr = NULL;
-				if (ctx->srchost_str) {
+				if (ctx->srchost_str && ctx->srcport_str) {
 					if (asprintf(&src_addr, ", src_addr=%s:%s", ctx->srchost_str, ctx->srcport_str) < 0) {
 						goto leave;
 					}
 				}
 
 				dst_addr = NULL;
-				if (ctx->dsthost_str) {
+				if (ctx->dsthost_str && ctx->dstport_str) {
 					if (asprintf(&dst_addr, ", dst_addr=%s:%s", ctx->dsthost_str, ctx->dstport_str) < 0) {
 						goto leave;
 					}
@@ -86,18 +86,23 @@ pxy_thrmgr_get_thr_expired_conns(pxy_thr_ctx_t *tctx, pxy_conn_ctx_t **expired_c
 
 #ifdef DEBUG_PROXY
 				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_get_expired_conns: thr=%d, fd=%d, child_fd=%d, time=%lld%s%s\n",
-						ctx->thr->thridx, ctx->fd, ctx->child_fd, (long int) now - ctx->atime, src_addr, dst_addr);
+						ctx->thr->thridx, ctx->fd, ctx->child_fd, (long int) now - ctx->atime, STRORNONE(src_addr), STRORNONE(dst_addr));
 #endif /* DEBUG_PROXY */
 
 				char *msg;
 				if (asprintf(&msg, "EXPIRED: thr=%d, time=%lld%s%s\n", 
-						ctx->thr->thridx, (long int) now - ctx->atime, src_addr, dst_addr)) {
+						ctx->thr->thridx, (long int) now - ctx->atime, STRORNONE(src_addr), STRORNONE(dst_addr)) < 0) {
 					goto leave;
 				}
-				free(src_addr);
-				src_addr = NULL;
-				free(dst_addr);
-				dst_addr = NULL;
+
+				if (src_addr) {
+					free(src_addr);
+					src_addr = NULL;
+				}
+				if (dst_addr) {
+					free(dst_addr);
+					dst_addr = NULL;
+				}
 
 				if (log_stats(msg) == -1) {
 					log_err_level_printf(LOG_WARNING, "Stats logging failed\n");
@@ -168,14 +173,14 @@ pxy_thrmgr_print_thr_info(pxy_thr_ctx_t *tctx)
 			time_t atime = now - ctx->atime;
 			time_t ctime = now - ctx->ctime;
 			
-			char *src_addr = NULL;
-			if (ctx->srchost_str) {
+			src_addr = NULL;
+			if (ctx->srchost_str && ctx->srcport_str) {
 				if (asprintf(&src_addr, ", src_addr=%s:%s", ctx->srchost_str, ctx->srcport_str) < 0) {
 					goto leave;
 				}
 			}
-			char *dst_addr = NULL;
-			if (ctx->dsthost_str) {
+			dst_addr = NULL;
+			if (ctx->dsthost_str && ctx->dstport_str) {
 				if (asprintf(&dst_addr, ", dst_addr=%s:%s", ctx->dsthost_str, ctx->dstport_str) < 0) {
 					goto leave;
 				}
@@ -185,7 +190,7 @@ pxy_thrmgr_print_thr_info(pxy_thr_ctx_t *tctx)
 			if (asprintf(&lmsg, "PARENT CONN: thr=%d, id=%u, fd=%d, child_fd=%d, dst=%d, srv_dst=%d, child_src=%d, child_dst=%d, p=%d-%d-%d c=%d-%d, ce=%d cc=%d, at=%lld ct=%lld%s%s\n",
 					tctx->thridx, idx, ctx->fd, ctx->child_fd, ctx->dst_fd, ctx->srv_dst_fd, ctx->child_src_fd, ctx->child_dst_fd,
 					ctx->src.closed, ctx->dst.closed, ctx->srv_dst.closed, ctx->children ? ctx->children->src.closed : 0, ctx->children ? ctx->children->dst.closed : 0,
-					ctx->children ? 1:0, ctx->child_count, atime, ctime, src_addr ? src_addr : "", dst_addr ? dst_addr : "") < 0) {
+					ctx->children ? 1:0, ctx->child_count, atime, ctime, STRORNONE(src_addr), STRORNONE(dst_addr)) < 0) {
 				goto leave;
 			}
 			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_print_thr_info: %s", lmsg);
@@ -196,7 +201,7 @@ pxy_thrmgr_print_thr_info(pxy_thr_ctx_t *tctx)
 			// @attention Report idle connections only, i.e. the conns which have been idle since the last time we checked for expired conns
 			if (atime >= tctx->thrmgr->opts->expired_conn_check_period) {
 				if (asprintf(&smsg, "IDLE: thr=%d, id=%u, ce=%d cc=%d, at=%lld ct=%lld%s%s\n",
-						tctx->thridx, idx, ctx->children ? 1:0, ctx->child_count, atime, ctime, src_addr ? src_addr : "", dst_addr ? dst_addr : "") < 0) {
+						tctx->thridx, idx, ctx->children ? 1:0, ctx->child_count, atime, ctime, STRORNONE(src_addr), STRORNONE(dst_addr)) < 0) {
 					goto leave;
 				}
 
@@ -207,10 +212,14 @@ pxy_thrmgr_print_thr_info(pxy_thr_ctx_t *tctx)
 				smsg = NULL;
 			}
 
-			free(src_addr);
-			src_addr = NULL;
-			free(dst_addr);
-			dst_addr = NULL;
+			if (src_addr) {
+				free(src_addr);
+				src_addr = NULL;
+			}
+			if (dst_addr) {
+				free(dst_addr);
+				dst_addr = NULL;
+			}
 
 			max_fd = MAX(max_fd, MAX(ctx->fd, MAX(ctx->child_fd, MAX(ctx->dst_fd, MAX(ctx->srv_dst_fd, MAX(ctx->child_src_fd, ctx->child_dst_fd))))));
 			max_atime = MAX(max_atime, atime);

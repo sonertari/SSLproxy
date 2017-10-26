@@ -71,11 +71,6 @@
 #define OUTBUF_LIMIT	(128*1024)
 
 /*
- * Print helper for logging code.
- */
-#define STRORDASH(x)	(((x)&&*(x))?(x):"-")
-
-/*
  * Context used for all server sessions.
  */
 #ifdef USE_SSL_SESSION_ID_CONTEXT
@@ -2679,8 +2674,8 @@ pxy_connected_enable(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		}
 		if (WANT_CONTENT_LOG(ctx)) {
 			if (log_content_open(&ctx->logctx, ctx->opts,
-			                     ctx->srchost_str, ctx->srcport_str,
-			                     ctx->dsthost_str, ctx->dstport_str,
+			                     STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str),
+			                     STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
 #ifdef HAVE_LOCAL_PROCINFO
 			                     ctx->lproc.exec_path,
 			                     ctx->lproc.user,
@@ -2778,7 +2773,8 @@ pxy_connected_enable(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 			return 0;
 		}
 		snprintf(ctx->header_str, header_len, "%s [%s]:%u,[%s]:%s,[%s]:%s,%s",
-				SSLPROXY_KEY, addr, ntohs(child_listener_addr.sin_port), ctx->srchost_str, ctx->srcport_str, ctx->dsthost_str, ctx->dstport_str, ctx->spec->ssl ? "s":"p");
+				SSLPROXY_KEY, addr, ntohs(child_listener_addr.sin_port), STRORNONE(ctx->srchost_str), STRORNONE(ctx->srcport_str),
+				STRORNONE(ctx->dsthost_str), STRORNONE(ctx->dstport_str), ctx->spec->ssl ? "s":"p");
 
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_connected_enable: Enable src, SSLproxy header= %s, fd=%d, child_fd=%d\n", ctx->header_str, fd, ctx->child_fd);
@@ -2818,12 +2814,8 @@ pxy_connected_enable(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 				               " %s %s\n",
 				               bev == ctx->srv_dst.bev ?
 				               "to" : "from",
-				               bev == ctx->srv_dst.bev ?
-				               ctx->dsthost_str :
-				               ctx->srchost_str,
-				               bev == ctx->srv_dst.bev ?
-				               ctx->dstport_str :
-				               ctx->srcport_str,
+				               bev == ctx->srv_dst.bev ? STRORDASH(ctx->dsthost_str) : STRORDASH(ctx->srchost_str),
+				               bev == ctx->srv_dst.bev ? STRORDASH(ctx->dstport_str) : STRORDASH(ctx->srcport_str),
 				               SSL_get_version(this->ssl),
 				               SSL_get_cipher(this->ssl));
 			} else {
@@ -2833,11 +2825,9 @@ pxy_connected_enable(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 				 * in order not to confuse anyone who might be
 				 * looking closely at the output */
 				log_dbg_printf("pxy_connected_enable: TCP connected to [%s]:%s\n",
-				               ctx->dsthost_str,
-				               ctx->dstport_str);
+				               STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str));
 				log_dbg_printf("pxy_connected_enable: TCP connected from [%s]:%s\n",
-				               ctx->srchost_str,
-				               ctx->srcport_str);
+				               STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str));
 			}
 		}
 	}
@@ -3187,10 +3177,10 @@ leave:
 	if (OPTS_DEBUG(ctx->opts)) {
 		log_dbg_printf("pxy_bev_eventcb: %s disconnected to [%s]:%s, fd=%d\n",
 					   this->ssl ? "SSL" : "TCP",
-					   ctx->dsthost_str, ctx->dstport_str, ctx->fd);
+					   STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str), ctx->fd);
 		log_dbg_printf("pxy_bev_eventcb: %s disconnected from [%s]:%s, fd=%d\n",
 					   this->ssl ? "SSL" : "TCP",
-					   ctx->srchost_str, ctx->srcport_str, ctx->fd);
+					   STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), ctx->fd);
 	}
 
 	this->closed = 1;
@@ -3325,10 +3315,10 @@ leave:
 	if (OPTS_DEBUG(parent->opts)) {
 		log_dbg_printf("pxy_bev_eventcb_child: %s disconnected to [%s]:%s, fd=%d, pfd=%d\n",
 					   this->ssl ? "SSL" : "TCP",
-					   parent->dsthost_str, parent->dstport_str, ctx->fd, parent->fd);
+					   STRORDASH(parent->dsthost_str), STRORDASH(parent->dstport_str), ctx->fd, parent->fd);
 		log_dbg_printf("pxy_bev_eventcb_child: %s disconnected from [%s]:%s, fd=%d, pfd=%d\n",
 					   this->ssl ? "SSL" : "TCP",
-					   parent->srchost_str, parent->srcport_str, ctx->fd, parent->fd);
+					   STRORDASH(parent->srchost_str), STRORDASH(parent->srcport_str), ctx->fd, parent->fd);
 	}
 
 	this->closed = 1;
