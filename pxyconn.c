@@ -608,8 +608,8 @@ pxy_log_connect_nonhttp(pxy_conn_ctx_t *ctx)
 	if (!ctx->opts->detach) {
 		log_err_printf("%s", msg);
 	} else if (ctx->opts->statslog) {
-		if (log_stats(msg) == -1) {
-			log_err_level_printf(LOG_WARNING, "Stats logging failed\n");
+		if (log_conn(msg) == -1) {
+			log_err_level_printf(LOG_WARNING, "Conn logging failed\n");
 		}
 	}
 	if (ctx->opts->connectlog) {
@@ -717,8 +717,8 @@ pxy_log_connect_http(pxy_conn_ctx_t *ctx)
 	if (!ctx->opts->detach) {
 		log_err_printf("%s", msg);
 	} else if (ctx->opts->statslog) {
-		if (log_stats(msg) == -1) {
-			log_err_level_printf(LOG_WARNING, "Stats logging failed\n");
+		if (log_conn(msg) == -1) {
+			log_err_level_printf(LOG_WARNING, "Conn logging failed\n");
 		}
 	}
 	if (ctx->opts->connectlog) {

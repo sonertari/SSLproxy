@@ -63,6 +63,7 @@ extern logger_t *connect_log;
         logger_write_freebuf(connect_log, 0, NULL, 0, (buf), (sz))
 
 int log_stats(const char *);
+int log_conn(const char *);
 
 typedef struct log_content_ctx log_content_ctx_t;
 int log_content_open(log_content_ctx_t **, opts_t *, char *, char *, char *,

@@ -83,7 +83,7 @@ log_err_writecb(int level, UNUSED void *fh, const void *buf, size_t sz)
 		case LOG_ERR_MODE_STDERR:
 			return fwrite(buf, sz - 1, 1, stderr);
 		case LOG_ERR_MODE_SYSLOG:
-			syslog(level, "%s", (const char *)buf);
+			syslog(LOG_DAEMON|level, "%s", (const char *)buf);
 			return sz;
 	}
 	return -1;
@@ -292,20 +292,31 @@ log_connect_fini(void)
 	close(connect_fd);
 }
 
-int
-log_stats(const char *buf)
+static int
+log_info(int facility, const char *buf)
 {
 	size_t sz = strlen(buf) + 1;
 	switch (err_mode) {
 		case LOG_ERR_MODE_STDERR:
 			return fwrite(buf, sz - 1, 1, stderr);
 		case LOG_ERR_MODE_SYSLOG:
-			syslog(LOG_INFO, "%s", (const char *)buf);
+			syslog(facility|LOG_INFO, "%s", (const char *)buf);
 			return sz;
 	}
 	return -1;
 }
 
+int
+log_stats(const char *buf)
+{
+	return log_info(LOG_LOCAL0, buf);
+}
+
+int
+log_conn(const char *buf)
+{
+	return log_info(LOG_LOCAL1, buf);
+}
 
 /*
  * Content log.
