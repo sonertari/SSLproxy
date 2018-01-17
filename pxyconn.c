@@ -1286,7 +1286,8 @@ pxy_dstssl_create(pxy_conn_ctx_t *ctx)
 
 	pxy_sslctx_setoptions(sslctx, ctx);
 
-	SSL_CTX_set_verify(sslctx, SSL_VERIFY_NONE, NULL);
+	SSL_CTX_set_verify(sslctx, SSL_VERIFY_PEER, NULL);
+	SSL_CTX_set_default_verify_paths(sslctx);
 
 	ssl = SSL_new(sslctx);
 	SSL_CTX_free(sslctx); /* SSL_new() increments refcount */
@@ -2688,7 +2689,7 @@ pxy_connected_enable(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 			log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_connected_enable: evutil_closesocket srv_dst->bev, fd=%d\n", bufferevent_getfd(srv_dst->bev));
 #endif /* DEBUG_PROXY */
 			// @attention Since both eventcb and writecb for srv_dst are enabled, either eventcb or writecb may get a NULL srv_dst bev, causing a crash with signal 10.
-			// So, from this point on, we should check if srv_dst in NULL or not.
+			// So, from this point on, we should check if srv_dst is NULL or not.
 			bufferevent_free_and_close_fd(srv_dst->bev, ctx);
 			srv_dst->bev = NULL;
 			srv_dst->closed = 1;

@@ -97,11 +97,12 @@ usage. Accordingly, connections are closed if they remain idle for a certain
 period of time. The default timeout is 120 seconds, which can be changed in a 
 configuration file.
 
-In order to maximize the chances that a connection can be successfully split, 
-SSLproxy does not verify upstream server certificates.  Instead, all 
-certificates including self-signed are accepted and if the expected hostname 
-signaled in SNI is missing from the server certificate, it will be added to 
-dynamically forged certificates.
+SSLproxy always verifies upstream certificates. This is in contrast to 
+SSLsplit, because in order to maximize the chances that a connection can be 
+successfully split, SSLsplit accepts all certificates including self-signed 
+ones. See [The Risks of SSL 
+Inspection](https://insights.sei.cmu.edu/cert/2015/03/the-risks-of-ssl-inspectio
+n.html) for the details of this difference.
 
 SSLproxy does not automagically redirect any network traffic.  To actually
 implement a proxy, you also need to redirect the traffic to the system
