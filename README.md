@@ -101,8 +101,8 @@ SSLproxy always verifies upstream certificates. This is in contrast to
 SSLsplit, because in order to maximize the chances that a connection can be 
 successfully split, SSLsplit accepts all certificates including self-signed 
 ones. See [The Risks of SSL 
-Inspection](https://insights.sei.cmu.edu/cert/2015/03/the-risks-of-ssl-inspectio
-n.html) for the details of this difference.
+Inspection](https://insights.sei.cmu.edu/cert/2015/03/the-risks-of-ssl-inspection.html)
+for the details of this difference.
 
 SSLproxy does not automagically redirect any network traffic.  To actually
 implement a proxy, you also need to redirect the traffic to the system
