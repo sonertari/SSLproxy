@@ -1,6 +1,6 @@
-# SSLproxy - transparent SSL/TLS proxy for diverting packets to other programs
+# SSLproxy - transparent SSL/TLS proxy for decrypting and diverting network traffic to other programs for deep SSL inspection
 
-Copyright (C) 2017, [Soner Tari](http://comixwall.org).  
+Copyright (C) 2017-2018, [Soner Tari](http://comixwall.org).  
 https://github.com/sonertari/SSLproxy
 
 Copyright (C) 2009-2018, [Daniel Roethlisberger](//daniel.roe.ch/).  
