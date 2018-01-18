@@ -1,6 +1,7 @@
 /*
  * SSLsplit - transparent SSL/TLS interception
- * Copyright (c) 2009-2016, Daniel Roethlisberger <daniel@roe.ch>
+ * Copyright (c) 2009-2018, Daniel Roethlisberger <daniel@roe.ch>
+ * Copyright (c) 2017-2018, Soner Tari <sonertari@gmail.com>
  * All rights reserved.
  * http://www.roe.ch/SSLsplit
  *
@@ -499,7 +500,11 @@ static int pxy_ossl_servername_cb(SSL *ssl, int *al, void *arg);
 #endif /* !OPENSSL_NO_TLSEXT */
 static int pxy_ossl_sessnew_cb(SSL *, SSL_SESSION *);
 static void pxy_ossl_sessremove_cb(SSL_CTX *, SSL_SESSION *);
+#if (OPENSSL_VERSION_NUMBER < 0x10100000L) || defined(LIBRESSL_VERSION_NUMBER)
 static SSL_SESSION * pxy_ossl_sessget_cb(SSL *, unsigned char *, int, int *);
+#else /* OPENSSL_VERSION_NUMBER >= 0x10100000L */
+static SSL_SESSION * pxy_ossl_sessget_cb(SSL *, const unsigned char *, int, int *);
+#endif /* OPENSSL_VERSION_NUMBER >= 0x10100000L */
 
 /*
  * Dump information on a certificate to the debug log.
@@ -558,6 +563,12 @@ pxy_log_connect_nonhttp(pxy_conn_ctx_t *ctx)
 		lpi = "";
 	}
 #endif /* HAVE_LOCAL_PROCINFO */
+
+	/*
+	 * The following ifdef's within asprintf arguments list generates
+	 * warnings with -Wembedded-directive on some compilers.
+	 * Not fixing the code in order to avoid more code duplication.
+	 */
 
 	if (!ctx->src.ssl) {
 		rv = asprintf(&msg, "CONN: %s %s %s %s %s"
@@ -659,6 +670,12 @@ pxy_log_connect_http(pxy_conn_ctx_t *ctx)
 		}
 	}
 #endif /* HAVE_LOCAL_PROCINFO */
+
+	/*
+	 * The following ifdef's within asprintf arguments list generates
+	 * warnings with -Wembedded-directive on some compilers.
+	 * Not fixing the code in order to avoid more code duplication.
+	 */
 
 	if (!ctx->spec->ssl) {
 		rv = asprintf(&msg, "CONN: http %s %s %s %s %s %s %s %s %s"
@@ -802,7 +819,11 @@ pxy_ossl_sessremove_cb(UNUSED SSL_CTX *sslctx, SSL_SESSION *sess)
  * Called by OpenSSL when a src SSL session is requested by the client.
  */
 static SSL_SESSION *
+#if (OPENSSL_VERSION_NUMBER < 0x10100000L) || defined(LIBRESSL_VERSION_NUMBER)
 pxy_ossl_sessget_cb(UNUSED SSL *ssl, unsigned char *id, int idlen, int *copy)
+#else /* OPENSSL_VERSION_NUMBER >= 0x10100000L */
+pxy_ossl_sessget_cb(UNUSED SSL *ssl, const unsigned char *id, int idlen, int *copy)
+#endif /* OPENSSL_VERSION_NUMBER >= 0x10100000L */
 {
 	SSL_SESSION *sess;
 
@@ -1069,8 +1090,10 @@ pxy_srccert_create(pxy_conn_ctx_t *ctx)
 				log_dbg_printf("Certificate cache: MISS\n");
 			cert->crt = ssl_x509_forge(ctx->opts->cacrt,
 			                           ctx->opts->cakey,
-			                           ctx->origcrt, NULL,
-			                           ctx->opts->key);
+			                           ctx->origcrt,
+			                           ctx->opts->key,
+			                           NULL,
+			                           ctx->opts->crlurl);
 			cachemgr_fkcrt_set(ctx->origcrt, cert->crt);
 		}
 		cert_set_key(cert, ctx->opts->key);
@@ -1207,7 +1230,7 @@ pxy_ossl_servername_cb(SSL *ssl, UNUSED int *al, void *arg)
 
 	/* generate a new certificate with sn as additional altSubjectName
 	 * and replace it both in the current SSL ctx and in the cert cache */
-	if (!ctx->immutable_cert &&
+	if (ctx->opts->allow_wrong_host && !ctx->immutable_cert &&
 	    !ssl_x509_names_match((sslcrt = SSL_get_certificate(ssl)), sn)) {
 		X509 *newcrt;
 		SSL_CTX *newsslctx;
@@ -1217,7 +1240,8 @@ pxy_ossl_servername_cb(SSL *ssl, UNUSED int *al, void *arg)
 			               "(SNI mismatch)\n");
 		}
 		newcrt = ssl_x509_forge(ctx->opts->cacrt, ctx->opts->cakey,
-		                        sslcrt, sn, ctx->opts->key);
+		                        sslcrt, ctx->opts->key,
+		                        sn, ctx->opts->crlurl);
 		if (!newcrt) {
 			ctx->enomem = 1;
 			return SSL_TLSEXT_ERR_NOACK;
@@ -1286,8 +1310,12 @@ pxy_dstssl_create(pxy_conn_ctx_t *ctx)
 
 	pxy_sslctx_setoptions(sslctx, ctx);
 
-	SSL_CTX_set_verify(sslctx, SSL_VERIFY_PEER, NULL);
-	SSL_CTX_set_default_verify_paths(sslctx);
+	if (ctx->opts->verify_peer) {
+		SSL_CTX_set_verify(sslctx, SSL_VERIFY_PEER, NULL);
+		SSL_CTX_set_default_verify_paths(sslctx);
+	} else {
+		SSL_CTX_set_verify(sslctx, SSL_VERIFY_NONE, NULL);
+	}
 
 	ssl = SSL_new(sslctx);
 	SSL_CTX_free(sslctx); /* SSL_new() increments refcount */
@@ -2794,6 +2822,7 @@ pxy_connected_enable(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 
 		if (OPTS_DEBUG(ctx->opts)) {
 			if (this->ssl) {
+				char *keystr;
 				/* for SSL, we get two connect events */
 				log_dbg_printf("pxy_connected_enable: SSL connected %s [%s]:%s"
 				               " %s %s\n",
@@ -2803,6 +2832,11 @@ pxy_connected_enable(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 				               bev == ctx->srv_dst.bev ? STRORDASH(ctx->dstport_str) : STRORDASH(ctx->srcport_str),
 				               SSL_get_version(this->ssl),
 				               SSL_get_cipher(this->ssl));
+				keystr = ssl_ssl_masterkey_to_str(this->ssl);
+				if (keystr) {
+					log_dbg_printf("%s\n", keystr);
+					free(keystr);
+				}
 			} else {
 				/* for TCP, we get only a dst connect event,
 				 * since src was already connected from the

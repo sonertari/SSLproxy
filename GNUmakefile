@@ -95,17 +95,22 @@ ifeq ($(shell uname),Darwin)
 ifneq ($(wildcard /usr/include/libproc.h),)
 FEATURES+=	-DHAVE_DARWIN_LIBPROC
 endif
-XNU_VERSION?=	$(shell uname -a|sed 's/^.*root:xnu-//g'|sed 's/~.*$$//')
-OSX_VERSION?=	$(shell sw_vers -productVersion)
+OSX_VERSION=	$(shell sw_vers -productVersion)
+ifneq ($(XNU_VERSION),)
+XNU_METHOD=	override
+XNU_HAVE=	$(shell uname -a|sed 's/^.*root:xnu-//g'|sed 's/~.*$$//')
+else
 XNU_METHOD=	uname
+XNU_VERSION=	$(shell uname -a|sed 's/^.*root:xnu-//g'|sed 's/~.*$$//')
 XNU_HAVE:=	$(XNU_VERSION)
-ifeq ($(wildcard xnu/xnu-$(XNU_VERSION)),)
-XNU_VERSION=	$(shell awk '/^XNU_RELS.*\# $(OSX_VERSION)$$/ {print $$2}' xnu/GNUmakefile)
-XNU_METHOD=	sw_vers
 endif
 ifeq ($(wildcard xnu/xnu-$(XNU_VERSION)),)
-XNU_VERSION=	$(shell awk '/^XNU_RELS/ {print $$2}' xnu/GNUmakefile|tail -1)
+XNU_METHOD=	sw_vers
+XNU_VERSION=	$(shell awk '/^XNU_RELS.*\# $(OSX_VERSION)$$/ {print $$2}' xnu/GNUmakefile)
+endif
+ifeq ($(wildcard xnu/xnu-$(XNU_VERSION)),)
 XNU_METHOD=	fallback
+XNU_VERSION=	$(shell awk '/^XNU_RELS/ {print $$2}' xnu/GNUmakefile|tail -1)
 endif
 ifneq ($(wildcard xnu/xnu-$(XNU_VERSION)),)
 FEATURES+=	-DHAVE_PF
@@ -144,7 +149,6 @@ endif
 
 PREFIX?=	/usr/local
 MANDIR?=	share/man
-EXAMPLESDIR?=	share/examples
 
 INSTALLUID?=	0
 INSTALLGID?=	0
@@ -154,7 +158,6 @@ BINMODE?=	0755
 MANUID?=	$(INSTALLUID)
 MANGID?=	$(INSTALLGID)
 MANMODE?=	0644
-EXAMPLESMODE?=	0444
 ifeq ($(shell id -u),0)
 BINOWNERFLAGS?=	-o $(BINUID) -g $(BINGID)
 MANOWNERFLAGS?=	-o $(MANUID) -g $(MANGID)
@@ -377,6 +380,7 @@ $(info -------------------------------------------------------------------------
 $(info $(PNAME) $(VERSION))
 $(info ------------------------------------------------------------------------------)
 $(info Report bugs at https://github.com/droe/sslsplit/issues/new)
+$(info Please supply this header for diagnostics when reporting build issues)
 $(info Before reporting bugs, make sure to try the latest develop branch first:)
 $(info % git clone -b develop https://github.com/droe/sslsplit.git)
 $(info ------------------------------------------------------------------------------)

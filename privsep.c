@@ -1,6 +1,7 @@
 /*
  * SSLsplit - transparent SSL/TLS interception
- * Copyright (c) 2009-2016, Daniel Roethlisberger <daniel@roe.ch>
+ * Copyright (c) 2009-2018, Daniel Roethlisberger <daniel@roe.ch>
+ * Copyright (c) 2017-2018, Soner Tari <sonertari@gmail.com>
  * All rights reserved.
  * http://www.roe.ch/SSLsplit
  *
@@ -635,9 +636,16 @@ privsep_server(opts_t *opts, int sigpipe, int srvsock[], size_t nsrvsock,
 
 		if (FD_ISSET(sigpipe, &readfds)) {
 			char buf[16];
+			ssize_t n;
 			/* first drain the signal pipe, then deal with
 			 * all the individual signal flags */
-			read(sigpipe, buf, sizeof(buf));
+			n = read(sigpipe, buf, sizeof(buf));
+			if (n == -1) {
+				log_err_level_printf(LOG_CRIT, "read(sigpipe) failed:"
+				               " %s (%i)\n",
+				               strerror(errno), errno);
+				return -1;
+			}
 			if (received_sigquit) {
 				if (kill(childpid, SIGQUIT) == -1) {
 					log_err_level_printf(LOG_CRIT, "kill(%i,SIGQUIT) "

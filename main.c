@@ -1,6 +1,7 @@
 /*
  * SSLsplit - transparent SSL/TLS interception
- * Copyright (c) 2009-2016, Daniel Roethlisberger <daniel@roe.ch>
+ * Copyright (c) 2009-2018, Daniel Roethlisberger <daniel@roe.ch>
+ * Copyright (c) 2017-2018, Soner Tari <sonertari@gmail.com>
  * All rights reserved.
  * http://www.roe.ch/SSLsplit
  *
@@ -94,9 +95,9 @@ main_version(void)
 		fprintf(stderr, "---------------------------------------"
 		                "---------------------------------------\n");
 	}
-	fprintf(stderr, "Copyright (c) 2017, Soner Tari <sonertari@gmail.com>\n");
+	fprintf(stderr, "Copyright (c) 2017-2018, Soner Tari <sonertari@gmail.com>\n");
 	fprintf(stderr, "https://github.com/sonertari/SSLproxy\n");
-	fprintf(stderr, "Copyright (c) 2009-2016, "
+	fprintf(stderr, "Copyright (c) 2009-2018, "
 	                "Daniel Roethlisberger <daniel@roe.ch>\n");
 	fprintf(stderr, "http://www.roe.ch/SSLsplit\n");
 	if (build_info[0]) {
@@ -125,21 +126,13 @@ static void
 main_usage(void)
 {
 	const char *dflt, *warn;
-
-	if (!(dflt = nat_getdefaultname())) {
-		dflt = "n/a";
-		warn = "\nWarning: no supported NAT engine on this platform!\n"
-		       "Only static and SNI proxyspecs are supported.\n";
-	} else {
-		warn = "";
-	}
-
-	fprintf(stderr,
+	const char *usagefmt =
 "Usage: %s [options...] [proxyspecs...]\n"
 "  -c pemfile  use CA cert (and key) from pemfile to sign forged certs\n"
 "  -k pemfile  use CA key (and cert) from pemfile to sign forged certs\n"
 "  -C pemfile  use CA chain from pemfile (intermediate and root CA certs)\n"
 "  -K pemfile  use key from pemfile for leaf certs (default: generate)\n"
+"  -q crlurl   use URL as CRL distribution point for all forged certs\n"
 "  -t certdir  use cert+chain+key PEM files from certdir to target all sites\n"
 "              matching the common names (non-matching: generate if CA)\n"
 "  -w gendir   write leaf key and only generated certificates to gendir\n"
@@ -213,7 +206,17 @@ main_usage(void)
 "              autossl ::1 10025                # autossl/6; STARTTLS et al\n"
 "Example:\n"
 "  %s -k ca.key -c ca.pem -P  https 127.0.0.1 8443  https ::1 8443\n"
-	"%s", BNAME, dflt, BNAME, warn);
+"%s";
+
+	if (!(dflt = nat_getdefaultname())) {
+		dflt = "n/a";
+		warn = "\nWarning: no supported NAT engine on this platform!\n"
+		       "Only static and SNI proxyspecs are supported.\n";
+	} else {
+		warn = "";
+	}
+
+	fprintf(stderr, usagefmt, BNAME, dflt, BNAME, warn);
 }
 
 /*
@@ -582,6 +585,26 @@ load_conffile(opts_t *opts, const char *argv0, const char *natengine)
 			}
 			fprintf(stderr, "RemoveHTTPReferer: %u\n", opts->remove_http_referer);
 			found = 1;
+		} else if (!strncasecmp(name, "VerifyPeer", 10)) {
+			if (!strncasecmp(value, "yes", 3)) {
+				opts->verify_peer = 1;
+			} else if (!strncasecmp(value, "no", 3)) {
+				opts->verify_peer = 0;
+			} else {
+				fprintf(stderr, "Invalid VerifyPeer %s at line %d, use yes|no\n", value, line_num);
+			}
+			fprintf(stderr, "VerifyPeer: %u\n", opts->verify_peer);
+			found = 1;
+		} else if (!strncasecmp(name, "AllowWrongHost", 14)) {
+			if (!strncasecmp(value, "yes", 3)) {
+				opts->allow_wrong_host = 1;
+			} else if (!strncasecmp(value, "no", 3)) {
+				opts->allow_wrong_host = 0;
+			} else {
+				fprintf(stderr, "Invalid AllowWrongHost %s at line %d, use yes|no\n", value, line_num);
+			}
+			fprintf(stderr, "AllowWrongHost: %u\n", opts->allow_wrong_host);
+			found = 1;
 		}
 
 		if (found) {
@@ -634,9 +657,11 @@ main(int argc, char *argv[])
 	opts->stats_period = 1;
 	opts->remove_http_accept_encoding = 1;
 	opts->remove_http_referer = 1;
+	opts->verify_peer = 1;
+	opts->allow_wrong_host = 0;
 
 	while ((ch = getopt(argc, argv, OPT_g OPT_G OPT_Z OPT_i "k:c:C:K:t:"
-	                    "OPs:r:R:e:Eu:m:j:p:l:L:S:F:dD::VhW:w:If:")) != -1) {
+	                    "OPs:r:R:e:Eu:m:j:p:l:L:S:F:dD::VhW:w:If:q:")) != -1) {
 		switch (ch) {
 			case 'f':
 				if (opts->conffile)
@@ -701,6 +726,11 @@ main(int argc, char *argv[])
 				opts->tgcrtdir = strdup(optarg);
 				if (!opts->tgcrtdir)
 					oom_die(argv0);
+				break;
+			case 'q':
+				if (opts->crlurl)
+					free(opts->crlurl);
+				opts->crlurl = strdup(optarg);
 				break;
 			case 'O':
 				opts->deny_ocsp = 1;

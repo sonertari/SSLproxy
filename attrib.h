@@ -1,6 +1,6 @@
 /*
  * SSLsplit - transparent SSL/TLS interception
- * Copyright (c) 2009-2016, Daniel Roethlisberger <daniel@roe.ch>
+ * Copyright (c) 2009-2018, Daniel Roethlisberger <daniel@roe.ch>
  * All rights reserved.
  * http://www.roe.ch/SSLsplit
  *
@@ -53,7 +53,6 @@
 #define MALLOC          __attribute__((malloc)) WUNRES
 #define NONNULL(...)    __attribute__((nonnull(__VA_ARGS__)))
 #define PURE            __attribute__((pure))
-
 
 /*
  * Branch prediction macros.

@@ -1,6 +1,7 @@
 /*
  * SSLsplit - transparent SSL/TLS interception
- * Copyright (c) 2009-2016, Daniel Roethlisberger <daniel@roe.ch>
+ * Copyright (c) 2009-2018, Daniel Roethlisberger <daniel@roe.ch>
+ * Copyright (c) 2017-2018, Soner Tari <sonertari@gmail.com>
  * All rights reserved.
  * http://www.roe.ch/SSLsplit
  *
@@ -214,15 +215,23 @@ sys_pidf_write(int fd)
 {
 	char pidbuf[4*sizeof(pid_t)];
 	int rv;
+	ssize_t n;
 
 	rv = snprintf(pidbuf, sizeof(pidbuf), "%d\n", getpid());
 	if (rv == -1 || rv >= (int)sizeof(pidbuf))
 		return -1;
 
-	write(fd, pidbuf, strlen(pidbuf));
-	fsync(fd);
+	n = write(fd, pidbuf, strlen(pidbuf));
+	if (n < (ssize_t)strlen(pidbuf))
+		return -1;
 
-	fcntl(fd, F_SETFD, fcntl(fd, F_GETFD) | FD_CLOEXEC);
+	rv = fsync(fd);
+	if (rv == -1)
+		return -1;
+
+	rv = fcntl(fd, F_SETFD, fcntl(fd, F_GETFD) | FD_CLOEXEC);
+	if (rv == -1)
+		return -1;
 
 	return 0;
 }
@@ -706,20 +715,22 @@ sys_afunix_str(struct sockaddr *addr, socklen_t addrlen)
 {
 	struct sockaddr_un *sun = (struct sockaddr_un *)addr;
 	char *name;
+	int rv;
 
 	if (addrlen == sizeof(sa_family_t)) {
-		asprintf(&name, "unnmd");
+		rv = asprintf(&name, "unnmd");
 	} else if (sun->sun_path[0] == '\0') {
 		/* abstract sockets is a Linux feature */
-		asprintf(&name, "abstr:%02x:%02x:%02x:%02x",
-				sun->sun_path[1],
-				sun->sun_path[2],
-				sun->sun_path[3],
-				sun->sun_path[4]);
+		rv = asprintf(&name, "abstr:%02x:%02x:%02x:%02x",
+		                     sun->sun_path[1],
+		                     sun->sun_path[2],
+		                     sun->sun_path[3],
+		                     sun->sun_path[4]);
 	} else {
-		asprintf(&name, "pname:%s", sun->sun_path);
+		rv = asprintf(&name, "pname:%s", sun->sun_path);
 	}
-
+	if (rv == -1)
+		name = NULL;
 	return name;
 }
 
@@ -766,7 +777,7 @@ sys_dump_fds(void)
 		}
 
 		if ((st.st_mode & S_IFMT) == S_IFSOCK) {
-			int lrv, frv;
+			int lrv, frv, arv;
 			struct sockaddr_storage lss, fss;
 			socklen_t lsslen = sizeof(lss);
 			socklen_t fsslen = sizeof(fss);
@@ -786,8 +797,11 @@ sys_dump_fds(void)
 					        &host, &port) != 0) {
 						laddrstr = strdup("?");
 					} else {
-						asprintf(&laddrstr, "[%s]:%s",
-						         host, port);
+						arv = asprintf(&laddrstr,
+						               "[%s]:%s",
+						               host, port);
+						if (arv == -1)
+							laddrstr = NULL;
 						free(host);
 						free(port);
 					}
@@ -802,8 +816,11 @@ sys_dump_fds(void)
 					        &host, &port) != 0) {
 						faddrstr = strdup("?");
 					} else {
-						asprintf(&faddrstr, "[%s]:%s",
-						         host, port);
+						arv = asprintf(&faddrstr,
+						               "[%s]:%s",
+						               host, port);
+						if (arv == -1)
+							faddrstr = NULL;
 						free(host);
 						free(port);
 					}

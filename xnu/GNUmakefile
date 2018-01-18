@@ -3,12 +3,6 @@ VERSION?=	unknown
 MKDIR?=		mkdir
 WGET?=		wget
 
-# xnu
-XNURL?=		https://opensource.apple.com/source/xnu/
-XNU_IDIRS?=	libkern net
-XNU_FILES?=	APPLE_LICENSE \
-		libkern/libkern/tree.h bsd/net/radix.h bsd/net/pfvar.h
-
 # All the xnu releases which contain bsd/net/pfvar.h
 # Commented out are releases where the xnu version is known but the
 # corresponding source code has not been published by Apple yet.
@@ -50,6 +44,24 @@ XNU_RELS+=	2782.40.9	# 10.10.5
 XNU_RELS+=	3247.1.106	# 10.11
 XNU_RELS+=	3247.10.11	# 10.11.1
 XNU_RELS+=	3248.20.55	# 10.11.2
+XNU_RELS+=	3248.30.4	# 10.11.3
+XNU_RELS+=	3248.40.184	# 10.11.4
+XNU_RELS+=	3248.50.21	# 10.11.5
+XNU_RELS+=	3248.60.10	# 10.11.6
+XNU_RELS+=	3789.1.32	# 10.12
+XNU_RELS+=	3789.21.4	# 10.12.1
+XNU_RELS+=	3789.31.2	# 10.12.2
+XNU_RELS+=	3789.41.3	# 10.12.3
+XNU_RELS+=	3789.51.2	# 10.12.4
+XNU_RELS+=	3789.60.24	# 10.12.5
+XNU_RELS+=	3789.70.16	# 10.12.6
+XNU_RELS+=	4570.1.46	# 10.13
+
+# defaults
+XNURL?=		https://opensource.apple.com/source/xnu/
+XNU_IDIRS?=	libkern net
+XNU_FILES?=	APPLE_LICENSE \
+		libkern/libkern/tree.h bsd/net/radix.h bsd/net/pfvar.h
 
 all: fetch
 
@@ -61,4 +73,13 @@ xnu-%:
 		ff=`echo "$$f"|sed 's/^[^/]*\///'`; \
 		$(WGET) -O- $(XNURL)$@/$$f?txt >$@/$$ff; \
 		done
+
+xnu-1456.%: XNU_IDIRS=sys net
+xnu-1456.%: XNU_FILES=APPLE_LICENSE bsd/sys/tree.h bsd/net/radix.h bsd/net/pfvar.h
+
+xnu-1486.%: XNU_IDIRS=sys net
+xnu-1486.%: XNU_FILES=APPLE_LICENSE bsd/sys/tree.h bsd/net/radix.h bsd/net/pfvar.h
+
+xnu-1504.%: XNU_IDIRS=sys net
+xnu-1504.%: XNU_FILES=APPLE_LICENSE bsd/sys/tree.h bsd/net/radix.h bsd/net/pfvar.h
 

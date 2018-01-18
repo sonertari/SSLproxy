@@ -3,7 +3,7 @@
 Copyright (C) 2017, [Soner Tari](http://comixwall.org).  
 https://github.com/sonertari/SSLproxy
 
-Copyright (C) 2009-2016, [Daniel Roethlisberger](//daniel.roe.ch/).  
+Copyright (C) 2009-2018, [Daniel Roethlisberger](//daniel.roe.ch/).  
 http://www.roe.ch/SSLsplit
 
 ## Overview
@@ -97,12 +97,12 @@ usage. Accordingly, connections are closed if they remain idle for a certain
 period of time. The default timeout is 120 seconds, which can be changed in a 
 configuration file.
 
-SSLproxy always verifies upstream certificates. This is in contrast to 
-SSLsplit, because in order to maximize the chances that a connection can be 
-successfully split, SSLsplit accepts all certificates including self-signed 
-ones. See [The Risks of SSL 
-Inspection](https://insights.sei.cmu.edu/cert/2015/03/the-risks-of-ssl-inspection.html)
-for the details of this difference.
+SSLproxy verifies upstream certificates by default. If the verification fails, the 
+connection is terminated immediately. This is in contrast to SSLsplit, because 
+in order to maximize the chances that a connection can be successfully split, 
+SSLsplit accepts all certificates including self-signed ones. See [The Risks of 
+SSL Inspection](https://insights.sei.cmu.edu/cert/2015/03/the-risks-of-ssl-inspection.html)
+for the reasons of this difference.
 
 SSLproxy does not automagically redirect any network traffic.  To actually
 implement a proxy, you also need to redirect the traffic to the system
@@ -168,4 +168,11 @@ SSLsplit is provided under a 2-clause BSD license.
 SSLsplit contains components licensed under the MIT and APSL licenses.
 See `LICENSE.md` and the respective source file headers for details.
 The modifications for SSLproxy are licensed under the same terms as SSLsplit.
+
+
+## Credits
+
+SSLsplit was inspired by `mitm-ssl` by Claes M. Nyberg and `sslsniff` by Moxie
+Marlinspike, but shares no source code with them.
+
 

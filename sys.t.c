@@ -1,6 +1,6 @@
 /*
  * SSLsplit - transparent SSL/TLS interception
- * Copyright (c) 2009-2016, Daniel Roethlisberger <daniel@roe.ch>
+ * Copyright (c) 2009-2018, Daniel Roethlisberger <daniel@roe.ch>
  * All rights reserved.
  * http://www.roe.ch/SSLsplit
  *
@@ -53,19 +53,39 @@ sys_isdir_setup(void)
 		perror("mkdtemp");
 		exit(EXIT_FAILURE);
 	}
-	asprintf(&file, "%s/file", basedir);
-	asprintf(&lfile, "%s/lfile", basedir);
-	asprintf(&dir, "%s/dir", basedir);
-	asprintf(&ldir, "%s/ldir", basedir);
-	asprintf(&notexist, "%s/DOES_NOT_EXIST", basedir);
-	if (!file || !lfile || !dir || !ldir || !notexist) {
+	if (asprintf(&file, "%s/file", basedir) == -1) {
+		perror("asprintf");
+		exit(EXIT_FAILURE);
+	}
+	if (asprintf(&lfile, "%s/lfile", basedir) == -1) {
+		perror("asprintf");
+		exit(EXIT_FAILURE);
+	}
+	if (asprintf(&dir, "%s/dir", basedir) == -1) {
+		perror("asprintf");
+		exit(EXIT_FAILURE);
+	}
+	if (asprintf(&ldir, "%s/ldir", basedir) == -1) {
+		perror("asprintf");
+		exit(EXIT_FAILURE);
+	}
+	if (asprintf(&notexist, "%s/DOES_NOT_EXIST", basedir) == -1) {
 		perror("asprintf");
 		exit(EXIT_FAILURE);
 	}
 	close(open(file, O_CREAT|O_WRONLY|O_APPEND, DFLT_FILEMODE));
-	symlink(file, lfile);
-	mkdir(dir, 0700);
-	symlink(dir, ldir);
+	if (symlink(file, lfile) == -1) {
+		perror("symlink");
+		exit(EXIT_FAILURE);
+	}
+	if (mkdir(dir, 0700) == -1) {
+		perror("mkdir");
+		exit(EXIT_FAILURE);
+	}
+	if (symlink(dir, ldir) == -1) {
+		perror("symlink");
+		exit(EXIT_FAILURE);
+	}
 }
 
 static void
@@ -127,20 +147,26 @@ static void
 sys_mkpath_teardown(void)
 {
 	char *cmd;
+	int rv;
 
-	asprintf(&cmd, "rm -r '%s'", basedir);
-	if (cmd) {
-		system(cmd);
+	rv = asprintf(&cmd, "rm -r '%s'", basedir);
+	if ((rv != -1) && cmd) {
+		rv = system(cmd);
+		if (rv == -1) {
+			perror("system");
+			exit(EXIT_FAILURE);
+		}
 	}
 }
 
 START_TEST(sys_mkpath_01)
 {
 	char *dir;
+	int rv;
 
-	asprintf(&dir, "%s/a/bb/ccc/dddd/eeeee/ffffff/ggggggg/hhhhhhhh",
-	         basedir);
-	fail_unless(!!dir, "asprintf failed");
+	rv = asprintf(&dir, "%s/a/bb/ccc/dddd/eeeee/ffffff/ggggggg/hhhhhhhh",
+	              basedir);
+	fail_unless((rv != -1) && !!dir, "asprintf failed");
 	fail_unless(!sys_isdir(dir), "dir already sys_isdir()");
 	fail_unless(!sys_mkpath(dir, DFLT_DIRMODE), "sys_mkpath failed");
 	fail_unless(sys_isdir(dir), "dir not sys_isdir()");
@@ -148,19 +174,22 @@ START_TEST(sys_mkpath_01)
 }
 END_TEST
 
-void
+int
 sys_dir_eachfile_cb(UNUSED const char *fn, void *arg)
 {
 	*((int*)arg) += 1;
 	/* fprintf(stderr, "%s\n", fn); */
+	return 0;
 }
 
 START_TEST(sys_dir_eachfile_01)
 {
 	int flag = 0;
+	int rv;
 
-	sys_dir_eachfile(TARGETDIR, sys_dir_eachfile_cb, &flag);
+	rv = sys_dir_eachfile(TARGETDIR, sys_dir_eachfile_cb, &flag);
 
+	fail_unless(rv == 0, "Did not return success");
 	fail_unless(flag == 2, "Iterated wrong number of files");
 }
 END_TEST

@@ -1,6 +1,6 @@
 /*
  * SSLsplit - transparent SSL/TLS interception
- * Copyright (c) 2009-2016, Daniel Roethlisberger <daniel@roe.ch>
+ * Copyright (c) 2009-2018, Daniel Roethlisberger <daniel@roe.ch>
  * All rights reserved.
  * http://www.roe.ch/SSLsplit
  *
@@ -515,9 +515,10 @@ START_TEST(ssl_key_identifier_sha1_01)
 	int loc = X509_get_ext_by_NID(c, NID_subject_key_identifier, -1);
 	X509_EXTENSION *ext = X509_get_ext(c, loc);
 	fail_unless(!!ext, "loading ext failed");
-	fail_unless(ext->value->length - 2 == SSL_KEY_IDSZ,
-	            "extension length mismatch");
-	fail_unless(!memcmp(ext->value->data + 2, keyid, SSL_KEY_IDSZ),
+	ASN1_STRING *value = X509_EXTENSION_get_data(ext);
+	fail_unless(ASN1_STRING_length(value) - 2 == SSL_KEY_IDSZ,
+	             "extension length mismatch");
+	fail_unless(!memcmp(ASN1_STRING_get0_data(value) + 2, keyid, SSL_KEY_IDSZ),
 	            "key id mismatch");
 }
 END_TEST

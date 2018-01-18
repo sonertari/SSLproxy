@@ -1,6 +1,7 @@
 /*
  * SSLsplit - transparent SSL/TLS interception
- * Copyright (c) 2009-2016, Daniel Roethlisberger <daniel@roe.ch>
+ * Copyright (c) 2009-2018, Daniel Roethlisberger <daniel@roe.ch>
+ * Copyright (c) 2017-2018, Soner Tari <sonertari@gmail.com>
  * All rights reserved.
  * http://www.roe.ch/SSLsplit
  *
@@ -85,6 +86,9 @@ opts_free(opts_t *opts)
 	}
 	if (opts->tgcrtdir) {
 		free(opts->tgcrtdir);
+	}
+	if (opts->crlurl) {
+		free(opts->crlurl);
 	}
 	if (opts->dropuser) {
 		free(opts->dropuser);
@@ -277,6 +281,7 @@ opts_proto_dbg_dump(opts_t *opts)
 #endif /* HAVE_TLSV12 */
 	               "");
 }
+
 
 /*
  * Parse proxyspecs using a simple state machine.

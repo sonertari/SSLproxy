@@ -1,6 +1,7 @@
 /*
  * SSLsplit - transparent SSL/TLS interception
- * Copyright (c) 2009-2016, Daniel Roethlisberger <daniel@roe.ch>
+ * Copyright (c) 2009-2018, Daniel Roethlisberger <daniel@roe.ch>
+ * Copyright (c) 2017-2018, Soner Tari <sonertari@gmail.com>
  * All rights reserved.
  * http://www.roe.ch/SSLsplit
  *
@@ -116,6 +117,7 @@ typedef struct opts {
 	char *ecdhcurve;
 #endif /* !OPENSSL_NO_ECDH */
 	proxyspec_t *spec;
+	char *crlurl;
 	unsigned int conn_idle_timeout;
 	unsigned int expired_conn_check_period;
 	unsigned int ssl_shutdown_retry_delay;
@@ -123,6 +125,8 @@ typedef struct opts {
 	unsigned int stats_period;
 	int remove_http_accept_encoding;
 	int remove_http_referer;
+	int verify_peer;
+	int allow_wrong_host;
 } opts_t;
 
 opts_t *opts_new(void) MALLOC;
@@ -135,7 +139,6 @@ void opts_proto_dbg_dump(opts_t *) NONNULL(1);
 #define OPTS_DEBUG(opts) unlikely((opts)->debug)
 
 void proxyspec_parse(int *, char **[], const char *, opts_t *);
-
 void proxyspec_free(proxyspec_t *) NONNULL(1);
 char * proxyspec_str(proxyspec_t *) NONNULL(1) MALLOC;
 
