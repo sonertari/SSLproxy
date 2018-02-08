@@ -149,6 +149,7 @@ endif
 
 PREFIX?=	/usr/local
 MANDIR?=	share/man
+EXAMPLESDIR?=	share/examples
 
 INSTALLUID?=	0
 INSTALLGID?=	0
@@ -158,6 +159,7 @@ BINMODE?=	0755
 MANUID?=	$(INSTALLUID)
 MANGID?=	$(INSTALLGID)
 MANMODE?=	0644
+EXAMPLESMODE?=	0444
 ifeq ($(shell id -u),0)
 BINOWNERFLAGS?=	-o $(BINUID) -g $(BINGID)
 MANOWNERFLAGS?=	-o $(MANUID) -g $(MANGID)
