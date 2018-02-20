@@ -64,6 +64,9 @@
 #include <assert.h>
 #include <sys/param.h>
 
+#ifdef HAVE_NETFILTER
+#include <glob.h>
+#endif /* HAVE_NETFILTER */
 
 /*
  * Maximum size of data to buffer per connection direction before
@@ -3587,6 +3590,29 @@ pxy_fd_readcb(MAYBE_UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 	pxy_conn_connect(ctx);
 }
 
+#ifdef HAVE_NETFILTER
+/*
+ * Copied from:
+ * https://github.com/tmux/tmux/blob/master/compat/getdtablecount.c
+ */
+int
+getdtablecount(void)
+{
+	char path[PATH_MAX];
+	glob_t g;
+	int n = 0;
+
+	if (snprintf(path, sizeof path, "/proc/%ld/fd/*", (long)getpid()) < 0) {
+		log_err_level_printf(LOG_CRIT, "snprintf overflow\n");
+		return 0;
+	}
+	if (glob(path, 0, NULL, &g) == 0)
+		n = g.gl_pathc;
+	globfree(&g);
+	return n;
+}
+#endif /* HAVE_NETFILTER */
+
 /*
  * Callback for accept events on the socket listener bufferevent.
  * Called when a new incoming connection has been accepted.
@@ -3605,6 +3631,8 @@ pxy_conn_setup(evutil_socket_t fd,
                proxyspec_t *spec, opts_t *opts,
 			   evutil_socket_t clisock)
 {
+	int dtable_count = getdtablecount();
+
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_setup: ENTER fd=%d\n", fd);
 
@@ -3615,11 +3643,11 @@ pxy_conn_setup(evutil_socket_t fd,
 		free(port);
 	}
 
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_setup: descriptor_table_size=%d, current fd count=%d, reserve=%d\n", descriptor_table_size, getdtablecount(), FD_RESERVE);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_setup: descriptor_table_size=%d, current fd count=%d, reserve=%d\n", descriptor_table_size, dtable_count, FD_RESERVE);
 #endif /* DEBUG_PROXY */
 
 	// Close the conn if we are out of file descriptors, or libevent will crash us
-	if (getdtablecount() + FD_RESERVE >= descriptor_table_size) {
+	if (dtable_count + FD_RESERVE >= descriptor_table_size) {
 		errno = EMFILE;
 		log_err_level_printf(LOG_CRIT, "Out of file descriptors\n");
 		evutil_closesocket(fd);

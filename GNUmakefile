@@ -381,10 +381,10 @@ ifndef MAKE_RESTARTS
 $(info ------------------------------------------------------------------------------)
 $(info $(PNAME) $(VERSION))
 $(info ------------------------------------------------------------------------------)
-$(info Report bugs at https://github.com/droe/sslsplit/issues/new)
+$(info Report bugs at https://github.com/sonertari/SSLproxy/issues/new)
 $(info Please supply this header for diagnostics when reporting build issues)
 $(info Before reporting bugs, make sure to try the latest develop branch first:)
-$(info % git clone -b develop https://github.com/droe/sslsplit.git)
+$(info % git clone -b develop https://github.com/sonertari/SSLproxy.git)
 $(info ------------------------------------------------------------------------------)
 $(info Via pkg-config: $(strip $(PKGS) $(TPKGS)))
 ifdef OPENSSL_FOUND
