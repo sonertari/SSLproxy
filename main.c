@@ -314,7 +314,7 @@ set_cacrt(opts_t *opts, const char *argv0, char *optarg)
 		opts->dh = ssl_dh_load(optarg);
 	}
 #endif /* !OPENSSL_NO_DH */
-	fprintf(stderr, "cacrt: %s\n", optarg);
+	fprintf(stderr, "CACrt: %s\n", optarg);
 }
 
 static void
@@ -349,7 +349,7 @@ set_cakey(opts_t *opts, const char *argv0, char *optarg)
 		opts->dh = ssl_dh_load(optarg);
 	}
 #endif /* !OPENSSL_NO_DH */
-	fprintf(stderr, "cakey: %s\n", optarg);
+	fprintf(stderr, "CAKey: %s\n", optarg);
 }
 
 static void
@@ -366,7 +366,7 @@ set_user(opts_t *opts, const char *argv0, char *optarg)
 	opts->dropuser = strdup(optarg);
 	if (!opts->dropuser)
 		oom_die(argv0);
-	fprintf(stderr, "dropuser: %s\n", opts->dropuser);
+	fprintf(stderr, "User: %s\n", opts->dropuser);
 }
 
 static void
@@ -383,7 +383,7 @@ set_group(opts_t *opts, const char *argv0, char *optarg)
 	opts->dropgroup = strdup(optarg);
 	if (!opts->dropgroup)
 		oom_die(argv0);
-	fprintf(stderr, "dropgroup: %s\n", opts->dropgroup);
+	fprintf(stderr, "Group: %s\n", opts->dropgroup);
 }
 
 static void
@@ -394,7 +394,18 @@ set_pidfile(opts_t *opts, const char *argv0, char *optarg)
 	opts->pidfile = strdup(optarg);
 	if (!opts->pidfile)
 		oom_die(argv0);
-	fprintf(stderr, "pidfile: %s\n", opts->pidfile);
+	fprintf(stderr, "PidFile: %s\n", opts->pidfile);
+}
+
+static void
+set_ciphers(opts_t *opts, const char *argv0, char *optarg)
+{
+	if (opts->ciphers)
+		free(opts->ciphers);
+	opts->ciphers = strdup(optarg);
+	if (!opts->ciphers)
+		oom_die(argv0);
+	fprintf(stderr, "Ciphers: %s\n", opts->ciphers);
 }
 
 static int
@@ -606,6 +617,9 @@ load_conffile(opts_t *opts, const char *argv0, const char *natengine)
 			}
 			fprintf(stderr, "AllowWrongHost: %u\n", opts->allow_wrong_host);
 			found = 1;
+		} else if (!strncasecmp(name, "Ciphers", 7)) {
+			set_ciphers(opts, argv0, value);
+			found = 1;
 		}
 
 		if (found) {
@@ -783,11 +797,7 @@ main(int argc, char *argv[])
 				break;
 #endif /* SSL_OP_NO_COMPRESSION */
 			case 's':
-				if (opts->ciphers)
-					free(opts->ciphers);
-				opts->ciphers = strdup(optarg);
-				if (!opts->ciphers)
-					oom_die(argv0);
+				set_ciphers(opts, argv0, optarg);
 				break;
 			case 'r':
 				opts_proto_force(opts, optarg, argv0);

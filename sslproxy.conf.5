@@ -23,7 +23,7 @@
 .\" (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
 .\" THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 .\"
-.TH "sslproxy.conf" "5" "February 09, 2018" "sslproxy 0.5.4" "SSLproxy"
+.TH "sslproxy.conf" "5" "February 28, 2018" "sslproxy 0.5.4" "SSLproxy"
 .SH "NAME"
 .LP 
 \fBsslproxy.conf\fR \- Configuration file for SSLproxy
@@ -108,6 +108,9 @@ Default: yes
 Allow wrong host names in certificates.
 .br
 Default: no
+.TP
+\fBCiphers STRING\fR
+Cipher specification for both server and client SSL/TLS connections.
 .TP 
 \fBProxySpec STRING\fR
 Proxy specification: type listenaddr+port up:utmport. Multiple specs are allowed, one on each line.
