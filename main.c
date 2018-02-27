@@ -1,29 +1,29 @@
-/*
+/*-
  * SSLsplit - transparent SSL/TLS interception
- * Copyright (c) 2009-2018, Daniel Roethlisberger <daniel@roe.ch>
- * Copyright (c) 2017-2018, Soner Tari <sonertari@gmail.com>
+ * https://www.roe.ch/SSLsplit
+ *
+ * Copyright (c) 2009-2018, Daniel Roethlisberger <daniel@roe.ch>.
  * All rights reserved.
- * http://www.roe.ch/SSLsplit
  *
  * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions, and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
+ * modification, are permitted provided that the following conditions are met:
+ * 1. Redistributions of source code must retain the above copyright notice,
+ *    this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ *    this list of conditions and the following disclaimer in the documentation
+ *    and/or other materials provided with the distribution.
  *
- * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
- * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
- * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDER AND CONTRIBUTORS ``AS IS''
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
 
 /* silence daemon(3) deprecation warning on Mac OS X */
@@ -99,7 +99,7 @@ main_version(void)
 	fprintf(stderr, "https://github.com/sonertari/SSLproxy\n");
 	fprintf(stderr, "Copyright (c) 2009-2018, "
 	                "Daniel Roethlisberger <daniel@roe.ch>\n");
-	fprintf(stderr, "http://www.roe.ch/SSLsplit\n");
+	fprintf(stderr, "https://www.roe.ch/SSLsplit\n");
 	if (build_info[0]) {
 		fprintf(stderr, "Build info: %s\n", build_info);
 	}
@@ -193,6 +193,7 @@ main_usage(void)
 "      e.g.    \"/var/log/sslproxy/%%T-%%s-%%d.log\"\n"
 #define OPT_i 
 #endif /* HAVE_LOCAL_PROCINFO */
+"  -M logfile  log master keys to logfile in SSLKEYLOGFILE format\n"
 "  -d          daemon mode: run in background, log error messages to syslog\n"
 "  -D          debug mode: run in foreground, log debug messages on stderr\n"
 "  -V          print version information and exit\n"
@@ -661,7 +662,7 @@ main(int argc, char *argv[])
 	opts->allow_wrong_host = 0;
 
 	while ((ch = getopt(argc, argv, OPT_g OPT_G OPT_Z OPT_i "k:c:C:K:t:"
-	                    "OPs:r:R:e:Eu:m:j:p:l:L:S:F:dD::VhW:w:If:q:")) != -1) {
+	                    "OPs:r:R:e:Eu:m:j:p:l:L:S:F:M:dD::VhW:w:If:q:")) != -1) {
 		switch (ch) {
 			case 'f':
 				if (opts->conffile)
@@ -964,6 +965,13 @@ main(int argc, char *argv[])
 				opts->lprocinfo = 1;
 				break;
 #endif /* HAVE_LOCAL_PROCINFO */
+			case 'M':
+				if (opts->masterkeylog)
+					free(opts->masterkeylog);
+				opts->masterkeylog = strdup(optarg);
+				if (!opts->masterkeylog)
+					oom_die(argv0);
+				break;
 			case 'd':
 				opts->detach = 1;
 				break;

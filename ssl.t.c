@@ -1,28 +1,29 @@
-/*
+/*-
  * SSLsplit - transparent SSL/TLS interception
- * Copyright (c) 2009-2018, Daniel Roethlisberger <daniel@roe.ch>
+ * https://www.roe.ch/SSLsplit
+ *
+ * Copyright (c) 2009-2018, Daniel Roethlisberger <daniel@roe.ch>.
  * All rights reserved.
- * http://www.roe.ch/SSLsplit
  *
  * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions, and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
+ * modification, are permitted provided that the following conditions are met:
+ * 1. Redistributions of source code must retain the above copyright notice,
+ *    this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ *    this list of conditions and the following disclaimer in the documentation
+ *    and/or other materials provided with the distribution.
  *
- * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
- * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
- * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDER AND CONTRIBUTORS ``AS IS''
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include "base64.h"
@@ -237,6 +238,12 @@ START_TEST(ssl_dnsname_match_16)
 }
 END_TEST
 
+static unsigned char clienthello00[] =
+	"\x80\x2b\x01\x00\x02\x00\x12\x00\x00\x00\x10\x07\x00\xc0\x03\x00"
+	"\x80\x01\x00\x80\x06\x00\x40\x04\x00\x80\x02\x00\x80\xe0\xc3\x4a"
+	"\xc6\xa4\x89\x23\x21\xb1\xbb\x51\xc7\x9c\x06\xa5\xff";
+	/* SSL 2.0 */
+
 static unsigned char clienthello01[] =
 	"\x80\x67\x01\x03\x00\x00\x4e\x00\x00\x00\x10\x01\x00\x80\x03\x00"
 	"\x80\x07\x00\xc0\x06\x00\x40\x02\x00\x80\x04\x00\x80\x00\x00\x39"
@@ -245,7 +252,7 @@ static unsigned char clienthello01[] =
 	"\x0a\x00\x00\x15\x00\x00\x12\x00\xfe\xfe\x00\x00\x09\x00\x00\x64"
 	"\x00\x00\x62\x00\x00\x03\x00\x00\x06\xa8\xb8\x93\xbb\x90\xe9\x2a"
 	"\xa2\x4d\x6d\xcc\x1c\xe7\x2a\x80\x21";
-	/* SSL 2.0, no TLS extensions */
+	/* SSL 3.0 in SSL 2.0 record */
 
 static unsigned char clienthello02[] =
 	"\x16\x03\x00\x00\x73\x01\x00\x00\x6f\x03\x00\x00\x34\x01\x1e\x67"
@@ -340,26 +347,47 @@ static unsigned char clienthello06[] =
 	"\x01\x01";
 	/* TLS 1.2, SNI extension with hostname "daniel.roe.ch" */
 
+START_TEST(ssl_tls_clienthello_parse_00)
+{
+	int rv;
+	const unsigned char *ch = NULL;
+	char *sni = (void *)0xDEADBEEF;
+
+	rv = ssl_tls_clienthello_parse(clienthello00,
+	                               sizeof(clienthello00) - 1,
+	                               0, &ch, &sni);
+#ifdef HAVE_SSLV2
+	fail_unless(rv == 0, "rv not 0");
+	fail_unless(ch != NULL, "ch is NULL");
+	fail_unless(sni == NULL, "sni not NULL");
+#else /* !HAVE_SSLV2 */
+	fail_unless(rv == 1, "rv not 1");
+	fail_unless(ch == NULL, "ch not NULL");
+	fail_unless(sni == (void*)0xDEADBEEF, "sni modified");
+#endif /* !HAVE_SSLV2 */
+}
+END_TEST
+
 START_TEST(ssl_tls_clienthello_parse_01)
 {
 	int rv;
-	const unsigned char *ch = (void *)0xDEADBEEF;
+	const unsigned char *ch = NULL;
 	char *sni = (void *)0xDEADBEEF;
 
 	rv = ssl_tls_clienthello_parse(clienthello01,
 	                               sizeof(clienthello01) - 1,
 	                               0, &ch, &sni);
-	fail_unless(rv == 1, "rv not 1");
-	fail_unless(ch == NULL, "ch not NULL");
-	fail_unless(sni == (void*)0xDEADBEEF, "sni was modified");
+	fail_unless(rv == 0, "rv not 0");
+	fail_unless(ch != NULL, "ch is NULL");
+	fail_unless(sni == NULL, "sni not NULL");
 }
 END_TEST
 
 START_TEST(ssl_tls_clienthello_parse_02)
 {
 	int rv;
-	const unsigned char *ch;
-	char *sni;
+	const unsigned char *ch = NULL;
+	char *sni = (void *)0xDEADBEEF;
 
 	rv = ssl_tls_clienthello_parse(clienthello02,
 	                                sizeof(clienthello02) - 1,
@@ -373,8 +401,8 @@ END_TEST
 START_TEST(ssl_tls_clienthello_parse_03)
 {
 	int rv;
-	const unsigned char *ch;
-	char *sni;
+	const unsigned char *ch = NULL;
+	char *sni = NULL;
 
 	rv = ssl_tls_clienthello_parse(clienthello03,
 	                                sizeof(clienthello03) - 1,
@@ -389,8 +417,8 @@ END_TEST
 START_TEST(ssl_tls_clienthello_parse_04)
 {
 	int rv;
-	const unsigned char *ch;
-	char *sni;
+	const unsigned char *ch = NULL;
+	char *sni = NULL;
 
 	rv = ssl_tls_clienthello_parse(clienthello04,
 	                                sizeof(clienthello04) - 1,
@@ -406,7 +434,7 @@ START_TEST(ssl_tls_clienthello_parse_05)
 {
 	for (size_t i = 0; i < sizeof(clienthello04) - 1; i++) {
 		int rv;
-		const unsigned char *ch;
+		const unsigned char *ch = NULL;
 		char *sni = (void*)0xDEADBEEF;
 		ssize_t sz;
 
@@ -422,8 +450,8 @@ END_TEST
 START_TEST(ssl_tls_clienthello_parse_06)
 {
 	int rv;
-	const unsigned char *ch;
-	char *sni;
+	const unsigned char *ch = NULL;
+	char *sni = NULL;
 
 	rv = ssl_tls_clienthello_parse(clienthello05,
 	                                sizeof(clienthello05) - 1,
@@ -439,7 +467,7 @@ START_TEST(ssl_tls_clienthello_parse_07)
 {
 	for (size_t i = 0; i < sizeof(clienthello05) - 1; i++) {
 		int rv;
-		const unsigned char *ch;
+		const unsigned char *ch = NULL;
 		char *sni = (void*)0xDEADBEEF;
 		ssize_t sz;
 
@@ -455,7 +483,7 @@ END_TEST
 START_TEST(ssl_tls_clienthello_parse_08)
 {
 	int rv;
-	const unsigned char *ch;
+	const unsigned char *ch = (void *)0xDEADBEEF;
 	char *sni = (void *)0xDEADBEEF;
 
 	rv = ssl_tls_clienthello_parse(clienthello06,
@@ -470,8 +498,8 @@ END_TEST
 START_TEST(ssl_tls_clienthello_parse_09)
 {
 	int rv;
-	const unsigned char *ch;
-	char *sni;
+	const unsigned char *ch = NULL;
+	char *sni = NULL;
 
 	rv = ssl_tls_clienthello_parse(clienthello06,
 	                                sizeof(clienthello06) - 1,
@@ -487,7 +515,7 @@ END_TEST
 START_TEST(ssl_tls_clienthello_parse_10)
 {
 	int rv;
-	const unsigned char *ch;
+	const unsigned char *ch = NULL;
 
 	rv = ssl_tls_clienthello_parse(clienthello06,
 	                                sizeof(clienthello06) - 1,
@@ -718,6 +746,7 @@ ssl_suite(void)
 	suite_add_tcase(s, tc);
 
 	tc = tcase_create("ssl_tls_clienthello_parse");
+	tcase_add_test(tc, ssl_tls_clienthello_parse_00);
 	tcase_add_test(tc, ssl_tls_clienthello_parse_01);
 	tcase_add_test(tc, ssl_tls_clienthello_parse_02);
 	tcase_add_test(tc, ssl_tls_clienthello_parse_03);

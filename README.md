@@ -4,7 +4,7 @@ Copyright (C) 2017-2018, [Soner Tari](http://comixwall.org).
 https://github.com/sonertari/SSLproxy
 
 Copyright (C) 2009-2018, [Daniel Roethlisberger](//daniel.roe.ch/).  
-http://www.roe.ch/SSLsplit
+https://www.roe.ch/SSLsplit
 
 ## Overview
 
@@ -71,12 +71,14 @@ important for the program, because it cannot reliably determine if the actual
 network traffic it is processing was encrypted or not.
 
 SSLproxy supports plain TCP, plain SSL, HTTP, HTTPS, POP3, POP3S, SMTP, and 
-SMTPS connections over both IPv4 and IPv6.  SSLproxy fully supports Server Name 
+SMTPS connections over both IPv4 and IPv6.  It also has the ability to 
+dynamically upgrade plain TCP to SSL in order to generically support SMTP 
+STARTTLS and similar upgrade mechanisms.  SSLproxy fully supports Server Name 
 Indication (SNI) and is able to work with RSA, DSA and ECDSA keys and DHE and 
 ECDHE cipher suites.  Depending on the version of OpenSSL, SSLproxy supports 
 SSL 3.0, TLS 1.0, TLS 1.1 and TLS 1.2, and optionally SSL 2.0 as well.
 
-For SSL/TLS connections, SSLproxy generates and signs forged X509v3 
+For SSL and HTTPS connections, SSLproxy generates and signs forged X509v3 
 certificates on-the-fly, mimicking the original server certificate's subject 
 DN, subjectAltName extension and other characteristics.  SSLproxy has the 
 ability to use existing certificates of which the private key is available, 
@@ -87,10 +89,11 @@ certificate verification vulnerabilities in SSL/TLS stacks.
 SSLproxy implements a number of defenses against mechanisms which would 
 normally prevent MitM attacks or make them more difficult.  SSLproxy can deny 
 OCSP requests in a generic way.  For HTTP and HTTPS connections, SSLproxy 
-removes response headers for HPKP in order to prevent server-instructed public 
-key pinning, for HSTS to avoid the strict transport security restrictions, and 
-Alternate Protocols to prevent switching to QUIC/SPDY.  HTTP compression, 
-encodings and keep-alive are disabled to make the logs more readable.
+mangles headers to prevent server-instructed public key pinning (HPKP), avoid 
+strict transport security restrictions (HSTS), and prevent switching to 
+QUIC/SPDY, HTTP/2 or WebSockets (Upgrade, Alternate Protocols).  HTTP
+compression, encodings and keep-alive are disabled to make the logs more
+readable.
 
 Another reason to disable persistent connections is to reduce file descriptor 
 usage. Accordingly, connections are closed if they remain idle for a certain 
@@ -103,13 +106,6 @@ in order to maximize the chances that a connection can be successfully split,
 SSLsplit accepts all certificates including self-signed ones. See [The Risks of 
 SSL Inspection](https://insights.sei.cmu.edu/cert/2015/03/the-risks-of-ssl-inspection.html)
 for the reasons of this difference.
-
-SSLproxy does not automagically redirect any network traffic.  To actually
-implement a proxy, you also need to redirect the traffic to the system
-running SSLproxy.  Your options include running SSLproxy on a legitimate
-router, ARP spoofing, ND spoofing, DNS poisoning, deploying a rogue access 
-point (e.g. using hostap mode), physical recabling, malicious VLAN 
-reconfiguration or route injection, /etc/hosts modification and so on.
 
 As SSLproxy is based on SSLsplit, this is a modified SSLsplit README file.
 See the manual page sslproxy(1) for details on using SSLproxy and setting up
@@ -157,20 +153,22 @@ For more build options see `GNUmakefile`.
 
 ## Documentation
 
+See the manual page `sslproxy.1` for user documentation.
 See `NEWS.md` for release notes listing significant changes between releases.
-See `HACKING.md` for information on development and how to submit bug reports.
-See `AUTHORS.md` for the list of contributors.
 
 
 ## License
 
 SSLsplit is provided under a 2-clause BSD license.
 SSLsplit contains components licensed under the MIT and APSL licenses.
-See `LICENSE.md` and the respective source file headers for details.
+See `LICENSE`, `LICENSE.contrib` and `LICENSE.third` as well as the respective
+source file headers for details.
 The modifications for SSLproxy are licensed under the same terms as SSLsplit.
 
 
 ## Credits
+
+See `AUTHORS.md` for the list of contributors.
 
 SSLsplit was inspired by `mitm-ssl` by Claes M. Nyberg and `sslsniff` by Moxie
 Marlinspike, but shares no source code with them.

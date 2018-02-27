@@ -1,32 +1,33 @@
+.\"-
 .\" SSLproxy - transparent SSL/TLS proxy for diverting packets to programs
-.\" Copyright (c) 2017-2018, Soner Tari <sonertari@gmail.com> 
-.\" Copyright (c) 2009-2016, Daniel Roethlisberger <daniel@roe.ch>
-.\" All rights reserved.
 .\" https://github.com/sonertari/SSLproxy
-.\" http://www.roe.ch/SSLsplit
+.\"
+.\" Copyright (c) 2009-2018, Daniel Roethlisberger <daniel@roe.ch>.
+.\" Copyright (c) 2017-2018, Soner Tari <sonertari@gmail.com>.
+.\" All rights reserved.
 .\"
 .\" The modifications for SSLproxy are licensed under the same terms as
 .\" SSLsplit.
 .\"
 .\" Redistribution and use in source and binary forms, with or without
-.\" modification, are permitted provided that the following conditions
-.\" are met:
-.\" 1. Redistributions of source code must retain the above copyright
-.\"    notice, this list of conditions, and the following disclaimer.
-.\" 2. Redistributions in binary form must reproduce the above copyright
-.\"    notice, this list of conditions and the following disclaimer in the
-.\"    documentation and/or other materials provided with the distribution.
+.\" modification, are permitted provided that the following conditions are met:
+.\" 1. Redistributions of source code must retain the above copyright notice,
+.\"    this list of conditions and the following disclaimer.
+.\" 2. Redistributions in binary form must reproduce the above copyright notice,
+.\"    this list of conditions and the following disclaimer in the documentation
+.\"    and/or other materials provided with the distribution.
 .\"
-.\" THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
-.\" IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
-.\" OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
-.\" IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
-.\" INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
-.\" NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-.\" DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-.\" THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-.\" (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
-.\" THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+.\" THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDER AND CONTRIBUTORS ``AS IS''
+.\" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+.\" IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+.\" ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+.\" LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+.\" CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+.\" SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+.\" INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+.\" CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+.\" ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+.\" POSSIBILITY OF SUCH DAMAGE.
 .\"
 .TH SSLPROXY 1  "9 February 2018"
 .SH NAME
@@ -34,18 +35,18 @@ sslproxy \-\- transparent SSL/TLS proxy for diverting packets to programs
 .SH SYNOPSIS
 .na
 .B sslproxy
-[\fB-kCKwWOPZdDgGsrReumjplLSFif\fP] \fB-c\fP \fIpem\fP
+[\fB-kCKqwWOPZdDgGsrReumjplLSFiM\fP] \fB-c\fP \fIpem\fP
 \fIproxyspecs\fP [...]
 .br
 .B sslproxy
-[\fB-kCKwWOPZdDgGsrReumjplLSFif\fP] \fB-c\fP \fIpem\fP \fB-t\fP \fIdir\fP
+[\fB-kCKqwWOPZdDgGsrReumjplLSFiM\fP] \fB-c\fP \fIpem\fP \fB-t\fP \fIdir\fP
 \fIproxyspecs\fP [...]
 .br
 .B sslproxy
-[\fB-OPZwWdDgGsrReumjplLSFif\fP] \fB-t\fP \fIdir\fP
+[\fB-OPZwWdDgGsrReumjplLSFiM\fP] \fB-t\fP \fIdir\fP
 \fIproxyspecs\fP [...]
 .br
-.B sslproxy [\fB-kCKwWOPZdDgGsrReumjplLSFi\fP] -f \fIconffile\fP
+.B sslproxy [\fB-kCKwWOPZdDgGsrReumjplLSFiM\fP] -f \fIconffile\fP
 .br
 .B sslproxy -E
 .br
@@ -86,7 +87,9 @@ that address, instead of sending them to the original destination as it
 normally would.
 .LP
 SSLproxy supports plain TCP, plain SSL, HTTP, HTTPS, POP3, POP3S, SMTP, and 
-SMTPS connections over both IPv4 and IPv6.  SSLproxy fully supports Server Name 
+SMTPS connections over both IPv4 and IPv6.  It also has the ability to 
+dynamically upgrade plain TCP to SSL in order to generically support SMTP 
+STARTTLS and similar upgrade mechanisms.  SSLproxy fully supports Server Name 
 Indication (SNI) and is able to work with RSA, DSA and ECDSA keys and DHE and 
 ECDHE cipher suites.  Depending on the version of OpenSSL, SSLproxy supports 
 SSL 3.0, TLS 1.0, TLS 1.1 and TLS 1.2, and optionally SSL 2.0 as well.
@@ -101,11 +104,14 @@ certificate verification vulnerabilities in SSL/TLS stacks.
 .LP
 SSLproxy implements a number of defenses against mechanisms which would 
 normally prevent MitM attacks or make them more difficult.  SSLproxy can deny 
-OCSP requests in a generic way.  For HTTP and HTTPS connections, SSLproxy 
-removes response headers for HPKP in order to prevent server-instructed public 
-key pinning, for HSTS to avoid the strict transport security restrictions, and 
-Alternate Protocols to prevent switching to QUIC/SPDY.  HTTP compression, 
-encodings and keep-alive are disabled to make the logs more readable.
+OCSP requests in a generic way.
+For HTTP and HTTPS connections, SSLsplit mangles headers to
+prevent server-instructed public key pinning (HPKP),
+avoid strict transport security restrictions (HSTS),
+and prevent switching to QUIC/SPDY, HTTP/2 or WebSockets (Upgrade,
+Alternate Protocols).
+HTTP compression, encodings and keep-alive are disabled to make the logs more
+readable.
 .LP
 Another reason to disable persistent connections is to reduce file descriptor 
 usage. Accordingly, connections are closed if they remain idle for a certain 
@@ -233,6 +239,14 @@ SIGUSR1 will cause \fIlogfile\fP to be re-opened.
 .B \-m
 When dropping privileges using \fB-u\fP, override the target primary group
 to be set to \fIgroup\fP.
+.TP
+.B \-M \fIlogfile\fP
+Log master keys to \fIlogfile\fP in SSLKEYLOGFILE format as defined by Mozilla.
+Logging master keys in this format allows for decryption of SSL/TLS traffic
+using Wireshark.
+Note that unlike browsers implementing this feature, setting the SSLKEYLOGFILE
+environment variable has no effect on SSLsplit.
+SIGUSR1 will cause \fIlogfile\fP to be re-opened.
 .TP
 .B \-O
 Deny all Online Certificate Status Protocol (OCSP) requests on all
@@ -364,7 +378,8 @@ address and program port:
 .TP
 \fBhttps\fP
 SSL/TLS interception with HTTP protocol decoding, including the removal of
-HPKP, HSTS and Alternate Protocol response headers.
+HPKP, HSTS, Upgrade and Alternate Protocol response headers.
+This mode currently suppresses WebSockets and HTTP/2.
 .TP
 \fBpop3s\fP
 SSL/TLS interception with POP3 protocol decoding.
@@ -378,7 +393,8 @@ connection content is treated as opaque stream of bytes and not modified.
 .TP
 \fBhttp\fP
 Plain TCP connection without SSL/TLS, with HTTP protocol decoding, including
-the removal of HPKP, HSTS and Alternate Protocol response headers.
+the removal of HPKP, HSTS, Upgrade and Alternate Protocol response headers.
+This mode currently suppresses WebSockets and HTTP/2.
 .TP
 \fBpop3\fP
 Plain POP3 connection without SSL/TLS and with POP3 protocol

@@ -1,29 +1,29 @@
-/*
+/*-
  * SSLsplit - transparent SSL/TLS interception
- * Copyright (c) 2009-2018, Daniel Roethlisberger <daniel@roe.ch>
- * Copyright (c) 2017-2018, Soner Tari <sonertari@gmail.com>
+ * https://www.roe.ch/SSLsplit
+ *
+ * Copyright (c) 2009-2018, Daniel Roethlisberger <daniel@roe.ch>.
  * All rights reserved.
- * http://www.roe.ch/SSLsplit
  *
  * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions, and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
+ * modification, are permitted provided that the following conditions are met:
+ * 1. Redistributions of source code must retain the above copyright notice,
+ *    this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ *    this list of conditions and the following disclaimer in the documentation
+ *    and/or other materials provided with the distribution.
  *
- * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
- * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
- * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDER AND CONTRIBUTORS ``AS IS''
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include "pxyconn.h"
@@ -867,18 +867,14 @@ pxy_sslctx_setoptions(SSL_CTX *sslctx, pxy_conn_ctx_t *ctx)
 	SSL_CTX_set_options(sslctx, SSL_OP_NO_TICKET);
 #endif /* SSL_OP_NO_TICKET */
 
-	/*
-	 * Do not use HAVE_SSLV2 because we need to set SSL_OP_NO_SSLv2 if it
-	 * is available and WITH_SSLV2 was not used.
-	 */
 #ifdef SSL_OP_NO_SSLv2
-#ifdef WITH_SSLV2
+#ifdef HAVE_SSLV2
 	if (ctx->opts->no_ssl2) {
-#endif /* WITH_SSLV2 */
+#endif /* HAVE_SSLV2 */
 		SSL_CTX_set_options(sslctx, SSL_OP_NO_SSLv2);
-#ifdef WITH_SSLV2
+#ifdef HAVE_SSLV2
 	}
-#endif /* WITH_SSLV2 */
+#endif /* HAVE_SSLV2 */
 #endif /* !SSL_OP_NO_SSLv2 */
 #ifdef HAVE_SSLV3
 	if (ctx->opts->no_ssl3) {
@@ -1513,6 +1509,7 @@ pxy_http_reqhdr_filter_line(const char *line, pxy_conn_ctx_t *ctx, int child)
 				ctx->enomem = 1;
 				return NULL;
 			}
+		/* Override Connection: keepalive and Connection: upgrade */
 		} else if (!strncasecmp(line, "Connection:", 11)) {
 			ctx->sent_http_conn_close = 1;
 			if (!(newhdr = strdup("Connection: close"))) {
@@ -1530,7 +1527,11 @@ pxy_http_reqhdr_filter_line(const char *line, pxy_conn_ctx_t *ctx, int child)
 					 (child && ((pxy_conn_child_ctx_t *) ctx)->parent->opts->remove_http_referer)) &&
 				!strncasecmp(line, "Referer:", 8)) {
 			return NULL;
-		} else if (!strncasecmp(line, "Keep-Alive:", 11)) {
+		/* Suppress upgrading to SSL/TLS, WebSockets or HTTP/2,
+		 * unsupported encodings, and keep-alive */
+		} else if (!strncasecmp(line, "Upgrade:", 8) ||
+		           !strncasecmp(line, "Accept-Encoding:", 16) ||
+		           !strncasecmp(line, "Keep-Alive:", 11)) {
 			return NULL;
 		} else if (child && (!strncasecmp(line, SSLPROXY_KEY, SSLPROXY_KEY_LEN) ||
 				   // @attention flickr keeps redirecting to https with 301 unless we remove the Via line of squid
@@ -1620,7 +1621,11 @@ pxy_http_resphdr_filter_line(const char *line, pxy_conn_ctx_t *ctx)
 		    !strncasecmp(line, "Strict-Transport-Security:", 26) ||
 		    /* Alternate Protocol
 		     * remove to prevent switching to QUIC, SPDY et al */
-		    !strncasecmp(line, "Alternate-Protocol:", 19)) {
+		    !strncasecmp(line, "Alternate-Protocol:", 19) ||
+		    /* Upgrade header
+		     * remove to prevent upgrading to HTTPS in unhandled ways,
+		     * and more importantly, WebSockets and HTTP/2 */
+		    !strncasecmp(line, "Upgrade:", 8)) {
 			return NULL;
 		} else if (line[0] == '\0') {
 			ctx->seen_resp_header = 1;
@@ -2817,10 +2822,24 @@ pxy_connected_enable(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 			pxy_log_connect_nonhttp(ctx);
 		}
 
-		/* write SSL certificates to gendir */
-		if (this->ssl && (bev == ctx->src.bev) &&
-		    ctx->opts->certgendir) {
-			pxy_srccert_write(ctx);
+		if (this->ssl) {
+			/* write SSL certificates to gendir */
+			if ((bev == ctx->src.bev) && ctx->opts->certgendir) {
+				pxy_srccert_write(ctx);
+			}
+
+			/* log master key */
+			if (ctx->opts->masterkeylog) {
+				char *keystr;
+				keystr = ssl_ssl_masterkey_to_str(this->ssl);
+				if ((keystr == NULL) ||
+				    (log_masterkey_print_free(keystr) == -1)) {
+					if (errno == ENOMEM)
+						ctx->enomem = 1;
+					pxy_conn_free(ctx, 1);
+					return 0;
+				}
+			}
 		}
 
 		if (OPTS_DEBUG(ctx->opts)) {
@@ -2837,8 +2856,7 @@ pxy_connected_enable(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 				               SSL_get_cipher(this->ssl));
 				keystr = ssl_ssl_masterkey_to_str(this->ssl);
 				if (keystr) {
-					log_dbg_printf("%s\n", keystr);
-					free(keystr);
+					log_dbg_print_free(keystr);
 				}
 			} else {
 				/* for TCP, we get only a dst connect event,

@@ -1,29 +1,29 @@
-/*
+/*-
  * SSLsplit - transparent SSL/TLS interception
- * Copyright (c) 2009-2018, Daniel Roethlisberger <daniel@roe.ch>
- * Copyright (c) 2017-2018, Soner Tari <sonertari@gmail.com>
+ * https://www.roe.ch/SSLsplit
+ *
+ * Copyright (c) 2009-2018, Daniel Roethlisberger <daniel@roe.ch>.
  * All rights reserved.
- * http://www.roe.ch/SSLsplit
  *
  * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions, and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
+ * modification, are permitted provided that the following conditions are met:
+ * 1. Redistributions of source code must retain the above copyright notice,
+ *    this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ *    this list of conditions and the following disclaimer in the documentation
+ *    and/or other materials provided with the distribution.
  *
- * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
- * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
- * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDER AND CONTRIBUTORS ``AS IS''
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifdef __FreeBSD__
@@ -176,7 +176,11 @@ proc_freebsd_pid_for_addr(pid_t *result, struct sockaddr *src_addr,
 
 	struct xinpgen *xig, *exig, *txig;
 	struct xtcpcb *xtp;
+#if __FreeBSD_version >= 1200026
+	struct xinpcb *inp;
+#else
 	struct inpcb *inp;
+#endif
 	struct xsocket *so;
 
 	if (proc_freebsd_getfiles(&xfiles, &nxfiles) == -1) {
@@ -198,7 +202,11 @@ proc_freebsd_pid_for_addr(pid_t *result, struct sockaddr *src_addr,
 			return -1;
 		}
 		inp = &xtp->xt_inp;
+#if __FreeBSD_version >= 1200026
+		so = &inp->xi_socket;
+#else
 		so = &xtp->xt_socket;
+#endif
 
 		if (!(so->so_state & SS_ISCONNECTED))
 			/* we are only interested in connected sockets */
@@ -317,19 +325,23 @@ proc_darwin_pid_for_addr(pid_t *result, struct sockaddr *src_addr,
 
 	/* iterate over all pids to find a matching socket */
 	int pid_count = proc_listallpids(NULL, 0);
+	if (pid_count <= 0)
+		goto errout1;
 	pids = malloc(sizeof(pid_t) * pid_count);
 	if (!pids) {
 		goto errout1;
 	}
 
 	pid_count = proc_listallpids(pids, sizeof(pid_t) * pid_count);
+	if (pid_count <= 0)
+		goto errout2;
 
 	for (int i = 0; i < pid_count; i++) {
 		pid_t pid = pids[i];
 
 		/* fetch fd info for this pid */
 		int fd_count = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, NULL, 0);
-		if (fd_count == -1) {
+		if (fd_count <= 0) {
 			/* failed to fetch pidinfo; process may have exited */
 			continue;
 		}
@@ -356,7 +368,7 @@ proc_darwin_pid_for_addr(pid_t *result, struct sockaddr *src_addr,
 			if (proc_pidfdinfo(pid, fd->proc_fd,
 			                   PROC_PIDFDSOCKETINFO,
 			                   &sinfo,
-			                   sizeof(struct socket_fdinfo)) == -1) {
+			                   sizeof(struct socket_fdinfo)) <= 0) {
 				/* process may have exited or socket may have
 				 * been released. */
 				continue;
@@ -420,7 +432,7 @@ proc_darwin_get_info(pid_t pid, char **path, uid_t *uid, gid_t *gid) {
 	/* fetch process structure */
 	struct proc_bsdinfo bsd_info;
 	if (proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &bsd_info,
-	                 sizeof(bsd_info)) == -1) {
+	                 sizeof(bsd_info)) <= 0) {
 		return -1;
 	}
 
@@ -433,8 +445,9 @@ proc_darwin_get_info(pid_t pid, char **path, uid_t *uid, gid_t *gid) {
 		return -1;
 	}
 	int path_len = proc_pidpath(pid, *path, PROC_PIDPATHINFO_MAXSIZE);
-	if (path_len == -1) {
+	if (path_len <= 0) {
 		free(*path);
+		*path = NULL;
 		return -1;
 	}
 

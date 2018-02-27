@@ -1,4 +1,26 @@
 
+### SSLsplit develop
+
+-   Fix build on FreeBSD 12 (patch-proc.c r436571 from FreeBSD ports).
+-   Minor bugfixes and improvements.
+
+
+### SSLsplit 0.5.2 2018-02-10
+
+-   Add support for SSLv2 ClientHello handshake format for SSLv3/TLS
+    connections and while there, essentially fixing autossl for clients using
+    SSLv2 ClientHello handshake format with SSLv3/TLS (#185).
+-   Suppress Upgrade header in order to prevent upgrading connections to
+    WebSockets or HTTP/2 (#91).
+-   Add -M for writing an SSLKEYLOGFILE compatible log file (issue #184).
+-   Fix error handling for Darwin libproc functions (-i).
+-   Fix session cache misses and failed unit tests on MIPS by fixing undefined
+    behaviour in session cache hash functions (Debian #848919 and #851271).
+-   Synthesize MAC addresses to avoid the requirement for root privileges and
+    waiting for ARP timeouts on some platforms in log2pcap.py (issue #169).
+-   Minor bugfixes and improvements.
+
+
 ### SSLsplit 0.5.1 2018-01-14
 
 -   Dump master key in NSS key log format in debug mode, allowing decryption of

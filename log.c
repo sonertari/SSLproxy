@@ -1,29 +1,29 @@
-/*
+/*-
  * SSLsplit - transparent SSL/TLS interception
- * Copyright (c) 2009-2018, Daniel Roethlisberger <daniel@roe.ch>
- * Copyright (c) 2017-2018, Soner Tari <sonertari@gmail.com>
+ * https://www.roe.ch/SSLsplit
+ *
+ * Copyright (c) 2009-2018, Daniel Roethlisberger <daniel@roe.ch>.
  * All rights reserved.
- * http://www.roe.ch/SSLsplit
  *
  * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions, and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
+ * modification, are permitted provided that the following conditions are met:
+ * 1. Redistributions of source code must retain the above copyright notice,
+ *    this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ *    this list of conditions and the following disclaimer in the documentation
+ *    and/or other materials provided with the distribution.
  *
- * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
- * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
- * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDER AND CONTRIBUTORS ``AS IS''
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include "log.h"
@@ -213,6 +213,69 @@ log_dbg_mode(int mode)
 	dbg_mode = mode;
 }
 
+/*
+ * Master key log.  Logs master keys in SSLKEYLOGFILE format.
+ * Uses a logger thread.
+ */
+
+logger_t *masterkey_log = NULL;
+static int masterkey_fd = -1;
+static char *masterkey_fn = NULL;
+
+static int
+log_masterkey_preinit(const char *logfile)
+{
+	masterkey_fd = open(logfile, O_WRONLY|O_APPEND|O_CREAT, DFLT_FILEMODE);
+	if (masterkey_fd == -1) {
+		log_err_level_printf(LOG_CRIT, "Failed to open '%s' for writing: %s (%i)\n",
+		               logfile, strerror(errno), errno);
+		return -1;
+	}
+	if (!(masterkey_fn = realpath(logfile, NULL))) {
+		log_err_level_printf(LOG_CRIT, "Failed to realpath '%s': %s (%i)\n",
+		              logfile, strerror(errno), errno);
+		close(masterkey_fd);
+		masterkey_fd = -1;
+		return -1;
+	}
+	return 0;
+}
+
+static int
+log_masterkey_reopencb(void)
+{
+	close(masterkey_fd);
+	masterkey_fd = open(masterkey_fn, O_WRONLY|O_APPEND|O_CREAT,
+	                    DFLT_FILEMODE);
+	if (masterkey_fd == -1) {
+		log_err_level_printf(LOG_CRIT, "Failed to open '%s' for writing: %s\n",
+		               masterkey_fn, strerror(errno));
+		free(masterkey_fn);
+		masterkey_fn = NULL;
+		return -1;
+	}
+	return 0;
+}
+
+/*
+ * Do the actual write to the open master key log file descriptor.
+ */
+static ssize_t
+log_masterkey_writecb(UNUSED int level, UNUSED void *fh, const void *buf, size_t sz)
+{
+	if (write(masterkey_fd, buf, sz) == -1) {
+		log_err_level_printf(LOG_CRIT, "Warning: Failed to write to masterkey log:"
+		               " %s\n", strerror(errno));
+		return -1;
+	}
+	return sz;
+}
+
+static void
+log_masterkey_fini(void)
+{
+	close(masterkey_fd);
+}
 
 /*
  * Connection log.  Logs a one-liner to a file-based connection log.
@@ -1050,6 +1113,17 @@ log_preinit(opts_t *opts)
 			goto out;
 		}
 	}
+	if (opts->masterkeylog) {
+		if (log_masterkey_preinit(opts->masterkeylog) == -1)
+			goto out;
+		if (!(masterkey_log = logger_new(log_masterkey_reopencb,
+		                                 NULL, NULL,
+		                                 log_masterkey_writecb, NULL,
+		                                 log_exceptcb))) {
+			log_masterkey_fini();
+			goto out;
+		}
+	}
 	if (opts->certgendir) {
 		if (!(cert_log = logger_new(NULL, NULL, NULL, log_cert_writecb,
 		                            NULL, log_exceptcb)))
@@ -1072,12 +1146,17 @@ out:
 	if (cert_log) {
 		logger_free(cert_log);
 	}
+	if (masterkey_log) {
+		log_masterkey_fini();
+		logger_free(masterkey_log);
+	}
 	return -1;
 }
 
 /*
  * Close all file descriptors opened by log_preinit; used in privsep parent.
- * Only undo content and connect log, leave error and debug log functional.
+ * Only undo content, connect and masterkey logs, leave error and debug log
+ * functional.
  */
 void
 log_preinit_undo(void)
@@ -1089,6 +1168,10 @@ log_preinit_undo(void)
 	if (connect_log) {
 		log_connect_fini();
 		logger_free(connect_log);
+	}
+	if (masterkey_log) {
+		log_masterkey_fini();
+		logger_free(masterkey_log);
 	}
 }
 
@@ -1106,6 +1189,9 @@ log_init(opts_t *opts, proxy_ctx_t *ctx, int clisock1, int clisock2)
 	if (!opts->debug) {
 		err_shortcut_logger = 1;
 	}
+	if (masterkey_log)
+		if (logger_start(masterkey_log) == -1)
+			return -1;
 	if (connect_log)
 		if (logger_start(connect_log) == -1)
 			return -1;
@@ -1139,6 +1225,8 @@ log_fini(void)
 
 	if (cert_log)
 		logger_leave(cert_log);
+	if (masterkey_log)
+		logger_leave(masterkey_log);
 	if (content_log)
 		logger_leave(content_log);
 	if (connect_log)
@@ -1148,6 +1236,8 @@ log_fini(void)
 
 	if (cert_log)
 		logger_join(cert_log);
+	if (masterkey_log)
+		logger_join(masterkey_log);
 	if (content_log)
 		logger_join(content_log);
 	if (connect_log)
@@ -1157,6 +1247,8 @@ log_fini(void)
 
 	if (cert_log)
 		logger_free(cert_log);
+	if (masterkey_log)
+		logger_free(masterkey_log);
 	if (content_log)
 		logger_free(content_log);
 	if (connect_log)
@@ -1164,6 +1256,8 @@ log_fini(void)
 	if (err_log)
 		logger_free(err_log);
 
+	if (masterkey_log)
+		log_masterkey_fini();
 	if (content_log)
 		log_content_file_fini();
 	if (connect_log)
@@ -1180,6 +1274,9 @@ log_reopen(void)
 {
 	int rv = 0;
 
+	if (masterkey_log)
+		if (logger_reopen(masterkey_log) == -1)
+			rv = -1;
 	if (content_log)
 		if (logger_reopen(content_log) == -1)
 			rv = -1;
