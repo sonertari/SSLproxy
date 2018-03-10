@@ -57,7 +57,7 @@ pxy_thrmgr_get_thr_expired_conns(pxy_thr_ctx_t *tctx, pxy_conn_ctx_t **expired_c
 
 		pxy_conn_ctx_t *ctx = tctx->conns;
 		while (ctx) {
-			unsigned long elapsed_time = now - ctx->atime;
+			time_t elapsed_time = now - ctx->atime;
 			if (elapsed_time > tctx->thrmgr->opts->conn_idle_timeout) {
 				ctx->next_expired = *expired_conns;
 				*expired_conns = ctx;
@@ -87,12 +87,12 @@ pxy_thrmgr_get_thr_expired_conns(pxy_thr_ctx_t *tctx, pxy_conn_ctx_t **expired_c
 
 #ifdef DEBUG_PROXY
 				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_get_expired_conns: thr=%d, fd=%d, child_fd=%d, time=%lld%s%s\n",
-						ctx->thr->thridx, ctx->fd, ctx->child_fd, (long int) now - ctx->atime, STRORNONE(src_addr), STRORNONE(dst_addr));
+						ctx->thr->thridx, ctx->fd, ctx->child_fd, (long long)(now - ctx->atime), STRORNONE(src_addr), STRORNONE(dst_addr));
 #endif /* DEBUG_PROXY */
 
 				char *msg;
 				if (asprintf(&msg, "EXPIRED: thr=%d, time=%lld%s%s\n", 
-						ctx->thr->thridx, (long int) now - ctx->atime, STRORNONE(src_addr), STRORNONE(dst_addr)) < 0) {
+						ctx->thr->thridx, (long long)(now - ctx->atime), STRORNONE(src_addr), STRORNONE(dst_addr)) < 0) {
 					goto leave;
 				}
 
@@ -191,7 +191,7 @@ pxy_thrmgr_print_thr_info(pxy_thr_ctx_t *tctx)
 			if (asprintf(&lmsg, "PARENT CONN: thr=%d, id=%u, fd=%d, child_fd=%d, dst=%d, srv_dst=%d, child_src=%d, child_dst=%d, p=%d-%d-%d c=%d-%d, ce=%d cc=%d, at=%lld ct=%lld%s%s\n",
 					tctx->thridx, idx, ctx->fd, ctx->child_fd, ctx->dst_fd, ctx->srv_dst_fd, ctx->child_src_fd, ctx->child_dst_fd,
 					ctx->src.closed, ctx->dst.closed, ctx->srv_dst.closed, ctx->children ? ctx->children->src.closed : 0, ctx->children ? ctx->children->dst.closed : 0,
-					ctx->children ? 1:0, ctx->child_count, atime, ctime, STRORNONE(src_addr), STRORNONE(dst_addr)) < 0) {
+					ctx->children ? 1:0, ctx->child_count, (long long)atime, (long long)ctime, STRORNONE(src_addr), STRORNONE(dst_addr)) < 0) {
 				goto leave;
 			}
 			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_print_thr_info: %s", lmsg);
@@ -202,7 +202,7 @@ pxy_thrmgr_print_thr_info(pxy_thr_ctx_t *tctx)
 			// @attention Report idle connections only, i.e. the conns which have been idle since the last time we checked for expired conns
 			if (atime >= tctx->thrmgr->opts->expired_conn_check_period) {
 				if (asprintf(&smsg, "IDLE: thr=%d, id=%u, ce=%d cc=%d, at=%lld ct=%lld%s%s\n",
-						tctx->thridx, idx, ctx->children ? 1:0, ctx->child_count, atime, ctime, STRORNONE(src_addr), STRORNONE(dst_addr)) < 0) {
+						tctx->thridx, idx, ctx->children ? 1:0, ctx->child_count, (long long)atime, (long long)ctime, STRORNONE(src_addr), STRORNONE(dst_addr)) < 0) {
 					goto leave;
 				}
 
@@ -236,7 +236,7 @@ pxy_thrmgr_print_thr_info(pxy_thr_ctx_t *tctx)
 	}
 
 	if (asprintf(&smsg, "STATS: thr=%d, mld=%lu, mfd=%d, mat=%lld, mct=%lld, iib=%llu, iob=%llu, eib=%llu, eob=%llu, swm=%lu, uwm=%lu, to=%lu, err=%lu, si=%u\n",
-			tctx->thridx, tctx->max_load, tctx->max_fd, max_atime, max_ctime, tctx->intif_in_bytes, tctx->intif_out_bytes, tctx->extif_in_bytes, tctx->extif_out_bytes,
+			tctx->thridx, tctx->max_load, tctx->max_fd, (long long)max_atime, (long long)max_ctime, tctx->intif_in_bytes, tctx->intif_out_bytes, tctx->extif_in_bytes, tctx->extif_out_bytes,
 			tctx->set_watermarks, tctx->unset_watermarks, tctx->timedout_conns, tctx->errors, tctx->stats_idx) < 0) {
 		goto leave;
 	}
@@ -309,7 +309,7 @@ pxy_thrmgr_timer_cb(UNUSED evutil_socket_t fd, UNUSED short what,
 
 #ifdef DEBUG_PROXY
 			log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_thrmgr_timer_cb: Delete timed out conn thr=%d, fd=%d, child_fd=%d, at=%lld ct=%lld\n",
-					expired->thr->thridx, expired->fd, expired->child_fd, (long int) now - expired->atime, (long int) now - expired->ctime);
+					expired->thr->thridx, expired->fd, expired->child_fd, (long long)(now - expired->atime), (long long)(now - expired->ctime));
 #endif /* DEBUG_PROXY */
 			pxy_conn_free(expired, 1);
 			ctx->timedout_conns++;
