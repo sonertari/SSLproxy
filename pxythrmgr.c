@@ -200,7 +200,7 @@ pxy_thrmgr_print_thr_info(pxy_thr_ctx_t *tctx)
 #endif /* DEBUG_PROXY */
 
 			// @attention Report idle connections only, i.e. the conns which have been idle since the last time we checked for expired conns
-			if (atime >= tctx->thrmgr->opts->expired_conn_check_period) {
+			if (atime >= (time_t)tctx->thrmgr->opts->expired_conn_check_period) {
 				if (asprintf(&smsg, "IDLE: thr=%d, id=%u, ce=%d cc=%d, at=%lld ct=%lld%s%s\n",
 						tctx->thridx, idx, ctx->children ? 1:0, ctx->child_count, (long long)atime, (long long)ctime, STRORNONE(src_addr), STRORNONE(dst_addr)) < 0) {
 					goto leave;
@@ -235,7 +235,7 @@ pxy_thrmgr_print_thr_info(pxy_thr_ctx_t *tctx)
 		}
 	}
 
-	if (asprintf(&smsg, "STATS: thr=%d, mld=%lu, mfd=%d, mat=%lld, mct=%lld, iib=%llu, iob=%llu, eib=%llu, eob=%llu, swm=%lu, uwm=%lu, to=%lu, err=%lu, si=%u\n",
+	if (asprintf(&smsg, "STATS: thr=%d, mld=%zu, mfd=%d, mat=%lld, mct=%lld, iib=%llu, iob=%llu, eib=%llu, eob=%llu, swm=%zu, uwm=%zu, to=%zu, err=%zu, si=%u\n",
 			tctx->thridx, tctx->max_load, tctx->max_fd, (long long)max_atime, (long long)max_ctime, tctx->intif_in_bytes, tctx->intif_out_bytes, tctx->extif_in_bytes, tctx->extif_out_bytes,
 			tctx->set_watermarks, tctx->unset_watermarks, tctx->timedout_conns, tctx->errors, tctx->stats_idx) < 0) {
 		goto leave;
