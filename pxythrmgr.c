@@ -58,7 +58,7 @@ pxy_thrmgr_get_thr_expired_conns(pxy_thr_ctx_t *tctx, pxy_conn_ctx_t **expired_c
 		pxy_conn_ctx_t *ctx = tctx->conns;
 		while (ctx) {
 			time_t elapsed_time = now - ctx->atime;
-			if (elapsed_time > tctx->thrmgr->opts->conn_idle_timeout) {
+			if (elapsed_time > (time_t)tctx->thrmgr->opts->conn_idle_timeout) {
 				ctx->next_expired = *expired_conns;
 				*expired_conns = ctx;
 			}
