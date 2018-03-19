@@ -24,8 +24,8 @@ back from the program. Upon receiving the packets back, SSLproxy re-encrypts
 and sends them to their original destination. The return traffic follows the 
 same path back to the client.
 
-![Mode of Operation 
-Diagram](https://drive.google.com/open?id=1N_Yy5nMPDSvY8YaNFd4sHvipyLWq5zDy)
+<img src="https://drive.google.com/uc?id=1N_Yy5nMPDSvY8YaNFd4sHvipyLWq5zDy" 
+ alt="Mode of Operation Diagram" width="70%">
 
 This is similar in principle to [divert 
 sockets](https://man.openbsd.org/divert.4), where the packet filter diverts the 
