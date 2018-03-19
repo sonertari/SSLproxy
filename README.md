@@ -24,6 +24,9 @@ back from the program. Upon receiving the packets back, SSLproxy re-encrypts
 and sends them to their original destination. The return traffic follows the 
 same path back to the client.
 
+![Mode of Operation 
+Diagram](https://drive.google.com/open?id=1N_Yy5nMPDSvY8YaNFd4sHvipyLWq5zDy)
+
 This is similar in principle to [divert 
 sockets](https://man.openbsd.org/divert.4), where the packet filter diverts the 
 packets to a program listening on a divert socket, and after processing the 
@@ -45,12 +48,6 @@ the Program obtains from the first packet in the connection. Then the SSLproxy
 re-encrypts and sends the packets to the Server. The response from the Server 
 follows the same path to the Client in reverse order.
 
-	            Program
-	              ^^
-	             /  \
-	            v    v
-	Client <-> SSLproxy <-> Server   
-
 The program that packets are diverted to should support this mode of operation.
 Specifically, it should be able to recognize the SSLproxy address in the first
 packet, and give the first and subsequent packets back to the SSLproxy 
@@ -64,13 +61,13 @@ following:
 
 The first IP:port pair is a dynamically assigned address that the SSLproxy 
 expects the program send the packets back to it. The second and third IP:port 
-pairs are the actual source and destination addresses of the connection. Since 
-the program receives the packets from the SSLproxy, it cannot determine the 
-source and destination addresses of the packets by itself, hence must rely on 
-the information in this SSLproxy line. The last letter is either s or p, for 
-SSL/TLS encrypted or plain traffic respectively. This information is also 
-important for the program, because it cannot reliably determine if the actual 
-network traffic it is processing was encrypted or not.
+pairs are the actual source and destination addresses of the connection 
+respectively. Since the program receives the packets from the SSLproxy, it 
+cannot determine the source and destination addresses of the packets by 
+itself, hence must rely on the information in this SSLproxy line. The last 
+letter is either s or p, for SSL/TLS encrypted or plain traffic respectively. 
+This information is also important for the program, because it cannot reliably 
+determine if the actual network traffic it is processing was encrypted or not.
 
 SSLproxy supports plain TCP, plain SSL, HTTP, HTTPS, POP3, POP3S, SMTP, and 
 SMTPS connections over both IPv4 and IPv6.  It also has the ability to 
