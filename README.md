@@ -10,7 +10,9 @@ https://www.roe.ch/SSLsplit
 
 SSLproxy is a proxy for SSL/TLS encrypted network connections.  It is intended 
 to be used for decrypting and diverting network traffic to other programs, such 
-as UTM services, for deep SSL inspection.
+as UTM services, for deep SSL inspection. See [this 
+presentation](https://drive.google.com/open?id=12YaGIGs0-xfpqMNAY3rzUbIyed-Tso8W) 
+for a summary.
 
 SSLproxy is designed to transparently terminate connections that are redirected 
 to it using a network address translation engine.  SSLproxy then terminates 
