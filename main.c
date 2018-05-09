@@ -63,8 +63,6 @@
 extern int daemon(int, int);
 #endif /* __APPLE__ */
 
-int descriptor_table_size = 0;
-
 /*
  * Print version information to stderr.
  */
@@ -129,6 +127,7 @@ main_usage(void)
 	const char *dflt, *warn;
 	const char *usagefmt =
 "Usage: %s [options...] [proxyspecs...]\n"
+"  -f conffile use conffile to load configuration from\n"
 "  -c pemfile  use CA cert (and key) from pemfile to sign forged certs\n"
 "  -k pemfile  use CA key (and cert) from pemfile to sign forged certs\n"
 "  -C pemfile  use CA chain from pemfile (intermediate and root CA certs)\n"
@@ -276,373 +275,6 @@ main_loadtgcrt(const char *filename, void *arg)
 }
 
 /*
- * Handle out of memory conditions in early stages of main().
- * Print error message and exit with failure status code.
- * Does not return.
- */
-void NORET
-oom_die(const char *argv0)
-{
-	fprintf(stderr, "%s: out of memory\n", argv0);
-	exit(EXIT_FAILURE);
-}
-
-static void
-set_cacrt(opts_t *opts, const char *argv0, char *optarg)
-{
-	if (opts->cacrt)
-		X509_free(opts->cacrt);
-	opts->cacrt = ssl_x509_load(optarg);
-	if (!opts->cacrt) {
-		fprintf(stderr, "%s: error loading CA "
-						"cert from '%s':\n",
-						argv0, optarg);
-		if (errno) {
-			fprintf(stderr, "%s\n",
-					strerror(errno));
-		} else {
-			ERR_print_errors_fp(stderr);
-		}
-		exit(EXIT_FAILURE);
-	}
-	ssl_x509_refcount_inc(opts->cacrt);
-	sk_X509_insert(opts->chain, opts->cacrt, 0);
-	if (!opts->cakey) {
-		opts->cakey = ssl_key_load(optarg);
-	}
-#ifndef OPENSSL_NO_DH
-	if (!opts->dh) {
-		opts->dh = ssl_dh_load(optarg);
-	}
-#endif /* !OPENSSL_NO_DH */
-	fprintf(stderr, "CACrt: %s\n", optarg);
-}
-
-static void
-set_cakey(opts_t *opts, const char *argv0, char *optarg)
-{
-	if (opts->cakey)
-		EVP_PKEY_free(opts->cakey);
-	opts->cakey = ssl_key_load(optarg);
-	if (!opts->cakey) {
-		fprintf(stderr, "%s: error loading CA "
-						"key from '%s':\n",
-						argv0, optarg);
-		if (errno) {
-			fprintf(stderr, "%s\n",
-					strerror(errno));
-		} else {
-			ERR_print_errors_fp(stderr);
-		}
-		exit(EXIT_FAILURE);
-	}
-	if (!opts->cacrt) {
-		opts->cacrt = ssl_x509_load(optarg);
-		if (opts->cacrt) {
-			ssl_x509_refcount_inc(
-						   opts->cacrt);
-			sk_X509_insert(opts->chain,
-						   opts->cacrt, 0);
-		}
-	}
-#ifndef OPENSSL_NO_DH
-	if (!opts->dh) {
-		opts->dh = ssl_dh_load(optarg);
-	}
-#endif /* !OPENSSL_NO_DH */
-	fprintf(stderr, "CAKey: %s\n", optarg);
-}
-
-static void
-set_user(opts_t *opts, const char *argv0, char *optarg)
-{
-	if (!sys_isuser(optarg)) {
-		fprintf(stderr, "%s: '%s' is not an "
-						"existing user\n",
-						argv0, optarg);
-		exit(EXIT_FAILURE);
-	}
-	if (opts->dropuser)
-		free(opts->dropuser);
-	opts->dropuser = strdup(optarg);
-	if (!opts->dropuser)
-		oom_die(argv0);
-	fprintf(stderr, "User: %s\n", opts->dropuser);
-}
-
-static void
-set_group(opts_t *opts, const char *argv0, char *optarg)
-{
-	if (!sys_isgroup(optarg)) {
-		fprintf(stderr, "%s: '%s' is not an "
-						"existing group\n",
-						argv0, optarg);
-		exit(EXIT_FAILURE);
-	}
-	if (opts->dropgroup)
-		free(opts->dropgroup);
-	opts->dropgroup = strdup(optarg);
-	if (!opts->dropgroup)
-		oom_die(argv0);
-	fprintf(stderr, "Group: %s\n", opts->dropgroup);
-}
-
-static void
-set_pidfile(opts_t *opts, const char *argv0, char *optarg)
-{
-	if (opts->pidfile)
-		free(opts->pidfile);
-	opts->pidfile = strdup(optarg);
-	if (!opts->pidfile)
-		oom_die(argv0);
-	fprintf(stderr, "PidFile: %s\n", opts->pidfile);
-}
-
-static void
-set_ciphers(opts_t *opts, const char *argv0, char *optarg)
-{
-	if (opts->ciphers)
-		free(opts->ciphers);
-	opts->ciphers = strdup(optarg);
-	if (!opts->ciphers)
-		oom_die(argv0);
-	fprintf(stderr, "Ciphers: %s\n", opts->ciphers);
-}
-
-static int
-load_conffile(opts_t *opts, const char *argv0, const char *natengine)
-{
-	FILE *f;
-	int rv, line_num, found;
-	size_t line_len;
-	char *n, *value, *v, *value_end;
-	char *line, *name;
-
-	f = fopen(opts->conffile, "r");
-	if (!f) {
-		fprintf(stderr, "Error opening conf file %s: %s\n", opts->conffile, strerror(errno));
-		return -1;
-	}
-
-	line = NULL;
-	line_num = 0;
-	while (!feof(f)) {
-		rv = getline(&line, &line_len, f);
-		if (rv == -1) {
-			break;
-		}
-		if (line == NULL) {
-			fprintf(stderr, "getline() buf=NULL");
-			return -1;
-		}
-		line_num++;
-
-		// skip white space
-		for (name = line; *name == ' ' || *name == '\t'; name++); 
-
-		// skip comments and empty lines
-		if ((name[0] == '\0') || (name[0] == '#') || (name[0] == ';') ||
-			(name[0] == '\r') || (name[0] == '\n')) {
-			continue;
-		}
-
-		// skip to the end of option name and terminate it with '\0'
-		for (n = name;; n++) {
-			if (*n == ' ' || *n == '\t') {
-				*n = '\0';
-				n++;
-				break;
-			}
-			if (*n == '\0') {
-				n = NULL;
-				break;
-			}
-		}
-
-		// no value
-		if (n == NULL) {
-			fprintf(stderr, "Conf error at line %d\n", line_num);
-			fclose(f);
-			if (line) {
-				free(line);
-			}
-			return -1;
-		}
-		
-		// skip white space before value
-		while (*n == ' ' || *n == '\t') {
-			n++;
-		}
-
-		value = n;
-
-		// find end of value and terminate it with '\0'
-		// find first occurrence of trailing white space
-		value_end = NULL;
-		for (v = value;; v++) {
-			if (*v == '\0') {
-				break;
-			}
-			if (*v == '\r' || *v == '\n') {
-				*v = '\0';
-				break;
-			}
-			if (*v == ' ' || *v == '\t') {
-				if (!value_end) {
-					value_end = v;
-				}
-			} else {
-				value_end = NULL;
-			}
-		}
-
-		if (value_end) {
-			*value_end = '\0';
-		}
-
-		found = 0;
-		if (!strncasecmp(name, "CACert", 6)) {
-			set_cacrt(opts, argv0, value);
-			found = 1;
-		} else if (!strncasecmp(name, "CAKey", 5)) {
-			set_cakey(opts, argv0, value);
-			found = 1;
-		} else if (!strncasecmp(name, "ProxySpec", 9)) {
-			char **argv = malloc(strlen(value) + 1);
-			char **save_argv = argv;
-			int argc = 0;
-			char *p, *last;
-
-			for ((p = strtok_r(value, " ", &last)); p; (p = strtok_r(NULL, " ", &last))) {
-				// Limit max # token
-				if (argc < 10) {
-					argv[argc++] = p;
-				}
-			}
-			
-			proxyspec_parse(&argc, &argv, natengine, opts);
-			free(save_argv);
-			found = 1;
-		} else if (!strncasecmp(name, "ConnIdleTimeout", 15)) {
-			unsigned int rv = atoi(value);
-			if (rv >= 10 && rv <= 3600) {
-				opts->conn_idle_timeout = rv;
-			} else {
-				fprintf(stderr, "Invalid ConnIdleTimeout %s at line %d, use 10-3600\n", value, line_num);
-			}
-			fprintf(stderr, "ConnIdleTimeout: %u\n", opts->conn_idle_timeout);
-			found = 1;
-		} else if (!strncasecmp(name, "ExpiredConnCheckPeriod", 22)) {
-			unsigned int rv = atoi(value);
-			if (rv >= 10 && rv <= 60) {
-				opts->expired_conn_check_period = rv;
-			} else {
-				fprintf(stderr, "Invalid ExpiredConnCheckPeriod %s at line %d, use 10-60\n", value, line_num);
-			}
-			fprintf(stderr, "ExpiredConnCheckPeriod: %u\n", opts->expired_conn_check_period);
-			found = 1;
-		} else if (!strncasecmp(name, "SSLShutdownRetryDelay", 21)) {
-			unsigned int rv = atoi(value);
-			if (rv >= 100 && rv <= 10000) {
-				opts->ssl_shutdown_retry_delay = rv;
-			} else {
-				fprintf(stderr, "Invalid SSLShutdownRetryDelay %s at line %d, use 100-10000\n", value, line_num);
-			}
-			fprintf(stderr, "SSLShutdownRetryDelay: %u\n", opts->ssl_shutdown_retry_delay);
-			found = 1;
-		} else if (!strncasecmp(name, "PidFile", 7)) {
-			set_pidfile(opts, argv0, value);
-			found = 1;
-		} else if (!strncasecmp(name, "LogStats", 8)) {
-			if (!strncasecmp(value, "yes", 3)) {
-				opts->statslog = 1;
-			} else if (!strncasecmp(value, "no", 3)) {
-				opts->statslog = 0;
-			} else {
-				fprintf(stderr, "Invalid LogStats %s at line %d, use yes|no\n", value, line_num);
-			}
-			fprintf(stderr, "LogStats: %u\n", opts->statslog);
-			found = 1;
-		} else if (!strncasecmp(name, "StatsPeriod", 11)) {
-			unsigned int rv = atoi(value);
-			if (rv >= 1 && rv <= 10) {
-				opts->stats_period = rv;
-			} else {
-				fprintf(stderr, "Invalid StatsPeriod %s at line %d, use 1-10\n", value, line_num);
-			}
-			fprintf(stderr, "StatsPeriod: %u\n", opts->stats_period);
-			found = 1;
-		} else if (!strncasecmp(name, "User", 4)) {
-			set_user(opts, argv0, value);
-			found = 1;
-		} else if (!strncasecmp(name, "Group", 5)) {
-			set_group(opts, argv0, value);
-			found = 1;
-		} else if (!strncasecmp(name, "RemoveHTTPAcceptEncoding", 24)) {
-			if (!strncasecmp(value, "yes", 3)) {
-				opts->remove_http_accept_encoding = 1;
-			} else if (!strncasecmp(value, "no", 3)) {
-				opts->remove_http_accept_encoding = 0;
-			} else {
-				fprintf(stderr, "Invalid RemoveHTTPAcceptEncoding %s at line %d, use yes|no\n", value, line_num);
-			}
-			fprintf(stderr, "RemoveHTTPAcceptEncoding: %u\n", opts->remove_http_accept_encoding);
-			found = 1;
-		} else if (!strncasecmp(name, "RemoveHTTPReferer", 17)) {
-			if (!strncasecmp(value, "yes", 3)) {
-				opts->remove_http_referer = 1;
-			} else if (!strncasecmp(value, "no", 3)) {
-				opts->remove_http_referer = 0;
-			} else {
-				fprintf(stderr, "Invalid RemoveHTTPReferer %s at line %d, use yes|no\n", value, line_num);
-			}
-			fprintf(stderr, "RemoveHTTPReferer: %u\n", opts->remove_http_referer);
-			found = 1;
-		} else if (!strncasecmp(name, "VerifyPeer", 10)) {
-			if (!strncasecmp(value, "yes", 3)) {
-				opts->verify_peer = 1;
-			} else if (!strncasecmp(value, "no", 3)) {
-				opts->verify_peer = 0;
-			} else {
-				fprintf(stderr, "Invalid VerifyPeer %s at line %d, use yes|no\n", value, line_num);
-			}
-			fprintf(stderr, "VerifyPeer: %u\n", opts->verify_peer);
-			found = 1;
-		} else if (!strncasecmp(name, "AllowWrongHost", 14)) {
-			if (!strncasecmp(value, "yes", 3)) {
-				opts->allow_wrong_host = 1;
-			} else if (!strncasecmp(value, "no", 3)) {
-				opts->allow_wrong_host = 0;
-			} else {
-				fprintf(stderr, "Invalid AllowWrongHost %s at line %d, use yes|no\n", value, line_num);
-			}
-			fprintf(stderr, "AllowWrongHost: %u\n", opts->allow_wrong_host);
-			found = 1;
-		} else if (!strncasecmp(name, "Ciphers", 7)) {
-			set_ciphers(opts, argv0, value);
-			found = 1;
-		}
-
-		if (found) {
-			continue;
-		}
-
-		fprintf(stderr, "Unknown option '%s' at %s line %d\n", name, opts->conffile, line_num);
-		fclose(f);
-		if (line) {
-			free(line);
-		}
-		return -1;
-	}
-
-	fclose(f);
-	if (line) {
-		free(line);
-	}
-	return 0;
-}
-
-/*
  * Main entry point.
  */
 int
@@ -677,7 +309,7 @@ main(int argc, char *argv[])
 	opts->allow_wrong_host = 0;
 
 	while ((ch = getopt(argc, argv, OPT_g OPT_G OPT_Z OPT_i "k:c:C:K:t:"
-	                    "OPs:r:R:e:Eu:m:j:p:l:L:S:F:M:dD::VhW:w:If:q:")) != -1) {
+	                    "OPs:r:R:e:Eu:m:j:p:l:L:S:F:M:dD::VhW:w:q:f:I")) != -1) {
 		switch (ch) {
 			case 'f':
 				if (opts->conffile)
@@ -688,126 +320,58 @@ main(int argc, char *argv[])
 				fprintf(stderr, "Conf file: %s\n", opts->conffile);
 				break;
 			case 'c':
-				set_cacrt(opts, argv0, optarg);
+				opts_set_cacrt(opts, argv0, optarg);
 				break;
 			case 'k':
-				set_cakey(opts, argv0, optarg);
+				opts_set_cakey(opts, argv0, optarg);
 				break;
 			case 'C':
-				if (ssl_x509chain_load(NULL, &opts->chain,
-				                       optarg) == -1) {
-					fprintf(stderr, "%s: error loading "
-					                "chain from '%s':\n",
-					                argv0, optarg);
-					if (errno) {
-						fprintf(stderr, "%s\n",
-						        strerror(errno));
-					} else {
-						ERR_print_errors_fp(stderr);
-					}
-					exit(EXIT_FAILURE);
-				}
+				opts_set_chain(opts, argv0, optarg);
 				break;
 			case 'K':
-				if (opts->key)
-					EVP_PKEY_free(opts->key);
-				opts->key = ssl_key_load(optarg);
-				if (!opts->key) {
-					fprintf(stderr, "%s: error loading lea"
-					                "f key from '%s':\n",
-					                argv0, optarg);
-					if (errno) {
-						fprintf(stderr, "%s\n",
-						        strerror(errno));
-					} else {
-						ERR_print_errors_fp(stderr);
-					}
-					exit(EXIT_FAILURE);
-				}
-#ifndef OPENSSL_NO_DH
-				if (!opts->dh) {
-					opts->dh = ssl_dh_load(optarg);
-				}
-#endif /* !OPENSSL_NO_DH */
+				opts_set_key(opts, argv0, optarg);
 				break;
 			case 't':
-				if (!sys_isdir(optarg)) {
-					fprintf(stderr, "%s: '%s' is not a "
-					                "directory\n",
-					                argv0, optarg);
-					exit(EXIT_FAILURE);
-				}
-				if (opts->tgcrtdir)
-					free(opts->tgcrtdir);
-				opts->tgcrtdir = strdup(optarg);
-				if (!opts->tgcrtdir)
-					oom_die(argv0);
+				opts_set_tgcrtdir(opts, argv0, optarg);
 				break;
 			case 'q':
-				if (opts->crlurl)
-					free(opts->crlurl);
-				opts->crlurl = strdup(optarg);
+				opts_set_crl(opts, optarg);
 				break;
 			case 'O':
-				opts->deny_ocsp = 1;
+				opts_set_deny_ocsp(opts);
 				break;
 			case 'P':
-				opts->passthrough = 1;
+				opts_set_passthrough(opts);
 				break;
 #ifndef OPENSSL_NO_DH
 			case 'g':
-				if (opts->dh)
-					DH_free(opts->dh);
-				opts->dh = ssl_dh_load(optarg);
-				if (!opts->dh) {
-					fprintf(stderr, "%s: error loading DH "
-					                "params from '%s':\n",
-					                argv0, optarg);
-					if (errno) {
-						fprintf(stderr, "%s\n",
-						        strerror(errno));
-					} else {
-						ERR_print_errors_fp(stderr);
-					}
-					exit(EXIT_FAILURE);
-				}
+				opts_set_dh(opts, argv0, optarg);
 				break;
 #endif /* !OPENSSL_NO_DH */
 #ifndef OPENSSL_NO_ECDH
 			case 'G':
 			{
-				EC_KEY *ec;
-				if (opts->ecdhcurve)
-					free(opts->ecdhcurve);
-				if (!(ec = ssl_ec_by_name(optarg))) {
-					fprintf(stderr, "%s: unknown curve "
-					                "'%s'\n",
-					                argv0, optarg);
-					exit(EXIT_FAILURE);
-				}
-				EC_KEY_free(ec);
-				opts->ecdhcurve = strdup(optarg);
-				if (!opts->ecdhcurve)
-					oom_die(argv0);
+				opts_set_ecdhcurve(opts, argv0, optarg);
 				break;
 			}
 #endif /* !OPENSSL_NO_ECDH */
 #ifdef SSL_OP_NO_COMPRESSION
 			case 'Z':
-				opts->sslcomp = 0;
+				opts_unset_sslcomp(opts);
 				break;
 #endif /* SSL_OP_NO_COMPRESSION */
 			case 's':
-				set_ciphers(opts, argv0, optarg);
+				opts_set_ciphers(opts, argv0, optarg);
 				break;
 			case 'r':
-				opts_proto_force(opts, optarg, argv0);
+				opts_force_proto(opts, argv0, optarg);
 				break;
 			case 'R':
-				opts_proto_disable(opts, optarg, argv0);
+				opts_disable_proto(opts, argv0, optarg);
 				break;
 			case 'e':
-				free(natengine);
+				if (natengine)
+					free(natengine);
 				natengine = strdup(optarg);
 				if (!natengine)
 					oom_die(argv0);
@@ -817,186 +381,54 @@ main(int argc, char *argv[])
 				exit(EXIT_SUCCESS);
 				break;
 			case 'u':
-				set_user(opts, argv0, optarg);
+				opts_set_user(opts, argv0, optarg);
 				break;
 			case 'm':
-				set_group(opts, argv0, optarg);
+				opts_set_group(opts, argv0, optarg);
 				break;
 			case 'p':
-				set_pidfile(opts, argv0, optarg);
+				opts_set_pidfile(opts, argv0, optarg);
 				break;
 			case 'j':
-				if (!sys_isdir(optarg)) {
-					fprintf(stderr, "%s: '%s' is not a "
-					                "directory\n",
-					                argv0, optarg);
-					exit(EXIT_FAILURE);
-				}
-				if (opts->jaildir)
-					free(opts->jaildir);
-				opts->jaildir = realpath(optarg, NULL);
-				if (!opts->jaildir) {
-					fprintf(stderr, "%s: Failed to "
-					                "canonicalize '%s': "
-					                "%s (%i)\n",
-					                argv0, optarg,
-					                strerror(errno), errno);
-					exit(EXIT_FAILURE);
-				}
+				opts_set_jaildir(opts, argv0, optarg);
 				break;
 			case 'l':
-				if (opts->connectlog)
-					free(opts->connectlog);
-				opts->connectlog = strdup(optarg);
-				if (!opts->connectlog)
-					oom_die(argv0);
+				opts_set_connectlog(opts, argv0, optarg);
 				break;
 			case 'I':
-				opts->statslog = 1;
+				opts_set_statslog(opts);
 				break;
 			case 'L':
-				if (opts->contentlog)
-					free(opts->contentlog);
-				opts->contentlog = strdup(optarg);
-				if (!opts->contentlog)
-					oom_die(argv0);
-				opts->contentlog_isdir = 0;
-				opts->contentlog_isspec = 0;
+				opts_set_contentlog(opts, argv0, optarg);
 				break;
 			case 'S':
-				if (!sys_isdir(optarg)) {
-					fprintf(stderr, "%s: '%s' is not a "
-					                "directory\n",
-					                argv0, optarg);
-					exit(EXIT_FAILURE);
-				}
-				if (opts->contentlog)
-					free(opts->contentlog);
-				opts->contentlog = realpath(optarg, NULL);
-				if (!opts->contentlog) {
-					fprintf(stderr, "%s: Failed to "
-					                "canonicalize '%s': "
-					                "%s (%i)\n",
-					                argv0, optarg,
-					                strerror(errno), errno);
-					exit(EXIT_FAILURE);
-				}
-				opts->contentlog_isdir = 1;
-				opts->contentlog_isspec = 0;
+				opts_set_contentlogdir(opts, argv0, optarg);
 				break;
 			case 'F': {
-				char *lhs, *rhs, *p, *q;
-				size_t n;
-				if (opts->contentlog_basedir)
-					free(opts->contentlog_basedir);
-				if (opts->contentlog)
-					free(opts->contentlog);
-				if (log_content_split_pathspec(optarg, &lhs,
-				                               &rhs) == -1) {
-					fprintf(stderr, "%s: Failed to split "
-					                "'%s' in lhs/rhs: "
-					                "%s (%i)\n",
-					                argv0, optarg,
-					                strerror(errno), errno);
-					exit(EXIT_FAILURE);
-				}
-				/* eliminate %% from lhs */
-				for (p = q = lhs; *p; p++, q++) {
-					if (q < p)
-						*q = *p;
-					if (*p == '%' && *(p+1) == '%')
-						p++;
-				}
-				*q = '\0';
-				/* all %% in lhs resolved to % */
-				if (sys_mkpath(lhs, 0777) == -1) {
-					fprintf(stderr, "%s: Failed to create "
-					                "'%s': %s (%i)\n",
-					                argv0, lhs,
-					                strerror(errno), errno);
-					exit(EXIT_FAILURE);
-				}
-				opts->contentlog_basedir = realpath(lhs, NULL);
-				if (!opts->contentlog_basedir) {
-					fprintf(stderr, "%s: Failed to "
-					                "canonicalize '%s': "
-					                "%s (%i)\n",
-					                argv0, lhs,
-					                strerror(errno), errno);
-					exit(EXIT_FAILURE);
-				}
-				/* count '%' in opts->contentlog_basedir */
-				for (n = 0, p = opts->contentlog_basedir;
-				     *p;
-				     p++) {
-					if (*p == '%')
-						n++;
-				}
-				free(lhs);
-				n += strlen(opts->contentlog_basedir);
-				if (!(lhs = malloc(n + 1)))
-					oom_die(argv0);
-				/* re-encoding % to %%, copying basedir to lhs */
-				for (p = opts->contentlog_basedir, q = lhs;
-				     *p;
-				     p++, q++) {
-					*q = *p;
-					if (*q == '%')
-						*(++q) = '%';
-				}
-				*q = '\0';
-				/* lhs contains encoded realpathed basedir */
-				if (asprintf(&opts->contentlog,
-				             "%s/%s", lhs, rhs) < 0)
-					oom_die(argv0);
-				opts->contentlog_isdir = 0;
-				opts->contentlog_isspec = 1;
-				free(lhs);
-				free(rhs);
+				opts_set_contentlogpathspec(opts, argv0, optarg);
 				break;
 			case 'W':
-				opts->certgen_writeall = 1;
-				if (opts->certgendir)
-					free(opts->certgendir);
-				opts->certgendir = strdup(optarg);
-				if (!opts->certgendir)
-					oom_die(argv0);
+				opts_set_certgendir_writeall(opts, argv0, optarg);
 				break;
 			case 'w':
-				opts->certgen_writeall = 0;
-				if (opts->certgendir)
-					free(opts->certgendir);
-				opts->certgendir = strdup(optarg);
-				if (!opts->certgendir)
-					oom_die(argv0);
+				opts_set_certgendir_writegencerts(opts, argv0, optarg);
 				break;
 			}
 #ifdef HAVE_LOCAL_PROCINFO
 			case 'i':
-				opts->lprocinfo = 1;
+				opts_set_lprocinfo(opts);
 				break;
 #endif /* HAVE_LOCAL_PROCINFO */
 			case 'M':
-				if (opts->masterkeylog)
-					free(opts->masterkeylog);
-				opts->masterkeylog = strdup(optarg);
-				if (!opts->masterkeylog)
-					oom_die(argv0);
+				opts_set_masterkeylog(opts, argv0, optarg);
 				break;
 			case 'd':
-				opts->detach = 1;
+				opts_set_daemon(opts);
 				break;
 			case 'D':
-				opts->debug = 1;
-				
-				if (optarg && strncmp(optarg, "2", 1) == 0) {
-					log_dbg_mode(LOG_DBG_MODE_FINE);
-				} else if (optarg && strncmp(optarg, "3", 1) == 0) {
-					log_dbg_mode(LOG_DBG_MODE_FINER);
-				} else if (optarg && strncmp(optarg, "4", 1) == 0) {
-					log_dbg_mode(LOG_DBG_MODE_FINEST);
-				} else {
-					log_dbg_mode(LOG_DBG_MODE_ERRLOG);
+				opts_set_debug(opts);
+				if (optarg) {
+					opts_set_debug_level(optarg);
 				}
 				break;
 			case 'V':
@@ -1014,7 +446,7 @@ main(int argc, char *argv[])
 	}
 	argc -= optind;
 	argv += optind;
-	proxyspec_parse(&argc, &argv, natengine, opts);
+	proxyspec_parse(&argc, &argv, natengine, &opts->spec);
 	
 	if (opts->conffile) {
 		if (load_conffile(opts, argv0, natengine) == -1) {

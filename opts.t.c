@@ -35,6 +35,7 @@
 #include <unistd.h>
 #include <netinet/in.h>
 
+// @todo Fix unit tests, up:port in the sslproxy proxspec format is mandatory
 static char *argv01[] = {
 	"https", "127.0.0.1", "10443", "127.0.0.2", "443"
 };
@@ -86,11 +87,11 @@ static char *argv14[] = {
 
 START_TEST(proxyspec_parse_01)
 {
-	proxyspec_t *spec;
+	proxyspec_t *spec = NULL;
 	int argc = 5;
 	char **argv = argv01;
 
-	spec = proxyspec_parse(&argc, &argv, NATENGINE);
+	proxyspec_parse(&argc, &argv, NATENGINE, &spec);
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(spec->ssl, "not SSL");
 	fail_unless(spec->http, "not HTTP");
@@ -110,11 +111,11 @@ END_TEST
 
 START_TEST(proxyspec_parse_02)
 {
-	proxyspec_t *spec;
+	proxyspec_t *spec = NULL;
 	int argc = 5;
 	char **argv = argv02;
 
-	spec = proxyspec_parse(&argc, &argv, NATENGINE);
+	proxyspec_parse(&argc, &argv, NATENGINE, &spec);
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(spec->ssl, "not SSL");
 	fail_unless(spec->http, "not HTTP");
@@ -134,12 +135,12 @@ END_TEST
 
 START_TEST(proxyspec_parse_03)
 {
-	proxyspec_t *spec;
+	proxyspec_t *spec = NULL;
 	int argc = 2;
 	char **argv = argv01;
 
 	close(2);
-	spec = proxyspec_parse(&argc, &argv, NATENGINE);
+	proxyspec_parse(&argc, &argv, NATENGINE, &spec);
 	if (spec)
 		proxyspec_free(spec);
 }
@@ -147,12 +148,12 @@ END_TEST
 
 START_TEST(proxyspec_parse_04)
 {
-	proxyspec_t *spec;
+	proxyspec_t *spec = NULL;
 	int argc = 4;
 	char **argv = argv01;
 
 	close(2);
-	spec = proxyspec_parse(&argc, &argv, NATENGINE);
+	proxyspec_parse(&argc, &argv, NATENGINE, &spec);
 	if (spec)
 		proxyspec_free(spec);
 }
@@ -160,11 +161,11 @@ END_TEST
 
 START_TEST(proxyspec_parse_05)
 {
-	proxyspec_t *spec;
+	proxyspec_t *spec = NULL;
 	int argc = 5;
 	char **argv = argv03;
 
-	spec = proxyspec_parse(&argc, &argv, NATENGINE);
+	proxyspec_parse(&argc, &argv, NATENGINE, &spec);
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(!spec->ssl, "SSL");
 	fail_unless(spec->http, "not HTTP");
@@ -184,11 +185,11 @@ END_TEST
 
 START_TEST(proxyspec_parse_06)
 {
-	proxyspec_t *spec;
+	proxyspec_t *spec = NULL;
 	int argc = 5;
 	char **argv = argv04;
 
-	spec = proxyspec_parse(&argc, &argv, NATENGINE);
+	proxyspec_parse(&argc, &argv, NATENGINE, &spec);
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(spec->ssl, "not SSL");
 	fail_unless(!spec->http, "HTTP");
@@ -208,11 +209,11 @@ END_TEST
 
 START_TEST(proxyspec_parse_07)
 {
-	proxyspec_t *spec;
+	proxyspec_t *spec = NULL;
 	int argc = 5;
 	char **argv = argv05;
 
-	spec = proxyspec_parse(&argc, &argv, NATENGINE);
+	proxyspec_parse(&argc, &argv, NATENGINE, &spec);
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(!spec->ssl, "SSL");
 	fail_unless(!spec->http, "HTTP");
@@ -232,11 +233,11 @@ END_TEST
 
 START_TEST(proxyspec_parse_08)
 {
-	proxyspec_t *spec;
+	proxyspec_t *spec = NULL;
 	int argc = 5;
 	char **argv = argv06;
 
-	spec = proxyspec_parse(&argc, &argv, NATENGINE);
+	proxyspec_parse(&argc, &argv, NATENGINE, &spec);
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(spec->ssl, "not SSL");
 	fail_unless(spec->http, "not HTTP");
@@ -255,12 +256,12 @@ END_TEST
 
 START_TEST(proxyspec_parse_09)
 {
-	proxyspec_t *spec;
+	proxyspec_t *spec = NULL;
 	int argc = 5;
 	char **argv = argv07;
 
 	close(2);
-	spec = proxyspec_parse(&argc, &argv, NATENGINE);
+	proxyspec_parse(&argc, &argv, NATENGINE, &spec);
 	if (spec)
 		proxyspec_free(spec);
 }
@@ -268,12 +269,12 @@ END_TEST
 
 START_TEST(proxyspec_parse_10)
 {
-	proxyspec_t *spec;
+	proxyspec_t *spec = NULL;
 	int argc = 4;
 	char **argv = argv06;
 
 	close(2);
-	spec = proxyspec_parse(&argc, &argv, NATENGINE);
+	proxyspec_parse(&argc, &argv, NATENGINE, &spec);
 	if (spec)
 		proxyspec_free(spec);
 }
@@ -281,11 +282,11 @@ END_TEST
 
 START_TEST(proxyspec_parse_11)
 {
-	proxyspec_t *spec;
+	proxyspec_t *spec = NULL;
 	int argc = 3;
 	char **argv = argv08;
 
-	spec = proxyspec_parse(&argc, &argv, NATENGINE);
+	proxyspec_parse(&argc, &argv, NATENGINE, &spec);
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(spec->ssl, "not SSL");
 	fail_unless(spec->http, "not HTTP");
@@ -305,12 +306,12 @@ END_TEST
 
 START_TEST(proxyspec_parse_12)
 {
-	proxyspec_t *spec;
+	proxyspec_t *spec = NULL;
 	int argc = 4;
 	char **argv = argv08;
 
 	close(2);
-	spec = proxyspec_parse(&argc, &argv, NATENGINE);
+	proxyspec_parse(&argc, &argv, NATENGINE, &spec);
 	if (spec)
 		proxyspec_free(spec);
 }
@@ -318,11 +319,11 @@ END_TEST
 
 START_TEST(proxyspec_parse_13)
 {
-	proxyspec_t *spec;
+	proxyspec_t *spec = NULL;
 	int argc = 10;
 	char **argv = argv09;
 
-	spec = proxyspec_parse(&argc, &argv, NATENGINE);
+	proxyspec_parse(&argc, &argv, NATENGINE, &spec);
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(spec->ssl, "not SSL");
 	fail_unless(spec->http, "not HTTP");
@@ -353,11 +354,11 @@ END_TEST
 
 START_TEST(proxyspec_parse_14)
 {
-	proxyspec_t *spec;
+	proxyspec_t *spec = NULL;
 	int argc = 6;
 	char **argv = argv10;
 
-	spec = proxyspec_parse(&argc, &argv, NATENGINE);
+	proxyspec_parse(&argc, &argv, NATENGINE, &spec);
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(spec->ssl, "not SSL");
 	fail_unless(spec->http, "not HTTP");
@@ -389,11 +390,11 @@ END_TEST
 
 START_TEST(proxyspec_parse_15)
 {
-	proxyspec_t *spec;
+	proxyspec_t *spec = NULL;
 	int argc = 3;
 	char **argv = argv11;
 
-	spec = proxyspec_parse(&argc, &argv, NATENGINE);
+	proxyspec_parse(&argc, &argv, NATENGINE, &spec);
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(!spec->ssl, "SSL");
 	fail_unless(!spec->http, "HTTP");
@@ -412,11 +413,11 @@ END_TEST
 
 START_TEST(proxyspec_parse_16)
 {
-	proxyspec_t *spec;
+	proxyspec_t *spec = NULL;
 	int argc = 10;
 	char **argv = argv12;
 
-	spec = proxyspec_parse(&argc, &argv, NATENGINE);
+	proxyspec_parse(&argc, &argv, NATENGINE, &spec);
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(spec->ssl, "not SSL");
 	fail_unless(spec->http, "not HTTP");
@@ -447,12 +448,12 @@ END_TEST
 
 START_TEST(proxyspec_parse_17)
 {
-	proxyspec_t *spec;
+	proxyspec_t *spec = NULL;
 	int argc = 5;
 	char **argv = argv13;
 
 	close(2);
-	spec = proxyspec_parse(&argc, &argv, NATENGINE);
+	proxyspec_parse(&argc, &argv, NATENGINE, &spec);
 	if (spec)
 		proxyspec_free(spec);
 }
@@ -460,11 +461,11 @@ END_TEST
 
 START_TEST(proxyspec_parse_18)
 {
-	proxyspec_t *spec;
+	proxyspec_t *spec = NULL;
 	int argc = 8;
 	char **argv = argv14;
 
-	spec = proxyspec_parse(&argc, &argv, NATENGINE);
+	proxyspec_parse(&argc, &argv, NATENGINE, &spec);
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(!spec->ssl, "SSL");
 	fail_unless(!spec->http, "HTTP");

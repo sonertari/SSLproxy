@@ -176,6 +176,7 @@ GREP?=		grep
 INSTALL?=	install
 MKDIR?=		mkdir
 SED?=		sed
+SORT?=		sort
 
 
 ### Variables only used for developer targets
@@ -357,7 +358,7 @@ export WGET
 
 ifndef MAKE_RESTARTS
 $(info ------------------------------------------------------------------------------)
-$(info $(PNAME) $(VERSION))
+$(info $(PKGLABEL) $(VERSION))
 $(info ------------------------------------------------------------------------------)
 $(info Report bugs at https://github.com/sonertari/SSLproxy/issues/new)
 $(info Please supply this header for diagnostics when reporting build issues)
@@ -375,6 +376,7 @@ ifdef CHECK_FOUND
 $(info CHECK_BASE:     $(strip $(CHECK_FOUND)))
 endif
 $(info Build options:  $(FEATURES))
+$(info Build info:     $(BUILD_INFO))
 ifeq ($(shell uname),Darwin)
 $(info OSX_VERSION:    $(OSX_VERSION))
 $(info XNU_VERSION:    $(XNU_VERSION) ($(XNU_METHOD), have $(XNU_HAVE)))
@@ -426,7 +428,7 @@ install: $(TARGET)
 	test -d $(DESTDIR)$(PREFIX)/$(MANDIR)/man5 || \
 		$(MKDIR) -p $(DESTDIR)$(PREFIX)/$(MANDIR)/man5
 	test -d $(DESTDIR)$(PREFIX)/$(EXAMPLESDIR)/sslproxy || \
-		$(MKDIR) -p $(DESTDIR)$(PREFIX)/$(EXAMPLESDIR)/sslproxy
+		$(MKDIR) -p $(DESTDIR)$(PREFIX)/$(EXAMPLESDIR)/$(TARGET)
 	$(INSTALL) $(BINOWNERFLAGS) -m $(BINMODE) \
 		$(TARGET) $(DESTDIR)$(PREFIX)/bin/
 	$(INSTALL) $(MANOWNERFLAGS) -m $(MANMODE) \
@@ -434,12 +436,12 @@ install: $(TARGET)
 	$(INSTALL) $(MANOWNERFLAGS) -m $(MANMODE) \
 		$(TARGET).conf.5 $(DESTDIR)$(PREFIX)/$(MANDIR)/man5/
 	$(INSTALL) $(MANOWNERFLAGS) -m $(EXAMPLESMODE) \
-		$(TARGET).conf $(DESTDIR)$(PREFIX)/$(EXAMPLESDIR)/sslproxy/
+		$(TARGET).conf $(DESTDIR)$(PREFIX)/$(EXAMPLESDIR)/$(TARGET)/
 
 deinstall:
 	$(RM) -f $(DESTDIR)$(PREFIX)/bin/$(TARGET) $(DESTDIR)$(PREFIX)/$(MANDIR)/man1/$(TARGET).1 \
 		$(DESTDIR)$(PREFIX)/$(MANDIR)/man5/$(TARGET).conf.5
-	$(RM) -rf $(DESTDIR)$(PREFIX)/$(EXAMPLESDIR)/sslproxy/
+	$(RM) -rf $(DESTDIR)$(PREFIX)/$(EXAMPLESDIR)/$(TARGET)/
 
 ifdef GITDIR
 lint:
@@ -481,9 +483,12 @@ dist: $(PKGNAME)-$(VERSION).tar.bz2 $(PKGNAME)-$(VERSION).tar.bz2.asc
 $(PKGNAME)-$(VERSION).tar.bz2:
 	$(MKDIR) -p $(PKGNAME)-$(VERSION)
 	echo $(VERSION) >$(PKGNAME)-$(VERSION)/VERSION
+	$(OPENSSL) dgst -sha1 -r *.[hc] | $(SORT) -k 2 \
+		>$(PKGNAME)-$(VERSION)/HASHES
 	$(GIT) archive --prefix=$(PKGNAME)-$(VERSION)/ HEAD \
 		>$(PKGNAME)-$(VERSION).tar
 	$(TAR) -f $(PKGNAME)-$(VERSION).tar -r $(PKGNAME)-$(VERSION)/VERSION
+	$(TAR) -f $(PKGNAME)-$(VERSION).tar -r $(PKGNAME)-$(VERSION)/HASHES
 	$(BZIP2) <$(PKGNAME)-$(VERSION).tar >$(PKGNAME)-$(VERSION).tar.bz2
 	$(RM) $(PKGNAME)-$(VERSION).tar
 	$(RM) -r $(PKGNAME)-$(VERSION)
