@@ -35,52 +35,51 @@
 #include <unistd.h>
 #include <netinet/in.h>
 
-// @todo Fix unit tests, up:port in the sslproxy proxspec format is mandatory
 static char *argv01[] = {
-	"https", "127.0.0.1", "10443", "127.0.0.2", "443"
+	"https", "127.0.0.1", "10443", "up:8080", "127.0.0.2", "443"
 };
 static char *argv02[] = {
-	"https", "::1", "10443", "::2", "443"
+	"https", "::1", "10443", "up:8080", "::2", "443"
 };
 static char *argv03[] = {
-	"http", "127.0.0.1", "10443", "127.0.0.2", "443"
+	"http", "127.0.0.1", "10443", "up:8080", "127.0.0.2", "443"
 };
 static char *argv04[] = {
-	"ssl", "127.0.0.1", "10443", "127.0.0.2", "443"
+	"ssl", "127.0.0.1", "10443", "up:8080", "127.0.0.2", "443"
 };
 static char *argv05[] = {
-	"tcp", "127.0.0.1", "10443", "127.0.0.2", "443"
+	"tcp", "127.0.0.1", "10443", "up:8080", "127.0.0.2", "443"
 };
 static char *argv06[] = {
-	"https", "127.0.0.1", "10443", "sni", "443"
+	"https", "127.0.0.1", "10443", "up:8080", "sni", "443"
 };
 static char *argv07[] = {
-	"http", "127.0.0.1", "10443", "sni", "443"
+	"http", "127.0.0.1", "10443", "up:8080", "sni", "443"
 };
 static char *argv08[] = {
-	"https", "127.0.0.1", "10443", "no_such_engine"
+	"https", "127.0.0.1", "10443", "up:8080", "no_such_engine"
 };
 static char *argv09[] = {
-	"https", "127.0.0.1", "10443", "127.0.0.2", "443",
-	"https", "::1", "10443", "::2", "443"
+	"https", "127.0.0.1", "10443", "up:8080", "127.0.0.2", "443",
+	"https", "::1", "10443", "up:8080", "::2", "443"
 };
 static char *argv10[] = {
-	"https", "127.0.0.1", "10443",
-	"https", "::1", "10443"
+	"https", "127.0.0.1", "10443", "up:8080",
+	"https", "::1", "10443", "up:8080"
 };
 static char *argv11[] = {
-	"autossl", "127.0.0.1", "10025"
+	"autossl", "127.0.0.1", "10025", "up:8080"
 };
 static char *argv12[] = {
-	"autossl", "127.0.0.1", "10025", "127.0.0.2", "25",
-	"https", "127.0.0.1", "10443", "127.0.0.2", "443"
+	"autossl", "127.0.0.1", "10025", "up:9199", "127.0.0.2", "25",
+	"https", "127.0.0.1", "10443", "up:8080", "127.0.0.2", "443"
 };
 static char *argv13[] = {
-	"autossl", "127.0.0.1", "10025", "sni", "25"
+	"autossl", "127.0.0.1", "10025", "up:9199", "sni", "25"
 };
 static char *argv14[] = {
-	"https", "127.0.0.1", "10443",
-	"autossl", "127.0.0.1", "10025", "127.0.0.2", "25"
+	"https", "127.0.0.1", "10443", "up:8080",
+	"autossl", "127.0.0.1", "10025", "up:9199", "127.0.0.2", "25"
 };
 
 #define NATENGINE "pf"
@@ -88,7 +87,7 @@ static char *argv14[] = {
 START_TEST(proxyspec_parse_01)
 {
 	proxyspec_t *spec = NULL;
-	int argc = 5;
+	int argc = 6;
 	char **argv = argv01;
 
 	proxyspec_parse(&argc, &argv, NATENGINE, &spec);
@@ -112,7 +111,7 @@ END_TEST
 START_TEST(proxyspec_parse_02)
 {
 	proxyspec_t *spec = NULL;
-	int argc = 5;
+	int argc = 6;
 	char **argv = argv02;
 
 	proxyspec_parse(&argc, &argv, NATENGINE, &spec);
@@ -149,7 +148,7 @@ END_TEST
 START_TEST(proxyspec_parse_04)
 {
 	proxyspec_t *spec = NULL;
-	int argc = 4;
+	int argc = 5;
 	char **argv = argv01;
 
 	close(2);
@@ -162,7 +161,7 @@ END_TEST
 START_TEST(proxyspec_parse_05)
 {
 	proxyspec_t *spec = NULL;
-	int argc = 5;
+	int argc = 6;
 	char **argv = argv03;
 
 	proxyspec_parse(&argc, &argv, NATENGINE, &spec);
@@ -186,7 +185,7 @@ END_TEST
 START_TEST(proxyspec_parse_06)
 {
 	proxyspec_t *spec = NULL;
-	int argc = 5;
+	int argc = 6;
 	char **argv = argv04;
 
 	proxyspec_parse(&argc, &argv, NATENGINE, &spec);
@@ -210,7 +209,7 @@ END_TEST
 START_TEST(proxyspec_parse_07)
 {
 	proxyspec_t *spec = NULL;
-	int argc = 5;
+	int argc = 6;
 	char **argv = argv05;
 
 	proxyspec_parse(&argc, &argv, NATENGINE, &spec);
@@ -234,7 +233,7 @@ END_TEST
 START_TEST(proxyspec_parse_08)
 {
 	proxyspec_t *spec = NULL;
-	int argc = 5;
+	int argc = 6;
 	char **argv = argv06;
 
 	proxyspec_parse(&argc, &argv, NATENGINE, &spec);
@@ -270,7 +269,7 @@ END_TEST
 START_TEST(proxyspec_parse_10)
 {
 	proxyspec_t *spec = NULL;
-	int argc = 4;
+	int argc = 5;
 	char **argv = argv06;
 
 	close(2);
@@ -283,7 +282,7 @@ END_TEST
 START_TEST(proxyspec_parse_11)
 {
 	proxyspec_t *spec = NULL;
-	int argc = 3;
+	int argc = 4;
 	char **argv = argv08;
 
 	proxyspec_parse(&argc, &argv, NATENGINE, &spec);
@@ -307,7 +306,7 @@ END_TEST
 START_TEST(proxyspec_parse_12)
 {
 	proxyspec_t *spec = NULL;
-	int argc = 4;
+	int argc = 5;
 	char **argv = argv08;
 
 	close(2);
@@ -320,7 +319,7 @@ END_TEST
 START_TEST(proxyspec_parse_13)
 {
 	proxyspec_t *spec = NULL;
-	int argc = 10;
+	int argc = 12;
 	char **argv = argv09;
 
 	proxyspec_parse(&argc, &argv, NATENGINE, &spec);
@@ -355,7 +354,7 @@ END_TEST
 START_TEST(proxyspec_parse_14)
 {
 	proxyspec_t *spec = NULL;
-	int argc = 6;
+	int argc = 8;
 	char **argv = argv10;
 
 	proxyspec_parse(&argc, &argv, NATENGINE, &spec);
@@ -391,7 +390,7 @@ END_TEST
 START_TEST(proxyspec_parse_15)
 {
 	proxyspec_t *spec = NULL;
-	int argc = 3;
+	int argc = 4;
 	char **argv = argv11;
 
 	proxyspec_parse(&argc, &argv, NATENGINE, &spec);
@@ -414,7 +413,7 @@ END_TEST
 START_TEST(proxyspec_parse_16)
 {
 	proxyspec_t *spec = NULL;
-	int argc = 10;
+	int argc = 12;
 	char **argv = argv12;
 
 	proxyspec_parse(&argc, &argv, NATENGINE, &spec);
@@ -449,7 +448,7 @@ END_TEST
 START_TEST(proxyspec_parse_17)
 {
 	proxyspec_t *spec = NULL;
-	int argc = 5;
+	int argc = 6;
 	char **argv = argv13;
 
 	close(2);
@@ -462,7 +461,7 @@ END_TEST
 START_TEST(proxyspec_parse_18)
 {
 	proxyspec_t *spec = NULL;
-	int argc = 8;
+	int argc = 10;
 	char **argv = argv14;
 
 	proxyspec_parse(&argc, &argv, NATENGINE, &spec);
