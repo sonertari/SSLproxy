@@ -168,6 +168,7 @@ main_usage(void)
 "  -j jaildir  chroot() to jaildir (impacts sni proxyspecs, see manual page)\n"
 "  -p pidfile  write pid to pidfile (default: no pid file)\n"
 "  -l logfile  connect log: log one line summary per connection to logfile\n"
+"  -I          enable connection statistics logging\n"
 "  -L logfile  content log: full data to file or named pipe (excludes -S/-F)\n"
 "  -S logdir   content log: full data to separate files in dir (excludes -L/-F)\n"
 "  -F pathspec content log: full data to sep files with %% subst (excl. -L/-S):\n"

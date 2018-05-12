@@ -22,7 +22,7 @@ program listening on a port given in the proxy specification. SSLproxy inserts
 in the first packet the address and port it is expecting to receive the packets 
 back from the program. Upon receiving the packets back, SSLproxy re-encrypts 
 and sends them to their original destination. The return traffic follows the 
-same path back to the client.
+same path back to the client in reverse order.
 
 ![Mode of Operation 
 Diagram](https://drive.google.com/uc?id=1N_Yy5nMPDSvY8YaNFd4sHvipyLWq5zDy)

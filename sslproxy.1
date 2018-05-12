@@ -29,24 +29,25 @@
 .\" ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 .\" POSSIBILITY OF SUCH DAMAGE.
 .\"
-.TH SSLPROXY 1  "26 March 2018"
+.TH SSLPROXY 1  "12 May 2018"
 .SH NAME
-sslproxy \-\- transparent SSL/TLS proxy for diverting packets to programs
+sslproxy \-\- transparent SSL/TLS proxy for decrypting and diverting network 
+traffic to other programs for deep SSL inspection
 .SH SYNOPSIS
 .na
 .B sslproxy
-[\fB-kCKqwWOPZdDgGsrReumjplLSFiM\fP] \fB-c\fP \fIpem\fP
+[\fB-kCKqwWOPZdDgGsrReumjplILSFiM\fP] \fB-c\fP \fIpem\fP
 \fIproxyspecs\fP [...]
 .br
 .B sslproxy
-[\fB-kCKqwWOPZdDgGsrReumjplLSFiM\fP] \fB-c\fP \fIpem\fP \fB-t\fP \fIdir\fP
+[\fB-kCKqwWOPZdDgGsrReumjplILSFiM\fP] \fB-c\fP \fIpem\fP \fB-t\fP \fIdir\fP
 \fIproxyspecs\fP [...]
 .br
 .B sslproxy
-[\fB-OPZwWdDgGsrReumjplLSFiM\fP] \fB-t\fP \fIdir\fP
+[\fB-OPZwWdDgGsrReumjplILSFiM\fP] \fB-t\fP \fIdir\fP
 \fIproxyspecs\fP [...]
 .br
-.B sslproxy [\fB-kCKwWOPZdDgGsrReumjplLSFiM\fP] -f \fIconffile\fP
+.B sslproxy [\fB-kCKwWOPZdDgGsrReumjplILSFiM\fP] -f \fIconffile\fP
 .br
 .B sslproxy -E
 .br
@@ -56,8 +57,6 @@ sslproxy \-\- transparent SSL/TLS proxy for diverting packets to programs
 .br
 .ad
 .SH DESCRIPTION
-As SSLproxy is based on SSLsplit, this is a modified SSLsplit man page.
-.LP
 SSLproxy is a proxy for SSL/TLS encrypted network connections.  It is intended 
 to be used for decrypting and diverting network traffic to other programs, such 
 as UTM services.
@@ -129,6 +128,8 @@ running \fBsslproxy\fP.  Your options include running \fBsslproxy\fP on a
 legitimate router, ARP spoofing, ND spoofing, DNS poisoning, deploying a rogue
 access point (e.g. using hostap mode), physical recabling, malicious VLAN
 reconfiguration or route injection, /etc/hosts modification and so on.
+.LP
+As SSLproxy is based on SSLsplit, this is a modified SSLsplit man page.
 .SH OPTIONS
 .TP
 .B \-c \fIpemfile\fP
@@ -167,8 +168,7 @@ List all supported NAT engines available on the system and exit.  See
 NAT ENGINES for a list of NAT engines currently supported by SSLproxy.
 .TP
 .B \-f \fIconffile\fP
-Read configuraion from \fIconffile\fP. Only certain configuration options can 
-be loaded from file.
+Read configuraion from \fIconffile\fP.
 .TP
 .B \-F \fIlogspec\fP
 Log connection content to separate log files with the given path specification
@@ -229,6 +229,9 @@ If \fB-K\fP is not given, SSLproxy will generate a random 1024-bit RSA key.
 Log connections to \fIlogfile\fP in a single line per connection format,
 including addresses and ports and some HTTP and SSL information, if available.
 SIGUSR1 will cause \fIlogfile\fP to be re-opened.
+.TP
+.B \-I
+Enable connection statistics logging.
 .TP
 .B \-L \fIlogfile\fP
 Log connection content to \fIlogfile\fP.  The content log will contain a
