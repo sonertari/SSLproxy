@@ -2548,12 +2548,47 @@ pxy_conn_connect_child(pxy_conn_child_ctx_t *ctx)
 	}
 }
 
+#ifdef HAVE_NETFILTER
+/*
+ * Copied from:
+ * https://github.com/tmux/tmux/blob/master/compat/getdtablecount.c
+ */
+int
+getdtablecount(void)
+{
+	char path[PATH_MAX];
+	glob_t g;
+	int n = 0;
+
+	if (snprintf(path, sizeof path, "/proc/%ld/fd/*", (long)getpid()) < 0) {
+		log_err_level_printf(LOG_CRIT, "snprintf overflow\n");
+		return 0;
+	}
+	if (glob(path, 0, NULL, &g) == 0)
+		n = g.gl_pathc;
+	globfree(&g);
+	return n;
+}
+#endif /* HAVE_NETFILTER */
+
 static void
 pxy_conn_setup_child(evutil_socket_t fd, pxy_conn_ctx_t *parent)
 {
+	int dtable_count = getdtablecount();
+
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_setup_child: ENTER fd=%d\n", fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_setup_child: descriptor_table_size=%d, current fd count=%d, reserve=%d\n", descriptor_table_size, dtable_count, FD_RESERVE);
 #endif /* DEBUG_PROXY */
+
+	// Close the conn if we are out of file descriptors, or libevent will crash us, @see pxy_conn_setup() for explanation
+	if (dtable_count + FD_RESERVE >= descriptor_table_size) {
+		errno = EMFILE;
+		log_err_level_printf(LOG_CRIT, "Out of file descriptors\n");
+		evutil_closesocket(fd);
+		pxy_conn_free(parent, 1);
+		return;
+	}
 
 	pxy_conn_child_ctx_t *ctx = pxy_conn_ctx_new_child(fd, parent);
 	if (!ctx) {
@@ -3472,7 +3507,7 @@ pxy_conn_connect(pxy_conn_ctx_t *ctx)
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_conn_connect: bufferevent_socket_connect for srv_dst failed, fd=%d\n", fd);
 #endif /* DEBUG_PROXY */
-		// @attention Do not try to close the conn here , otherwise both pxy_conn_connect() and eventcb try to free the conn using pxy_conn_free(),
+		// @attention Do not try to close the conn here, otherwise both pxy_conn_connect() and eventcb try to free the conn using pxy_conn_free(),
 		// they are running on different threads, causing multithreading issues, e.g. signal 10.
 		// @todo Should we use thrmgr->mutex? Can we?
 	}
@@ -3631,29 +3666,6 @@ pxy_fd_readcb(MAYBE_UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 	pxy_conn_connect(ctx);
 }
 
-#ifdef HAVE_NETFILTER
-/*
- * Copied from:
- * https://github.com/tmux/tmux/blob/master/compat/getdtablecount.c
- */
-int
-getdtablecount(void)
-{
-	char path[PATH_MAX];
-	glob_t g;
-	int n = 0;
-
-	if (snprintf(path, sizeof path, "/proc/%ld/fd/*", (long)getpid()) < 0) {
-		log_err_level_printf(LOG_CRIT, "snprintf overflow\n");
-		return 0;
-	}
-	if (glob(path, 0, NULL, &g) == 0)
-		n = g.gl_pathc;
-	globfree(&g);
-	return n;
-}
-#endif /* HAVE_NETFILTER */
-
 /*
  * Callback for accept events on the socket listener bufferevent.
  * Called when a new incoming connection has been accepted.
@@ -3688,6 +3700,15 @@ pxy_conn_setup(evutil_socket_t fd,
 #endif /* DEBUG_PROXY */
 
 	// Close the conn if we are out of file descriptors, or libevent will crash us
+	// @attention We cannot guess the number of children in a connection at conn setup time. So, FD_RESERVE is just a ball park figure.
+	// But what if a connection passes the check below, but eventually tries to create more children than FD_RESERVE allows for? This will crash us the same.
+	// Beware, this applies to all current conns, not just the last connection setup.
+	// For example, 20x conns pass the check below before creating any children, at which point we reach at the last FD_RESERVE fds,
+	// then they all start creating children, which crashes us again.
+	// So, no matter how large an FD_RESERVE we choose, there will always be a risk of running out of fds, if we check the number of fds here only.
+	// If we are left with less than FD_RESERVE fds, we should not create more children than FD_RESERVE allows for either.
+	// Therefore, we check if we are out of fds in pxy_conn_setup_child() and close the conn there too.
+	// @attention These checks are expected to slow us further down, but it is critical to avoid a crash in case we run out of fds.
 	if (dtable_count + FD_RESERVE >= descriptor_table_size) {
 		errno = EMFILE;
 		log_err_level_printf(LOG_CRIT, "Out of file descriptors\n");
