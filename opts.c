@@ -1434,6 +1434,8 @@ load_conffile(opts_t *opts, const char *argv0, const char *prev_natengine)
 				// Limit max # token
 				if (argc < MAX_TOKEN) {
 					argv[argc++] = p;
+				} else {
+					break;
 				}
 			}
 			
