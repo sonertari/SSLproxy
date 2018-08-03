@@ -101,7 +101,6 @@ typedef struct opts {
 	char *pidfile;
 	char *conffile;
 	char *connectlog;
-	int statslog;
 	char *contentlog;
 	char *contentlog_basedir; /* static part of logspec, for privsep srv */
 	char *masterkeylog;
@@ -124,12 +123,13 @@ typedef struct opts {
 	unsigned int conn_idle_timeout;
 	unsigned int expired_conn_check_period;
 	unsigned int ssl_shutdown_retry_delay;
-	int log_stats;
 	unsigned int stats_period;
-	int remove_http_accept_encoding;
-	int remove_http_referer;
-	int verify_peer;
-	int allow_wrong_host;
+	unsigned int statslog: 1;
+	unsigned int log_stats: 1;
+	unsigned int remove_http_accept_encoding: 1;
+	unsigned int remove_http_referer: 1;
+	unsigned int verify_peer: 1;
+	unsigned int allow_wrong_host: 1;
 } opts_t;
 
 void NORET oom_die(const char *) NONNULL(1);

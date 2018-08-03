@@ -304,17 +304,6 @@ main(int argc, char *argv[])
 		natengine = NULL;
 	}
 
-	// Set defaults
-	opts->conn_idle_timeout = 120;
-	opts->expired_conn_check_period = 10;
-	opts->ssl_shutdown_retry_delay = 100;
-	opts->log_stats = 0;
-	opts->stats_period = 1;
-	opts->remove_http_accept_encoding = 1;
-	opts->remove_http_referer = 1;
-	opts->verify_peer = 1;
-	opts->allow_wrong_host = 0;
-
 	while ((ch = getopt(argc, argv, OPT_g OPT_G OPT_Z OPT_i "k:c:C:K:t:"
 	                    "OPs:r:R:e:Eu:m:j:p:l:L:S:F:M:dD::VhW:w:q:f:I")) != -1) {
 		switch (ch) {

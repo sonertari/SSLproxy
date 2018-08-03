@@ -63,6 +63,13 @@ opts_new(void)
 	opts->sslcomp = 1;
 	opts->chain = sk_X509_new_null();
 	opts->sslmethod = SSLv23_method;
+	opts->conn_idle_timeout = 120;
+	opts->expired_conn_check_period = 10;
+	opts->ssl_shutdown_retry_delay = 100;
+	opts->stats_period = 1;
+	opts->remove_http_accept_encoding = 1;
+	opts->remove_http_referer = 1;
+	opts->verify_peer = 1;
 
 	return opts;
 }
