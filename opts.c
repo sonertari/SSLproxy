@@ -78,6 +78,12 @@ void
 opts_free(opts_t *opts)
 {
 	sk_X509_pop_free(opts->chain, X509_free);
+	if (opts->clientcrt) {
+		X509_free(opts->clientcrt);
+	}
+	if (opts->clientkey) {
+		EVP_PKEY_free(opts->clientkey);
+	}
 	if (opts->cacrt) {
 		X509_free(opts->cacrt);
 	}
@@ -257,7 +263,7 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine, proxyspec_t **o
 				spec->next = *opts_spec;
 				*opts_spec = spec;
 
-				// Defaults
+				/* Defaults */
 				spec->ssl = 0;
 				spec->http = 0;
 				spec->upgrade = 0;
@@ -265,7 +271,7 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine, proxyspec_t **o
 				spec->pop3 = 0;
 				spec->smtp = 0;
 				if (!strcmp(**argv, "tcp")) {
-					// use defaults
+					/* use defaults */
 				} else
 				if (!strcmp(**argv, "ssl")) {
 					spec->ssl = 1;
@@ -561,7 +567,7 @@ opts_set_cacrt(opts_t *opts, const char *argv0, const char *optarg)
 		opts->dh = ssl_dh_load(optarg);
 	}
 #endif /* !OPENSSL_NO_DH */
-	fprintf(stderr, "CACrt: %s\n", optarg);
+	fprintf(stderr, "CACert: %s\n", optarg);
 }
 
 void
@@ -718,6 +724,48 @@ void
 opts_unset_passthrough(opts_t *opts)
 {
 	opts->passthrough = 0;
+}
+
+void
+opts_set_clientcrt(opts_t *opts, const char *argv0, const char *optarg)
+{
+	if (opts->clientcrt)
+		X509_free(opts->clientcrt);
+	opts->clientcrt = ssl_x509_load(optarg);
+	if (!opts->clientcrt) {
+		fprintf(stderr, "%s: error loading cli"
+						"ent cert from '%s':\n",
+						argv0, optarg);
+		if (errno) {
+			fprintf(stderr, "%s\n",
+					strerror(errno));
+		} else {
+			ERR_print_errors_fp(stderr);
+		}
+		exit(EXIT_FAILURE);
+	}
+	fprintf(stderr, "ClientCert: %s\n", optarg);
+}
+
+void
+opts_set_clientkey(opts_t *opts, const char *argv0, const char *optarg)
+{
+	if (opts->clientkey)
+		EVP_PKEY_free(opts->clientkey);
+	opts->clientkey = ssl_key_load(optarg);
+	if (!opts->clientkey) {
+		fprintf(stderr, "%s: error loading cli"
+						"ent key from '%s':\n",
+						argv0, optarg);
+		if (errno) {
+			fprintf(stderr, "%s\n",
+					strerror(errno));
+		} else {
+			ERR_print_errors_fp(stderr);
+		}
+		exit(EXIT_FAILURE);
+	}
+	fprintf(stderr, "ClientKey: %s\n", optarg);
 }
 
 #ifndef OPENSSL_NO_DH
@@ -1227,7 +1275,7 @@ opts_unset_allow_wrong_host(opts_t *opts)
 static int
 check_value_yesno(char *value, char *name, int line_num)
 {
-	// Compare strlen(s2)+1 chars to match exactly
+	/* Compare strlen(s2)+1 chars to match exactly */
 	if (!strncmp(value, "yes", 4)) {
 		return 1;
 	} else if (!strncmp(value, "no", 3)) {
@@ -1271,16 +1319,16 @@ load_conffile(opts_t *opts, const char *argv0, const char *prev_natengine)
 		}
 		line_num++;
 
-		// Skip white space
+		/* Skip white space */
 		for (name = line; *name == ' ' || *name == '\t'; name++); 
 
-		// Skip comments and empty lines
+		/* Skip comments and empty lines */
 		if ((name[0] == '\0') || (name[0] == '#') || (name[0] == ';') ||
 			(name[0] == '\r') || (name[0] == '\n')) {
 			continue;
 		}
 
-		// Skip to the end of option name and terminate it with '\0'
+		/* Skip to the end of option name and terminate it with '\0' */
 		for (n = name;; n++) {
 			if (*n == ' ' || *n == '\t') {
 				*n = '\0';
@@ -1293,21 +1341,21 @@ load_conffile(opts_t *opts, const char *argv0, const char *prev_natengine)
 			}
 		}
 
-		// No value
+		/* No value */
 		if (n == NULL) {
 			fprintf(stderr, "Error in conf file: No value at line %d\n", line_num);
 			goto leave;
 		}
 		
-		// Skip white space before value
+		/* Skip white space before value */
 		while (*n == ' ' || *n == '\t') {
 			n++;
 		}
 
 		value = n;
 
-		// Find end of value and terminate it with '\0'
-		// Find first occurrence of trailing white space
+		/* Find end of value and terminate it with '\0'
+		   Find first occurrence of trailing white space */
 		value_end = NULL;
 		for (v = value;; v++) {
 			if (*v == '\0') {
@@ -1330,11 +1378,15 @@ load_conffile(opts_t *opts, const char *argv0, const char *prev_natengine)
 			*value_end = '\0';
 		}
 
-		// Compare strlen(s2)+1 chars to match exactly
+        /* Compare strlen(s2)+1 chars to match exactly */
 		if (!strncmp(name, "CACert", 7)) {
 			opts_set_cacrt(opts, argv0, value);
 		} else if (!strncmp(name, "CAKey", 6)) {
 			opts_set_cakey(opts, argv0, value);
+		} else if (!strncmp(name, "ClientCert", 11)) {
+			opts_set_clientcrt(opts, argv0, value);
+		} else if (!strncmp(name, "ClientKey", 10)) {
+			opts_set_clientkey(opts, argv0, value);
 		} else if (!strncmp(name, "CAChain", 8)) {
 			opts_set_chain(opts, argv0, value);
 		} else if (!strncmp(name, "LeafCerts", 10)) {
@@ -1431,14 +1483,14 @@ load_conffile(opts_t *opts, const char *argv0, const char *prev_natengine)
 		} else if (!strncmp(name, "DebugLevel", 11)) {
 			opts_set_debug_level(value);
 		} else if (!strncmp(name, "ProxySpec", 10)) {
-			// Use MAX_TOKEN instead of computing the actual number of tokens in value
+			/* Use MAX_TOKEN instead of computing the actual number of tokens in value */
 			char **argv = malloc(sizeof(char *) * MAX_TOKEN);
 			char **save_argv = argv;
 			int argc = 0;
 			char *p, *last = NULL;
 
 			for ((p = strtok_r(value, " ", &last)); p; (p = strtok_r(NULL, " ", &last))) {
-				// Limit max # token
+				/* Limit max # token */
 				if (argc < MAX_TOKEN) {
 					argv[argc++] = p;
 				} else {

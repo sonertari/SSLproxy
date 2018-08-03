@@ -240,6 +240,7 @@ ifdef OPENSSL_BASE
 OPENSSL_FIND:=	$(wildcard $(OPENSSL_BASE)/$(OPENSSL_PAT))
 else
 OPENSSL_FIND:=	$(wildcard \
+		/usr/local/opt/openssl/$(OPENSSL_PAT) \
 		/opt/local/$(OPENSSL_PAT) \
 		/usr/local/$(OPENSSL_PAT) \
 		/usr/$(OPENSSL_PAT))
@@ -257,6 +258,7 @@ ifdef LIBEVENT_BASE
 LIBEVENT_FIND:=	$(wildcard $(LIBEVENT_BASE)/$(LIBEVENT_PAT))
 else
 LIBEVENT_FIND:=	$(wildcard \
+		/usr/local/opt/libevent/$(LIBEVENT_PAT) \
 		/opt/local/$(LIBEVENT_PAT) \
 		/usr/local/$(LIBEVENT_PAT) \
 		/usr/$(LIBEVENT_PAT))
@@ -274,6 +276,7 @@ ifdef CHECK_BASE
 CHECK_FIND:=	$(wildcard $(CHECK_BASE)/$(CHECK_PAT))
 else
 CHECK_FIND:=	$(wildcard \
+		/usr/local/opt/check/$(CHECK_PAT) \
 		/opt/local/$(CHECK_PAT) \
 		/usr/local/$(CHECK_PAT) \
 		/usr/$(CHECK_PAT))
@@ -413,6 +416,9 @@ test: $(TARGET).test
 	$(RM) extra/pki/session.pem
 	$(MAKE) -C extra/pki testreqs session
 	./$(TARGET).test
+
+sudotest: test
+	sudo ./$(TARGET).test
 
 $(TARGET).test: $(TOBJS)
 	$(CC) $(LDFLAGS) $(TPKG_LDFLAGS) -o $@ $^ $(LIBS) $(TPKG_LIBS)

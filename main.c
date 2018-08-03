@@ -140,6 +140,8 @@ main_usage(void)
 "  -O          deny all OCSP requests on all proxyspecs\n"
 "  -P          passthrough SSL connections if they cannot be split because of\n"
 "              client cert auth or no matching cert and no CA (default: drop)\n"
+"  -a pemfile  use cert from pemfile when destination requests client certs\n"
+"  -b pemfile  use key from pemfile when destination requests client certs\n"
 #ifndef OPENSSL_NO_DH
 "  -g pemfile  use DH group params from pemfile (default: keyfiles or auto)\n"
 #define OPT_g "g:"
@@ -304,8 +306,8 @@ main(int argc, char *argv[])
 		natengine = NULL;
 	}
 
-	while ((ch = getopt(argc, argv, OPT_g OPT_G OPT_Z OPT_i "k:c:C:K:t:"
-	                    "OPs:r:R:e:Eu:m:j:p:l:L:S:F:M:dD::VhW:w:q:f:I")) != -1) {
+	while ((ch = getopt(argc, argv, OPT_g OPT_G OPT_Z OPT_i "k:c:C:K:t:OPa:"
+	                    "b:s:r:R:e:Eu:m:j:p:l:L:S:F:M:dD::VhW:w:q:f:I")) != -1) {
 		switch (ch) {
 			case 'f':
 				if (opts->conffile)
@@ -338,6 +340,12 @@ main(int argc, char *argv[])
 				break;
 			case 'P':
 				opts_set_passthrough(opts);
+				break;
+			case 'a':
+				opts_set_clientcrt(opts, argv0, optarg);
+				break;
+			case 'b':
+				opts_set_clientkey(opts, argv0, optarg);
 				break;
 #ifndef OPENSSL_NO_DH
 			case 'g':
@@ -715,6 +723,10 @@ main(int argc, char *argv[])
 		               strerror(errno), errno);
 		exit(EXIT_FAILURE);
 	}
+	log_dbg_printf("Dropped privs to user %s group %s chroot %s\n",
+	               opts->dropuser  ? opts->dropuser  : "-",
+	               opts->dropgroup ? opts->dropgroup : "-",
+	               opts->jaildir   ? opts->jaildir   : "-");
 	if (ssl_reinit() == -1) {
 		fprintf(stderr, "%s: failed to reinit SSL\n", argv0);
 		goto out_sslreinit_failed;

@@ -264,7 +264,7 @@ ssl_openssl_version(void)
  */
 static int ssl_initialized = 0;
 
-#if defined(OPENSSL_THREADS) && (OPENSSL_VERSION_NUMBER < 0x10100000L)
+#if defined(OPENSSL_THREADS) && OPENSSL_VERSION_NUMBER < 0x10100000L
 struct CRYPTO_dynlock_value {
 	pthread_mutex_t mutex;
 };
@@ -372,7 +372,7 @@ ssl_init(void)
 	OpenSSL_add_all_algorithms();
 
 	/* thread-safety */
-#if defined(OPENSSL_THREADS) && (OPENSSL_VERSION_NUMBER < 0x10100000L)
+#if defined(OPENSSL_THREADS) && OPENSSL_VERSION_NUMBER < 0x10100000L
 	ssl_mutex_num = CRYPTO_num_locks();
 	ssl_mutex = malloc(ssl_mutex_num * sizeof(*ssl_mutex));
 	for (int i = 0; i < ssl_mutex_num; i++) {
@@ -441,7 +441,7 @@ ssl_reinit(void)
 	if (!ssl_initialized)
 		return 0;
 
-#if defined(OPENSSL_THREADS) && (OPENSSL_VERSION_NUMBER < 0x10100000L)
+#if defined(OPENSSL_THREADS) && OPENSSL_VERSION_NUMBER < 0x10100000L
 	for (int i = 0; i < ssl_mutex_num; i++) {
 		if (pthread_mutex_init(&ssl_mutex[i], NULL)) {
 			return -1;
@@ -466,7 +466,7 @@ ssl_fini(void)
 	ERR_remove_state(0); /* current thread */
 #endif
 
-#if defined(OPENSSL_THREADS) && (OPENSSL_VERSION_NUMBER < 0x10100000L)
+#if defined(OPENSSL_THREADS) && OPENSSL_VERSION_NUMBER < 0x10100000L
 	CRYPTO_set_locking_callback(NULL);
 	CRYPTO_set_dynlock_create_callback(NULL);
 	CRYPTO_set_dynlock_lock_callback(NULL);
@@ -882,6 +882,36 @@ ssl_x509_serial_copyrand(X509 *dstcrt, X509 *srccrt)
 }
 
 /*
+ * Returns the appropriate key usage strings for the type of server key.
+ * Return value should conceptually be const, but OpenSSL does not use const
+ * appropriately.
+ */
+static char *
+ssl_key_usage_for_key(EVP_PKEY *key)
+{
+	switch (EVP_PKEY_type(EVP_PKEY_base_id(key))) {
+#ifndef OPENSSL_NO_RSA
+	case EVP_PKEY_RSA:
+		return "keyEncipherment,digitalSignature";
+#endif /* !OPENSSL_NO_RSA */
+#ifndef OPENSSL_NO_DH
+	case EVP_PKEY_DH:
+		return "keyAgreement";
+#endif /* !OPENSSL_NO_DH */
+#ifndef OPENSSL_NO_DSA
+	case EVP_PKEY_DSA:
+		return "digitalSignature";
+#endif /* !OPENSSL_NO_DSA */
+#ifndef OPENSSL_NO_ECDSA
+	case EVP_PKEY_EC:
+		return "digitalSignature,keyAgreement";
+#endif /* !OPENSSL_NO_ECDSA */
+	default:
+		return "keyEncipherment,keyAgreement,digitalSignature";
+	}
+}
+
+/*
  * Create a fake X509v3 certificate, signed by the provided CA,
  * based on the original certificate retrieved from the real server.
  * The returned certificate is created using X509_new() and thus must
@@ -934,12 +964,9 @@ ssl_x509_forge(X509 *cacrt, EVP_PKEY *cakey, X509 *origcrt, EVP_PKEY *key,
 	if (rv == -1)
 		goto errout;
 
-	rv = ssl_x509_v3ext_copy_by_nid(crt, origcrt,
-	                                NID_key_usage);
-	if (rv == 0)
-		rv = ssl_x509_v3ext_add(&ctx, crt, "keyUsage",
-		                                   "digitalSignature,"
-		                                   "keyEncipherment");
+	/* key usage depends on the key type, do not copy from original */
+	rv = ssl_x509_v3ext_add(&ctx, crt, "keyUsage",
+	                        ssl_key_usage_for_key(key));
 	if (rv == -1)
 		goto errout;
 
@@ -1426,7 +1453,7 @@ ssl_x509_fingerprint(X509 *crt, int colons)
 void
 ssl_dh_refcount_inc(DH *dh)
 {
-#if defined(OPENSSL_THREADS) && (OPENSSL_VERSION_NUMBER < 0x10100000L)
+#if defined(OPENSSL_THREADS) && OPENSSL_VERSION_NUMBER < 0x10100000L
 	CRYPTO_add(&dh->references, 1, CRYPTO_LOCK_DH);
 #else /* !OPENSSL_THREADS */
 	DH_up_ref(dh);
@@ -1441,7 +1468,7 @@ ssl_dh_refcount_inc(DH *dh)
 void
 ssl_key_refcount_inc(EVP_PKEY *key)
 {
-#if defined(OPENSSL_THREADS) && (OPENSSL_VERSION_NUMBER < 0x10100000L)
+#if defined(OPENSSL_THREADS) && OPENSSL_VERSION_NUMBER < 0x10100000L
 	CRYPTO_add(&key->references, 1, CRYPTO_LOCK_EVP_PKEY);
 #else /* !OPENSSL_THREADS */
 	EVP_PKEY_up_ref(key);
@@ -1456,7 +1483,7 @@ ssl_key_refcount_inc(EVP_PKEY *key)
 void
 ssl_x509_refcount_inc(X509 *crt)
 {
-#if defined(OPENSSL_THREADS) && (OPENSSL_VERSION_NUMBER < 0x10100000L)
+#if defined(OPENSSL_THREADS) && OPENSSL_VERSION_NUMBER < 0x10100000L
 	CRYPTO_add(&crt->references, 1, CRYPTO_LOCK_X509);
 #else /* !OPENSSL_THREADS */
 	X509_up_ref(crt);
