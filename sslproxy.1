@@ -36,15 +36,15 @@ traffic to other programs for deep SSL inspection
 .SH SYNOPSIS
 .na
 .B sslproxy
-[\fB-kCKqwWOPZdDgGsrReumjplILSFiM\fP] \fB-c\fP \fIpem\fP
+[\fB-kCKqwWOPZdDgGsrReumjplILSFiMab\fP] \fB-c\fP \fIpem\fP
 \fIproxyspecs\fP [...]
 .br
 .B sslproxy
-[\fB-kCKqwWOPZdDgGsrReumjplILSFiM\fP] \fB-c\fP \fIpem\fP \fB-t\fP \fIdir\fP
+[\fB-kCKqwWOPZdDgGsrReumjplILSFiMab\fP] \fB-c\fP \fIpem\fP \fB-t\fP \fIdir\fP
 \fIproxyspecs\fP [...]
 .br
 .B sslproxy
-[\fB-OPZwWdDgGsrReumjplILSFiM\fP] \fB-t\fP \fIdir\fP
+[\fB-OPZwWdDgGsrReumjplILSFiMab\fP] \fB-t\fP \fIdir\fP
 \fIproxyspecs\fP [...]
 .br
 .B sslproxy [\fB-kCKwWOPZdDgGsrReumjplILSFiM\fP] -f \fIconffile\fP
@@ -131,6 +131,14 @@ reconfiguration or route injection, /etc/hosts modification and so on.
 .LP
 As SSLproxy is based on SSLsplit, this is a modified SSLsplit man page.
 .SH OPTIONS
+.TP
+.B \-a \fIpemfile\fP
+Use client certificate from \fIpemfile\fP when destination server requests a
+client certificate.
+.TP
+.B \-b \fIpemfile\fP
+Use client private key from \fIpemfile\fP when destination server requests a
+client certificate.
 .TP
 .B \-c \fIpemfile\fP
 Use CA certificate from \fIpemfile\fP to sign certificates forged on-the-fly.
@@ -269,6 +277,13 @@ within the \fIcertdir\fP specified by \fB-t\fP.
 Write the process ID to \fIpidfile\fP and refuse to run if the \fIpidfile\fP
 is already in use by another process.
 .TP
+.B \-q \fIcrlurl\fP
+Set CRL distribution point (CDP) \fIcrlurl\fP on forged leaf certificates.
+Some clients, such as some .NET applications, reject certificates that do not
+carry a CDP.  When using \fB-q\fP, you will need to generate an empty CRL
+signed by the CA certificate and key provided with \fB-c\fP and \fB-k\fP, and
+make it available at \fIcrlurl\fP.
+.TP
 .B \-r \fIproto\fP
 Force SSL/TLS protocol version on both client and server side to \fIproto\fP
 by selecting the respective OpenSSL method constructor instead of the default
@@ -333,6 +348,8 @@ effective and stored user IDs to \fIuser\fP and loading the appropriate
 primary and ancillary groups.  If \fB-u\fP is not given, SSLproxy will drop
 privileges to the stored UID if EUID != UID (setuid bit scenario), or to
 \fBnobody\fP if running with full \fBroot\fP privileges (EUID == UID == 0).
+The user needs to be allowed to make outbound TCP connections, and in some
+configurations, also to perform DNS resolution.
 Due to an Apple bug, \fB-u\fP cannot be used with \fBpf\fP proxyspecs on
 Mac OS X.
 .TP
@@ -563,7 +580,8 @@ Assuming inbound interface \fBbge0\fP:
 .TP
 .B netfilter
 Linux netfilter using the iptables REDIRECT target.
-Only supports IPv4 due to limitations in the SO_ORIGINAL_DST getsockopt(2)
+Fully supported including IPv6 since Linux v3.8-rc1; on older kernels only
+supports IPv4 due to limitations in the SO_ORIGINAL_DST getsockopt(2)
 interface.
 .LP
 .RS
@@ -574,6 +592,7 @@ interface.
 \fBiptables -t nat -A PREROUTING -s 192.0.2.0/24 \\
          -p tcp --dport 443 \\
          -j REDIRECT --to-ports 10443\fP
+\fB# please contribute a tested ip6tables config\fP
 .fi
 .LP
 Note that SSLproxy is only able to accept incoming connections if it binds
@@ -681,15 +700,17 @@ hostapd(8), arpspoof(8), parasite6(8), yersinia(8),
 .I https://github.com/sonertari/SSLproxy
 .SH AUTHORS
 SSLsplit was written by Daniel Roethlisberger <daniel@roe.ch>.
+SSLsplit is currently maintained by Daniel Roethlisberger and Soner Tari.
 .LP
 SSLproxy has been developed by Soner Tari <sonertari@gmail.com>.
 .LP
-The following individuals have contributed code or documentation to the 
-SSLsplit project, in chronological order of their first contribution:
+
+The following individuals have contributed code or documentation, in
+chronological order of their first contribution:
 Steve Wills, Landon Fuller, Wayne Jensen, Rory McNamara, Alexander Neumann,
-Adam Jacob Muller, Richard Poole, Maciej Kotowicz, Eun Soo Park and Christian
+Adam Jacob Muller, Richard Poole, Maciej Kotowicz, Eun Soo Park, Christian
 Groschupp, Alexander Savchenkov, Soner Tari, Petr Vanek, Hilko Bengen,
-Philip Duldig and Levente Polyak.
+Philip Duldig, Levente Polyak and Nick French.
 .SH BUGS
 Use Github for submission of bug reports or patches:
 .LP
