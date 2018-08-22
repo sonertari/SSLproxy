@@ -189,7 +189,7 @@ void
 opts_proto_dbg_dump(opts_t *opts)
 {
 	log_dbg_printf("SSL/TLS protocol: %s%s%s%s%s%s\n",
-#if OPENSSL_VERSION_NUMBER < 0x10100000L
+#if (OPENSSL_VERSION_NUMBER < 0x10100000L) || defined(LIBRESSL_VERSION_NUMBER)
 #ifdef HAVE_SSLV2
 	               (opts->sslmethod == SSLv2_method) ? "ssl2" :
 #endif /* HAVE_SSLV2 */
@@ -350,16 +350,16 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine, proxyspec_t **o
 				// The UTM port is set/used in pf and UTM service config.
 				// @todo Need IPv6?
 				if (strstr(**argv, "up:")) {
-					af = sys_sockaddr_parse(&spec->parent_dst_addr,
+					int utm_af = sys_sockaddr_parse(&spec->parent_dst_addr,
 										&spec->parent_dst_addrlen,
 										"127.0.0.1", **argv + 3, AF_INET, EVUTIL_AI_PASSIVE);
-					if (af == -1) {
+					if (utm_af == -1) {
 						exit(EXIT_FAILURE);
 					}
-					af = sys_sockaddr_parse(&spec->child_src_addr,
+					utm_af = sys_sockaddr_parse(&spec->child_src_addr,
 										&spec->child_src_addrlen,
 										"127.0.0.1", "0", AF_INET, EVUTIL_AI_PASSIVE);
-					if (af == -1) {
+					if (utm_af == -1) {
 						exit(EXIT_FAILURE);
 					}
 					state++;
@@ -842,7 +842,7 @@ opts_set_ciphers(opts_t *opts, const char *argv0, const char *optarg)
 void
 opts_force_proto(opts_t *opts, const char *argv0, const char *optarg)
 {
-#if OPENSSL_VERSION_NUMBER < 0x10100000L
+#if (OPENSSL_VERSION_NUMBER < 0x10100000L) || defined(LIBRESSL_VERSION_NUMBER)
 	if (opts->sslmethod != SSLv23_method) {
 #else /* OPENSSL_VERSION_NUMBER >= 0x10100000L */
 	if (opts->sslversion) {
@@ -851,7 +851,7 @@ opts_force_proto(opts_t *opts, const char *argv0, const char *optarg)
 		exit(EXIT_FAILURE);
 	}
 
-#if OPENSSL_VERSION_NUMBER < 0x10100000L
+#if (OPENSSL_VERSION_NUMBER < 0x10100000L) || defined(LIBRESSL_VERSION_NUMBER)
 #ifdef HAVE_SSLV2
 	if (!strcmp(optarg, "ssl2")) {
 		opts->sslmethod = SSLv2_method;

@@ -46,7 +46,7 @@
 ### Debugging
 
 # These flags are added to CFLAGS iff building from a git repo.
-#DEBUG_CFLAGS?=	-g
+DEBUG_CFLAGS?=	-g
 #DEBUG_CFLAGS+=	-Werror
 
 # Define to remove false positives when debugging memory allocation.
@@ -350,8 +350,8 @@ endif
 # _FORTIFY_SOURCE requires -O on Linux
 ifeq (,$(findstring -O,$(CFLAGS)))
 # TODO: -O w/o -g is failing bufferevent_socket_connect for parent dst,
-# so either enable -O w/ -g, or disable -O w/o -g (-O2 is failing too)
-#CFLAGS+=	-O
+# so either enable -O w/ -g, or disable -O w/o -g (-O2 is failing too?)
+CFLAGS+=	-O2
 endif
 
 export VERSION

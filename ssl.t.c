@@ -548,6 +548,8 @@ START_TEST(ssl_key_identifier_sha1_01)
 	             "extension length mismatch");
 	fail_unless(!memcmp(ASN1_STRING_get0_data(value) + 2, keyid, SSL_KEY_IDSZ),
 	            "key id mismatch");
+	EVP_PKEY_free(k);
+	X509_free(c);
 }
 END_TEST
 
@@ -712,6 +714,40 @@ START_TEST(ssl_features_02)
 }
 END_TEST
 
+START_TEST(ssl_key_refcount_inc_01)
+{
+	EVP_PKEY *key;
+
+	key = ssl_key_load(TESTKEY);
+	fail_unless(!!key, "loading key failed");
+	ssl_key_refcount_inc(key);
+	ssl_key_refcount_inc(key);
+	ssl_key_refcount_inc(key);
+	EVP_PKEY_free(key);
+	/* these must not crash */
+	EVP_PKEY_free(key);
+	EVP_PKEY_free(key);
+	EVP_PKEY_free(key);
+}
+END_TEST
+
+START_TEST(ssl_x509_refcount_inc_01)
+{
+	X509 *crt;
+
+	crt = ssl_x509_load(TESTCERT);
+	fail_unless(!!crt, "loading certificate failed");
+	ssl_x509_refcount_inc(crt);
+	ssl_x509_refcount_inc(crt);
+	ssl_x509_refcount_inc(crt);
+	X509_free(crt);
+	/* these must not crash */
+	X509_free(crt);
+	X509_free(crt);
+	X509_free(crt);
+}
+END_TEST
+
 Suite *
 ssl_suite(void)
 {
@@ -798,6 +834,14 @@ ssl_suite(void)
 	tc = tcase_create("ssl_features");
 	tcase_add_test(tc, ssl_features_01);
 	tcase_add_test(tc, ssl_features_02);
+	suite_add_tcase(s, tc);
+
+	tc = tcase_create("ssl_key_refcount_inc");
+	tcase_add_test(tc, ssl_key_refcount_inc_01);
+	suite_add_tcase(s, tc);
+
+	tc = tcase_create("ssl_x509_refcount_inc");
+	tcase_add_test(tc, ssl_x509_refcount_inc_01);
 	suite_add_tcase(s, tc);
 
 	return s;
