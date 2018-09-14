@@ -38,6 +38,15 @@
 #include <openssl/x509.h>
 #include <openssl/x509v3.h>
 
+/*
+ * LibreSSL seems to ship engine support on a source code level, but it seems
+ * to be broken.  Tested with LibreSSL 2.7.4 on OpenBSD and macOS.  For now,
+ * disable engine support when building against LibreSSL.
+ */
+#if defined(LIBRESSL_VERSION_NUMBER) && !defined(OPENSSL_NO_ENGINE)
+#define OPENSSL_NO_ENGINE
+#endif
+
 #if (OPENSSL_VERSION_NUMBER < 0x10000000L) && !defined(OPENSSL_NO_THREADID)
 #define OPENSSL_NO_THREADID
 #endif
@@ -71,11 +80,37 @@
 #endif
 
 #if (OPENSSL_VERSION_NUMBER < 0x10100000L) || defined(LIBRESSL_VERSION_NUMBER)
+#if LIBRESSL_VERSION_NUMBER >= 0x2050100fL
+#define SSL_is_server(ssl) ((ssl)->server)
+#else /* < LibreSSL 2.5.1 and OpenSSL < 1.1.0 */
+#define SSL_is_server(ssl) ((ssl)->type != SSL_ST_CONNECT)
+#endif /* < LibreSSL 2.5.1 and OpenSSL < 1.1.0 */
 #define ASN1_STRING_get0_data(value) ASN1_STRING_data(value)
-#define SSL_is_server(ssl) (ssl->type != SSL_ST_CONNECT)
 #define X509_get_signature_nid(x509) (OBJ_obj2nid(x509->sig_alg->algorithm))
 int DH_set0_pqg(DH *, BIGNUM *, BIGNUM *, BIGNUM *);
+#endif /* < OpenSSL 1.1.0 */
+
+#if OPENSSL_VERSION_NUMBER < 0x1000000fL
+static inline int EVP_PKEY_base_id(const EVP_PKEY *pkey)
+{
+	return EVP_PKEY_type(pkey->type);
+}
+static inline int X509_PUBKEY_get0_param(ASN1_OBJECT **ppkalg, const unsigned char **pk, int *ppklen, X509_ALGOR **pa, X509_PUBKEY *pub)
+{
+	if (ppkalg)
+		*ppkalg = pub->algor->algorithm;
+	if (pk) {
+		*pk = pub->public_key->data;
+		*ppklen = pub->public_key->length;
+	}
+	if (pa)
+		*pa = pub->algor;
+	return 1;
+}
+#ifndef X509_get_X509_PUBKEY
+#define X509_get_X509_PUBKEY(x) ((x)->cert_info->key
 #endif
+#endif /* OpenSSL < 1.0.0 */
 
 /*
  * The constructors returning a SSL_METHOD * were changed to return
@@ -163,6 +198,10 @@ void ssl_openssl_version(void);
 int ssl_init(void) WUNRES;
 int ssl_reinit(void) WUNRES;
 void ssl_fini(void);
+
+#ifndef OPENSSL_NO_ENGINE
+int ssl_engine(const char *) WUNRES;
+#endif /* !OPENSSL_NO_ENGINE */
 
 char * ssl_sha1_to_str(unsigned char *, int) NONNULL(1) MALLOC;
 

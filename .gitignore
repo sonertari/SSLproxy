@@ -3,6 +3,8 @@
 /sslproxy
 /sslproxy.test
 /extra/*.pyc
+/extra/engine/*.dylib
+/extra/engine/*.so
 /extra/pki/dh*.param
 /extra/pki/dsa.pem
 /extra/pki/dsa.crt
@@ -18,7 +20,6 @@
 /extra/pki/server.pem
 /extra/pki/server.crt
 /extra/pki/server.key
-/extra/pki/session.pem
 /extra/pki/targets/*
 
 /docs/

@@ -33,10 +33,16 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
+#include <time.h>
 
 #include <check.h>
 
+#if defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER < 0x20501000L
+#define TMP_SESS_FILE "extra/pki/session-libressl-2.5.0.pem"
+#else
 #define TMP_SESS_FILE "extra/pki/session.pem"
+#endif
+
 
 static SSL_SESSION *
 ssl_session_from_file(const char *filename)
@@ -49,6 +55,8 @@ ssl_session_from_file(const char *filename)
 		return NULL;
 	sess = PEM_read_SSL_SESSION(f, NULL, NULL, NULL);
 	fclose(f);
+	/* to avoid having to regenerate the session, just bump its time */
+	SSL_SESSION_set_time(sess, time(NULL) - 1);
 	return sess;
 }
 

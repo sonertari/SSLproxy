@@ -26,34 +26,36 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef NAT_H
-#define NAT_H
+/*
+ * Dummy OpenSSL engine.  Does not do anything useful except being loadable.
+ * It deliberately builds fine even if engine support is unavailable.
+ *
+ * gcc -I/opt/local/include -fPIC -o dummy-engine.o -c dummy-engine.c
+ * gcc -L/opt/local/lib -shared -o dummy-engine.dylib -lcrypto dummy-engine.o
+ * openssl engine -t -c `pwd`/dummy-engine.dylib
+ */
 
-#include "attrib.h"
+#include <stdio.h>
 
-#include <sys/types.h>
-#include <sys/socket.h>
+#include <openssl/conf.h>
+#ifndef OPENSSL_NO_ENGINE
+#include <openssl/engine.h>
 
-#include <event2/util.h>
+static int
+bind(ENGINE *engine, const char *id)
+{
+	if (!ENGINE_set_id(engine, "dummy")) {
+		fprintf(stderr, "ENGINE_set_id() failed\n");
+		return 0;
+	}
+	if (!ENGINE_set_name(engine, "dummy engine")) {
+		fprintf(stderr, "ENGINE_set_name() failed\n");
+		return 0;
+	}
+	return 1;
+}
 
-typedef int (*nat_lookup_cb_t)(struct sockaddr *, socklen_t *, evutil_socket_t,
-                               struct sockaddr *, socklen_t);
-typedef int (*nat_socket_cb_t)(evutil_socket_t);
+IMPLEMENT_DYNAMIC_BIND_FN(bind)
+IMPLEMENT_DYNAMIC_CHECK_FN()
+#endif /* !OPENSSL_NO_ENGINE */
 
-int nat_exist(const char *) WUNRES;
-int nat_used(const char *) WUNRES;
-nat_lookup_cb_t nat_getlookupcb(const char *) WUNRES;
-nat_socket_cb_t nat_getsocketcb(const char *) WUNRES;
-int nat_ipv6ready(const char *) WUNRES;
-
-const char *nat_getdefaultname(void) WUNRES;
-void nat_list_engines(void);
-int nat_preinit(void) WUNRES;
-void nat_preinit_undo(void);
-int nat_init(void) WUNRES;
-void nat_fini(void);
-void nat_version(void);
-
-#endif /* !NAT_H */
-
-/* vim: set noet ft=c: */

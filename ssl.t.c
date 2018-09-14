@@ -29,13 +29,22 @@
 #include "base64.h"
 #include "ssl.h"
 
+#include <limits.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 #include <check.h>
+
+#ifdef __APPLE__
+#define DLSUFFIX "dylib"
+#else
+#define DLSUFFIX "so"
+#endif
 
 #define TESTKEY "extra/pki/server.key"
 #define TESTCERT "extra/pki/server.crt"
 #define TESTCERT2 "extra/pki/rsa.crt"
+#define ENGINE "extra/engine/dummy-engine."DLSUFFIX
 
 static void
 ssl_setup(void)
@@ -748,6 +757,21 @@ START_TEST(ssl_x509_refcount_inc_01)
 }
 END_TEST
 
+#ifndef OPENSSL_NO_ENGINE
+START_TEST(ssl_engine_01)
+{
+	char cwd[PATH_MAX];
+	char *path;
+
+	fail_unless(getcwd(cwd, sizeof(cwd)) == cwd, "getcwd() failed");
+	fail_unless(asprintf(&path, "%s/"ENGINE, cwd) != -1 && !!path,
+	            "constructing engine path failed");
+	fail_unless(ssl_engine(path) == 0, "loading OpenSSL engine failed");
+	free(path);
+}
+END_TEST
+#endif /* !OPENSSL_NO_ENGINE */
+
 Suite *
 ssl_suite(void)
 {
@@ -757,12 +781,14 @@ ssl_suite(void)
 	s = suite_create("ssl");
 
 	tc = tcase_create("ssl_wildcardify");
+	tcase_add_checked_fixture(tc, ssl_setup, ssl_teardown);
 	tcase_add_test(tc, ssl_wildcardify_01);
 	tcase_add_test(tc, ssl_wildcardify_02);
 	tcase_add_test(tc, ssl_wildcardify_03);
 	suite_add_tcase(s, tc);
 
 	tc = tcase_create("ssl_dnsname_match");
+	tcase_add_checked_fixture(tc, ssl_setup, ssl_teardown);
 	tcase_add_test(tc, ssl_dnsname_match_01);
 	tcase_add_test(tc, ssl_dnsname_match_02);
 	tcase_add_test(tc, ssl_dnsname_match_03);
@@ -782,6 +808,7 @@ ssl_suite(void)
 	suite_add_tcase(s, tc);
 
 	tc = tcase_create("ssl_tls_clienthello_parse");
+	tcase_add_checked_fixture(tc, ssl_setup, ssl_teardown);
 	tcase_add_test(tc, ssl_tls_clienthello_parse_00);
 	tcase_add_test(tc, ssl_tls_clienthello_parse_01);
 	tcase_add_test(tc, ssl_tls_clienthello_parse_02);
@@ -828,21 +855,35 @@ ssl_suite(void)
 	suite_add_tcase(s, tc);
 
 	tc = tcase_create("ssl_is_ocspreq");
+	tcase_add_checked_fixture(tc, ssl_setup, ssl_teardown);
 	tcase_add_test(tc, ssl_is_ocspreq_01);
 	suite_add_tcase(s, tc);
 
 	tc = tcase_create("ssl_features");
+	tcase_add_checked_fixture(tc, ssl_setup, ssl_teardown);
 	tcase_add_test(tc, ssl_features_01);
 	tcase_add_test(tc, ssl_features_02);
 	suite_add_tcase(s, tc);
 
 	tc = tcase_create("ssl_key_refcount_inc");
+	tcase_add_checked_fixture(tc, ssl_setup, ssl_teardown);
 	tcase_add_test(tc, ssl_key_refcount_inc_01);
 	suite_add_tcase(s, tc);
 
 	tc = tcase_create("ssl_x509_refcount_inc");
+	tcase_add_checked_fixture(tc, ssl_setup, ssl_teardown);
 	tcase_add_test(tc, ssl_x509_refcount_inc_01);
 	suite_add_tcase(s, tc);
+
+#ifndef OPENSSL_NO_ENGINE
+	tc = tcase_create("ssl_engine");
+	tcase_add_checked_fixture(tc, ssl_setup, ssl_teardown);
+	tcase_add_test(tc, ssl_engine_01);
+	suite_add_tcase(s, tc);
+#else /* OPENSSL_NO_ENGINE */
+	fprintf(stderr, "1 test omitted because OpenSSL has no "
+	                "engine support\n");
+#endif /* OPENSSL_NO_ENGINE */
 
 	return s;
 }

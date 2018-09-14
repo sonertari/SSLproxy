@@ -30,6 +30,7 @@
 
 #include "log.h"
 #include "defaults.h"
+#include "attrib.h"
 
 #include <sys/types.h>
 #include <fcntl.h>
@@ -39,7 +40,9 @@
 #include <limits.h>
 
 #include <openssl/crypto.h>
+#ifndef OPENSSL_NO_ENGINE
 #include <openssl/engine.h>
+#endif /* !OPENSSL_NO_ENGINE */
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <openssl/rand.h>
@@ -93,31 +96,28 @@ ssl_ssl_cert_get(SSL *s)
 int
 DH_set0_pqg(DH *dh, BIGNUM *p, BIGNUM *q, BIGNUM *g)
 {
-    /* If the fields p and g in d are NULL, the corresponding input
-     * parameters MUST be non-NULL.  q may remain NULL.
-     */
-    if ((dh->p == NULL && p == NULL)
-        || (dh->g == NULL && g == NULL))
-        return 0;
+	/*
+	 * If the fields p and g in d are NULL, the corresponding input
+	 * parameters MUST be non-NULL.  q may remain NULL.
+	 */
+	if ((dh->p == NULL && p == NULL) || (dh->g == NULL && g == NULL))
+		return 0;
 
-    if (p != NULL) {
-        BN_free(dh->p);
-        dh->p = p;
-    }
-    if (q != NULL) {
-        BN_free(dh->q);
-        dh->q = q;
-    }
-    if (g != NULL) {
-        BN_free(dh->g);
-        dh->g = g;
-    }
+	if (p != NULL) {
+		BN_free(dh->p);
+		dh->p = p;
+	}
+	if (q != NULL) {
+		BN_free(dh->q);
+		dh->q = q;
+		dh->length = BN_num_bits(q);
+	}
+	if (g != NULL) {
+		BN_free(dh->g);
+		dh->g = g;
+	}
 
-    if (q != NULL) {
-        dh->length = BN_num_bits(q);
-    }
-
-    return 1;
+	return 1;
 }
 #endif
 
@@ -171,6 +171,11 @@ ssl_openssl_version(void)
 #else /* !OPENSSL_THREADS */
 	fprintf(stderr, "OpenSSL is not thread-safe\n");
 #endif /* !OPENSSL_THREADS */
+#ifndef OPENSSL_NO_ENGINE
+	fprintf(stderr, "OpenSSL has engine support\n");
+#else /* OPENSSL_NO_ENGINE */
+	fprintf(stderr, "OpenSSL has no engine support\n");
+#endif /* OPENSSL_NO_ENGINE */
 #ifdef SSL_MODE_RELEASE_BUFFERS
 	fprintf(stderr, "Using SSL_MODE_RELEASE_BUFFERS\n");
 #else /* !SSL_MODE_RELEASE_BUFFERS */
@@ -363,13 +368,26 @@ ssl_init(void)
 		return 0;
 
 	/* general initialization */
+#if (OPENSSL_VERSION_NUMBER >= 0x10100000L) && !defined(LIBRESSL_VERSION_NUMBER)
+	OPENSSL_init_crypto(OPENSSL_INIT_LOAD_CONFIG
+#ifndef OPENSSL_NO_ENGINE
+	                    |OPENSSL_INIT_ENGINE_ALL_BUILTIN
+#endif /* !OPENSSL_NO_ENGINE */
+	                    , NULL);
+	OPENSSL_init_ssl(0, NULL);
+#else /* OPENSSL_VERSION_NUMBER < 0x10100000L */
 	SSL_library_init();
+#endif /* OPENSSL_VERSION_NUMBER < 0x10100000L */
+
 #ifdef PURIFY
 	CRYPTO_malloc_init();
 	CRYPTO_mem_ctrl(CRYPTO_MEM_CHECK_ON);
 #endif /* PURIFY */
 	SSL_load_error_strings();
 	OpenSSL_add_all_algorithms();
+#if (OPENSSL_VERSION_NUMBER < 0x10100000L) || defined(LIBRESSL_VERSION_NUMBER)
+	OPENSSL_config(NULL);
+#endif /* OPENSSL_VERSION_NUMBER < 0x10100000L */
 
 	/* thread-safety */
 #if defined(OPENSSL_THREADS) && ((OPENSSL_VERSION_NUMBER < 0x10100000L) || defined(LIBRESSL_VERSION_NUMBER))
@@ -390,7 +408,7 @@ ssl_init(void)
 #else /* !OPENSSL_NO_THREADID */
 	CRYPTO_THREADID_set_callback(ssl_thr_id_cb);
 #endif /* !OPENSSL_NO_THREADID */
-#endif /* OPENSSL_THREADS */
+#endif /* OPENSSL_THREADS && OPENSSL_VERSION_NUMBER < 0x10100000L */
 
 	/* randomness */
 #ifndef PURIFY
@@ -482,7 +500,9 @@ ssl_fini(void)
 	free(ssl_mutex);
 #endif
 
+#if !defined(OPENSSL_NO_ENGINE) && ((OPENSSL_VERSION_NUMBER < 0x10100000L) || defined(LIBRESSL_VERSION_NUMBER))
 	ENGINE_cleanup();
+#endif /* !OPENSSL_NO_ENGINE && OPENSSL_VERSION_NUMBER < 0x10100000L */
 	CONF_modules_finish();
 	CONF_modules_unload(1);
 	CONF_modules_free();
@@ -491,6 +511,27 @@ ssl_fini(void)
 	ERR_free_strings();
 	CRYPTO_cleanup_all_ex_data();
 }
+
+/*
+ * Look up an OpenSSL engine by ID or by full path and load it as default
+ * engine.  This works globally, not on specific SSL_CTX or SSL instances.
+ * OpenSSL must already have been initialized when calling this function.
+ * Returns 0 on success, -1 on failure.
+ */
+#ifndef OPENSSL_NO_ENGINE
+int
+ssl_engine(const char *name) {
+	ENGINE *engine;
+
+	engine = ENGINE_by_id(name);
+	if (!engine)
+		return -1;
+
+	if (!ENGINE_set_default(engine, ENGINE_METHOD_ALL))
+		return -1;
+	return 0;
+}
+#endif /* !OPENSSL_NO_ENGINE */
 
 /*
  * Format raw SHA1 hash into newly allocated string, with or without colons.
@@ -527,14 +568,15 @@ ssl_ssl_state_to_str(SSL *ssl, const char *prepend)
 	char *str = NULL;
 	int rv;
 
-	rv = asprintf(&str, "%s%08x = %s%s%04x = %s (%s)\n",
+	rv = asprintf(&str, "%s%08x = %s%s%04x = %s (%s) [%s]\n",
 	              prepend,
 	              SSL_get_state(ssl),
 	              (SSL_get_state(ssl) & SSL_ST_CONNECT) ? "SSL_ST_CONNECT|" : "",
 	              (SSL_get_state(ssl) & SSL_ST_ACCEPT) ? "SSL_ST_ACCEPT|" : "",
 	              SSL_get_state(ssl) & SSL_ST_MASK,
 	              SSL_state_string(ssl),
-	              SSL_state_string_long(ssl));
+	              SSL_state_string_long(ssl),
+	              SSL_is_server(ssl) ? "accept socket" : "connect socket");
 
 	return (rv < 0) ? NULL : str;
 }

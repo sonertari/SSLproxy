@@ -89,10 +89,10 @@ SSLproxy implements a number of defenses against mechanisms which would
 normally prevent MitM attacks or make them more difficult.  SSLproxy can deny 
 OCSP requests in a generic way.  For HTTP and HTTPS connections, SSLproxy 
 mangles headers to prevent server-instructed public key pinning (HPKP), avoid 
-strict transport security restrictions (HSTS), and prevent switching to 
-QUIC/SPDY, HTTP/2 or WebSockets (Upgrade, Alternate Protocols).  HTTP
-compression, encodings and keep-alive are disabled to make the logs more
-readable.
+strict transport security restrictions (HSTS), avoid Certificate Transparency
+enforcement (Expect-CT) and prevent switching to QUIC/SPDY, HTTP/2 or
+WebSockets (Upgrade, Alternate Protocols).  HTTP compression, encodings and
+keep-alive are disabled to make the logs more readable.
 
 Another reason to disable persistent connections is to reduce file descriptor 
 usage. Accordingly, connections are closed if they remain idle for a certain 

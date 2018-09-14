@@ -92,6 +92,9 @@ typedef struct opts {
 	unsigned int lprocinfo : 1;
 #endif /* HAVE_LOCAL_PROCINFO */
 	unsigned int certgen_writeall: 1;
+#ifndef OPENSSL_NO_ENGINE
+	char *openssl_engine;
+#endif /* !OPENSSL_NO_ENGINE */
 	char *ciphers;
 	char *certgendir;
 	char *tgcrtdir;
@@ -153,8 +156,10 @@ void opts_set_chain(opts_t *, const char *, const char *) NONNULL(1,2,3);
 void opts_set_key(opts_t *, const char *, const char *) NONNULL(1,2,3);
 void opts_set_crl(opts_t *, const char *) NONNULL(1,2);
 void opts_set_tgcrtdir(opts_t *, const char *, const char *) NONNULL(1,2,3);
-void opts_set_certgendir_writeall(opts_t *, const char *, const char *) NONNULL(1,2,3);
-void opts_set_certgendir_writegencerts(opts_t *, const char *, const char *) NONNULL(1,2,3);
+void opts_set_certgendir_writeall(opts_t *, const char *, const char *)
+     NONNULL(1,2,3);
+void opts_set_certgendir_writegencerts(opts_t *, const char *, const char *)
+     NONNULL(1,2,3);
 void opts_set_deny_ocsp(opts_t *) NONNULL(1);
 void opts_set_passthrough(opts_t *) NONNULL(1);
 void opts_set_clientcrt(opts_t *, const char *, const char *) NONNULL(1,2,3);
@@ -169,14 +174,18 @@ void opts_unset_sslcomp(opts_t *) NONNULL(1);
 void opts_force_proto(opts_t *, const char *, const char *) NONNULL(1,2,3);
 void opts_disable_proto(opts_t *, const char *, const char *) NONNULL(1,2,3);
 void opts_set_ciphers(opts_t *, const char *, const char *) NONNULL(1,2,3);
+void opts_set_openssl_engine(opts_t *, const char *, const char *)
+     NONNULL(1,2,3);
 void opts_set_user(opts_t *, const char *, const char *) NONNULL(1,2,3);
 void opts_set_group(opts_t *, const char *, const char *) NONNULL(1,2,3);
 void opts_set_jaildir(opts_t *, const char *, const char *) NONNULL(1,2,3);
 void opts_set_pidfile(opts_t *, const char *, const char *) NONNULL(1,2,3);
 void opts_set_connectlog(opts_t *, const char *, const char *) NONNULL(1,2,3);
 void opts_set_contentlog(opts_t *, const char *, const char *) NONNULL(1,2,3);
-void opts_set_contentlogdir(opts_t *, const char *, const char *) NONNULL(1,2,3);
-void opts_set_contentlogpathspec(opts_t *, const char *, const char *) NONNULL(1,2,3);
+void opts_set_contentlogdir(opts_t *, const char *, const char *)
+     NONNULL(1,2,3);
+void opts_set_contentlogpathspec(opts_t *, const char *, const char *)
+     NONNULL(1,2,3);
 #ifdef HAVE_LOCAL_PROCINFO
 void opts_set_lprocinfo(opts_t *) NONNULL(1);
 #endif /* HAVE_LOCAL_PROCINFO */
@@ -185,8 +194,10 @@ void opts_set_daemon(opts_t *) NONNULL(1);
 void opts_set_debug(opts_t *) NONNULL(1);
 void opts_set_debug_level(const char *) NONNULL(1);
 void opts_set_statslog(opts_t *) NONNULL(1);
+int opts_set_option(opts_t *, const char *, const char *, char **)
+    NONNULL(1,2,3);
 
-int load_conffile(opts_t *, const char *, const char *) NONNULL(1,2,3);
+int load_conffile(opts_t *, const char *, char **) NONNULL(1,2);
 #endif /* !OPTS_H */
 
 /* vim: set noet ft=c: */

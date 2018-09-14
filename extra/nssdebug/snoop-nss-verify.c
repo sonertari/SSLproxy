@@ -26,34 +26,48 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef NAT_H
-#define NAT_H
+/*
+ * LD_PRELOAD library overlay to print calls to NSS CERT_PKIXVerifyCert() and
+ * their error code.  This function is used by Chrome and other browsers using
+ * NSS to verify server certificates.  This overlay is intended to help finding
+ * the root cause for certificate verification failures in Chrome, that are
+ * mapped to Chrome error codes in MapSecurityError():
+ * https://chromium.googlesource.com/chromium/src/+/master/net/cert/cert_verify_proc_nss.cc
+ *
+ * Usage on Linux:
+ * gcc -shared -fPIC -o snoop-nss-verify.so snoop-nss-verify.c -ldl
+ * LD_PRELOAD=./snoop-nss-verify.so /usr/bin/google-chrome
+ */
 
-#include "attrib.h"
-
+#define _GNU_SOURCE
 #include <sys/types.h>
-#include <sys/socket.h>
+#include <dlfcn.h>
+#include <stdlib.h>
+#include <stdint.h>
+#include <inttypes.h>
+#include <stdio.h>
 
-#include <event2/util.h>
+#define CERTCertificate void
+#define SECCertificateUsage int64_t
+#define CERTValInParam  void
+#define CERTValOutParam void
+#define SECStatus int /* actually enum */
 
-typedef int (*nat_lookup_cb_t)(struct sockaddr *, socklen_t *, evutil_socket_t,
-                               struct sockaddr *, socklen_t);
-typedef int (*nat_socket_cb_t)(evutil_socket_t);
+SECStatus
+CERT_PKIXVerifyCert(CERTCertificate *cert,
+                    SECCertificateUsage usages,
+                    CERTValInParam *paramsIn,
+                    CERTValOutParam *paramsOut,
+                    void *wincx)
+{
+	typeof(CERT_PKIXVerifyCert) *original;
+	SECStatus rv;
 
-int nat_exist(const char *) WUNRES;
-int nat_used(const char *) WUNRES;
-nat_lookup_cb_t nat_getlookupcb(const char *) WUNRES;
-nat_socket_cb_t nat_getsocketcb(const char *) WUNRES;
-int nat_ipv6ready(const char *) WUNRES;
+	original = dlsym(RTLD_NEXT, "CERT_PKIXVerifyCert");
+	rv = original(cert, usages, paramsIn, paramsOut, wincx);
+	fprintf(stderr,
+	        "CERT_PKIXVerifyCert(%p, %"PRId64", %p, %p, %p) => %i\n",
+	        cert, usages, paramsIn, paramsOut, wincx, rv);
+	return rv;
+}
 
-const char *nat_getdefaultname(void) WUNRES;
-void nat_list_engines(void);
-int nat_preinit(void) WUNRES;
-void nat_preinit_undo(void);
-int nat_init(void) WUNRES;
-void nat_fini(void);
-void nat_version(void);
-
-#endif /* !NAT_H */
-
-/* vim: set noet ft=c: */

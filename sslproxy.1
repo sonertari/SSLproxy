@@ -29,25 +29,25 @@
 .\" ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 .\" POSSIBILITY OF SUCH DAMAGE.
 .\"
-.TH SSLPROXY 1  "12 May 2018"
+.TH SSLPROXY 1  "15 Sep 2018"
 .SH NAME
 sslproxy \-\- transparent SSL/TLS proxy for decrypting and diverting network 
 traffic to other programs for deep SSL inspection
 .SH SYNOPSIS
 .na
 .B sslproxy
-[\fB-kCKqwWOPZdDgGsrReumjplILSFiMab\fP] \fB-c\fP \fIpem\fP
+[\fB-kCKqwWOPZdDgGsrRxeumjplILSFiMab\fP] \fB-c\fP \fIpem\fP
 \fIproxyspecs\fP [...]
 .br
 .B sslproxy
-[\fB-kCKqwWOPZdDgGsrReumjplILSFiMab\fP] \fB-c\fP \fIpem\fP \fB-t\fP \fIdir\fP
+[\fB-kCKqwWOPZdDgGsrRxeumjplILSFiMab\fP] \fB-c\fP \fIpem\fP \fB-t\fP \fIdir\fP
 \fIproxyspecs\fP [...]
 .br
 .B sslproxy
-[\fB-OPZwWdDgGsrReumjplILSFiMab\fP] \fB-t\fP \fIdir\fP
+[\fB-OPZwWdDgGsrRxeumjplILSFiMab\fP] \fB-t\fP \fIdir\fP
 \fIproxyspecs\fP [...]
 .br
-.B sslproxy [\fB-kCKwWOPZdDgGsrReumjplILSFiM\fP] -f \fIconffile\fP
+.B sslproxy [\fB-kCKwWOPZdDgGsrRxeumjplILSFiM\fP] -f \fIconffile\fP
 .br
 .B sslproxy -E
 .br
@@ -107,7 +107,8 @@ OCSP requests in a generic way.
 For HTTP and HTTPS connections, SSLsplit mangles headers to
 prevent server-instructed public key pinning (HPKP),
 avoid strict transport security restrictions (HSTS),
-and prevent switching to QUIC/SPDY, HTTP/2 or WebSockets (Upgrade,
+avoid Certificate Transparency enforcement (Expect-CT) and
+prevent switching to QUIC/SPDY, HTTP/2 or WebSockets (Upgrade,
 Alternate Protocols).
 HTTP compression, encodings and keep-alive are disabled to make the logs more
 readable.
@@ -270,7 +271,7 @@ parsable by OpenSSL, or if the method is \fBPOST\fP and the \fBContent-Type\fP
 is \fBapplication/ocsp-request\fP.
 For this to be effective, SSLproxy must be handling traffic destined to the
 port used by the OCSP server.  In particular, SSLproxy must be configured to
-receive traffic to all ports used by OCSP servers of targetted certificates
+receive traffic to all ports used by OCSP servers of targeted certificates
 within the \fIcertdir\fP specified by \fB-t\fP.
 .TP
 .B \-p \fIpidfile\fP
@@ -352,6 +353,16 @@ The user needs to be allowed to make outbound TCP connections, and in some
 configurations, also to perform DNS resolution.
 Due to an Apple bug, \fB-u\fP cannot be used with \fBpf\fP proxyspecs on
 Mac OS X.
+.TP
+.B \-x \fIengine\fP
+Use the OpenSSL engine with identifier \fIengine\fP as a default engine.  The
+engine must be available within the OpenSSL ecosystem under the specified
+identifier, that is, they must be loaded from the global OpenSSL configuration.
+If \fIengine\fP is an absolute path, it will be interpreted as path to an
+engine dynamically linked library and loaded by path, regardless of global
+OpenSSL configuration.
+This option is only available if built against a version of OpenSSL with engine
+support.
 .TP
 .B \-V
 Display version and compiled features information and exit.

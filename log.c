@@ -878,7 +878,7 @@ log_content_file_preinit(const char *logfile)
 		log_err_level_printf(LOG_CRIT, "Failed to realpath '%s': %s (%i)\n",
 		              logfile, strerror(errno), errno);
 		close(content_file_fd);
-		connect_fd = -1;
+		content_file_fd = -1;
 		return -1;
 	}
 	return 0;
@@ -910,14 +910,6 @@ log_content_file_reopencb(void)
 	}
 	return 0;
 }
-
-/*
-static int
-log_content_file_opencb(void *fh)
-{
-	return 0;
-}
-*/
 
 static void
 log_content_file_closecb(void *fh)

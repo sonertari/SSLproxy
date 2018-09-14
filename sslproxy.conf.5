@@ -1,29 +1,30 @@
+.\"-
 .\" SSLproxy - transparent SSL/TLS proxy for diverting packets to programs
-.\" Copyright (c) 2017-2018, Soner Tari <sonertari@gmail.com> 
-.\" All rights reserved.
 .\" https://github.com/sonertari/SSLproxy
 .\"
+.\" Copyright (c) 2017-2018, Soner Tari <sonertari@gmail.com> 
+.\" All rights reserved.
+.\"
 .\" Redistribution and use in source and binary forms, with or without
-.\" modification, are permitted provided that the following conditions
-.\" are met:
-.\" 1. Redistributions of source code must retain the above copyright
-.\"    notice, this list of conditions, and the following disclaimer.
-.\" 2. Redistributions in binary form must reproduce the above copyright
-.\"    notice, this list of conditions and the following disclaimer in the
-.\"    documentation and/or other materials provided with the distribution.
+.\" modification, are permitted provided that the following conditions are met:
+.\" 1. Redistributions of source code must retain the above copyright notice,
+.\"    this list of conditions and the following disclaimer.
+.\" 2. Redistributions in binary form must reproduce the above copyright notice,
+.\"    this list of conditions and the following disclaimer in the documentation
+.\"    and/or other materials provided with the distribution.
 .\"
-.\" THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
-.\" IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
-.\" OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
-.\" IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
-.\" INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
-.\" NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-.\" DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-.\" THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-.\" (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
-.\" THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-.\"
-.TH "sslproxy.conf" "5" "May 7, 2018" "sslproxy 0.5.7" "SSLproxy"
+.\" THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDER AND CONTRIBUTORS ``AS IS''
+.\" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+.\" IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+.\" ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+.\" LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+.\" CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+.\" SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+.\" INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+.\" CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+.\" ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+.\" POSSIBILITY OF SUCH DAMAGE.
+.TH "sslproxy.conf" "5" "Sep 15, 2018" "sslproxy 0.5.7" "SSLproxy"
 .SH "NAME"
 .LP 
 \fBsslproxy.conf\fR \- Configuration file for SSLproxy
@@ -109,9 +110,15 @@ Disable SSL/TLS protocol version.
 Default: none
 .TP
 \fBCiphers STRING\fR
-Cipher specification for both server and client SSL/TLS connections.
+Use the given OpenSSL cipher suite spec.
 .br 
 Default: ALL:-aNULL
+.TP 
+\fBOpenSSLEngine STRING\fR
+The OpenSSL engine to activate, either the ID or the full path to the shared
+library implementing the engine.  If an ID is given, the engine needs to be
+known to the system-wide OpenSSL configuration.  Only available if built
+against a version of OpenSSL with engine support.
 .TP 
 \fBNATEngine STRING\fR
 Specify default NAT engine to use.
@@ -142,7 +149,7 @@ Content log: full data to file or named pipe (excludes ContentLogDir/ContentLogP
 Content log: full data to separate files in dir (excludes ContentLog/ContentLogPathSpec).
 .TP 
 \fBContentLogPathSpec STRING\fR
-Content log: full data to sep files with %% subst (excludes ContentLog/ContentLogDir).
+Content log: full data to sep files with % subst (excludes ContentLog/ContentLogDir).
 .TP 
 \fBLogProcInfo BOOL\fR
 Look up local process owning each connection for logging.
@@ -200,7 +207,7 @@ Verify peer using default certificates.
 Default: yes
 .TP
 \fBAllowWrongHost BOOL\fR
-Allow wrong host names in certificates.
+When disabled, never add the SNI to forged certificates, even if the SNI provided by the client does not match the server certificate's CN/SAN. Helps pass the wrong.host test at https://badssl.com.
 .br
 Default: no
 .TP 

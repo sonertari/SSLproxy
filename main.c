@@ -126,8 +126,9 @@ main_usage(void)
 {
 	const char *dflt, *warn;
 	const char *usagefmt =
-"Usage: %s [options...] [proxyspecs...]\n"
+"Usage: %s [-D] [-f conffile] [-o opt=val] [options...] [proxyspecs...]\n"
 "  -f conffile use conffile to load configuration from\n"
+"  -o opt=val  override conffile option opt with value val\n"
 "  -c pemfile  use CA cert (and key) from pemfile to sign forged certs\n"
 "  -k pemfile  use CA key (and cert) from pemfile to sign forged certs\n"
 "  -C pemfile  use CA chain from pemfile (intermediate and root CA certs)\n"
@@ -163,6 +164,12 @@ main_usage(void)
 "  -r proto    only support one of " SSL_PROTO_SUPPORT_S "(default: all)\n"
 "  -R proto    disable one of " SSL_PROTO_SUPPORT_S "(default: none)\n"
 "  -s ciphers  use the given OpenSSL cipher suite spec (default: " DFLT_CIPHERS ")\n"
+#ifndef OPENSSL_NO_ENGINE
+"  -x engine   load OpenSSL engine with the given identifier\n"
+#define OPT_x "x:"
+#else /* OPENSSL_NO_ENGINE */
+#define OPT_x 
+#endif /* OPENSSL_NO_ENGINE */
 "  -e engine   specify default NAT engine to use (default: %s)\n"
 "  -E          list available NAT engines and exit\n"
 "  -u user     drop privileges to user (default if run as root: " DFLT_DROPUSER ")\n"
@@ -306,8 +313,9 @@ main(int argc, char *argv[])
 		natengine = NULL;
 	}
 
-	while ((ch = getopt(argc, argv, OPT_g OPT_G OPT_Z OPT_i "k:c:C:K:t:OPa:"
-	                    "b:s:r:R:e:Eu:m:j:p:l:L:S:F:M:dD::VhW:w:q:f:I")) != -1) {
+	while ((ch = getopt(argc, argv, OPT_g OPT_G OPT_Z OPT_i OPT_x
+	                    "k:c:C:K:t:OPa:b:s:r:R:e:Eu:m:j:p:l:L:S:F:M:"
+	                    "dD::VhW:w:q:f:o:I")) != -1) {
 		switch (ch) {
 			case 'f':
 				if (opts->conffile)
@@ -315,7 +323,15 @@ main(int argc, char *argv[])
 				opts->conffile = strdup(optarg);
 				if (!opts->conffile)
 					oom_die(argv0);
+				if (load_conffile(opts, argv0, &natengine) == -1) {
+					exit(EXIT_FAILURE);
+				}
 				fprintf(stderr, "Conf file: %s\n", opts->conffile);
+				break;
+			case 'o':
+				if (opts_set_option(opts, argv0, optarg, &natengine) == -1) {
+					exit(EXIT_FAILURE);
+				}
 				break;
 			case 'c':
 				opts_set_cacrt(opts, argv0, optarg);
@@ -354,10 +370,8 @@ main(int argc, char *argv[])
 #endif /* !OPENSSL_NO_DH */
 #ifndef OPENSSL_NO_ECDH
 			case 'G':
-			{
 				opts_set_ecdhcurve(opts, argv0, optarg);
 				break;
-			}
 #endif /* !OPENSSL_NO_ECDH */
 #ifdef SSL_OP_NO_COMPRESSION
 			case 'Z':
@@ -373,6 +387,11 @@ main(int argc, char *argv[])
 			case 'R':
 				opts_disable_proto(opts, argv0, optarg);
 				break;
+#ifndef OPENSSL_NO_ENGINE
+			case 'x':
+				opts_set_openssl_engine(opts, argv0, optarg);
+				break;
+#endif /* !OPENSSL_NO_ENGINE */
 			case 'e':
 				if (natengine)
 					free(natengine);
@@ -408,7 +427,7 @@ main(int argc, char *argv[])
 			case 'S':
 				opts_set_contentlogdir(opts, argv0, optarg);
 				break;
-			case 'F': {
+			case 'F':
 				opts_set_contentlogpathspec(opts, argv0, optarg);
 				break;
 			case 'W':
@@ -417,7 +436,6 @@ main(int argc, char *argv[])
 			case 'w':
 				opts_set_certgendir_writegencerts(opts, argv0, optarg);
 				break;
-			}
 #ifdef HAVE_LOCAL_PROCINFO
 			case 'i':
 				opts_set_lprocinfo(opts);
@@ -452,12 +470,6 @@ main(int argc, char *argv[])
 	argv += optind;
 	proxyspec_parse(&argc, &argv, natengine, &opts->spec);
 	
-	if (opts->conffile) {
-		if (load_conffile(opts, argv0, natengine) == -1) {
-			exit(EXIT_FAILURE);
-		}
-	}
-
 	/* usage checks before defaults */
 	if (opts->detach && OPTS_DEBUG(opts)) {
 		fprintf(stderr, "%s: -d and -D are mutually exclusive.\n",
@@ -493,6 +505,14 @@ main(int argc, char *argv[])
 			                argv0);
 			exit(EXIT_FAILURE);
 		}
+#ifndef OPENSSL_NO_ENGINE
+		if (opts->openssl_engine &&
+		    ssl_engine(opts->openssl_engine) == -1) {
+			fprintf(stderr, "%s: failed to enable OpenSSL engine"
+			                " %s.\n", argv0, opts->openssl_engine);
+			exit(EXIT_FAILURE);
+		}
+#endif /* !OPENSSL_NO_ENGINE */
 		if ((opts->cacrt || !opts->tgcrtdir) && !opts->cakey) {
 			fprintf(stderr, "%s: no CA key specified (-k).\n",
 			                argv0);
@@ -552,6 +572,19 @@ main(int argc, char *argv[])
 		}
 #endif /* __APPLE__ */
 	}
+
+	/* usage checks after defaults */
+	if (opts->dropgroup && !opts->dropuser) {
+		fprintf(stderr, "%s: -m depends on -u.\n", argv0);
+		exit(EXIT_FAILURE);
+	}
+
+	/* debug log, part 1 */
+	if (OPTS_DEBUG(opts)) {
+		main_version();
+	}
+
+	/* generate leaf key */
 	if (opts_has_ssl_spec(opts) && opts->cakey && !opts->key) {
 		/*
 		 * While browsers still generally accept it, use a leaf key
@@ -572,7 +605,6 @@ main(int argc, char *argv[])
 			log_dbg_printf("Generated RSA key for leaf certs.\n");
 		}
 	}
-
 	if (opts->certgendir) {
 		char *keyid, *keyfn;
 		int prv;
@@ -607,15 +639,8 @@ main(int argc, char *argv[])
 		fclose(keyf);
 	}
 
-	/* usage checks after defaults */
-	if (opts->dropgroup && !opts->dropuser) {
-		fprintf(stderr, "%s: -m depends on -u.\n", argv0);
-		exit(EXIT_FAILURE);
-	}
-
-	/* debugging */
+	/* debug log, part 2 */
 	if (OPTS_DEBUG(opts)) {
-		main_version();
 		opts_proto_dbg_dump(opts);
 		log_dbg_printf("proxyspecs:\n");
 		for (proxyspec_t *spec = opts->spec; spec; spec = spec->next) {
@@ -627,6 +652,12 @@ main(int argc, char *argv[])
 			log_dbg_printf("- %s\n", specstr);
 			free(specstr);
 		}
+#ifndef OPENSSL_NO_ENGINE
+		if (opts->openssl_engine) {
+			log_dbg_printf("Loaded OpenSSL engine %s\n",
+			               opts->openssl_engine);
+		}
+#endif /* !OPENSSL_NO_ENGINE */
 		if (opts->cacrt) {
 			char *subj = ssl_x509_subject(opts->cacrt);
 			log_dbg_printf("Loaded CA: '%s'\n", subj);
