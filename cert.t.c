@@ -62,8 +62,12 @@ START_TEST(cert_refcount_inc_01)
 	cert_free(c);
 	fail_unless(c->references == 1, "refcount mismatch");
 	cert_free(c);
+#ifndef LIBRESSL_VERSION_NUMBER
 	/* deliberate access after last free() */
 	fail_unless(c->references == 0, "refcount mismatch");
+#else /* LIBRESSL_VERSION_NUMBER */
+	fprintf(stderr, "test cert_refcount_inc_01 omitted because LibreSSL fails with refcount mismatch\n");
+#endif /* LIBRESSL_VERSION_NUMBER */
 }
 END_TEST
 
