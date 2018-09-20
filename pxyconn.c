@@ -2705,7 +2705,16 @@ pxy_connected_enable(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 				if (ctx->opts->passthrough && !ctx->enomem) {
 					ctx->passthrough = 1;
 					ctx->connected = 0;
-					log_err_level_printf(LOG_WARNING, "No cert found; falling back to passthrough\n");
+
+					// Close and free dst if open
+					if (!ctx->dst.closed) {
+						ctx->dst.closed = 1;
+						bufferevent_free_and_close_fd_nonssl(ctx->dst.bev, ctx);
+						ctx->dst.bev = NULL;
+						ctx->dst_fd = 0;
+					}
+
+					log_err_level_printf(LOG_WARNING, "No cert found; falling back to passthrough, fd=%d\n", fd);
 					pxy_fd_readcb(fd, 0, ctx);
 					return 0;
 				}
@@ -3239,7 +3248,16 @@ pxy_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 					ctx->srv_dst.bev = NULL;
 					ctx->srv_dst.ssl = NULL;
 					ctx->passthrough = 1;
-					log_err_level_printf(LOG_WARNING, "SSL srv_dst connection failed; falling back to passthrough\n");
+
+					// Close and free dst if open
+					if (!ctx->dst.closed) {
+						ctx->dst.closed = 1;
+						bufferevent_free_and_close_fd_nonssl(ctx->dst.bev, ctx);
+						ctx->dst.bev = NULL;
+						ctx->dst_fd = 0;
+					}
+
+					log_err_level_printf(LOG_WARNING, "SSL srv_dst connection failed; falling back to passthrough, fd=%d\n", ctx->fd);
 					pxy_fd_readcb(ctx->fd, 0, ctx);
 					return;
 				}
