@@ -3249,10 +3249,12 @@ pxy_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 						bufferevent_get_openssl_error(bev)) {
 					/* ssl callout failed, fall back to plain
 					 * TCP passthrough of SSL connection */
-					bufferevent_free_and_close_fd(bev, ctx);
+					SSL_free(ctx->srv_dst.ssl);
+					bufferevent_free_and_close_fd_nonssl(ctx->srv_dst.bev, ctx);
 					ctx->srv_dst.bev = NULL;
 					ctx->srv_dst.ssl = NULL;
 					ctx->passthrough = 1;
+					ctx->connected = 0;
 					ctx->srv_dst_connected = 0;
 
 					// Close and free dst if open
