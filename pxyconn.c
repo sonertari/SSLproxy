@@ -608,8 +608,8 @@ pxy_log_connect_nonhttp(pxy_conn_ctx_t *ctx)
 		              STRORDASH(ctx->ssl_names),
 		              SSL_get_version(ctx->src.ssl),
 		              SSL_get_cipher(ctx->src.ssl),
-		              !ctx->srv_dst.closed ? SSL_get_version(ctx->srv_dst.ssl):ctx->srv_dst_ssl_version,
-		              !ctx->srv_dst.closed ? SSL_get_cipher(ctx->srv_dst.ssl):ctx->srv_dst_ssl_cipher,
+		              !ctx->srv_dst.closed && ctx->srv_dst.ssl ? SSL_get_version(ctx->srv_dst.ssl):ctx->srv_dst_ssl_version,
+		              !ctx->srv_dst.closed && ctx->srv_dst.ssl ? SSL_get_cipher(ctx->srv_dst.ssl):ctx->srv_dst_ssl_cipher,
 		              STRORDASH(ctx->origcrtfpr),
 		              STRORDASH(ctx->usedcrtfpr)
 #ifdef HAVE_LOCAL_PROCINFO
@@ -2699,12 +2699,17 @@ pxy_connected_enable(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		if ((ctx->spec->ssl || ctx->clienthello_found) && !ctx->passthrough) {
 			ctx->src.ssl = pxy_srcssl_create(ctx, srv_dst_ctx->ssl);
 			if (!ctx->src.ssl) {
-				bufferevent_free_and_close_fd(ctx->srv_dst.bev, ctx);
-				ctx->srv_dst.bev = NULL;
-				ctx->srv_dst.ssl = NULL;
 				if (ctx->opts->passthrough && !ctx->enomem) {
+					// @attention Do not call bufferevent_free_and_close_fd(), otherwise connection stalls due to ssl shutdown
+					// We get srv_dst writecb while ssl shutdown is still in progress, and srv_dst readcb never fires
+					//bufferevent_free_and_close_fd(ctx->srv_dst.bev, ctx);
+					SSL_free(ctx->srv_dst.ssl);
+					bufferevent_free_and_close_fd_nonssl(ctx->srv_dst.bev, ctx);
+					ctx->srv_dst.bev = NULL;
+					ctx->srv_dst.ssl = NULL;
 					ctx->passthrough = 1;
 					ctx->connected = 0;
+					ctx->srv_dst_connected = 0;
 
 					// Close and free dst if open
 					if (!ctx->dst.closed) {
@@ -3248,6 +3253,7 @@ pxy_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 					ctx->srv_dst.bev = NULL;
 					ctx->srv_dst.ssl = NULL;
 					ctx->passthrough = 1;
+					ctx->srv_dst_connected = 0;
 
 					// Close and free dst if open
 					if (!ctx->dst.closed) {
@@ -3288,10 +3294,10 @@ pxy_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_eventcb: EOF %s fd=%d\n", event_name, ctx->fd);
 #endif /* DEBUG_PROXY */
 
-		if (bev == ctx->srv_dst.bev) {
-			log_err_level_printf(LOG_WARNING, "EOF on outbound connection before connection establishment\n");
+		if (bev == ctx->srv_dst.bev && !ctx->passthrough) {
+			log_err_level_printf(LOG_WARNING, "EOF on outbound connection before connection establishment on srv_dst\n");
 #ifdef DEBUG_PROXY
-			log_dbg_level_printf(LOG_DBG_MODE_FINER, "WARNING: pxy_bev_eventcb: EOF on outbound connection before connection establishment, fd=%d\n", ctx->fd);
+			log_dbg_level_printf(LOG_DBG_MODE_FINER, "WARNING: pxy_bev_eventcb: EOF on outbound connection before connection establishment on srv_dst, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 			pxy_conn_free(ctx, 1);
 			return;
