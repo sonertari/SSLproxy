@@ -2235,13 +2235,7 @@ pxy_bev_readcb(struct bufferevent *bev, void *arg)
 
 			// @attention Cannot use string manipulation functions; we are dealing with binary arrays here, not NULL-terminated strings
 			if (!ctx->sent_header) {
-				if (ctx->spec->mail) {
-					memmove(packet + header_len + 2, packet, packet_size);
-					memcpy(packet, ctx->header_str, header_len);
-					memcpy(packet + header_len, "\r\n", 2);
-					packet_size+= header_len + 2;
-					ctx->sent_header = 1;
-				} else {
+				if (ctx->spec->http) {
 					char *pos = memmem(packet, packet_size, "\r\n", 2);
 					if (pos) {
 						memmove(pos + 2 + header_len, pos, packet_size - (pos - packet));
@@ -2254,6 +2248,12 @@ pxy_bev_readcb(struct bufferevent *bev, void *arg)
 						log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_bev_readcb: No CRLF in packet\n");
 #endif /* DEBUG_PROXY */
 					}
+				} else {
+					memmove(packet + header_len + 2, packet, packet_size);
+					memcpy(packet, ctx->header_str, header_len);
+					memcpy(packet + header_len, "\r\n", 2);
+					packet_size+= header_len + 2;
+					ctx->sent_header = 1;
 				}
 			}
 

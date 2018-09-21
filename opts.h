@@ -41,7 +41,6 @@ typedef struct proxyspec {
 	unsigned int ssl : 1;
 	unsigned int http : 1;
 	unsigned int upgrade: 1;
-	unsigned int mail : 1;
 	unsigned int pop3 : 1;
 	unsigned int smtp : 1;
 	unsigned int dns : 1;		/* set if spec needs DNS lookups */

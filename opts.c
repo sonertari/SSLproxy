@@ -272,7 +272,6 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine, proxyspec_t **o
 				spec->ssl = 0;
 				spec->http = 0;
 				spec->upgrade = 0;
-				spec->mail = 0;
 				spec->pop3 = 0;
 				spec->smtp = 0;
 				if (!strcmp(**argv, "tcp")) {
@@ -292,21 +291,17 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine, proxyspec_t **o
 					spec->upgrade = 1;
 				} else
 				if (!strcmp(**argv, "pop3")) {
-					spec->mail = 1;
 					spec->pop3 = 1;
 				} else
 				if (!strcmp(**argv, "pop3s")) {
 					spec->ssl = 1;
-					spec->mail = 1;
 					spec->pop3 = 1;
 				} else
 				if (!strcmp(**argv, "smtp")) {
-					spec->mail = 1;
 					spec->smtp = 1;
 				} else
 				if (!strcmp(**argv, "smtps")) {
 					spec->ssl = 1;
-					spec->mail = 1;
 					spec->smtp = 1;
 				} else {
 					fprintf(stderr, "Unknown connection "
@@ -516,11 +511,12 @@ proxyspec_str(proxyspec_t *spec)
 			return NULL;
 		}
 	}
-	if (asprintf(&s, "listen=[%s]:%s %s%s%s%s %s%s%s", lhbuf, lpbuf,
+	if (asprintf(&s, "listen=[%s]:%s %s%s%s%s%s %s%s%s", lhbuf, lpbuf,
 	             (spec->ssl ? "ssl" : "tcp"),
 	             (spec->upgrade ? "|upgrade" : ""),
 	             (spec->http ? "|http" : ""),
-	             (spec->mail ? "|mail" : ""),
+	             (spec->pop3 ? "|pop3" : ""),
+	             (spec->smtp ? "|smtp" : ""),
 	             (spec->natengine ? spec->natengine : cbuf),
 	             (pdstbuf),
 	             (csrcbuf)) < 0) {
