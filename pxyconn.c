@@ -1916,8 +1916,8 @@ static void
 pxy_http_reqhdr_filter(struct evbuffer *inbuf, struct evbuffer *outbuf, struct bufferevent *bev, pxy_conn_ctx_t *ctx, pxy_conn_ctx_t *parent, int child)
 {
 	logbuf_t *lb = NULL, *tail = NULL;
-	int inserted_header = 0;
 	char *line;
+
 	while ((line = evbuffer_readln(inbuf, NULL, EVBUFFER_EOL_CRLF))) {
 		char *replace;
 		if (WANT_CONTENT_LOG(parent)) {
@@ -1952,8 +1952,8 @@ pxy_http_reqhdr_filter(struct evbuffer *inbuf, struct evbuffer *outbuf, struct b
 		}
 		free(line);
 
-		if (!child && !inserted_header) {
-			inserted_header = 1;
+		if (!child && !ctx->sent_header) {
+			ctx->sent_header = 1;
 #ifdef DEBUG_PROXY
 			log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_http_reqhdr_filter: src INSERT header_str line, fd=%d: %s\n", ctx->fd, ctx->header_str);
 #endif /* DEBUG_PROXY */
@@ -2012,6 +2012,7 @@ static void
 pxy_http_resphdr_filter(struct evbuffer *inbuf, struct evbuffer *outbuf, struct bufferevent *bev, pxy_conn_ctx_t *ctx, pxy_conn_ctx_t *parent, int child)
 {
 	logbuf_t *lb = NULL, *tail = NULL;
+
 	char *line;
 	while ((line = evbuffer_readln(inbuf, NULL,
 								   EVBUFFER_EOL_CRLF))) {
@@ -2191,6 +2192,14 @@ pxy_bev_readcb(struct bufferevent *bev, void *arg)
 			}
 		}
 	
+		// We insert our special header line to the first packet we get, e.g. right after the first \r\n in the case of http
+		// @todo Should we look for GET/POST or Host header lines to detect the first packet?
+		// But there is no guarantee that they will exist, due to fragmentation.
+		// @attention We cannot append the ssl proxy address at the end of the packet or in between the header and the content,
+		// because (1) the packet may be just the first fragment split somewhere not appropriate for appending a header,
+		// and (2) there may not be any content.
+		// And we are dealing pop3 and smtp also, not just http.
+
 		/* request header munging */
 		if (ctx->spec->http) {
 			if (!ctx->seen_req_header) {
@@ -2225,36 +2234,13 @@ pxy_bev_readcb(struct bufferevent *bev, void *arg)
 					packet_size, ctx->fd, (int)packet_size, packet);
 #endif /* DEBUG_PROXY */
 
-			// We insert our special header line to the first packet we get, e.g. right after the first \r\n
-			// @todo Should we look for GET/POST or Host header lines to detect the first packet?
-			// But there is no guarantee that they will exist, due to fragmentation.
-			// @attention We cannot append the ssl proxy address at the end of the packet or in between the header and the content,
-			// because (1) the packet may be just the first fragment split somewhere not appropriate for appending a header,
-			// and (2) there may not be any content.
-			// And we are dealing pop3 and smtp also, not just http.
-
 			// @attention Cannot use string manipulation functions; we are dealing with binary arrays here, not NULL-terminated strings
 			if (!ctx->sent_header) {
-				if (ctx->spec->http) {
-					char *pos = memmem(packet, packet_size, "\r\n", 2);
-					if (pos) {
-						memmove(pos + 2 + header_len, pos, packet_size - (pos - packet));
-						memcpy(pos + 2, ctx->header_str, header_len);
-						memcpy(pos + 2 + header_len, "\r\n", 2);
-						packet_size+= header_len + 2;
-						ctx->sent_header = 1;
-					} else {
-#ifdef DEBUG_PROXY
-						log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_bev_readcb: No CRLF in packet\n");
-#endif /* DEBUG_PROXY */
-					}
-				} else {
-					memmove(packet + header_len + 2, packet, packet_size);
-					memcpy(packet, ctx->header_str, header_len);
-					memcpy(packet + header_len, "\r\n", 2);
-					packet_size+= header_len + 2;
-					ctx->sent_header = 1;
-				}
+				memmove(packet + header_len + 2, packet, packet_size);
+				memcpy(packet, ctx->header_str, header_len);
+				memcpy(packet + header_len, "\r\n", 2);
+				packet_size+= header_len + 2;
+				ctx->sent_header = 1;
 			}
 
 			if (evbuffer_add(outbuf, packet, packet_size) < 0) {
