@@ -343,8 +343,8 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine, proxyspec_t **o
 				// The UTM port is set/used in pf and UTM service config.
 				// @todo Need IPv6?
 				if (strstr(**argv, "up:")) {
-					int utm_af = sys_sockaddr_parse(&spec->parent_dst_addr,
-										&spec->parent_dst_addrlen,
+					int utm_af = sys_sockaddr_parse(&spec->conn_dst_addr,
+										&spec->conn_dst_addrlen,
 										"127.0.0.1", **argv + 3, AF_INET, EVUTIL_AI_PASSIVE);
 					if (utm_af == -1) {
 						exit(EXIT_FAILURE);
@@ -480,10 +480,10 @@ proxyspec_str(proxyspec_t *spec)
 		free(chbuf);
 		free(cpbuf);
 	}
-	if (spec->parent_dst_addrlen) {
+	if (spec->conn_dst_addrlen) {
 		char *chbuf, *cpbuf;
-		if (sys_sockaddr_str((struct sockaddr *)&spec->parent_dst_addr,
-		                     spec->parent_dst_addrlen,
+		if (sys_sockaddr_str((struct sockaddr *)&spec->conn_dst_addr,
+		                     spec->conn_dst_addrlen,
 		                     &chbuf, &cpbuf) != 0) {
 			return NULL;
 		}

@@ -57,8 +57,8 @@ typedef struct proxyspec {
 	nat_socket_cb_t natsocket;
 	struct proxyspec *next;
 
-	struct sockaddr_storage parent_dst_addr;
-	socklen_t parent_dst_addrlen;
+	struct sockaddr_storage conn_dst_addr;
+	socklen_t conn_dst_addrlen;
 
 	struct sockaddr_storage child_src_addr;
 	socklen_t child_src_addrlen;

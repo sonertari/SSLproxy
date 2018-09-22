@@ -139,6 +139,7 @@ pxy_conn_ctx_new(evutil_socket_t fd,
 #endif /* DEBUG_PROXY */
 	
 	ctx->fd = fd;
+	ctx->conn = ctx;
 	ctx->thrmgr = thrmgr;
 	ctx->spec = spec;
 	ctx->opts = opts;
@@ -165,9 +166,9 @@ pxy_conn_ctx_new(evutil_socket_t fd,
 }
 
 static pxy_conn_child_ctx_t * MALLOC NONNULL(2)
-pxy_conn_ctx_new_child(evutil_socket_t fd, pxy_conn_ctx_t *parent)
+pxy_conn_ctx_new_child(evutil_socket_t fd, pxy_conn_ctx_t *conn)
 {
-	assert(parent != NULL);
+	assert(conn != NULL);
 
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_new_child: ENTER fd=%d\n", fd);
@@ -178,11 +179,12 @@ pxy_conn_ctx_new_child(evutil_socket_t fd, pxy_conn_ctx_t *parent)
 	}
 	memset(ctx, 0, sizeof(pxy_conn_child_ctx_t));
 	ctx->fd = fd;
-	ctx->parent = parent;
-	// @attention Child ctxs use the parent's event bases, otherwise we would get multithreading issues
-	pxy_thrmgr_attach_child(parent);
+	ctx->is_child = 1;
+	ctx->conn = conn;
+	// @attention Child connections use the parent's event bases, otherwise we would get multithreading issues
+	pxy_thrmgr_attach_child(conn);
 #ifdef DEBUG_PROXY
-	if (OPTS_DEBUG(parent->opts)) {
+	if (OPTS_DEBUG(conn->opts)) {
 		log_dbg_printf("%p             pxy_conn_ctx_new_child\n", (void*)ctx);
 	}
 #endif /* DEBUG_PROXY */
@@ -193,13 +195,13 @@ static void NONNULL(1)
 pxy_conn_ctx_free_child(pxy_conn_child_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_free_child: ENTER fd=%d, pfd=%d\n", ctx->fd, ctx->parent->fd);
-	if (OPTS_DEBUG(ctx->parent->opts)) {
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_free_child: ENTER fd=%d, pfd=%d\n", ctx->fd, ctx->conn->fd);
+	if (OPTS_DEBUG(ctx->conn->opts)) {
 		log_dbg_printf("%p             pxy_conn_ctx_free_child\n",
 		                (void*)ctx);
 	}
 #endif /* DEBUG_PROXY */
-	pxy_thrmgr_detach_child(ctx->parent);
+	pxy_thrmgr_detach_child(ctx->conn);
 	
 	if (ctx->srchost_str) {
 		free(ctx->srchost_str);
@@ -321,27 +323,25 @@ pxy_conn_remove_child(pxy_conn_child_ctx_t *child, pxy_conn_child_ctx_t **head)
 static void NONNULL(1)
 pxy_conn_free_child(pxy_conn_child_ctx_t *ctx)
 {
-	assert(ctx->parent != NULL);
+	assert(ctx->conn != NULL);
 
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_free_child: ENTER fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
-	pxy_conn_ctx_t *parent = ctx->parent;
-
 	pxy_conn_desc_t *dst = &ctx->dst;
 	if (dst->bev) {
-		bufferevent_free_and_close_fd(dst->bev, ctx->parent);
+		bufferevent_free_and_close_fd(dst->bev, ctx->conn);
 		dst->bev = NULL;
 	}
 
 	pxy_conn_desc_t *src = &ctx->src;
 	if (src->bev) {
-		bufferevent_free_and_close_fd_nonssl(src->bev, ctx->parent);
+		bufferevent_free_and_close_fd_nonssl(src->bev, ctx->conn);
 		src->bev = NULL;
 	}
 
-	pxy_conn_remove_child(ctx, &parent->children);
+	pxy_conn_remove_child(ctx, &ctx->conn->children);
 	pxy_conn_ctx_free_child(ctx);
 }
 
@@ -1445,10 +1445,10 @@ pxy_bufferevent_setup_child(pxy_conn_child_ctx_t *ctx, evutil_socket_t fd, SSL *
 	struct bufferevent *bev;
 
 	if (ssl) {
-		bev = bufferevent_openssl_socket_new(ctx->parent->evbase, fd, ssl,
+		bev = bufferevent_openssl_socket_new(ctx->conn->evbase, fd, ssl,
 				((fd == -1) ? BUFFEREVENT_SSL_CONNECTING : BUFFEREVENT_SSL_ACCEPTING), BEV_OPT_DEFER_CALLBACKS);
 	} else {
-		bev = bufferevent_socket_new(ctx->parent->evbase, fd, BEV_OPT_DEFER_CALLBACKS);
+		bev = bufferevent_socket_new(ctx->conn->evbase, fd, BEV_OPT_DEFER_CALLBACKS);
 	}
 	if (!bev) {
 		log_err_level_printf(LOG_CRIT, "Error creating bufferevent socket\n");
@@ -1472,7 +1472,7 @@ pxy_bufferevent_setup_child(pxy_conn_child_ctx_t *ctx, evutil_socket_t fd, SSL *
 	//bufferevent_enable(bev, EV_READ|EV_WRITE);
 
 #ifdef DEBUG_PROXY
-	if (OPTS_DEBUG(ctx->parent->opts)) {
+	if (OPTS_DEBUG(ctx->conn->opts)) {
 		log_dbg_printf("            %p pxy_bufferevent_setup_child\n",
 		               (void*)bev);
 	}
@@ -1489,7 +1489,7 @@ pxy_bufferevent_setup_child(pxy_conn_child_ctx_t *ctx, evutil_socket_t fd, SSL *
  * Returns `line' if the line should be kept.
  */
 static char *
-pxy_http_reqhdr_filter_line(const char *line, pxy_conn_ctx_t *ctx, int child)
+pxy_http_reqhdr_filter_line(const char *line, pxy_conn_ctx_t *ctx)
 {
 	/* parse information for connect log */
 	if (!ctx->http_method) {
@@ -1549,15 +1549,10 @@ pxy_http_reqhdr_filter_line(const char *line, pxy_conn_ctx_t *ctx, int child)
 				return NULL;
 			}
 			return newhdr;
-		// @attention Beware, child ctx does not have opts, see the comments in pxy_conn_child_ctx
-		// XXX: Does not look nice, but C does not have polymorphism similar to OOP
-		} else if (((!child && ctx->opts->remove_http_accept_encoding) ||
-					 (child && ((pxy_conn_child_ctx_t *) ctx)->parent->opts->remove_http_accept_encoding)) &&
-				!strncasecmp(line, "Accept-Encoding:", 16)) {
+		// @attention Always use conn ctx for opts, child ctx does not have opts, see the comments in pxy_conn_child_ctx
+		} else if (ctx->conn->opts->remove_http_accept_encoding && !strncasecmp(line, "Accept-Encoding:", 16)) {
 			return NULL;
-		} else if (((!child && ctx->opts->remove_http_referer) ||
-					 (child && ((pxy_conn_child_ctx_t *) ctx)->parent->opts->remove_http_referer)) &&
-				!strncasecmp(line, "Referer:", 8)) {
+		} else if (ctx->conn->opts->remove_http_referer && !strncasecmp(line, "Referer:", 8)) {
 			return NULL;
 		/* Suppress upgrading to SSL/TLS, WebSockets or HTTP/2,
 		 * unsupported encodings, and keep-alive */
@@ -1565,7 +1560,7 @@ pxy_http_reqhdr_filter_line(const char *line, pxy_conn_ctx_t *ctx, int child)
 		           !strncasecmp(line, "Accept-Encoding:", 16) ||
 		           !strncasecmp(line, "Keep-Alive:", 11)) {
 			return NULL;
-		} else if (child && (!strncasecmp(line, SSLPROXY_KEY, SSLPROXY_KEY_LEN) ||
+		} else if (ctx->is_child && (!strncasecmp(line, SSLPROXY_KEY, SSLPROXY_KEY_LEN) ||
 				   // @attention flickr keeps redirecting to https with 301 unless we remove the Via line of squid
 				   // Apparently flickr assumes the existence of Via header field or squid keyword a sign of plain http, even if we are using https
 		           !strncasecmp(line, "Via:", 4) ||
@@ -1731,7 +1726,7 @@ pxy_ocsp_is_valid_uri(const char *uri, pxy_conn_ctx_t *ctx)
  * RFC 2560: X.509 Internet PKI Online Certificate Status Protocol (OCSP)
  */
 static void
-pxy_ocsp_deny(pxy_conn_ctx_t *ctx, int child)
+pxy_ocsp_deny(pxy_conn_ctx_t *ctx)
 {
 	struct evbuffer *inbuf, *outbuf;
 	static const char ocspresp[] =
@@ -1762,7 +1757,7 @@ deny:
 	outbuf = bufferevent_get_output(ctx->src.bev);
 
 	if (evbuffer_get_length(inbuf) > 0) {
-		if (WANT_CONTENT_LOG(child ? ((pxy_conn_child_ctx_t *)ctx)->parent:ctx)) {
+		if (WANT_CONTENT_LOG(ctx->conn)) {
 			logbuf_t *lb;
 			lb = logbuf_new_alloc(evbuffer_get_length(inbuf),
 			                      NULL, NULL);
@@ -1778,12 +1773,12 @@ deny:
 		}
 		evbuffer_drain(inbuf, evbuffer_get_length(inbuf));
 	}
-	bufferevent_free_and_close_fd(ctx->dst.bev, child ? ((pxy_conn_child_ctx_t *)ctx)->parent:ctx);
+	bufferevent_free_and_close_fd(ctx->dst.bev, ctx->conn);
 	ctx->dst.bev = NULL;
 	ctx->dst.closed = 1;
 	evbuffer_add_printf(outbuf, ocspresp);
 	ctx->ocsp_denied = 1;
-	if (WANT_CONTENT_LOG(child ? ((pxy_conn_child_ctx_t *)ctx)->parent:ctx)) {
+	if (WANT_CONTENT_LOG(ctx->conn)) {
 		logbuf_t *lb;
 		lb = logbuf_new_copy(ocspresp, sizeof(ocspresp) - 1,
 		                     NULL, NULL);
@@ -1913,14 +1908,14 @@ pxy_get_event_name_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ctx)
 #endif /* DEBUG_PROXY */
 
 static void
-pxy_http_reqhdr_filter(struct evbuffer *inbuf, struct evbuffer *outbuf, struct bufferevent *bev, pxy_conn_ctx_t *ctx, pxy_conn_ctx_t *parent, int child)
+pxy_http_reqhdr_filter(struct evbuffer *inbuf, struct evbuffer *outbuf, struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 	logbuf_t *lb = NULL, *tail = NULL;
 	char *line;
 
 	while ((line = evbuffer_readln(inbuf, NULL, EVBUFFER_EOL_CRLF))) {
 		char *replace;
-		if (WANT_CONTENT_LOG(parent)) {
+		if (WANT_CONTENT_LOG(ctx->conn)) {
 			logbuf_t *tmp;
 			tmp = logbuf_new_printf(NULL, NULL,
 									"%s\r\n", line);
@@ -1933,7 +1928,7 @@ pxy_http_reqhdr_filter(struct evbuffer *inbuf, struct evbuffer *outbuf, struct b
 				lb = tail = tmp;
 			}
 		}
-		replace = pxy_http_reqhdr_filter_line(line, ctx, child);
+		replace = pxy_http_reqhdr_filter_line(line, ctx);
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_http_reqhdr_filter: src line, fd=%d: %s\n", ctx->fd, line);
 #endif /* DEBUG_PROXY */
@@ -1952,7 +1947,7 @@ pxy_http_reqhdr_filter(struct evbuffer *inbuf, struct evbuffer *outbuf, struct b
 		}
 		free(line);
 
-		if (!child && !ctx->sent_header) {
+		if (!ctx->is_child && !ctx->sent_header) {
 			ctx->sent_header = 1;
 #ifdef DEBUG_PROXY
 			log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_http_reqhdr_filter: src INSERT header_str line, fd=%d: %s\n", ctx->fd, ctx->header_str);
@@ -1962,14 +1957,14 @@ pxy_http_reqhdr_filter(struct evbuffer *inbuf, struct evbuffer *outbuf, struct b
 
 		if (ctx->seen_req_header) {
 			/* request header complete */
-			if (parent->opts->deny_ocsp) {
-				pxy_ocsp_deny(ctx, 0);
+			if (ctx->conn->opts->deny_ocsp) {
+				pxy_ocsp_deny(ctx);
 			}
 			break;
 		}
 	}
-	if (lb && WANT_CONTENT_LOG(parent)) {
-		if (log_content_submit(parent->logctx, lb,
+	if (lb && WANT_CONTENT_LOG(ctx->conn)) {
+		if (log_content_submit(ctx->conn->logctx, lb,
 							   1/*req*/) == -1) {
 			logbuf_free(lb);
 			log_err_level_printf(LOG_WARNING, "Content log "
@@ -1983,7 +1978,7 @@ pxy_http_reqhdr_filter(struct evbuffer *inbuf, struct evbuffer *outbuf, struct b
 	// @todo Fix this
 	/* out of memory condition? */
 	if (ctx->enomem) {
-		pxy_conn_free(parent, (bev == ctx->src.bev));
+		pxy_conn_free(ctx->conn, (bev == ctx->src.bev));
 		goto leave;
 	}
 
@@ -1991,11 +1986,11 @@ pxy_http_reqhdr_filter(struct evbuffer *inbuf, struct evbuffer *outbuf, struct b
 	if (evbuffer_get_length(inbuf) == 0)
 		goto leave;
 
-	if (WANT_CONTENT_LOG(parent)) {
+	if (WANT_CONTENT_LOG(ctx->conn)) {
 		logbuf_t *lb;
 		lb = logbuf_new_alloc(evbuffer_get_length(inbuf), NULL, NULL);
 		if (lb && (evbuffer_copyout(inbuf, lb->buf, lb->sz) != -1)) {
-			if (log_content_submit(parent->logctx, lb,
+			if (log_content_submit(ctx->conn->logctx, lb,
 								   (bev == ctx->src.bev)) == -1) {
 				logbuf_free(lb);
 				log_err_level_printf(LOG_WARNING, "Content log "
@@ -2009,7 +2004,7 @@ leave:
 }
 
 static void
-pxy_http_resphdr_filter(struct evbuffer *inbuf, struct evbuffer *outbuf, struct bufferevent *bev, pxy_conn_ctx_t *ctx, pxy_conn_ctx_t *parent, int child)
+pxy_http_resphdr_filter(struct evbuffer *inbuf, struct evbuffer *outbuf, struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 	logbuf_t *lb = NULL, *tail = NULL;
 
@@ -2017,7 +2012,7 @@ pxy_http_resphdr_filter(struct evbuffer *inbuf, struct evbuffer *outbuf, struct 
 	while ((line = evbuffer_readln(inbuf, NULL,
 								   EVBUFFER_EOL_CRLF))) {
 		char *replace;
-		if (WANT_CONTENT_LOG(parent)) {
+		if (WANT_CONTENT_LOG(ctx->conn)) {
 			logbuf_t *tmp;
 			tmp = logbuf_new_printf(NULL, NULL,
 									"%s\r\n", line);
@@ -2050,14 +2045,14 @@ pxy_http_resphdr_filter(struct evbuffer *inbuf, struct evbuffer *outbuf, struct 
 		free(line);
 		if (ctx->seen_resp_header) {
 			/* response header complete: log connection */
-			if (!child && (WANT_CONNECT_LOG(parent) || ctx->opts->statslog)) {
-				pxy_log_connect_http(parent);
+			if (!ctx->is_child && (WANT_CONNECT_LOG(ctx->conn) || ctx->conn->opts->statslog)) {
+				pxy_log_connect_http(ctx->conn);
 			}
 			break;
 		}
 	}
-	if (lb && WANT_CONTENT_LOG(parent)) {
-		if (log_content_submit(parent->logctx, lb,
+	if (lb && WANT_CONTENT_LOG(ctx->conn)) {
+		if (log_content_submit(ctx->conn->logctx, lb,
 							   0/*resp*/) == -1) {
 			logbuf_free(lb);
 			log_err_level_printf(LOG_WARNING, "Content log "
@@ -2071,7 +2066,7 @@ pxy_http_resphdr_filter(struct evbuffer *inbuf, struct evbuffer *outbuf, struct 
 	// @todo Fix this
 	/* out of memory condition? */
 	if (ctx->enomem) {
-		pxy_conn_free(parent, (bev == ctx->src.bev));
+		pxy_conn_free(ctx->conn, (bev == ctx->src.bev));
 		goto leave;
 	}
 
@@ -2079,11 +2074,11 @@ pxy_http_resphdr_filter(struct evbuffer *inbuf, struct evbuffer *outbuf, struct 
 	if (evbuffer_get_length(inbuf) == 0)
 		goto leave;
 
-	if (WANT_CONTENT_LOG(parent)) {
+	if (WANT_CONTENT_LOG(ctx->conn)) {
 		logbuf_t *lb;
 		lb = logbuf_new_alloc(evbuffer_get_length(inbuf), NULL, NULL);
 		if (lb && (evbuffer_copyout(inbuf, lb->buf, lb->sz) != -1)) {
-			if (log_content_submit(parent->logctx, lb,
+			if (log_content_submit(ctx->conn->logctx, lb,
 								   (bev == ctx->src.bev)) == -1) {
 				logbuf_free(lb);
 				log_err_level_printf(LOG_WARNING, "Content log "
@@ -2097,7 +2092,7 @@ leave:
 }
 
 static void
-pxy_process_response(struct evbuffer *inbuf, struct evbuffer *outbuf, struct bufferevent *bev, pxy_conn_ctx_t *ctx, pxy_conn_ctx_t *parent)
+pxy_process_response(struct evbuffer *inbuf, struct evbuffer *outbuf, struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 	size_t packet_size = evbuffer_get_length(inbuf);
 	char *packet = malloc(packet_size);
@@ -2118,12 +2113,12 @@ pxy_process_response(struct evbuffer *inbuf, struct evbuffer *outbuf, struct buf
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_response: dst packet (size=%lu)\n", packet_size);
 #endif /* DEBUG_PROXY */
 
-	if (WANT_CONTENT_LOG(parent)) {
+	if (WANT_CONTENT_LOG(ctx->conn)) {
 		logbuf_t *lb;
 		lb = logbuf_new_alloc(packet_size, NULL, NULL);
 		if (lb) {
 			memcpy(lb->buf, packet, lb->sz);
-			if (log_content_submit(parent->logctx, lb, (bev == ctx->src.bev)) == -1) {
+			if (log_content_submit(ctx->conn->logctx, lb, (bev == ctx->src.bev)) == -1) {
 				logbuf_free(lb);
 				log_err_level_printf(LOG_WARNING, "Content log "
 							   "submission failed\n");
@@ -2206,7 +2201,7 @@ pxy_bev_readcb(struct bufferevent *bev, void *arg)
 #ifdef DEBUG_PROXY
 				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb: HTTP Request Header size=%lu, fd=%d\n", evbuffer_get_length(inbuf), ctx->fd);
 #endif /* DEBUG_PROXY */
-				pxy_http_reqhdr_filter(inbuf, outbuf, bev, ctx, ctx, 0);
+				pxy_http_reqhdr_filter(inbuf, outbuf, bev, ctx);
 			} else {
 #ifdef DEBUG_PROXY
 				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb: HTTP Request Body size=%lu, fd=%d\n", evbuffer_get_length(inbuf), ctx->fd);
@@ -2275,7 +2270,7 @@ pxy_bev_readcb(struct bufferevent *bev, void *arg)
 #ifdef DEBUG_PROXY
 				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb: HTTP Response Header size=%lu, fd=%d\n", evbuffer_get_length(inbuf), ctx->fd);
 #endif /* DEBUG_PROXY */
-				pxy_http_resphdr_filter(inbuf, outbuf, bev, ctx, ctx, 0);
+				pxy_http_resphdr_filter(inbuf, outbuf, bev, ctx);
 			} else {
 #ifdef DEBUG_PROXY
 				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb: HTTP Response Body size=%lu, fd=%d\n", evbuffer_get_length(inbuf), ctx->fd);
@@ -2283,7 +2278,7 @@ pxy_bev_readcb(struct bufferevent *bev, void *arg)
 				goto leave;
 			}
 		} else {
-			pxy_process_response(inbuf, outbuf, bev, ctx, ctx);
+			pxy_process_response(inbuf, outbuf, bev, ctx);
 		}
 	}
 	goto watermark;
@@ -2321,15 +2316,14 @@ pxy_bev_readcb_child(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_child_ctx_t *ctx = arg;
 
-	assert(ctx->parent != NULL);
-	pxy_conn_ctx_t *parent = ctx->parent;
+	assert(ctx->conn != NULL);
 	
-	ctx->parent->atime = time(NULL);
+	ctx->conn->atime = time(NULL);
 
 	size_t bytes = evbuffer_get_length(bufferevent_get_input(bev));
 
 #ifdef DEBUG_PROXY
-	evutil_socket_t pfd = parent->fd;
+	evutil_socket_t pfd = ctx->conn->fd;
 	char *event_name = pxy_get_event_name_child(bev, ctx);
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb_child: ENTER %s fd=%d, pfd=%d, size=%lu\n",
 			event_name, ctx->fd, pfd, bytes);
@@ -2354,15 +2348,15 @@ pxy_bev_readcb_child(struct bufferevent *bev, void *arg)
 	}
 
 	if (bev == ctx->src.bev) {
-		parent->thr->extif_out_bytes += bytes;
+		ctx->conn->thr->extif_out_bytes += bytes;
 
 		/* request header munging */
-		if (parent->spec->http) {
+		if (ctx->conn->spec->http) {
 			if (!ctx->seen_req_header) {
 #ifdef DEBUG_PROXY
 				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb_child: HTTP Request Header size=%lu, fd=%d\n", evbuffer_get_length(inbuf), ctx->fd);
 #endif /* DEBUG_PROXY */
-				pxy_http_reqhdr_filter(inbuf, outbuf, bev, (pxy_conn_ctx_t *)ctx, parent, 1);
+				pxy_http_reqhdr_filter(inbuf, outbuf, bev, (pxy_conn_ctx_t *)ctx);
 			} else {
 #ifdef DEBUG_PROXY
 				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb_child: HTTP Request Body size=%lu, fd=%d\n", evbuffer_get_length(inbuf), ctx->fd);
@@ -2374,7 +2368,7 @@ pxy_bev_readcb_child(struct bufferevent *bev, void *arg)
 			char *packet = malloc(packet_size);
 			if (!packet) {
 				ctx->enomem = 1;
-				pxy_conn_free(parent, 1);
+				pxy_conn_free(ctx->conn, 1);
 				return;
 			}
 
@@ -2382,8 +2376,8 @@ pxy_bev_readcb_child(struct bufferevent *bev, void *arg)
 				log_err_printf("evbuffer_remove cannot drain the buffer\n");
 			}
 
-			size_t header_len = strlen(parent->header_str);
-			char *pos = memmem(packet, packet_size, parent->header_str, header_len);
+			size_t header_len = strlen(ctx->conn->header_str);
+			char *pos = memmem(packet, packet_size, ctx->conn->header_str, header_len);
 			if (pos) {
 				memmove(pos, pos + header_len + 2, packet_size - (pos - packet) - (header_len + 2));
 				packet_size-= header_len + 2;
@@ -2397,16 +2391,16 @@ pxy_bev_readcb_child(struct bufferevent *bev, void *arg)
 			}
 
 #ifdef DEBUG_PROXY
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb_child: src packet (size=%lu), fd=%d, parent fd=%d:\n%.*s\n",
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb_child: src packet (size=%lu), fd=%d, conn fd=%d:\n%.*s\n",
 					packet_size, ctx->fd, pfd, (int)packet_size, packet);
 #endif /* DEBUG_PROXY */
 
-			if (WANT_CONTENT_LOG(parent)) {
+			if (WANT_CONTENT_LOG(ctx->conn)) {
 				logbuf_t *lb;
 				lb = logbuf_new_alloc(packet_size, NULL, NULL);
 				if (lb) {
 					memcpy(lb->buf, packet, lb->sz);
-					if (log_content_submit(parent->logctx, lb, (bev == ctx->src.bev)) == -1) {
+					if (log_content_submit(ctx->conn->logctx, lb, (bev == ctx->src.bev)) == -1) {
 						logbuf_free(lb);
 						log_err_level_printf(LOG_WARNING, "Content log "
 									   "submission failed\n");
@@ -2417,14 +2411,14 @@ pxy_bev_readcb_child(struct bufferevent *bev, void *arg)
 		}
 	}
 	else if (bev == ctx->dst.bev) {
-		parent->thr->extif_in_bytes += bytes;
+		ctx->conn->thr->extif_in_bytes += bytes;
 
-		if (parent->spec->http) {
+		if (ctx->conn->spec->http) {
 			if (!ctx->seen_resp_header) {
 #ifdef DEBUG_PROXY
 				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb_child: HTTP Response Header size=%lu, fd=%d\n", evbuffer_get_length(inbuf), ctx->fd);
 #endif /* DEBUG_PROXY */
-				pxy_http_resphdr_filter(inbuf, outbuf, bev, (pxy_conn_ctx_t *)ctx, parent, 1);
+				pxy_http_resphdr_filter(inbuf, outbuf, bev, (pxy_conn_ctx_t *)ctx);
 			} else {
 #ifdef DEBUG_PROXY
 				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb_child: HTTP Response Body size=%lu, fd=%d\n", evbuffer_get_length(inbuf), ctx->fd);
@@ -2432,17 +2426,17 @@ pxy_bev_readcb_child(struct bufferevent *bev, void *arg)
 				goto leave;
 			}
 		} else {
-			pxy_process_response(inbuf, outbuf, bev, (pxy_conn_ctx_t *)ctx, parent);
+			pxy_process_response(inbuf, outbuf, bev, (pxy_conn_ctx_t *)ctx);
 		}
 	}
 	goto watermark;
 
 leave:
-	if (WANT_CONTENT_LOG(parent)) {
+	if (WANT_CONTENT_LOG(ctx->conn)) {
 		logbuf_t *lb;
 		lb = logbuf_new_alloc(evbuffer_get_length(inbuf), NULL, NULL);
 		if (lb && (evbuffer_copyout(inbuf, lb->buf, lb->sz) != -1)) {
-			if (log_content_submit(parent->logctx, lb,
+			if (log_content_submit(ctx->conn->logctx, lb,
 								   (bev == ctx->src.bev)) == -1) {
 				logbuf_free(lb);
 				log_err_level_printf(LOG_WARNING, "Content log "
@@ -2455,13 +2449,13 @@ leave:
 watermark:
 	if (evbuffer_get_length(outbuf) >= OUTBUF_LIMIT) {
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_bev_readcb_child: setwatermark, pfd=%d\n", ctx->parent->fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_bev_readcb_child: setwatermark, pfd=%d\n", ctx->conn->fd);
 #endif /* DEBUG_PROXY */
 		/* temporarily disable data source;
 		 * set an appropriate watermark. */
 		bufferevent_setwatermark(other->bev, EV_WRITE, OUTBUF_LIMIT/2, OUTBUF_LIMIT);
 		bufferevent_disable(bev, EV_READ);
-		ctx->parent->thr->set_watermarks++;
+		ctx->conn->thr->set_watermarks++;
 	}
 }
 
@@ -2472,12 +2466,10 @@ pxy_conn_connect_child(pxy_conn_child_ctx_t *ctx)
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_connect_child: ENTER fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
-	pxy_conn_ctx_t *parent = ctx->parent;
-
-	if (!parent->addrlen) {
+	if (!ctx->conn->addrlen) {
 		log_err_level_printf(LOG_CRIT, "Child no target address; aborting connection\n");
 		evutil_closesocket(ctx->fd);
-		pxy_conn_free(parent, 1);
+		pxy_conn_free(ctx->conn, 1);
 		return;
 	}
 
@@ -2486,13 +2478,13 @@ pxy_conn_connect_child(pxy_conn_child_ctx_t *ctx)
 	if (!ctx->src.bev) {
 		log_err_level_printf(LOG_CRIT, "Error creating child src\n");
 		evutil_closesocket(ctx->fd);
-		pxy_conn_free(parent, 1);
+		pxy_conn_free(ctx->conn, 1);
 		return;
 	}
 
 	ctx->src_fd = bufferevent_getfd(ctx->src.bev);
-	parent->child_src_fd = ctx->src_fd;
-	parent->thr->max_fd = MAX(parent->thr->max_fd, ctx->src_fd);
+	ctx->conn->child_src_fd = ctx->src_fd;
+	ctx->conn->thr->max_fd = MAX(ctx->conn->thr->max_fd, ctx->src_fd);
 	
 	// @attention Do not enable src events here yet, they will be enabled after dst connects
 	// @todo Do we need a read watermark for the header line of SSL proxy address?
@@ -2500,21 +2492,21 @@ pxy_conn_connect_child(pxy_conn_child_ctx_t *ctx)
 
 	/* create server-side socket and eventbuffer */
 	// Children rely on the findings of parent
-	if (parent->spec->ssl || parent->clienthello_found) {
-		ctx->dst.ssl = pxy_dstssl_create(parent);
+	if (ctx->conn->spec->ssl || ctx->conn->clienthello_found) {
+		ctx->dst.ssl = pxy_dstssl_create(ctx->conn);
 		if (!ctx->dst.ssl) {
 			log_err_level_printf(LOG_CRIT, "Error creating SSL\n");
 			// pxy_conn_free()>pxy_conn_free_child() will close the fd, since we have a non-NULL src.bev now
-			pxy_conn_free(parent, 1);
+			pxy_conn_free(ctx->conn, 1);
 			return;
 		}
 	}
-	if (parent->clienthello_found) {
-		if (OPTS_DEBUG(parent->opts)) {
+	if (ctx->conn->clienthello_found) {
+		if (OPTS_DEBUG(ctx->conn->opts)) {
 			log_dbg_printf("Completing autossl upgrade\n");
 		}
 		ctx->dst.bev = bufferevent_openssl_filter_new(
-					   parent->evbase, ctx->dst.bev, ctx->dst.ssl,
+					   ctx->conn->evbase, ctx->dst.bev, ctx->dst.ssl,
 					   BUFFEREVENT_SSL_ACCEPTING,
 					   BEV_OPT_DEFER_CALLBACKS);
 		if (ctx->dst.bev) {
@@ -2529,7 +2521,7 @@ pxy_conn_connect_child(pxy_conn_child_ctx_t *ctx)
 			SSL_free(ctx->dst.ssl);
 			ctx->dst.ssl = NULL;
 		}
-		pxy_conn_free(parent, 1);
+		pxy_conn_free(ctx->conn, 1);
 		return;
 	}
 
@@ -2537,15 +2529,15 @@ pxy_conn_connect_child(pxy_conn_child_ctx_t *ctx)
 
 	/* initiate connection */
 	// @attention No need to check retval here, the eventcb should handle the errors
-	bufferevent_socket_connect(ctx->dst.bev, (struct sockaddr *)&parent->addr, parent->addrlen);
+	bufferevent_socket_connect(ctx->dst.bev, (struct sockaddr *)&ctx->conn->addr, ctx->conn->addrlen);
 	
 	ctx->dst_fd = bufferevent_getfd(ctx->dst.bev);
-	parent->child_dst_fd = ctx->dst_fd;
-	parent->thr->max_fd = MAX(parent->thr->max_fd, ctx->dst_fd);
+	ctx->conn->child_dst_fd = ctx->dst_fd;
+	ctx->conn->thr->max_fd = MAX(ctx->conn->thr->max_fd, ctx->dst_fd);
 
-	if (OPTS_DEBUG(parent->opts)) {
+	if (OPTS_DEBUG(ctx->conn->opts)) {
 		char *host, *port;
-		if (sys_sockaddr_str((struct sockaddr *)&parent->addr, parent->addrlen, &host, &port) != 0) {
+		if (sys_sockaddr_str((struct sockaddr *)&ctx->conn->addr, ctx->conn->addrlen, &host, &port) != 0) {
 			log_dbg_printf("pxy_conn_connect_child: Connecting to [?]:?\n");
 		} else {
 			log_dbg_printf("pxy_conn_connect_child: Connecting to [%s]:%s\n", host, port);
@@ -2579,7 +2571,7 @@ getdtablecount(void)
 #endif /* HAVE_NETFILTER */
 
 static void
-pxy_conn_setup_child(evutil_socket_t fd, pxy_conn_ctx_t *parent)
+pxy_conn_setup_child(evutil_socket_t fd, pxy_conn_ctx_t *conn)
 {
 	int dtable_count = getdtablecount();
 
@@ -2593,25 +2585,25 @@ pxy_conn_setup_child(evutil_socket_t fd, pxy_conn_ctx_t *parent)
 		errno = EMFILE;
 		log_err_level_printf(LOG_CRIT, "Out of file descriptors\n");
 		evutil_closesocket(fd);
-		pxy_conn_free(parent, 1);
+		pxy_conn_free(conn, 1);
 		return;
 	}
 
-	pxy_conn_child_ctx_t *ctx = pxy_conn_ctx_new_child(fd, parent);
+	pxy_conn_child_ctx_t *ctx = pxy_conn_ctx_new_child(fd, conn);
 	if (!ctx) {
 		log_err_level_printf(LOG_CRIT, "Error allocating memory\n");
 		evutil_closesocket(fd);
-		pxy_conn_free(parent, 1);
+		pxy_conn_free(conn, 1);
 		return;
 	}
 
 	// Prepend ctx to meta ctx child list
 	// If the last child is deleted, the child_list may become null again
-	ctx->next = parent->children;
-	parent->children = ctx;
+	ctx->next = conn->children;
+	conn->children = ctx;
 
-	parent->child_count++;
-	ctx->idx = parent->child_count;
+	conn->child_count++;
+	ctx->idx = conn->child_count;
 
 	pxy_conn_connect_child(ctx);
 }
@@ -2625,22 +2617,22 @@ proxy_listener_acceptcb_child(UNUSED struct evconnlistener *listener,
                         UNUSED struct sockaddr *peeraddr, UNUSED int peeraddrlen,
                         void *arg)
 {
-	pxy_conn_ctx_t *parent = arg;
-	assert(parent != NULL);
+	pxy_conn_ctx_t *conn = arg;
+	assert(conn != NULL);
 
-	parent->atime = time(NULL);
+	conn->atime = time(NULL);
 
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "proxy_listener_acceptcb_child: ENTER fd=%d, pfd=%d, child_fd=%d\n", fd, parent->fd, parent->child_fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "proxy_listener_acceptcb_child: ENTER fd=%d, pfd=%d, child_fd=%d\n", fd, conn->fd, conn->child_fd);
 
 	char *host, *port;
 	if (sys_sockaddr_str(peeraddr, peeraddrlen, &host, &port) == 0) {
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "proxy_listener_acceptcb_child: Peer addr=[%s]:%s, child fd=%d, pfd=%d\n", host, port, fd, parent->fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "proxy_listener_acceptcb_child: Peer addr=[%s]:%s, child fd=%d, pfd=%d\n", host, port, fd, conn->fd);
 		free(host);
 		free(port);
 	}
 #endif /* DEBUG_PROXY */
-	pxy_conn_setup_child(fd, parent);
+	pxy_conn_setup_child(fd, conn);
 }
 
 static int
@@ -2661,8 +2653,8 @@ pxy_connected_enable(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		if (!ctx->passthrough) {
 			// @attention Create and enable dst.bev before, but connect here, because we check if dst.bev is NULL elsewhere
 			if (bufferevent_socket_connect(ctx->dst.bev,
-									   (struct sockaddr *)&ctx->spec->parent_dst_addr,
-									   ctx->spec->parent_dst_addrlen) == -1) {
+									   (struct sockaddr *)&ctx->spec->conn_dst_addr,
+									   ctx->spec->conn_dst_addrlen) == -1) {
 #ifdef DEBUG_PROXY
 				log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_connected_enable: FAILED bufferevent_socket_connect for dst, fd=%d\n", fd);
 #endif /* DEBUG_PROXY */
@@ -2792,7 +2784,7 @@ pxy_connected_enable(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		}
 
 		if (!ctx->passthrough) {
-			// @attention Free the srv_dst of the parent ctx asap, we don't need it, but we need its fd
+			// @attention Free the srv_dst of the conn asap, we don't need it, but we need its fd
 			// So save its ssl info for logging
 			if (ctx->srv_dst.ssl) {
 				ctx->srv_dst_ssl_version = strdup(SSL_get_version(ctx->srv_dst.ssl));
@@ -2811,7 +2803,7 @@ pxy_connected_enable(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 				srv_dst->closed = 1;
 			}
 
-			// @attention Defer child setup and evcl creation until parent init is complete, otherwise (1) causes multithreading issues (proxy_listener_acceptcb is
+			// @attention Defer child setup and evcl creation until after parent init is complete, otherwise (1) causes multithreading issues (proxy_listener_acceptcb is
 			// running on a different thread from the conn, and we only have thrmgr mutex), and (2) we need to clean up less upon errors.
 			// Child evcls use the evbase of the parent thread, otherwise we would get multithreading issues.
 			evutil_socket_t cfd;
@@ -2840,7 +2832,7 @@ pxy_connected_enable(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 
 			evconnlistener_set_error_cb(child_evcl, proxy_listener_errorcb);
 #ifdef DEBUG_PROXY
-			log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_connected_enable: Finished setting up child, parent fd=%d, NEW cfd=%d\n", fd, ctx->child_fd);	
+			log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_connected_enable: Finished setting up child, conn fd=%d, NEW cfd=%d\n", fd, ctx->child_fd);	
 #endif /* DEBUG_PROXY */
 
 			struct sockaddr_in child_listener_addr;
@@ -3045,20 +3037,18 @@ static void
 pxy_bev_writecb_child(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_child_ctx_t *ctx = arg;
-	assert(ctx->parent != NULL);
-
-	pxy_conn_ctx_t *parent = ctx->parent;
+	assert(ctx->conn != NULL);
 
 #ifdef DEBUG_PROXY
 	char *event_name = pxy_get_event_name_child(bev, ctx);
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_writecb_child: ENTER %s fd=%d, child_fd=%d, cfd=%d\n", event_name, parent->fd, parent->child_fd, ctx->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_writecb_child: ENTER %s fd=%d, child_fd=%d, cfd=%d\n", event_name, ctx->conn->fd, ctx->conn->child_fd, ctx->fd);
 #endif /* DEBUG_PROXY */
 
-	parent->atime = time(NULL);
+	ctx->conn->atime = time(NULL);
 
 	if (bev == ctx->dst.bev && !ctx->connected) {
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_bev_writecb_child: writecb before connected %s fd=%d, pfd=%d\n", event_name, ctx->fd, ctx->parent->fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_bev_writecb_child: writecb before connected %s fd=%d, pfd=%d\n", event_name, ctx->fd, ctx->conn->fd);
 #endif /* DEBUG_PROXY */
 		pxy_bev_eventcb_child(bev, BEV_EVENT_CONNECTED, ctx);
 	}
@@ -3076,7 +3066,7 @@ pxy_bev_writecb_child(struct bufferevent *bev, void *arg)
 			/* finished writing and other end is closed;
 			 * close this end too and clean up memory */
 			this->closed = 1;
-			this_free_and_close_fd_func(bev, ctx->parent);
+			this_free_and_close_fd_func(bev, ctx->conn);
 			this->bev = NULL;
 			pxy_conn_free_child(ctx);
 		}
@@ -3085,13 +3075,13 @@ pxy_bev_writecb_child(struct bufferevent *bev, void *arg)
 
 	if (other->bev && !(bufferevent_get_enabled(other->bev) & EV_READ)) {
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_bev_writecb_child: unset watermark, pfd=%d\n", ctx->parent->fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_bev_writecb_child: unset watermark, pfd=%d\n", ctx->conn->fd);
 #endif /* DEBUG_PROXY */
 		/* data source temporarily disabled;
 		 * re-enable and reset watermark to 0. */
 		bufferevent_setwatermark(bev, EV_WRITE, 0, 0);
 		bufferevent_enable(other->bev, EV_READ);
-		ctx->parent->thr->unset_watermarks++;
+		ctx->conn->thr->unset_watermarks++;
 	}
 }
 
@@ -3371,14 +3361,13 @@ static void
 pxy_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 {
 	pxy_conn_child_ctx_t *ctx = arg;
-	assert(ctx->parent != NULL);
+	assert(ctx->conn != NULL);
 
-	pxy_conn_ctx_t *parent = ctx->parent;
-	parent->atime = time(NULL);
+	ctx->conn->atime = time(NULL);
 
 #ifdef DEBUG_PROXY
 	char *event_name = pxy_get_event_name_child(bev, ctx);
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_eventcb_child: ENTER %s fd=%d, child_fd=%d\n", event_name, parent->fd, parent->child_fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_eventcb_child: ENTER %s fd=%d, child_fd=%d\n", event_name, ctx->conn->fd, ctx->conn->child_fd);
 #endif /* DEBUG_PROXY */
 
 	pxy_conn_desc_t *this = (bev==ctx->src.bev) ? &ctx->src : &ctx->dst;
@@ -3397,7 +3386,7 @@ pxy_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 			// @attention Create and enable src.bev before, but connect here, because we check if dst.bev is NULL elsewhere
 			bufferevent_enable(ctx->src.bev, EV_READ|EV_WRITE);
 		}
-		parent->thr->max_fd = MAX(parent->thr->max_fd, MAX(bufferevent_getfd(ctx->src.bev), bufferevent_getfd(ctx->dst.bev)));
+		ctx->conn->thr->max_fd = MAX(ctx->conn->thr->max_fd, MAX(bufferevent_getfd(ctx->src.bev), bufferevent_getfd(ctx->dst.bev)));
 		return;
 	}
 
@@ -3406,8 +3395,8 @@ pxy_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINER, "ERROR: pxy_bev_eventcb_child error, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
-		pxy_print_ssl_error(bev, parent);
-		parent->thr->errors++;
+		pxy_print_ssl_error(bev, ctx->conn);
+		ctx->conn->thr->errors++;
 
 		if (!ctx->connected) {
 			/* the callout to the original destination failed,
@@ -3421,7 +3410,7 @@ pxy_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 			struct evbuffer *outbuf;
 			outbuf = bufferevent_get_output(other->bev);
 			if (evbuffer_get_length(outbuf) == 0) {
-				other_free_and_close_fd_func(other->bev, ctx->parent);
+				other_free_and_close_fd_func(other->bev, ctx->conn);
 				other->bev = NULL;
 				other->closed = 1;
 			}
@@ -3433,7 +3422,7 @@ pxy_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_eventcb_child: EOF %s fd=%d\n", event_name, ctx->fd);
 
-		if (OPTS_DEBUG(parent->opts)) {
+		if (OPTS_DEBUG(ctx->conn->opts)) {
 			log_dbg_printf("evbuffer size at EOF: "
 			               "i:%zu o:%zu i:%zu o:%zu\n",
 			                evbuffer_get_length(
@@ -3452,18 +3441,18 @@ pxy_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 		if (!ctx->connected) {
 			log_err_level_printf(LOG_WARNING, "EOF on outbound connection before connection establishment\n");
 #ifdef DEBUG_PROXY
-			log_dbg_level_printf(LOG_DBG_MODE_FINER, "WARNING: pxy_bev_eventcb_child: EOF on outbound connection before connection establishment, fd=%d, pfd=%d\n", ctx->fd, parent->fd);
+			log_dbg_level_printf(LOG_DBG_MODE_FINER, "WARNING: pxy_bev_eventcb_child: EOF on outbound connection before connection establishment, fd=%d, pfd=%d\n", ctx->fd, ctx->conn->fd);
 #endif /* DEBUG_PROXY */
 			other->closed = 1;
 		} else if (!other->closed) {
 #ifdef DEBUG_PROXY
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_eventcb_child: !other->closed, terminate conn, fd=%d, pfd=%d\n", ctx->fd, parent->fd);
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_eventcb_child: !other->closed, terminate conn, fd=%d, pfd=%d\n", ctx->fd, ctx->conn->fd);
 #endif /* DEBUG_PROXY */
 			/* if there is data pending in the closed connection,
 			 * handle it here, otherwise it will be lost. */
 			if (evbuffer_get_length(bufferevent_get_input(bev))) {
 #ifdef DEBUG_PROXY
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_eventcb_child: evbuffer_get_length(inbuf) > 0, terminate conn, fd=%d, pfd=%d\n", ctx->fd, parent->fd);
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_eventcb_child: evbuffer_get_length(inbuf) > 0, terminate conn, fd=%d, pfd=%d\n", ctx->fd, ctx->conn->fd);
 #endif /* DEBUG_PROXY */
 				pxy_bev_readcb_child(bev, ctx);
 			}
@@ -3473,10 +3462,10 @@ pxy_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 			 * left in the output buffer. */
 			if (evbuffer_get_length(bufferevent_get_output(other->bev)) == 0) {
 #ifdef DEBUG_PROXY
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_eventcb_child: evbuffer_get_length(outbuf) == 0, terminate conn, fd=%d, pfd=%d\n", ctx->fd, parent->fd);
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_eventcb_child: evbuffer_get_length(outbuf) == 0, terminate conn, fd=%d, pfd=%d\n", ctx->fd, ctx->conn->fd);
 #endif /* DEBUG_PROXY */
 				other->closed = 1;
-				other_free_and_close_fd_func(other->bev, ctx->parent);
+				other_free_and_close_fd_func(other->bev, ctx->conn);
 				other->bev = NULL;
 			}
 		}
@@ -3485,21 +3474,21 @@ pxy_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 
 leave:
 	/* we only get a single disconnect event here for both connections */
-	if (OPTS_DEBUG(parent->opts)) {
+	if (OPTS_DEBUG(ctx->conn->opts)) {
 		log_dbg_printf("pxy_bev_eventcb_child: %s disconnected to [%s]:%s, fd=%d, pfd=%d\n",
 					   this->ssl ? "SSL" : "TCP",
-					   STRORDASH(parent->dsthost_str), STRORDASH(parent->dstport_str), ctx->fd, parent->fd);
+					   STRORDASH(ctx->conn->dsthost_str), STRORDASH(ctx->conn->dstport_str), ctx->fd, ctx->conn->fd);
 		log_dbg_printf("pxy_bev_eventcb_child: %s disconnected from [%s]:%s, fd=%d, pfd=%d\n",
 					   this->ssl ? "SSL" : "TCP",
-					   STRORDASH(parent->srchost_str), STRORDASH(parent->srcport_str), ctx->fd, parent->fd);
+					   STRORDASH(ctx->conn->srchost_str), STRORDASH(ctx->conn->srcport_str), ctx->fd, ctx->conn->fd);
 	}
 
 	this->closed = 1;
-	this_free_and_close_fd_func(bev, ctx->parent);
+	this_free_and_close_fd_func(bev, ctx->conn);
 	this->bev = NULL;
 	if (other->closed) {
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_eventcb_child: other->closed, terminate conn, fd=%d, pfd=%d\n", ctx->fd, parent->fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_eventcb_child: other->closed, terminate conn, fd=%d, pfd=%d\n", ctx->fd, ctx->conn->fd);
 #endif /* DEBUG_PROXY */
 		pxy_conn_free_child(ctx);
 	}

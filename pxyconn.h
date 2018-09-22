@@ -61,6 +61,9 @@ typedef struct pxy_conn_desc {
 struct pxy_conn_ctx {
 	// Common properties
 	// @attention The order of these common vars should match with their order in children
+	unsigned int is_child : 1;       /* is this parent or child context? */
+	pxy_conn_ctx_t *conn;                 /* parent's conn ctx is itself */
+
 	/* per-connection state */
 	struct pxy_conn_desc src;
 	struct pxy_conn_desc dst;
@@ -189,6 +192,9 @@ struct pxy_conn_ctx {
 struct pxy_conn_child_ctx {
 	// Common properties
 	// @attention The order of these common vars should match with their order in parent
+	unsigned int is_child : 1;       /* is this parent or child context? */
+	pxy_conn_ctx_t *conn;                              /* parent context */
+
 	/* per-connection state */
 	struct pxy_conn_desc src;
 	struct pxy_conn_desc dst;
@@ -230,8 +236,6 @@ struct pxy_conn_child_ctx {
 
 	evutil_socket_t src_fd;
 	evutil_socket_t dst_fd;
-
-	pxy_conn_ctx_t *parent;
 
 	// Child index
 	unsigned int idx;
