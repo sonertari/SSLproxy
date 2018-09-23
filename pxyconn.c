@@ -1907,28 +1907,69 @@ pxy_get_event_name_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ctx)
 }
 #endif /* DEBUG_PROXY */
 
-static void
-pxy_http_reqhdr_filter(struct evbuffer *inbuf, struct evbuffer *outbuf, struct bufferevent *bev, pxy_conn_ctx_t *ctx)
+static int
+pxy_buffer_content_line(pxy_conn_ctx_t *ctx, char *line, unsigned char **buf, size_t *sz)
 {
-	logbuf_t *lb = NULL, *tail = NULL;
+	if (WANT_CONTENT_LOG(ctx->conn)) {
+		size_t line_sz = strlen(line);
+		*buf = realloc(*buf, *sz + line_sz + 2);
+		if (!buf) {
+			return -1;
+		}
+
+		memcpy(*buf + *sz, line, line_sz);
+		memcpy(*buf + *sz + line_sz, "\r\n", 2);
+		*sz += line_sz + 2;
+	}
+	return 0;
+}
+
+static int
+pxy_log_content_buf(pxy_conn_ctx_t *ctx, unsigned char *buf, size_t sz, int req)
+{
+	if (WANT_CONTENT_LOG(ctx->conn)) {
+		if (buf) {
+			logbuf_t *lb = logbuf_new_alloc(sz, NULL, NULL);
+			if (!lb) {
+				return -1;
+			}
+			memcpy(lb->buf, buf, lb->sz);
+			if (log_content_submit(ctx->conn->logctx, lb, req) == -1) {
+				logbuf_free(lb);
+				log_err_level_printf(LOG_WARNING, "Content log submission failed\n");
+				return -1;
+			}
+		}
+	}
+	return 0;
+}
+
+static int
+pxy_log_content_inbuf(pxy_conn_ctx_t *ctx, struct evbuffer *inbuf, int req)
+{
+	if (WANT_CONTENT_LOG(ctx->conn)) {
+		size_t sz = evbuffer_get_length(inbuf);
+		unsigned char *buf = malloc(sz);
+		if (!buf || (evbuffer_copyout(inbuf, buf, sz) == -1) || (pxy_log_content_buf(ctx, buf, sz, req) == -1)) {
+			return -1;
+		}
+	}
+	return 0;
+}
+
+static void
+pxy_http_reqhdr_filter(struct evbuffer *inbuf, struct evbuffer *outbuf, pxy_conn_ctx_t *ctx)
+{
+	unsigned char *buf = NULL;
+	size_t sz = 0;
 	char *line;
 
 	while ((line = evbuffer_readln(inbuf, NULL, EVBUFFER_EOL_CRLF))) {
-		char *replace;
-		if (WANT_CONTENT_LOG(ctx->conn)) {
-			logbuf_t *tmp;
-			tmp = logbuf_new_printf(NULL, NULL,
-									"%s\r\n", line);
-			if (tail) {
-				if (tmp) {
-					tail->next = tmp;
-					tail = tail->next;
-				}
-			} else {
-				lb = tail = tmp;
-			}
+		if (pxy_buffer_content_line(ctx, line, &buf, &sz) == -1) {
+			goto errout;
 		}
-		replace = pxy_http_reqhdr_filter_line(line, ctx);
+
+		char *replace = pxy_http_reqhdr_filter_line(line, ctx);
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_http_reqhdr_filter: src line, fd=%d: %s\n", ctx->fd, line);
 #endif /* DEBUG_PROXY */
@@ -1963,69 +2004,55 @@ pxy_http_reqhdr_filter(struct evbuffer *inbuf, struct evbuffer *outbuf, struct b
 			break;
 		}
 	}
-	if (lb && WANT_CONTENT_LOG(ctx->conn)) {
-		if (log_content_submit(ctx->conn->logctx, lb,
-							   1/*req*/) == -1) {
-			logbuf_free(lb);
-			log_err_level_printf(LOG_WARNING, "Content log "
-						   "submission failed\n");
-		}
+
+	if (pxy_log_content_buf(ctx, buf, sz, 1) == -1) {
+		goto errout;
 	}
+
 	if (!ctx->seen_req_header) {
-		goto leave;
+		goto out;
 	}
 
 	// @todo Fix this
 	/* out of memory condition? */
 	if (ctx->enomem) {
-		pxy_conn_free(ctx->conn, (bev == ctx->src.bev));
-		goto leave;
+		goto errout;
 	}
 
 	/* no data left after parsing headers? */
-	if (evbuffer_get_length(inbuf) == 0)
-		goto leave;
-
-	if (WANT_CONTENT_LOG(ctx->conn)) {
-		logbuf_t *lb;
-		lb = logbuf_new_alloc(evbuffer_get_length(inbuf), NULL, NULL);
-		if (lb && (evbuffer_copyout(inbuf, lb->buf, lb->sz) != -1)) {
-			if (log_content_submit(ctx->conn->logctx, lb,
-								   (bev == ctx->src.bev)) == -1) {
-				logbuf_free(lb);
-				log_err_level_printf(LOG_WARNING, "Content log "
-							   "submission failed\n");
-			}
-		}
+	if (evbuffer_get_length(inbuf) == 0) {
+		goto out;
 	}
+
+	if (pxy_log_content_inbuf(ctx, inbuf, 1) == -1) {
+		goto errout;
+	}
+
 	evbuffer_add_buffer(outbuf, inbuf);
-leave:
+	goto out;
+
+errout:
+	pxy_conn_free(ctx->conn, 1);
+out:
+	if (buf) {
+		free(buf);
+	}
 	return;
 }
 
 static void
-pxy_http_resphdr_filter(struct evbuffer *inbuf, struct evbuffer *outbuf, struct bufferevent *bev, pxy_conn_ctx_t *ctx)
+pxy_http_resphdr_filter(struct evbuffer *inbuf, struct evbuffer *outbuf, pxy_conn_ctx_t *ctx)
 {
-	logbuf_t *lb = NULL, *tail = NULL;
-
+	unsigned char *buf = NULL;
+	size_t sz = 0;
 	char *line;
-	while ((line = evbuffer_readln(inbuf, NULL,
-								   EVBUFFER_EOL_CRLF))) {
-		char *replace;
-		if (WANT_CONTENT_LOG(ctx->conn)) {
-			logbuf_t *tmp;
-			tmp = logbuf_new_printf(NULL, NULL,
-									"%s\r\n", line);
-			if (tail) {
-				if (tmp) {
-					tail->next = tmp;
-					tail = tail->next;
-				}
-			} else {
-				lb = tail = tmp;
-			}
+
+	while ((line = evbuffer_readln(inbuf, NULL, EVBUFFER_EOL_CRLF))) {
+		if (pxy_buffer_content_line(ctx, line, &buf, &sz) == -1) {
+			goto errout;
 		}
-		replace = pxy_http_resphdr_filter_line(line, ctx);
+
+		char *replace = pxy_http_resphdr_filter_line(line, ctx);
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_http_resphdr_filter: dst line, fd=%d: %s\n", ctx->fd, line);
 #endif /* DEBUG_PROXY */
@@ -2043,6 +2070,7 @@ pxy_http_resphdr_filter(struct evbuffer *inbuf, struct evbuffer *outbuf, struct 
 #endif /* DEBUG_PROXY */
 		}
 		free(line);
+
 		if (ctx->seen_resp_header) {
 			/* response header complete: log connection */
 			if (!ctx->is_child && (WANT_CONNECT_LOG(ctx->conn) || ctx->conn->opts->statslog)) {
@@ -2051,81 +2079,40 @@ pxy_http_resphdr_filter(struct evbuffer *inbuf, struct evbuffer *outbuf, struct 
 			break;
 		}
 	}
-	if (lb && WANT_CONTENT_LOG(ctx->conn)) {
-		if (log_content_submit(ctx->conn->logctx, lb,
-							   0/*resp*/) == -1) {
-			logbuf_free(lb);
-			log_err_level_printf(LOG_WARNING, "Content log "
-						   "submission failed\n");
-		}
+
+	if (pxy_log_content_buf(ctx, buf, sz, 0) == -1) {
+		goto errout;
 	}
+
 	if (!ctx->seen_resp_header) {
-		goto leave;
+		goto out;
 	}
 
 	// @todo Fix this
 	/* out of memory condition? */
 	if (ctx->enomem) {
-		pxy_conn_free(ctx->conn, (bev == ctx->src.bev));
-		goto leave;
+		goto errout;
 	}
 
 	/* no data left after parsing headers? */
-	if (evbuffer_get_length(inbuf) == 0)
-		goto leave;
-
-	if (WANT_CONTENT_LOG(ctx->conn)) {
-		logbuf_t *lb;
-		lb = logbuf_new_alloc(evbuffer_get_length(inbuf), NULL, NULL);
-		if (lb && (evbuffer_copyout(inbuf, lb->buf, lb->sz) != -1)) {
-			if (log_content_submit(ctx->conn->logctx, lb,
-								   (bev == ctx->src.bev)) == -1) {
-				logbuf_free(lb);
-				log_err_level_printf(LOG_WARNING, "Content log "
-							   "submission failed\n");
-			}
-		}
+	if (evbuffer_get_length(inbuf) == 0) {
+		goto out;
 	}
+
+	if (pxy_log_content_inbuf(ctx, inbuf, 0) == -1) {
+		goto errout;
+	}
+
 	evbuffer_add_buffer(outbuf, inbuf);
-leave:
+	goto out;
+
+errout:
+	pxy_conn_free(ctx->conn, 0);
+out:
+	if (buf) {
+		free(buf);
+	}
 	return;
-}
-
-static void
-pxy_process_response(struct evbuffer *inbuf, struct evbuffer *outbuf, struct bufferevent *bev, pxy_conn_ctx_t *ctx)
-{
-	size_t packet_size = evbuffer_get_length(inbuf);
-	char *packet = malloc(packet_size);
-	if (!packet) {
-		ctx->enomem = 1;
-		return;
-	}
-
-	if (evbuffer_remove(inbuf, packet, packet_size) < 0) {
-		log_err_printf("evbuffer_remove cannot drain the buffer\n");
-	}
-
-	if (evbuffer_add(outbuf, packet, packet_size) < 0) {
-		log_err_printf("evbuffer_add failed\n");
-	}
-
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_response: dst packet (size=%lu)\n", packet_size);
-#endif /* DEBUG_PROXY */
-
-	if (WANT_CONTENT_LOG(ctx->conn)) {
-		logbuf_t *lb;
-		lb = logbuf_new_alloc(packet_size, NULL, NULL);
-		if (lb) {
-			memcpy(lb->buf, packet, lb->sz);
-			if (log_content_submit(ctx->conn->logctx, lb, (bev == ctx->src.bev)) == -1) {
-				logbuf_free(lb);
-				log_err_level_printf(LOG_WARNING, "Content log "
-							   "submission failed\n");
-			}
-		}
-	}
-	free(packet);
 }
 
 /*
@@ -2138,40 +2125,34 @@ pxy_bev_readcb(struct bufferevent *bev, void *arg)
 	pxy_conn_ctx_t *ctx = arg;
 
 	ctx->atime = time(NULL);
-	size_t bytes = evbuffer_get_length(bufferevent_get_input(bev));
 
 #ifdef DEBUG_PROXY
-	if (OPTS_DEBUG(ctx->opts)) {
-		log_dbg_printf("%p %p %s readcb\n", arg, (void*)bev,
-		               (bev == ctx->src.bev) ? "src" : "dst");
-	}
-
 	char *event_name = pxy_get_event_name(bev, ctx);
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb: ENTER %s, fd=%d, child_fd=%d, size=%lu\n",
-			event_name, ctx->fd, ctx->child_fd, bytes);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb: ENTER %s, fd=%d, child_fd=%d, size=%zu\n",
+			event_name, ctx->fd, ctx->child_fd, evbuffer_get_length(bufferevent_get_input(bev)));
 #endif /* DEBUG_PROXY */
 
 	if (!ctx->connected) {
-		log_err_level_printf(LOG_CRIT, "readcb called when other end not connected - "
-		               "aborting.\n");
+		log_err_level_printf(LOG_CRIT, "pxy_bev_readcb: readcb called when other end not connected - aborting.\n");
 		log_exceptcb();
 		return;
 	}
 
 	struct evbuffer *inbuf = bufferevent_get_input(bev);
 	pxy_conn_desc_t *other;
-	if (!ctx->passthrough) {
-		other = (bev==ctx->src.bev) ? &ctx->dst : &ctx->src;
-	} else {
+	if (ctx->passthrough) {
 		// Passthrough packets are transfered between src and srv_dst
 		other = (bev==ctx->src.bev) ? &ctx->srv_dst : &ctx->src;
+	} else {
+		other = (bev==ctx->src.bev) ? &ctx->dst : &ctx->src;
 	}
 	struct evbuffer *outbuf = bufferevent_get_output(other->bev);
 
+	size_t inbuf_size = evbuffer_get_length(inbuf);
+
 	if (other->closed) {
-		log_dbg_printf("Warning: Drained %zu bytes (conn closed)\n",
-		               evbuffer_get_length(inbuf));
-		evbuffer_drain(inbuf, evbuffer_get_length(inbuf));
+		log_dbg_printf("Warning: Drained %zu bytes (conn closed)\n", inbuf_size);
+		evbuffer_drain(inbuf, inbuf_size);
 		return;
 	}
 
@@ -2179,7 +2160,7 @@ pxy_bev_readcb(struct bufferevent *bev, void *arg)
 		// Just pass packets along
 		goto leave;
 	} else if (bev == ctx->src.bev) {
-		ctx->thr->intif_in_bytes += bytes;
+		ctx->thr->intif_in_bytes += inbuf_size;
 
 		if (ctx->clienthello_search) {
 			if (pxy_conn_autossl_peek_and_upgrade(ctx)) {
@@ -2199,20 +2180,21 @@ pxy_bev_readcb(struct bufferevent *bev, void *arg)
 		if (ctx->spec->http) {
 			if (!ctx->seen_req_header) {
 #ifdef DEBUG_PROXY
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb: HTTP Request Header size=%lu, fd=%d\n", evbuffer_get_length(inbuf), ctx->fd);
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb: HTTP Request Header size=%zu, fd=%d\n", inbuf_size, ctx->fd);
 #endif /* DEBUG_PROXY */
-				pxy_http_reqhdr_filter(inbuf, outbuf, bev, ctx);
+				pxy_http_reqhdr_filter(inbuf, outbuf, ctx);
+				// Transfered packet to outbuf and logged content, just check watermark
+				goto watermark;
 			} else {
 #ifdef DEBUG_PROXY
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb: HTTP Request Body size=%lu, fd=%d\n", evbuffer_get_length(inbuf), ctx->fd);
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb: HTTP Request Body size=%zu, fd=%d\n", inbuf_size, ctx->fd);
 #endif /* DEBUG_PROXY */
-				goto leave;
 			}
 		} else {
 			size_t header_len = strlen(ctx->header_str);
-			size_t packet_size = evbuffer_get_length(inbuf);
+			size_t packet_size = inbuf_size;
 			// +2 is for \r\n
-			char *packet = malloc(packet_size + header_len + 2);
+			unsigned char *packet = malloc(packet_size + header_len + 2);
 			if (!packet) {
 				// @todo Should we just set enomem?
 				ctx->enomem = 1;
@@ -2220,12 +2202,12 @@ pxy_bev_readcb(struct bufferevent *bev, void *arg)
 				return;
 			}
 
-			if (evbuffer_remove(inbuf, packet, packet_size) < 0) {
-				log_err_printf("evbuffer_remove cannot drain the buffer\n");
+			if (evbuffer_remove(inbuf, packet, packet_size) == -1) {
+				log_err_printf("pxy_bev_readcb: src evbuffer_remove failed, fd=%d\n", ctx->fd);
 			}
 
 #ifdef DEBUG_PROXY
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb: src ORIG packet (size=%lu), fd=%d:\n%.*s\n",
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb: src ORIG packet (size=%zu), fd=%d:\n%.*s\n",
 					packet_size, ctx->fd, (int)packet_size, packet);
 #endif /* DEBUG_PROXY */
 
@@ -2238,64 +2220,50 @@ pxy_bev_readcb(struct bufferevent *bev, void *arg)
 				ctx->sent_header = 1;
 			}
 
-			if (evbuffer_add(outbuf, packet, packet_size) < 0) {
-				log_err_printf("evbuffer_add failed\n");
+			if (evbuffer_add(outbuf, packet, packet_size) == -1) {
+				log_err_printf("pxy_bev_readcb: src evbuffer_add failed, fd=%d\n", ctx->fd);
 			}
 
 #ifdef DEBUG_PROXY
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb: src packet (size=%lu), fd=%d:\n%.*s\n",
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb: src NEW packet (size=%zu), fd=%d:\n%.*s\n",
 					packet_size, ctx->fd, (int)packet_size, packet);
 #endif /* DEBUG_PROXY */
 
-			if (WANT_CONTENT_LOG(ctx)) {
-				logbuf_t *lb;
-				lb = logbuf_new_alloc(packet_size, NULL, NULL);
-				if (lb) {
-					memcpy(lb->buf, packet, lb->sz);
-					if (log_content_submit(ctx->logctx, lb, (bev == ctx->src.bev)) == -1) {
-						logbuf_free(lb);
-						log_err_level_printf(LOG_WARNING, "Content log "
-									   "submission failed\n");
-					}
-				}
+			if (pxy_log_content_buf(ctx, packet, packet_size, 1) == -1) {
+				ctx->enomem = 1;
 			}
 			free(packet);
+			// Transfered packet to outbuf and logged content, just check watermark
+			goto watermark;
 		}
-	}
-	else if (bev == ctx->dst.bev) {
-		ctx->thr->intif_out_bytes += bytes;
+	} else if (bev == ctx->dst.bev) {
+		ctx->thr->intif_out_bytes += inbuf_size;
 
 		if (ctx->spec->http) {
 			if (!ctx->seen_resp_header) {
 #ifdef DEBUG_PROXY
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb: HTTP Response Header size=%lu, fd=%d\n", evbuffer_get_length(inbuf), ctx->fd);
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb: HTTP Response Header size=%zu, fd=%d\n", inbuf_size, ctx->fd);
 #endif /* DEBUG_PROXY */
-				pxy_http_resphdr_filter(inbuf, outbuf, bev, ctx);
+				pxy_http_resphdr_filter(inbuf, outbuf, ctx);
+				// Transfered packet to outbuf and logged content, just check watermark
+				goto watermark;
 			} else {
 #ifdef DEBUG_PROXY
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb: HTTP Response Body size=%lu, fd=%d\n", evbuffer_get_length(inbuf), ctx->fd);
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb: HTTP Response Body size=%zu, fd=%d\n", inbuf_size, ctx->fd);
 #endif /* DEBUG_PROXY */
-				goto leave;
 			}
 		} else {
-			pxy_process_response(inbuf, outbuf, bev, ctx);
+#ifdef DEBUG_PROXY
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb: dst packet size=%zu, fd=%d\n", inbuf_size, ctx->fd);
+#endif /* DEBUG_PROXY */
 		}
 	}
-	goto watermark;
+
+	if (pxy_log_content_inbuf(ctx, inbuf, (bev == ctx->src.bev)) == -1) {
+		ctx->enomem = 1;
+	}
 
 leave:
-	if (WANT_CONTENT_LOG(ctx)) {
-		logbuf_t *lb;
-		lb = logbuf_new_alloc(evbuffer_get_length(inbuf), NULL, NULL);
-		if (lb && (evbuffer_copyout(inbuf, lb->buf, lb->sz) != -1)) {
-			if (log_content_submit(ctx->logctx, lb,
-								   (bev == ctx->src.bev)) == -1) {
-				logbuf_free(lb);
-				log_err_level_printf(LOG_WARNING, "Content log "
-							   "submission failed\n");
-			}
-		}
-	}
 	evbuffer_add_buffer(outbuf, inbuf);
 
 watermark:
@@ -2316,134 +2284,115 @@ pxy_bev_readcb_child(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_child_ctx_t *ctx = arg;
 
-	assert(ctx->conn != NULL);
-	
 	ctx->conn->atime = time(NULL);
 
-	size_t bytes = evbuffer_get_length(bufferevent_get_input(bev));
-
 #ifdef DEBUG_PROXY
-	evutil_socket_t pfd = ctx->conn->fd;
 	char *event_name = pxy_get_event_name_child(bev, ctx);
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb_child: ENTER %s fd=%d, pfd=%d, size=%lu\n",
-			event_name, ctx->fd, pfd, bytes);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb_child: ENTER %s fd=%d, pfd=%d, size=%zu\n",
+			event_name, ctx->fd, ctx->conn->fd, evbuffer_get_length(bufferevent_get_input(bev)));
 #endif /* DEBUG_PROXY */
 		
 	if (!ctx->connected) {
-		log_err_level_printf(LOG_CRIT, "readcb called when other end not connected - "
-		               "aborting.\n");
+		log_err_level_printf(LOG_CRIT, "pxy_bev_readcb_child: readcb called when other end not connected - aborting.\n");
 		log_exceptcb();
 		return;
 	}
 
-	pxy_conn_desc_t *other = (bev==ctx->src.bev) ? &ctx->dst : &ctx->src;
 	struct evbuffer *inbuf = bufferevent_get_input(bev);
+	pxy_conn_desc_t *other = (bev == ctx->src.bev) ? &ctx->dst : &ctx->src;
 	struct evbuffer *outbuf = bufferevent_get_output(other->bev);
 
+	size_t inbuf_size = evbuffer_get_length(inbuf);
+
 	if (other->closed) {
-		log_dbg_printf("Warning: Drained %zu bytes (conn closed)\n",
-		               evbuffer_get_length(inbuf));
-		evbuffer_drain(inbuf, evbuffer_get_length(inbuf));
+		log_dbg_printf("Warning: Drained %zu bytes (conn closed)\n", inbuf_size);
+		evbuffer_drain(inbuf, inbuf_size);
 		return;
 	}
 
 	if (bev == ctx->src.bev) {
-		ctx->conn->thr->extif_out_bytes += bytes;
+		ctx->conn->thr->extif_out_bytes += inbuf_size;
 
 		/* request header munging */
 		if (ctx->conn->spec->http) {
 			if (!ctx->seen_req_header) {
 #ifdef DEBUG_PROXY
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb_child: HTTP Request Header size=%lu, fd=%d\n", evbuffer_get_length(inbuf), ctx->fd);
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb_child: HTTP Request Header size=%zu, fd=%d\n", inbuf_size, ctx->fd);
 #endif /* DEBUG_PROXY */
-				pxy_http_reqhdr_filter(inbuf, outbuf, bev, (pxy_conn_ctx_t *)ctx);
+				pxy_http_reqhdr_filter(inbuf, outbuf, (pxy_conn_ctx_t *)ctx);
+				// Transfered packet to outbuf and logged content, just check watermark
+				goto watermark;
 			} else {
 #ifdef DEBUG_PROXY
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb_child: HTTP Request Body size=%lu, fd=%d\n", evbuffer_get_length(inbuf), ctx->fd);
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb_child: HTTP Request Body size=%zu, fd=%d\n", inbuf_size, ctx->fd);
 #endif /* DEBUG_PROXY */
-				goto leave;
 			}
 		} else {
-			size_t packet_size = evbuffer_get_length(inbuf);
-			char *packet = malloc(packet_size);
+			size_t packet_size = inbuf_size;
+			unsigned char *packet = malloc(packet_size);
 			if (!packet) {
 				ctx->enomem = 1;
 				pxy_conn_free(ctx->conn, 1);
 				return;
 			}
 
-			if (evbuffer_remove(inbuf, packet, packet_size) < 0) {
-				log_err_printf("evbuffer_remove cannot drain the buffer\n");
+			if (evbuffer_remove(inbuf, packet, packet_size) == -1) {
+				log_err_printf("pxy_bev_readcb_child: src evbuffer_remove failed, fd=%d\n", ctx->fd);
 			}
 
 			size_t header_len = strlen(ctx->conn->header_str);
-			char *pos = memmem(packet, packet_size, ctx->conn->header_str, header_len);
+			unsigned char *pos = memmem(packet, packet_size, ctx->conn->header_str, header_len);
 			if (pos) {
 				memmove(pos, pos + header_len + 2, packet_size - (pos - packet) - (header_len + 2));
 				packet_size-= header_len + 2;
 #ifdef DEBUG_PROXY
-				log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_bev_readcb_child: REMOVED SSLproxy header\n");
+				log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_bev_readcb_child: REMOVED SSLproxy header, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 			}
 
-			if (evbuffer_add(outbuf, packet, packet_size) < 0) {
-				log_err_printf("evbuffer_add failed\n");
+			if (evbuffer_add(outbuf, packet, packet_size) == -1) {
+				log_err_printf("pxy_bev_readcb_child: src evbuffer_add failed, fd=%d\n", ctx->fd);
 			}
 
 #ifdef DEBUG_PROXY
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb_child: src packet (size=%lu), fd=%d, conn fd=%d:\n%.*s\n",
-					packet_size, ctx->fd, pfd, (int)packet_size, packet);
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb_child: src packet (size=%zu), fd=%d, conn fd=%d:\n%.*s\n",
+					packet_size, ctx->fd, ctx->conn->fd, (int)packet_size, packet);
 #endif /* DEBUG_PROXY */
 
-			if (WANT_CONTENT_LOG(ctx->conn)) {
-				logbuf_t *lb;
-				lb = logbuf_new_alloc(packet_size, NULL, NULL);
-				if (lb) {
-					memcpy(lb->buf, packet, lb->sz);
-					if (log_content_submit(ctx->conn->logctx, lb, (bev == ctx->src.bev)) == -1) {
-						logbuf_free(lb);
-						log_err_level_printf(LOG_WARNING, "Content log "
-									   "submission failed\n");
-					}
-				}
+			if (pxy_log_content_buf((pxy_conn_ctx_t *)ctx, packet, packet_size, 1) == -1) {
+				ctx->enomem = 1;
 			}
 			free(packet);
+			// Transfered packet to outbuf and logged content, just check watermark
+			goto watermark;
 		}
-	}
-	else if (bev == ctx->dst.bev) {
-		ctx->conn->thr->extif_in_bytes += bytes;
+	} else if (bev == ctx->dst.bev) {
+		ctx->conn->thr->extif_in_bytes += inbuf_size;
 
 		if (ctx->conn->spec->http) {
 			if (!ctx->seen_resp_header) {
 #ifdef DEBUG_PROXY
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb_child: HTTP Response Header size=%lu, fd=%d\n", evbuffer_get_length(inbuf), ctx->fd);
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb_child: HTTP Response Header size=%zu, fd=%d\n", inbuf_size, ctx->fd);
 #endif /* DEBUG_PROXY */
-				pxy_http_resphdr_filter(inbuf, outbuf, bev, (pxy_conn_ctx_t *)ctx);
+				pxy_http_resphdr_filter(inbuf, outbuf, (pxy_conn_ctx_t *)ctx);
+				// Transfered packet to outbuf and logged content, just check watermark
+				goto watermark;
 			} else {
 #ifdef DEBUG_PROXY
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb_child: HTTP Response Body size=%lu, fd=%d\n", evbuffer_get_length(inbuf), ctx->fd);
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb_child: HTTP Response Body size=%zu, fd=%d\n", inbuf_size, ctx->fd);
 #endif /* DEBUG_PROXY */
-				goto leave;
 			}
 		} else {
-			pxy_process_response(inbuf, outbuf, bev, (pxy_conn_ctx_t *)ctx);
+#ifdef DEBUG_PROXY
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb_child: dst packet size=%zu, fd=%d\n", inbuf_size, ctx->fd);
+#endif /* DEBUG_PROXY */
 		}
 	}
-	goto watermark;
 
-leave:
-	if (WANT_CONTENT_LOG(ctx->conn)) {
-		logbuf_t *lb;
-		lb = logbuf_new_alloc(evbuffer_get_length(inbuf), NULL, NULL);
-		if (lb && (evbuffer_copyout(inbuf, lb->buf, lb->sz) != -1)) {
-			if (log_content_submit(ctx->conn->logctx, lb,
-								   (bev == ctx->src.bev)) == -1) {
-				logbuf_free(lb);
-				log_err_level_printf(LOG_WARNING, "Content log "
-							   "submission failed\n");
-			}
-		}
+	if (pxy_log_content_inbuf((pxy_conn_ctx_t *)ctx, inbuf, (bev == ctx->src.bev)) == -1) {
+		ctx->enomem = 1;
 	}
+
 	evbuffer_add_buffer(outbuf, inbuf);
 
 watermark:
