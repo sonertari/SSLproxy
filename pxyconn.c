@@ -195,7 +195,7 @@ static void NONNULL(1)
 pxy_conn_ctx_free_child(pxy_conn_child_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_free_child: ENTER fd=%d, pfd=%d\n", ctx->fd, ctx->conn->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_free_child: ENTER fd=%d, conn fd=%d\n", ctx->fd, ctx->conn->fd);
 	if (OPTS_DEBUG(ctx->conn->opts)) {
 		log_dbg_printf("%p             pxy_conn_ctx_free_child\n",
 		                (void*)ctx);
@@ -479,7 +479,7 @@ pxy_conn_free(pxy_conn_ctx_t *ctx, int by_requestor)
 	// @attention Parent may be closing before there was any child at all nor was child_evcl ever created
 	if (ctx->child_evcl) {
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_conn_free: Freeing child_evcl, pfd=%d, child_fd=%d, cfd=%d\n",
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_conn_free: Freeing child_evcl, conn fd=%d, child_fd=%d, cfd=%d\n",
 				ctx->fd, ctx->child_fd, ctx->children ? ctx->children->fd : -1);
 #endif /* DEBUG_PROXY */
 		// @attention child_evcl was created with LEV_OPT_CLOSE_ON_FREE, so do not close ctx->child_fd
@@ -2288,7 +2288,7 @@ pxy_bev_readcb_child(struct bufferevent *bev, void *arg)
 
 #ifdef DEBUG_PROXY
 	char *event_name = pxy_get_event_name_child(bev, ctx);
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb_child: ENTER %s fd=%d, pfd=%d, size=%zu\n",
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb_child: ENTER %s fd=%d, conn fd=%d, size=%zu\n",
 			event_name, ctx->fd, ctx->conn->fd, evbuffer_get_length(bufferevent_get_input(bev)));
 #endif /* DEBUG_PROXY */
 		
@@ -2398,101 +2398,13 @@ pxy_bev_readcb_child(struct bufferevent *bev, void *arg)
 watermark:
 	if (evbuffer_get_length(outbuf) >= OUTBUF_LIMIT) {
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_bev_readcb_child: setwatermark, pfd=%d\n", ctx->conn->fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_bev_readcb_child: setwatermark, conn fd=%d\n", ctx->conn->fd);
 #endif /* DEBUG_PROXY */
 		/* temporarily disable data source;
 		 * set an appropriate watermark. */
 		bufferevent_setwatermark(other->bev, EV_WRITE, OUTBUF_LIMIT/2, OUTBUF_LIMIT);
 		bufferevent_disable(bev, EV_READ);
 		ctx->conn->thr->set_watermarks++;
-	}
-}
-
-static void
-pxy_conn_connect_child(pxy_conn_child_ctx_t *ctx)
-{
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_connect_child: ENTER fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
-
-	if (!ctx->conn->addrlen) {
-		log_err_level_printf(LOG_CRIT, "Child no target address; aborting connection\n");
-		evutil_closesocket(ctx->fd);
-		pxy_conn_free(ctx->conn, 1);
-		return;
-	}
-
-	ctx->src.ssl = NULL;
-	ctx->src.bev = pxy_bufferevent_setup_child(ctx, ctx->fd, ctx->src.ssl);
-	if (!ctx->src.bev) {
-		log_err_level_printf(LOG_CRIT, "Error creating child src\n");
-		evutil_closesocket(ctx->fd);
-		pxy_conn_free(ctx->conn, 1);
-		return;
-	}
-
-	ctx->src_fd = bufferevent_getfd(ctx->src.bev);
-	ctx->conn->child_src_fd = ctx->src_fd;
-	ctx->conn->thr->max_fd = MAX(ctx->conn->thr->max_fd, ctx->src_fd);
-	
-	// @attention Do not enable src events here yet, they will be enabled after dst connects
-	// @todo Do we need a read watermark for the header line of SSL proxy address?
-	//bufferevent_setwatermark(ctx->src.bev, EV_READ, 200, OUTBUF_LIMIT);
-
-	/* create server-side socket and eventbuffer */
-	// Children rely on the findings of parent
-	if (ctx->conn->spec->ssl || ctx->conn->clienthello_found) {
-		ctx->dst.ssl = pxy_dstssl_create(ctx->conn);
-		if (!ctx->dst.ssl) {
-			log_err_level_printf(LOG_CRIT, "Error creating SSL\n");
-			// pxy_conn_free()>pxy_conn_free_child() will close the fd, since we have a non-NULL src.bev now
-			pxy_conn_free(ctx->conn, 1);
-			return;
-		}
-	}
-	if (ctx->conn->clienthello_found) {
-		if (OPTS_DEBUG(ctx->conn->opts)) {
-			log_dbg_printf("Completing autossl upgrade\n");
-		}
-		ctx->dst.bev = bufferevent_openssl_filter_new(
-					   ctx->conn->evbase, ctx->dst.bev, ctx->dst.ssl,
-					   BUFFEREVENT_SSL_ACCEPTING,
-					   BEV_OPT_DEFER_CALLBACKS);
-		if (ctx->dst.bev) {
-			bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb_child, pxy_bev_writecb_child, pxy_bev_eventcb_child, ctx);
-		}
-	} else {
-		ctx->dst.bev = pxy_bufferevent_setup_child(ctx, -1, ctx->dst.ssl);
-	}
-	if (!ctx->dst.bev) {
-		log_err_level_printf(LOG_CRIT, "Error creating bufferevent\n");
-		if (ctx->dst.ssl) {
-			SSL_free(ctx->dst.ssl);
-			ctx->dst.ssl = NULL;
-		}
-		pxy_conn_free(ctx->conn, 1);
-		return;
-	}
-
-	bufferevent_enable(ctx->dst.bev, EV_READ|EV_WRITE);
-
-	/* initiate connection */
-	// @attention No need to check retval here, the eventcb should handle the errors
-	bufferevent_socket_connect(ctx->dst.bev, (struct sockaddr *)&ctx->conn->addr, ctx->conn->addrlen);
-	
-	ctx->dst_fd = bufferevent_getfd(ctx->dst.bev);
-	ctx->conn->child_dst_fd = ctx->dst_fd;
-	ctx->conn->thr->max_fd = MAX(ctx->conn->thr->max_fd, ctx->dst_fd);
-
-	if (OPTS_DEBUG(ctx->conn->opts)) {
-		char *host, *port;
-		if (sys_sockaddr_str((struct sockaddr *)&ctx->conn->addr, ctx->conn->addrlen, &host, &port) != 0) {
-			log_dbg_printf("pxy_conn_connect_child: Connecting to [?]:?\n");
-		} else {
-			log_dbg_printf("pxy_conn_connect_child: Connecting to [%s]:%s\n", host, port);
-			free(host);
-			free(port);
-		}
 	}
 }
 
@@ -2519,14 +2431,34 @@ getdtablecount(void)
 }
 #endif /* HAVE_NETFILTER */
 
+/*
+ * Callback for accept events on the socket listener bufferevent.
+ */
 static void
-pxy_conn_setup_child(evutil_socket_t fd, pxy_conn_ctx_t *conn)
+proxy_listener_acceptcb_child(UNUSED struct evconnlistener *listener,
+                        evutil_socket_t fd,
+                        UNUSED struct sockaddr *peeraddr, UNUSED int peeraddrlen,
+                        void *arg)
 {
+	pxy_conn_ctx_t *conn = arg;
+
+	conn->atime = time(NULL);
+
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "proxy_listener_acceptcb_child: ENTER fd=%d, conn fd=%d, child_fd=%d\n", fd, conn->fd, conn->child_fd);
+
+	char *host, *port;
+	if (sys_sockaddr_str(peeraddr, peeraddrlen, &host, &port) == 0) {
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "proxy_listener_acceptcb_child: Peer addr=[%s]:%s, child fd=%d, conn fd=%d\n", host, port, fd, conn->fd);
+		free(host);
+		free(port);
+	}
+#endif /* DEBUG_PROXY */
+
 	int dtable_count = getdtablecount();
 
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_setup_child: ENTER fd=%d\n", fd);
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_setup_child: descriptor_table_size=%d, current fd count=%d, reserve=%d\n", descriptor_table_size, dtable_count, FD_RESERVE);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "proxy_listener_acceptcb_child: descriptor_table_size=%d, current fd count=%d, reserve=%d, fd=%d\n", descriptor_table_size, dtable_count, FD_RESERVE, fd);
 #endif /* DEBUG_PROXY */
 
 	// Close the conn if we are out of file descriptors, or libevent will crash us, @see pxy_conn_setup() for explanation
@@ -2546,42 +2478,226 @@ pxy_conn_setup_child(evutil_socket_t fd, pxy_conn_ctx_t *conn)
 		return;
 	}
 
-	// Prepend ctx to meta ctx child list
-	// If the last child is deleted, the child_list may become null again
+	// Prepend child ctx to conn ctx child list
+	// @attention If the last child is deleted, the children list may become null again
 	ctx->next = conn->children;
 	conn->children = ctx;
 
 	conn->child_count++;
 	ctx->idx = conn->child_count;
 
-	pxy_conn_connect_child(ctx);
+	if (!ctx->conn->addrlen) {
+		log_err_level_printf(LOG_CRIT, "Child no target address; aborting connection\n");
+		evutil_closesocket(ctx->fd);
+		pxy_conn_free(ctx->conn, 1);
+		return;
+	}
+
+	ctx->src.ssl = NULL;
+	ctx->src.bev = pxy_bufferevent_setup_child(ctx, ctx->fd, ctx->src.ssl);
+	if (!ctx->src.bev) {
+		log_err_level_printf(LOG_CRIT, "Error creating child src\n");
+		evutil_closesocket(ctx->fd);
+		pxy_conn_free(ctx->conn, 1);
+		return;
+	}
+
+	ctx->src_fd = bufferevent_getfd(ctx->src.bev);
+	ctx->conn->child_src_fd = ctx->src_fd;
+	ctx->conn->thr->max_fd = MAX(ctx->conn->thr->max_fd, ctx->src_fd);
+	
+	// @attention Do not enable src events here yet, they will be enabled after dst connects
+
+	/* create server-side socket and eventbuffer */
+	// Children rely on the findings of parent
+	if (ctx->conn->spec->ssl || ctx->conn->clienthello_found) {
+		ctx->dst.ssl = pxy_dstssl_create(ctx->conn);
+		if (!ctx->dst.ssl) {
+			log_err_level_printf(LOG_CRIT, "Error creating SSL\n");
+			// pxy_conn_free()>pxy_conn_free_child() will close the fd, since we have a non-NULL src.bev now
+			pxy_conn_free(ctx->conn, 1);
+			return;
+		}
+	}
+	if (ctx->conn->clienthello_found) {
+		if (OPTS_DEBUG(ctx->conn->opts)) {
+			log_dbg_printf("Completing autossl upgrade\n");
+		}
+		ctx->dst.bev = bufferevent_openssl_filter_new(ctx->conn->evbase, ctx->dst.bev, ctx->dst.ssl,
+				BUFFEREVENT_SSL_ACCEPTING, BEV_OPT_DEFER_CALLBACKS);
+		if (ctx->dst.bev) {
+			bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb_child, pxy_bev_writecb_child, pxy_bev_eventcb_child, ctx);
+		}
+	} else {
+		ctx->dst.bev = pxy_bufferevent_setup_child(ctx, -1, ctx->dst.ssl);
+	}
+	if (!ctx->dst.bev) {
+		log_err_level_printf(LOG_CRIT, "Error creating bufferevent\n");
+		if (ctx->dst.ssl) {
+			SSL_free(ctx->dst.ssl);
+			ctx->dst.ssl = NULL;
+		}
+		pxy_conn_free(ctx->conn, 1);
+		return;
+	}
+
+	bufferevent_enable(ctx->dst.bev, EV_READ|EV_WRITE);
+
+	if (OPTS_DEBUG(ctx->conn->opts)) {
+		char *host, *port;
+		if (sys_sockaddr_str((struct sockaddr *)&ctx->conn->addr, ctx->conn->addrlen, &host, &port) != 0) {
+			log_dbg_printf("proxy_listener_acceptcb_child: Connecting to [?]:?\n");
+		} else {
+			log_dbg_printf("proxy_listener_acceptcb_child: Connecting to [%s]:%s\n", host, port);
+			free(host);
+			free(port);
+		}
+	}
+
+	/* initiate connection */
+	// @attention No need to check retval here, the eventcb should handle the errors
+	bufferevent_socket_connect(ctx->dst.bev, (struct sockaddr *)&ctx->conn->addr, ctx->conn->addrlen);
+	
+	ctx->dst_fd = bufferevent_getfd(ctx->dst.bev);
+	ctx->conn->child_dst_fd = ctx->dst_fd;
+	ctx->conn->thr->max_fd = MAX(ctx->conn->thr->max_fd, ctx->dst_fd);
 }
 
 /*
- * Callback for accept events on the socket listener bufferevent.
+ * Callback for write events on the up- and downstream connection bufferevents.
+ * Called when either all data from the output evbuffer has been written,
+ * or if the outbuf is only half full again after having been full.
  */
 static void
-proxy_listener_acceptcb_child(UNUSED struct evconnlistener *listener,
-                        evutil_socket_t fd,
-                        UNUSED struct sockaddr *peeraddr, UNUSED int peeraddrlen,
-                        void *arg)
+pxy_bev_writecb(struct bufferevent *bev, void *arg)
 {
-	pxy_conn_ctx_t *conn = arg;
-	assert(conn != NULL);
+	pxy_conn_ctx_t *ctx = arg;
 
-	conn->atime = time(NULL);
+	// @attention srv_dst.bev may be NULL
+#ifdef DEBUG_PROXY
+	char *event_name = pxy_get_event_name(bev, ctx);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_writecb: ENTER %s fd=%d, child_fd=%d\n", event_name, ctx->fd, ctx->child_fd);
+#endif /* DEBUG_PROXY */
+
+	ctx->atime = time(NULL);
+
+	if (bev == ctx->srv_dst.bev && !ctx->srv_dst_connected) {
+#ifdef DEBUG_PROXY
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_bev_writecb: writecb before connected %s fd=%d, child_fd=%d\n", event_name, ctx->fd, ctx->child_fd);
+#endif /* DEBUG_PROXY */
+		// @attention Sometimes dst write cb fires but not event cb, especially if the listener cb is not finished yet, so the conn stalls. This is a workaround for this error condition, nothing else seems to work.
+		// @attention Do not try to free the conn here, since the listener cb may not be finished yet, causes multithreading issues
+		// XXX: Workaround, should find the real cause: BEV_OPT_DEFER_CALLBACKS?
+		pxy_bev_eventcb(bev, BEV_EVENT_CONNECTED, ctx);
+		return;
+	}
+
+	if ((bev==ctx->src.bev) || (bev==ctx->dst.bev) || ctx->passthrough) {
+		if (bev == ctx->dst.bev && !ctx->passthrough && !ctx->dst_connected) {
+#ifdef DEBUG_PROXY
+			log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_bev_writecb: writecb before connected %s, fd=%d, child_fd=%d\n", event_name, ctx->fd, ctx->child_fd);
+#endif /* DEBUG_PROXY */
+			pxy_bev_eventcb(bev, BEV_EVENT_CONNECTED, ctx);
+			// @todo Should return instead?
+		}
+
+		pxy_conn_desc_t *this;
+		pxy_conn_desc_t *other;
+		void (*this_free_and_close_fd_func)(struct bufferevent *, pxy_conn_ctx_t *);
+		int by_requestor;
+
+		if (!ctx->passthrough) {
+			this = (bev==ctx->src.bev) ? &ctx->src : &ctx->dst;
+			other = (bev==ctx->src.bev) ? &ctx->dst : &ctx->src;
+			this_free_and_close_fd_func = (bev==ctx->dst.bev) ? &bufferevent_free_and_close_fd_nonssl : &bufferevent_free_and_close_fd;
+			by_requestor = (bev == ctx->dst.bev);
+		} else {
+			// Passthrough packets are transfered between src and srv_dst
+			this = (bev==ctx->src.bev) ? &ctx->src : &ctx->srv_dst;
+			other = (bev==ctx->src.bev) ? &ctx->srv_dst : &ctx->src;
+			this_free_and_close_fd_func = &bufferevent_free_and_close_fd_nonssl;
+			by_requestor = (bev == ctx->srv_dst.bev);
+		}
+
+		if (other->closed) {
+			struct evbuffer *outbuf = bufferevent_get_output(bev);
+			if (evbuffer_get_length(outbuf) == 0) {
+#ifdef DEBUG_PROXY
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_writecb: other->closed, terminate conn\n");
+#endif /* DEBUG_PROXY */
+				/* finished writing and other end is closed;
+				 * close this end too and clean up memory */
+				this->closed = 1;
+				this_free_and_close_fd_func(bev, ctx);
+				this->bev = NULL;
+				pxy_conn_free(ctx, by_requestor);
+			}
+			return;
+		}
+
+		if (other->bev && !(bufferevent_get_enabled(other->bev) & EV_READ)) {
+#ifdef DEBUG_PROXY
+			log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_bev_writecb: unset watermark, fd=%d\n", ctx->fd);
+#endif /* DEBUG_PROXY */
+			/* data source temporarily disabled;
+			 * re-enable and reset watermark to 0. */
+			bufferevent_setwatermark(bev, EV_WRITE, 0, 0);
+			bufferevent_enable(other->bev, EV_READ);
+			ctx->thr->unset_watermarks++;
+		}
+	}
+}
+
+static void
+pxy_bev_writecb_child(struct bufferevent *bev, void *arg)
+{
+	pxy_conn_child_ctx_t *ctx = arg;
+	assert(ctx->conn != NULL);
 
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "proxy_listener_acceptcb_child: ENTER fd=%d, pfd=%d, child_fd=%d\n", fd, conn->fd, conn->child_fd);
-
-	char *host, *port;
-	if (sys_sockaddr_str(peeraddr, peeraddrlen, &host, &port) == 0) {
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "proxy_listener_acceptcb_child: Peer addr=[%s]:%s, child fd=%d, pfd=%d\n", host, port, fd, conn->fd);
-		free(host);
-		free(port);
-	}
+	char *event_name = pxy_get_event_name_child(bev, ctx);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_writecb_child: ENTER %s fd=%d, child_fd=%d, cfd=%d\n", event_name, ctx->conn->fd, ctx->conn->child_fd, ctx->fd);
 #endif /* DEBUG_PROXY */
-	pxy_conn_setup_child(fd, conn);
+
+	ctx->conn->atime = time(NULL);
+
+	if (bev == ctx->dst.bev && !ctx->connected) {
+#ifdef DEBUG_PROXY
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_bev_writecb_child: writecb before connected %s fd=%d, conn fd=%d\n", event_name, ctx->fd, ctx->conn->fd);
+#endif /* DEBUG_PROXY */
+		pxy_bev_eventcb_child(bev, BEV_EVENT_CONNECTED, ctx);
+	}
+		
+	pxy_conn_desc_t *this = (bev==ctx->src.bev) ? &ctx->src : &ctx->dst;
+	pxy_conn_desc_t *other = (bev==ctx->src.bev) ? &ctx->dst : &ctx->src;
+	void (*this_free_and_close_fd_func)(struct bufferevent *, pxy_conn_ctx_t *) = (bev==ctx->src.bev) ? &bufferevent_free_and_close_fd_nonssl : &bufferevent_free_and_close_fd;
+
+	if (other->closed) {
+		struct evbuffer *outbuf = bufferevent_get_output(bev);
+		if (evbuffer_get_length(outbuf) == 0) {
+#ifdef DEBUG_PROXY
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_writecb_child: other->closed, terminate conn\n");
+#endif /* DEBUG_PROXY */
+			/* finished writing and other end is closed;
+			 * close this end too and clean up memory */
+			this->closed = 1;
+			this_free_and_close_fd_func(bev, ctx->conn);
+			this->bev = NULL;
+			pxy_conn_free_child(ctx);
+		}
+		return;
+	}
+
+	if (other->bev && !(bufferevent_get_enabled(other->bev) & EV_READ)) {
+#ifdef DEBUG_PROXY
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_bev_writecb_child: unset watermark, conn fd=%d\n", ctx->conn->fd);
+#endif /* DEBUG_PROXY */
+		/* data source temporarily disabled;
+		 * re-enable and reset watermark to 0. */
+		bufferevent_setwatermark(bev, EV_WRITE, 0, 0);
+		bufferevent_enable(other->bev, EV_READ);
+		ctx->conn->thr->unset_watermarks++;
+	}
 }
 
 static int
@@ -2897,143 +3013,6 @@ pxy_connected_enable(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	return 1;
 }
 
-/*
- * Callback for write events on the up- and downstream connection bufferevents.
- * Called when either all data from the output evbuffer has been written,
- * or if the outbuf is only half full again after having been full.
- */
-static void
-pxy_bev_writecb(struct bufferevent *bev, void *arg)
-{
-	pxy_conn_ctx_t *ctx = arg;
-
-	// @attention srv_dst.bev may be NULL
-#ifdef DEBUG_PROXY
-	char *event_name = pxy_get_event_name(bev, ctx);
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_writecb: ENTER %s fd=%d, child_fd=%d\n", event_name, ctx->fd, ctx->child_fd);
-#endif /* DEBUG_PROXY */
-
-	ctx->atime = time(NULL);
-
-	if (bev == ctx->srv_dst.bev && !ctx->srv_dst_connected) {
-#ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_bev_writecb: writecb before connected %s fd=%d, child_fd=%d\n", event_name, ctx->fd, ctx->child_fd);
-#endif /* DEBUG_PROXY */
-		// @attention Sometimes dst write cb fires but not event cb, especially if the listener cb is not finished yet, so the conn stalls. This is a workaround for this error condition, nothing else seems to work.
-		// @attention Do not try to free the conn here, since the listener cb may not be finished yet, causes multithreading issues
-		// XXX: Workaround, should find the real cause: BEV_OPT_DEFER_CALLBACKS?
-		pxy_bev_eventcb(bev, BEV_EVENT_CONNECTED, ctx);
-		return;
-	}
-
-	if ((bev==ctx->src.bev) || (bev==ctx->dst.bev) || ctx->passthrough) {
-		if (bev == ctx->dst.bev && !ctx->passthrough && !ctx->dst_connected) {
-#ifdef DEBUG_PROXY
-			log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_bev_writecb: writecb before connected %s, fd=%d, child_fd=%d\n", event_name, ctx->fd, ctx->child_fd);
-#endif /* DEBUG_PROXY */
-			pxy_bev_eventcb(bev, BEV_EVENT_CONNECTED, ctx);
-			// @todo Should return instead?
-		}
-
-		pxy_conn_desc_t *this;
-		pxy_conn_desc_t *other;
-		void (*this_free_and_close_fd_func)(struct bufferevent *, pxy_conn_ctx_t *);
-		int by_requestor;
-
-		if (!ctx->passthrough) {
-			this = (bev==ctx->src.bev) ? &ctx->src : &ctx->dst;
-			other = (bev==ctx->src.bev) ? &ctx->dst : &ctx->src;
-			this_free_and_close_fd_func = (bev==ctx->dst.bev) ? &bufferevent_free_and_close_fd_nonssl : &bufferevent_free_and_close_fd;
-			by_requestor = (bev == ctx->dst.bev);
-		} else {
-			// Passthrough packets are transfered between src and srv_dst
-			this = (bev==ctx->src.bev) ? &ctx->src : &ctx->srv_dst;
-			other = (bev==ctx->src.bev) ? &ctx->srv_dst : &ctx->src;
-			this_free_and_close_fd_func = &bufferevent_free_and_close_fd_nonssl;
-			by_requestor = (bev == ctx->srv_dst.bev);
-		}
-
-		if (other->closed) {
-			struct evbuffer *outbuf = bufferevent_get_output(bev);
-			if (evbuffer_get_length(outbuf) == 0) {
-#ifdef DEBUG_PROXY
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_writecb: other->closed, terminate conn\n");
-#endif /* DEBUG_PROXY */
-				/* finished writing and other end is closed;
-				 * close this end too and clean up memory */
-				this->closed = 1;
-				this_free_and_close_fd_func(bev, ctx);
-				this->bev = NULL;
-				pxy_conn_free(ctx, by_requestor);
-			}
-			return;
-		}
-
-		if (other->bev && !(bufferevent_get_enabled(other->bev) & EV_READ)) {
-#ifdef DEBUG_PROXY
-			log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_bev_writecb: unset watermark, fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
-			/* data source temporarily disabled;
-			 * re-enable and reset watermark to 0. */
-			bufferevent_setwatermark(bev, EV_WRITE, 0, 0);
-			bufferevent_enable(other->bev, EV_READ);
-			ctx->thr->unset_watermarks++;
-		}
-	}
-}
-
-static void
-pxy_bev_writecb_child(struct bufferevent *bev, void *arg)
-{
-	pxy_conn_child_ctx_t *ctx = arg;
-	assert(ctx->conn != NULL);
-
-#ifdef DEBUG_PROXY
-	char *event_name = pxy_get_event_name_child(bev, ctx);
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_writecb_child: ENTER %s fd=%d, child_fd=%d, cfd=%d\n", event_name, ctx->conn->fd, ctx->conn->child_fd, ctx->fd);
-#endif /* DEBUG_PROXY */
-
-	ctx->conn->atime = time(NULL);
-
-	if (bev == ctx->dst.bev && !ctx->connected) {
-#ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_bev_writecb_child: writecb before connected %s fd=%d, pfd=%d\n", event_name, ctx->fd, ctx->conn->fd);
-#endif /* DEBUG_PROXY */
-		pxy_bev_eventcb_child(bev, BEV_EVENT_CONNECTED, ctx);
-	}
-		
-	pxy_conn_desc_t *this = (bev==ctx->src.bev) ? &ctx->src : &ctx->dst;
-	pxy_conn_desc_t *other = (bev==ctx->src.bev) ? &ctx->dst : &ctx->src;
-	void (*this_free_and_close_fd_func)(struct bufferevent *, pxy_conn_ctx_t *) = (bev==ctx->src.bev) ? &bufferevent_free_and_close_fd_nonssl : &bufferevent_free_and_close_fd;
-
-	if (other->closed) {
-		struct evbuffer *outbuf = bufferevent_get_output(bev);
-		if (evbuffer_get_length(outbuf) == 0) {
-#ifdef DEBUG_PROXY
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_writecb_child: other->closed, terminate conn\n");
-#endif /* DEBUG_PROXY */
-			/* finished writing and other end is closed;
-			 * close this end too and clean up memory */
-			this->closed = 1;
-			this_free_and_close_fd_func(bev, ctx->conn);
-			this->bev = NULL;
-			pxy_conn_free_child(ctx);
-		}
-		return;
-	}
-
-	if (other->bev && !(bufferevent_get_enabled(other->bev) & EV_READ)) {
-#ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_bev_writecb_child: unset watermark, pfd=%d\n", ctx->conn->fd);
-#endif /* DEBUG_PROXY */
-		/* data source temporarily disabled;
-		 * re-enable and reset watermark to 0. */
-		bufferevent_setwatermark(bev, EV_WRITE, 0, 0);
-		bufferevent_enable(other->bev, EV_READ);
-		ctx->conn->thr->unset_watermarks++;
-	}
-}
-
 static void
 pxy_print_ssl_error(struct bufferevent *bev, UNUSED pxy_conn_ctx_t *ctx)
 {
@@ -3121,6 +3100,7 @@ static void
 pxy_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
+	// Init here, because bevs may be freed before exiting the function
 	int is_requestor = (bev == ctx->src.bev);
 
 	ctx->atime = time(NULL);
@@ -3128,12 +3108,20 @@ pxy_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 	// @attention srv_dst.bev may be NULL
 #ifdef DEBUG_PROXY
 	char *event_name = pxy_get_event_name(bev, ctx);
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_eventcb: ENTER %s fd=%d, child_fd=%d\n", event_name, ctx->fd, ctx->child_fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_eventcb: ENTER %s, fd=%d\n", event_name, ctx->fd);
 #endif /* DEBUG_PROXY */
 	
 	if (events & BEV_EVENT_CONNECTED) {
 		pxy_connected_enable(bev, ctx);
-		return;
+
+		if (!(events & (BEV_EVENT_EOF|BEV_EVENT_ERROR))) {
+			// Do not fall through unless there are other events, otherwise connection is terminated
+			return;
+		}
+#ifdef DEBUG_PROXY
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_bev_eventcb: BEV_EVENT_CONNECTED with %s %s %s, fd=%d\n", event_name,
+				(events & BEV_EVENT_EOF) ? "BEV_EVENT_EOF" : "", (events & BEV_EVENT_ERROR) ? "BEV_EVENT_ERROR" : "", ctx->fd);
+#endif /* DEBUG_PROXY */
 	}
 
 	pxy_conn_desc_t *this;
@@ -3154,10 +3142,74 @@ pxy_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 		other_free_and_close_fd_func = &bufferevent_free_and_close_fd_nonssl;
 	}
 
+	if (events & BEV_EVENT_EOF) {
+#ifdef DEBUG_PROXY
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_eventcb: EOF %s, fd=%d\n", event_name, ctx->fd);
+#endif /* DEBUG_PROXY */
+
+		if (bev == ctx->srv_dst.bev && !ctx->passthrough) {
+			log_err_level_printf(LOG_WARNING, "EOF on outbound connection before connection establishment on srv_dst\n");
+#ifdef DEBUG_PROXY
+			log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_bev_eventcb: EOF on outbound connection before connection establishment on srv_dst, fd=%d\n", ctx->fd);
+#endif /* DEBUG_PROXY */
+			pxy_conn_free(ctx, 1);
+			return;
+		} else {
+#ifdef DEBUG_PROXY
+			if (OPTS_DEBUG(ctx->opts)) {
+				log_dbg_printf("evbuffer size at EOF: "
+							   "i:%zu o:%zu i:%zu o:%zu\n",
+								evbuffer_get_length(
+									bufferevent_get_input(bev)),
+								evbuffer_get_length(
+									bufferevent_get_output(bev)),
+								other->closed ? 0 : evbuffer_get_length(
+									bufferevent_get_input(other->bev)),
+								other->closed ? 0 : evbuffer_get_length(
+									bufferevent_get_output(other->bev))
+								);
+			}
+#endif /* DEBUG_PROXY */
+
+			// @todo How to handle the following case?
+			if (!ctx->connected) {
+				log_err_level_printf(LOG_WARNING, "EOF on outbound connection before connection establishment\n");
+#ifdef DEBUG_PROXY
+				log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_bev_eventcb: EOF on outbound connection before connection establishment, fd=%d\n", ctx->fd);
+#endif /* DEBUG_PROXY */
+				other->closed = 1;
+			} else if (!other->closed) {
+#ifdef DEBUG_PROXY
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_eventcb: !other->closed, terminate conn, fd=%d\n", ctx->fd);
+#endif /* DEBUG_PROXY */
+				/* if there is data pending in the closed connection,
+				 * handle it here, otherwise it will be lost. */
+				if (evbuffer_get_length(bufferevent_get_input(bev))) {
+#ifdef DEBUG_PROXY
+					log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_eventcb: evbuffer_get_length(inbuf) > 0, terminate conn, fd=%d\n", ctx->fd);
+#endif /* DEBUG_PROXY */
+					pxy_bev_readcb(bev, ctx);
+				}
+				/* if the other end is still open and doesn't
+				 * have data to send, close it, otherwise its
+				 * writecb will close it after writing what's
+				 * left in the output buffer. */
+				if (evbuffer_get_length(bufferevent_get_output(other->bev)) == 0) {
+#ifdef DEBUG_PROXY
+					log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_eventcb: evbuffer_get_length(outbuf) == 0, terminate conn, fd=%d\n", ctx->fd);
+#endif /* DEBUG_PROXY */
+					other->closed = 1;
+					other_free_and_close_fd_func(other->bev, ctx);
+					other->bev = NULL;
+				}
+			}
+		}
+	}
+
 	if (events & BEV_EVENT_ERROR) {
 		log_err_printf("Client-side BEV_EVENT_ERROR\n");
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINER, "ERROR: pxy_bev_eventcb error, fd=%d\n", ctx->fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_bev_eventcb: BEV_EVENT_ERROR %s, fd=%d\n", event_name, ctx->fd);
 #endif /* DEBUG_PROXY */
 		pxy_print_ssl_error(bev, ctx);
 		ctx->thr->errors++;
@@ -3213,78 +3265,9 @@ pxy_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 				}
 			}
 		}
-		goto leave;
 	}
 
-	if (events & BEV_EVENT_EOF) {
-#ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_eventcb: EOF %s fd=%d\n", event_name, ctx->fd);
-#endif /* DEBUG_PROXY */
-
-		if (bev == ctx->srv_dst.bev && !ctx->passthrough) {
-			log_err_level_printf(LOG_WARNING, "EOF on outbound connection before connection establishment on srv_dst\n");
-#ifdef DEBUG_PROXY
-			log_dbg_level_printf(LOG_DBG_MODE_FINER, "WARNING: pxy_bev_eventcb: EOF on outbound connection before connection establishment on srv_dst, fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
-			pxy_conn_free(ctx, 1);
-			return;
-		} else {
-#ifdef DEBUG_PROXY
-			if (OPTS_DEBUG(ctx->opts)) {
-				log_dbg_printf("evbuffer size at EOF: "
-							   "i:%zu o:%zu i:%zu o:%zu\n",
-								evbuffer_get_length(
-									bufferevent_get_input(bev)),
-								evbuffer_get_length(
-									bufferevent_get_output(bev)),
-								other->closed ? 0 : evbuffer_get_length(
-									bufferevent_get_input(other->bev)),
-								other->closed ? 0 : evbuffer_get_length(
-									bufferevent_get_output(other->bev))
-								);
-			}
-#endif /* DEBUG_PROXY */
-
-			// @todo How to handle the following case?
-			if (!ctx->connected) {
-				log_err_level_printf(LOG_WARNING, "EOF on outbound connection before connection establishment\n");
-#ifdef DEBUG_PROXY
-				log_dbg_level_printf(LOG_DBG_MODE_FINER, "WARNING: pxy_bev_eventcb: EOF on outbound connection before connection establishment, fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
-				other->closed = 1;
-			} else if (!other->closed) {
-#ifdef DEBUG_PROXY
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_eventcb: !other->closed, terminate conn, fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
-				/* if there is data pending in the closed connection,
-				 * handle it here, otherwise it will be lost. */
-				if (evbuffer_get_length(bufferevent_get_input(bev))) {
-#ifdef DEBUG_PROXY
-					log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_eventcb: evbuffer_get_length(inbuf) > 0, terminate conn, fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
-					pxy_bev_readcb(bev, ctx);
-				}
-				/* if the other end is still open and doesn't
-				 * have data to send, close it, otherwise its
-				 * writecb will close it after writing what's
-				 * left in the output buffer. */
-				if (evbuffer_get_length(bufferevent_get_output(other->bev)) == 0) {
-#ifdef DEBUG_PROXY
-					log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_eventcb: evbuffer_get_length(outbuf) == 0, terminate conn, fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
-					other->closed = 1;
-					other_free_and_close_fd_func(other->bev, ctx);
-					other->bev = NULL;
-				}
-			}
-
-		}
-		goto leave;
-	}
 	// @attention srv_dst should never reach leave, its bev may be NULL
-	return;
-
-leave:
 	/* we only get a single disconnect event here for both connections */
 	if (OPTS_DEBUG(ctx->opts)) {
 		log_dbg_printf("pxy_bev_eventcb: %s disconnected to [%s]:%s, fd=%d\n",
@@ -3310,24 +3293,23 @@ static void
 pxy_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 {
 	pxy_conn_child_ctx_t *ctx = arg;
-	assert(ctx->conn != NULL);
 
 	ctx->conn->atime = time(NULL);
 
 #ifdef DEBUG_PROXY
 	char *event_name = pxy_get_event_name_child(bev, ctx);
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_eventcb_child: ENTER %s fd=%d, child_fd=%d\n", event_name, ctx->conn->fd, ctx->conn->child_fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_eventcb_child: ENTER %s, fd=%d, conn fd=%d\n", event_name, ctx->fd, ctx->conn->fd);
 #endif /* DEBUG_PROXY */
 
 	pxy_conn_desc_t *this = (bev==ctx->src.bev) ? &ctx->src : &ctx->dst;
-	pxy_conn_desc_t *other = (bev==ctx->src.bev) ? &ctx->dst : &ctx->src;
-
 	void (*this_free_and_close_fd_func)(struct bufferevent *, pxy_conn_ctx_t *) = (this->bev==ctx->src.bev) ? &bufferevent_free_and_close_fd_nonssl : &bufferevent_free_and_close_fd;
+
+	pxy_conn_desc_t *other = (bev==ctx->src.bev) ? &ctx->dst : &ctx->src;
 	void (*other_free_and_close_fd_func)(struct bufferevent *, pxy_conn_ctx_t *) = (other->bev==ctx->dst.bev) ? &bufferevent_free_and_close_fd : &bufferevent_free_and_close_fd_nonssl;
 
 	if (events & BEV_EVENT_CONNECTED) {
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_eventcb_child: Connected %s fd=%d\n", event_name, ctx->fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_eventcb_child: Connected %s, fd=%d, conn fd=%d\n", event_name, ctx->fd, ctx->conn->fd);
 #endif /* DEBUG_PROXY */
 		if (bev == ctx->dst.bev) {
 			ctx->connected = 1;
@@ -3336,13 +3318,74 @@ pxy_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 			bufferevent_enable(ctx->src.bev, EV_READ|EV_WRITE);
 		}
 		ctx->conn->thr->max_fd = MAX(ctx->conn->thr->max_fd, MAX(bufferevent_getfd(ctx->src.bev), bufferevent_getfd(ctx->dst.bev)));
-		return;
+
+		if (!(events & (BEV_EVENT_EOF|BEV_EVENT_ERROR))) {
+			// Do not fall through unless there are other events, otherwise connection is terminated
+			return;
+		}
+#ifdef DEBUG_PROXY
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_bev_eventcb_child: BEV_EVENT_CONNECTED with %s %s %s, fd=%d, conn fd=%d\n", event_name,
+				(events & BEV_EVENT_EOF) ? "BEV_EVENT_EOF" : "", (events & BEV_EVENT_ERROR) ? "BEV_EVENT_ERROR" : "", ctx->fd, ctx->conn->fd);
+#endif /* DEBUG_PROXY */
+	}
+
+	if (events & BEV_EVENT_EOF) {
+#ifdef DEBUG_PROXY
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_eventcb_child: EOF %s, fd=%d, conn fd=%d\n", event_name, ctx->fd, ctx->conn->fd);
+
+		if (OPTS_DEBUG(ctx->conn->opts)) {
+			log_dbg_printf("evbuffer size at EOF: "
+			               "i:%zu o:%zu i:%zu o:%zu\n",
+			                evbuffer_get_length(
+			                    bufferevent_get_input(bev)),
+			                evbuffer_get_length(
+			                    bufferevent_get_output(bev)),
+			                other->closed ? 0 : evbuffer_get_length(
+			                    bufferevent_get_input(other->bev)),
+			                other->closed ? 0 : evbuffer_get_length(
+			                    bufferevent_get_output(other->bev))
+			                );
+		}
+#endif /* DEBUG_PROXY */
+
+		// @todo How to handle the following case?
+		if (!ctx->connected) {
+			log_err_level_printf(LOG_WARNING, "EOF on outbound connection before connection establishment\n");
+#ifdef DEBUG_PROXY
+			log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_bev_eventcb_child: EOF on outbound connection before connection establishment, fd=%d, conn fd=%d\n", ctx->fd, ctx->conn->fd);
+#endif /* DEBUG_PROXY */
+			other->closed = 1;
+		} else if (!other->closed) {
+#ifdef DEBUG_PROXY
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_eventcb_child: !other->closed, terminate conn, fd=%d, conn fd=%d\n", ctx->fd, ctx->conn->fd);
+#endif /* DEBUG_PROXY */
+			/* if there is data pending in the closed connection,
+			 * handle it here, otherwise it will be lost. */
+			if (evbuffer_get_length(bufferevent_get_input(bev))) {
+#ifdef DEBUG_PROXY
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_eventcb_child: evbuffer_get_length(inbuf) > 0, terminate conn, fd=%d, conn fd=%d\n", ctx->fd, ctx->conn->fd);
+#endif /* DEBUG_PROXY */
+				pxy_bev_readcb_child(bev, ctx);
+			}
+			/* if the other end is still open and doesn't
+			 * have data to send, close it, otherwise its
+			 * writecb will close it after writing what's
+			 * left in the output buffer. */
+			if (evbuffer_get_length(bufferevent_get_output(other->bev)) == 0) {
+#ifdef DEBUG_PROXY
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_eventcb_child: evbuffer_get_length(outbuf) == 0, terminate conn, fd=%d, conn fd=%d\n", ctx->fd, ctx->conn->fd);
+#endif /* DEBUG_PROXY */
+				other->closed = 1;
+				other_free_and_close_fd_func(other->bev, ctx->conn);
+				other->bev = NULL;
+			}
+		}
 	}
 
 	if (events & BEV_EVENT_ERROR) {
 		log_err_printf("Server-side BEV_EVENT_ERROR\n");
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINER, "ERROR: pxy_bev_eventcb_child error, fd=%d\n", ctx->fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_bev_eventcb_child: BEV_EVENT_ERROR %s, fd=%d, conn fd=%d\n", event_name, ctx->fd, ctx->conn->fd);
 #endif /* DEBUG_PROXY */
 		pxy_print_ssl_error(bev, ctx->conn);
 		ctx->conn->thr->errors++;
@@ -3364,70 +3407,14 @@ pxy_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 				other->closed = 1;
 			}
 		}
-		goto leave;
 	}
 
-	if (events & BEV_EVENT_EOF) {
-#ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_eventcb_child: EOF %s fd=%d\n", event_name, ctx->fd);
-
-		if (OPTS_DEBUG(ctx->conn->opts)) {
-			log_dbg_printf("evbuffer size at EOF: "
-			               "i:%zu o:%zu i:%zu o:%zu\n",
-			                evbuffer_get_length(
-			                    bufferevent_get_input(bev)),
-			                evbuffer_get_length(
-			                    bufferevent_get_output(bev)),
-			                other->closed ? 0 : evbuffer_get_length(
-			                    bufferevent_get_input(other->bev)),
-			                other->closed ? 0 : evbuffer_get_length(
-			                    bufferevent_get_output(other->bev))
-			                );
-		}
-#endif /* DEBUG_PROXY */
-
-		// @todo How to handle the following case?
-		if (!ctx->connected) {
-			log_err_level_printf(LOG_WARNING, "EOF on outbound connection before connection establishment\n");
-#ifdef DEBUG_PROXY
-			log_dbg_level_printf(LOG_DBG_MODE_FINER, "WARNING: pxy_bev_eventcb_child: EOF on outbound connection before connection establishment, fd=%d, pfd=%d\n", ctx->fd, ctx->conn->fd);
-#endif /* DEBUG_PROXY */
-			other->closed = 1;
-		} else if (!other->closed) {
-#ifdef DEBUG_PROXY
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_eventcb_child: !other->closed, terminate conn, fd=%d, pfd=%d\n", ctx->fd, ctx->conn->fd);
-#endif /* DEBUG_PROXY */
-			/* if there is data pending in the closed connection,
-			 * handle it here, otherwise it will be lost. */
-			if (evbuffer_get_length(bufferevent_get_input(bev))) {
-#ifdef DEBUG_PROXY
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_eventcb_child: evbuffer_get_length(inbuf) > 0, terminate conn, fd=%d, pfd=%d\n", ctx->fd, ctx->conn->fd);
-#endif /* DEBUG_PROXY */
-				pxy_bev_readcb_child(bev, ctx);
-			}
-			/* if the other end is still open and doesn't
-			 * have data to send, close it, otherwise its
-			 * writecb will close it after writing what's
-			 * left in the output buffer. */
-			if (evbuffer_get_length(bufferevent_get_output(other->bev)) == 0) {
-#ifdef DEBUG_PROXY
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_eventcb_child: evbuffer_get_length(outbuf) == 0, terminate conn, fd=%d, pfd=%d\n", ctx->fd, ctx->conn->fd);
-#endif /* DEBUG_PROXY */
-				other->closed = 1;
-				other_free_and_close_fd_func(other->bev, ctx->conn);
-				other->bev = NULL;
-			}
-		}
-		goto leave;
-	}
-
-leave:
 	/* we only get a single disconnect event here for both connections */
 	if (OPTS_DEBUG(ctx->conn->opts)) {
-		log_dbg_printf("pxy_bev_eventcb_child: %s disconnected to [%s]:%s, fd=%d, pfd=%d\n",
+		log_dbg_printf("pxy_bev_eventcb_child: %s disconnected to [%s]:%s, fd=%d, conn fd=%d\n",
 					   this->ssl ? "SSL" : "TCP",
 					   STRORDASH(ctx->conn->dsthost_str), STRORDASH(ctx->conn->dstport_str), ctx->fd, ctx->conn->fd);
-		log_dbg_printf("pxy_bev_eventcb_child: %s disconnected from [%s]:%s, fd=%d, pfd=%d\n",
+		log_dbg_printf("pxy_bev_eventcb_child: %s disconnected from [%s]:%s, fd=%d, conn fd=%d\n",
 					   this->ssl ? "SSL" : "TCP",
 					   STRORDASH(ctx->conn->srchost_str), STRORDASH(ctx->conn->srcport_str), ctx->fd, ctx->conn->fd);
 	}
@@ -3437,7 +3424,7 @@ leave:
 	this->bev = NULL;
 	if (other->closed) {
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_eventcb_child: other->closed, terminate conn, fd=%d, pfd=%d\n", ctx->fd, ctx->conn->fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_eventcb_child: other->closed, terminate conn, fd=%d, conn fd=%d\n", ctx->fd, ctx->conn->fd);
 #endif /* DEBUG_PROXY */
 		pxy_conn_free_child(ctx);
 	}
@@ -3728,7 +3715,7 @@ pxy_conn_setup(evutil_socket_t fd,
 	// then they all start creating children, which crashes us again.
 	// So, no matter how large an FD_RESERVE we choose, there will always be a risk of running out of fds, if we check the number of fds here only.
 	// If we are left with less than FD_RESERVE fds, we should not create more children than FD_RESERVE allows for either.
-	// Therefore, we check if we are out of fds in pxy_conn_setup_child() and close the conn there too.
+	// Therefore, we check if we are out of fds in proxy_listener_acceptcb_child() and close the conn there too.
 	// @attention These checks are expected to slow us further down, but it is critical to avoid a crash in case we run out of fds.
 	if (dtable_count + FD_RESERVE >= descriptor_table_size) {
 		errno = EMFILE;
