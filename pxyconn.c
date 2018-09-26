@@ -1832,20 +1832,28 @@ pxy_conn_autossl_peek_and_upgrade(pxy_conn_ctx_t *ctx)
 			ctx->srv_dst.ssl = pxy_dstssl_create(ctx);
 			if (!ctx->srv_dst.ssl) {
 				log_err_level_printf(LOG_CRIT, "Error creating SSL for upgrade\n");
+				// @todo Should we close the connection?
 				return 0;
 			}
+
 			ctx->srv_dst.bev = bufferevent_openssl_filter_new(ctx->evbase, ctx->srv_dst.bev, ctx->srv_dst.ssl,
 					BUFFEREVENT_SSL_CONNECTING, BEV_OPT_DEFER_CALLBACKS);
+			if (!ctx->srv_dst.bev) {
+				log_err_level_printf(LOG_CRIT, "Error creating bufferevent\n");
+				if (ctx->srv_dst.ssl) {
+					SSL_free(ctx->srv_dst.ssl);
+					ctx->srv_dst.ssl = NULL;
+				}
+				// @todo Should we close the connection?
+				return 0;
+			}
 
 			bufferevent_setcb(ctx->srv_dst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
-
 #ifdef DEBUG_PROXY
 			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_autossl_peek_and_upgrade: Enabling srv_dst, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 			bufferevent_enable(ctx->srv_dst.bev, EV_READ|EV_WRITE);
-			if (!ctx->srv_dst.bev) {
-				return 0;
-			}
+
 			if (OPTS_DEBUG(ctx->opts)) {
 				log_err_level_printf(LOG_INFO, "Replaced srv_dst bufferevent, new one is %p\n", (void *)ctx->srv_dst.bev);
 			}
@@ -2336,16 +2344,20 @@ pxy_bev_readcb_child(struct bufferevent *bev, void *arg)
 		}
 		ctx->dst.bev = bufferevent_openssl_filter_new(ctx->conn->evbase, ctx->dst.bev, ctx->dst.ssl,
 				BUFFEREVENT_SSL_CONNECTING, BEV_OPT_DEFER_CALLBACKS);
-		bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb_child, pxy_bev_writecb_child, pxy_bev_eventcb_child, ctx);
-
-#ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb_child: Enabling dst, fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
 		if (!ctx->dst.bev) {
+			log_err_level_printf(LOG_CRIT, "pxy_bev_readcb_child: Error creating bufferevent\n");
 			ctx->enomem = 1;
+			if (ctx->dst.ssl) {
+				SSL_free(ctx->dst.ssl);
+				ctx->dst.ssl = NULL;
+			}
 			pxy_conn_free(ctx->conn, 1);
 			return;
 		}
+		bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb_child, pxy_bev_writecb_child, pxy_bev_eventcb_child, ctx);
+#ifdef DEBUG_PROXY
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb_child: Enabling dst, fd=%d\n", ctx->fd);
+#endif /* DEBUG_PROXY */
 		bufferevent_enable(ctx->dst.bev, EV_READ|EV_WRITE);
 		if (OPTS_DEBUG(ctx->conn->opts)) {
 			log_err_level_printf(LOG_INFO, "pxy_bev_readcb_child: Replaced dst bufferevent, new one is %p\n", (void *)ctx->dst.bev);
