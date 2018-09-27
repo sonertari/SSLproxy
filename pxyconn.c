@@ -2156,9 +2156,9 @@ pxy_bev_readcb(struct bufferevent *bev, void *arg)
 	pxy_conn_desc_t *other;
 	if (ctx->passthrough) {
 		// Passthrough packets are transfered between src and srv_dst
-		other = (bev==ctx->src.bev) ? &ctx->srv_dst : &ctx->src;
+		other = (bev == ctx->src.bev) ? &ctx->srv_dst : &ctx->src;
 	} else {
-		other = (bev==ctx->src.bev) ? &ctx->dst : &ctx->src;
+		other = (bev == ctx->src.bev) ? &ctx->dst : &ctx->src;
 	}
 	struct evbuffer *outbuf = bufferevent_get_output(other->bev);
 
@@ -2772,9 +2772,8 @@ pxy_connected_enable(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 
 		if (!ctx->passthrough) {
 			// @attention Create and enable dst.bev before, but connect here, because we check if dst.bev is NULL elsewhere
-			if (bufferevent_socket_connect(ctx->dst.bev,
-									   (struct sockaddr *)&ctx->spec->conn_dst_addr,
-									   ctx->spec->conn_dst_addrlen) == -1) {
+			if (bufferevent_socket_connect(ctx->dst.bev, (struct sockaddr *)&ctx->spec->conn_dst_addr,
+					ctx->spec->conn_dst_addrlen) == -1) {
 #ifdef DEBUG_PROXY
 				log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_connected_enable: FAILED bufferevent_socket_connect for dst, fd=%d\n", fd);
 #endif /* DEBUG_PROXY */
@@ -3366,11 +3365,11 @@ pxy_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_eventcb_child: ENTER %s, fd=%d, conn fd=%d\n", event_name, ctx->fd, ctx->conn->fd);
 #endif /* DEBUG_PROXY */
 
-	pxy_conn_desc_t *this = (bev==ctx->src.bev) ? &ctx->src : &ctx->dst;
-	void (*this_free_and_close_fd_func)(struct bufferevent *, pxy_conn_ctx_t *) = (this->bev==ctx->src.bev) ? &bufferevent_free_and_close_fd_nonssl : &bufferevent_free_and_close_fd;
+	pxy_conn_desc_t *this = (bev == ctx->src.bev) ? &ctx->src : &ctx->dst;
+	void (*this_free_and_close_fd_func)(struct bufferevent *, pxy_conn_ctx_t *) = (this->bev == ctx->src.bev) ? &bufferevent_free_and_close_fd_nonssl : &bufferevent_free_and_close_fd;
 
-	pxy_conn_desc_t *other = (bev==ctx->src.bev) ? &ctx->dst : &ctx->src;
-	void (*other_free_and_close_fd_func)(struct bufferevent *, pxy_conn_ctx_t *) = (other->bev==ctx->dst.bev) ? &bufferevent_free_and_close_fd : &bufferevent_free_and_close_fd_nonssl;
+	pxy_conn_desc_t *other = (bev == ctx->src.bev) ? &ctx->dst : &ctx->src;
+	void (*other_free_and_close_fd_func)(struct bufferevent *, pxy_conn_ctx_t *) = (other->bev == ctx->dst.bev) ? &bufferevent_free_and_close_fd : &bufferevent_free_and_close_fd_nonssl;
 
 	if (events & BEV_EVENT_CONNECTED) {
 #ifdef DEBUG_PROXY
@@ -3613,8 +3612,7 @@ pxy_sni_resolve_cb(int errcode, struct evutil_addrinfo *ai, void *arg)
 #endif /* DEBUG_PROXY */
 
 	if (errcode) {
-		log_err_printf("Cannot resolve SNI hostname '%s': %s\n",
-		               ctx->sni, evutil_gai_strerror(errcode));
+		log_err_printf("Cannot resolve SNI hostname '%s': %s\n", ctx->sni, evutil_gai_strerror(errcode));
 		evutil_closesocket(ctx->fd);
 		pxy_conn_ctx_free(ctx, 1);
 		return;
@@ -3652,7 +3650,7 @@ pxy_fd_readcb(MAYBE_UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 #ifndef OPENSSL_NO_TLSEXT
 	// Child connections will use the sni info obtained by the parent conn
 	/* for SSL, peek ClientHello and parse SNI from it */
-	if (ctx->spec->ssl && !ctx->passthrough /*&& ctx->ev*/) {
+	if (ctx->spec->ssl && !ctx->passthrough) {
 		unsigned char buf[1024];
 		ssize_t n;
 		const unsigned char *chello;
@@ -3681,23 +3679,17 @@ pxy_fd_readcb(MAYBE_UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 
 		rv = ssl_tls_clienthello_parse(buf, n, 0, &chello, &ctx->sni);
 		if ((rv == 1) && !chello) {
-			log_err_printf("Peeking did not yield a (truncated) "
-			               "ClientHello message, "
-			               "aborting connection\n");
+			log_err_printf("Peeking did not yield a (truncated) ClientHello message, aborting connection\n");
 #ifdef DEBUG_PROXY
-			log_dbg_level_printf(LOG_DBG_MODE_FINER, "ERROR: Peeking did not yield a (truncated) "
-			               "ClientHello message, "
-			               "aborting connection, fd=%d\n", ctx->fd);
+			log_dbg_level_printf(LOG_DBG_MODE_FINER, "ERROR: Peeking did not yield a (truncated) ClientHello message, aborting connection, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 			evutil_closesocket(fd);
 			pxy_conn_ctx_free(ctx, 1);
 			return;
 		}
 		if (OPTS_DEBUG(ctx->opts)) {
-			log_dbg_printf("SNI peek: [%s] [%s], fd=%d\n",
-			               ctx->sni ? ctx->sni : "n/a",
-			               ((rv == 1) && chello) ?
-			               "incomplete" : "complete", ctx->fd);
+			log_dbg_printf("SNI peek: [%s] [%s], fd=%d\n", ctx->sni ? ctx->sni : "n/a",
+			               ((rv == 1) && chello) ? "incomplete" : "complete", ctx->fd);
 		}
 		if ((rv == 1) && chello && (ctx->sni_peek_retries++ < 50)) {
 			/* ssl_tls_clienthello_parse indicates that we
@@ -3711,8 +3703,7 @@ pxy_fd_readcb(MAYBE_UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 			struct timeval retry_delay = {0, 100};
 
 			event_free(ctx->ev);
-			ctx->ev = event_new(ctx->evbase, fd, 0,
-			                    pxy_fd_readcb, ctx);
+			ctx->ev = event_new(ctx->evbase, fd, 0, pxy_fd_readcb, ctx);
 			if (!ctx->ev) {
 				log_err_level_printf(LOG_CRIT, "Error creating retry event, aborting connection\n");
 #ifdef DEBUG_PROXY
@@ -3740,8 +3731,7 @@ pxy_fd_readcb(MAYBE_UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 		hints.ai_protocol = IPPROTO_TCP;
 
 		snprintf(sniport, sizeof(sniport), "%i", ctx->spec->sni_port);
-		evdns_getaddrinfo(ctx->dnsbase, ctx->sni, sniport, &hints,
-		                  pxy_sni_resolve_cb, ctx);
+		evdns_getaddrinfo(ctx->dnsbase, ctx->sni, sniport, &hints, pxy_sni_resolve_cb, ctx);
 		return;
 	}
 #endif /* !OPENSSL_NO_TLSEXT */
@@ -3814,10 +3804,8 @@ pxy_conn_setup(evutil_socket_t fd,
 	if (spec->natlookup) {
 		/* NAT engine lookup */
 		ctx->addrlen = sizeof(struct sockaddr_storage);
-		if (spec->natlookup((struct sockaddr *)&ctx->addr, &ctx->addrlen,
-		                    fd, peeraddr, peeraddrlen) == -1) {
-			log_err_printf("Connection not found in NAT "
-			               "state table, aborting connection\n");
+		if (spec->natlookup((struct sockaddr *)&ctx->addr, &ctx->addrlen, fd, peeraddr, peeraddrlen) == -1) {
+			log_err_printf("Connection not found in NAT state table, aborting connection\n");
 			evutil_closesocket(fd);
 			pxy_conn_ctx_free(ctx, 1);
 			return;
@@ -3830,17 +3818,14 @@ pxy_conn_setup(evutil_socket_t fd,
 		/* SNI mode */
 		if (!ctx->spec->ssl) {
 			/* if this happens, the proxyspec parser is broken */
-			log_err_printf("SNI mode used for non-SSL connection; "
-			               "aborting connection\n");
+			log_err_printf("SNI mode used for non-SSL connection; aborting connection\n");
 			evutil_closesocket(fd);
 			pxy_conn_ctx_free(ctx, 1);
 			return;
 		}
 	}
 
-	if (sys_sockaddr_str(peeraddr, peeraddrlen,
-						 &ctx->srchost_str,
-						 &ctx->srcport_str) != 0) {
+	if (sys_sockaddr_str(peeraddr, peeraddrlen, &ctx->srchost_str, &ctx->srcport_str) != 0) {
 		goto memout;
 	}
 
