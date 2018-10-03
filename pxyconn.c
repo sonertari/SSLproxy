@@ -1717,6 +1717,16 @@ pxy_ocsp_is_valid_uri(const char *uri, pxy_conn_ctx_t *ctx)
 	return ret;
 }
 
+static const char ocspresp[] =
+	"HTTP/1.0 200 OK\r\n"
+	"Content-Type: application/ocsp-response\r\n"
+	"Content-Length: 5\r\n"
+	"Connection: close\r\n"
+	"\r\n"
+	"\x30\x03"      /* OCSPResponse: SEQUENCE */
+	"\x0a\x01"      /* OCSPResponseStatus: ENUMERATED */
+	"\x03";         /* tryLater (3) */
+
 /*
  * Called after a request header was completely read.
  * If the request is an OCSP request, deny the request by sending an
@@ -1729,15 +1739,6 @@ static void
 pxy_ocsp_deny(pxy_conn_ctx_t *ctx)
 {
 	struct evbuffer *inbuf, *outbuf;
-	static const char ocspresp[] =
-		"HTTP/1.0 200 OK\r\n"
-		"Content-Type: application/ocsp-response\r\n"
-		"Content-Length: 5\r\n"
-		"Connection: close\r\n"
-		"\r\n"
-		"\x30\x03"      /* OCSPResponse: SEQUENCE */
-		"\x0a\x01"      /* OCSPResponseStatus: ENUMERATED */
-		"\x03";         /* tryLater (3) */
 
 	if (!ctx->http_method)
 		return;
@@ -1757,20 +1758,6 @@ deny:
 	outbuf = bufferevent_get_output(ctx->src.bev);
 
 	if (evbuffer_get_length(inbuf) > 0) {
-		if (WANT_CONTENT_LOG(ctx->conn)) {
-			logbuf_t *lb;
-			lb = logbuf_new_alloc(evbuffer_get_length(inbuf),
-			                      NULL, NULL);
-			if (lb &&
-			    (evbuffer_copyout(inbuf, lb->buf, lb->sz) != -1)) {
-				if (log_content_submit(ctx->logctx, lb,
-				                       1/*req*/) == -1) {
-					logbuf_free(lb);
-					log_err_level_printf(LOG_WARNING, "Content log "
-					               "submission failed\n");
-				}
-			}
-		}
 		evbuffer_drain(inbuf, evbuffer_get_length(inbuf));
 	}
 	bufferevent_free_and_close_fd(ctx->dst.bev, ctx->conn);
@@ -1778,19 +1765,6 @@ deny:
 	ctx->dst.closed = 1;
 	evbuffer_add_printf(outbuf, ocspresp);
 	ctx->ocsp_denied = 1;
-	if (WANT_CONTENT_LOG(ctx->conn)) {
-		logbuf_t *lb;
-		lb = logbuf_new_copy(ocspresp, sizeof(ocspresp) - 1,
-		                     NULL, NULL);
-		if (lb) {
-			if (log_content_submit(ctx->logctx, lb,
-			                       0/*resp*/) == -1) {
-				logbuf_free(lb);
-				log_err_level_printf(LOG_WARNING, "Content log "
-				               "submission failed\n");
-			}
-		}
-	}
 }
 
 /*
@@ -2060,23 +2034,6 @@ proxy_listener_acceptcb_child(UNUSED struct evconnlistener *listener, evutil_soc
 }
 
 static int
-pxy_buffer_content_line(pxy_conn_ctx_t *ctx, char *line, unsigned char **buf, size_t *sz)
-{
-	if (WANT_CONTENT_LOG(ctx->conn)) {
-		size_t line_sz = strlen(line);
-		*buf = realloc(*buf, *sz + line_sz + 2);
-		if (!buf) {
-			return -1;
-		}
-
-		memcpy(*buf + *sz, line, line_sz);
-		memcpy(*buf + *sz + line_sz, "\r\n", 2);
-		*sz += line_sz + 2;
-	}
-	return 0;
-}
-
-static int
 pxy_log_content_buf(pxy_conn_ctx_t *ctx, unsigned char *buf, size_t sz, int req)
 {
 	if (WANT_CONTENT_LOG(ctx->conn)) {
@@ -2120,15 +2077,9 @@ pxy_log_content_inbuf(pxy_conn_ctx_t *ctx, struct evbuffer *inbuf, int req)
 static void
 pxy_http_reqhdr_filter(struct evbuffer *inbuf, struct evbuffer *outbuf, pxy_conn_ctx_t *ctx)
 {
-	unsigned char *buf = NULL;
-	size_t sz = 0;
 	char *line;
 
 	while ((line = evbuffer_readln(inbuf, NULL, EVBUFFER_EOL_CRLF))) {
-		if (pxy_buffer_content_line(ctx, line, &buf, &sz) == -1) {
-			goto errout;
-		}
-
 		char *replace = pxy_http_reqhdr_filter_line(line, ctx);
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_http_reqhdr_filter: src line, fd=%d: %s\n", ctx->fd, line);
@@ -2165,53 +2116,30 @@ pxy_http_reqhdr_filter(struct evbuffer *inbuf, struct evbuffer *outbuf, pxy_conn
 		}
 	}
 
-	if (pxy_log_content_buf(ctx, buf, sz, 1) == -1) {
-		goto errout;
-	}
-
 	if (!ctx->seen_req_header) {
-		goto out;
+		return;
 	}
 
 	// @todo Fix this
 	/* out of memory condition? */
 	if (ctx->enomem) {
-		goto errout;
+		pxy_conn_free(ctx->conn, 1);
+		return;
 	}
 
 	/* no data left after parsing headers? */
 	if (evbuffer_get_length(inbuf) == 0) {
-		goto out;
+		return;
 	}
-
-	if (pxy_log_content_inbuf(ctx, inbuf, 1) == -1) {
-		goto errout;
-	}
-
 	evbuffer_add_buffer(outbuf, inbuf);
-	goto out;
-
-errout:
-	pxy_conn_free(ctx->conn, 1);
-out:
-	if (buf) {
-		free(buf);
-	}
-	return;
 }
 
 static void
 pxy_http_resphdr_filter(struct evbuffer *inbuf, struct evbuffer *outbuf, pxy_conn_ctx_t *ctx)
 {
-	unsigned char *buf = NULL;
-	size_t sz = 0;
 	char *line;
 
 	while ((line = evbuffer_readln(inbuf, NULL, EVBUFFER_EOL_CRLF))) {
-		if (pxy_buffer_content_line(ctx, line, &buf, &sz) == -1) {
-			goto errout;
-		}
-
 		char *replace = pxy_http_resphdr_filter_line(line, ctx);
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_http_resphdr_filter: dst line, fd=%d: %s\n", ctx->fd, line);
@@ -2230,49 +2158,24 @@ pxy_http_resphdr_filter(struct evbuffer *inbuf, struct evbuffer *outbuf, pxy_con
 #endif /* DEBUG_PROXY */
 		}
 		free(line);
-
-		if (ctx->seen_resp_header) {
-			/* response header complete: log connection */
-			if (!ctx->is_child && (WANT_CONNECT_LOG(ctx->conn) || ctx->conn->opts->statslog)) {
-				pxy_log_connect_http(ctx->conn);
-			}
-			break;
-		}
-	}
-
-	if (pxy_log_content_buf(ctx, buf, sz, 0) == -1) {
-		goto errout;
 	}
 
 	if (!ctx->seen_resp_header) {
-		goto out;
+		return;
 	}
 
 	// @todo Fix this
 	/* out of memory condition? */
 	if (ctx->enomem) {
-		goto errout;
+		pxy_conn_free(ctx->conn, 0);
+		return;
 	}
 
 	/* no data left after parsing headers? */
 	if (evbuffer_get_length(inbuf) == 0) {
-		goto out;
+		return;
 	}
-
-	if (pxy_log_content_inbuf(ctx, inbuf, 0) == -1) {
-		goto errout;
-	}
-
 	evbuffer_add_buffer(outbuf, inbuf);
-	goto out;
-
-errout:
-	pxy_conn_free(ctx->conn, 0);
-out:
-	if (buf) {
-		free(buf);
-	}
-	return;
 }
 
 static void
@@ -2381,6 +2284,10 @@ pxy_bev_readcb_autossl_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 
 	ctx->thr->intif_in_bytes += inbuf_size;
 
+	if (pxy_log_content_inbuf(ctx, inbuf, 1) == -1) {
+		return;
+	}
+
 	size_t header_len = strlen(ctx->header_str);
 	size_t packet_size = inbuf_size;
 	// +2 is for \r\n
@@ -2422,8 +2329,6 @@ pxy_bev_readcb_autossl_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb_autossl_src: NEW packet (size=%zu), fd=%d:\n%.*s\n",
 			packet_size, ctx->fd, (int)packet_size, packet);
 #endif /* DEBUG_PROXY */
-
-	pxy_log_content_buf(ctx, packet, packet_size, 1);
 	free(packet);
 	pxy_set_watermark(bev, ctx, ctx->dst.bev);
 }
@@ -2447,11 +2352,13 @@ pxy_bev_readcb_autossl_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 
 	ctx->thr->intif_out_bytes += inbuf_size;
 
+	if (pxy_log_content_inbuf(ctx, inbuf, 0) == -1) {
+		return;
+	}
+
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb_autossl_dst: dst packet size=%zu, fd=%d\n", inbuf_size, ctx->fd);
 #endif /* DEBUG_PROXY */
-
-	pxy_log_content_inbuf(ctx, inbuf, 0);
 	evbuffer_add_buffer(outbuf, inbuf);
 	pxy_set_watermark(bev, ctx, ctx->src.bev);
 }
@@ -2512,6 +2419,12 @@ pxy_bev_readcb_http_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 
 	ctx->thr->intif_in_bytes += inbuf_size;
 
+	// Content logging at this point may record certain headers twice
+	if (pxy_log_content_inbuf(ctx, inbuf, 1) == -1) {
+		return;
+	}
+	int seen_req_header_on_entry = ctx->seen_req_header;
+
 	// We insert our special header line to the first packet we get, e.g. right after the first \r\n in the case of http
 	// @todo Should we look for GET/POST or Host header lines to detect the first packet?
 	// But there is no guarantee that they will exist, due to fragmentation.
@@ -2530,10 +2443,13 @@ pxy_bev_readcb_http_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb_http_src: HTTP Request Body size=%zu, fd=%d\n", inbuf_size, ctx->fd);
 #endif /* DEBUG_PROXY */
-		pxy_log_content_inbuf(ctx, inbuf, 1);
 		evbuffer_add_buffer(outbuf, inbuf);
 	}
 	pxy_set_watermark(bev, ctx, ctx->dst.bev);
+
+	if (!seen_req_header_on_entry && ctx->seen_req_header && ctx->ocsp_denied) {
+		pxy_log_content_buf(ctx, (unsigned char *)ocspresp, sizeof(ocspresp) - 1, 0/*resp*/);
+	}
 }
 
 
@@ -2555,6 +2471,12 @@ pxy_bev_readcb_http_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 
 	ctx->thr->intif_out_bytes += inbuf_size;
 
+	// Content logging at this point may record certain headers twice
+	if (pxy_log_content_inbuf(ctx, inbuf, 1) == -1) {
+		return;
+	}
+	int seen_resp_header_on_entry = ctx->seen_resp_header;
+
 	if (!ctx->seen_resp_header) {
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb_http_dst: HTTP Response Header size=%zu, fd=%d\n", inbuf_size, ctx->fd);
@@ -2564,10 +2486,16 @@ pxy_bev_readcb_http_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb_http_dst: HTTP Response Body size=%zu, fd=%d\n", inbuf_size, ctx->fd);
 #endif /* DEBUG_PROXY */
-		pxy_log_content_inbuf(ctx, inbuf, 0);
 		evbuffer_add_buffer(outbuf, inbuf);
 	}
 	pxy_set_watermark(bev, ctx, ctx->src.bev);
+
+	if (!seen_resp_header_on_entry && ctx->seen_resp_header) {
+		/* response header complete: log connection */
+		if (WANT_CONNECT_LOG(ctx->conn) || ctx->opts->statslog) {
+			pxy_log_connect_http(ctx);
+		}
+	}
 }
 
 static void
@@ -2608,6 +2536,10 @@ pxy_bev_readcb_default_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 
 	ctx->thr->intif_in_bytes += inbuf_size;
 
+	if (pxy_log_content_inbuf(ctx, inbuf, 1) == -1) {
+		return;
+	}
+
 	size_t header_len = strlen(ctx->header_str);
 	size_t packet_size = inbuf_size;
 	// +2 is for \r\n
@@ -2638,8 +2570,6 @@ pxy_bev_readcb_default_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb_default_src: NEW packet (size=%zu), fd=%d:\n%.*s\n",
 			packet_size, ctx->fd, (int)packet_size, packet);
 #endif /* DEBUG_PROXY */
-
-	pxy_log_content_buf(ctx, packet, packet_size, 1);
 	free(packet);
 	pxy_set_watermark(bev, ctx, ctx->dst.bev);
 }
@@ -2662,11 +2592,13 @@ pxy_bev_readcb_default_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 
 	ctx->thr->intif_out_bytes += inbuf_size;
 
+	if (pxy_log_content_inbuf(ctx, inbuf, 0) == -1) {
+		return;
+	}
+
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb_default_dst: packet size=%zu, fd=%d\n", inbuf_size, ctx->fd);
 #endif /* DEBUG_PROXY */
-
-	pxy_log_content_inbuf(ctx, inbuf, 0);
 	evbuffer_add_buffer(outbuf, inbuf);
 	pxy_set_watermark(bev, ctx, ctx->src.bev);
 }
@@ -2959,7 +2891,6 @@ pxy_bev_writecb_passthrough_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		}			
 		return;
 	}
-
 	pxy_unset_watermark(bev, ctx, &ctx->srv_dst);
 }
 
@@ -2981,7 +2912,6 @@ pxy_bev_writecb_passthrough_srv_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx
 		}			
 		return;
 	}
-
 	pxy_unset_watermark(bev, ctx, &ctx->src);
 }
 
@@ -3013,7 +2943,6 @@ pxy_bev_writecb_default_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		}			
 		return;
 	}
-
 	pxy_unset_watermark(bev, ctx, &ctx->dst);
 }
 
@@ -3035,7 +2964,6 @@ pxy_bev_writecb_default_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		}			
 		return;
 	}
-
 	pxy_unset_watermark(bev, ctx, &ctx->src);
 }
 
@@ -3045,7 +2973,6 @@ pxy_bev_writecb_default_srv_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_writecb_default_srv_dst: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
-
 	pxy_bev_writecb_connect_srv_dst(bev, ctx);
 }
 
@@ -3135,35 +3062,52 @@ pxy_bev_writecb_child(struct bufferevent *bev, void *arg)
 }
 
 static int
+pxy_prepare_logging_local_procinfo(UNUSED pxy_conn_ctx_t *ctx)
+{
+#ifdef HAVE_LOCAL_PROCINFO
+	if (ctx->opts->lprocinfo) {
+		/* fetch process info */
+		if (proc_pid_for_addr(&ctx->lproc.pid,
+				(struct sockaddr*)&ctx->lproc.srcaddr,
+				ctx->lproc.srcaddrlen) == 0 &&
+			ctx->lproc.pid != -1 &&
+			proc_get_info(ctx->lproc.pid,
+						  &ctx->lproc.exec_path,
+						  &ctx->lproc.uid,
+						  &ctx->lproc.gid) == 0) {
+			/* fetch user/group names */
+			ctx->lproc.user = sys_user_str(
+							ctx->lproc.uid);
+			ctx->lproc.group = sys_group_str(
+							ctx->lproc.gid);
+			if (!ctx->lproc.user ||
+				!ctx->lproc.group) {
+				ctx->enomem = 1;
+				pxy_conn_free(ctx, 1);
+				return -1;
+			}
+		}
+	}
+#endif /* HAVE_LOCAL_PROCINFO */
+	return 0;
+}
+
+static int
+pxy_connected_prepare_logging_passthrough(pxy_conn_ctx_t *ctx)
+{
+	/* prepare logging, part 2 */
+	if (WANT_CONNECT_LOG(ctx)) {
+		return pxy_prepare_logging_local_procinfo(ctx);
+	}
+	return 0;
+}
+
+static int
 pxy_connected_prepare_logging(pxy_conn_ctx_t *ctx)
 {
 	/* prepare logging, part 2 */
 	if (WANT_CONNECT_LOG(ctx) || WANT_CONTENT_LOG(ctx)) {
-#ifdef HAVE_LOCAL_PROCINFO
-		if (ctx->opts->lprocinfo) {
-			/* fetch process info */
-			if (proc_pid_for_addr(&ctx->lproc.pid,
-					(struct sockaddr*)&ctx->lproc.srcaddr,
-					ctx->lproc.srcaddrlen) == 0 &&
-				ctx->lproc.pid != -1 &&
-				proc_get_info(ctx->lproc.pid,
-							  &ctx->lproc.exec_path,
-							  &ctx->lproc.uid,
-							  &ctx->lproc.gid) == 0) {
-				/* fetch user/group names */
-				ctx->lproc.user = sys_user_str(
-								ctx->lproc.uid);
-				ctx->lproc.group = sys_group_str(
-								ctx->lproc.gid);
-				if (!ctx->lproc.user ||
-					!ctx->lproc.group) {
-					ctx->enomem = 1;
-					pxy_conn_free(ctx, 1);
-					return -1;
-				}
-			}
-		}
-#endif /* HAVE_LOCAL_PROCINFO */
+		return pxy_prepare_logging_local_procinfo(ctx);
 	}
 	if (WANT_CONTENT_LOG(ctx)) {
 		if (log_content_open(&ctx->logctx, ctx->opts,
@@ -3217,7 +3161,6 @@ pxy_event_connected_passthrough_src(pxy_conn_ctx_t *ctx)
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_event_connected_passthrough_src: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
-
 	pxy_log_connect_passthrough_src(ctx);
 }
 
@@ -3250,7 +3193,7 @@ pxy_event_connected_passthrough_enable_src(pxy_conn_ctx_t *ctx)
 			return -1;
 		}
 
-		if (pxy_connected_prepare_logging(ctx) == -1) {
+		if (pxy_connected_prepare_logging_passthrough(ctx) == -1) {
 			return -1;
 		}
 
@@ -3442,7 +3385,7 @@ pxy_log_masterkey(pxy_conn_ctx_t *ctx, pxy_conn_desc_t *this)
 }
 
 static void
-pxy_log_connect_type(pxy_conn_ctx_t *ctx, pxy_conn_desc_t *this)
+pxy_log_dbg_connect_type(pxy_conn_ctx_t *ctx, pxy_conn_desc_t *this)
 {
 	if (OPTS_DEBUG(ctx->opts)) {
 		if (this->ssl) {
@@ -3486,7 +3429,7 @@ pxy_log_connect_src(pxy_conn_ctx_t *ctx)
 		return;
 	}
 
-	pxy_log_connect_type(ctx, &ctx->src);
+	pxy_log_dbg_connect_type(ctx, &ctx->src);
 }
 
 static void
@@ -3503,7 +3446,7 @@ pxy_log_connect_srv_dst(pxy_conn_ctx_t *ctx)
 			return;
 		}
 
-		pxy_log_connect_type(ctx, &ctx->srv_dst);
+		pxy_log_dbg_connect_type(ctx, &ctx->srv_dst);
 	}
 }
 
@@ -3631,6 +3574,7 @@ pxy_event_connected_autssl_srv_dst(pxy_conn_ctx_t *ctx)
 	if (pxy_event_connected_autssl_enable_src(ctx) == -1) {
 		return;
 	}
+
 	pxy_log_connect_srv_dst(ctx);
 }
 
@@ -3749,6 +3693,7 @@ pxy_event_connected_srv_dst(pxy_conn_ctx_t *ctx)
 	if (pxy_event_connected_enable_src(ctx) == -1) {
 		return;
 	}
+
 	pxy_log_connect_srv_dst(ctx);
 }
 
@@ -3767,7 +3712,7 @@ pxy_event_connected(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 }
 
 static void
-pxy_log_ssl_error(struct bufferevent *bev, UNUSED pxy_conn_ctx_t *ctx)
+pxy_log_err_ssl_error(struct bufferevent *bev, UNUSED pxy_conn_ctx_t *ctx)
 {
 	unsigned long sslerr;
 
@@ -3819,7 +3764,7 @@ pxy_log_ssl_error(struct bufferevent *bev, UNUSED pxy_conn_ctx_t *ctx)
 }
 
 static void
-pxy_log_evbuf_info(pxy_conn_ctx_t *ctx, pxy_conn_desc_t *this, pxy_conn_desc_t *other)
+pxy_log_dbg_evbuf_info(UNUSED pxy_conn_ctx_t *ctx, UNUSED pxy_conn_desc_t *this, UNUSED pxy_conn_desc_t *other)
 {
 #ifdef DEBUG_PROXY
 	if (OPTS_DEBUG(ctx->opts)) {
@@ -3846,7 +3791,7 @@ pxy_process_last_input(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 }
 
 static void
-pxy_log_disconnect(pxy_conn_ctx_t *ctx)
+pxy_log_dbg_disconnect(pxy_conn_ctx_t *ctx)
 {
 	// On parent connections, ctx->src.ssl is enough to know the type of connection
 	/* we only get a single disconnect event here for both connections */
@@ -3883,7 +3828,7 @@ pxy_event_eof_passthrough_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_event_eof_passthrough_src: EOF, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
-	pxy_log_evbuf_info(ctx, &ctx->src, &ctx->srv_dst);
+	pxy_log_dbg_evbuf_info(ctx, &ctx->src, &ctx->srv_dst);
 
 	if (!ctx->connected) {
 		log_err_level_printf(LOG_WARNING, "EOF on outbound connection before connection establishment\n");
@@ -3892,12 +3837,12 @@ pxy_event_eof_passthrough_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_event_eof_passthrough_src: !other->closed, terminate conn, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
-
 		pxy_process_last_input(bev, ctx);
 		pxy_close_conn_end_ifnodata(&ctx->srv_dst, ctx, &bufferevent_free_and_close_fd_nonssl);
 	}
 
-	pxy_log_disconnect(ctx);
+	pxy_log_dbg_disconnect(ctx);
+
 	pxy_disconnect(bev, ctx, &ctx->src, &bufferevent_free_and_close_fd_nonssl, &ctx->srv_dst, 1);
 }
 
@@ -3908,7 +3853,7 @@ pxy_event_eof_passthrough_srv_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_event_eof_passthrough_srv_dst: EOF, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
-	pxy_log_evbuf_info(ctx, &ctx->srv_dst, &ctx->src);
+	pxy_log_dbg_evbuf_info(ctx, &ctx->srv_dst, &ctx->src);
 
 	if (!ctx->connected) {
 		log_err_level_printf(LOG_WARNING, "EOF on outbound connection before connection establishment\n");
@@ -3917,12 +3862,12 @@ pxy_event_eof_passthrough_srv_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_event_eof_passthrough_srv_dst: !other->closed, terminate conn, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
-
 		pxy_process_last_input(bev, ctx);
 		pxy_close_conn_end_ifnodata(&ctx->src, ctx, &bufferevent_free_and_close_fd_nonssl);
 	}
 
-	pxy_log_disconnect(ctx);
+	pxy_log_dbg_disconnect(ctx);
+
 	pxy_disconnect(bev, ctx, &ctx->srv_dst, &bufferevent_free_and_close_fd_nonssl, &ctx->src, 0);
 }
 
@@ -3946,7 +3891,7 @@ pxy_event_eof_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_event_eof_src: EOF, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
-	pxy_log_evbuf_info(ctx, &ctx->src, &ctx->dst);
+	pxy_log_dbg_evbuf_info(ctx, &ctx->src, &ctx->dst);
 
 	if (!ctx->connected) {
 		log_err_level_printf(LOG_WARNING, "EOF on outbound connection before connection establishment\n");
@@ -3955,12 +3900,12 @@ pxy_event_eof_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_event_eof_src: !other->closed, terminate conn, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
-
 		pxy_process_last_input(bev, ctx);
 		pxy_close_conn_end_ifnodata(&ctx->dst, ctx, &bufferevent_free_and_close_fd_nonssl);
 	}
 
-	pxy_log_disconnect(ctx);
+	pxy_log_dbg_disconnect(ctx);
+
 	pxy_disconnect(bev, ctx, &ctx->src, &bufferevent_free_and_close_fd, &ctx->dst, 1);
 }
 
@@ -3971,7 +3916,7 @@ pxy_event_eof_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_event_eof_dst: EOF, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
-	pxy_log_evbuf_info(ctx, &ctx->dst, &ctx->src);
+	pxy_log_dbg_evbuf_info(ctx, &ctx->dst, &ctx->src);
 
 	if (!ctx->connected) {
 		log_err_level_printf(LOG_WARNING, "EOF on outbound connection before connection establishment\n");
@@ -3980,12 +3925,12 @@ pxy_event_eof_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_event_eof_dst: !other->closed, terminate conn, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
-
 		pxy_process_last_input(bev, ctx);
 		pxy_close_conn_end_ifnodata(&ctx->src, ctx, &bufferevent_free_and_close_fd);
 	}
 
-	pxy_log_disconnect(ctx);
+	pxy_log_dbg_disconnect(ctx);
+
 	pxy_disconnect(bev, ctx, &ctx->dst, &bufferevent_free_and_close_fd_nonssl, &ctx->src, 0);
 }
 
@@ -4028,7 +3973,8 @@ pxy_event_error_passthrough_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		pxy_close_conn_end_ifnodata(&ctx->srv_dst, ctx, &bufferevent_free_and_close_fd_nonssl);
 	}
 
-	pxy_log_disconnect(ctx);
+	pxy_log_dbg_disconnect(ctx);
+
 	pxy_disconnect(bev, ctx, &ctx->src, &bufferevent_free_and_close_fd_nonssl, &ctx->srv_dst, 1);
 }
 
@@ -4046,7 +3992,8 @@ pxy_event_error_passthrough_srv_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx
 		pxy_close_conn_end_ifnodata(&ctx->src, ctx, &bufferevent_free_and_close_fd_nonssl);
 	}
 
-	pxy_log_disconnect(ctx);
+	pxy_log_dbg_disconnect(ctx);
+
 	pxy_disconnect(bev, ctx, &ctx->srv_dst, &bufferevent_free_and_close_fd_nonssl, &ctx->src, 0);
 }
 
@@ -4054,7 +4001,7 @@ static void
 pxy_event_error_passthrough(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 	log_err_printf("pxy_event_error_passthrough: Client-side BEV_EVENT_ERROR\n");
-	pxy_log_ssl_error(bev, ctx);
+	pxy_log_err_ssl_error(bev, ctx);
 	ctx->thr->errors++;
 
 	// Passthrough packets are transfered between src and srv_dst
@@ -4080,7 +4027,8 @@ pxy_event_error_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		pxy_close_conn_end_ifnodata(&ctx->dst, ctx, &bufferevent_free_and_close_fd_nonssl);
 	}
 
-	pxy_log_disconnect(ctx);
+	pxy_log_dbg_disconnect(ctx);
+
 	pxy_disconnect(bev, ctx, &ctx->src, &bufferevent_free_and_close_fd, &ctx->dst, 1);
 }
 
@@ -4097,7 +4045,8 @@ pxy_event_error_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		pxy_close_conn_end_ifnodata(&ctx->src, ctx, &bufferevent_free_and_close_fd);
 	}
 
-	pxy_log_disconnect(ctx);
+	pxy_log_dbg_disconnect(ctx);
+
 	pxy_disconnect(bev, ctx, &ctx->dst, &bufferevent_free_and_close_fd_nonssl, &ctx->src, 0);
 }
 
@@ -4129,7 +4078,7 @@ static void
 pxy_event_error(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 	log_err_printf("pxy_event_error: Client-side BEV_EVENT_ERROR\n");
-	pxy_log_ssl_error(bev, ctx);
+	pxy_log_err_ssl_error(bev, ctx);
 	ctx->thr->errors++;
 
 	if (bev == ctx->src.bev) {
@@ -4318,7 +4267,7 @@ pxy_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_bev_eventcb_child: BEV_EVENT_ERROR %s, fd=%d, conn fd=%d\n", event_name, ctx->fd, ctx->conn->fd);
 #endif /* DEBUG_PROXY */
-		pxy_log_ssl_error(bev, ctx->conn);
+		pxy_log_err_ssl_error(bev, ctx->conn);
 		ctx->conn->thr->errors++;
 
 		if (!ctx->connected) {
