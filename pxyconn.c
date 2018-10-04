@@ -2079,7 +2079,7 @@ pxy_http_reqhdr_filter(struct evbuffer *inbuf, struct evbuffer *outbuf, pxy_conn
 {
 	char *line;
 
-	while ((line = evbuffer_readln(inbuf, NULL, EVBUFFER_EOL_CRLF))) {
+	while (!ctx->seen_req_header && (line = evbuffer_readln(inbuf, NULL, EVBUFFER_EOL_CRLF))) {
 		char *replace = pxy_http_reqhdr_filter_line(line, ctx);
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_http_reqhdr_filter: src line, fd=%d: %s\n", ctx->fd, line);
@@ -2106,32 +2106,27 @@ pxy_http_reqhdr_filter(struct evbuffer *inbuf, struct evbuffer *outbuf, pxy_conn
 #endif /* DEBUG_PROXY */
 			evbuffer_add_printf(outbuf, "%s\r\n", ctx->header_str);
 		}
+	}
 
-		if (ctx->seen_req_header) {
-			/* request header complete */
-			if (ctx->conn->opts->deny_ocsp) {
-				pxy_ocsp_deny(ctx);
-			}
-			break;
+	if (ctx->seen_req_header) {
+		/* request header complete */
+		if (ctx->conn->opts->deny_ocsp) {
+			pxy_ocsp_deny(ctx);
 		}
-	}
 
-	if (!ctx->seen_req_header) {
-		return;
-	}
+		// @todo Fix this
+		/* out of memory condition? */
+		if (ctx->enomem) {
+			pxy_conn_free(ctx->conn, 1);
+			return;
+		}
 
-	// @todo Fix this
-	/* out of memory condition? */
-	if (ctx->enomem) {
-		pxy_conn_free(ctx->conn, 1);
-		return;
+		/* no data left after parsing headers? */
+		if (evbuffer_get_length(inbuf) == 0) {
+			return;
+		}
+		evbuffer_add_buffer(outbuf, inbuf);
 	}
-
-	/* no data left after parsing headers? */
-	if (evbuffer_get_length(inbuf) == 0) {
-		return;
-	}
-	evbuffer_add_buffer(outbuf, inbuf);
 }
 
 static void
@@ -2139,7 +2134,7 @@ pxy_http_resphdr_filter(struct evbuffer *inbuf, struct evbuffer *outbuf, pxy_con
 {
 	char *line;
 
-	while ((line = evbuffer_readln(inbuf, NULL, EVBUFFER_EOL_CRLF))) {
+	while (!ctx->seen_resp_header && (line = evbuffer_readln(inbuf, NULL, EVBUFFER_EOL_CRLF))) {
 		char *replace = pxy_http_resphdr_filter_line(line, ctx);
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_http_resphdr_filter: dst line, fd=%d: %s\n", ctx->fd, line);
@@ -2160,22 +2155,20 @@ pxy_http_resphdr_filter(struct evbuffer *inbuf, struct evbuffer *outbuf, pxy_con
 		free(line);
 	}
 
-	if (!ctx->seen_resp_header) {
-		return;
-	}
+	if (ctx->seen_resp_header) {
+		// @todo Fix this
+		/* out of memory condition? */
+		if (ctx->enomem) {
+			pxy_conn_free(ctx->conn, 0);
+			return;
+		}
 
-	// @todo Fix this
-	/* out of memory condition? */
-	if (ctx->enomem) {
-		pxy_conn_free(ctx->conn, 0);
-		return;
+		/* no data left after parsing headers? */
+		if (evbuffer_get_length(inbuf) == 0) {
+			return;
+		}
+		evbuffer_add_buffer(outbuf, inbuf);
 	}
-
-	/* no data left after parsing headers? */
-	if (evbuffer_get_length(inbuf) == 0) {
-		return;
-	}
-	evbuffer_add_buffer(outbuf, inbuf);
 }
 
 static void
