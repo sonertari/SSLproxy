@@ -56,6 +56,14 @@ typedef struct pxy_conn_desc {
 	unsigned int closed : 1;
 } pxy_conn_desc_t;
 
+enum protocol {
+	PASSTHROUGH = 0,
+	HTTP = 1,
+	AUTOSSL = 2,
+	DEFAULT = 3,
+	UNKWN_PROTO = 4,
+};
+
 /* parent connection state consisting of three connection descriptors,
  * connection-wide state and the specs and options */
 struct pxy_conn_ctx {
@@ -63,6 +71,7 @@ struct pxy_conn_ctx {
 	// @attention The order of these common vars should match with their order in children
 	unsigned int is_child : 1;       /* is this parent or child context? */
 	pxy_conn_ctx_t *conn;                 /* parent's conn ctx is itself */
+	enum protocol proto;
 
 	/* per-connection state */
 	struct pxy_conn_desc src;
@@ -194,6 +203,7 @@ struct pxy_conn_child_ctx {
 	// @attention The order of these common vars should match with their order in parent
 	unsigned int is_child : 1;       /* is this parent or child context? */
 	pxy_conn_ctx_t *conn;                              /* parent context */
+	enum protocol proto;
 
 	/* per-connection state */
 	struct pxy_conn_desc src;
