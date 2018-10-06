@@ -57,11 +57,17 @@ typedef struct pxy_conn_desc {
 } pxy_conn_desc_t;
 
 enum protocol {
-	PASSTHROUGH = 0,
-	HTTP = 1,
-	AUTOSSL = 2,
-	DEFAULT = 3,
-	UNKWN_PROTO = 4,
+	PROTO_PASSTHROUGH = 0,
+	PROTO_HTTP,
+	PROTO_HTTPS,
+	PROTO_POP3,
+	PROTO_POP3S,
+	PROTO_SMTP,
+	PROTO_SMTPS,
+	PROTO_AUTOSSL,
+	PROTO_TCP,
+	PROTO_SSL,
+	PROTO_UNKWN,
 };
 
 /* parent connection state consisting of three connection descriptors,
