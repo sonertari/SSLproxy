@@ -40,12 +40,24 @@
 
 #include <event2/event.h>
 #include <event2/util.h>
+#include <event2/buffer.h>
 
 /*
  * Print helper for logging code.
  */
 #define STRORDASH(x)	(((x)&&*(x))?(x):"-")
 #define STRORNONE(x)	(((x)&&*(x))?(x):"")
+
+#define WANT_CONNECT_LOG(ctx)	((ctx)->opts->connectlog||!(ctx)->opts->detach)
+#define WANT_CONTENT_LOG(ctx)	((ctx)->opts->contentlog&&!(ctx)->passthrough)
+
+#define SSLPROXY_KEY		"SSLproxy:"
+#define SSLPROXY_KEY_LEN	strlen(SSLPROXY_KEY)
+
+typedef void (*fd_readcb_func_t)(evutil_socket_t,  short, void *);
+typedef void (*conn_connect_func_t)(pxy_conn_ctx_t *);
+typedef void (*bufferevent_setcb_func_t)(pxy_conn_ctx_t *);
+typedef void (*proto_free_func_t)(pxy_conn_ctx_t *);
 
 typedef struct pxy_conn_child_ctx pxy_conn_child_ctx_t;
 
@@ -57,6 +69,7 @@ typedef struct pxy_conn_desc {
 } pxy_conn_desc_t;
 
 enum protocol {
+	PROTO_ERROR = -1,
 	PROTO_PASSTHROUGH = 0,
 	PROTO_HTTP,
 	PROTO_HTTPS,
@@ -67,7 +80,22 @@ enum protocol {
 	PROTO_AUTOSSL,
 	PROTO_TCP,
 	PROTO_SSL,
-	PROTO_UNKWN,
+};
+
+typedef struct proto_ctx proto_ctx_t;
+
+struct proto_ctx {
+	enum protocol proto;
+
+	conn_connect_func_t conn_connectcb;
+	fd_readcb_func_t fd_readcb;
+	bufferevent_setcb_func_t bev_setcb_src;
+	bufferevent_setcb_func_t bev_setcb_dst;
+	bufferevent_setcb_func_t bev_setcb_srv_dst;
+	proto_free_func_t proto_free;
+
+	// For protocol specific fields, if any
+	void *arg;
 };
 
 /* parent connection state consisting of three connection descriptors,
@@ -75,7 +103,6 @@ enum protocol {
 struct pxy_conn_ctx {
 	// Common properties
 	// @attention The order of these common vars should match with their order in children
-	unsigned int is_child : 1;       /* is this parent or child context? */
 	pxy_conn_ctx_t *conn;                 /* parent's conn ctx is itself */
 	enum protocol proto;
 
@@ -86,28 +113,12 @@ struct pxy_conn_ctx {
 	/* status flags */
 	unsigned int connected : 1;       /* 0 until both ends are connected */
 	unsigned int enomem : 1;                       /* 1 if out of memory */
-	/* http */
-	unsigned int seen_req_header : 1; /* 0 until request header complete */
-	unsigned int seen_resp_header : 1;  /* 0 until response hdr complete */
-	unsigned int sent_http_conn_close : 1;   /* 0 until Conn: close sent */
-	unsigned int ocsp_denied : 1;                /* 1 if OCSP was denied */
 
 	/* log strings from socket */
 	char *srchost_str;
 	char *srcport_str;
 	char *dsthost_str;
 	char *dstport_str;
-
-	/* log strings from HTTP request */
-	char *http_method;
-	char *http_uri;
-	char *http_host;
-	char *http_content_type;
-
-	/* log strings from HTTP response */
-	char *http_status_code;
-	char *http_status_text;
-	char *http_content_length;
 
 	/* log strings related to SSL */
 	char *ssl_names;
@@ -116,6 +127,8 @@ struct pxy_conn_ctx {
 
 	/* store fd and fd event while connected is 0 */
 	evutil_socket_t fd;
+
+	proto_ctx_t *proto_ctx;
 	// End of common properties
 
 	/* content log context */
@@ -169,6 +182,7 @@ struct pxy_conn_ctx {
 	struct evconnlistener *child_evcl;
 	// SSL proxy specific info: The IP:port address the children are listening on, orig client addr, and orig target addr
 	char *header_str;
+	size_t header_len;
 	int sent_header;
 
 	// Child list of the conn
@@ -207,7 +221,6 @@ struct pxy_conn_ctx {
 struct pxy_conn_child_ctx {
 	// Common properties
 	// @attention The order of these common vars should match with their order in parent
-	unsigned int is_child : 1;       /* is this parent or child context? */
 	pxy_conn_ctx_t *conn;                              /* parent context */
 	enum protocol proto;
 
@@ -218,28 +231,12 @@ struct pxy_conn_child_ctx {
 	/* status flags */
 	unsigned int connected : 1;       /* 0 until both ends are connected */
 	unsigned int enomem : 1;                       /* 1 if out of memory */
-	/* http */
-	unsigned int seen_req_header : 1; /* 0 until request header complete */
-	unsigned int seen_resp_header : 1;  /* 0 until response hdr complete */
-	unsigned int sent_http_conn_close : 1;   /* 0 until Conn: close sent */
-	unsigned int ocsp_denied : 1;                /* 1 if OCSP was denied */
 
 	/* log strings from socket */
 	char *srchost_str;
 	char *srcport_str;
 	char *dsthost_str;
 	char *dstport_str;
-
-	/* log strings from HTTP request */
-	char *http_method;
-	char *http_uri;
-	char *http_host;
-	char *http_content_type;
-
-	/* log strings from HTTP response */
-	char *http_status_code;
-	char *http_status_text;
-	char *http_content_length;
 
 	/* log strings related to SSL */
 	char *ssl_names;
@@ -248,6 +245,8 @@ struct pxy_conn_child_ctx {
 
 	/* store fd and fd event while connected is 0 */
 	evutil_socket_t fd;
+
+	proto_ctx_t *proto_ctx;
 	// End of common properties
 
 	evutil_socket_t src_fd;
@@ -259,6 +258,35 @@ struct pxy_conn_child_ctx {
 	// Children of the conn are link-listed using this pointer
 	pxy_conn_child_ctx_t *next;
 };
+
+void pxy_close_dst(pxy_conn_ctx_t *);
+
+void pxy_discard_inbuf(struct bufferevent *);
+
+int pxy_log_content_inbuf(pxy_conn_ctx_t *, struct evbuffer *, int);
+int pxy_log_content_buf(pxy_conn_ctx_t *, unsigned char *, size_t sz, int);
+
+void pxy_set_watermark(struct bufferevent *, pxy_conn_ctx_t *, struct bufferevent *);
+
+void pxy_bev_eventcb_connected_src(struct bufferevent *, pxy_conn_ctx_t *);
+void pxy_bev_eventcb_eof_src(struct bufferevent *, pxy_conn_ctx_t *);
+void pxy_bev_eventcb_error_src(struct bufferevent *, pxy_conn_ctx_t *);
+
+void pxy_bev_eventcb_connected_dst(struct bufferevent *, pxy_conn_ctx_t *);
+void pxy_bev_eventcb_eof_dst(struct bufferevent *, pxy_conn_ctx_t *);
+void pxy_bev_eventcb_error_dst(struct bufferevent *, pxy_conn_ctx_t *);
+
+void pxy_bev_eventcb_connected_srv_dst(struct bufferevent *, pxy_conn_ctx_t *);
+void pxy_bev_eventcb_eof_srv_dst(struct bufferevent *, pxy_conn_ctx_t *);
+void pxy_bev_eventcb_error_srv_dst(struct bufferevent *, pxy_conn_ctx_t *);
+
+void pxy_bev_writecb_src(struct bufferevent *, void *);
+void pxy_bev_writecb_dst(struct bufferevent *, void *);
+void pxy_bev_writecb_srv_dst(struct bufferevent *, void *);
+
+void pxy_conn_connect_tcp(pxy_conn_ctx_t *);
+void pxy_fd_readcb_tcp(evutil_socket_t, short, void *);
+void pxy_fd_readcb_ssl(evutil_socket_t, short, void *);
 
 void pxy_conn_setup(evutil_socket_t, struct sockaddr *, int,
                     pxy_thrmgr_ctx_t *, proxyspec_t *, opts_t *,

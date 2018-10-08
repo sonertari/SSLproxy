@@ -28,6 +28,8 @@
 
 #include "pxyconn.h"
 
+#include "protohttp.h"
+
 #include "privsep.h"
 #include "pxysslshut.h"
 #include "cachemgr.h"
@@ -106,35 +108,28 @@ typedef struct pxy_conn_lproc_desc {
 } pxy_conn_lproc_desc_t;
 #endif /* HAVE_LOCAL_PROCINFO */
 
-#define WANT_CONNECT_LOG(ctx)	((ctx)->opts->connectlog||!(ctx)->opts->detach)
-#define WANT_CONTENT_LOG(ctx)	((ctx)->opts->contentlog&&!(ctx)->passthrough)
-
-#define SSLPROXY_KEY		"SSLproxy:"
-#define SSLPROXY_KEY_LEN	strlen(SSLPROXY_KEY)
-
 int descriptor_table_size = 0;
 
-typedef void (*callback_func_t)(struct bufferevent *, pxy_conn_ctx_t *);
-typedef void (*fd_readcb_func_t)(evutil_socket_t, pxy_conn_ctx_t *);
-typedef void (*conn_connect_func_t)(pxy_conn_ctx_t *);
+typedef void (*callback_func_t)(struct bufferevent *, void *);
+typedef void (*event_callback_func_t)(struct bufferevent *, pxy_conn_ctx_t *);
 
 // Forward declarations of callback function tables
 callback_func_t readcb_funcs[][3];
 callback_func_t writecb_funcs[][3];
-callback_func_t eventcb_funcs[][3][3];
+event_callback_func_t eventcb_funcs[][3][3];
 fd_readcb_func_t fd_readcb_funcs[];
 conn_connect_func_t conn_connect_funcs[];
 
 static enum protocol
-get_proto(pxy_conn_ctx_t *ctx)
+setup_proto(pxy_conn_ctx_t *ctx)
 {
 	if (ctx->spec->upgrade) {
 		return PROTO_AUTOSSL;
 	} else if (ctx->spec->http) {
 		if (ctx->spec->ssl) {
-			return PROTO_HTTPS;
+			return protohttps_setup(ctx);
 		} else {
-			return PROTO_HTTP;
+			return protohttp_setup(ctx);
 		}
 	} else if (ctx->spec->pop3) {
 		if (ctx->spec->ssl) {
@@ -149,6 +144,36 @@ get_proto(pxy_conn_ctx_t *ctx)
 			return PROTO_SMTP;
 		}
 	} else if (ctx->spec->ssl) {
+		return PROTO_SSL;
+	} else {
+		return PROTO_TCP;
+	}
+}
+
+static enum protocol
+setup_proto_child(pxy_conn_child_ctx_t *ctx)
+{
+	if (ctx->conn->spec->upgrade) {
+		return PROTO_AUTOSSL;
+	} else if (ctx->conn->spec->http) {
+		if (ctx->conn->spec->ssl) {
+			return protohttps_setup((pxy_conn_ctx_t *)ctx);
+		} else {
+			return protohttp_setup((pxy_conn_ctx_t *)ctx);
+		}
+	} else if (ctx->conn->spec->pop3) {
+		if (ctx->conn->spec->ssl) {
+			return PROTO_POP3S;
+		} else {
+			return PROTO_POP3;
+		}
+	} else if (ctx->conn->spec->smtp) {
+		if (ctx->conn->spec->ssl) {
+			return PROTO_SMTPS;
+		} else {
+			return PROTO_SMTP;
+		}
+	} else if (ctx->conn->spec->ssl) {
 		return PROTO_SSL;
 	} else {
 		return PROTO_TCP;
@@ -183,7 +208,13 @@ pxy_conn_ctx_new(evutil_socket_t fd,
 	ctx->conn = ctx;
 	ctx->thrmgr = thrmgr;
 	ctx->spec = spec;
-	ctx->proto = get_proto(ctx);
+	ctx->proto = setup_proto(ctx);
+	if (ctx->proto == PROTO_ERROR) {
+		log_err_level_printf(LOG_CRIT, "Error allocating memory\n");
+		evutil_closesocket(fd);
+		free(ctx);
+		return NULL;
+	}
 	ctx->opts = opts;
 	ctx->clisock = clisock;
 
@@ -221,9 +252,14 @@ pxy_conn_ctx_new_child(evutil_socket_t fd, pxy_conn_ctx_t *conn)
 	}
 	memset(ctx, 0, sizeof(pxy_conn_child_ctx_t));
 	ctx->fd = fd;
-	ctx->is_child = 1;
 	ctx->conn = conn;
-	ctx->proto = get_proto(ctx->conn);
+	ctx->proto = setup_proto_child(ctx);
+	if (ctx->proto == PROTO_ERROR) {
+		log_err_level_printf(LOG_CRIT, "Error allocating memory\n");
+		evutil_closesocket(fd);
+		free(ctx);
+		return NULL;
+	}
 	// @attention Child connections use the parent's event bases, otherwise we would get multithreading issues
 	pxy_thrmgr_attach_child(conn);
 #ifdef DEBUG_PROXY
@@ -267,6 +303,7 @@ pxy_conn_ctx_free_child(pxy_conn_child_ctx_t *ctx)
 	if (ctx->usedcrtfpr) {
 		free(ctx->usedcrtfpr);
 	}
+	ctx->proto_ctx->proto_free((pxy_conn_ctx_t *)ctx);
 	free(ctx);
 }
 
@@ -416,27 +453,6 @@ pxy_conn_ctx_free(pxy_conn_ctx_t *ctx, int by_requestor)
 	if (ctx->dstport_str) {
 		free(ctx->dstport_str);
 	}
-	if (ctx->http_method) {
-		free(ctx->http_method);
-	}
-	if (ctx->http_uri) {
-		free(ctx->http_uri);
-	}
-	if (ctx->http_host) {
-		free(ctx->http_host);
-	}
-	if (ctx->http_content_type) {
-		free(ctx->http_content_type);
-	}
-	if (ctx->http_status_code) {
-		free(ctx->http_status_code);
-	}
-	if (ctx->http_status_text) {
-		free(ctx->http_status_text);
-	}
-	if (ctx->http_content_length) {
-		free(ctx->http_content_length);
-	}
 	if (ctx->ssl_names) {
 		free(ctx->ssl_names);
 	}
@@ -475,6 +491,7 @@ pxy_conn_ctx_free(pxy_conn_ctx_t *ctx, int by_requestor)
 	if (ctx->srv_dst_ssl_cipher) {
 		free(ctx->srv_dst_ssl_cipher);
 	}
+	ctx->proto_ctx->proto_free(ctx);
 	free(ctx);
 }
 
@@ -682,121 +699,6 @@ pxy_log_connect_nonhttp(pxy_conn_ctx_t *ctx)
 out:
 #ifdef HAVE_LOCAL_PROCINFO
 	if (lpi && ctx->opts->lprocinfo) {
-		free(lpi);
-	}
-#endif /* HAVE_LOCAL_PROCINFO */
-	return;
-}
-
-static void
-pxy_log_connect_http(pxy_conn_ctx_t *ctx)
-{
-	char *msg;
-#ifdef HAVE_LOCAL_PROCINFO
-	char *lpi = NULL;
-#endif /* HAVE_LOCAL_PROCINFO */
-	int rv;
-
-#ifdef DEBUG_PROXY
-	if (ctx->passthrough) {
-		log_err_level_printf(LOG_WARNING, "pxy_log_connect_http called while in "
-		               "passthrough mode\n");
-		return;
-	}
-#endif
-
-#ifdef HAVE_LOCAL_PROCINFO
-	if (ctx->opts->lprocinfo) {
-		rv = asprintf(&lpi, "lproc:%i:%s:%s:%s",
-		              ctx->lproc.pid,
-		              STRORDASH(ctx->lproc.user),
-		              STRORDASH(ctx->lproc.group),
-		              STRORDASH(ctx->lproc.exec_path));
-		if ((rv < 0) || !lpi) {
-			ctx->enomem = 1;
-			goto out;
-		}
-	}
-#endif /* HAVE_LOCAL_PROCINFO */
-
-	/*
-	 * The following ifdef's within asprintf arguments list generates
-	 * warnings with -Wembedded-directive on some compilers.
-	 * Not fixing the code in order to avoid more code duplication.
-	 */
-
-	if (!ctx->spec->ssl) {
-		rv = asprintf(&msg, "CONN: http %s %s %s %s %s %s %s %s %s"
-#ifdef HAVE_LOCAL_PROCINFO
-		              " %s"
-#endif /* HAVE_LOCAL_PROCINFO */
-		              "%s\n",
-		              STRORDASH(ctx->srchost_str),
-		              STRORDASH(ctx->srcport_str),
-		              STRORDASH(ctx->dsthost_str),
-		              STRORDASH(ctx->dstport_str),
-		              STRORDASH(ctx->http_host),
-		              STRORDASH(ctx->http_method),
-		              STRORDASH(ctx->http_uri),
-		              STRORDASH(ctx->http_status_code),
-		              STRORDASH(ctx->http_content_length),
-#ifdef HAVE_LOCAL_PROCINFO
-		              lpi,
-#endif /* HAVE_LOCAL_PROCINFO */
-		              ctx->ocsp_denied ? " ocsp:denied" : "");
-	} else {
-		rv = asprintf(&msg, "CONN: https %s %s %s %s %s %s %s %s %s "
-		              "sni:%s names:%s "
-		              "sproto:%s:%s dproto:%s:%s "
-		              "origcrt:%s usedcrt:%s"
-#ifdef HAVE_LOCAL_PROCINFO
-		              " %s"
-#endif /* HAVE_LOCAL_PROCINFO */
-		              "%s\n",
-		              STRORDASH(ctx->srchost_str),
-		              STRORDASH(ctx->srcport_str),
-		              STRORDASH(ctx->dsthost_str),
-		              STRORDASH(ctx->dstport_str),
-		              STRORDASH(ctx->http_host),
-		              STRORDASH(ctx->http_method),
-		              STRORDASH(ctx->http_uri),
-		              STRORDASH(ctx->http_status_code),
-		              STRORDASH(ctx->http_content_length),
-		              STRORDASH(ctx->sni),
-		              STRORDASH(ctx->ssl_names),
-		              SSL_get_version(ctx->src.ssl),
-		              SSL_get_cipher(ctx->src.ssl),
-		              !ctx->srv_dst.closed ? SSL_get_version(ctx->srv_dst.ssl):ctx->srv_dst_ssl_version,
-		              !ctx->srv_dst.closed ? SSL_get_cipher(ctx->srv_dst.ssl):ctx->srv_dst_ssl_cipher,
-		              STRORDASH(ctx->origcrtfpr),
-		              STRORDASH(ctx->usedcrtfpr),
-#ifdef HAVE_LOCAL_PROCINFO
-		              lpi,
-#endif /* HAVE_LOCAL_PROCINFO */
-		              ctx->ocsp_denied ? " ocsp:denied" : "");
-	}
-	if ((rv < 0 ) || !msg) {
-		ctx->enomem = 1;
-		goto out;
-	}
-	if (!ctx->opts->detach) {
-		log_err_printf("%s", msg);
-	} else if (ctx->opts->statslog) {
-		if (log_conn(msg) == -1) {
-			log_err_level_printf(LOG_WARNING, "Conn logging failed\n");
-		}
-	}
-	if (ctx->opts->connectlog) {
-		if (log_connect_print_free(msg) == -1) {
-			free(msg);
-			log_err_level_printf(LOG_WARNING, "Connection logging failed\n");
-		}
-	} else {
-		free(msg);
-	}
-out:
-#ifdef HAVE_LOCAL_PROCINFO
-	if (lpi) {
 		free(lpi);
 	}
 #endif /* HAVE_LOCAL_PROCINFO */
@@ -1524,292 +1426,6 @@ pxy_bufferevent_setup_child(pxy_conn_child_ctx_t *ctx, evutil_socket_t fd, SSL *
 }
 
 /*
- * Filter a single line of HTTP request headers.
- * Also fills in some context fields for logging.
- *
- * Returns NULL if the current line should be deleted from the request.
- * Returns a newly allocated string if the current line should be replaced.
- * Returns `line' if the line should be kept.
- */
-static char *
-pxy_http_filter_request_header_line(const char *line, pxy_conn_ctx_t *ctx)
-{
-	/* parse information for connect log */
-	if (!ctx->http_method) {
-		/* first line */
-		char *space1, *space2;
-
-		space1 = strchr(line, ' ');
-		space2 = space1 ? strchr(space1 + 1, ' ') : NULL;
-		if (!space1) {
-			/* not HTTP */
-			ctx->seen_req_header = 1;
-		} else {
-			ctx->http_method = malloc(space1 - line + 1);
-			if (ctx->http_method) {
-				memcpy(ctx->http_method, line, space1 - line);
-				ctx->http_method[space1 - line] = '\0';
-			} else {
-				ctx->enomem = 1;
-				return NULL;
-			}
-			space1++;
-			if (!space2) {
-				/* HTTP/0.9 */
-				ctx->seen_req_header = 1;
-				space2 = space1 + strlen(space1);
-			}
-			ctx->http_uri = malloc(space2 - space1 + 1);
-			if (ctx->http_uri) {
-				memcpy(ctx->http_uri, space1, space2 - space1);
-				ctx->http_uri[space2 - space1] = '\0';
-			} else {
-				ctx->enomem = 1;
-				return NULL;
-			}
-		}
-	} else {
-		/* not first line */
-		char *newhdr;
-
-		if (!ctx->http_host && !strncasecmp(line, "Host:", 5)) {
-			ctx->http_host = strdup(util_skipws(line + 5));
-			if (!ctx->http_host) {
-				ctx->enomem = 1;
-				return NULL;
-			}
-		} else if (!strncasecmp(line, "Content-Type:", 13)) {
-			ctx->http_content_type = strdup(util_skipws(line + 13));
-			if (!ctx->http_content_type) {
-				ctx->enomem = 1;
-				return NULL;
-			}
-		/* Override Connection: keepalive and Connection: upgrade */
-		} else if (!strncasecmp(line, "Connection:", 11)) {
-			ctx->sent_http_conn_close = 1;
-			if (!(newhdr = strdup("Connection: close"))) {
-				ctx->enomem = 1;
-				return NULL;
-			}
-			return newhdr;
-		// @attention Always use conn ctx for opts, child ctx does not have opts, see the comments in pxy_conn_child_ctx
-		} else if (ctx->conn->opts->remove_http_accept_encoding && !strncasecmp(line, "Accept-Encoding:", 16)) {
-			return NULL;
-		} else if (ctx->conn->opts->remove_http_referer && !strncasecmp(line, "Referer:", 8)) {
-			return NULL;
-		/* Suppress upgrading to SSL/TLS, WebSockets or HTTP/2,
-		 * unsupported encodings, and keep-alive */
-		} else if (!strncasecmp(line, "Upgrade:", 8) ||
-		           !strncasecmp(line, "Accept-Encoding:", 16) ||
-		           !strncasecmp(line, "Keep-Alive:", 11)) {
-			return NULL;
-		} else if (ctx->is_child && (!strncasecmp(line, SSLPROXY_KEY, SSLPROXY_KEY_LEN) ||
-				   // @attention flickr keeps redirecting to https with 301 unless we remove the Via line of squid
-				   // Apparently flickr assumes the existence of Via header field or squid keyword a sign of plain http, even if we are using https
-		           !strncasecmp(line, "Via:", 4) ||
-				   // Also do not send the loopback address to the Internet
-		           !strncasecmp(line, "X-Forwarded-For:", 16))) {
-			return NULL;
-		} else if (line[0] == '\0') {
-			ctx->seen_req_header = 1;
-			if (!ctx->sent_http_conn_close) {
-				newhdr = strdup("Connection: close\r\n");
-				if (!newhdr) {
-					ctx->enomem = 1;
-					return NULL;
-				}
-				return newhdr;
-			}
-		}
-	}
-
-	return (char*)line;
-}
-
-/*
- * Filter a single line of HTTP response headers.
- *
- * Returns NULL if the current line should be deleted from the response.
- * Returns a newly allocated string if the current line should be replaced.
- * Returns `line' if the line should be kept.
- */
-static char *
-pxy_http_filter_response_header_line(const char *line, pxy_conn_ctx_t *ctx)
-{
-	/* parse information for connect log */
-	if (!ctx->http_status_code) {
-		/* first line */
-		char *space1, *space2;
-
-		space1 = strchr(line, ' ');
-		space2 = space1 ? strchr(space1 + 1, ' ') : NULL;
-		if (!space1 || !!strncmp(line, "HTTP", 4)) {
-			/* not HTTP or HTTP/0.9 */
-			ctx->seen_resp_header = 1;
-		} else {
-			size_t len_code, len_text;
-
-			if (space2) {
-				len_code = space2 - space1 - 1;
-				len_text = strlen(space2 + 1);
-			} else {
-				len_code = strlen(space1 + 1);
-				len_text = 0;
-			}
-			ctx->http_status_code = malloc(len_code + 1);
-			ctx->http_status_text = malloc(len_text + 1);
-			if (!ctx->http_status_code || !ctx->http_status_text) {
-				ctx->enomem = 1;
-				return NULL;
-			}
-			memcpy(ctx->http_status_code, space1 + 1, len_code);
-			ctx->http_status_code[len_code] = '\0';
-			if (space2) {
-				memcpy(ctx->http_status_text,
-				       space2 + 1, len_text);
-			}
-			ctx->http_status_text[len_text] = '\0';
-		}
-	} else {
-		/* not first line */
-		if (!ctx->http_content_length &&
-		    !strncasecmp(line, "Content-Length:", 15)) {
-			ctx->http_content_length =
-				strdup(util_skipws(line + 15));
-			if (!ctx->http_content_length) {
-				ctx->enomem = 1;
-				return NULL;
-			}
-		} else if (
-		    /* HPKP: Public Key Pinning Extension for HTTP
-		     * (draft-ietf-websec-key-pinning)
-		     * remove to prevent public key pinning */
-		    !strncasecmp(line, "Public-Key-Pins:", 16) ||
-		    !strncasecmp(line, "Public-Key-Pins-Report-Only:", 28) ||
-		    /* HSTS: HTTP Strict Transport Security (RFC 6797)
-		     * remove to allow users to accept bad certs */
-		    !strncasecmp(line, "Strict-Transport-Security:", 26) ||
-		    /* Expect-CT: Expect Certificate Transparency
-		     * (draft-ietf-httpbis-expect-ct-latest)
-		     * remove to prevent failed CT log lookups */
-		    !strncasecmp(line, "Expect-CT:", 10) ||
-		    /* Alternate Protocol
-		     * remove to prevent switching to QUIC, SPDY et al */
-		    !strncasecmp(line, "Alternate-Protocol:", 19) ||
-		    /* Upgrade header
-		     * remove to prevent upgrading to HTTPS in unhandled ways,
-		     * and more importantly, WebSockets and HTTP/2 */
-		    !strncasecmp(line, "Upgrade:", 8)) {
-			return NULL;
-		} else if (line[0] == '\0') {
-			ctx->seen_resp_header = 1;
-		}
-	}
-
-	return (char*)line;
-}
-
-/*
- * Return 1 if uri is an OCSP GET URI, 0 if not.
- */
-static int
-pxy_ocsp_is_valid_uri(const char *uri, pxy_conn_ctx_t *ctx)
-{
-	char *buf_url;
-	size_t sz_url;
-	char *buf_b64;
-	size_t sz_b64;
-	unsigned char *buf_asn1;
-	size_t sz_asn1;
-	int ret;
-
-	buf_url = strrchr(uri, '/');
-	if (!buf_url)
-		return 0;
-	buf_url++;
-
-	/*
-	 * Do some quick checks to avoid unnecessary buffer allocations and
-	 * decoding URL, Base64 and ASN.1:
-	 * -   OCSP requests begin with a SEQUENCE (0x30), so the first Base64
-	 *     byte is 'M' or, unlikely but legal, the URL encoding thereof.
-	 * -   There should be no query string in OCSP GET requests.
-	 * -   Encoded OCSP request ASN.1 blobs are longer than 32 bytes.
-	 */
-	if (buf_url[0] != 'M' && buf_url[0] != '%')
-		return 0;
-	if (strchr(uri, '?'))
-		return 0;
-	sz_url = strlen(buf_url);
-	if (sz_url < 32)
-		return 0;
-	buf_b64 = url_dec(buf_url, sz_url, &sz_b64);
-	if (!buf_b64) {
-		ctx->enomem = 1;
-		return 0;
-	}
-	buf_asn1 = base64_dec(buf_b64, sz_b64, &sz_asn1);
-	if (!buf_asn1) {
-		ctx->enomem = 1;
-		free(buf_b64);
-		return 0;
-	}
-	ret = ssl_is_ocspreq(buf_asn1, sz_asn1);
-	free(buf_asn1);
-	free(buf_b64);
-	return ret;
-}
-
-static const char ocspresp[] =
-	"HTTP/1.0 200 OK\r\n"
-	"Content-Type: application/ocsp-response\r\n"
-	"Content-Length: 5\r\n"
-	"Connection: close\r\n"
-	"\r\n"
-	"\x30\x03"      /* OCSPResponse: SEQUENCE */
-	"\x0a\x01"      /* OCSPResponseStatus: ENUMERATED */
-	"\x03";         /* tryLater (3) */
-
-/*
- * Called after a request header was completely read.
- * If the request is an OCSP request, deny the request by sending an
- * OCSP response of type tryLater and close the connection to the server.
- *
- * Reference:
- * RFC 2560: X.509 Internet PKI Online Certificate Status Protocol (OCSP)
- */
-static void
-pxy_ocsp_deny(pxy_conn_ctx_t *ctx)
-{
-	struct evbuffer *inbuf, *outbuf;
-
-	if (!ctx->http_method)
-		return;
-	if (!strncasecmp(ctx->http_method, "GET", 3) &&
-	    pxy_ocsp_is_valid_uri(ctx->http_uri, ctx))
-		goto deny;
-	if (!strncasecmp(ctx->http_method, "POST", 4) &&
-	    ctx->http_content_type &&
-	    !strncasecmp(ctx->http_content_type,
-	                 "application/ocsp-request", 24))
-		goto deny;
-	return;
-
-deny:
-	inbuf = bufferevent_get_input(ctx->src.bev);
-	outbuf = bufferevent_get_output(ctx->src.bev);
-
-	if (evbuffer_get_length(inbuf) > 0) {
-		evbuffer_drain(inbuf, evbuffer_get_length(inbuf));
-	}
-	bufferevent_free_and_close_fd(ctx->dst.bev, ctx->conn);
-	ctx->dst.bev = NULL;
-	ctx->dst.closed = 1;
-	evbuffer_add_printf(outbuf, ocspresp);
-	ctx->ocsp_denied = 1;
-}
-
-/*
  * Peek into pending data to see if it is an SSL/TLS ClientHello, and if so,
  * upgrade the connection from plain TCP to SSL/TLS.
  *
@@ -2075,7 +1691,7 @@ proxy_listener_acceptcb_child(UNUSED struct evconnlistener *listener, evutil_soc
 	ctx->conn->thr->max_fd = MAX(ctx->conn->thr->max_fd, ctx->dst_fd);
 }
 
-static int
+int
 pxy_log_content_buf(pxy_conn_ctx_t *ctx, unsigned char *buf, size_t sz, int req)
 {
 	if (WANT_CONTENT_LOG(ctx->conn)) {
@@ -2096,7 +1712,7 @@ pxy_log_content_buf(pxy_conn_ctx_t *ctx, unsigned char *buf, size_t sz, int req)
 	return 0;
 }
 
-static int
+int
 pxy_log_content_inbuf(pxy_conn_ctx_t *ctx, struct evbuffer *inbuf, int req)
 {
 	if (WANT_CONTENT_LOG(ctx->conn)) {
@@ -2116,104 +1732,7 @@ pxy_log_content_inbuf(pxy_conn_ctx_t *ctx, struct evbuffer *inbuf, int req)
 	return 0;
 }
 
-static void
-pxy_http_filter_request_header(struct evbuffer *inbuf, struct evbuffer *outbuf, pxy_conn_ctx_t *ctx)
-{
-	char *line;
-
-	while (!ctx->seen_req_header && (line = evbuffer_readln(inbuf, NULL, EVBUFFER_EOL_CRLF))) {
-		char *replace = pxy_http_filter_request_header_line(line, ctx);
-#ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_http_filter_request_header: src line, fd=%d: %s\n", ctx->fd, line);
-#endif /* DEBUG_PROXY */
-		if (replace == line) {
-			evbuffer_add_printf(outbuf, "%s\r\n", line);
-		} else if (replace) {
-#ifdef DEBUG_PROXY
-			log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_http_filter_request_header: src REPLACED line, fd=%d: %s\n", ctx->fd, replace);
-#endif /* DEBUG_PROXY */
-			evbuffer_add_printf(outbuf, "%s\r\n", replace);
-			free(replace);
-		} else {
-#ifdef DEBUG_PROXY
-			log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_http_filter_request_header: src REMOVED line, fd=%d: %s\n", ctx->fd, line);
-#endif /* DEBUG_PROXY */
-		}
-		free(line);
-
-		if (!ctx->is_child && !ctx->sent_header) {
-			ctx->sent_header = 1;
-#ifdef DEBUG_PROXY
-			log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_http_filter_request_header: src INSERT header_str line, fd=%d: %s\n", ctx->fd, ctx->header_str);
-#endif /* DEBUG_PROXY */
-			evbuffer_add_printf(outbuf, "%s\r\n", ctx->header_str);
-		}
-	}
-
-	if (ctx->seen_req_header) {
-		/* request header complete */
-		if (ctx->conn->opts->deny_ocsp) {
-			pxy_ocsp_deny(ctx);
-		}
-
-		// @todo Fix this
-		/* out of memory condition? */
-		if (ctx->enomem) {
-			pxy_conn_free(ctx->conn, 1);
-			return;
-		}
-
-		/* no data left after parsing headers? */
-		if (evbuffer_get_length(inbuf) == 0) {
-			return;
-		}
-		evbuffer_add_buffer(outbuf, inbuf);
-	}
-}
-
-static void
-pxy_http_filter_response_header(struct evbuffer *inbuf, struct evbuffer *outbuf, pxy_conn_ctx_t *ctx)
-{
-	char *line;
-
-	while (!ctx->seen_resp_header && (line = evbuffer_readln(inbuf, NULL, EVBUFFER_EOL_CRLF))) {
-		char *replace = pxy_http_filter_response_header_line(line, ctx);
-#ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_http_filter_response_header: dst line, fd=%d: %s\n", ctx->fd, line);
-#endif /* DEBUG_PROXY */
-		if (replace == line) {
-			evbuffer_add_printf(outbuf, "%s\r\n", line);
-		} else if (replace) {
-#ifdef DEBUG_PROXY
-			log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_http_filter_response_header: dst REPLACED line, fd=%d: %s\n", ctx->fd, replace);
-#endif /* DEBUG_PROXY */
-			evbuffer_add_printf(outbuf, "%s\r\n", replace);
-			free(replace);
-		} else {
-#ifdef DEBUG_PROXY
-			log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_http_filter_response_header: dst REMOVED line, fd=%d: %s\n", ctx->fd, line);
-#endif /* DEBUG_PROXY */
-		}
-		free(line);
-	}
-
-	if (ctx->seen_resp_header) {
-		// @todo Fix this
-		/* out of memory condition? */
-		if (ctx->enomem) {
-			pxy_conn_free(ctx->conn, 0);
-			return;
-		}
-
-		/* no data left after parsing headers? */
-		if (evbuffer_get_length(inbuf) == 0) {
-			return;
-		}
-		evbuffer_add_buffer(outbuf, inbuf);
-	}
-}
-
-static void
+void
 pxy_set_watermark(struct bufferevent *bev, pxy_conn_ctx_t *ctx, struct bufferevent *other)
 {
 	if (evbuffer_get_length(bufferevent_get_output(other)) >= OUTBUF_LIMIT) {
@@ -2228,7 +1747,7 @@ pxy_set_watermark(struct bufferevent *bev, pxy_conn_ctx_t *ctx, struct buffereve
 	}
 }
 
-static void
+void
 pxy_discard_inbuf(struct bufferevent *bev)
 {
 	struct evbuffer *inbuf = bufferevent_get_input(bev);
@@ -2239,8 +1758,9 @@ pxy_discard_inbuf(struct bufferevent *bev)
 }
 
 static void
-pxy_bev_readcb_passthrough_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
+pxy_bev_readcb_passthrough_src(struct bufferevent *bev, void *arg)
 {
+	pxy_conn_ctx_t *ctx = arg;
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb_passthrough_src: ENTER, fd=%d, size=%zu\n",
 			ctx->fd, evbuffer_get_length(bufferevent_get_input(bev)));
@@ -2257,8 +1777,9 @@ pxy_bev_readcb_passthrough_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 }
 
 static void
-pxy_bev_readcb_passthrough_srv_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
+pxy_bev_readcb_passthrough_srv_dst(struct bufferevent *bev, void *arg)
 {
+	pxy_conn_ctx_t *ctx = arg;
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb_passthrough_srv_dst: ENTER, fd=%d, size=%zu\n",
 			ctx->fd, evbuffer_get_length(bufferevent_get_input(bev)));
@@ -2279,18 +1800,31 @@ pxy_insert_sslproxy_header(pxy_conn_ctx_t *ctx, unsigned char *packet, size_t *p
 {
 	// @attention Cannot use string manipulation functions; we are dealing with binary arrays here, not NULL-terminated strings
 	if (!ctx->sent_header) {
-		size_t header_len = strlen(ctx->header_str);
-		memmove(packet + header_len + 2, packet, *packet_size);
-		memcpy(packet, ctx->header_str, header_len);
-		memcpy(packet + header_len, "\r\n", 2);
-		*packet_size+= header_len + 2;
+		memmove(packet + ctx->header_len + 2, packet, *packet_size);
+		memcpy(packet, ctx->header_str, ctx->header_len);
+		memcpy(packet + ctx->header_len, "\r\n", 2);
+		*packet_size+= ctx->header_len + 2;
 		ctx->sent_header = 1;
 	}
 }
 
-static void
-pxy_bev_readcb_autossl_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
+static unsigned char *
+pxy_malloc_packet(size_t sz, pxy_conn_ctx_t *ctx)
 {
+	unsigned char *packet = malloc(sz);
+	if (!packet) {
+		// @todo Should we just set enomem?
+		ctx->enomem = 1;
+		pxy_conn_free(ctx, 1);
+		return NULL;
+	}
+	return packet;
+}
+
+static void
+pxy_bev_readcb_autossl_src(struct bufferevent *bev, void *arg)
+{
+	pxy_conn_ctx_t *ctx = arg;
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb_autossl_src: ENTER %s, fd=%d, size=%zu\n",
 			pxy_get_event_name(bev, ctx), ctx->fd, evbuffer_get_length(bufferevent_get_input(bev)));
@@ -2317,14 +1851,10 @@ pxy_bev_readcb_autossl_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		return;
 	}
 
-	size_t header_len = strlen(ctx->header_str);
 	size_t packet_size = inbuf_size;
 	// +2 is for \r\n
-	unsigned char *packet = malloc(packet_size + header_len + 2);
+	unsigned char *packet = pxy_malloc_packet(packet_size + ctx->header_len + 2, ctx);
 	if (!packet) {
-		// @todo Should we just set enomem?
-		ctx->enomem = 1;
-		pxy_conn_free(ctx, 1);
 		return;
 	}
 
@@ -2364,8 +1894,9 @@ pxy_bev_readcb_autossl_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 
 
 static void
-pxy_bev_readcb_autossl_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
+pxy_bev_readcb_autossl_dst(struct bufferevent *bev, void *arg)
 {
+	pxy_conn_ctx_t *ctx = arg;
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb_autossl_dst: ENTER %s, fd=%d, size=%zu\n",
 			pxy_get_event_name(bev, ctx), ctx->fd, evbuffer_get_length(bufferevent_get_input(bev)));
@@ -2400,8 +1931,10 @@ pxy_bev_readcb_autossl_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 }
 
 static void
-pxy_bev_readcb_autossl_srv_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
+pxy_bev_readcb_autossl_srv_dst(struct bufferevent *bev, void *arg)
 {
+	pxy_conn_ctx_t *ctx = arg;
+
 	if (ctx->clienthello_search) {
 		if (pxy_conn_autossl_peek_and_upgrade(ctx)) {
 			return;
@@ -2424,113 +1957,9 @@ pxy_bev_readcb_autossl_srv_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 }
 
 static void
-pxy_bev_readcb_http_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
+pxy_bev_readcb_src(struct bufferevent *bev, void *arg)
 {
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb_http_src: ENTER %s, fd=%d, size=%zu\n",
-			pxy_get_event_name(bev, ctx), ctx->fd, evbuffer_get_length(bufferevent_get_input(bev)));
-#endif /* DEBUG_PROXY */
-
-	if (ctx->dst.closed) {
-		pxy_discard_inbuf(bev);
-		return;
-	}
-
-	struct evbuffer *inbuf = bufferevent_get_input(bev);
-	struct evbuffer *outbuf = bufferevent_get_output(ctx->dst.bev);
-	size_t inbuf_size = evbuffer_get_length(inbuf);
-
-	ctx->thr->intif_in_bytes += inbuf_size;
-
-	// Content logging at this point may record certain headers twice
-	if (pxy_log_content_inbuf(ctx, inbuf, 1) == -1) {
-		return;
-	}
-	int seen_req_header_on_entry = ctx->seen_req_header;
-
-	// We insert our special header line to the first packet we get, e.g. right after the first \r\n in the case of http
-	// @todo Should we look for GET/POST or Host header lines to detect the first packet?
-	// But there is no guarantee that they will exist, due to fragmentation.
-	// @attention We cannot append the ssl proxy address at the end of the packet or in between the header and the content,
-	// because (1) the packet may be just the first fragment split somewhere not appropriate for appending a header,
-	// and (2) there may not be any content.
-	// And we are dealing pop3 and smtp also, not just http.
-
-	/* request header munging */
-	if (!ctx->seen_req_header) {
-#ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb_http_src: HTTP Request Header size=%zu, fd=%d\n", inbuf_size, ctx->fd);
-#endif /* DEBUG_PROXY */
-		pxy_http_filter_request_header(inbuf, outbuf, ctx);
-	} else {
-#ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb_http_src: HTTP Request Body size=%zu, fd=%d\n", inbuf_size, ctx->fd);
-#endif /* DEBUG_PROXY */
-		evbuffer_add_buffer(outbuf, inbuf);
-	}
-	pxy_set_watermark(bev, ctx, ctx->dst.bev);
-
-	if (!seen_req_header_on_entry && ctx->seen_req_header && ctx->ocsp_denied) {
-		pxy_log_content_buf(ctx, (unsigned char *)ocspresp, sizeof(ocspresp) - 1, 0/*resp*/);
-	}
-}
-
-
-static void
-pxy_bev_readcb_http_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
-{
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb_http_dst: ENTER %s, fd=%d, size=%zu\n",
-			pxy_get_event_name(bev, ctx), ctx->fd, evbuffer_get_length(bufferevent_get_input(bev)));
-#endif /* DEBUG_PROXY */
-
-	if (ctx->src.closed) {
-		pxy_discard_inbuf(bev);
-		return;
-	}
-
-	struct evbuffer *inbuf = bufferevent_get_input(bev);
-	struct evbuffer *outbuf = bufferevent_get_output(ctx->src.bev);
-	size_t inbuf_size = evbuffer_get_length(inbuf);
-
-	ctx->thr->intif_out_bytes += inbuf_size;
-
-	// Content logging at this point may record certain headers twice
-	if (pxy_log_content_inbuf(ctx, inbuf, 1) == -1) {
-		return;
-	}
-	int seen_resp_header_on_entry = ctx->seen_resp_header;
-
-	if (!ctx->seen_resp_header) {
-#ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb_http_dst: HTTP Response Header size=%zu, fd=%d\n", inbuf_size, ctx->fd);
-#endif /* DEBUG_PROXY */
-		pxy_http_filter_response_header(inbuf, outbuf, ctx);
-	} else {
-#ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb_http_dst: HTTP Response Body size=%zu, fd=%d\n", inbuf_size, ctx->fd);
-#endif /* DEBUG_PROXY */
-		evbuffer_add_buffer(outbuf, inbuf);
-	}
-	pxy_set_watermark(bev, ctx, ctx->src.bev);
-
-	if (!seen_resp_header_on_entry && ctx->seen_resp_header) {
-		/* response header complete: log connection */
-		if (WANT_CONNECT_LOG(ctx->conn) || ctx->opts->statslog) {
-			pxy_log_connect_http(ctx);
-		}
-	}
-}
-
-static void
-pxy_bev_readcb_http_srv_dst(UNUSED struct bufferevent *bev, UNUSED pxy_conn_ctx_t *ctx)
-{
-	log_err_printf("pxy_bev_readcb_http_srv_dst: readcb called on srv_dst\n");
-}
-
-static void
-pxy_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
-{
+	pxy_conn_ctx_t *ctx = arg;
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb_src: ENTER %s, fd=%d, size=%zu\n",
 			pxy_get_event_name(bev, ctx), ctx->fd, evbuffer_get_length(bufferevent_get_input(bev)));
@@ -2551,14 +1980,10 @@ pxy_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		return;
 	}
 
-	size_t header_len = strlen(ctx->header_str);
 	size_t packet_size = inbuf_size;
 	// +2 is for \r\n
-	unsigned char *packet = malloc(packet_size + header_len + 2);
+	unsigned char *packet = pxy_malloc_packet(packet_size + ctx->header_len + 2, ctx);
 	if (!packet) {
-		// @todo Should we just set enomem?
-		ctx->enomem = 1;
-		pxy_conn_free(ctx, 1);
 		return;
 	}
 
@@ -2586,8 +2011,9 @@ pxy_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 }
 
 static void
-pxy_bev_readcb_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
+pxy_bev_readcb_dst(struct bufferevent *bev, void *arg)
 {
+	pxy_conn_ctx_t *ctx = arg;
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb_dst: ENTER %s, fd=%d, size=%zu\n",
 			pxy_get_event_name(bev, ctx), ctx->fd, evbuffer_get_length(bufferevent_get_input(bev)));
@@ -2616,7 +2042,7 @@ pxy_bev_readcb_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 }
 
 static void
-pxy_bev_readcb_srv_dst(UNUSED struct bufferevent *bev, UNUSED pxy_conn_ctx_t *ctx)
+pxy_bev_readcb_srv_dst(UNUSED struct bufferevent *bev, UNUSED void *arg)
 {
 	log_err_printf("pxy_bev_readcb_srv_dst: readcb called on srv_dst\n");
 }
@@ -2676,6 +2102,7 @@ static void
 pxy_bev_readcb_child(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_child_ctx_t *ctx = arg;
+	protohttp_ctx_t *http_ctx = ctx->proto_ctx->arg;
 
 	ctx->conn->atime = time(NULL);
 
@@ -2744,11 +2171,12 @@ pxy_bev_readcb_child(struct bufferevent *bev, void *arg)
 
 		/* request header munging */
 		if (ctx->conn->spec->http) {
-			if (!ctx->seen_req_header) {
+			if (!http_ctx->seen_req_header) {
 #ifdef DEBUG_PROXY
 				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb_child: HTTP Request Header size=%zu, fd=%d\n", inbuf_size, ctx->fd);
 #endif /* DEBUG_PROXY */
-				pxy_http_filter_request_header(inbuf, outbuf, (pxy_conn_ctx_t *)ctx);
+				/// XXX: Just remove SSLproxy line, do not filter response on the server side
+				protohttp_filter_request_header(inbuf, outbuf, (pxy_conn_ctx_t *)ctx, 1);
 				// Transfered packet to outbuf and logged content, just check watermark
 				goto watermark;
 			} else {
@@ -2758,10 +2186,8 @@ pxy_bev_readcb_child(struct bufferevent *bev, void *arg)
 			}
 		} else {
 			size_t packet_size = inbuf_size;
-			unsigned char *packet = malloc(packet_size);
+			unsigned char *packet = pxy_malloc_packet(packet_size, ctx->conn);
 			if (!packet) {
-				ctx->enomem = 1;
-				pxy_conn_free(ctx->conn, 1);
 				return;
 			}
 
@@ -2769,11 +2195,10 @@ pxy_bev_readcb_child(struct bufferevent *bev, void *arg)
 				log_err_printf("pxy_bev_readcb_child: src evbuffer_remove failed, fd=%d\n", ctx->fd);
 			}
 
-			size_t header_len = strlen(ctx->conn->header_str);
-			unsigned char *pos = memmem(packet, packet_size, ctx->conn->header_str, header_len);
+			unsigned char *pos = memmem(packet, packet_size, ctx->conn->header_str, ctx->conn->header_len);
 			if (pos) {
-				memmove(pos, pos + header_len + 2, packet_size - (pos - packet) - (header_len + 2));
-				packet_size-= header_len + 2;
+				memmove(pos, pos + ctx->conn->header_len + 2, packet_size - (pos - packet) - (ctx->conn->header_len + 2));
+				packet_size-= ctx->conn->header_len + 2;
 #ifdef DEBUG_PROXY
 				log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_bev_readcb_child: REMOVED SSLproxy header, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
@@ -2797,11 +2222,12 @@ pxy_bev_readcb_child(struct bufferevent *bev, void *arg)
 		ctx->conn->thr->extif_in_bytes += inbuf_size;
 
 		if (ctx->conn->spec->http) {
-			if (!ctx->seen_resp_header) {
+			if (!http_ctx->seen_resp_header) {
 #ifdef DEBUG_PROXY
 				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb_child: HTTP Response Header size=%zu, fd=%d\n", inbuf_size, ctx->fd);
 #endif /* DEBUG_PROXY */
-				pxy_http_filter_response_header(inbuf, outbuf, (pxy_conn_ctx_t *)ctx);
+				/// XXX: Do not filter response on the server side
+				protohttp_filter_response_header(inbuf, outbuf, (pxy_conn_ctx_t *)ctx);
 				// Transfered packet to outbuf and logged content, just check watermark
 				goto watermark;
 			} else {
@@ -2897,8 +2323,10 @@ pxy_close_conn_end_ifnodata(pxy_conn_desc_t *conn_end, pxy_conn_ctx_t *ctx, void
 }
 
 static void
-pxy_bev_writecb_passthrough_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
+pxy_bev_writecb_passthrough_src(struct bufferevent *bev, void *arg)
 {
+	pxy_conn_ctx_t *ctx = arg;
+
 	// @attention srv_dst.bev may be NULL
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_writecb_passthrough_src: ENTER, fd=%d\n", ctx->fd);
@@ -2917,8 +2345,9 @@ pxy_bev_writecb_passthrough_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 }
 
 static void
-pxy_bev_writecb_passthrough_srv_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
+pxy_bev_writecb_passthrough_srv_dst(struct bufferevent *bev, void *arg)
 {
+	pxy_conn_ctx_t *ctx = arg;
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_writecb_passthrough_srv_dst: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
@@ -2937,9 +2366,10 @@ pxy_bev_writecb_passthrough_srv_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx
 	pxy_unset_watermark(bev, ctx, &ctx->src);
 }
 
-static void
-pxy_bev_writecb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
+void
+pxy_bev_writecb_src(struct bufferevent *bev, void *arg)
 {
+	pxy_conn_ctx_t *ctx = arg;
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_writecb: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
@@ -2956,9 +2386,10 @@ pxy_bev_writecb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	pxy_unset_watermark(bev, ctx, &ctx->dst);
 }
 
-static void
-pxy_bev_writecb_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
+void
+pxy_bev_writecb_dst(struct bufferevent *bev, void *arg)
 {
+	pxy_conn_ctx_t *ctx = arg;
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_writecb_dst: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
@@ -2977,9 +2408,10 @@ pxy_bev_writecb_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	pxy_unset_watermark(bev, ctx, &ctx->src);
 }
 
-static void
-pxy_bev_writecb_srv_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
+void
+pxy_bev_writecb_srv_dst(struct bufferevent *bev, void *arg)
 {
+	pxy_conn_ctx_t *ctx = arg;
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_writecb_srv_dst: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
@@ -3165,6 +2597,39 @@ pxy_bev_eventcb_passthrough_connected_src(UNUSED struct bufferevent *bev, pxy_co
 }
 
 static int
+pxy_check_src_bev(pxy_conn_ctx_t *ctx)
+{
+	if (!ctx->src.bev) {
+		log_err_level_printf(LOG_CRIT, "Error creating src bufferevent\n");
+		if (ctx->src.ssl) {
+			SSL_free(ctx->src.ssl);
+			ctx->src.ssl = NULL;
+		}
+		pxy_conn_free(ctx, 1);
+		return -1;
+	}
+	return 0;
+}
+
+static int
+pxy_setup_src(pxy_conn_ctx_t *ctx)
+{
+	ctx->src.bev = pxy_bufferevent_setup(ctx, ctx->fd, ctx->src.ssl);
+	return pxy_check_src_bev(ctx);
+}
+
+static int
+pxy_set_dstaddr(pxy_conn_ctx_t *ctx)
+{
+	if (sys_sockaddr_str((struct sockaddr *)&ctx->addr, ctx->addrlen, &ctx->dsthost_str, &ctx->dstport_str) != 0) {
+		ctx->enomem = 1;
+		pxy_conn_free(ctx, 1);
+		return -1;
+	}
+	return 0;
+}
+
+static int
 pxy_passthrough_enable_src(pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
@@ -3173,22 +2638,12 @@ pxy_passthrough_enable_src(pxy_conn_ctx_t *ctx)
 
 	ctx->connected = 1;
 
-	ctx->src.bev = pxy_bufferevent_setup(ctx, ctx->fd, ctx->src.ssl);
-	if (!ctx->src.bev) {
-		log_err_level_printf(LOG_CRIT, "Error creating bufferevent\n");
-		if (ctx->src.ssl) {
-			SSL_free(ctx->src.ssl);
-			ctx->src.ssl = NULL;
-		}
-		pxy_conn_free(ctx, 1);
+	if (pxy_setup_src(ctx) == -1) {
 		return -1;
 	}
 	bufferevent_setcb(ctx->src.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
 
-	if (sys_sockaddr_str((struct sockaddr *)&ctx->addr, ctx->addrlen,
-						 &ctx->dsthost_str, &ctx->dstport_str) != 0) {
-		ctx->enomem = 1;
-		pxy_conn_free(ctx, 1);
+	if (pxy_set_dstaddr(ctx) == -1) {
 		return -1;
 	}
 
@@ -3280,14 +2735,14 @@ pxy_setup_child_listener(pxy_conn_ctx_t *ctx)
 	// @todo Port may be less than 5 chars
 	// SSLproxy:        +   + [ + addr         + ] + : + p + , + [ + srchost_str              + ] + : + srcport_str              + , + [ + dsthost_str              + ] + : + dstport_str              + , + s + NULL
 	// SSLPROXY_KEY_LEN + 1 + 1 + strlen(addr) + 1 + 1 + 5 + 1 + 1 + strlen(ctx->srchost_str) + 1 + 1 + strlen(ctx->srcport_str) + 1 + 1 + strlen(ctx->dsthost_str) + 1 + 1 + strlen(ctx->dstport_str) + 1 + 1 + 1
-	int header_len = SSLPROXY_KEY_LEN + strlen(addr) + strlen(ctx->srchost_str) + strlen(ctx->srcport_str) + strlen(ctx->dsthost_str) + strlen(ctx->dstport_str) + 20;
+	ctx->header_len = SSLPROXY_KEY_LEN + strlen(addr) + strlen(ctx->srchost_str) + strlen(ctx->srcport_str) + strlen(ctx->dsthost_str) + strlen(ctx->dstport_str) + 20;
 	// @todo Always check malloc retvals. Should we close the conn if malloc fails?
-	ctx->header_str = malloc(header_len);
+	ctx->header_str = malloc(ctx->header_len);
 	if (!ctx->header_str) {
 		pxy_conn_free(ctx, 1);
 		return -1;
 	}
-	snprintf(ctx->header_str, header_len, "%s [%s]:%u,[%s]:%s,[%s]:%s,%s",
+	snprintf(ctx->header_str, ctx->header_len, "%s [%s]:%u,[%s]:%s,[%s]:%s,%s",
 			SSLPROXY_KEY, addr, ntohs(child_listener_addr.sin_port), STRORNONE(ctx->srchost_str), STRORNONE(ctx->srcport_str),
 			STRORNONE(ctx->dsthost_str), STRORNONE(ctx->dstport_str), ctx->spec->ssl ? "s":"p");
 	return 0;
@@ -3311,6 +2766,17 @@ pxy_close_srv_dst(pxy_conn_ctx_t *ctx)
 	bufferevent_free_and_close_fd(ctx->srv_dst.bev, ctx);
 	ctx->srv_dst.bev = NULL;
 	ctx->srv_dst.closed = 1;
+}
+
+void
+pxy_close_dst(pxy_conn_ctx_t *ctx)
+{
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_close_dst: Closing dst, fd=%d, dst fd=%d\n", ctx->fd, bufferevent_getfd(ctx->dst.bev));
+#endif /* DEBUG_PROXY */
+	bufferevent_free_and_close_fd(ctx->dst.bev, ctx);
+	ctx->dst.bev = NULL;
+	ctx->dst.closed = 1;
 }
 
 static void
@@ -3340,17 +2806,6 @@ pxy_engage_passthrough_mode(pxy_conn_ctx_t *ctx)
 	}
 
 	pxy_fd_readcb(ctx->fd, 0, ctx);
-}
-
-static int
-pxy_set_dstaddr(pxy_conn_ctx_t *ctx)
-{
-	if (sys_sockaddr_str((struct sockaddr *)&ctx->addr, ctx->addrlen, &ctx->dsthost_str, &ctx->dstport_str) != 0) {
-		ctx->enomem = 1;
-		pxy_conn_free(ctx, 1);
-		return -1;
-	}
-	return 0;
 }
 
 static int
@@ -3440,6 +2895,32 @@ pxy_log_connect_srv_dst(pxy_conn_ctx_t *ctx)
 }
 
 static int
+pxy_setup_src_ssl(pxy_conn_ctx_t *ctx)
+{
+	// @todo Make srv_dst.ssl the origssl param
+	ctx->src.ssl = pxy_srcssl_create(ctx, ctx->srv_dst.ssl);
+	if (!ctx->src.ssl) {
+		if (ctx->opts->passthrough && !ctx->enomem) {
+			log_err_level_printf(LOG_WARNING, "No cert found; falling back to passthrough, fd=%d\n", ctx->fd);
+			pxy_engage_passthrough_mode(ctx);
+			// return protocol change
+			return 1;
+		}
+		pxy_conn_free(ctx, 1);
+		return -1;
+	}
+	return 0;
+}
+
+static int
+pxy_setup_new_src(pxy_conn_ctx_t *ctx)
+{
+	ctx->src.bev = bufferevent_openssl_filter_new(ctx->evbase, ctx->src.bev, ctx->src.ssl,
+			BUFFEREVENT_SSL_ACCEPTING, BEV_OPT_DEFER_CALLBACKS);
+	return pxy_check_src_bev(ctx);
+}
+
+static int
 pxy_autossl_enable_src(pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
@@ -3448,39 +2929,23 @@ pxy_autossl_enable_src(pxy_conn_ctx_t *ctx)
 
 	ctx->connected = 1;
 
-	if (ctx->clienthello_found) {
-		ctx->src.ssl = pxy_srcssl_create(ctx, ctx->srv_dst.ssl);
-		if (!ctx->src.ssl) {
-			if (ctx->opts->passthrough && !ctx->enomem) {
-				log_err_level_printf(LOG_WARNING, "No cert found; falling back to passthrough, fd=%d\n", ctx->fd);
-				pxy_engage_passthrough_mode(ctx);
-				// return success
-				return 0;
-			}
-			pxy_conn_free(ctx, 1);
-			return -1;
-		}
-	}
-
 	// Create and set up src.bev
 	if (ctx->clienthello_found) {
 		// ctx->src.bev must have already been created at this point
 		if (OPTS_DEBUG(ctx->opts)) {
 			log_dbg_printf("Completing autossl upgrade\n");
 		}
-		ctx->src.bev = bufferevent_openssl_filter_new(ctx->evbase, ctx->src.bev, ctx->src.ssl,
-				BUFFEREVENT_SSL_ACCEPTING, BEV_OPT_DEFER_CALLBACKS);
-	} else {
-		ctx->src.bev = pxy_bufferevent_setup(ctx, ctx->fd, ctx->src.ssl);
-	}
-	if (!ctx->src.bev) {
-		log_err_level_printf(LOG_CRIT, "Error creating bufferevent\n");
-		if (ctx->src.ssl) {
-			SSL_free(ctx->src.ssl);
-			ctx->src.ssl = NULL;
+		int rv;
+		if ((rv = pxy_setup_src_ssl(ctx)) != 0) {
+			return rv;
 		}
-		pxy_conn_free(ctx, 1);
-		return -1;
+		if (pxy_setup_new_src(ctx) == -1) {
+			return -1;
+		}
+	} else {
+		if (pxy_setup_src(ctx) == -1) {
+			return -1;
+		}
 	}
 	bufferevent_setcb(ctx->src.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
 
@@ -3492,6 +2957,7 @@ pxy_autossl_enable_src(pxy_conn_ctx_t *ctx)
 		return -1;
 	}
 
+	// srv_dst is not needed after clienthello search is over
 	if (ctx->srv_dst.bev && !ctx->clienthello_search) {
 		pxy_close_srv_dst(ctx);
 	}
@@ -3506,7 +2972,7 @@ pxy_autossl_enable_src(pxy_conn_ctx_t *ctx)
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_autossl_enable_src: Enabling src, %s, fd=%d, child_fd=%d\n", ctx->header_str, ctx->fd, ctx->child_fd);
 #endif /* DEBUG_PROXY */
-	// Now open the gates, perhaps for a second time if in autossl mode
+	// Now open the gates, perhaps for a second time in autossl mode
 	bufferevent_enable(ctx->src.bev, EV_READ|EV_WRITE);
 	return 0;
 }
@@ -3576,30 +3042,20 @@ pxy_enable_src(pxy_conn_ctx_t *ctx)
 	ctx->connected = 1;
 
 	if (ctx->spec->ssl) {
-		ctx->src.ssl = pxy_srcssl_create(ctx, ctx->srv_dst.ssl);
-		if (!ctx->src.ssl) {
-			if (ctx->opts->passthrough && !ctx->enomem) {
-				log_err_level_printf(LOG_WARNING, "No cert found; falling back to passthrough, fd=%d\n", ctx->fd);
-				pxy_engage_passthrough_mode(ctx);
-				// return success
-				return 0;
-			}
-			pxy_conn_free(ctx, 1);
-			return -1;
+		int rv;
+		if ((rv = pxy_setup_src_ssl(ctx)) != 0) {
+			return rv;
 		}
 	}
-
-	ctx->src.bev = pxy_bufferevent_setup(ctx, ctx->fd, ctx->src.ssl);
-	if (!ctx->src.bev) {
-		log_err_level_printf(LOG_CRIT, "Error creating bufferevent\n");
-		if (ctx->src.ssl) {
-			SSL_free(ctx->src.ssl);
-			ctx->src.ssl = NULL;
-		}
-		pxy_conn_free(ctx, 1);
+	if (pxy_setup_src(ctx) == -1) {
 		return -1;
 	}
-	bufferevent_setcb(ctx->src.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
+//	bufferevent_setcb(ctx->src.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
+	if (ctx->proto == PROTO_HTTP || ctx->proto == PROTO_HTTPS) {
+		ctx->proto_ctx->bev_setcb_src(ctx);
+	} else {
+		bufferevent_setcb(ctx->src.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
+	}
 
 	if (pxy_set_dstaddr(ctx) == -1) {
 		return -1;
@@ -3623,7 +3079,7 @@ pxy_enable_src(pxy_conn_ctx_t *ctx)
 	return 0;
 }
 
-static void
+void
 pxy_bev_eventcb_connected_src(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
@@ -3633,7 +3089,7 @@ pxy_bev_eventcb_connected_src(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ct
 	pxy_log_connect_src(ctx);
 }
 
-static void
+void
 pxy_bev_eventcb_connected_dst(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
@@ -3647,7 +3103,7 @@ pxy_bev_eventcb_connected_dst(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ct
 	}
 }
 
-static void
+void
 pxy_bev_eventcb_connected_srv_dst(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
@@ -3838,7 +3294,7 @@ pxy_bev_eventcb_passthrough_eof_srv_dst(struct bufferevent *bev, pxy_conn_ctx_t 
 	pxy_disconnect(bev, ctx, &ctx->srv_dst, &bufferevent_free_and_close_fd_nonssl, &ctx->src, 0);
 }
 
-static void
+void
 pxy_bev_eventcb_eof_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
@@ -3863,7 +3319,7 @@ pxy_bev_eventcb_eof_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	pxy_disconnect(bev, ctx, &ctx->src, &bufferevent_free_and_close_fd, &ctx->dst, 1);
 }
 
-static void
+void
 pxy_bev_eventcb_eof_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
@@ -3888,7 +3344,7 @@ pxy_bev_eventcb_eof_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	pxy_disconnect(bev, ctx, &ctx->dst, &bufferevent_free_and_close_fd_nonssl, &ctx->src, 0);
 }
 
-static void
+void
 pxy_bev_eventcb_eof_srv_dst(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
@@ -3945,7 +3401,7 @@ pxy_bev_eventcb_passthrough_error_srv_dst(struct bufferevent *bev, pxy_conn_ctx_
 	pxy_disconnect(bev, ctx, &ctx->srv_dst, &bufferevent_free_and_close_fd_nonssl, &ctx->src, 0);
 }
 
-static void
+void
 pxy_bev_eventcb_error_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
@@ -3967,7 +3423,7 @@ pxy_bev_eventcb_error_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	pxy_disconnect(bev, ctx, &ctx->src, &bufferevent_free_and_close_fd, &ctx->dst, 1);
 }
 
-static void
+void
 pxy_bev_eventcb_error_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
@@ -3989,7 +3445,7 @@ pxy_bev_eventcb_error_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	pxy_disconnect(bev, ctx, &ctx->dst, &bufferevent_free_and_close_fd_nonssl, &ctx->src, 0);
 }
 
-static void
+void
 pxy_bev_eventcb_error_srv_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
@@ -4052,7 +3508,7 @@ pxy_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 	if (event != EVENT_UNKWN) {
 		enum conn_end ce = get_conn_end(bev, ctx);
 		if (ce != CONN_END_UNKWN) {
-			callback_func_t eventcb = eventcb_funcs[ctx->proto][event][ce];
+			event_callback_func_t eventcb = eventcb_funcs[ctx->proto][event][ce];
 			if (eventcb) {
 				eventcb(bev, ctx);
 			} else {
@@ -4320,7 +3776,7 @@ pxy_conn_connect_autossl(pxy_conn_ctx_t *ctx)
 	}
 }
 
-static void
+void
 pxy_conn_connect_tcp(pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
@@ -4331,7 +3787,12 @@ pxy_conn_connect_tcp(pxy_conn_ctx_t *ctx)
 		return;
 	}
 
-	bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
+//	bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
+	if (ctx->proto == PROTO_HTTP || ctx->proto == PROTO_HTTPS) {
+		ctx->proto_ctx->bev_setcb_dst(ctx);
+	} else {
+		bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
+	}
 	bufferevent_enable(ctx->dst.bev, EV_READ|EV_WRITE);
 
 	/* create server-side socket and eventbuffer */
@@ -4347,7 +3808,12 @@ pxy_conn_connect_tcp(pxy_conn_ctx_t *ctx)
 	// @attention BEV_OPT_DEFER_CALLBACKS seems responsible for the issue with srv_dst, libevent acts as if we call event connect() ourselves.
 	// @see Launching connections on socket-based bufferevents at http://www.wangafu.net/~nickm/libevent-book/Ref6_bufferevent.html
 	// Disable and NULL r cb, we do nothing for srv_dst in r cb
-	bufferevent_setcb(ctx->srv_dst.bev, NULL, pxy_bev_writecb, pxy_bev_eventcb, ctx);
+//	bufferevent_setcb(ctx->srv_dst.bev, NULL, pxy_bev_writecb, pxy_bev_eventcb, ctx);
+	if (ctx->proto == PROTO_HTTP || ctx->proto == PROTO_HTTPS) {
+		ctx->proto_ctx->bev_setcb_srv_dst(ctx);
+	} else {
+		bufferevent_setcb(ctx->srv_dst.bev, NULL, pxy_bev_writecb, pxy_bev_eventcb, ctx);
+	}
 	bufferevent_enable(ctx->srv_dst.bev, EV_WRITE);
 	
 	/* initiate connection */
@@ -4391,6 +3857,11 @@ pxy_conn_connect(pxy_conn_ctx_t *ctx)
 		}
 	}
 
+	if (ctx->proto == PROTO_HTTP || ctx->proto == PROTO_HTTPS) {
+		ctx->proto_ctx->conn_connectcb(ctx);
+		return;
+	}
+	
 	conn_connect_func_t conn_connect_func = conn_connect_funcs[ctx->proto];
 	if (conn_connect_func) {
 		conn_connect_func(ctx);
@@ -4434,9 +3905,10 @@ pxy_sni_resolve_cb(int errcode, struct evutil_addrinfo *ai, void *arg)
  * connection.  If ctx->passthrough is set, it was called a second time
  * after the first ssl callout failed because of client cert auth.
  */
-static void
-pxy_fd_readcb_tcp(UNUSED evutil_socket_t fd, pxy_conn_ctx_t *ctx)
+void
+pxy_fd_readcb_tcp(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 {
+	pxy_conn_ctx_t *ctx = arg;
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_fd_readcb_tcp: ENTER fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
@@ -4448,9 +3920,10 @@ pxy_fd_readcb_tcp(UNUSED evutil_socket_t fd, pxy_conn_ctx_t *ctx)
 #else /* OPENSSL_NO_TLSEXT */
 #define MAYBE_UNUSED UNUSED
 #endif /* OPENSSL_NO_TLSEXT */
-static void
-pxy_fd_readcb_ssl(MAYBE_UNUSED evutil_socket_t fd, pxy_conn_ctx_t *ctx)
+void
+pxy_fd_readcb_ssl(MAYBE_UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 {
+	pxy_conn_ctx_t *ctx = arg;
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_fd_readcb_ssl: ENTER fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
@@ -4511,7 +3984,12 @@ pxy_fd_readcb_ssl(MAYBE_UNUSED evutil_socket_t fd, pxy_conn_ctx_t *ctx)
 		struct timeval retry_delay = {0, 100};
 
 		event_free(ctx->ev);
-		ctx->ev = event_new(ctx->evbase, fd, 0, pxy_fd_readcb, ctx);
+//		ctx->ev = event_new(ctx->evbase, fd, 0, pxy_fd_readcb, ctx);
+		if (ctx->proto == PROTO_HTTP || ctx->proto == PROTO_HTTPS) {
+			ctx->ev = event_new(ctx->evbase, fd, 0, ctx->proto_ctx->fd_readcb, ctx);
+		} else {
+			ctx->ev = event_new(ctx->evbase, fd, 0, pxy_fd_readcb, ctx);
+		}
 		if (!ctx->ev) {
 			log_err_level_printf(LOG_CRIT, "Error creating retry event, aborting connection\n");
 #ifdef DEBUG_PROXY
@@ -4558,7 +4036,7 @@ pxy_fd_readcb(evutil_socket_t fd, UNUSED short what, void *arg)
 
 	fd_readcb_func_t fd_readcb_func = fd_readcb_funcs[ctx->proto];
 	if (fd_readcb_func) {
-		fd_readcb_func(fd, ctx);
+		fd_readcb_func(fd, what, arg);
 	} else {
 		log_err_printf("pxy_fd_readcb: NULL fd_readcb_func\n");
 	}
@@ -4666,12 +4144,22 @@ pxy_conn_setup(evutil_socket_t fd,
 
 	/* for SSL, defer dst connection setup to initial_readcb */
 	if (ctx->spec->ssl) {
-		ctx->ev = event_new(ctx->evbase, fd, EV_READ, pxy_fd_readcb, ctx);
+//		ctx->ev = event_new(ctx->evbase, fd, EV_READ, pxy_fd_readcb, ctx);
+		if (ctx->proto == PROTO_HTTP || ctx->proto == PROTO_HTTPS) {
+			ctx->ev = event_new(ctx->evbase, fd, EV_READ, ctx->proto_ctx->fd_readcb, ctx);
+		} else {
+			ctx->ev = event_new(ctx->evbase, fd, EV_READ, pxy_fd_readcb, ctx);
+		}
 		if (!ctx->ev)
 			goto memout;
 		event_add(ctx->ev, NULL);
 	} else {
-		pxy_fd_readcb(fd, 0, ctx);
+//		pxy_fd_readcb(fd, 0, ctx);
+		if (ctx->proto == PROTO_HTTP || ctx->proto == PROTO_HTTPS) {
+			ctx->proto_ctx->fd_readcb(fd, 0, ctx);
+		} else {
+			pxy_fd_readcb(fd, 0, ctx);
+		}
 	}
 	return;
 
@@ -4684,8 +4172,8 @@ memout:
 callback_func_t readcb_funcs[][3] = {
 	/* CONN_END_SRC, CONN_END_DST, CONN_END_SRV_DST */
 	{pxy_bev_readcb_passthrough_src, NULL, pxy_bev_readcb_passthrough_srv_dst}, /* PROTO_PASSTHROUGH */
-	{pxy_bev_readcb_http_src, pxy_bev_readcb_http_dst, pxy_bev_readcb_http_srv_dst}, /* PROTO_HTTP */
-	{pxy_bev_readcb_http_src, pxy_bev_readcb_http_dst, pxy_bev_readcb_http_srv_dst}, /* PROTO_HTTPS */
+	{NULL, NULL, NULL}, /* PROTO_HTTP */
+	{NULL, NULL, NULL}, /* PROTO_HTTPS */
 	{pxy_bev_readcb_src, pxy_bev_readcb_dst, pxy_bev_readcb_srv_dst}, /* PROTO_POP3 */
 	{pxy_bev_readcb_src, pxy_bev_readcb_dst, pxy_bev_readcb_srv_dst}, /* PROTO_POP3S */
 	{pxy_bev_readcb_src, pxy_bev_readcb_dst, pxy_bev_readcb_srv_dst}, /* PROTO_SMTP */
@@ -4698,8 +4186,8 @@ callback_func_t readcb_funcs[][3] = {
 callback_func_t writecb_funcs[][3] = {
 	/* CONN_END_SRC, CONN_END_DST, CONN_END_SRV_DST */
 	{pxy_bev_writecb_passthrough_src, NULL, pxy_bev_writecb_passthrough_srv_dst}, /* PROTO_PASSTHROUGH */
-	{pxy_bev_writecb_src, pxy_bev_writecb_dst, pxy_bev_writecb_srv_dst}, /* PROTO_HTTP */
-	{pxy_bev_writecb_src, pxy_bev_writecb_dst, pxy_bev_writecb_srv_dst}, /* PROTO_HTTPS */
+	{NULL, NULL, NULL}, /* PROTO_HTTP */
+	{NULL, NULL, NULL}, /* PROTO_HTTPS */
 	{pxy_bev_writecb_src, pxy_bev_writecb_dst, pxy_bev_writecb_srv_dst}, /* PROTO_POP3 */
 	{pxy_bev_writecb_src, pxy_bev_writecb_dst, pxy_bev_writecb_srv_dst}, /* PROTO_POP3S */
 	{pxy_bev_writecb_src, pxy_bev_writecb_dst, pxy_bev_writecb_srv_dst}, /* PROTO_SMTP */
@@ -4709,7 +4197,7 @@ callback_func_t writecb_funcs[][3] = {
 	{pxy_bev_writecb_src, pxy_bev_writecb_dst, pxy_bev_writecb_srv_dst}, /* PROTO_SSL */
 };
 
-callback_func_t eventcb_funcs[][3][3] = {
+event_callback_func_t eventcb_funcs[][3][3] = {
 	{ /* PROTO_PASSTHROUGH */
 		/* CONN_END_SRC, CONN_END_DST, CONN_END_SRV_DST */
 		{pxy_bev_eventcb_passthrough_connected_src, NULL, pxy_bev_eventcb_passthrough_connected_srv_dst}, /* EVENT_CONNECTED */
@@ -4717,14 +4205,14 @@ callback_func_t eventcb_funcs[][3][3] = {
 		{pxy_bev_eventcb_passthrough_error_src, NULL, pxy_bev_eventcb_passthrough_error_srv_dst} /* EVENT_ERROR */
 	},
 	{ /* PROTO_HTTP */
-		{pxy_bev_eventcb_connected_src, pxy_bev_eventcb_connected_dst, pxy_bev_eventcb_connected_srv_dst}, /* EVENT_CONNECTED */
-		{pxy_bev_eventcb_eof_src, pxy_bev_eventcb_eof_dst, pxy_bev_eventcb_eof_srv_dst}, /* EVENT_EOF */
-		{pxy_bev_eventcb_error_src, pxy_bev_eventcb_error_dst, pxy_bev_eventcb_error_srv_dst} /* EVENT_ERROR */
+		{NULL, NULL, NULL}, /* EVENT_CONNECTED */
+		{NULL, NULL, NULL}, /* EVENT_EOF */
+		{NULL, NULL, NULL} /* EVENT_ERROR */
 	},
 	{ /* PROTO_HTTPS */
-		{pxy_bev_eventcb_connected_src, pxy_bev_eventcb_connected_dst, pxy_bev_eventcb_connected_srv_dst}, /* EVENT_CONNECTED */
-		{pxy_bev_eventcb_eof_src, pxy_bev_eventcb_eof_dst, pxy_bev_eventcb_eof_srv_dst}, /* EVENT_EOF */
-		{pxy_bev_eventcb_error_src, pxy_bev_eventcb_error_dst, pxy_bev_eventcb_error_srv_dst} /* EVENT_ERROR */
+		{NULL, NULL, NULL}, /* EVENT_CONNECTED */
+		{NULL, NULL, NULL}, /* EVENT_EOF */
+		{NULL, NULL, NULL} /* EVENT_ERROR */
 	},
 	{ /* PROTO_POP3 */
 		{pxy_bev_eventcb_connected_src, pxy_bev_eventcb_connected_dst, pxy_bev_eventcb_connected_srv_dst}, /* EVENT_CONNECTED */
@@ -4765,8 +4253,8 @@ callback_func_t eventcb_funcs[][3][3] = {
 
 conn_connect_func_t conn_connect_funcs[] = {
 	pxy_conn_connect_passthrough, /* PROTO_PASSTHROUGH */
-	pxy_conn_connect_tcp, /* PROTO_HTTP */
-	pxy_conn_connect_tcp, /* PROTO_HTTPS */
+	NULL, /* PROTO_HTTP */
+	NULL, /* PROTO_HTTPS */
 	pxy_conn_connect_tcp, /* PROTO_POP3 */
 	pxy_conn_connect_tcp, /* PROTO_POP3S */
 	pxy_conn_connect_tcp, /* PROTO_SMTP */
@@ -4778,8 +4266,8 @@ conn_connect_func_t conn_connect_funcs[] = {
 
 fd_readcb_func_t fd_readcb_funcs[] = {
 	pxy_fd_readcb_tcp, /* PROTO_PASSTHROUGH */
-	pxy_fd_readcb_tcp, /* PROTO_HTTP */
-	pxy_fd_readcb_ssl, /* PROTO_HTTPS */
+	NULL, /* PROTO_HTTP */
+	NULL, /* PROTO_HTTPS */
 	pxy_fd_readcb_tcp, /* PROTO_POP3 */
 	pxy_fd_readcb_ssl, /* PROTO_POP3S */
 	pxy_fd_readcb_tcp, /* PROTO_SMTP */
