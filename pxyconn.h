@@ -41,6 +41,7 @@
 #include <event2/event.h>
 #include <event2/util.h>
 #include <event2/buffer.h>
+#include <event2/bufferevent.h>
 
 /*
  * Print helper for logging code.
@@ -54,12 +55,20 @@
 #define SSLPROXY_KEY		"SSLproxy:"
 #define SSLPROXY_KEY_LEN	strlen(SSLPROXY_KEY)
 
+typedef struct pxy_conn_child_ctx pxy_conn_child_ctx_t;
+
 typedef void (*fd_readcb_func_t)(evutil_socket_t,  short, void *);
-typedef void (*conn_connect_func_t)(pxy_conn_ctx_t *);
-typedef void (*bufferevent_setcb_func_t)(pxy_conn_ctx_t *);
+typedef void (*connect_func_t)(pxy_conn_ctx_t *);
+
+typedef void (*callback_func_t)(struct bufferevent *, void *);
+typedef void (*eventcb_func_t)(struct bufferevent *, short, void *);
+
+typedef void (*bufferevent_free_and_close_fd_func_t)(struct bufferevent *, pxy_conn_ctx_t *);
+
 typedef void (*proto_free_func_t)(pxy_conn_ctx_t *);
 
-typedef struct pxy_conn_child_ctx pxy_conn_child_ctx_t;
+typedef void (*child_connect_func_t)(pxy_conn_child_ctx_t *);
+typedef void (*child_proto_free_func_t)(pxy_conn_child_ctx_t *);
 
 /* single socket bufferevent descriptor */
 typedef struct pxy_conn_desc {
@@ -67,6 +76,13 @@ typedef struct pxy_conn_desc {
 	SSL *ssl;
 	unsigned int closed : 1;
 } pxy_conn_desc_t;
+
+enum conn_end {
+	CONN_END_SRC = 0,
+	CONN_END_DST,
+	CONN_END_SRV_DST,
+	CONN_END_UNKWN,
+};
 
 enum protocol {
 	PROTO_ERROR = -1,
@@ -83,16 +99,38 @@ enum protocol {
 };
 
 typedef struct proto_ctx proto_ctx_t;
+typedef struct proto_child_ctx proto_child_ctx_t;
 
 struct proto_ctx {
 	enum protocol proto;
 
-	conn_connect_func_t conn_connectcb;
+	connect_func_t connectcb;
 	fd_readcb_func_t fd_readcb;
-	bufferevent_setcb_func_t bev_setcb_src;
-	bufferevent_setcb_func_t bev_setcb_dst;
-	bufferevent_setcb_func_t bev_setcb_srv_dst;
+
+	callback_func_t bev_readcb;
+	callback_func_t bev_writecb;
+	eventcb_func_t bev_eventcb;
+
+	bufferevent_free_and_close_fd_func_t bufferevent_free_and_close_fd;
+
 	proto_free_func_t proto_free;
+
+	// For protocol specific fields, if any
+	void *arg;
+};
+
+struct proto_child_ctx {
+	enum protocol proto;
+
+	child_connect_func_t connectcb;
+
+	callback_func_t bev_readcb;
+	callback_func_t bev_writecb;
+	eventcb_func_t bev_eventcb;
+
+	bufferevent_free_and_close_fd_func_t bufferevent_free_and_close_fd;
+
+	child_proto_free_func_t proto_free;
 
 	// For protocol specific fields, if any
 	void *arg;
@@ -110,9 +148,11 @@ struct pxy_conn_ctx {
 	struct pxy_conn_desc src;
 	struct pxy_conn_desc dst;
 
-	/* status flags */
-	unsigned int connected : 1;       /* 0 until both ends are connected */
-	unsigned int enomem : 1;                       /* 1 if out of memory */
+	/* store fd and fd event while connected is 0 */
+	evutil_socket_t fd;
+
+	proto_ctx_t *proto_ctx;
+	// End of common properties
 
 	/* log strings from socket */
 	char *srchost_str;
@@ -125,15 +165,12 @@ struct pxy_conn_ctx {
 	char *origcrtfpr;
 	char *usedcrtfpr;
 
-	/* store fd and fd event while connected is 0 */
-	evutil_socket_t fd;
-
-	proto_ctx_t *proto_ctx;
-	// End of common properties
-
 	/* content log context */
 	log_content_ctx_t *logctx;
 
+	/* status flags */
+	unsigned int connected : 1;       /* 0 until both ends are connected */
+	unsigned int enomem : 1;                       /* 1 if out of memory */
 	unsigned int srv_dst_connected : 1;   /* 0 until server is connected */
 	unsigned int dst_connected : 1;          /* 0 until dst is connected */
 
@@ -142,9 +179,6 @@ struct pxy_conn_ctx {
 	unsigned int immutable_cert : 1;  /* 1 if the cert cannot be changed */
 	unsigned int generated_cert : 1;     /* 1 if we generated a new cert */
 	unsigned int passthrough : 1;      /* 1 if SSL passthrough is active */
-	/* autossl */
-	unsigned int clienthello_search : 1;       /* 1 if waiting for hello */
-	unsigned int clienthello_found : 1;      /* 1 if conn upgrade to SSL */
 
 	struct pxy_conn_desc srv_dst;
 	char *srv_dst_ssl_version;
@@ -228,27 +262,16 @@ struct pxy_conn_child_ctx {
 	struct pxy_conn_desc src;
 	struct pxy_conn_desc dst;
 
-	/* status flags */
-	unsigned int connected : 1;       /* 0 until both ends are connected */
-	unsigned int enomem : 1;                       /* 1 if out of memory */
-
-	/* log strings from socket */
-	char *srchost_str;
-	char *srcport_str;
-	char *dsthost_str;
-	char *dstport_str;
-
-	/* log strings related to SSL */
-	char *ssl_names;
-	char *origcrtfpr;
-	char *usedcrtfpr;
-
 	/* store fd and fd event while connected is 0 */
 	evutil_socket_t fd;
 
-	proto_ctx_t *proto_ctx;
+	proto_child_ctx_t *proto_ctx;
 	// End of common properties
 
+	/* status flags */
+	unsigned int connected : 1;       /* 0 until both ends are connected */
+
+	// For max fd stats
 	evutil_socket_t src_fd;
 	evutil_socket_t dst_fd;
 
@@ -259,12 +282,39 @@ struct pxy_conn_child_ctx {
 	pxy_conn_child_ctx_t *next;
 };
 
-void pxy_close_dst(pxy_conn_ctx_t *);
+enum conn_end get_conn_end(struct bufferevent *, pxy_conn_ctx_t *);
 
 void pxy_discard_inbuf(struct bufferevent *);
+int pxy_set_dstaddr(pxy_conn_ctx_t *);
+unsigned char *pxy_malloc_packet(size_t, pxy_conn_ctx_t *);
+void pxy_insert_sslproxy_header(pxy_conn_ctx_t *, unsigned char *, size_t *);
+void pxy_remove_sslproxy_header(unsigned char *, size_t *, pxy_conn_child_ctx_t *);
+
+SSL *pxy_dstssl_create(pxy_conn_ctx_t *);
+
+int pxy_prepare_logging(pxy_conn_ctx_t *);
+
+void pxy_log_connect_src(pxy_conn_ctx_t *);
+void pxy_log_connect_srv_dst(pxy_conn_ctx_t *);
 
 int pxy_log_content_inbuf(pxy_conn_ctx_t *, struct evbuffer *, int);
-int pxy_log_content_buf(pxy_conn_ctx_t *, unsigned char *, size_t sz, int);
+int pxy_log_content_buf(pxy_conn_ctx_t *, unsigned char *, size_t, int);
+
+int pxy_setup_src(pxy_conn_ctx_t *);
+int pxy_setup_src_ssl(pxy_conn_ctx_t *);
+int pxy_setup_new_src(pxy_conn_ctx_t *);
+
+int pxy_setup_dst(pxy_conn_ctx_t *);
+int pxy_setup_srv_dst(pxy_conn_ctx_t *);
+int pxy_setup_srv_dst_ssl(pxy_conn_ctx_t *);
+
+struct bufferevent *pxy_bufferevent_setup_child(pxy_conn_child_ctx_t *, evutil_socket_t, SSL *) NONNULL(1);
+
+void bufferevent_free_and_close_fd_ssl(struct bufferevent *, pxy_conn_ctx_t *);
+
+void pxy_close_dst(pxy_conn_ctx_t *);
+void pxy_close_srv_dst(pxy_conn_ctx_t *);
+void pxy_close_dst_child(pxy_conn_child_ctx_t *);
 
 void pxy_set_watermark(struct bufferevent *, pxy_conn_ctx_t *, struct bufferevent *);
 
@@ -280,13 +330,35 @@ void pxy_bev_eventcb_connected_srv_dst(struct bufferevent *, pxy_conn_ctx_t *);
 void pxy_bev_eventcb_eof_srv_dst(struct bufferevent *, pxy_conn_ctx_t *);
 void pxy_bev_eventcb_error_srv_dst(struct bufferevent *, pxy_conn_ctx_t *);
 
-void pxy_bev_writecb_src(struct bufferevent *, void *);
-void pxy_bev_writecb_dst(struct bufferevent *, void *);
-void pxy_bev_writecb_srv_dst(struct bufferevent *, void *);
-
 void pxy_conn_connect_tcp(pxy_conn_ctx_t *);
 void pxy_fd_readcb_tcp(evutil_socket_t, short, void *);
 void pxy_fd_readcb_ssl(evutil_socket_t, short, void *);
+
+int pxy_setup_child_listener(pxy_conn_ctx_t *);
+
+void pxy_connect_tcp_child(pxy_conn_child_ctx_t *);
+void pxy_connect_ssl_child(pxy_conn_child_ctx_t *);
+
+void pxy_bev_readcb_tcp(struct bufferevent *, void *);
+void pxy_bev_writecb_tcp(struct bufferevent *, void *);
+void pxy_bev_eventcb_tcp(struct bufferevent *, short, void *);
+
+void pxy_bev_readcb_tcp_child(struct bufferevent *, void *);
+void pxy_bev_writecb_tcp_child(struct bufferevent *, void *);
+void pxy_bev_eventcb_tcp_child(struct bufferevent *, short, void *);
+
+void pxy_bev_eventcb_child_src(struct bufferevent *, short events, void *);
+
+void pxy_bev_eventcb_child_eof_dst(struct bufferevent *, pxy_conn_child_ctx_t *);
+void pxy_bev_eventcb_child_error_dst(struct bufferevent *, pxy_conn_child_ctx_t *);
+
+void pxy_bev_readcb(struct bufferevent *, void *);
+void pxy_bev_writecb(struct bufferevent *, void *);
+void pxy_bev_eventcb(struct bufferevent *, short, void *);
+
+void pxy_bev_readcb_child(struct bufferevent *, void *);
+void pxy_bev_writecb_child(struct bufferevent *, void *);
+void pxy_bev_eventcb_child(struct bufferevent *, short, void *);
 
 void pxy_conn_setup(evutil_socket_t, struct sockaddr *, int,
                     pxy_thrmgr_ctx_t *, proxyspec_t *, opts_t *,

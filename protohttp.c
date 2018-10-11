@@ -135,6 +135,37 @@ deny:
 	http_ctx->ocsp_denied = 1;
 }
 
+static void
+protohttp_ocsp_deny_child(pxy_conn_child_ctx_t *ctx)
+{
+	protohttp_ctx_t *http_ctx = ctx->proto_ctx->arg;
+
+	struct evbuffer *inbuf, *outbuf;
+
+	if (!http_ctx->http_method)
+		return;
+	if (!strncasecmp(http_ctx->http_method, "GET", 3) &&
+	    protohttp_ocsp_is_valid_uri(http_ctx->http_uri, ctx->conn))
+		goto deny;
+	if (!strncasecmp(http_ctx->http_method, "POST", 4) &&
+	    http_ctx->http_content_type &&
+	    !strncasecmp(http_ctx->http_content_type,
+	                 "application/ocsp-request", 24))
+		goto deny;
+	return;
+
+deny:
+	inbuf = bufferevent_get_input(ctx->src.bev);
+	outbuf = bufferevent_get_output(ctx->src.bev);
+
+	if (evbuffer_get_length(inbuf) > 0) {
+		evbuffer_drain(inbuf, evbuffer_get_length(inbuf));
+	}
+	pxy_close_dst_child(ctx);
+	evbuffer_add_printf(outbuf, ocspresp);
+	http_ctx->ocsp_denied = 1;
+}
+
 /*
  * Filter a single line of HTTP request headers.
  * Also fills in some context fields for logging.
@@ -144,12 +175,10 @@ deny:
  * Returns `line' if the line should be kept.
  */
 static char *
-protohttp_filter_request_header_line(const char *line, pxy_conn_ctx_t *ctx,
+protohttp_filter_request_header_line(const char *line, protohttp_ctx_t *http_ctx, pxy_conn_ctx_t *ctx,
 		// XXX: Remove is_child param, child conns should have a child filter function
 		int is_child)
 {
-	protohttp_ctx_t *http_ctx = ctx->proto_ctx->arg;
-
 	/* parse information for connect log */
 	if (!http_ctx->http_method) {
 		/* first line */
@@ -252,7 +281,7 @@ protohttp_filter_request_header(struct evbuffer *inbuf, struct evbuffer *outbuf,
 	char *line;
 
 	while (!http_ctx->seen_req_header && (line = evbuffer_readln(inbuf, NULL, EVBUFFER_EOL_CRLF))) {
-		char *replace = protohttp_filter_request_header_line(line, ctx, is_child);
+		char *replace = protohttp_filter_request_header_line(line, http_ctx, ctx, 0);
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_filter_request_header: line, fd=%d: %s\n", ctx->fd, line);
 #endif /* DEBUG_PROXY */
@@ -289,6 +318,55 @@ protohttp_filter_request_header(struct evbuffer *inbuf, struct evbuffer *outbuf,
 		// @todo Fix this
 		/* out of memory condition? */
 		if (ctx->enomem) {
+			pxy_conn_free(ctx->conn, 1);
+			return;
+		}
+
+		/* no data left after parsing headers? */
+		if (evbuffer_get_length(inbuf) == 0) {
+			return;
+		}
+		evbuffer_add_buffer(outbuf, inbuf);
+	}
+}
+
+void
+protohttp_filter_request_header_child(struct evbuffer *inbuf, struct evbuffer *outbuf, pxy_conn_child_ctx_t *ctx)
+{
+	protohttp_ctx_t *http_ctx = ctx->proto_ctx->arg;
+
+	char *line;
+
+	while (!http_ctx->seen_req_header && (line = evbuffer_readln(inbuf, NULL, EVBUFFER_EOL_CRLF))) {
+		char *replace = protohttp_filter_request_header_line(line, http_ctx, ctx->conn, 1);
+#ifdef DEBUG_PROXY
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_filter_request_header: line, fd=%d: %s\n", ctx->fd, line);
+#endif /* DEBUG_PROXY */
+		if (replace == line) {
+			evbuffer_add_printf(outbuf, "%s\r\n", line);
+		} else if (replace) {
+#ifdef DEBUG_PROXY
+			log_dbg_level_printf(LOG_DBG_MODE_FINER, "protohttp_filter_request_header: REPLACED line, fd=%d: %s\n", ctx->fd, replace);
+#endif /* DEBUG_PROXY */
+			evbuffer_add_printf(outbuf, "%s\r\n", replace);
+			free(replace);
+		} else {
+#ifdef DEBUG_PROXY
+			log_dbg_level_printf(LOG_DBG_MODE_FINER, "protohttp_filter_request_header: REMOVED line, fd=%d: %s\n", ctx->fd, line);
+#endif /* DEBUG_PROXY */
+		}
+		free(line);
+	}
+
+	if (http_ctx->seen_req_header) {
+		/* request header complete */
+		if (ctx->conn->opts->deny_ocsp) {
+			protohttp_ocsp_deny_child(ctx);
+		}
+
+		// @todo Fix this
+		/* out of memory condition? */
+		if (ctx->conn->enomem) {
 			pxy_conn_free(ctx->conn, 1);
 			return;
 		}
@@ -397,10 +475,8 @@ protohttp_bev_readcb_src(struct bufferevent *bev, void *arg)
  * Returns `line' if the line should be kept.
  */
 static char *
-protohttp_filter_response_header_line(const char *line, pxy_conn_ctx_t *ctx)
+protohttp_filter_response_header_line(const char *line, protohttp_ctx_t *http_ctx, pxy_conn_ctx_t *ctx)
 {
-	protohttp_ctx_t *http_ctx = ctx->proto_ctx->arg;
-
 	/* parse information for connect log */
 	if (!http_ctx->http_status_code) {
 		/* first line */
@@ -474,7 +550,7 @@ protohttp_filter_response_header_line(const char *line, pxy_conn_ctx_t *ctx)
 	return (char*)line;
 }
 
-void
+static void
 protohttp_filter_response_header(struct evbuffer *inbuf, struct evbuffer *outbuf, pxy_conn_ctx_t *ctx)
 {
 	protohttp_ctx_t *http_ctx = ctx->proto_ctx->arg;
@@ -482,7 +558,7 @@ protohttp_filter_response_header(struct evbuffer *inbuf, struct evbuffer *outbuf
 	char *line;
 
 	while (!http_ctx->seen_resp_header && (line = evbuffer_readln(inbuf, NULL, EVBUFFER_EOL_CRLF))) {
-		char *replace = protohttp_filter_response_header_line(line, ctx);
+		char *replace = protohttp_filter_response_header_line(line, http_ctx, ctx->conn);
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_filter_response_header: line, fd=%d: %s\n", ctx->fd, line);
 #endif /* DEBUG_PROXY */
@@ -506,6 +582,50 @@ protohttp_filter_response_header(struct evbuffer *inbuf, struct evbuffer *outbuf
 		// @todo Fix this
 		/* out of memory condition? */
 		if (ctx->enomem) {
+			pxy_conn_free(ctx->conn, 0);
+			return;
+		}
+
+		/* no data left after parsing headers? */
+		if (evbuffer_get_length(inbuf) == 0) {
+			return;
+		}
+		evbuffer_add_buffer(outbuf, inbuf);
+	}
+}
+
+static void
+protohttp_filter_response_header_child(struct evbuffer *inbuf, struct evbuffer *outbuf, pxy_conn_child_ctx_t *ctx)
+{
+	protohttp_ctx_t *http_ctx = ctx->proto_ctx->arg;
+
+	char *line;
+
+	while (!http_ctx->seen_resp_header && (line = evbuffer_readln(inbuf, NULL, EVBUFFER_EOL_CRLF))) {
+		char *replace = protohttp_filter_response_header_line(line, http_ctx, ctx->conn);
+#ifdef DEBUG_PROXY
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_filter_response_header: line, fd=%d: %s\n", ctx->fd, line);
+#endif /* DEBUG_PROXY */
+		if (replace == line) {
+			evbuffer_add_printf(outbuf, "%s\r\n", line);
+		} else if (replace) {
+#ifdef DEBUG_PROXY
+			log_dbg_level_printf(LOG_DBG_MODE_FINER, "protohttp_filter_response_header: REPLACED line, fd=%d: %s\n", ctx->fd, replace);
+#endif /* DEBUG_PROXY */
+			evbuffer_add_printf(outbuf, "%s\r\n", replace);
+			free(replace);
+		} else {
+#ifdef DEBUG_PROXY
+			log_dbg_level_printf(LOG_DBG_MODE_FINER, "protohttp_filter_response_header: REMOVED line, fd=%d: %s\n", ctx->fd, line);
+#endif /* DEBUG_PROXY */
+		}
+		free(line);
+	}
+
+	if (http_ctx->seen_resp_header) {
+		// @todo Fix this
+		/* out of memory condition? */
+		if (ctx->conn->enomem) {
 			pxy_conn_free(ctx->conn, 0);
 			return;
 		}
@@ -725,69 +845,146 @@ protohttp_bev_readcb_srv_dst(UNUSED struct bufferevent *bev, UNUSED void *arg)
 }
 
 static void
-protohttp_bev_eventcb_src(struct bufferevent *bev, short events, void *arg)
+protohttp_bev_readcb(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
 	ctx->atime = time(NULL);
 
-	if (events & BEV_EVENT_CONNECTED) {
-		pxy_bev_eventcb_connected_src(bev, ctx);
-	} else if (events & BEV_EVENT_EOF) {
-		pxy_bev_eventcb_eof_src(bev, ctx);
-	} else if (events & BEV_EVENT_ERROR) {
-		pxy_bev_eventcb_error_src(bev, ctx);
+	if (!ctx->connected) {
+		log_err_level_printf(LOG_CRIT, "protohttp_bev_readcb: readcb called when not connected - aborting.\n");
+		log_exceptcb();
+		return;
+	}
+
+	if (bev == ctx->src.bev) {
+		protohttp_bev_readcb_src(bev, arg);
+	} else if (bev == ctx->dst.bev) {
+		protohttp_bev_readcb_dst(bev, arg);
+	} else if (bev == ctx->srv_dst.bev) {
+		protohttp_bev_readcb_srv_dst(bev, arg);
+	} else {
+		log_err_printf("protohttp_bev_readcb: UNKWN conn end\n");
 	}
 }
 
 static void
-protohttp_bev_eventcb_dst(struct bufferevent *bev, short events, void *arg)
+protohttp_bev_readcb_src_child(struct bufferevent *bev, void *arg)
 {
-	pxy_conn_ctx_t *ctx = arg;
-	ctx->atime = time(NULL);
+	pxy_conn_child_ctx_t *ctx = arg;
+	protohttp_ctx_t *http_ctx = ctx->proto_ctx->arg;
 
-	if (events & BEV_EVENT_CONNECTED) {
-		pxy_bev_eventcb_connected_dst(bev, ctx);
-	} else if (events & BEV_EVENT_EOF) {
-		pxy_bev_eventcb_eof_dst(bev, ctx);
-	} else if (events & BEV_EVENT_ERROR) {
-		pxy_bev_eventcb_error_dst(bev, ctx);
+	ctx->conn->atime = time(NULL);
+
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_bev_readcb_src_child: ENTER, fd=%d, conn fd=%d, size=%zu\n",
+			ctx->fd, ctx->conn->fd, evbuffer_get_length(bufferevent_get_input(bev)));
+#endif /* DEBUG_PROXY */
+		
+	if (!ctx->connected) {
+		log_err_level_printf(LOG_CRIT, "protohttp_bev_readcb_src_child: readcb called when not connected - aborting.\n");
+		log_exceptcb();
+		return;
+	}
+
+	if (ctx->dst.closed) {
+		pxy_discard_inbuf(bev);
+		return;
+	}
+
+	struct evbuffer *inbuf = bufferevent_get_input(bev);
+	struct evbuffer *outbuf = bufferevent_get_output(ctx->dst.bev);
+
+	size_t inbuf_size = evbuffer_get_length(inbuf);
+
+	ctx->conn->thr->extif_out_bytes += inbuf_size;
+
+	if (!http_ctx->seen_req_header) {
+#ifdef DEBUG_PROXY
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_bev_readcb_src_child: HTTP Request Header size=%zu, fd=%d\n", inbuf_size, ctx->fd);
+#endif /* DEBUG_PROXY */
+		/// XXX: Just remove SSLproxy line, do not filter response on the server side
+		protohttp_filter_request_header_child(inbuf, outbuf, ctx);
+	} else {
+#ifdef DEBUG_PROXY
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_bev_readcb_src_child: HTTP Request Body size=%zu, fd=%d\n", inbuf_size, ctx->fd);
+#endif /* DEBUG_PROXY */
+		pxy_log_content_inbuf((pxy_conn_ctx_t *)ctx, inbuf, 1);
+
+		evbuffer_add_buffer(outbuf, inbuf);
+	}
+	pxy_set_watermark(bev, ctx->conn, ctx->dst.bev);
+}
+
+static void
+protohttp_bev_readcb_dst_child(struct bufferevent *bev, void *arg)
+{
+	pxy_conn_child_ctx_t *ctx = arg;
+	protohttp_ctx_t *http_ctx = ctx->proto_ctx->arg;
+
+	ctx->conn->atime = time(NULL);
+
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_bev_readcb_dst_child: ENTER, fd=%d, conn fd=%d, size=%zu\n",
+			ctx->fd, ctx->conn->fd, evbuffer_get_length(bufferevent_get_input(bev)));
+#endif /* DEBUG_PROXY */
+		
+	if (!ctx->connected) {
+		log_err_level_printf(LOG_CRIT, "protohttp_bev_readcb_dst_child: readcb called when not connected - aborting.\n");
+		log_exceptcb();
+		return;
+	}
+
+	if (ctx->src.closed) {
+		pxy_discard_inbuf(bev);
+		return;
+	}
+
+	struct evbuffer *inbuf = bufferevent_get_input(bev);
+	struct evbuffer *outbuf = bufferevent_get_output(ctx->src.bev);
+
+	size_t inbuf_size = evbuffer_get_length(inbuf);
+
+	ctx->conn->thr->extif_in_bytes += inbuf_size;
+
+	if (!http_ctx->seen_resp_header) {
+#ifdef DEBUG_PROXY
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_bev_readcb_dst_child: HTTP Response Header size=%zu, fd=%d\n", inbuf_size, ctx->fd);
+#endif /* DEBUG_PROXY */
+		/// XXX: Do not filter response on the server side
+		protohttp_filter_response_header_child(inbuf, outbuf, ctx);
+	} else {
+#ifdef DEBUG_PROXY
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_bev_readcb_dst_child: HTTP Response Body size=%zu, fd=%d\n", inbuf_size, ctx->fd);
+#endif /* DEBUG_PROXY */
+		pxy_log_content_inbuf((pxy_conn_ctx_t *)ctx, inbuf, 0);
+		evbuffer_add_buffer(outbuf, inbuf);
+	}
+	pxy_set_watermark(bev, ctx->conn, ctx->src.bev);
+}
+
+static void
+protohttp_bev_readcb_child(struct bufferevent *bev, void *arg)
+{
+	pxy_conn_child_ctx_t *ctx = arg;
+
+	ctx->conn->atime = time(NULL);
+
+	if (!ctx->connected) {
+		log_err_level_printf(LOG_CRIT, "protohttp_bev_readcb_child: readcb called when not connected - aborting.\n");
+		log_exceptcb();
+		return;
+	}
+
+	if (bev == ctx->src.bev) {
+		protohttp_bev_readcb_src_child(bev, arg);
+	} else if (bev == ctx->dst.bev) {
+		protohttp_bev_readcb_dst_child(bev, arg);
+	} else {
+		log_err_printf("protohttp_bev_readcb: UNKWN conn end\n");
 	}
 }
 
 static void
-protohttp_bev_eventcb_srv_dst(struct bufferevent *bev, short events, void *arg)
-{
-	pxy_conn_ctx_t *ctx = arg;
-	ctx->atime = time(NULL);
-
-	if (events & BEV_EVENT_CONNECTED) {
-		pxy_bev_eventcb_connected_srv_dst(bev, ctx);
-	} else if (events & BEV_EVENT_EOF) {
-		pxy_bev_eventcb_eof_srv_dst(bev, ctx);
-	} else if (events & BEV_EVENT_ERROR) {
-		pxy_bev_eventcb_error_srv_dst(bev, ctx);
-	}
-}
-
-static void
-protohttp_bev_setcb_src(pxy_conn_ctx_t *ctx)
-{
-	bufferevent_setcb(ctx->src.bev, protohttp_bev_readcb_src, pxy_bev_writecb_src, protohttp_bev_eventcb_src, ctx);
-}
-
-static void
-protohttp_bev_setcb_dst(pxy_conn_ctx_t *ctx)
-{
-	bufferevent_setcb(ctx->dst.bev, protohttp_bev_readcb_dst, pxy_bev_writecb_dst, protohttp_bev_eventcb_dst, ctx);
-}
-
-static void
-protohttp_bev_setcb_srv_dst(pxy_conn_ctx_t *ctx)
-{
-	bufferevent_setcb(ctx->srv_dst.bev, protohttp_bev_readcb_srv_dst, pxy_bev_writecb_srv_dst, protohttp_bev_eventcb_srv_dst, ctx);
-}
-
-void
 protohttp_free(pxy_conn_ctx_t *ctx)
 {
 	protohttp_ctx_t *http_ctx = ctx->proto_ctx->arg;
@@ -814,25 +1011,45 @@ protohttp_free(pxy_conn_ctx_t *ctx)
 		free(http_ctx->http_content_length);
 	}
 	free(http_ctx);
-	free(ctx->proto_ctx);
+}
+
+static void
+protohttp_free_child(pxy_conn_child_ctx_t *ctx)
+{
+	protohttp_ctx_t *http_ctx = ctx->proto_ctx->arg;
+
+	if (http_ctx->http_method) {
+		free(http_ctx->http_method);
+	}
+	if (http_ctx->http_uri) {
+		free(http_ctx->http_uri);
+	}
+	if (http_ctx->http_host) {
+		free(http_ctx->http_host);
+	}
+	if (http_ctx->http_content_type) {
+		free(http_ctx->http_content_type);
+	}
+	if (http_ctx->http_status_code) {
+		free(http_ctx->http_status_code);
+	}
+	if (http_ctx->http_status_text) {
+		free(http_ctx->http_status_text);
+	}
+	if (http_ctx->http_content_length) {
+		free(http_ctx->http_content_length);
+	}
+	free(http_ctx);
 }
 
 enum protocol
 protohttp_setup(pxy_conn_ctx_t *ctx)
 {
-	ctx->proto_ctx = malloc(sizeof(proto_ctx_t));
-	if (!ctx->proto_ctx) {
-		return PROTO_ERROR;
-	}
 	ctx->proto_ctx->proto = PROTO_HTTP;
-	ctx->proto_ctx->conn_connectcb = pxy_conn_connect_tcp;
-	ctx->proto_ctx->fd_readcb = pxy_fd_readcb_tcp;
-	ctx->proto_ctx->bev_setcb_src = protohttp_bev_setcb_src;
-	ctx->proto_ctx->bev_setcb_dst = protohttp_bev_setcb_dst;
-	ctx->proto_ctx->bev_setcb_srv_dst = protohttp_bev_setcb_srv_dst;
+	
+	ctx->proto_ctx->bev_readcb = protohttp_bev_readcb;
 	ctx->proto_ctx->proto_free = protohttp_free;
 
-	// XXX: Use a different proto arg for child conns
 	ctx->proto_ctx->arg = malloc(sizeof(protohttp_ctx_t));
 	if (!ctx->proto_ctx->arg) {
 		free(ctx->proto_ctx);
@@ -843,26 +1060,58 @@ protohttp_setup(pxy_conn_ctx_t *ctx)
 }
 
 enum protocol
-protohttps_setup(pxy_conn_ctx_t *ctx) {
-	ctx->proto_ctx = malloc(sizeof(proto_ctx_t));
-	if (!ctx->proto_ctx) {
-		return PROTO_ERROR;
-	}
+protohttps_setup(pxy_conn_ctx_t *ctx)
+{
 	ctx->proto_ctx->proto = PROTO_HTTPS;
-	ctx->proto_ctx->conn_connectcb = pxy_conn_connect_tcp;
+
 	ctx->proto_ctx->fd_readcb = pxy_fd_readcb_ssl;
-	ctx->proto_ctx->bev_setcb_src = protohttp_bev_setcb_src;
-	ctx->proto_ctx->bev_setcb_dst = protohttp_bev_setcb_dst;
-	ctx->proto_ctx->bev_setcb_srv_dst = protohttp_bev_setcb_srv_dst;
+	ctx->proto_ctx->bev_readcb = protohttp_bev_readcb;
+	ctx->proto_ctx->bufferevent_free_and_close_fd = bufferevent_free_and_close_fd_ssl;
 	ctx->proto_ctx->proto_free = protohttp_free;
 
-	// XXX: Use a different proto arg for child conns
 	ctx->proto_ctx->arg = malloc(sizeof(protohttp_ctx_t));
 	if (!ctx->proto_ctx->arg) {
 		free(ctx->proto_ctx);
 		return PROTO_ERROR;
 	}
 	memset(ctx->proto_ctx->arg, 0, sizeof(protohttp_ctx_t));
+	return PROTO_HTTPS;
+}
+
+enum protocol
+protohttp_setup_child(pxy_conn_child_ctx_t *ctx)
+{
+	ctx->proto_ctx->proto = PROTO_HTTPS;
+
+	// TODO: Should HTTP child conns do any http related processing, so use tcp defaults instead?
+	ctx->proto_ctx->bev_readcb = protohttp_bev_readcb_child;
+	ctx->proto_ctx->proto_free = protohttp_free_child;
+
+	ctx->proto_ctx->arg = malloc(sizeof(proto_child_ctx_t));
+	if (!ctx->proto_ctx->arg) {
+		free(ctx->proto_ctx);
+		return PROTO_ERROR;
+	}
+	memset(ctx->proto_ctx->arg, 0, sizeof(proto_child_ctx_t));
+	return PROTO_HTTPS;
+}
+
+enum protocol
+protohttps_setup_child(pxy_conn_child_ctx_t *ctx)
+{
+	ctx->proto_ctx->proto = PROTO_HTTPS;
+
+	ctx->proto_ctx->connectcb = pxy_connect_ssl_child;
+	ctx->proto_ctx->bev_readcb = protohttp_bev_readcb_child;
+	ctx->proto_ctx->bufferevent_free_and_close_fd = bufferevent_free_and_close_fd_ssl;
+	ctx->proto_ctx->proto_free = protohttp_free_child;
+
+	ctx->proto_ctx->arg = malloc(sizeof(proto_child_ctx_t));
+	if (!ctx->proto_ctx->arg) {
+		free(ctx->proto_ctx);
+		return PROTO_ERROR;
+	}
+	memset(ctx->proto_ctx->arg, 0, sizeof(proto_child_ctx_t));
 	return PROTO_HTTPS;
 }
 
