@@ -127,7 +127,6 @@ callback_func_t child_writecb_funcs[][2];
 child_event_callback_func_t child_eventcb_funcs[][3][2];
 child_connect_func_t child_connect_funcs[];
 
-// XXX
 static void bufferevent_free_and_close_fd_tcp(struct bufferevent *, pxy_conn_ctx_t *);
 
 enum protocol
@@ -261,6 +260,7 @@ pxy_conn_ctx_new(evutil_socket_t fd,
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_new: id=%llu, fd=%d\n", ctx->id, fd);
 #endif /* DEBUG_PROXY */
 	
+	ctx->type = CONN_TYPE_PARENT;
 	ctx->fd = fd;
 	ctx->conn = ctx;
 	ctx->thrmgr = thrmgr;
@@ -317,6 +317,8 @@ pxy_conn_ctx_new_child(evutil_socket_t fd, pxy_conn_ctx_t *conn)
 		return NULL;
 	}
 	memset(ctx, 0, sizeof(pxy_conn_child_ctx_t));
+
+	ctx->type = CONN_TYPE_CHILD;
 	ctx->fd = fd;
 	ctx->conn = conn;
 
@@ -1685,7 +1687,7 @@ pxy_log_content_buf(pxy_conn_ctx_t *ctx, unsigned char *buf, size_t sz, int req)
 		if (buf) {
 			logbuf_t *lb = logbuf_new_alloc(sz, NULL, NULL);
 			if (!lb) {
-				ctx->enomem = 1;
+				ctx->conn->enomem = 1;
 				return -1;
 			}
 			memcpy(lb->buf, buf, lb->sz);
@@ -1706,7 +1708,7 @@ pxy_log_content_inbuf(pxy_conn_ctx_t *ctx, struct evbuffer *inbuf, int req)
 		size_t sz = evbuffer_get_length(inbuf);
 		unsigned char *buf = malloc(sz);
 		if (!buf) {
-			ctx->enomem = 1;
+			ctx->conn->enomem = 1;
 			return -1;
 		}
 		if (evbuffer_copyout(inbuf, buf, sz) == -1) {
@@ -2673,17 +2675,6 @@ pxy_close_dst(pxy_conn_ctx_t *ctx)
 	ctx->dst.closed = 1;
 }
 
-void
-pxy_close_dst_child(pxy_conn_child_ctx_t *ctx)
-{
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_close_dst_child: Closing dst, fd=%d, dst fd=%d\n", ctx->fd, bufferevent_getfd(ctx->dst.bev));
-#endif /* DEBUG_PROXY */
-	bufferevent_free_and_close_fd(ctx->dst.bev, ctx->conn);
-	ctx->dst.bev = NULL;
-	ctx->dst.closed = 1;
-}
-
 static void
 pxy_engage_passthrough_mode(pxy_conn_ctx_t *ctx)
 {
@@ -3444,7 +3435,7 @@ pxy_bev_eventcb_child_eof_src(struct bufferevent *bev, pxy_conn_child_ctx_t *ctx
 
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_eventcb_child_eof_src: ENTER, fd=%d, conn fd=%d\n", ctx->fd, ctx->conn->fd);
-	pxy_log_dbg_evbuf_info((pxy_conn_ctx_t *)ctx, &ctx->src, &ctx->dst);
+	pxy_log_dbg_evbuf_info(ctx->conn, &ctx->src, &ctx->dst);
 #endif /* DEBUG_PROXY */
 
 	// @todo How to handle the following case?
@@ -3472,7 +3463,7 @@ pxy_bev_eventcb_child_eof_dst(struct bufferevent *bev, pxy_conn_child_ctx_t *ctx
 
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_eventcb_child_eof_dst: ENTER, fd=%d, conn fd=%d\n", ctx->fd, ctx->conn->fd);
-	pxy_log_dbg_evbuf_info((pxy_conn_ctx_t *)ctx, &ctx->dst, &ctx->src);
+	pxy_log_dbg_evbuf_info(ctx->conn, &ctx->dst, &ctx->src);
 #endif /* DEBUG_PROXY */
 
 	// @todo How to handle the following case?

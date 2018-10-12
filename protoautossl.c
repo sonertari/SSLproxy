@@ -413,19 +413,11 @@ pxy_bev_readcb_child_autossl_src(struct bufferevent *bev, void *arg)
 	pxy_conn_child_ctx_t *ctx = arg;
 	protoautossl_ctx_t *autossl_ctx = ctx->conn->proto_ctx->arg;
 
-	ctx->conn->atime = time(NULL);
-
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb_child_autossl_src: ENTER, fd=%d, conn fd=%d, size=%zu\n",
 			ctx->fd, ctx->conn->fd, evbuffer_get_length(bufferevent_get_input(bev)));
 #endif /* DEBUG_PROXY */
 		
-	if (!ctx->connected) {
-		log_err_level_printf(LOG_CRIT, "pxy_bev_readcb_child: readcb called when other end not connected - aborting.\n");
-		log_exceptcb();
-		return;
-	}
-
 	// Autossl upgrade on child connections follows the findings of parent
 	if (autossl_ctx->clienthello_found && !ctx->dst.ssl) {
 		pxy_bev_readcb_child_complete_autossl(ctx);
@@ -477,19 +469,11 @@ pxy_bev_readcb_child_autossl_dst(struct bufferevent *bev, void *arg)
 	pxy_conn_child_ctx_t *ctx = arg;
 	protoautossl_ctx_t *autossl_ctx = ctx->conn->proto_ctx->arg;
 
-	ctx->conn->atime = time(NULL);
-
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb_child_autossl_dst: ENTER, fd=%d, conn fd=%d, size=%zu\n",
 			ctx->fd, ctx->conn->fd, evbuffer_get_length(bufferevent_get_input(bev)));
 #endif /* DEBUG_PROXY */
 		
-	if (!ctx->connected) {
-		log_err_level_printf(LOG_CRIT, "pxy_bev_readcb_child: readcb called when other end not connected - aborting.\n");
-		log_exceptcb();
-		return;
-	}
-
 	// Autossl upgrade on child connections follows the findings of parent
 	if (autossl_ctx->clienthello_found && !ctx->dst.ssl) {
 		pxy_bev_readcb_child_complete_autossl(ctx);

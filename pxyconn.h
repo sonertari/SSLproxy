@@ -77,6 +77,11 @@ typedef struct pxy_conn_desc {
 	unsigned int closed : 1;
 } pxy_conn_desc_t;
 
+enum conn_type {
+	CONN_TYPE_PARENT = 0,
+	CONN_TYPE_CHILD,
+};
+
 enum conn_end {
 	CONN_END_SRC = 0,
 	CONN_END_DST,
@@ -141,6 +146,8 @@ struct proto_child_ctx {
 struct pxy_conn_ctx {
 	// Common properties
 	// @attention The order of these common vars should match with their order in children
+	enum conn_type type;
+
 	pxy_conn_ctx_t *conn;                 /* parent's conn ctx is itself */
 	enum protocol proto;
 
@@ -150,9 +157,9 @@ struct pxy_conn_ctx {
 
 	/* store fd and fd event while connected is 0 */
 	evutil_socket_t fd;
+	// End of common properties
 
 	proto_ctx_t *proto_ctx;
-	// End of common properties
 
 	/* log strings from socket */
 	char *srchost_str;
@@ -255,6 +262,8 @@ struct pxy_conn_ctx {
 struct pxy_conn_child_ctx {
 	// Common properties
 	// @attention The order of these common vars should match with their order in parent
+	enum conn_type type;
+
 	pxy_conn_ctx_t *conn;                              /* parent context */
 	enum protocol proto;
 
@@ -264,9 +273,9 @@ struct pxy_conn_child_ctx {
 
 	/* store fd and fd event while connected is 0 */
 	evutil_socket_t fd;
+	// End of common properties
 
 	proto_child_ctx_t *proto_ctx;
-	// End of common properties
 
 	/* status flags */
 	unsigned int connected : 1;       /* 0 until both ends are connected */
@@ -314,7 +323,6 @@ void bufferevent_free_and_close_fd_ssl(struct bufferevent *, pxy_conn_ctx_t *);
 
 void pxy_close_dst(pxy_conn_ctx_t *);
 void pxy_close_srv_dst(pxy_conn_ctx_t *);
-void pxy_close_dst_child(pxy_conn_child_ctx_t *);
 
 void pxy_set_watermark(struct bufferevent *, pxy_conn_ctx_t *, struct bufferevent *);
 
