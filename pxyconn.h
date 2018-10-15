@@ -50,7 +50,8 @@
 #define STRORNONE(x)	(((x)&&*(x))?(x):"")
 
 #define WANT_CONNECT_LOG(ctx)	((ctx)->opts->connectlog||!(ctx)->opts->detach)
-#define WANT_CONTENT_LOG(ctx)	((ctx)->opts->contentlog&&!(ctx)->passthrough)
+// XXX: Remove passthrough condition
+#define WANT_CONTENT_LOG(ctx)	((ctx)->opts->contentlog&&((ctx)->proto!=PROTO_PASSTHROUGH))
 
 #define SSLPROXY_KEY		"SSLproxy:"
 #define SSLPROXY_KEY_LEN	strlen(SSLPROXY_KEY)
@@ -82,13 +83,6 @@ enum conn_type {
 	CONN_TYPE_CHILD,
 };
 
-enum conn_end {
-	CONN_END_SRC = 0,
-	CONN_END_DST,
-	CONN_END_SRV_DST,
-	CONN_END_UNKWN,
-};
-
 enum protocol {
 	PROTO_ERROR = -1,
 	PROTO_PASSTHROUGH = 0,
@@ -103,8 +97,30 @@ enum protocol {
 	PROTO_SSL,
 };
 
+typedef struct ssl_ctx ssl_ctx_t;
+
 typedef struct proto_ctx proto_ctx_t;
 typedef struct proto_child_ctx proto_child_ctx_t;
+
+struct ssl_ctx {
+	/* log strings related to SSL */
+	char *ssl_names;
+	char *origcrtfpr;
+	char *usedcrtfpr;
+
+	/* ssl */
+	unsigned int sni_peek_retries : 6;       /* max 64 SNI parse retries */
+	unsigned int immutable_cert : 1;  /* 1 if the cert cannot be changed */
+	unsigned int generated_cert : 1;     /* 1 if we generated a new cert */
+
+	/* server name indicated by client in SNI TLS extension */
+	char *sni;
+
+	X509 *origcrt;
+
+	char *srv_dst_ssl_version;
+	char *srv_dst_ssl_cipher;
+};
 
 struct proto_ctx {
 	enum protocol proto;
@@ -159,18 +175,15 @@ struct pxy_conn_ctx {
 	evutil_socket_t fd;
 	// End of common properties
 
-	proto_ctx_t *proto_ctx;
+	proto_ctx_t *protoctx;
+
+	ssl_ctx_t *sslctx;
 
 	/* log strings from socket */
 	char *srchost_str;
 	char *srcport_str;
 	char *dsthost_str;
 	char *dstport_str;
-
-	/* log strings related to SSL */
-	char *ssl_names;
-	char *origcrtfpr;
-	char *usedcrtfpr;
 
 	/* content log context */
 	log_content_ctx_t *logctx;
@@ -181,15 +194,7 @@ struct pxy_conn_ctx {
 	unsigned int srv_dst_connected : 1;   /* 0 until server is connected */
 	unsigned int dst_connected : 1;          /* 0 until dst is connected */
 
-	/* ssl */
-	unsigned int sni_peek_retries : 6;       /* max 64 SNI parse retries */
-	unsigned int immutable_cert : 1;  /* 1 if the cert cannot be changed */
-	unsigned int generated_cert : 1;     /* 1 if we generated a new cert */
-	unsigned int passthrough : 1;      /* 1 if SSL passthrough is active */
-
 	struct pxy_conn_desc srv_dst;
-	char *srv_dst_ssl_version;
-	char *srv_dst_ssl_cipher;
 
 	struct event *ev;
 
@@ -197,7 +202,6 @@ struct pxy_conn_ctx {
 	struct sockaddr_storage addr;
 	socklen_t addrlen;
 	int af;
-	X509 *origcrt;
 
 	// Thread that the conn is attached to
 	pxy_thr_ctx_t *thr;
@@ -221,6 +225,7 @@ struct pxy_conn_ctx {
 	// Fd of the listener event for the children
 	evutil_socket_t child_fd;
 	struct evconnlistener *child_evcl;
+
 	// SSL proxy specific info: The IP:port address the children are listening on, orig client addr, and orig target addr
 	char *header_str;
 	size_t header_len;
@@ -234,9 +239,6 @@ struct pxy_conn_ctx {
 
 	evutil_socket_t child_src_fd;
 	evutil_socket_t child_dst_fd;
-
-	/* server name indicated by client in SNI TLS extension */
-	char *sni;
 
 	// Conn create time
 	time_t ctime;
@@ -275,7 +277,7 @@ struct pxy_conn_child_ctx {
 	evutil_socket_t fd;
 	// End of common properties
 
-	proto_child_ctx_t *proto_ctx;
+	proto_child_ctx_t *protoctx;
 
 	/* status flags */
 	unsigned int connected : 1;       /* 0 until both ends are connected */
@@ -290,8 +292,6 @@ struct pxy_conn_child_ctx {
 	// Children of the conn are link-listed using this pointer
 	pxy_conn_child_ctx_t *next;
 };
-
-enum conn_end get_conn_end(struct bufferevent *, pxy_conn_ctx_t *);
 
 void pxy_discard_inbuf(struct bufferevent *);
 int pxy_set_dstaddr(pxy_conn_ctx_t *);
@@ -355,6 +355,8 @@ void pxy_bev_readcb_tcp_child(struct bufferevent *, void *);
 void pxy_bev_writecb_tcp_child(struct bufferevent *, void *);
 void pxy_bev_eventcb_tcp_child(struct bufferevent *, short, void *);
 
+void bufferevent_free_and_close_fd_tcp(struct bufferevent *, pxy_conn_ctx_t *);
+
 void pxy_bev_eventcb_child_src(struct bufferevent *, short events, void *);
 
 void pxy_bev_eventcb_child_eof_dst(struct bufferevent *, pxy_conn_child_ctx_t *);
@@ -373,6 +375,12 @@ void pxy_conn_setup(evutil_socket_t, struct sockaddr *, int,
 					evutil_socket_t)
                     NONNULL(2,4,5,6);
 void pxy_conn_free(pxy_conn_ctx_t *ctx, int) NONNULL(1);
+void protossl_free(pxy_conn_ctx_t *ctx) NONNULL(1);
+
+void pxy_conn_connect_passthrough(pxy_conn_ctx_t *);
+void pxy_bev_readcb_passthrough(struct bufferevent *, void *);
+void pxy_bev_writecb_passthrough(struct bufferevent *, void *);
+void pxy_bev_eventcb_passthrough(struct bufferevent *, short, void *);
 
 #endif /* !PXYCONN_H */
 

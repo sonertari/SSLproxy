@@ -294,10 +294,10 @@ protohttp_filter_request_header(struct evbuffer *inbuf, struct evbuffer *outbuf,
 static int
 protohttp_bev_readcb_src_log_preexec(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
-	protohttp_ctx_t *http_ctx = ctx->proto_ctx->arg;
+	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
 
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_bev_readcb_src_log_content_preexec: ENTER, fd=%d\n", ctx->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_bev_readcb_src_log_preexec: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
 	// HTTP content logging at this point may record certain headers twice if have not seen all header lines yet
@@ -311,10 +311,10 @@ protohttp_bev_readcb_src_log_preexec(struct bufferevent *bev, pxy_conn_ctx_t *ct
 static void
 protohttp_bev_readcb_src_log_postexec(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
-	protohttp_ctx_t *http_ctx = ctx->proto_ctx->arg;
+	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
 
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_bev_readcb_src_log_content_postexec: ENTER, fd=%d\n", ctx->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_bev_readcb_src_log_postexec: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
 	if (!http_ctx->seen_req_header_on_entry && http_ctx->seen_req_header && http_ctx->ocsp_denied) {
@@ -330,7 +330,7 @@ protohttp_bev_readcb_src_exec(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 			ctx->fd, evbuffer_get_length(bufferevent_get_input(bev)));
 #endif /* DEBUG_PROXY */
 
-	protohttp_ctx_t *http_ctx = ctx->proto_ctx->arg;
+	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
 	struct evbuffer *inbuf = bufferevent_get_input(bev);
 	struct evbuffer *outbuf = bufferevent_get_output(ctx->dst.bev);
 
@@ -352,12 +352,12 @@ protohttp_bev_readcb_src_exec(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	/* request header munging */
 	if (!http_ctx->seen_req_header) {
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_bev_readcb_src: HTTP Request Header size=%zu, fd=%d\n", evbuffer_get_length(inbuf), ctx->fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_bev_readcb_src_exec: HTTP Request Header size=%zu, fd=%d\n", evbuffer_get_length(inbuf), ctx->fd);
 #endif /* DEBUG_PROXY */
 		protohttp_filter_request_header(inbuf, outbuf, ctx, http_ctx);
 	} else {
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_bev_readcb_src: HTTP Request Body size=%zu, fd=%d\n", evbuffer_get_length(inbuf), ctx->fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_bev_readcb_src_exec: HTTP Request Body size=%zu, fd=%d\n", evbuffer_get_length(inbuf), ctx->fd);
 #endif /* DEBUG_PROXY */
 		evbuffer_add_buffer(outbuf, inbuf);
 	}
@@ -387,7 +387,7 @@ protohttp_bev_readcb_src(struct bufferevent *bev, void *arg)
  * Returns `line' if the line should be kept.
  */
 static char *
-protohttp_filter_response_header_line(const char *line, protohttp_ctx_t *http_ctx, pxy_conn_ctx_t *ctx)
+protohttp_filter_response_header_line(const char *line, pxy_conn_ctx_t *ctx, protohttp_ctx_t *http_ctx)
 {
 	/* parse information for connect log */
 	if (!http_ctx->http_status_code) {
@@ -468,7 +468,7 @@ protohttp_filter_response_header(struct evbuffer *inbuf, struct evbuffer *outbuf
 	char *line;
 
 	while (!http_ctx->seen_resp_header && (line = evbuffer_readln(inbuf, NULL, EVBUFFER_EOL_CRLF))) {
-		char *replace = protohttp_filter_response_header_line(line, http_ctx, ctx);
+		char *replace = protohttp_filter_response_header_line(line, ctx, http_ctx);
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_filter_response_header: line, fd=%d: %s\n", ctx->fd, line);
 #endif /* DEBUG_PROXY */
@@ -507,21 +507,13 @@ protohttp_filter_response_header(struct evbuffer *inbuf, struct evbuffer *outbuf
 static void
 protohttp_log_connect(pxy_conn_ctx_t *ctx)
 {
-	protohttp_ctx_t *http_ctx = ctx->proto_ctx->arg;
+	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
 
 	char *msg;
 #ifdef HAVE_LOCAL_PROCINFO
 	char *lpi = NULL;
 #endif /* HAVE_LOCAL_PROCINFO */
 	int rv;
-
-#ifdef DEBUG_PROXY
-	if (ctx->passthrough) {
-		log_err_level_printf(LOG_WARNING, "protohttp_log_connect called while in "
-		               "passthrough mode\n");
-		return;
-	}
-#endif
 
 #ifdef HAVE_LOCAL_PROCINFO
 	if (ctx->opts->lprocinfo) {
@@ -580,14 +572,14 @@ protohttp_log_connect(pxy_conn_ctx_t *ctx)
 		              STRORDASH(http_ctx->http_uri),
 		              STRORDASH(http_ctx->http_status_code),
 		              STRORDASH(http_ctx->http_content_length),
-		              STRORDASH(ctx->sni),
-		              STRORDASH(ctx->ssl_names),
+		              STRORDASH(ctx->sslctx->sni),
+		              STRORDASH(ctx->sslctx->ssl_names),
 		              SSL_get_version(ctx->src.ssl),
 		              SSL_get_cipher(ctx->src.ssl),
-		              !ctx->srv_dst.closed ? SSL_get_version(ctx->srv_dst.ssl):ctx->srv_dst_ssl_version,
-		              !ctx->srv_dst.closed ? SSL_get_cipher(ctx->srv_dst.ssl):ctx->srv_dst_ssl_cipher,
-		              STRORDASH(ctx->origcrtfpr),
-		              STRORDASH(ctx->usedcrtfpr),
+		              !ctx->srv_dst.closed ? SSL_get_version(ctx->srv_dst.ssl):ctx->sslctx->srv_dst_ssl_version,
+		              !ctx->srv_dst.closed ? SSL_get_cipher(ctx->srv_dst.ssl):ctx->sslctx->srv_dst_ssl_cipher,
+		              STRORDASH(ctx->sslctx->origcrtfpr),
+		              STRORDASH(ctx->sslctx->usedcrtfpr),
 #ifdef HAVE_LOCAL_PROCINFO
 		              lpi,
 #endif /* HAVE_LOCAL_PROCINFO */
@@ -625,10 +617,10 @@ out:
 static int
 protohttp_bev_readcb_dst_log_preexec(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
-	protohttp_ctx_t *http_ctx = ctx->proto_ctx->arg;
+	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
 
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_bev_readcb_dst_log_content_preexec: ENTER, fd=%d\n", ctx->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_bev_readcb_dst_log_preexec: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
 	// HTTP content logging at this point may record certain headers twice if we have not seen all header lines yet
@@ -642,10 +634,10 @@ protohttp_bev_readcb_dst_log_preexec(struct bufferevent *bev, pxy_conn_ctx_t *ct
 static void
 protohttp_bev_readcb_dst_log_postexec(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
-	protohttp_ctx_t *http_ctx = ctx->proto_ctx->arg;
+	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
 
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_bev_readcb_dst_log_content_postexec: ENTER, fd=%d\n", ctx->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_bev_readcb_dst_log_postexec: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
 	if (!http_ctx->seen_resp_header_on_entry && http_ctx->seen_resp_header) {
@@ -664,7 +656,7 @@ protohttp_bev_readcb_dst_exec(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 			ctx->fd, evbuffer_get_length(bufferevent_get_input(bev)));
 #endif /* DEBUG_PROXY */
 
-	protohttp_ctx_t *http_ctx = ctx->proto_ctx->arg;
+	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
 	struct evbuffer *inbuf = bufferevent_get_input(bev);
 	struct evbuffer *outbuf = bufferevent_get_output(ctx->src.bev);
 
@@ -737,7 +729,7 @@ static void
 protohttp_bev_readcb_src_child(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_child_ctx_t *ctx = arg;
-	protohttp_ctx_t *http_ctx = ctx->proto_ctx->arg;
+	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
 
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_bev_readcb_src_child: ENTER, fd=%d, conn fd=%d, size=%zu\n",
@@ -777,7 +769,7 @@ static void
 protohttp_bev_readcb_dst_child(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_child_ctx_t *ctx = arg;
-	protohttp_ctx_t *http_ctx = ctx->proto_ctx->arg;
+	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
 
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_bev_readcb_dst_child: ENTER, fd=%d, conn fd=%d, size=%zu\n",
@@ -830,7 +822,7 @@ protohttp_bev_readcb_child(struct bufferevent *bev, void *arg)
 	} else if (bev == ctx->dst.bev) {
 		protohttp_bev_readcb_dst_child(bev, arg);
 	} else {
-		log_err_printf("protohttp_bev_readcb: UNKWN conn end\n");
+		log_err_printf("protohttp_bev_readcb_child: UNKWN conn end\n");
 	}
 }
 
@@ -864,87 +856,104 @@ protohttp_free_ctx(protohttp_ctx_t *http_ctx)
 static void
 protohttp_free(pxy_conn_ctx_t *ctx)
 {
-	protohttp_ctx_t *http_ctx = ctx->proto_ctx->arg;
+	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
 	protohttp_free_ctx(http_ctx);
+}
+
+static void
+protohttps_free(pxy_conn_ctx_t *ctx)
+{
+	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
+	protohttp_free_ctx(http_ctx);
+	protossl_free(ctx);
 }
 
 static void
 protohttp_free_child(pxy_conn_child_ctx_t *ctx)
 {
-	protohttp_ctx_t *http_ctx = ctx->proto_ctx->arg;
+	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
 	protohttp_free_ctx(http_ctx);
 }
 
 enum protocol
 protohttp_setup(pxy_conn_ctx_t *ctx)
 {
-	ctx->proto_ctx->proto = PROTO_HTTP;
+	ctx->protoctx->proto = PROTO_HTTP;
 	
-	ctx->proto_ctx->bev_readcb = protohttp_bev_readcb;
-	ctx->proto_ctx->proto_free = protohttp_free;
+	ctx->protoctx->bev_readcb = protohttp_bev_readcb;
+	ctx->protoctx->proto_free = protohttp_free;
 
-	ctx->proto_ctx->arg = malloc(sizeof(protohttp_ctx_t));
-	if (!ctx->proto_ctx->arg) {
-		free(ctx->proto_ctx);
+	ctx->protoctx->arg = malloc(sizeof(protohttp_ctx_t));
+	if (!ctx->protoctx->arg) {
+		free(ctx->protoctx);
 		return PROTO_ERROR;
 	}
-	memset(ctx->proto_ctx->arg, 0, sizeof(protohttp_ctx_t));
+	memset(ctx->protoctx->arg, 0, sizeof(protohttp_ctx_t));
 	return PROTO_HTTP;
 }
 
 enum protocol
 protohttps_setup(pxy_conn_ctx_t *ctx)
 {
-	ctx->proto_ctx->proto = PROTO_HTTPS;
+	ctx->protoctx->proto = PROTO_HTTPS;
 
-	ctx->proto_ctx->fd_readcb = pxy_fd_readcb_ssl;
-	ctx->proto_ctx->bev_readcb = protohttp_bev_readcb;
-	ctx->proto_ctx->bufferevent_free_and_close_fd = bufferevent_free_and_close_fd_ssl;
-	ctx->proto_ctx->proto_free = protohttp_free;
+	ctx->protoctx->fd_readcb = pxy_fd_readcb_ssl;
+	ctx->protoctx->bev_readcb = protohttp_bev_readcb;
+	ctx->protoctx->bufferevent_free_and_close_fd = bufferevent_free_and_close_fd_ssl;
+	ctx->protoctx->proto_free = protohttps_free;
 
-	ctx->proto_ctx->arg = malloc(sizeof(protohttp_ctx_t));
-	if (!ctx->proto_ctx->arg) {
-		free(ctx->proto_ctx);
+	ctx->protoctx->arg = malloc(sizeof(protohttp_ctx_t));
+	if (!ctx->protoctx->arg) {
+		free(ctx->protoctx);
 		return PROTO_ERROR;
 	}
-	memset(ctx->proto_ctx->arg, 0, sizeof(protohttp_ctx_t));
+	memset(ctx->protoctx->arg, 0, sizeof(protohttp_ctx_t));
+
+	ctx->sslctx = malloc(sizeof(ssl_ctx_t));
+	if (!ctx->sslctx) {
+		free(ctx->protoctx->arg);
+		free(ctx->protoctx);
+		return PROTO_ERROR;
+	}
+	memset(ctx->sslctx, 0, sizeof(ssl_ctx_t));
+
 	return PROTO_HTTPS;
 }
 
 enum protocol
 protohttp_setup_child(pxy_conn_child_ctx_t *ctx)
 {
-	ctx->proto_ctx->proto = PROTO_HTTPS;
+	ctx->protoctx->proto = PROTO_HTTPS;
 
 	// @todo Should HTTP child conns do any http related processing, so use tcp defaults instead?
-	ctx->proto_ctx->bev_readcb = protohttp_bev_readcb_child;
-	ctx->proto_ctx->proto_free = protohttp_free_child;
+	ctx->protoctx->bev_readcb = protohttp_bev_readcb_child;
+	ctx->protoctx->proto_free = protohttp_free_child;
 
-	ctx->proto_ctx->arg = malloc(sizeof(proto_child_ctx_t));
-	if (!ctx->proto_ctx->arg) {
-		free(ctx->proto_ctx);
+	ctx->protoctx->arg = malloc(sizeof(protohttp_ctx_t));
+	if (!ctx->protoctx->arg) {
+		free(ctx->protoctx);
 		return PROTO_ERROR;
 	}
-	memset(ctx->proto_ctx->arg, 0, sizeof(proto_child_ctx_t));
+	memset(ctx->protoctx->arg, 0, sizeof(protohttp_ctx_t));
 	return PROTO_HTTPS;
 }
 
 enum protocol
 protohttps_setup_child(pxy_conn_child_ctx_t *ctx)
 {
-	ctx->proto_ctx->proto = PROTO_HTTPS;
+	ctx->protoctx->proto = PROTO_HTTPS;
 
-	ctx->proto_ctx->connectcb = pxy_connect_ssl_child;
-	ctx->proto_ctx->bev_readcb = protohttp_bev_readcb_child;
-	ctx->proto_ctx->bufferevent_free_and_close_fd = bufferevent_free_and_close_fd_ssl;
-	ctx->proto_ctx->proto_free = protohttp_free_child;
+	ctx->protoctx->connectcb = pxy_connect_ssl_child;
+	ctx->protoctx->bev_readcb = protohttp_bev_readcb_child;
+	ctx->protoctx->bufferevent_free_and_close_fd = bufferevent_free_and_close_fd_ssl;
+	ctx->protoctx->proto_free = protohttp_free_child;
 
-	ctx->proto_ctx->arg = malloc(sizeof(proto_child_ctx_t));
-	if (!ctx->proto_ctx->arg) {
-		free(ctx->proto_ctx);
+	ctx->protoctx->arg = malloc(sizeof(protohttp_ctx_t));
+	if (!ctx->protoctx->arg) {
+		free(ctx->protoctx);
 		return PROTO_ERROR;
 	}
-	memset(ctx->proto_ctx->arg, 0, sizeof(proto_child_ctx_t));
+	memset(ctx->protoctx->arg, 0, sizeof(protohttp_ctx_t));
 	return PROTO_HTTPS;
 }
 
