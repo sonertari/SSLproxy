@@ -27,6 +27,8 @@
  */
 
 #include "protoautossl.h"
+#include "prototcp.h"
+
 #include "pxysslshut.h"
 
 #include <string.h>
@@ -658,9 +660,9 @@ protoautossl_bev_eventcb_src(struct bufferevent *bev, short events, void *arg)
 	if (events & BEV_EVENT_CONNECTED) {
 		protoautossl_bev_eventcb_connected_src(bev, ctx);
 	} else if (events & BEV_EVENT_EOF) {
-		pxy_bev_eventcb_eof_src(bev, ctx);
+		prototcp_bev_eventcb_eof_src(bev, ctx);
 	} else if (events & BEV_EVENT_ERROR) {
-		pxy_bev_eventcb_error_src(bev, ctx);
+		prototcp_bev_eventcb_error_src(bev, ctx);
 	}
 }
 
@@ -673,9 +675,9 @@ protoautossl_bev_eventcb_dst(struct bufferevent *bev, short events, void *arg)
 	if (events & BEV_EVENT_CONNECTED) {
 		protoautossl_eventcb_connected_dst(bev, ctx);
 	} else if (events & BEV_EVENT_EOF) {
-		pxy_bev_eventcb_eof_dst(bev, ctx);
+		prototcp_bev_eventcb_eof_dst(bev, ctx);
 	} else if (events & BEV_EVENT_ERROR) {
-		pxy_bev_eventcb_error_dst(bev, ctx);
+		prototcp_bev_eventcb_error_dst(bev, ctx);
 	}
 }
 
@@ -688,9 +690,9 @@ protoautossl_bev_eventcb_srv_dst(struct bufferevent *bev, short events, void *ar
 	if (events & BEV_EVENT_CONNECTED) {
 		protoautossl_bev_eventcb_connected_srv_dst(bev, ctx);
 	} else if (events & BEV_EVENT_EOF) {
-		pxy_bev_eventcb_eof_srv_dst(bev, ctx);
+		prototcp_bev_eventcb_eof_srv_dst(bev, ctx);
 	} else if (events & BEV_EVENT_ERROR) {
-		pxy_bev_eventcb_error_srv_dst(bev, ctx);
+		prototcp_bev_eventcb_error_srv_dst(bev, ctx);
 	}
 }
 
@@ -720,9 +722,9 @@ protoautossl_bev_eventcb_dst_child(struct bufferevent *bev, short events, void *
 	if (events & BEV_EVENT_CONNECTED) {
 		protoautossl_bev_eventcb_connected_dst_child(bev, ctx);
 	} else if (events & BEV_EVENT_EOF) {
-		pxy_bev_eventcb_child_eof_dst(bev, ctx);
+		prototcp_bev_eventcb_eof_dst_child(bev, ctx);
 	} else if (events & BEV_EVENT_ERROR) {
-		pxy_bev_eventcb_child_error_dst(bev, ctx);
+		prototcp_bev_eventcb_error_dst_child(bev, ctx);
 	}
 }
 
@@ -733,7 +735,7 @@ protoautossl_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 	ctx->conn->atime = time(NULL);
 
 	if (bev == ctx->src.bev) {
-		pxy_bev_eventcb_child_src(bev, events, arg);
+		prototcp_bev_eventcb_src_child(bev, events, arg);
 	} else if (bev == ctx->dst.bev) {
 		protoautossl_bev_eventcb_dst_child(bev, events, arg);
 	} else {
@@ -786,10 +788,10 @@ protoautossl_setup(pxy_conn_ctx_t *ctx)
 {
 	ctx->protoctx->proto = PROTO_AUTOSSL;
 	ctx->protoctx->connectcb = protoautossl_conn_connect;
-	ctx->protoctx->fd_readcb = pxy_fd_readcb_tcp;
+	ctx->protoctx->fd_readcb = prototcp_fd_readcb;
 	
 	ctx->protoctx->bev_readcb = protoautossl_bev_readcb;
-	ctx->protoctx->bev_writecb = pxy_bev_writecb_tcp;
+	ctx->protoctx->bev_writecb = prototcp_bev_writecb;
 	ctx->protoctx->bev_eventcb = protoautossl_bev_eventcb;
 
 	ctx->protoctx->bufferevent_free_and_close_fd = protoautossl_bufferevent_free_and_close_fd;
@@ -822,7 +824,7 @@ protoautossl_setup_child(pxy_conn_child_ctx_t *ctx)
 	ctx->protoctx->connectcb = protoautossl_connect_child;
 
 	ctx->protoctx->bev_readcb = protoautossl_bev_readcb_child;
-	ctx->protoctx->bev_writecb = pxy_bev_writecb_tcp_child;
+	ctx->protoctx->bev_writecb = prototcp_bev_writecb_child;
 	ctx->protoctx->bev_eventcb = protoautossl_bev_eventcb_child;
 
 	ctx->protoctx->bufferevent_free_and_close_fd = protoautossl_bufferevent_free_and_close_fd;

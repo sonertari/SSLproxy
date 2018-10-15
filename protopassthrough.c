@@ -27,6 +27,7 @@
  */
 
 #include "protopassthrough.h"
+#include "prototcp.h"
 
 #include <sys/param.h>
 
@@ -446,13 +447,13 @@ protopassthrough_setup(pxy_conn_ctx_t *ctx)
 	// This is different from initial protocol setup, which may choose to keep the default tcp settings.
 	ctx->protoctx->proto = PROTO_PASSTHROUGH;
 	ctx->protoctx->connectcb = protopassthrough_conn_connect;
-	ctx->protoctx->fd_readcb = pxy_fd_readcb_tcp;
+	ctx->protoctx->fd_readcb = prototcp_fd_readcb;
 	
 	ctx->protoctx->bev_readcb = protopassthrough_bev_readcb;
 	ctx->protoctx->bev_writecb = protopassthrough_bev_writecb;
 	ctx->protoctx->bev_eventcb = protopassthrough_bev_eventcb;
 
-	ctx->protoctx->bufferevent_free_and_close_fd = bufferevent_free_and_close_fd_tcp;
+	ctx->protoctx->bufferevent_free_and_close_fd = prototcp_bufferevent_free_and_close_fd;
 	return PROTO_PASSTHROUGH;
 }
 

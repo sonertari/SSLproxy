@@ -897,7 +897,7 @@ protohttps_setup(pxy_conn_ctx_t *ctx)
 {
 	ctx->protoctx->proto = PROTO_HTTPS;
 
-	ctx->protoctx->fd_readcb = pxy_fd_readcb_ssl;
+	ctx->protoctx->fd_readcb = protossl_fd_readcb;
 	ctx->protoctx->bev_readcb = protohttp_bev_readcb;
 	ctx->protoctx->bufferevent_free_and_close_fd = bufferevent_free_and_close_fd_ssl;
 	ctx->protoctx->proto_free = protohttps_free;
@@ -943,7 +943,7 @@ protohttps_setup_child(pxy_conn_child_ctx_t *ctx)
 {
 	ctx->protoctx->proto = PROTO_HTTPS;
 
-	ctx->protoctx->connectcb = pxy_connect_ssl_child;
+	ctx->protoctx->connectcb = protossl_connect_child;
 	ctx->protoctx->bev_readcb = protohttp_bev_readcb_child;
 	ctx->protoctx->bufferevent_free_and_close_fd = bufferevent_free_and_close_fd_ssl;
 	ctx->protoctx->proto_free = protohttp_free_child;
