@@ -296,18 +296,24 @@ struct pxy_conn_child_ctx {
 void pxy_discard_inbuf(struct bufferevent *);
 int pxy_set_dstaddr(pxy_conn_ctx_t *);
 unsigned char *pxy_malloc_packet(size_t, pxy_conn_ctx_t *);
+
 void pxy_insert_sslproxy_header(pxy_conn_ctx_t *, unsigned char *, size_t *);
 void pxy_remove_sslproxy_header(unsigned char *, size_t *, pxy_conn_child_ctx_t *);
 
 SSL *pxy_dstssl_create(pxy_conn_ctx_t *);
 
 int pxy_prepare_logging(pxy_conn_ctx_t *);
+int pxy_prepare_logging_local_procinfo(pxy_conn_ctx_t *);
 
 void pxy_log_connect_src(pxy_conn_ctx_t *);
 void pxy_log_connect_srv_dst(pxy_conn_ctx_t *);
 
 int pxy_log_content_inbuf(pxy_conn_ctx_t *, struct evbuffer *, int);
 int pxy_log_content_buf(pxy_conn_ctx_t *, unsigned char *, size_t, int);
+void pxy_log_connect_nonhttp(pxy_conn_ctx_t *);
+void pxy_log_dbg_evbuf_info(pxy_conn_ctx_t *, pxy_conn_desc_t *, pxy_conn_desc_t *);
+void pxy_log_dbg_disconnect(pxy_conn_ctx_t *);
+void pxy_log_err_ssl_error(struct bufferevent *, pxy_conn_ctx_t *);
 
 int pxy_setup_src(pxy_conn_ctx_t *);
 int pxy_setup_src_ssl(pxy_conn_ctx_t *);
@@ -320,11 +326,20 @@ int pxy_setup_srv_dst_ssl(pxy_conn_ctx_t *);
 struct bufferevent *pxy_bufferevent_setup_child(pxy_conn_child_ctx_t *, evutil_socket_t, SSL *) NONNULL(1);
 
 void bufferevent_free_and_close_fd_ssl(struct bufferevent *, pxy_conn_ctx_t *);
+void bufferevent_free_and_close_fd_nonssl(struct bufferevent *, pxy_conn_ctx_t *);
+
+void pxy_connect_srv_dst(struct bufferevent *, pxy_conn_ctx_t *);
+
+int pxy_close_conn_end_ifnodata(pxy_conn_desc_t *, pxy_conn_ctx_t *, bufferevent_free_and_close_fd_func_t);
 
 void pxy_close_dst(pxy_conn_ctx_t *);
 void pxy_close_srv_dst(pxy_conn_ctx_t *);
 
+void pxy_disconnect(pxy_conn_ctx_t *, pxy_conn_desc_t *, bufferevent_free_and_close_fd_func_t, pxy_conn_desc_t *, int);
+void pxy_consume_last_input(struct bufferevent *, pxy_conn_ctx_t *);
+
 void pxy_set_watermark(struct bufferevent *, pxy_conn_ctx_t *, struct bufferevent *);
+void pxy_unset_watermark(struct bufferevent *, pxy_conn_ctx_t *, pxy_conn_desc_t *);
 
 void pxy_bev_eventcb_connected_src(struct bufferevent *, pxy_conn_ctx_t *);
 void pxy_bev_eventcb_eof_src(struct bufferevent *, pxy_conn_ctx_t *);
@@ -341,6 +356,8 @@ void pxy_bev_eventcb_error_srv_dst(struct bufferevent *, pxy_conn_ctx_t *);
 void pxy_conn_connect_tcp(pxy_conn_ctx_t *);
 void pxy_fd_readcb_tcp(evutil_socket_t, short, void *);
 void pxy_fd_readcb_ssl(evutil_socket_t, short, void *);
+
+void pxy_fd_readcb(evutil_socket_t, short, void *);
 
 int pxy_setup_child_listener(pxy_conn_ctx_t *);
 
@@ -376,11 +393,6 @@ void pxy_conn_setup(evutil_socket_t, struct sockaddr *, int,
                     NONNULL(2,4,5,6);
 void pxy_conn_free(pxy_conn_ctx_t *ctx, int) NONNULL(1);
 void protossl_free(pxy_conn_ctx_t *ctx) NONNULL(1);
-
-void pxy_conn_connect_passthrough(pxy_conn_ctx_t *);
-void pxy_bev_readcb_passthrough(struct bufferevent *, void *);
-void pxy_bev_writecb_passthrough(struct bufferevent *, void *);
-void pxy_bev_eventcb_passthrough(struct bufferevent *, short, void *);
 
 #endif /* !PXYCONN_H */
 

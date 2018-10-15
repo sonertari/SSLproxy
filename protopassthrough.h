@@ -26,39 +26,13 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef PROTOHTTP_H
-#define PROTOHTTP_H
+#ifndef PROTOPASSTHROUGH_H
+#define PROTOPASSTHROUGH_H
 
 #include "pxyconn.h"
 
-typedef struct protohttp_ctx protohttp_ctx_t;
+void protopassthrough_engage(pxy_conn_ctx_t *);
+enum protocol protopassthrough_setup(pxy_conn_ctx_t *);
 
-struct protohttp_ctx {
-	unsigned int seen_req_header : 1; /* 0 until request header complete */
-	unsigned int seen_resp_header : 1;  /* 0 until response hdr complete */
-	unsigned int sent_http_conn_close : 1;   /* 0 until Conn: close sent */
-	unsigned int ocsp_denied : 1;                /* 1 if OCSP was denied */
-	unsigned int seen_req_header_on_entry : 1;   /* save seen_req_header */
-	unsigned int seen_resp_header_on_entry : 1;  /* save seen_resp_header */
+#endif /* PROTOPASSTHROUGH_H */
 
-	/* log strings from HTTP request */
-	char *http_method;
-	char *http_uri;
-	char *http_host;
-	char *http_content_type;
-
-	/* log strings from HTTP response */
-	char *http_status_code;
-	char *http_status_text;
-	char *http_content_length;
-};
-
-enum protocol protohttp_setup(pxy_conn_ctx_t *);
-enum protocol protohttps_setup(pxy_conn_ctx_t *);
-
-enum protocol protohttp_setup_child(pxy_conn_child_ctx_t *);
-enum protocol protohttps_setup_child(pxy_conn_child_ctx_t *);
-
-#endif /* !PROTOHTTP_H */
-
-/* vim: set noet ft=c: */

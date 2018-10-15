@@ -30,6 +30,7 @@
 
 #include "protohttp.h"
 #include "protoautossl.h"
+#include "protopassthrough.h"
 
 #include "privsep.h"
 #include "pxysslshut.h"
@@ -168,23 +169,6 @@ protossl_setup_child(pxy_conn_child_ctx_t *ctx)
 
 	ctx->protoctx->bufferevent_free_and_close_fd = bufferevent_free_and_close_fd_ssl;
 	return PROTO_SSL;
-}
-
-enum protocol
-protopassthrough_setup(pxy_conn_ctx_t *ctx)
-{
-	// @attention Reset all callbacks while switching to passthrough mode, because we should override any/all protocol settings of the previous protocol.
-	// This is different from initial protocol setup, which may choose to keep the default tcp settings.
-	ctx->protoctx->proto = PROTO_PASSTHROUGH;
-	ctx->protoctx->connectcb = pxy_conn_connect_passthrough;
-	ctx->protoctx->fd_readcb = pxy_fd_readcb_tcp;
-	
-	ctx->protoctx->bev_readcb = pxy_bev_readcb_passthrough;
-	ctx->protoctx->bev_writecb = pxy_bev_writecb_passthrough;
-	ctx->protoctx->bev_eventcb = pxy_bev_eventcb_passthrough;
-
-	ctx->protoctx->bufferevent_free_and_close_fd = bufferevent_free_and_close_fd_tcp;
-	return PROTO_PASSTHROUGH;
 }
 
 static enum protocol
@@ -450,7 +434,7 @@ bufferevent_free_and_close_fd(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
  * Free bufferenvent and close underlying socket properly.
  * This is for non-OpenSSL bufferevents.
  */
-static void
+void
 bufferevent_free_and_close_fd_nonssl(struct bufferevent *bev, UNUSED pxy_conn_ctx_t *ctx)
 {
 	bufferevent_free_and_close_fd_tcp(bev, ctx);
@@ -641,9 +625,6 @@ pxy_conn_free(pxy_conn_ctx_t *ctx, int by_requestor)
 	pxy_conn_ctx_free(ctx, by_requestor);
 }
 
-/* forward declaration of libevent callbacks */
-static void pxy_fd_readcb(evutil_socket_t, short, void *);
-
 /* forward declaration of OpenSSL callbacks */
 #ifndef OPENSSL_NO_TLSEXT
 static int pxy_ossl_servername_cb(SSL *ssl, int *al, void *arg);
@@ -689,7 +670,7 @@ pxy_debug_crt(X509 *crt)
 #endif /* DEBUG_CERTIFICATE */
 }
 
-static void
+void
 pxy_log_connect_nonhttp(pxy_conn_ctx_t *ctx)
 {
 	char *msg;
@@ -1773,44 +1754,6 @@ pxy_discard_inbuf(struct bufferevent *bev)
 	evbuffer_drain(inbuf, inbuf_size);
 }
 
-static void
-pxy_bev_readcb_passthrough_src(struct bufferevent *bev, void *arg)
-{
-	pxy_conn_ctx_t *ctx = arg;
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb_passthrough_src: ENTER, fd=%d, size=%zu\n",
-			ctx->fd, evbuffer_get_length(bufferevent_get_input(bev)));
-#endif /* DEBUG_PROXY */
-
-	// Passthrough packets are transfered between src and srv_dst
-	if (ctx->srv_dst.closed) {
-		pxy_discard_inbuf(bev);
-		return;
-	}
-
-	evbuffer_add_buffer(bufferevent_get_output(ctx->srv_dst.bev), bufferevent_get_input(bev));
-	pxy_set_watermark(bev, ctx, ctx->srv_dst.bev);
-}
-
-static void
-pxy_bev_readcb_passthrough_srv_dst(struct bufferevent *bev, void *arg)
-{
-	pxy_conn_ctx_t *ctx = arg;
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb_passthrough_srv_dst: ENTER, fd=%d, size=%zu\n",
-			ctx->fd, evbuffer_get_length(bufferevent_get_input(bev)));
-#endif /* DEBUG_PROXY */
-
-	// Passthrough packets are transfered between src and srv_dst
-	if (ctx->src.closed) {
-		pxy_discard_inbuf(bev);
-		return;
-	}
-
-	evbuffer_add_buffer(bufferevent_get_output(ctx->src.bev), bufferevent_get_input(bev));
-	pxy_set_watermark(bev, ctx, ctx->src.bev);
-}
-
 void
 pxy_insert_sslproxy_header(pxy_conn_ctx_t *ctx, unsigned char *packet, size_t *packet_size)
 {
@@ -2070,7 +2013,7 @@ pxy_bev_readcb_child(struct bufferevent *bev, void *arg)
 	ctx->protoctx->bev_readcb(bev, ctx);
 }
 
-static void
+void
 pxy_unset_watermark(struct bufferevent *bev, pxy_conn_ctx_t *ctx, pxy_conn_desc_t *other)
 {
 	if (other->bev && !(bufferevent_get_enabled(other->bev) & EV_READ)) {
@@ -2100,7 +2043,7 @@ pxy_connect_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	}
 }
 
-static void
+void
 pxy_connect_srv_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 	if (!ctx->srv_dst_connected) {
@@ -2115,8 +2058,8 @@ pxy_connect_srv_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	}
 }
 
-static int
-pxy_close_conn_end_ifnodata(pxy_conn_desc_t *conn_end, pxy_conn_ctx_t *ctx, void (*free_and_close_fd_func)(struct bufferevent *, pxy_conn_ctx_t *))
+int
+pxy_close_conn_end_ifnodata(pxy_conn_desc_t *conn_end, pxy_conn_ctx_t *ctx, bufferevent_free_and_close_fd_func_t free_and_close_fd_func)
 {
 	/* if the other end is still open and doesn't have data
 	 * to send, close it, otherwise its writecb will close
@@ -2131,50 +2074,6 @@ pxy_close_conn_end_ifnodata(pxy_conn_desc_t *conn_end, pxy_conn_ctx_t *ctx, void
 		return 1;
 	}
 	return 0;
-}
-
-static void
-pxy_bev_writecb_passthrough_src(struct bufferevent *bev, void *arg)
-{
-	pxy_conn_ctx_t *ctx = arg;
-
-	// @attention srv_dst.bev may be NULL
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_writecb_passthrough_src: ENTER, fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
-
-	if (ctx->srv_dst.closed) {
-		if (pxy_close_conn_end_ifnodata(&ctx->src, ctx, &bufferevent_free_and_close_fd_nonssl)) {
-#ifdef DEBUG_PROXY
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_writecb_passthrough_src: other->closed, terminate conn, fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
-			pxy_conn_free(ctx, 1);
-		}			
-		return;
-	}
-	pxy_unset_watermark(bev, ctx, &ctx->srv_dst);
-}
-
-static void
-pxy_bev_writecb_passthrough_srv_dst(struct bufferevent *bev, void *arg)
-{
-	pxy_conn_ctx_t *ctx = arg;
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_writecb_passthrough_srv_dst: ENTER, fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
-
-	pxy_connect_srv_dst(bev, ctx);
-
-	if (ctx->src.closed) {
-		if (pxy_close_conn_end_ifnodata(&ctx->srv_dst, ctx, &bufferevent_free_and_close_fd_nonssl) == 1) {
-#ifdef DEBUG_PROXY
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_writecb_passthrough_srv_dst: other->closed, terminate conn, fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
-			pxy_conn_free(ctx, 0);
-		}			
-		return;
-	}
-	pxy_unset_watermark(bev, ctx, &ctx->src);
 }
 
 static void
@@ -2314,7 +2213,7 @@ pxy_bev_writecb_child(struct bufferevent *bev, void *arg)
 	ctx->protoctx->bev_writecb(bev, ctx);
 }
 
-static int
+int
 pxy_prepare_logging_local_procinfo(UNUSED pxy_conn_ctx_t *ctx)
 {
 #ifdef HAVE_LOCAL_PROCINFO
@@ -2345,16 +2244,6 @@ pxy_prepare_logging_local_procinfo(UNUSED pxy_conn_ctx_t *ctx)
 	return 0;
 }
 
-static int
-pxy_prepare_passthrough_logging(pxy_conn_ctx_t *ctx)
-{
-	/* prepare logging, part 2 */
-	if (WANT_CONNECT_LOG(ctx)) {
-		return pxy_prepare_logging_local_procinfo(ctx);
-	}
-	return 0;
-}
-
 int
 pxy_prepare_logging(pxy_conn_ctx_t *ctx)
 {
@@ -2381,40 +2270,6 @@ pxy_prepare_logging(pxy_conn_ctx_t *ctx)
 		}
 	}
 	return 0;
-}
-
-static void
-pxy_log_passthrough_connect_type(pxy_conn_ctx_t *ctx)
-{
-	if (OPTS_DEBUG(ctx->opts)) {
-		/* for TCP, we get only a dst connect event,
-		 * since src was already connected from the
-		 * beginning; mirror SSL debug output anyway
-		 * in order not to confuse anyone who might be
-		 * looking closely at the output */
-		log_dbg_printf("pxy_log_passthrough_connect_type: TCP connected to [%s]:%s\n",
-					   STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str));
-		log_dbg_printf("pxy_log_passthrough_connect_type: TCP connected from [%s]:%s\n",
-					   STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str));
-	}
-}
-
-static void
-pxy_log_passthrough_connect_src(pxy_conn_ctx_t *ctx)
-{
-	if (WANT_CONNECT_LOG(ctx) || ctx->opts->statslog) {
-		pxy_log_connect_nonhttp(ctx);
-	}
-	pxy_log_passthrough_connect_type(ctx);
-}
-
-static void
-pxy_bev_eventcb_passthrough_connected_src(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ctx)
-{
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_eventcb_passthrough_connected_src: ENTER, fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
-	pxy_log_passthrough_connect_src(ctx);
 }
 
 static int
@@ -2448,60 +2303,6 @@ pxy_set_dstaddr(pxy_conn_ctx_t *ctx)
 		return -1;
 	}
 	return 0;
-}
-
-static int
-pxy_passthrough_enable_src(pxy_conn_ctx_t *ctx)
-{
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_passthrough_enable_src: ENTER, fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
-
-	ctx->connected = 1;
-
-	if (pxy_setup_src(ctx) == -1) {
-		return -1;
-	}
-	bufferevent_setcb(ctx->src.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
-
-	if (pxy_set_dstaddr(ctx) == -1) {
-		return -1;
-	}
-
-	if (pxy_prepare_passthrough_logging(ctx) == -1) {
-		return -1;
-	}
-
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_passthrough_enable_src: Enabling src, %s, fd=%d, child_fd=%d\n", ctx->header_str, ctx->fd, ctx->child_fd);
-#endif /* DEBUG_PROXY */
-	// Now open the gates
-	bufferevent_enable(ctx->src.bev, EV_READ|EV_WRITE);
-	return 0;
-}
-
-static void
-pxy_bev_eventcb_passthrough_connected_srv_dst(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ctx)
-{
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_eventcb_passthrough_connected_srv_dst: ENTER, fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
-
-	if (!ctx->srv_dst_connected) {
-		ctx->srv_dst_connected = 1;
-		ctx->srv_dst_fd = bufferevent_getfd(ctx->srv_dst.bev);
-		ctx->thr->max_fd = MAX(ctx->thr->max_fd, ctx->srv_dst_fd);
-	}
-
-	if (ctx->srv_dst_connected && !ctx->connected) {
-		if (pxy_passthrough_enable_src(ctx) == -1) {
-			return;
-		}
-	}
-
-	if (ctx->connected) {
-		pxy_log_passthrough_connect_type(ctx);
-	}
 }
 
 int
@@ -2606,34 +2407,6 @@ pxy_close_dst(pxy_conn_ctx_t *ctx)
 	ctx->dst.closed = 1;
 }
 
-static void
-pxy_engage_passthrough_mode(pxy_conn_ctx_t *ctx)
-{
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_engage_passthrough_mode: ENTER, fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
-	// @attention Do not call bufferevent_free_and_close_fd(), otherwise connection stalls due to ssl shutdown
-	// We get srv_dst writecb while ssl shutdown is still in progress, and srv_dst readcb never fires
-	//bufferevent_free_and_close_fd(ctx->srv_dst.bev, ctx);
-	SSL_free(ctx->srv_dst.ssl);
-	bufferevent_free_and_close_fd_nonssl(ctx->srv_dst.bev, ctx);
-	ctx->srv_dst.bev = NULL;
-	ctx->srv_dst.ssl = NULL;
-	ctx->connected = 0;
-	ctx->srv_dst_connected = 0;
-
-	// Close and free dst if open
-	if (!ctx->dst.closed) {
-		ctx->dst.closed = 1;
-		bufferevent_free_and_close_fd_nonssl(ctx->dst.bev, ctx);
-		ctx->dst.bev = NULL;
-		ctx->dst_fd = 0;
-	}
-
-	ctx->proto = protopassthrough_setup(ctx);
-	pxy_fd_readcb(ctx->fd, 0, ctx);
-}
-
 static int
 pxy_log_masterkey(pxy_conn_ctx_t *ctx, pxy_conn_desc_t *this)
 {
@@ -2728,7 +2501,7 @@ pxy_setup_src_ssl(pxy_conn_ctx_t *ctx)
 	if (!ctx->src.ssl) {
 		if (ctx->opts->passthrough && !ctx->enomem) {
 			log_err_level_printf(LOG_WARNING, "No cert found; falling back to passthrough, fd=%d\n", ctx->fd);
-			pxy_engage_passthrough_mode(ctx);
+			protopassthrough_engage(ctx);
 			// return protocol change
 			return 1;
 		}
@@ -2845,7 +2618,7 @@ pxy_bev_eventcb_connected_srv_dst(UNUSED struct bufferevent *bev, pxy_conn_ctx_t
 	}
 }
 
-static void
+void
 pxy_log_err_ssl_error(struct bufferevent *bev, UNUSED pxy_conn_ctx_t *ctx)
 {
 	unsigned long sslerr;
@@ -2897,7 +2670,7 @@ pxy_log_err_ssl_error(struct bufferevent *bev, UNUSED pxy_conn_ctx_t *ctx)
 	}
 }
 
-static void
+void
 pxy_log_dbg_evbuf_info(UNUSED pxy_conn_ctx_t *ctx, UNUSED pxy_conn_desc_t *this, UNUSED pxy_conn_desc_t *other)
 {
 #ifdef DEBUG_PROXY
@@ -2912,7 +2685,7 @@ pxy_log_dbg_evbuf_info(UNUSED pxy_conn_ctx_t *ctx, UNUSED pxy_conn_desc_t *this,
 #endif /* DEBUG_PROXY */
 }
 
-static void
+void
 pxy_consume_last_input(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 	/* if there is data pending in the closed connection,
@@ -2925,7 +2698,7 @@ pxy_consume_last_input(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	}
 }
 
-static void
+void
 pxy_log_dbg_disconnect(pxy_conn_ctx_t *ctx)
 {
 	// On parent connections, ctx->src.ssl is enough to know the type of connection
@@ -2940,9 +2713,9 @@ pxy_log_dbg_disconnect(pxy_conn_ctx_t *ctx)
 	}
 }
 
-static void
+void
 pxy_disconnect(pxy_conn_ctx_t *ctx, pxy_conn_desc_t *this,
-		void (*this_free_and_close_fd_func)(struct bufferevent *, pxy_conn_ctx_t *), pxy_conn_desc_t *other, int is_requestor)
+		bufferevent_free_and_close_fd_func_t this_free_and_close_fd_func, pxy_conn_desc_t *other, int is_requestor)
 {
 	// @attention srv_dst should never reach here unless in passthrough mode, its bev may be NULL
 	this->closed = 1;
@@ -2954,56 +2727,6 @@ pxy_disconnect(pxy_conn_ctx_t *ctx, pxy_conn_desc_t *this,
 #endif /* DEBUG_PROXY */
 		pxy_conn_free(ctx, is_requestor);
 	}
-}
-
-static void
-pxy_bev_eventcb_passthrough_eof_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
-{
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_eventcb_passthrough_eof_src: EOF, fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
-
-	pxy_log_dbg_evbuf_info(ctx, &ctx->src, &ctx->srv_dst);
-
-	if (!ctx->connected) {
-		log_err_level_printf(LOG_WARNING, "EOF on outbound connection before connection establishment\n");
-		ctx->srv_dst.closed = 1;
-	} else if (!ctx->srv_dst.closed) {
-#ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_eventcb_passthrough_eof_src: !other->closed, terminate conn, fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
-		pxy_consume_last_input(bev, ctx);
-		pxy_close_conn_end_ifnodata(&ctx->srv_dst, ctx, &bufferevent_free_and_close_fd_nonssl);
-	}
-
-	pxy_log_dbg_disconnect(ctx);
-
-	pxy_disconnect(ctx, &ctx->src, &bufferevent_free_and_close_fd_nonssl, &ctx->srv_dst, 1);
-}
-
-static void
-pxy_bev_eventcb_passthrough_eof_srv_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
-{
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_eventcb_passthrough_eof_srv_dst: EOF, fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
-
-	pxy_log_dbg_evbuf_info(ctx, &ctx->srv_dst, &ctx->src);
-
-	if (!ctx->connected) {
-		log_err_level_printf(LOG_WARNING, "EOF on outbound connection before connection establishment\n");
-		ctx->src.closed = 1;
-	} else if (!ctx->src.closed) {
-#ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_eventcb_passthrough_eof_srv_dst: !other->closed, terminate conn, fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
-		pxy_consume_last_input(bev, ctx);
-		pxy_close_conn_end_ifnodata(&ctx->src, ctx, &bufferevent_free_and_close_fd_nonssl);
-	}
-
-	pxy_log_dbg_disconnect(ctx);
-
-	pxy_disconnect(ctx, &ctx->srv_dst, &bufferevent_free_and_close_fd_nonssl, &ctx->src, 0);
 }
 
 void
@@ -3065,52 +2788,6 @@ pxy_bev_eventcb_eof_srv_dst(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 
 	log_err_level_printf(LOG_WARNING, "EOF on outbound connection before connection establishment on srv_dst\n");
 	pxy_conn_free(ctx, 0);
-}
-
-static void
-pxy_bev_eventcb_passthrough_error_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
-{
-	// Passthrough packets are transfered between src and srv_dst
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_bev_eventcb_passthrough_error_src: BEV_EVENT_ERROR, fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
-
-	log_err_printf("pxy_bev_eventcb_passthrough_error_src: Client-side BEV_EVENT_ERROR\n");
-	pxy_log_err_ssl_error(bev, ctx);
-	ctx->thr->errors++;
-
-	if (!ctx->connected) {
-		ctx->srv_dst.closed = 1;
-	} else if (!ctx->srv_dst.closed) {
-		pxy_close_conn_end_ifnodata(&ctx->srv_dst, ctx, &bufferevent_free_and_close_fd_nonssl);
-	}
-
-	pxy_log_dbg_disconnect(ctx);
-
-	pxy_disconnect(ctx, &ctx->src, &bufferevent_free_and_close_fd_nonssl, &ctx->srv_dst, 1);
-}
-
-static void
-pxy_bev_eventcb_passthrough_error_srv_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
-{
-	// Passthrough packets are transfered between src and srv_dst
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_bev_eventcb_passthrough_error_srv_dst: BEV_EVENT_ERROR, fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
-
-	log_err_printf("pxy_bev_eventcb_passthrough_error_srv_dst: Client-side BEV_EVENT_ERROR\n");
-	pxy_log_err_ssl_error(bev, ctx);
-	ctx->thr->errors++;
-
-	if (!ctx->connected) {
-		ctx->src.closed = 1;
-	} else if (!ctx->src.closed) {
-		pxy_close_conn_end_ifnodata(&ctx->src, ctx, &bufferevent_free_and_close_fd_nonssl);
-	}
-
-	pxy_log_dbg_disconnect(ctx);
-
-	pxy_disconnect(ctx, &ctx->srv_dst, &bufferevent_free_and_close_fd_nonssl, &ctx->src, 0);
 }
 
 void
@@ -3178,7 +2855,7 @@ pxy_bev_eventcb_error_srv_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		if (ctx->srv_dst.ssl && ctx->opts->passthrough && bufferevent_get_openssl_error(bev)) {
 			/* ssl callout failed, fall back to plain TCP passthrough of SSL connection */
 			log_err_level_printf(LOG_WARNING, "SSL srv_dst connection failed; falling back to passthrough, fd=%d\n", ctx->fd);
-			pxy_engage_passthrough_mode(ctx);
+			protopassthrough_engage(ctx);
 			return;
 		}
 		pxy_conn_free(ctx, 0);
@@ -3507,30 +3184,6 @@ pxy_setup_srv_dst_ssl(pxy_conn_ctx_t *ctx)
 }
 
 void
-pxy_conn_connect_passthrough(pxy_conn_ctx_t *ctx)
-{
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_connect_passthrough: ENTER fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
-
-	if (pxy_setup_srv_dst(ctx) == -1) {
-		return;
-	}
-
-	// @attention Sometimes dst write cb fires but not event cb, especially if this listener cb is not finished yet, so the conn stalls.
-	bufferevent_setcb(ctx->srv_dst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
-	bufferevent_enable(ctx->srv_dst.bev, EV_READ|EV_WRITE);
-	
-	/* initiate connection */
-	if (bufferevent_socket_connect(ctx->srv_dst.bev, (struct sockaddr *)&ctx->addr, ctx->addrlen) == -1) {
-		log_err_level_printf(LOG_CRIT, "pxy_conn_connect_passthrough: bufferevent_socket_connect for srv_dst failed\n");
-#ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_conn_connect_passthrough: bufferevent_socket_connect for srv_dst failed, fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
-	}
-}
-
-void
 pxy_conn_connect_tcp(pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
@@ -3753,7 +3406,7 @@ pxy_fd_readcb_ssl(MAYBE_UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 	pxy_conn_connect(ctx);
 }
 
-static void
+void
 pxy_fd_readcb(evutil_socket_t fd, UNUSED short what, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
@@ -3987,87 +3640,6 @@ pxy_bev_eventcb_tcp_child(struct bufferevent *bev, short events, void *arg)
 		pxy_bev_eventcb_child_dst(bev, events, arg);
 	} else {
 		log_err_printf("pxy_bev_eventcb_tcp_child: UNKWN conn end\n");
-	}
-}
-
-void
-pxy_bev_readcb_passthrough(struct bufferevent *bev, void *arg)
-{
-	pxy_conn_ctx_t *ctx = arg;
-	ctx->atime = time(NULL);
-
-	if (!ctx->connected) {
-		log_err_level_printf(LOG_CRIT, "pxy_bev_readcb_passthrough: readcb called when not connected - aborting.\n");
-		log_exceptcb();
-		return;
-	}
-
-	if (bev == ctx->src.bev) {
-		pxy_bev_readcb_passthrough_src(bev, arg);
-	} else if (bev == ctx->srv_dst.bev) {
-		pxy_bev_readcb_passthrough_srv_dst(bev, arg);
-	} else {
-		log_err_printf("pxy_bev_readcb_passthrough: UNKWN conn end\n");
-	}
-}
-
-void
-pxy_bev_writecb_passthrough(struct bufferevent *bev, void *arg)
-{
-	pxy_conn_ctx_t *ctx = arg;
-	ctx->atime = time(NULL);
-
-	if (bev == ctx->src.bev) {
-		pxy_bev_writecb_passthrough_src(bev, arg);
-	} else if (bev == ctx->srv_dst.bev) {
-		pxy_bev_writecb_passthrough_srv_dst(bev, arg);
-	} else {
-		log_err_printf("pxy_bev_writecb_passthrough: UNKWN conn end\n");
-	}
-}
-
-static void
-pxy_bev_eventcb_src_passthrough(struct bufferevent *bev, short events, void *arg)
-{
-	pxy_conn_ctx_t *ctx = arg;
-	ctx->atime = time(NULL);
-
-	if (events & BEV_EVENT_CONNECTED) {
-		pxy_bev_eventcb_passthrough_connected_src(bev, ctx);
-	} else if (events & BEV_EVENT_EOF) {
-		pxy_bev_eventcb_passthrough_eof_src(bev, ctx);
-	} else if (events & BEV_EVENT_ERROR) {
-		pxy_bev_eventcb_passthrough_error_src(bev, ctx);
-	}
-}
-
-static void
-pxy_bev_eventcb_srv_dst_passthrough(struct bufferevent *bev, short events, void *arg)
-{
-	pxy_conn_ctx_t *ctx = arg;
-	ctx->atime = time(NULL);
-
-	if (events & BEV_EVENT_CONNECTED) {
-		pxy_bev_eventcb_passthrough_connected_srv_dst(bev, ctx);
-	} else if (events & BEV_EVENT_EOF) {
-		pxy_bev_eventcb_passthrough_eof_srv_dst(bev, ctx);
-	} else if (events & BEV_EVENT_ERROR) {
-		pxy_bev_eventcb_passthrough_error_srv_dst(bev, ctx);
-	}
-}
-
-void
-pxy_bev_eventcb_passthrough(struct bufferevent *bev, short events, void *arg)
-{
-	pxy_conn_ctx_t *ctx = arg;
-	ctx->atime = time(NULL);
-
-	if (bev == ctx->src.bev) {
-		pxy_bev_eventcb_src_passthrough(bev, events, arg);
-	} else if (bev == ctx->srv_dst.bev) {
-		pxy_bev_eventcb_srv_dst_passthrough(bev, events, arg);
-	} else {
-		log_err_printf("pxy_bev_eventcb_passthrough: UNKWN conn end\n");
 	}
 }
 
