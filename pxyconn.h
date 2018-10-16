@@ -307,12 +307,6 @@ void pxy_log_dbg_evbuf_info(pxy_conn_ctx_t *, pxy_conn_desc_t *, pxy_conn_desc_t
 void pxy_log_dbg_disconnect(pxy_conn_ctx_t *);
 void pxy_log_dbg_disconnect_child(pxy_conn_child_ctx_t *);
 
-void pxy_log_err_ssl_error(struct bufferevent *, pxy_conn_ctx_t *);
-
-void bufferevent_free_and_close_fd(struct bufferevent *, pxy_conn_ctx_t *);
-void bufferevent_free_and_close_fd_ssl(struct bufferevent *, pxy_conn_ctx_t *);
-void bufferevent_free_and_close_fd_nonssl(struct bufferevent *, pxy_conn_ctx_t *);
-
 void pxy_discard_inbuf(struct bufferevent *);
 int pxy_set_dstaddr(pxy_conn_ctx_t *);
 unsigned char *pxy_malloc_packet(size_t, pxy_conn_ctx_t *);
@@ -323,15 +317,11 @@ void pxy_remove_sslproxy_header(unsigned char *, size_t *, pxy_conn_child_ctx_t 
 void pxy_set_watermark(struct bufferevent *, pxy_conn_ctx_t *, struct bufferevent *);
 void pxy_unset_watermark(struct bufferevent *, pxy_conn_ctx_t *, pxy_conn_desc_t *);
 
-SSL *pxy_dstssl_create(pxy_conn_ctx_t *);
-
 int pxy_setup_src(pxy_conn_ctx_t *);
-int pxy_setup_src_ssl(pxy_conn_ctx_t *);
 int pxy_setup_new_src(pxy_conn_ctx_t *);
 
 int pxy_setup_dst(pxy_conn_ctx_t *);
 int pxy_setup_srv_dst(pxy_conn_ctx_t *);
-int pxy_setup_srv_dst_ssl(pxy_conn_ctx_t *);
 
 struct bufferevent *pxy_bufferevent_setup_child(pxy_conn_child_ctx_t *, evutil_socket_t, SSL *) NONNULL(1);
 
@@ -356,6 +346,8 @@ void pxy_bev_readcb_child(struct bufferevent *, void *);
 void pxy_bev_writecb_child(struct bufferevent *, void *);
 void pxy_bev_eventcb_child(struct bufferevent *, short, void *);
 
+void pxy_bufferevent_free_and_close_fd(struct bufferevent *, pxy_conn_ctx_t *);
+
 void pxy_connect_srv_dst(struct bufferevent *, pxy_conn_ctx_t *);
 void pxy_conn_connect(pxy_conn_ctx_t *);
 
@@ -366,12 +358,10 @@ void pxy_conn_setup(evutil_socket_t, struct sockaddr *, int,
 					evutil_socket_t)
                     NONNULL(2,4,5,6);
 
+void pxy_conn_ctx_free(pxy_conn_ctx_t *, int) NONNULL(1);
+
 void pxy_conn_free(pxy_conn_ctx_t *, int) NONNULL(1);
 void pxy_conn_free_child(pxy_conn_child_ctx_t *) NONNULL(1);
-
-void protossl_fd_readcb(evutil_socket_t, short, void *);
-void protossl_connect_child(pxy_conn_child_ctx_t *);
-void protossl_free(pxy_conn_ctx_t *) NONNULL(1);
 
 #endif /* !PXYCONN_H */
 

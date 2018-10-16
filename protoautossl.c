@@ -28,6 +28,7 @@
 
 #include "protoautossl.h"
 #include "prototcp.h"
+#include "protossl.h"
 
 #include "pxysslshut.h"
 
@@ -73,7 +74,7 @@ protoautossl_peek_and_upgrade(pxy_conn_ctx_t *ctx)
 				log_dbg_printf("Peek found ClientHello\n");
 			}
 
-			ctx->srv_dst.ssl = pxy_dstssl_create(ctx);
+			ctx->srv_dst.ssl = protossl_dstssl_create(ctx);
 			if (!ctx->srv_dst.ssl) {
 				log_err_level_printf(LOG_CRIT, "Error creating SSL for upgrade\n");
 				// @todo Should we close the connection?
@@ -143,7 +144,7 @@ protoautossl_enable_src(pxy_conn_ctx_t *ctx)
 			log_dbg_printf("Completing autossl upgrade\n");
 		}
 		int rv;
-		if ((rv = pxy_setup_src_ssl(ctx)) != 0) {
+		if ((rv = protossl_setup_src(ctx)) != 0) {
 			return rv;
 		}
 		if (pxy_setup_new_src(ctx) == -1) {
@@ -392,7 +393,7 @@ protoautossl_bev_readcb_complete_child(pxy_conn_child_ctx_t *ctx)
 		log_dbg_printf("Completing autossl upgrade on child conn\n");
 	}
 
-	ctx->dst.ssl = pxy_dstssl_create(ctx->conn);
+	ctx->dst.ssl = protossl_dstssl_create(ctx->conn);
 	if (!ctx->dst.ssl) {
 		log_err_level_printf(LOG_CRIT, "protoautossl_bev_readcb_complete_child: Error creating SSL for upgrade\n");
 		ctx->conn->enomem = 1;
@@ -599,7 +600,7 @@ protoautossl_conn_connect(pxy_conn_ctx_t *ctx)
 	bufferevent_enable(ctx->dst.bev, EV_READ|EV_WRITE);
 
 	/* create server-side socket and eventbuffer */
-	if (pxy_setup_srv_dst_ssl(ctx) == -1) {
+	if (protossl_setup_srv_dst(ctx) == -1) {
 		return;
 	}
 	if (pxy_setup_srv_dst(ctx) == -1) {
@@ -630,7 +631,7 @@ protoautossl_connect_child(pxy_conn_child_ctx_t *ctx)
 	/* create server-side socket and eventbuffer */
 	// Children rely on the findings of parent
 	if (autossl_ctx->clienthello_found) {
-		ctx->dst.ssl = pxy_dstssl_create(ctx->conn);
+		ctx->dst.ssl = protossl_dstssl_create(ctx->conn);
 		if (!ctx->dst.ssl) {
 			log_err_level_printf(LOG_CRIT, "Error creating SSL\n");
 			// pxy_conn_free()>pxy_conn_free_child() will close the fd, since we have a non-NULL src.bev now

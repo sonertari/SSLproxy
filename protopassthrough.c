@@ -28,6 +28,8 @@
 
 #include "protopassthrough.h"
 #include "prototcp.h"
+// XXX
+#include "protossl.h"
 
 #include <sys/param.h>
 
@@ -80,7 +82,7 @@ protopassthrough_bev_writecb_src(struct bufferevent *bev, void *arg)
 #endif /* DEBUG_PROXY */
 
 	if (ctx->srv_dst.closed) {
-		if (pxy_close_conn_end_ifnodata(&ctx->src, ctx, &bufferevent_free_and_close_fd_nonssl)) {
+		if (pxy_close_conn_end_ifnodata(&ctx->src, ctx, &prototcp_bufferevent_free_and_close_fd)) {
 #ifdef DEBUG_PROXY
 			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protopassthrough_bev_writecb_src: other->closed, terminate conn, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
@@ -102,7 +104,7 @@ protopassthrough_bev_writecb_srv_dst(struct bufferevent *bev, void *arg)
 	pxy_connect_srv_dst(bev, ctx);
 
 	if (ctx->src.closed) {
-		if (pxy_close_conn_end_ifnodata(&ctx->srv_dst, ctx, &bufferevent_free_and_close_fd_nonssl) == 1) {
+		if (pxy_close_conn_end_ifnodata(&ctx->srv_dst, ctx, &prototcp_bufferevent_free_and_close_fd) == 1) {
 #ifdef DEBUG_PROXY
 			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protopassthrough_bev_writecb_srv_dst: other->closed, terminate conn, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
@@ -221,7 +223,7 @@ protopassthrough_engage(pxy_conn_ctx_t *ctx)
 	// We get srv_dst writecb while ssl shutdown is still in progress, and srv_dst readcb never fires
 	//bufferevent_free_and_close_fd(ctx->srv_dst.bev, ctx);
 	SSL_free(ctx->srv_dst.ssl);
-	bufferevent_free_and_close_fd_nonssl(ctx->srv_dst.bev, ctx);
+	prototcp_bufferevent_free_and_close_fd(ctx->srv_dst.bev, ctx);
 	ctx->srv_dst.bev = NULL;
 	ctx->srv_dst.ssl = NULL;
 	ctx->connected = 0;
@@ -230,7 +232,7 @@ protopassthrough_engage(pxy_conn_ctx_t *ctx)
 	// Close and free dst if open
 	if (!ctx->dst.closed) {
 		ctx->dst.closed = 1;
-		bufferevent_free_and_close_fd_nonssl(ctx->dst.bev, ctx);
+		prototcp_bufferevent_free_and_close_fd(ctx->dst.bev, ctx);
 		ctx->dst.bev = NULL;
 		ctx->dst_fd = 0;
 	}
@@ -256,12 +258,12 @@ protopassthrough_bev_eventcb_eof_src(struct bufferevent *bev, pxy_conn_ctx_t *ct
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protopassthrough_bev_eventcb_eof_src: !other->closed, terminate conn, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 		pxy_consume_last_input(bev, ctx);
-		pxy_close_conn_end_ifnodata(&ctx->srv_dst, ctx, &bufferevent_free_and_close_fd_nonssl);
+		pxy_close_conn_end_ifnodata(&ctx->srv_dst, ctx, &prototcp_bufferevent_free_and_close_fd);
 	}
 
 	pxy_log_dbg_disconnect(ctx);
 
-	pxy_disconnect(ctx, &ctx->src, &bufferevent_free_and_close_fd_nonssl, &ctx->srv_dst, 1);
+	pxy_disconnect(ctx, &ctx->src, &prototcp_bufferevent_free_and_close_fd, &ctx->srv_dst, 1);
 }
 
 static void
@@ -281,12 +283,12 @@ protopassthrough_bev_eventcb_eof_srv_dst(struct bufferevent *bev, pxy_conn_ctx_t
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protopassthrough_bev_eventcb_eof_srv_dst: !other->closed, terminate conn, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 		pxy_consume_last_input(bev, ctx);
-		pxy_close_conn_end_ifnodata(&ctx->src, ctx, &bufferevent_free_and_close_fd_nonssl);
+		pxy_close_conn_end_ifnodata(&ctx->src, ctx, &prototcp_bufferevent_free_and_close_fd);
 	}
 
 	pxy_log_dbg_disconnect(ctx);
 
-	pxy_disconnect(ctx, &ctx->srv_dst, &bufferevent_free_and_close_fd_nonssl, &ctx->src, 0);
+	pxy_disconnect(ctx, &ctx->srv_dst, &prototcp_bufferevent_free_and_close_fd, &ctx->src, 0);
 }
 
 static void
@@ -298,18 +300,19 @@ protopassthrough_bev_eventcb_error_src(struct bufferevent *bev, pxy_conn_ctx_t *
 #endif /* DEBUG_PROXY */
 
 	log_err_printf("protopassthrough_bev_eventcb_error_src: Client-side BEV_EVENT_ERROR\n");
-	pxy_log_err_ssl_error(bev, ctx);
+	// XXX
+	protossl_log_ssl_error(bev, ctx);
 	ctx->thr->errors++;
 
 	if (!ctx->connected) {
 		ctx->srv_dst.closed = 1;
 	} else if (!ctx->srv_dst.closed) {
-		pxy_close_conn_end_ifnodata(&ctx->srv_dst, ctx, &bufferevent_free_and_close_fd_nonssl);
+		pxy_close_conn_end_ifnodata(&ctx->srv_dst, ctx, &prototcp_bufferevent_free_and_close_fd);
 	}
 
 	pxy_log_dbg_disconnect(ctx);
 
-	pxy_disconnect(ctx, &ctx->src, &bufferevent_free_and_close_fd_nonssl, &ctx->srv_dst, 1);
+	pxy_disconnect(ctx, &ctx->src, &prototcp_bufferevent_free_and_close_fd, &ctx->srv_dst, 1);
 }
 
 static void
@@ -321,18 +324,19 @@ protopassthrough_bev_eventcb_error_srv_dst(struct bufferevent *bev, pxy_conn_ctx
 #endif /* DEBUG_PROXY */
 
 	log_err_printf("protopassthrough_bev_eventcb_error_srv_dst: Client-side BEV_EVENT_ERROR\n");
-	pxy_log_err_ssl_error(bev, ctx);
+	// XXX
+	protossl_log_ssl_error(bev, ctx);
 	ctx->thr->errors++;
 
 	if (!ctx->connected) {
 		ctx->src.closed = 1;
 	} else if (!ctx->src.closed) {
-		pxy_close_conn_end_ifnodata(&ctx->src, ctx, &bufferevent_free_and_close_fd_nonssl);
+		pxy_close_conn_end_ifnodata(&ctx->src, ctx, &prototcp_bufferevent_free_and_close_fd);
 	}
 
 	pxy_log_dbg_disconnect(ctx);
 
-	pxy_disconnect(ctx, &ctx->srv_dst, &bufferevent_free_and_close_fd_nonssl, &ctx->src, 0);
+	pxy_disconnect(ctx, &ctx->srv_dst, &prototcp_bufferevent_free_and_close_fd, &ctx->src, 0);
 }
 
 void

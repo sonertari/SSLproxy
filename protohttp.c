@@ -27,6 +27,7 @@
  */
 
 #include "protohttp.h"
+#include "protossl.h"
 
 #include "util.h"
 #include "base64.h"
@@ -899,7 +900,7 @@ protohttps_setup(pxy_conn_ctx_t *ctx)
 
 	ctx->protoctx->fd_readcb = protossl_fd_readcb;
 	ctx->protoctx->bev_readcb = protohttp_bev_readcb;
-	ctx->protoctx->bufferevent_free_and_close_fd = bufferevent_free_and_close_fd_ssl;
+	ctx->protoctx->bufferevent_free_and_close_fd = protossl_bufferevent_free_and_close_fd;
 	ctx->protoctx->proto_free = protohttps_free;
 
 	ctx->protoctx->arg = malloc(sizeof(protohttp_ctx_t));
@@ -945,7 +946,7 @@ protohttps_setup_child(pxy_conn_child_ctx_t *ctx)
 
 	ctx->protoctx->connectcb = protossl_connect_child;
 	ctx->protoctx->bev_readcb = protohttp_bev_readcb_child;
-	ctx->protoctx->bufferevent_free_and_close_fd = bufferevent_free_and_close_fd_ssl;
+	ctx->protoctx->bufferevent_free_and_close_fd = protossl_bufferevent_free_and_close_fd;
 	ctx->protoctx->proto_free = protohttp_free_child;
 
 	ctx->protoctx->arg = malloc(sizeof(protohttp_ctx_t));
