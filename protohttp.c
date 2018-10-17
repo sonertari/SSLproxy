@@ -129,7 +129,14 @@ deny:
 	if (evbuffer_get_length(inbuf) > 0) {
 		evbuffer_drain(inbuf, evbuffer_get_length(inbuf));
 	}
-	pxy_close_dst(ctx);
+
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINER, "protohttp_ocsp_deny: Closing dst, fd=%d, dst fd=%d\n", ctx->fd, bufferevent_getfd(ctx->dst.bev));
+#endif /* DEBUG_PROXY */
+	ctx->protoctx->bufferevent_free_and_close_fd(ctx->dst.bev, ctx);
+	ctx->dst.bev = NULL;
+	ctx->dst.closed = 1;
+
 	evbuffer_add_printf(outbuf, ocspresp);
 	http_ctx->ocsp_denied = 1;
 }
@@ -897,9 +904,12 @@ enum protocol
 protohttps_setup(pxy_conn_ctx_t *ctx)
 {
 	ctx->protoctx->proto = PROTO_HTTPS;
-
+	ctx->protoctx->connectcb = protossl_conn_connect;
 	ctx->protoctx->fd_readcb = protossl_fd_readcb;
+
 	ctx->protoctx->bev_readcb = protohttp_bev_readcb;
+	ctx->protoctx->bev_eventcb = protossl_bev_eventcb;
+
 	ctx->protoctx->bufferevent_free_and_close_fd = protossl_bufferevent_free_and_close_fd;
 	ctx->protoctx->proto_free = protohttps_free;
 
@@ -943,9 +953,11 @@ enum protocol
 protohttps_setup_child(pxy_conn_child_ctx_t *ctx)
 {
 	ctx->protoctx->proto = PROTO_HTTPS;
-
 	ctx->protoctx->connectcb = protossl_connect_child;
+
 	ctx->protoctx->bev_readcb = protohttp_bev_readcb_child;
+	ctx->protoctx->bev_eventcb = protossl_bev_eventcb_child;
+
 	ctx->protoctx->bufferevent_free_and_close_fd = protossl_bufferevent_free_and_close_fd;
 	ctx->protoctx->proto_free = protohttp_free_child;
 

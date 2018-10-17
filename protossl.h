@@ -34,15 +34,27 @@
 int protossl_log_masterkey(pxy_conn_ctx_t *, pxy_conn_desc_t *);
 void protossl_log_ssl_error(struct bufferevent *, pxy_conn_ctx_t *);
 
+// @todo Used externally by pxy_log_connect_src(), create tcp and ssl versions of that function instead
 void protossl_srccert_write(pxy_conn_ctx_t *);
 SSL *protossl_dstssl_create(pxy_conn_ctx_t *);
-int protossl_setup_src(pxy_conn_ctx_t *);
-int protossl_setup_srv_dst(pxy_conn_ctx_t *);
+
+int protossl_setup_src_ssl(pxy_conn_ctx_t *);
+int protossl_setup_src_sslbev(pxy_conn_ctx_t *);
+
+int protossl_setup_dst_ssl_child(pxy_conn_child_ctx_t *);
+int protossl_setup_dst_sslbev_child(pxy_conn_child_ctx_t *);
+int protossl_setup_dst_child(pxy_conn_child_ctx_t *);
+
+void protossl_bev_eventcb(struct bufferevent *, short, void *);
+void protossl_bev_eventcb_child(struct bufferevent *, short, void *);
 
 void protossl_bufferevent_free_and_close_fd(struct bufferevent *, pxy_conn_ctx_t *);
-void protossl_fd_readcb(evutil_socket_t, short, void *);
-void protossl_connect_child(pxy_conn_child_ctx_t *);
 void protossl_free(pxy_conn_ctx_t *) NONNULL(1);
+
+void protossl_conn_connect(pxy_conn_ctx_t *);
+void protossl_fd_readcb(evutil_socket_t, short, void *);
+
+void protossl_connect_child(pxy_conn_child_ctx_t *);
 
 enum protocol protossl_setup(pxy_conn_ctx_t *);
 enum protocol protossl_setup_child(pxy_conn_child_ctx_t *);

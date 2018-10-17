@@ -213,7 +213,7 @@ pxy_ssl_shutdown(opts_t *opts, struct event_base *evbase, SSL *ssl,
                  evutil_socket_t fd)
 {
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_ssl_shutdown: ENTER fd=%d\n", fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_ssl_shutdown: ENTER, fd=%d\n", fd);
 #endif /* DEBUG_PROXY */
 
 	pxy_ssl_shutdown_ctx_t *sslshutctx;

@@ -126,6 +126,27 @@ protoautossl_bev_eventcb_connected_src(UNUSED struct bufferevent *bev, pxy_conn_
 	pxy_log_connect_src(ctx);
 }
 
+static void
+protoautossl_close_srv_dst(pxy_conn_ctx_t *ctx)
+{
+	// @attention Free the srv_dst of the conn asap, we don't need it anymore, but we need its fd
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINER, "protoautossl_close_srv_dst: Closing srv_dst, fd=%d, srv_dst fd=%d\n", ctx->fd, bufferevent_getfd(ctx->srv_dst.bev));
+#endif /* DEBUG_PROXY */
+	// So save its ssl info for logging
+	// @todo Do we always have srv_dst.ssl or not? Can we use ssl or tcp versions of this function?
+	if (ctx->srv_dst.ssl) {
+		ctx->sslctx->srv_dst_ssl_version = strdup(SSL_get_version(ctx->srv_dst.ssl));
+		ctx->sslctx->srv_dst_ssl_cipher = strdup(SSL_get_cipher(ctx->srv_dst.ssl));
+	}
+
+	// @attention When both eventcb and writecb for srv_dst are enabled, either eventcb or writecb may get a NULL srv_dst bev, causing a crash with signal 10.
+	// So, from this point on, we should check if srv_dst is NULL or not.
+	ctx->protoctx->bufferevent_free_and_close_fd(ctx->srv_dst.bev, ctx);
+	ctx->srv_dst.bev = NULL;
+	ctx->srv_dst.closed = 1;
+}
+
 static int
 protoautossl_enable_src(pxy_conn_ctx_t *ctx)
 {
@@ -138,20 +159,23 @@ protoautossl_enable_src(pxy_conn_ctx_t *ctx)
 	ctx->connected = 1;
 
 	// Create and set up src.bev
-	if (autossl_ctx->clienthello_found) {
-		// ctx->src.bev must have already been created at this point
-		if (OPTS_DEBUG(ctx->opts)) {
-			log_dbg_printf("Completing autossl upgrade\n");
-		}
-		int rv;
-		if ((rv = protossl_setup_src(ctx)) != 0) {
-			return rv;
-		}
-		if (pxy_setup_new_src(ctx) == -1) {
+	if (!autossl_ctx->clienthello_found) {
+		// Create tcp src.bev first
+		if (prototcp_setup_src(ctx) == -1) {
 			return -1;
 		}
 	} else {
-		if (pxy_setup_src(ctx) == -1) {
+		if (OPTS_DEBUG(ctx->opts)) {
+			log_dbg_printf("Completing autossl upgrade\n");
+		}
+
+		// tcp src.bev is already created above
+		int rv;
+		if ((rv = protossl_setup_src_ssl(ctx)) != 0) {
+			return rv;
+		}
+		// Replace tcp src.bev with ssl version
+		if (protossl_setup_src_sslbev(ctx) == -1) {
 			return -1;
 		}
 	}
@@ -167,7 +191,7 @@ protoautossl_enable_src(pxy_conn_ctx_t *ctx)
 
 	// srv_dst is not needed after clienthello search is over
 	if (ctx->srv_dst.bev && !autossl_ctx->clienthello_search) {
-		pxy_close_srv_dst(ctx);
+		protoautossl_close_srv_dst(ctx);
 	}
 
 	// Skip child listener setup if completing autossl upgrade, after finding clienthello
@@ -393,26 +417,14 @@ protoautossl_bev_readcb_complete_child(pxy_conn_child_ctx_t *ctx)
 		log_dbg_printf("Completing autossl upgrade on child conn\n");
 	}
 
-	ctx->dst.ssl = protossl_dstssl_create(ctx->conn);
-	if (!ctx->dst.ssl) {
-		log_err_level_printf(LOG_CRIT, "protoautossl_bev_readcb_complete_child: Error creating SSL for upgrade\n");
-		ctx->conn->enomem = 1;
-		pxy_conn_free(ctx->conn, 1);
+	if (protossl_setup_dst_ssl_child(ctx) == -1) {
 		return;
 	}
-	ctx->dst.bev = bufferevent_openssl_filter_new(ctx->conn->evbase, ctx->dst.bev, ctx->dst.ssl,
-			BUFFEREVENT_SSL_CONNECTING, BEV_OPT_DEFER_CALLBACKS);
-	if (!ctx->dst.bev) {
-		log_err_level_printf(LOG_CRIT, "protoautossl_bev_readcb_complete_child: Error creating bufferevent\n");
-		ctx->conn->enomem = 1;
-		if (ctx->dst.ssl) {
-			SSL_free(ctx->dst.ssl);
-			ctx->dst.ssl = NULL;
-		}
-		pxy_conn_free(ctx->conn, 1);
+	if (protossl_setup_dst_sslbev_child(ctx) == -1) {
 		return;
 	}
 	bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb_child, pxy_bev_writecb_child, pxy_bev_eventcb_child, ctx);
+
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protoautossl_bev_readcb_complete_child: Enabling dst, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
@@ -589,10 +601,10 @@ static void
 protoautossl_conn_connect(pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protoautossl_conn_connect: ENTER fd=%d\n", ctx->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protoautossl_conn_connect: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
-	if (pxy_setup_dst(ctx) == -1) {
+	if (prototcp_setup_dst(ctx) == -1) {
 		return;
 	}
 
@@ -600,14 +612,11 @@ protoautossl_conn_connect(pxy_conn_ctx_t *ctx)
 	bufferevent_enable(ctx->dst.bev, EV_READ|EV_WRITE);
 
 	/* create server-side socket and eventbuffer */
-	if (protossl_setup_srv_dst(ctx) == -1) {
-		return;
-	}
-	if (pxy_setup_srv_dst(ctx) == -1) {
+	if (prototcp_setup_srv_dst(ctx) == -1) {
 		return;
 	}
 	
-	// Enable srv_dst r cb for autossl modes
+	// Enable srv_dst r cb for autossl mode
 	bufferevent_setcb(ctx->srv_dst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
 	bufferevent_enable(ctx->srv_dst.bev, EV_READ|EV_WRITE);
 	
@@ -631,24 +640,9 @@ protoautossl_connect_child(pxy_conn_child_ctx_t *ctx)
 	/* create server-side socket and eventbuffer */
 	// Children rely on the findings of parent
 	if (autossl_ctx->clienthello_found) {
-		ctx->dst.ssl = protossl_dstssl_create(ctx->conn);
-		if (!ctx->dst.ssl) {
-			log_err_level_printf(LOG_CRIT, "Error creating SSL\n");
-			// pxy_conn_free()>pxy_conn_free_child() will close the fd, since we have a non-NULL src.bev now
-			pxy_conn_free(ctx->conn, 1);
-			return;
-		}
-	}
-
-	ctx->dst.bev = pxy_bufferevent_setup_child(ctx, -1, ctx->dst.ssl);
-	if (!ctx->dst.bev) {
-		log_err_level_printf(LOG_CRIT, "Error creating bufferevent\n");
-		if (ctx->dst.ssl) {
-			SSL_free(ctx->dst.ssl);
-			ctx->dst.ssl = NULL;
-		}
-		pxy_conn_free(ctx->conn, 1);
-		return;
+		protossl_setup_dst_child(ctx);
+	} else {
+		prototcp_setup_dst_child(ctx);
 	}
 }
 

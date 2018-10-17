@@ -27,12 +27,14 @@
  */
 
 #include "protossl.h"
+#include "prototcp.h"
 #include "protopassthrough.h"
 
 #include "pxysslshut.h"
 #include "cachemgr.h"
 
 #include <string.h>
+#include <sys/param.h>
 #include <event2/bufferevent_ssl.h>
 
 /*
@@ -97,7 +99,7 @@ protossl_log_ssl_error(struct bufferevent *bev, UNUSED pxy_conn_ctx_t *ctx)
 int
 protossl_log_masterkey(pxy_conn_ctx_t *ctx, pxy_conn_desc_t *this)
 {
-	// XXX
+	// XXX: Remove ssl check
 	if (this->ssl) {
 		/* log master key */
 		if (ctx->opts->masterkeylog) {
@@ -779,109 +781,74 @@ protossl_dstssl_create(pxy_conn_ctx_t *ctx)
 	return ssl;
 }
 
-int
-protossl_setup_src(pxy_conn_ctx_t *ctx)
-{
-	// @todo Make srv_dst.ssl the origssl param
-	ctx->src.ssl = protossl_srcssl_create(ctx, ctx->srv_dst.ssl);
-	if (!ctx->src.ssl) {
-		if (ctx->opts->passthrough && !ctx->enomem) {
-			log_err_level_printf(LOG_WARNING, "No cert found; falling back to passthrough, fd=%d\n", ctx->fd);
-			protopassthrough_engage(ctx);
-			// return protocol change
-			return 1;
-		}
-		pxy_conn_free(ctx, 1);
-		return -1;
-	}
-	return 0;
-}
-
-int
-protossl_setup_srv_dst(pxy_conn_ctx_t *ctx)
-{
-	if (ctx->spec->ssl) {
-		ctx->srv_dst.ssl = protossl_dstssl_create(ctx);
-		if (!ctx->srv_dst.ssl) {
-			log_err_level_printf(LOG_CRIT, "Error creating SSL for srv_dst\n");
-			pxy_conn_free(ctx, 1);
-			return -1;
-		}
-	}
-	return 0;
-}
-
-void
-protossl_bufferevent_free_and_close_fd(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
-{
-	evutil_socket_t fd = bufferevent_getfd(bev);
-
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINER, "bufferevent_free_and_close_fd_ssl: ENTER i:%zu o:%zu, fd=%d\n",
-			evbuffer_get_length(bufferevent_get_input(bev)), evbuffer_get_length(bufferevent_get_output(bev)), fd);
-#endif /* DEBUG_PROXY */
-
-	SSL *ssl = bufferevent_openssl_get_ssl(bev); /* does not inc refc */
-
-	// @todo Check if we need to NULL all cbs?
-	// @see https://stackoverflow.com/questions/31688709/knowing-all-callbacks-have-run-with-libevent-and-bufferevent-free
-	//bufferevent_setcb(bev, NULL, NULL, NULL, NULL);
-	bufferevent_free(bev); /* does not free SSL unless the option BEV_OPT_CLOSE_ON_FREE was set */
-	pxy_ssl_shutdown(ctx->opts, ctx->evbase, ssl, fd);
-}
-
-void
-protossl_free(pxy_conn_ctx_t *ctx)
-{
-	if (ctx->sslctx->ssl_names) {
-		free(ctx->sslctx->ssl_names);
-	}
-	if (ctx->sslctx->origcrtfpr) {
-		free(ctx->sslctx->origcrtfpr);
-	}
-	if (ctx->sslctx->usedcrtfpr) {
-		free(ctx->sslctx->usedcrtfpr);
-	}
-	if (ctx->sslctx->origcrt) {
-		X509_free(ctx->sslctx->origcrt);
-	}
-	if (ctx->sslctx->sni) {
-		free(ctx->sslctx->sni);
-	}
-	if (ctx->sslctx->srv_dst_ssl_version) {
-		free(ctx->sslctx->srv_dst_ssl_version);
-	}
-	if (ctx->sslctx->srv_dst_ssl_cipher) {
-		free(ctx->sslctx->srv_dst_ssl_cipher);
-	}
-	free(ctx->sslctx);
-}
-
-void
-protossl_connect_child(pxy_conn_child_ctx_t *ctx)
+/*
+ * Set up a bufferevent structure for either a dst or src connection,
+ * optionally with or without SSL.  Sets all callbacks, enables read
+ * and write events, but does not call bufferevent_socket_connect().
+ *
+ * For dst connections, pass -1 as fd.  Pass a pointer to an initialized
+ * SSL struct as ssl if the connection should use SSL.
+ *
+ * Returns pointer to initialized bufferevent structure, as returned
+ * by bufferevent_socket_new() or bufferevent_openssl_socket_new().
+ */
+static struct bufferevent * NONNULL(1,3)
+protossl_bufferevent_setup(pxy_conn_ctx_t *ctx, evutil_socket_t fd, SSL *ssl)
 {
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_connect_ssl_child: ENTER, conn fd=%d, child_fd=%d\n", ctx->conn->fd, ctx->conn->child_fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protossl_bufferevent_setup: ENTER, fd=%d\n", fd);
 #endif /* DEBUG_PROXY */
 
-	/* create server-side socket and eventbuffer */
-	// Children rely on the findings of parent
-	ctx->dst.ssl = protossl_dstssl_create(ctx->conn);
-	if (!ctx->dst.ssl) {
-		log_err_level_printf(LOG_CRIT, "Error creating SSL\n");
-		// pxy_conn_free()>pxy_conn_free_child() will close the fd, since we have a non-NULL src.bev now
-		pxy_conn_free(ctx->conn, 1);
-		return;
+	struct bufferevent *bev = bufferevent_openssl_socket_new(ctx->evbase, fd, ssl,
+			((fd == -1) ? BUFFEREVENT_SSL_CONNECTING : BUFFEREVENT_SSL_ACCEPTING), BEV_OPT_DEFER_CALLBACKS);
+	if (!bev) {
+		log_err_level_printf(LOG_CRIT, "Error creating bufferevent socket\n");
+		return NULL;
+	}
+#if LIBEVENT_VERSION_NUMBER >= 0x02010000
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protossl_bufferevent_setup: bufferevent_openssl_set_allow_dirty_shutdown\n");
+#endif /* DEBUG_PROXY */
+	/* Prevent unclean (dirty) shutdowns to cause error
+	 * events on the SSL socket bufferevent. */
+	bufferevent_openssl_set_allow_dirty_shutdown(bev, 1);
+#endif /* LIBEVENT_VERSION_NUMBER >= 0x02010000 */
+
+	// @attention Do not set callbacks here, srv_dst does not set r cb
+	//bufferevent_setcb(bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
+	// @todo Should we enable events here?
+	//bufferevent_enable(bev, EV_READ|EV_WRITE);
+	return bev;
+}
+
+static struct bufferevent *
+protossl_bufferevent_setup_child(pxy_conn_child_ctx_t *ctx, evutil_socket_t fd, SSL *ssl)
+{
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protossl_bufferevent_setup_child: ENTER, fd=%d\n", fd);
+#endif /* DEBUG_PROXY */
+
+	struct bufferevent *bev = bufferevent_openssl_socket_new(ctx->conn->evbase, fd, ssl,
+			((fd == -1) ? BUFFEREVENT_SSL_CONNECTING : BUFFEREVENT_SSL_ACCEPTING), BEV_OPT_DEFER_CALLBACKS);
+	if (!bev) {
+		log_err_level_printf(LOG_CRIT, "Error creating bufferevent socket\n");
+		return NULL;
 	}
 
-	ctx->dst.bev = pxy_bufferevent_setup_child(ctx, -1, ctx->dst.ssl);
-	if (!ctx->dst.bev) {
-		log_err_level_printf(LOG_CRIT, "Error creating bufferevent\n");
-		SSL_free(ctx->dst.ssl);
-		ctx->dst.ssl = NULL;
-		pxy_conn_free(ctx->conn, 1);
-		return;
-	}
+#if LIBEVENT_VERSION_NUMBER >= 0x02010000
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protossl_bufferevent_setup_child: bufferevent_openssl_set_allow_dirty_shutdown\n");
+#endif /* DEBUG_PROXY */
+	/* Prevent unclean (dirty) shutdowns to cause error
+	 * events on the SSL socket bufferevent. */
+	bufferevent_openssl_set_allow_dirty_shutdown(bev, 1);
+#endif /* LIBEVENT_VERSION_NUMBER >= 0x02010000 */
+
+	bufferevent_setcb(bev, pxy_bev_readcb_child, pxy_bev_writecb_child, pxy_bev_eventcb_child, ctx);
+
+	// @attention We cannot enable events here, because src events will be deferred until after dst is connected
+	//bufferevent_enable(bev, EV_READ|EV_WRITE);
+	return bev;
 }
 
 #ifndef OPENSSL_NO_TLSEXT
@@ -894,7 +861,7 @@ protossl_sni_resolve_cb(int errcode, struct evutil_addrinfo *ai, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protossl_sni_resolve_cb: ENTER fd=%d\n", ctx->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protossl_sni_resolve_cb: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
 	if (errcode) {
@@ -921,7 +888,7 @@ protossl_fd_readcb(MAYBE_UNUSED evutil_socket_t fd, UNUSED short what, void *arg
 {
 	pxy_conn_ctx_t *ctx = arg;
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_fd_readcb_ssl: ENTER fd=%d\n", ctx->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protossl_fd_readcb: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
 #ifndef OPENSSL_NO_TLSEXT
@@ -1015,12 +982,459 @@ protossl_fd_readcb(MAYBE_UNUSED evutil_socket_t fd, UNUSED short what, void *arg
 	pxy_conn_connect(ctx);
 }
 
+static int
+protossl_setup_srv_dst_ssl(pxy_conn_ctx_t *ctx)
+{
+	ctx->srv_dst.ssl = protossl_dstssl_create(ctx);
+	if (!ctx->srv_dst.ssl) {
+		log_err_level_printf(LOG_CRIT, "Error creating SSL for srv_dst\n");
+		pxy_conn_free(ctx, 1);
+		return -1;
+	}
+	return 0;
+}
+
+static int
+protossl_setup_srv_dst(pxy_conn_ctx_t *ctx)
+{
+	if (protossl_setup_srv_dst_ssl(ctx) == -1) {
+		return -1;
+	}
+
+	ctx->srv_dst.bev = protossl_bufferevent_setup(ctx, -1, ctx->srv_dst.ssl);
+	if (!ctx->srv_dst.bev) {
+		log_err_level_printf(LOG_CRIT, "Error creating srv_dst\n");
+		SSL_free(ctx->srv_dst.ssl);
+		ctx->srv_dst.ssl = NULL;
+		pxy_conn_free(ctx, 1);
+		return -1;
+	}
+	return 0;
+}
+
+void
+protossl_conn_connect(pxy_conn_ctx_t *ctx)
+{
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protossl_conn_connect: ENTER, fd=%d\n", ctx->fd);
+#endif /* DEBUG_PROXY */
+
+	if (prototcp_setup_dst(ctx) == -1) {
+		return;
+	}
+
+	bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
+	bufferevent_enable(ctx->dst.bev, EV_READ|EV_WRITE);
+
+	/* create server-side socket and eventbuffer */
+	if (protossl_setup_srv_dst(ctx) == -1) {
+		return;
+	}
+
+	// @attention Sometimes dst write cb fires but not event cb, especially if this listener cb is not finished yet, so the conn stalls.
+	// @todo Why does event cb not fire sometimes?
+	// @attention BEV_OPT_DEFER_CALLBACKS seems responsible for the issue with srv_dst, libevent acts as if we call event connect() ourselves.
+	// @see Launching connections on socket-based bufferevents at http://www.wangafu.net/~nickm/libevent-book/Ref6_bufferevent.html
+	// Disable and NULL r cb, we do nothing for srv_dst in r cb
+	bufferevent_setcb(ctx->srv_dst.bev, NULL, pxy_bev_writecb, pxy_bev_eventcb, ctx);
+	bufferevent_enable(ctx->srv_dst.bev, EV_WRITE);
+	
+	/* initiate connection */
+	if (bufferevent_socket_connect(ctx->srv_dst.bev, (struct sockaddr *)&ctx->addr, ctx->addrlen) == -1) {
+		log_err_level_printf(LOG_CRIT, "protossl_conn_connect: bufferevent_socket_connect for srv_dst failed\n");
+#ifdef DEBUG_PROXY
+		log_dbg_level_printf(LOG_DBG_MODE_FINER, "protossl_conn_connect: bufferevent_socket_connect for srv_dst failed, fd=%d\n", ctx->fd);
+#endif /* DEBUG_PROXY */
+		// @attention Do not try to close the conn here, otherwise both pxy_conn_connect() and eventcb try to free the conn using pxy_conn_free(),
+		// they are running on different threads, causing multithreading issues, e.g. signal 10.
+		// @todo Should we use thrmgr->mutex? Can we?
+	}
+}
+
+/*
+ * Free bufferenvent and close underlying socket properly.
+ * For OpenSSL bufferevents, this will shutdown the SSL connection.
+ */
+void
+protossl_bufferevent_free_and_close_fd(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
+{
+	evutil_socket_t fd = bufferevent_getfd(bev);
+
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINER, "protossl_bufferevent_free_and_close_fd: ENTER i:%zu o:%zu, fd=%d\n",
+			evbuffer_get_length(bufferevent_get_input(bev)), evbuffer_get_length(bufferevent_get_output(bev)), fd);
+#endif /* DEBUG_PROXY */
+
+	SSL *ssl = bufferevent_openssl_get_ssl(bev); /* does not inc refc */
+
+	// @todo Check if we need to NULL all cbs?
+	// @see https://stackoverflow.com/questions/31688709/knowing-all-callbacks-have-run-with-libevent-and-bufferevent-free
+	//bufferevent_setcb(bev, NULL, NULL, NULL, NULL);
+	bufferevent_free(bev); /* does not free SSL unless the option BEV_OPT_CLOSE_ON_FREE was set */
+	pxy_ssl_shutdown(ctx->opts, ctx->evbase, ssl, fd);
+}
+
+void
+protossl_free(pxy_conn_ctx_t *ctx)
+{
+	if (ctx->sslctx->ssl_names) {
+		free(ctx->sslctx->ssl_names);
+	}
+	if (ctx->sslctx->origcrtfpr) {
+		free(ctx->sslctx->origcrtfpr);
+	}
+	if (ctx->sslctx->usedcrtfpr) {
+		free(ctx->sslctx->usedcrtfpr);
+	}
+	if (ctx->sslctx->origcrt) {
+		X509_free(ctx->sslctx->origcrt);
+	}
+	if (ctx->sslctx->sni) {
+		free(ctx->sslctx->sni);
+	}
+	if (ctx->sslctx->srv_dst_ssl_version) {
+		free(ctx->sslctx->srv_dst_ssl_version);
+	}
+	if (ctx->sslctx->srv_dst_ssl_cipher) {
+		free(ctx->sslctx->srv_dst_ssl_cipher);
+	}
+	free(ctx->sslctx);
+}
+
+int
+protossl_setup_src_ssl(pxy_conn_ctx_t *ctx)
+{
+	// @todo Make srv_dst.ssl the origssl param
+	ctx->src.ssl = protossl_srcssl_create(ctx, ctx->srv_dst.ssl);
+	if (!ctx->src.ssl) {
+		if (ctx->opts->passthrough && !ctx->enomem) {
+			log_err_level_printf(LOG_WARNING, "No cert found; falling back to passthrough, fd=%d\n", ctx->fd);
+			protopassthrough_engage(ctx);
+			// report protocol change by returning 1
+			return 1;
+		}
+		pxy_conn_free(ctx, 1);
+		return -1;
+	}
+	return 0;
+}
+
+int
+protossl_setup_src_sslbev(pxy_conn_ctx_t *ctx)
+{
+	ctx->src.bev = bufferevent_openssl_filter_new(ctx->evbase, ctx->src.bev, ctx->src.ssl,
+			BUFFEREVENT_SSL_ACCEPTING, BEV_OPT_DEFER_CALLBACKS);
+	if (!ctx->src.bev) {
+		log_err_level_printf(LOG_CRIT, "Error creating src bufferevent\n");
+		SSL_free(ctx->src.ssl);
+		ctx->src.ssl = NULL;
+		pxy_conn_free(ctx, 1);
+		return -1;
+	}
+	return 0;
+}
+
+int
+protossl_setup_dst_ssl_child(pxy_conn_child_ctx_t *ctx)
+{
+	// Children rely on the findings of parent
+	ctx->dst.ssl = protossl_dstssl_create(ctx->conn);
+	if (!ctx->dst.ssl) {
+		log_err_level_printf(LOG_CRIT, "Error creating SSL\n");
+		// pxy_conn_free()>pxy_conn_free_child() will close the fd, since we have a non-NULL src.bev now
+		pxy_conn_free(ctx->conn, 1);
+		return -1;
+	}
+	return 0;
+}
+
+int
+protossl_setup_dst_child(pxy_conn_child_ctx_t *ctx)
+{
+	if (protossl_setup_dst_ssl_child(ctx) == -1) {
+		return -1;
+	}
+
+	ctx->dst.bev = protossl_bufferevent_setup_child(ctx, -1, ctx->dst.ssl);
+	if (!ctx->dst.bev) {
+		log_err_level_printf(LOG_CRIT, "Error creating dst bufferevent\n");
+		SSL_free(ctx->dst.ssl);
+		ctx->dst.ssl = NULL;
+		pxy_conn_free(ctx->conn, 1);
+		return -1;
+	}
+	return 0;
+}
+
+int
+protossl_setup_dst_sslbev_child(pxy_conn_child_ctx_t *ctx)
+{
+	ctx->dst.bev = bufferevent_openssl_filter_new(ctx->conn->evbase, ctx->dst.bev, ctx->dst.ssl,
+			BUFFEREVENT_SSL_ACCEPTING, BEV_OPT_DEFER_CALLBACKS);
+	if (!ctx->dst.bev) {
+		log_err_level_printf(LOG_CRIT, "Error creating dst bufferevent\n");
+		SSL_free(ctx->dst.ssl);
+		ctx->dst.ssl = NULL;
+		pxy_conn_free(ctx->conn, 1);
+		return -1;
+	}
+	return 0;
+}
+
+int
+protossl_setup_srv_dst_sslbev(pxy_conn_ctx_t *ctx)
+{
+	ctx->srv_dst.bev = bufferevent_openssl_filter_new(ctx->evbase, ctx->srv_dst.bev, ctx->srv_dst.ssl,
+			BUFFEREVENT_SSL_ACCEPTING, BEV_OPT_DEFER_CALLBACKS);
+	if (!ctx->srv_dst.bev) {
+		log_err_level_printf(LOG_CRIT, "Error creating srv_dst bufferevent\n");
+		SSL_free(ctx->srv_dst.ssl);
+		ctx->srv_dst.ssl = NULL;
+		pxy_conn_free(ctx, 1);
+		return -1;
+	}
+	return 0;
+}
+
+void
+protossl_connect_child(pxy_conn_child_ctx_t *ctx)
+{
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protossl_connect_child: ENTER, conn fd=%d, child_fd=%d\n", ctx->conn->fd, ctx->conn->child_fd);
+#endif /* DEBUG_PROXY */
+
+	/* create server-side socket and eventbuffer */
+	protossl_setup_dst_child(ctx);
+}
+void
+protossl_close_srv_dst(pxy_conn_ctx_t *ctx)
+{
+	// @attention Free the srv_dst of the conn asap, we don't need it anymore, but we need its fd
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINER, "protossl_close_srv_dst: Closing srv_dst, fd=%d, srv_dst fd=%d\n", ctx->fd, bufferevent_getfd(ctx->srv_dst.bev));
+#endif /* DEBUG_PROXY */
+	// So save its ssl info for logging
+	ctx->sslctx->srv_dst_ssl_version = strdup(SSL_get_version(ctx->srv_dst.ssl));
+	ctx->sslctx->srv_dst_ssl_cipher = strdup(SSL_get_cipher(ctx->srv_dst.ssl));
+
+	// @attention When both eventcb and writecb for srv_dst are enabled, either eventcb or writecb may get a NULL srv_dst bev, causing a crash with signal 10.
+	// So, from this point on, we should check if srv_dst is NULL or not.
+	protossl_bufferevent_free_and_close_fd(ctx->srv_dst.bev, ctx);
+	ctx->srv_dst.bev = NULL;
+	ctx->srv_dst.closed = 1;
+}
+
+static int
+protossl_setup_src(pxy_conn_ctx_t *ctx)
+{
+	int rv;
+	if ((rv = protossl_setup_src_ssl(ctx)) != 0) {
+		return rv;
+	}
+		
+	ctx->src.bev = protossl_bufferevent_setup(ctx, ctx->fd, ctx->src.ssl);
+	if (!ctx->src.bev) {
+		log_err_level_printf(LOG_CRIT, "Error creating src bufferevent\n");
+		SSL_free(ctx->src.ssl);
+		ctx->src.ssl = NULL;
+		pxy_conn_free(ctx, 1);
+		return -1;
+	}
+	return 0;
+}
+
+static int
+protossl_enable_src(pxy_conn_ctx_t *ctx)
+{
+	ctx->connected = 1;
+
+	int rv;
+	if ((rv = protossl_setup_src(ctx)) != 0) {
+		// Might have switched to passthrough mode
+		return rv;
+	}
+	bufferevent_setcb(ctx->src.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
+
+	if (pxy_set_dstaddr(ctx) == -1) {
+		return -1;
+	}
+
+	if (pxy_prepare_logging(ctx) == -1) {
+		return -1;
+	}
+
+	protossl_close_srv_dst(ctx);
+
+	if (pxy_setup_child_listener(ctx) == -1) {
+		return -1;
+	}
+
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protossl_enable_src: Enabling src, %s, fd=%d, child_fd=%d\n", ctx->header_str, ctx->fd, ctx->child_fd);
+#endif /* DEBUG_PROXY */
+	// Now open the gates
+	bufferevent_enable(ctx->src.bev, EV_READ|EV_WRITE);
+	return 0;
+}
+
+void
+protossl_bev_eventcb_connected_dst(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ctx)
+{
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protossl_bev_eventcb_connected_dst: ENTER, fd=%d\n", ctx->fd);
+#endif /* DEBUG_PROXY */
+
+	ctx->dst_connected = 1;
+
+	if (ctx->srv_dst_connected && ctx->dst_connected && !ctx->connected) {
+		if (protossl_enable_src(ctx) == -1) {
+			return;
+		}
+	}
+
+	if (ctx->connected) {
+		pxy_log_connect_srv_dst(ctx);
+	}
+}
+
+void
+protossl_bev_eventcb_connected_srv_dst(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ctx)
+{
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protossl_bev_eventcb_connected_srv_dst: ENTER, fd=%d\n", ctx->fd);
+#endif /* DEBUG_PROXY */
+
+	ctx->srv_dst_connected = 1;
+	ctx->srv_dst_fd = bufferevent_getfd(ctx->srv_dst.bev);
+	ctx->thr->max_fd = MAX(ctx->thr->max_fd, ctx->srv_dst_fd);
+
+	// @attention Create and enable dst.bev before, but connect here, because we check if dst.bev is NULL elsewhere
+	if (bufferevent_socket_connect(ctx->dst.bev, (struct sockaddr *)&ctx->spec->conn_dst_addr, ctx->spec->conn_dst_addrlen) == -1) {
+#ifdef DEBUG_PROXY
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, "protossl_bev_eventcb_connected_srv_dst: FAILED bufferevent_socket_connect for dst, fd=%d\n", ctx->fd);
+#endif /* DEBUG_PROXY */
+		pxy_conn_free(ctx, 1);
+		return;
+	}
+	ctx->dst_fd = bufferevent_getfd(ctx->dst.bev);
+	ctx->thr->max_fd = MAX(ctx->thr->max_fd, ctx->dst_fd);
+
+	if (ctx->srv_dst_connected && ctx->dst_connected && !ctx->connected) {
+		if (protossl_enable_src(ctx) == -1) {
+			return;
+		}
+	}
+
+	if (ctx->connected) {
+		pxy_log_connect_srv_dst(ctx);
+	}
+}
+
+void
+protossl_bev_eventcb_error_srv_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
+{
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINER, "protossl_bev_eventcb_error_srv_dst: BEV_EVENT_ERROR, fd=%d\n", ctx->fd);
+#endif /* DEBUG_PROXY */
+
+	if (!ctx->connected) {
+#ifdef DEBUG_PROXY
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, "protossl_bev_eventcb_error_srv_dst: ERROR !ctx->connected, fd=%d\n", ctx->fd);
+#endif /* DEBUG_PROXY */
+		/* the callout to the original destination failed,
+		 * e.g. because it asked for client cert auth, so
+		 * close the accepted socket and clean up */
+		if (ctx->opts->passthrough && bufferevent_get_openssl_error(bev)) {
+			/* ssl callout failed, fall back to plain TCP passthrough of SSL connection */
+			log_err_level_printf(LOG_WARNING, "SSL srv_dst connection failed; falling back to passthrough, fd=%d\n", ctx->fd);
+			protopassthrough_engage(ctx);
+			return;
+		}
+		pxy_conn_free(ctx, 0);
+	}
+}
+
+void
+protossl_bev_eventcb_dst(struct bufferevent *bev, short events, void *arg)
+{
+	pxy_conn_ctx_t *ctx = arg;
+
+	if (events & BEV_EVENT_CONNECTED) {
+		protossl_bev_eventcb_connected_dst(bev, ctx);
+	} else if (events & BEV_EVENT_EOF) {
+		prototcp_bev_eventcb_eof_dst(bev, ctx);
+	} else if (events & BEV_EVENT_ERROR) {
+		prototcp_bev_eventcb_error_dst(bev, ctx);
+	}
+}
+
+void
+protossl_bev_eventcb_srv_dst(struct bufferevent *bev, short events, void *arg)
+{
+	pxy_conn_ctx_t *ctx = arg;
+
+	if (events & BEV_EVENT_CONNECTED) {
+		protossl_bev_eventcb_connected_srv_dst(bev, ctx);
+	} else if (events & BEV_EVENT_EOF) {
+		prototcp_bev_eventcb_eof_srv_dst(bev, ctx);
+	} else if (events & BEV_EVENT_ERROR) {
+		protossl_bev_eventcb_error_srv_dst(bev, ctx);
+	}
+}
+
+void
+protossl_bev_eventcb(struct bufferevent *bev, short events, void *arg)
+{
+	pxy_conn_ctx_t *ctx = arg;
+	ctx->atime = time(NULL);
+
+	if (events & BEV_EVENT_ERROR) {
+		log_err_printf("protossl_bev_eventcb: Client-side BEV_EVENT_ERROR\n");
+		protossl_log_ssl_error(bev, ctx);
+		ctx->thr->errors++;
+	}
+
+	if (bev == ctx->src.bev) {
+		prototcp_bev_eventcb_src(bev, events, arg);
+	} else if (bev == ctx->dst.bev) {
+		protossl_bev_eventcb_dst(bev, events, arg);
+	} else if (bev == ctx->srv_dst.bev) {
+		protossl_bev_eventcb_srv_dst(bev, events, arg);
+	} else {
+		log_err_printf("protossl_bev_eventcb: UNKWN conn end\n");
+	}
+}
+
+void
+protossl_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
+{
+	pxy_conn_child_ctx_t *ctx = arg;
+	ctx->conn->atime = time(NULL);
+
+	if (events & BEV_EVENT_ERROR) {
+		log_err_printf("Server-side BEV_EVENT_ERROR\n");
+		protossl_log_ssl_error(bev, ctx->conn);
+		ctx->conn->thr->errors++;
+	}
+
+	if (bev == ctx->src.bev) {
+		prototcp_bev_eventcb_src_child(bev, events, arg);
+	} else if (bev == ctx->dst.bev) {
+		prototcp_bev_eventcb_dst_child(bev, events, arg);
+	} else {
+		log_err_printf("protossl_bev_eventcb_child: UNKWN conn end\n");
+	}
+}
+
 enum protocol
 protossl_setup(pxy_conn_ctx_t *ctx)
 {
 	ctx->protoctx->proto = PROTO_SSL;
+	ctx->protoctx->connectcb = protossl_conn_connect;
 	ctx->protoctx->fd_readcb = protossl_fd_readcb;
 	
+	ctx->protoctx->bev_eventcb = protossl_bev_eventcb;
+
 	ctx->protoctx->bufferevent_free_and_close_fd = protossl_bufferevent_free_and_close_fd;
 	ctx->protoctx->proto_free = protossl_free;
 
@@ -1041,7 +1455,10 @@ protossl_setup_child(pxy_conn_child_ctx_t *ctx)
 	ctx->protoctx->proto = PROTO_SSL;
 	ctx->protoctx->connectcb = protossl_connect_child;
 
+	ctx->protoctx->bev_eventcb = protossl_bev_eventcb_child;
+
 	ctx->protoctx->bufferevent_free_and_close_fd = protossl_bufferevent_free_and_close_fd;
+
 	return PROTO_SSL;
 }
 

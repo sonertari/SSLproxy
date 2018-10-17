@@ -35,39 +35,17 @@
 #include "protopassthrough.h"
 
 #include "privsep.h"
-#include "pxysslshut.h"
-#include "ssl.h"
-#include "opts.h"
 #include "sys.h"
-#include "util.h"
-#include "base64.h"
-#include "url.h"
 #include "log.h"
 #include "attrib.h"
 #include "proc.h"
 
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <stdlib.h>
-#include <stdio.h>
 #include <string.h>
-#include <errno.h>
-
-#include <event2/event.h>
-#include <event2/listener.h>
-#include <event2/bufferevent.h>
-#include <event2/bufferevent_ssl.h>
-#include <event2/buffer.h>
-#include <event2/thread.h>
-#include <event2/dns.h>
-
-#include <openssl/ssl.h>
-#include <openssl/err.h>
-#include <openssl/rand.h>
-#include <openssl/x509.h>
-#include <openssl/x509v3.h>
-#include <assert.h>
+#include <arpa/inet.h>
 #include <sys/param.h>
+#include <assert.h>
+
+#include <event2/listener.h>
 
 #ifdef HAVE_NETFILTER
 #include <glob.h>
@@ -190,7 +168,7 @@ pxy_conn_ctx_new(evutil_socket_t fd,
 			     evutil_socket_t clisock)
 {
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_new: ENTER fd=%d\n", fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_new: ENTER, fd=%d\n", fd);
 #endif /* DEBUG_PROXY */
 
 	pxy_conn_ctx_t *ctx = malloc(sizeof(pxy_conn_ctx_t));
@@ -221,6 +199,7 @@ pxy_conn_ctx_new(evutil_socket_t fd,
 		return NULL;
 	}
 	memset(ctx->protoctx, 0, sizeof(proto_ctx_t));
+
 	ctx->proto = pxy_setup_proto(ctx);
 	if (ctx->proto == PROTO_ERROR) {
 		log_err_level_printf(LOG_CRIT, "Error allocating memory\n");
@@ -257,7 +236,7 @@ pxy_conn_ctx_new_child(evutil_socket_t fd, pxy_conn_ctx_t *conn)
 	assert(conn != NULL);
 
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_new_child: ENTER fd=%d\n", fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_new_child: ENTER, fd=%d\n", fd);
 #endif /* DEBUG_PROXY */
 	pxy_conn_child_ctx_t *ctx = malloc(sizeof(pxy_conn_child_ctx_t));
 	if (!ctx) {
@@ -277,6 +256,7 @@ pxy_conn_ctx_new_child(evutil_socket_t fd, pxy_conn_ctx_t *conn)
 		return NULL;
 	}
 	memset(ctx->protoctx, 0, sizeof(proto_ctx_t));
+
 	ctx->proto = pxy_setup_proto_child(ctx);
 	if (ctx->proto == PROTO_ERROR) {
 		log_err_level_printf(LOG_CRIT, "Error allocating memory\n");
@@ -300,7 +280,7 @@ static void NONNULL(1)
 pxy_conn_ctx_free_child(pxy_conn_child_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_free_child: ENTER fd=%d, conn fd=%d\n", ctx->fd, ctx->conn->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_free_child: ENTER, fd=%d, conn fd=%d\n", ctx->fd, ctx->conn->fd);
 	if (OPTS_DEBUG(ctx->conn->opts)) {
 		log_dbg_printf("%p             pxy_conn_ctx_free_child\n",
 		                (void*)ctx);
@@ -316,21 +296,11 @@ pxy_conn_ctx_free_child(pxy_conn_child_ctx_t *ctx)
 	free(ctx);
 }
 
-/*
- * Free bufferenvent and close underlying socket properly.
- * For OpenSSL bufferevents, this will shutdown the SSL connection.
- */
-void
-pxy_bufferevent_free_and_close_fd(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
-{
-	ctx->protoctx->bufferevent_free_and_close_fd(bev, ctx);
-}
-
 static void NONNULL(1,2)
 pxy_conn_remove_child(pxy_conn_child_ctx_t *child, pxy_conn_child_ctx_t **head)
 {
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_remove_child: ENTER fd=%d\n", child->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_remove_child: ENTER, fd=%d\n", child->fd);
 #endif /* DEBUG_PROXY */
 
     if (child->fd == (*head)->fd) {
@@ -357,12 +327,12 @@ pxy_conn_free_child(pxy_conn_child_ctx_t *ctx)
 	assert(ctx->conn != NULL);
 
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_free_child: ENTER fd=%d\n", ctx->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_free_child: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
 	pxy_conn_desc_t *dst = &ctx->dst;
 	if (dst->bev) {
-		pxy_bufferevent_free_and_close_fd(dst->bev, ctx->conn);
+		ctx->protoctx->bufferevent_free_and_close_fd(dst->bev, ctx->conn);
 		dst->bev = NULL;
 	}
 
@@ -380,7 +350,7 @@ void
 pxy_conn_ctx_free(pxy_conn_ctx_t *ctx, int by_requestor)
 {
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_free: ENTER fd=%d\n", ctx->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_free: ENTER, fd=%d\n", ctx->fd);
 	if (OPTS_DEBUG(ctx->opts)) {
 		log_dbg_printf("%p             pxy_conn_ctx_free\n",
 		                (void*)ctx);
@@ -436,13 +406,13 @@ pxy_conn_free(pxy_conn_ctx_t *ctx, int by_requestor)
 
 #ifdef DEBUG_PROXY
 	evutil_socket_t child_fd = ctx->child_fd;
-	log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_conn_free: ENTER fd=%d, child_fd=%d\n", fd, child_fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_conn_free: ENTER, fd=%d, child_fd=%d\n", fd, child_fd);
 #endif /* DEBUG_PROXY */
 
 	pxy_conn_desc_t *src = &ctx->src;
 	if (!src->closed) {
 		if (src->bev) {
-			pxy_bufferevent_free_and_close_fd(src->bev, ctx);
+			ctx->protoctx->bufferevent_free_and_close_fd(src->bev, ctx);
 			src->bev = NULL;
 		} else {
 #ifdef DEBUG_PROXY
@@ -455,7 +425,7 @@ pxy_conn_free(pxy_conn_ctx_t *ctx, int by_requestor)
 
 	pxy_conn_desc_t *srv_dst = &ctx->srv_dst;
 	if (srv_dst->bev) {
-		pxy_bufferevent_free_and_close_fd(srv_dst->bev, ctx);
+		ctx->protoctx->bufferevent_free_and_close_fd(srv_dst->bev, ctx);
 		srv_dst->bev = NULL;
 	}
 
@@ -482,107 +452,6 @@ pxy_conn_free(pxy_conn_ctx_t *ctx, int by_requestor)
 	}
 
 	pxy_conn_ctx_free(ctx, by_requestor);
-}
-
-/*
- * Set up a bufferevent structure for either a dst or src connection,
- * optionally with or without SSL.  Sets all callbacks, enables read
- * and write events, but does not call bufferevent_socket_connect().
- *
- * For dst connections, pass -1 as fd.  Pass a pointer to an initialized
- * SSL struct as ssl if the connection should use SSL.
- *
- * Returns pointer to initialized bufferevent structure, as returned
- * by bufferevent_socket_new() or bufferevent_openssl_socket_new().
- */
-static struct bufferevent * NONNULL(1)
-pxy_bufferevent_setup(pxy_conn_ctx_t *ctx, evutil_socket_t fd, SSL *ssl)
-{
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bufferevent_setup: ENTER fd=%d\n", fd);
-#endif /* DEBUG_PROXY */
-
-	struct bufferevent *bev;
-
-	if (ssl) {
-		bev = bufferevent_openssl_socket_new(ctx->evbase, fd, ssl,
-				((fd == -1) ? BUFFEREVENT_SSL_CONNECTING : BUFFEREVENT_SSL_ACCEPTING), BEV_OPT_DEFER_CALLBACKS);
-	} else {
-		// @todo Do we really need to defer callbacks? BEV_OPT_DEFER_CALLBACKS seems responsible for the issue with srv_dst: We get writecb sometimes, no eventcb for CONNECTED event
-		bev = bufferevent_socket_new(ctx->evbase, fd, BEV_OPT_DEFER_CALLBACKS);
-	}
-	if (!bev) {
-		log_err_level_printf(LOG_CRIT, "Error creating bufferevent socket\n");
-		return NULL;
-	}
-#if LIBEVENT_VERSION_NUMBER >= 0x02010000
-	if (ssl) {
-#ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bufferevent_setup: bufferevent_openssl_set_allow_dirty_shutdown\n");
-#endif /* DEBUG_PROXY */
-		/* Prevent unclean (dirty) shutdowns to cause error
-		 * events on the SSL socket bufferevent. */
-		bufferevent_openssl_set_allow_dirty_shutdown(bev, 1);
-	}
-#endif /* LIBEVENT_VERSION_NUMBER >= 0x02010000 */
-
-	// @attention Do not set callbacks here, srv_dst does not set r cb
-	//bufferevent_setcb(bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
-	// @todo Should we enable events here?
-	//bufferevent_enable(bev, EV_READ|EV_WRITE);
-
-#ifdef DEBUG_PROXY
-	if (OPTS_DEBUG(ctx->opts)) {
-		log_dbg_printf("            %p pxy_bufferevent_setup\n",
-		               (void*)bev);
-	}
-#endif /* DEBUG_PROXY */
-	return bev;
-}
-
-struct bufferevent *
-pxy_bufferevent_setup_child(pxy_conn_child_ctx_t *ctx, evutil_socket_t fd, SSL *ssl)
-{
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bufferevent_setup_child: ENTER fd=%d\n", fd);
-#endif /* DEBUG_PROXY */
-
-	struct bufferevent *bev;
-
-	if (ssl) {
-		bev = bufferevent_openssl_socket_new(ctx->conn->evbase, fd, ssl,
-				((fd == -1) ? BUFFEREVENT_SSL_CONNECTING : BUFFEREVENT_SSL_ACCEPTING), BEV_OPT_DEFER_CALLBACKS);
-	} else {
-		bev = bufferevent_socket_new(ctx->conn->evbase, fd, BEV_OPT_DEFER_CALLBACKS);
-	}
-	if (!bev) {
-		log_err_level_printf(LOG_CRIT, "Error creating bufferevent socket\n");
-		return NULL;
-	}
-
-#if LIBEVENT_VERSION_NUMBER >= 0x02010000
-	if (ssl) {
-#ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bufferevent_setup_child: bufferevent_openssl_set_allow_dirty_shutdown\n");
-#endif /* DEBUG_PROXY */
-		/* Prevent unclean (dirty) shutdowns to cause error
-		 * events on the SSL socket bufferevent. */
-		bufferevent_openssl_set_allow_dirty_shutdown(bev, 1);
-	}
-#endif /* LIBEVENT_VERSION_NUMBER >= 0x02010000 */
-
-	bufferevent_setcb(bev, pxy_bev_readcb_child, pxy_bev_writecb_child, pxy_bev_eventcb_child, ctx);
-
-	// @attention We cannot enable events here, because src events will be deferred until after dst is connected
-	//bufferevent_enable(bev, EV_READ|EV_WRITE);
-
-#ifdef DEBUG_PROXY
-	if (OPTS_DEBUG(ctx->conn->opts)) {
-		log_dbg_printf("            %p pxy_bufferevent_setup_child\n",
-		               (void*)bev);
-	}
-#endif /* DEBUG_PROXY */
-	return bev;
 }
 
 void
@@ -1040,7 +909,7 @@ pxy_listener_acceptcb_child(UNUSED struct evconnlistener *listener, evutil_socke
 	conn->atime = time(NULL);
 
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_listener_acceptcb_child: ENTER fd=%d, conn fd=%d, child_fd=%d\n", fd, conn->fd, conn->child_fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_listener_acceptcb_child: ENTER, fd=%d, conn fd=%d, child_fd=%d\n", fd, conn->fd, conn->child_fd);
 
 	char *host, *port;
 	if (sys_sockaddr_str(peeraddr, peeraddrlen, &host, &port) == 0) {
@@ -1049,6 +918,13 @@ pxy_listener_acceptcb_child(UNUSED struct evconnlistener *listener, evutil_socke
 		free(port);
 	}
 #endif /* DEBUG_PROXY */
+
+	if (!conn->addrlen) {
+		log_err_level_printf(LOG_CRIT, "Child no target address; aborting connection\n");
+		evutil_closesocket(fd);
+		pxy_conn_free(conn, 1);
+		return;
+	}
 
 	int dtable_count = getdtablecount();
 
@@ -1081,22 +957,11 @@ pxy_listener_acceptcb_child(UNUSED struct evconnlistener *listener, evutil_socke
 	conn->child_count++;
 	ctx->idx = conn->child_count;
 
-	if (!ctx->conn->addrlen) {
-		log_err_level_printf(LOG_CRIT, "Child no target address; aborting connection\n");
-		evutil_closesocket(ctx->fd);
-		pxy_conn_free(ctx->conn, 1);
+	if (prototcp_setup_src_child(ctx) == -1) {
 		return;
 	}
 
-	ctx->src.ssl = NULL;
-	ctx->src.bev = pxy_bufferevent_setup_child(ctx, ctx->fd, ctx->src.ssl);
-	if (!ctx->src.bev) {
-		log_err_level_printf(LOG_CRIT, "Error creating child src\n");
-		evutil_closesocket(ctx->fd);
-		pxy_conn_free(ctx->conn, 1);
-		return;
-	}
-
+	// @todo Is this the same as fd?
 	ctx->src_fd = bufferevent_getfd(ctx->src.bev);
 	ctx->conn->child_src_fd = ctx->src_fd;
 	ctx->conn->thr->max_fd = MAX(ctx->conn->thr->max_fd, ctx->src_fd);
@@ -1201,14 +1066,14 @@ pxy_setup_child_listener(pxy_conn_ctx_t *ctx)
 }
 
 int
-pxy_close_conn_end_ifnodata(pxy_conn_desc_t *conn_end, pxy_conn_ctx_t *ctx, bufferevent_free_and_close_fd_func_t free_and_close_fd_func)
+pxy_try_close_conn_end(pxy_conn_desc_t *conn_end, pxy_conn_ctx_t *ctx, bufferevent_free_and_close_fd_func_t free_and_close_fd_func)
 {
 	/* if the other end is still open and doesn't have data
 	 * to send, close it, otherwise its writecb will close
 	 * it after writing what's left in the output buffer */
 	if (evbuffer_get_length(bufferevent_get_output(conn_end->bev)) == 0) {
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_close_conn_end_ifnodata: evbuffer_get_length(outbuf) == 0, terminate conn, fd=%d\n", ctx->fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_try_close_conn_end: evbuffer_get_length(outbuf) == 0, terminate conn, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 		free_and_close_fd_func(conn_end->bev, ctx);
 		conn_end->bev = NULL;
@@ -1216,37 +1081,6 @@ pxy_close_conn_end_ifnodata(pxy_conn_desc_t *conn_end, pxy_conn_ctx_t *ctx, buff
 		return 1;
 	}
 	return 0;
-}
-
-void
-pxy_close_dst(pxy_conn_ctx_t *ctx)
-{
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_close_dst: Closing dst, fd=%d, dst fd=%d\n", ctx->fd, bufferevent_getfd(ctx->dst.bev));
-#endif /* DEBUG_PROXY */
-	pxy_bufferevent_free_and_close_fd(ctx->dst.bev, ctx);
-	ctx->dst.bev = NULL;
-	ctx->dst.closed = 1;
-}
-
-void
-pxy_close_srv_dst(pxy_conn_ctx_t *ctx)
-{
-	// @attention Free the srv_dst of the conn asap, we don't need it anymore, but we need its fd
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_close_srv_dst: Closing srv_dst, fd=%d, srv_dst fd=%d\n", ctx->fd, bufferevent_getfd(ctx->srv_dst.bev));
-#endif /* DEBUG_PROXY */
-	// So save its ssl info for logging
-	if (ctx->srv_dst.ssl) {
-		ctx->sslctx->srv_dst_ssl_version = strdup(SSL_get_version(ctx->srv_dst.ssl));
-		ctx->sslctx->srv_dst_ssl_cipher = strdup(SSL_get_cipher(ctx->srv_dst.ssl));
-	}
-
-	// @attention When both eventcb and writecb for srv_dst are enabled, either eventcb or writecb may get a NULL srv_dst bev, causing a crash with signal 10.
-	// So, from this point on, we should check if srv_dst is NULL or not.
-	pxy_bufferevent_free_and_close_fd(ctx->srv_dst.bev, ctx);
-	ctx->srv_dst.bev = NULL;
-	ctx->srv_dst.closed = 1;
 }
 
 void
@@ -1321,71 +1155,11 @@ pxy_consume_last_input_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ctx)
 	}
 }
 
-static int
-pxy_check_src_bev(pxy_conn_ctx_t *ctx)
-{
-	if (!ctx->src.bev) {
-		log_err_level_printf(LOG_CRIT, "Error creating src bufferevent\n");
-		if (ctx->src.ssl) {
-			SSL_free(ctx->src.ssl);
-			ctx->src.ssl = NULL;
-		}
-		pxy_conn_free(ctx, 1);
-		return -1;
-	}
-	return 0;
-}
-
-int
-pxy_setup_src(pxy_conn_ctx_t *ctx)
-{
-	ctx->src.bev = pxy_bufferevent_setup(ctx, ctx->fd, ctx->src.ssl);
-	return pxy_check_src_bev(ctx);
-}
-
-int
-pxy_setup_new_src(pxy_conn_ctx_t *ctx)
-{
-	ctx->src.bev = bufferevent_openssl_filter_new(ctx->evbase, ctx->src.bev, ctx->src.ssl,
-			BUFFEREVENT_SSL_ACCEPTING, BEV_OPT_DEFER_CALLBACKS);
-	return pxy_check_src_bev(ctx);
-}
-
 int
 pxy_set_dstaddr(pxy_conn_ctx_t *ctx)
 {
 	if (sys_sockaddr_str((struct sockaddr *)&ctx->addr, ctx->addrlen, &ctx->dsthost_str, &ctx->dstport_str) != 0) {
 		ctx->enomem = 1;
-		pxy_conn_free(ctx, 1);
-		return -1;
-	}
-	return 0;
-}
-
-int
-pxy_setup_dst(pxy_conn_ctx_t *ctx)
-{
-	ctx->dst.ssl= NULL;
-	ctx->dst.bev = pxy_bufferevent_setup(ctx, -1, ctx->dst.ssl);
-	if (!ctx->dst.bev) {
-		log_err_level_printf(LOG_CRIT, "Error creating parent dst\n");
-		evutil_closesocket(ctx->fd);
-		pxy_conn_ctx_free(ctx, 1);
-		return -1;
-	}
-	return 0;
-}
-
-int
-pxy_setup_srv_dst(pxy_conn_ctx_t *ctx)
-{
-	ctx->srv_dst.bev = pxy_bufferevent_setup(ctx, -1, ctx->srv_dst.ssl);
-	if (!ctx->srv_dst.bev) {
-		log_err_level_printf(LOG_CRIT, "Error creating srv_dst\n");
-		if (ctx->srv_dst.ssl) {
-			SSL_free(ctx->srv_dst.ssl);
-			ctx->srv_dst.ssl = NULL;
-		}
 		pxy_conn_free(ctx, 1);
 		return -1;
 	}
@@ -1475,7 +1249,7 @@ void
 pxy_conn_connect(pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_connect: ENTER fd=%d\n", ctx->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_connect: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 	if (!ctx->addrlen) {
 		log_err_level_printf(LOG_CRIT, "No target address; aborting connection\n");
@@ -1512,7 +1286,7 @@ pxy_fd_readcb(evutil_socket_t fd, UNUSED short what, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_fd_readcb: ENTER fd=%d\n", ctx->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_fd_readcb: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
 	ctx->atime = time(NULL);
@@ -1540,7 +1314,7 @@ pxy_conn_setup(evutil_socket_t fd,
 	int dtable_count = getdtablecount();
 
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_setup: ENTER fd=%d\n", fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_setup: ENTER, fd=%d\n", fd);
 
 	char *host, *port;
 	if (sys_sockaddr_str(peeraddr, peeraddrlen, &host, &port) == 0) {

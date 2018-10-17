@@ -28,19 +28,71 @@
 
 #include "prototcp.h"
 #include "protopassthrough.h"
-// XXX
-#include "protossl.h"
 
 #include <sys/param.h>
-#include <event2/bufferevent_ssl.h>
 
+/*
+ * Set up a bufferevent structure for either a dst or src connection,
+ * optionally with or without SSL.  Sets all callbacks, enables read
+ * and write events, but does not call bufferevent_socket_connect().
+ *
+ * For dst connections, pass -1 as fd.  Pass a pointer to an initialized
+ * SSL struct as ssl if the connection should use SSL.
+ *
+ * Returns pointer to initialized bufferevent structure, as returned
+ * by bufferevent_socket_new() or bufferevent_openssl_socket_new().
+ */
+static struct bufferevent * NONNULL(1)
+prototcp_bufferevent_setup(pxy_conn_ctx_t *ctx, evutil_socket_t fd)
+{
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bufferevent_setup: ENTER, fd=%d\n", fd);
+#endif /* DEBUG_PROXY */
+
+	// @todo Do we really need to defer callbacks? BEV_OPT_DEFER_CALLBACKS seems responsible for the issue with srv_dst: We get writecb sometimes, no eventcb for CONNECTED event
+	struct bufferevent *bev = bufferevent_socket_new(ctx->evbase, fd, BEV_OPT_DEFER_CALLBACKS);
+	if (!bev) {
+		log_err_level_printf(LOG_CRIT, "Error creating bufferevent socket\n");
+		return NULL;
+	}
+
+	// @attention Do not set callbacks here, srv_dst does not set r cb
+	//bufferevent_setcb(bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
+	// @todo Should we enable events here?
+	//bufferevent_enable(bev, EV_READ|EV_WRITE);
+	return bev;
+}
+
+static struct bufferevent *
+prototcp_bufferevent_setup_child(pxy_conn_child_ctx_t *ctx, evutil_socket_t fd)
+{
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bufferevent_setup_child: ENTER, fd=%d\n", fd);
+#endif /* DEBUG_PROXY */
+
+	struct bufferevent *bev = bufferevent_socket_new(ctx->conn->evbase, fd, BEV_OPT_DEFER_CALLBACKS);
+	if (!bev) {
+		log_err_level_printf(LOG_CRIT, "Error creating bufferevent socket\n");
+		return NULL;
+	}
+
+	bufferevent_setcb(bev, pxy_bev_readcb_child, pxy_bev_writecb_child, pxy_bev_eventcb_child, ctx);
+
+	// @attention We cannot enable events here, because src events will be deferred until after dst is connected
+	//bufferevent_enable(bev, EV_READ|EV_WRITE);
+	return bev;
+}
+
+/*
+ * Free bufferenvent and close underlying socket properly.
+ */
 void
 prototcp_bufferevent_free_and_close_fd(struct bufferevent *bev, UNUSED pxy_conn_ctx_t *ctx)
 {
 	evutil_socket_t fd = bufferevent_getfd(bev);
 
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINER, "bufferevent_free_and_close_fd_tcp: ENTER i:%zu o:%zu, fd=%d\n",
+	log_dbg_level_printf(LOG_DBG_MODE_FINER, "prototcp_bufferevent_free_and_close_fd: ENTER i:%zu o:%zu, fd=%d\n",
 			evbuffer_get_length(bufferevent_get_input(bev)), evbuffer_get_length(bufferevent_get_output(bev)), fd);
 #endif /* DEBUG_PROXY */
 
@@ -48,19 +100,58 @@ prototcp_bufferevent_free_and_close_fd(struct bufferevent *bev, UNUSED pxy_conn_
 
 	if (evutil_closesocket(fd) == -1) {
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINE, "bufferevent_free_and_close_fd_tcp: evutil_closesocket FAILED, fd=%d\n", fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, "prototcp_bufferevent_free_and_close_fd: evutil_closesocket FAILED, fd=%d\n", fd);
 #endif /* DEBUG_PROXY */
 	}
 }
 
-void
+int
+prototcp_setup_src(pxy_conn_ctx_t *ctx)
+{
+	ctx->src.ssl= NULL;
+	ctx->src.bev = prototcp_bufferevent_setup(ctx, ctx->fd);
+	if (!ctx->src.bev) {
+		log_err_level_printf(LOG_CRIT, "Error creating src bufferevent\n");
+		pxy_conn_free(ctx, 1);
+		return -1;
+	}
+	return 0;
+}
+
+int
+prototcp_setup_dst(pxy_conn_ctx_t *ctx)
+{
+	ctx->dst.ssl= NULL;
+	ctx->dst.bev = prototcp_bufferevent_setup(ctx, -1);
+	if (!ctx->dst.bev) {
+		log_err_level_printf(LOG_CRIT, "Error creating parent dst\n");
+		pxy_conn_free(ctx, 1);
+		return -1;
+	}
+	return 0;
+}
+
+int
+prototcp_setup_srv_dst(pxy_conn_ctx_t *ctx)
+{
+	ctx->srv_dst.ssl= NULL;
+	ctx->srv_dst.bev = prototcp_bufferevent_setup(ctx, -1);
+	if (!ctx->srv_dst.bev) {
+		log_err_level_printf(LOG_CRIT, "Error creating srv_dst\n");
+		pxy_conn_free(ctx, 1);
+		return -1;
+	}
+	return 0;
+}
+
+static void
 prototcp_conn_connect(pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_connect_tcp: ENTER fd=%d\n", ctx->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_conn_connect: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
-	if (pxy_setup_dst(ctx) == -1) {
+	if (prototcp_setup_dst(ctx) == -1) {
 		return;
 	}
 
@@ -68,11 +159,7 @@ prototcp_conn_connect(pxy_conn_ctx_t *ctx)
 	bufferevent_enable(ctx->dst.bev, EV_READ|EV_WRITE);
 
 	/* create server-side socket and eventbuffer */
-	// XXX
-	if (protossl_setup_srv_dst(ctx) == -1) {
-		return;
-	}
-	if (pxy_setup_srv_dst(ctx) == -1) {
+	if (prototcp_setup_srv_dst(ctx) == -1) {
 		return;
 	}
 
@@ -86,9 +173,9 @@ prototcp_conn_connect(pxy_conn_ctx_t *ctx)
 	
 	/* initiate connection */
 	if (bufferevent_socket_connect(ctx->srv_dst.bev, (struct sockaddr *)&ctx->addr, ctx->addrlen) == -1) {
-		log_err_level_printf(LOG_CRIT, "pxy_conn_connect_tcp: bufferevent_socket_connect for srv_dst failed\n");
+		log_err_level_printf(LOG_CRIT, "prototcp_conn_connect: bufferevent_socket_connect for srv_dst failed\n");
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_conn_connect_tcp: bufferevent_socket_connect for srv_dst failed, fd=%d\n", ctx->fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINER, "prototcp_conn_connect: bufferevent_socket_connect for srv_dst failed, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 		// @attention Do not try to close the conn here, otherwise both pxy_conn_connect() and eventcb try to free the conn using pxy_conn_free(),
 		// they are running on different threads, causing multithreading issues, e.g. signal 10.
@@ -96,21 +183,42 @@ prototcp_conn_connect(pxy_conn_ctx_t *ctx)
 	}
 }
 
-void
-prototcp_connect_child(pxy_conn_child_ctx_t *ctx)
+int
+prototcp_setup_src_child(pxy_conn_child_ctx_t *ctx)
 {
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_connect_tcp_child: ENTER, conn fd=%d, child_fd=%d\n", ctx->conn->fd, ctx->conn->child_fd);
-#endif /* DEBUG_PROXY */
+	ctx->src.ssl = NULL;
+	ctx->src.bev = prototcp_bufferevent_setup_child(ctx, ctx->fd);
+	if (!ctx->src.bev) {
+		log_err_level_printf(LOG_CRIT, "Error creating child src\n");
+		evutil_closesocket(ctx->fd);
+		pxy_conn_free(ctx->conn, 1);
+		return -1;
+	}
+	return 0;
+}
 
-	/* create server-side socket and eventbuffer */
+int
+prototcp_setup_dst_child(pxy_conn_child_ctx_t *ctx)
+{
 	ctx->dst.ssl = NULL;
-	ctx->dst.bev = pxy_bufferevent_setup_child(ctx, -1, ctx->dst.ssl);
+	ctx->dst.bev = prototcp_bufferevent_setup_child(ctx, -1);
 	if (!ctx->dst.bev) {
 		log_err_level_printf(LOG_CRIT, "Error creating bufferevent\n");
 		pxy_conn_free(ctx->conn, 1);
-		return;
+		return -1;
 	}
+	return 0;
+}
+
+static void
+prototcp_connect_child(pxy_conn_child_ctx_t *ctx)
+{
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_connect_child: ENTER, conn fd=%d, child_fd=%d\n", ctx->conn->fd, ctx->conn->child_fd);
+#endif /* DEBUG_PROXY */
+
+	/* create server-side socket and eventbuffer */
+	prototcp_setup_dst_child(ctx);
 }
 
 void
@@ -118,7 +226,7 @@ prototcp_fd_readcb(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_fd_readcb_tcp: ENTER fd=%d\n", ctx->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_fd_readcb: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 	pxy_conn_connect(ctx);
 }
@@ -128,7 +236,7 @@ prototcp_bev_readcb_src(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb_src: ENTER, fd=%d, size=%zu\n",
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_readcb_src: ENTER, fd=%d, size=%zu\n",
 			ctx->fd, evbuffer_get_length(bufferevent_get_input(bev)));
 #endif /* DEBUG_PROXY */
 
@@ -155,22 +263,22 @@ prototcp_bev_readcb_src(struct bufferevent *bev, void *arg)
 	}
 
 	if (evbuffer_remove(inbuf, packet, packet_size) == -1) {
-		log_err_printf("pxy_bev_readcb_src: evbuffer_remove failed, fd=%d\n", ctx->fd);
+		log_err_printf("prototcp_bev_readcb_src: evbuffer_remove failed, fd=%d\n", ctx->fd);
 	}
 
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb_src: ORIG packet (size=%zu), fd=%d:\n%.*s\n",
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_readcb_src: ORIG packet (size=%zu), fd=%d:\n%.*s\n",
 			packet_size, ctx->fd, (int)packet_size, packet);
 #endif /* DEBUG_PROXY */
 
 	pxy_insert_sslproxy_header(ctx, packet, &packet_size);
 
 	if (evbuffer_add(outbuf, packet, packet_size) == -1) {
-		log_err_printf("pxy_bev_readcb_src: evbuffer_add failed, fd=%d\n", ctx->fd);
+		log_err_printf("prototcp_bev_readcb_src: evbuffer_add failed, fd=%d\n", ctx->fd);
 	}
 
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb_src: NEW packet (size=%zu), fd=%d:\n%.*s\n",
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_readcb_src: NEW packet (size=%zu), fd=%d:\n%.*s\n",
 			packet_size, ctx->fd, (int)packet_size, packet);
 #endif /* DEBUG_PROXY */
 	free(packet);
@@ -182,7 +290,7 @@ prototcp_bev_readcb_dst(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb_dst: ENTER, fd=%d, size=%zu\n",
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_readcb_dst: ENTER, fd=%d, size=%zu\n",
 			ctx->fd, evbuffer_get_length(bufferevent_get_input(bev)));
 #endif /* DEBUG_PROXY */
 	
@@ -202,7 +310,7 @@ prototcp_bev_readcb_dst(struct bufferevent *bev, void *arg)
 	}
 
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb_dst: packet size=%zu, fd=%d\n", inbuf_size, ctx->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_readcb_dst: packet size=%zu, fd=%d\n", inbuf_size, ctx->fd);
 #endif /* DEBUG_PROXY */
 	evbuffer_add_buffer(outbuf, inbuf);
 	pxy_set_watermark(bev, ctx, ctx->src.bev);
@@ -211,7 +319,7 @@ prototcp_bev_readcb_dst(struct bufferevent *bev, void *arg)
 static void
 prototcp_bev_readcb_srv_dst(UNUSED struct bufferevent *bev, UNUSED void *arg)
 {
-	log_err_printf("pxy_bev_readcb_srv_dst: readcb called on srv_dst\n");
+	log_err_printf("prototcp_bev_readcb_srv_dst: readcb called on srv_dst\n");
 }
 
 static void
@@ -219,15 +327,13 @@ prototcp_bev_readcb_src_child(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_child_ctx_t *ctx = arg;
 
-	ctx->conn->atime = time(NULL);
-
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb_child_src: ENTER, fd=%d, conn fd=%d, size=%zu\n",
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_readcb_src_child: ENTER, fd=%d, conn fd=%d, size=%zu\n",
 			ctx->fd, ctx->conn->fd, evbuffer_get_length(bufferevent_get_input(bev)));
 #endif /* DEBUG_PROXY */
 		
 	if (!ctx->connected) {
-		log_err_level_printf(LOG_CRIT, "pxy_bev_readcb_child_src: readcb called when other end not connected - aborting.\n");
+		log_err_level_printf(LOG_CRIT, "prototcp_bev_readcb_src_child: readcb called when other end not connected - aborting.\n");
 		log_exceptcb();
 		return;
 	}
@@ -251,17 +357,17 @@ prototcp_bev_readcb_src_child(struct bufferevent *bev, void *arg)
 	}
 
 	if (evbuffer_remove(inbuf, packet, packet_size) == -1) {
-		log_err_printf("pxy_bev_readcb_child_src: src evbuffer_remove failed, fd=%d\n", ctx->fd);
+		log_err_printf("prototcp_bev_readcb_src_child: src evbuffer_remove failed, fd=%d\n", ctx->fd);
 	}
 
 	pxy_remove_sslproxy_header(packet, &packet_size, ctx);
 
 	if (evbuffer_add(outbuf, packet, packet_size) == -1) {
-		log_err_printf("pxy_bev_readcb_child_src: src evbuffer_add failed, fd=%d\n", ctx->fd);
+		log_err_printf("prototcp_bev_readcb_src_child: src evbuffer_add failed, fd=%d\n", ctx->fd);
 	}
 
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb_child_src: src packet (size=%zu), fd=%d, conn fd=%d:\n%.*s\n",
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_readcb_src_child: src packet (size=%zu), fd=%d, conn fd=%d:\n%.*s\n",
 			packet_size, ctx->fd, ctx->conn->fd, (int)packet_size, packet);
 #endif /* DEBUG_PROXY */
 
@@ -276,15 +382,13 @@ prototcp_bev_readcb_dst_child(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_child_ctx_t *ctx = arg;
 
-	ctx->conn->atime = time(NULL);
-
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb_child_dst: ENTER, fd=%d, conn fd=%d, size=%zu\n",
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_readcb_dst_child: ENTER, fd=%d, conn fd=%d, size=%zu\n",
 			ctx->fd, ctx->conn->fd, evbuffer_get_length(bufferevent_get_input(bev)));
 #endif /* DEBUG_PROXY */
 		
 	if (!ctx->connected) {
-		log_err_level_printf(LOG_CRIT, "pxy_bev_readcb_child_dst: readcb called when other end not connected - aborting.\n");
+		log_err_level_printf(LOG_CRIT, "prototcp_bev_readcb_dst_child: readcb called when other end not connected - aborting.\n");
 		log_exceptcb();
 		return;
 	}
@@ -301,7 +405,7 @@ prototcp_bev_readcb_dst_child(struct bufferevent *bev, void *arg)
 
 	ctx->conn->thr->extif_in_bytes += inbuf_size;
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_readcb_child_dst: dst packet size=%zu, fd=%d\n", inbuf_size, ctx->fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_readcb_dst_child: dst packet size=%zu, fd=%d\n", inbuf_size, ctx->fd);
 #endif /* DEBUG_PROXY */
 	pxy_log_content_inbuf((pxy_conn_ctx_t *)ctx, inbuf, 0);
 	evbuffer_add_buffer(outbuf, inbuf);
@@ -314,13 +418,13 @@ prototcp_bev_writecb_src(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_writecb_src: ENTER, fd=%d\n", ctx->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_writecb_src: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
 	if (ctx->dst.closed) {
-		if (pxy_close_conn_end_ifnodata(&ctx->src, ctx, &pxy_bufferevent_free_and_close_fd) == 1) {
+		if (pxy_try_close_conn_end(&ctx->src, ctx, ctx->protoctx->bufferevent_free_and_close_fd) == 1) {
 #ifdef DEBUG_PROXY
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_writecb_src: other->closed, terminate conn, fd=%d\n", ctx->fd);
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_writecb_src: other->closed, terminate conn, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 			pxy_conn_free(ctx, 1);
 		}			
@@ -334,22 +438,7 @@ prototcp_connect_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 	if (!ctx->dst_connected) {
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_connect_dst: writecb before connected, fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
-		// @attention Sometimes dst write cb fires but not event cb, especially if the listener cb is not finished yet, so the conn stalls.
-		// This is a workaround for this error condition, nothing else seems to work.
-		// @attention Do not try to free the conn here, since the listener cb may not be finished yet, which causes multithreading issues
-		// XXX: Workaround, should find the real cause: BEV_OPT_DEFER_CALLBACKS?
-		ctx->protoctx->bev_eventcb(bev, BEV_EVENT_CONNECTED, ctx);
-	}
-}
-
-static void
-prototcp_connect_dst_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ctx)
-{
-	if (!ctx->connected) {
-#ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_connect_dst_child: writecb before connected, fd=%d\n", ctx->fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, "prototcp_connect_dst: writecb before connected, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 		// @attention Sometimes dst write cb fires but not event cb, especially if the listener cb is not finished yet, so the conn stalls.
 		// This is a workaround for this error condition, nothing else seems to work.
@@ -364,15 +453,15 @@ prototcp_bev_writecb_dst(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_writecb_dst: ENTER, fd=%d\n", ctx->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_writecb_dst: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
 	prototcp_connect_dst(bev, ctx);
 
 	if (ctx->src.closed) {
-		if (pxy_close_conn_end_ifnodata(&ctx->dst, ctx, &prototcp_bufferevent_free_and_close_fd) == 1) {
+		if (pxy_try_close_conn_end(&ctx->dst, ctx, &prototcp_bufferevent_free_and_close_fd) == 1) {
 #ifdef DEBUG_PROXY
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_writecb_dst: other->closed, terminate conn, fd=%d\n", ctx->fd);
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_writecb_dst: other->closed, terminate conn, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 			pxy_conn_free(ctx, 0);
 		}			
@@ -386,7 +475,7 @@ prototcp_bev_writecb_srv_dst(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_writecb_srv_dst: ENTER, fd=%d\n", ctx->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_writecb_srv_dst: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 	pxy_connect_srv_dst(bev, ctx);
 }
@@ -397,15 +486,13 @@ prototcp_bev_writecb_src_child(struct bufferevent *bev, void *arg)
 	pxy_conn_child_ctx_t *ctx = arg;
 
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_writecb_child_src: ENTER, fd=%d\n", ctx->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_writecb_src_child: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
-	ctx->conn->atime = time(NULL);
-
 	if (ctx->dst.closed) {
-		if (pxy_close_conn_end_ifnodata(&ctx->src, ctx->conn, &prototcp_bufferevent_free_and_close_fd) == 1) {
+		if (pxy_try_close_conn_end(&ctx->src, ctx->conn, &prototcp_bufferevent_free_and_close_fd) == 1) {
 #ifdef DEBUG_PROXY
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_writecb_child_src: other->closed, terminate conn, fd=%d\n", ctx->fd);
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_writecb_src_child: other->closed, terminate conn, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 			pxy_conn_free_child(ctx);
 		}			
@@ -415,29 +502,56 @@ prototcp_bev_writecb_src_child(struct bufferevent *bev, void *arg)
 }
 
 static void
+prototcp_connect_dst_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ctx)
+{
+	if (!ctx->connected) {
+#ifdef DEBUG_PROXY
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, "prototcp_connect_dst_child: writecb before connected, fd=%d\n", ctx->fd);
+#endif /* DEBUG_PROXY */
+		// @attention Sometimes dst write cb fires but not event cb, especially if the listener cb is not finished yet, so the conn stalls.
+		// This is a workaround for this error condition, nothing else seems to work.
+		// @attention Do not try to free the conn here, since the listener cb may not be finished yet, which causes multithreading issues
+		// XXX: Workaround, should find the real cause: BEV_OPT_DEFER_CALLBACKS?
+		ctx->protoctx->bev_eventcb(bev, BEV_EVENT_CONNECTED, ctx);
+	}
+}
+
+static void
 prototcp_bev_writecb_dst_child(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_child_ctx_t *ctx = arg;
 
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_writecb_child_dst: ENTER, fd=%d\n", ctx->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_writecb_dst_child: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
-
-	ctx->conn->atime = time(NULL);
 
 	prototcp_connect_dst_child(bev, ctx);
 
 	if (ctx->src.closed) {
-		if (pxy_close_conn_end_ifnodata(&ctx->dst, ctx->conn, &pxy_bufferevent_free_and_close_fd) == 1) {
+		if (pxy_try_close_conn_end(&ctx->dst, ctx->conn, ctx->protoctx->bufferevent_free_and_close_fd) == 1) {
 #ifdef DEBUG_PROXY
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_writecb_child_dst: other->closed, terminate conn, fd=%d\n", ctx->fd);
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_writecb_dst_child: other->closed, terminate conn, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 			pxy_conn_free_child(ctx);
 		}			
 		return;
 	}
-
 	pxy_unset_watermark(bev, ctx->conn, &ctx->src);
+}
+
+void
+prototcp_close_srv_dst(pxy_conn_ctx_t *ctx)
+{
+	// @attention Free the srv_dst of the conn asap, we don't need it anymore, but we need its fd
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINER, "prototcp_close_srv_dst: Closing srv_dst, fd=%d, srv_dst fd=%d\n", ctx->fd, bufferevent_getfd(ctx->srv_dst.bev));
+#endif /* DEBUG_PROXY */
+
+	// @attention When both eventcb and writecb for srv_dst are enabled, either eventcb or writecb may get a NULL srv_dst bev, causing a crash with signal 10.
+	// So, from this point on, we should check if srv_dst is NULL or not.
+	prototcp_bufferevent_free_and_close_fd(ctx->srv_dst.bev, ctx);
+	ctx->srv_dst.bev = NULL;
+	ctx->srv_dst.closed = 1;
 }
 
 static int
@@ -445,14 +559,7 @@ prototcp_enable_src(pxy_conn_ctx_t *ctx)
 {
 	ctx->connected = 1;
 
-	// XXX
-	if (ctx->spec->ssl) {
-		int rv;
-		if ((rv = protossl_setup_src(ctx)) != 0) {
-			return rv;
-		}
-	}
-	if (pxy_setup_src(ctx) == -1) {
+	if (prototcp_setup_src(ctx) == -1) {
 		return -1;
 	}
 	bufferevent_setcb(ctx->src.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
@@ -465,41 +572,43 @@ prototcp_enable_src(pxy_conn_ctx_t *ctx)
 		return -1;
 	}
 
-	pxy_close_srv_dst(ctx);
+	prototcp_close_srv_dst(ctx);
 
 	if (pxy_setup_child_listener(ctx) == -1) {
 		return -1;
 	}
 
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_enable_src: Enabling src, %s, fd=%d, child_fd=%d\n", ctx->header_str, ctx->fd, ctx->child_fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_enable_src: Enabling src, %s, fd=%d, child_fd=%d\n", ctx->header_str, ctx->fd, ctx->child_fd);
 #endif /* DEBUG_PROXY */
 	// Now open the gates
 	bufferevent_enable(ctx->src.bev, EV_READ|EV_WRITE);
 	return 0;
 }
 
-void
+static void
 prototcp_bev_eventcb_connected_src(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_eventcb_connected_src: ENTER, fd=%d\n", ctx->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_eventcb_connected_src: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
 	pxy_log_connect_src(ctx);
 }
 
-void
+static void
 prototcp_bev_eventcb_connected_dst(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_eventcb_connected_dst: ENTER, fd=%d\n", ctx->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_eventcb_connected_dst: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
 	ctx->dst_connected = 1;
 
 	if (ctx->srv_dst_connected && ctx->dst_connected && !ctx->connected) {
-		prototcp_enable_src(ctx);
+		if (prototcp_enable_src(ctx) == -1) {
+			return;
+		}
 	}
 
 	if (ctx->connected) {
@@ -507,11 +616,11 @@ prototcp_bev_eventcb_connected_dst(UNUSED struct bufferevent *bev, pxy_conn_ctx_
 	}
 }
 
-void
+static void
 prototcp_bev_eventcb_connected_srv_dst(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_eventcb_connected_srv_dst: ENTER, fd=%d\n", ctx->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_eventcb_connected_srv_dst: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
 	ctx->srv_dst_connected = 1;
@@ -521,7 +630,7 @@ prototcp_bev_eventcb_connected_srv_dst(UNUSED struct bufferevent *bev, pxy_conn_
 	// @attention Create and enable dst.bev before, but connect here, because we check if dst.bev is NULL elsewhere
 	if (bufferevent_socket_connect(ctx->dst.bev, (struct sockaddr *)&ctx->spec->conn_dst_addr, ctx->spec->conn_dst_addrlen) == -1) {
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_bev_eventcb_connected_srv_dst: FAILED bufferevent_socket_connect for dst, fd=%d\n", ctx->fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, "prototcp_bev_eventcb_connected_srv_dst: FAILED bufferevent_socket_connect for dst, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 		pxy_conn_free(ctx, 1);
 		return;
@@ -544,7 +653,7 @@ void
 prototcp_bev_eventcb_eof_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_eventcb_eof_src: EOF, fd=%d\n", ctx->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_eventcb_eof_src: EOF, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
 	pxy_log_dbg_evbuf_info(ctx, &ctx->src, &ctx->dst);
@@ -554,22 +663,22 @@ prototcp_bev_eventcb_eof_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		ctx->dst.closed = 1;
 	} else if (!ctx->dst.closed) {
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_eventcb_eof_src: !other->closed, terminate conn, fd=%d\n", ctx->fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_eventcb_eof_src: !other->closed, terminate conn, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 		pxy_consume_last_input(bev, ctx);
-		pxy_close_conn_end_ifnodata(&ctx->dst, ctx, &prototcp_bufferevent_free_and_close_fd);
+		pxy_try_close_conn_end(&ctx->dst, ctx, &prototcp_bufferevent_free_and_close_fd);
 	}
 
 	pxy_log_dbg_disconnect(ctx);
 
-	pxy_disconnect(ctx, &ctx->src, &pxy_bufferevent_free_and_close_fd, &ctx->dst, 1);
+	pxy_disconnect(ctx, &ctx->src, ctx->protoctx->bufferevent_free_and_close_fd, &ctx->dst, 1);
 }
 
 void
 prototcp_bev_eventcb_eof_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_eventcb_eof_dst: EOF, fd=%d\n", ctx->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_eventcb_eof_dst: EOF, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
 	pxy_log_dbg_evbuf_info(ctx, &ctx->dst, &ctx->src);
@@ -579,10 +688,10 @@ prototcp_bev_eventcb_eof_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		ctx->src.closed = 1;
 	} else if (!ctx->src.closed) {
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_eventcb_eof_dst: !other->closed, terminate conn, fd=%d\n", ctx->fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_eventcb_eof_dst: !other->closed, terminate conn, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 		pxy_consume_last_input(bev, ctx);
-		pxy_close_conn_end_ifnodata(&ctx->src, ctx, &pxy_bufferevent_free_and_close_fd);
+		pxy_try_close_conn_end(&ctx->src, ctx, ctx->protoctx->bufferevent_free_and_close_fd);
 	}
 
 	pxy_log_dbg_disconnect(ctx);
@@ -594,7 +703,7 @@ void
 prototcp_bev_eventcb_eof_srv_dst(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_eventcb_eof_srv_dst: EOF, fd=%d\n", ctx->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_eventcb_eof_srv_dst: EOF, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
 	log_err_level_printf(LOG_WARNING, "EOF on outbound connection before connection establishment on srv_dst\n");
@@ -602,44 +711,34 @@ prototcp_bev_eventcb_eof_srv_dst(UNUSED struct bufferevent *bev, pxy_conn_ctx_t 
 }
 
 void
-prototcp_bev_eventcb_error_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
+prototcp_bev_eventcb_error_src(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_bev_eventcb_error_src: BEV_EVENT_ERROR, fd=%d\n", ctx->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINER, "prototcp_bev_eventcb_error_src: BEV_EVENT_ERROR, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
-
-	log_err_printf("pxy_bev_eventcb_error_src: Client-side BEV_EVENT_ERROR\n");
-	// XXX
-	protossl_log_ssl_error(bev, ctx);
-	ctx->thr->errors++;
 
 	if (!ctx->connected) {
 		ctx->dst.closed = 1;
 	} else if (!ctx->dst.closed) {
-		pxy_close_conn_end_ifnodata(&ctx->dst, ctx, &prototcp_bufferevent_free_and_close_fd);
+		pxy_try_close_conn_end(&ctx->dst, ctx, &prototcp_bufferevent_free_and_close_fd);
 	}
 
 	pxy_log_dbg_disconnect(ctx);
 
-	pxy_disconnect(ctx, &ctx->src, &pxy_bufferevent_free_and_close_fd, &ctx->dst, 1);
+	pxy_disconnect(ctx, &ctx->src, ctx->protoctx->bufferevent_free_and_close_fd, &ctx->dst, 1);
 }
 
 void
-prototcp_bev_eventcb_error_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
+prototcp_bev_eventcb_error_dst(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_bev_eventcb_error_dst: BEV_EVENT_ERROR, fd=%d\n", ctx->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINER, "prototcp_bev_eventcb_error_dst: BEV_EVENT_ERROR, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
-
-	log_err_printf("pxy_bev_eventcb_error_dst: Client-side BEV_EVENT_ERROR\n");
-	// XXX
-	protossl_log_ssl_error(bev, ctx);
-	ctx->thr->errors++;
 
 	if (!ctx->connected) {
 		ctx->src.closed = 1;
 	} else if (!ctx->src.closed) {
-		pxy_close_conn_end_ifnodata(&ctx->src, ctx, &pxy_bufferevent_free_and_close_fd);
+		pxy_try_close_conn_end(&ctx->src, ctx, ctx->protoctx->bufferevent_free_and_close_fd);
 	}
 
 	pxy_log_dbg_disconnect(ctx);
@@ -648,30 +747,16 @@ prototcp_bev_eventcb_error_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 }
 
 void
-prototcp_bev_eventcb_error_srv_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
+prototcp_bev_eventcb_error_srv_dst(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_bev_eventcb_error_srv_dst: BEV_EVENT_ERROR, fd=%d\n", ctx->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINER, "prototcp_bev_eventcb_error_srv_dst: BEV_EVENT_ERROR, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
-
-	log_err_printf("pxy_bev_eventcb_error_srv_dst: Client-side BEV_EVENT_ERROR\n");
-	// XXX
-	protossl_log_ssl_error(bev, ctx);
-	ctx->thr->errors++;
 
 	if (!ctx->connected) {
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_bev_eventcb_error_srv_dst: ERROR !ctx->connected, fd=%d\n", ctx->fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, "prototcp_bev_eventcb_error_srv_dst: ERROR !ctx->connected, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
-		/* the callout to the original destination failed,
-		 * e.g. because it asked for client cert auth, so
-		 * close the accepted socket and clean up */
-		if (ctx->srv_dst.ssl && ctx->opts->passthrough && bufferevent_get_openssl_error(bev)) {
-			/* ssl callout failed, fall back to plain TCP passthrough of SSL connection */
-			log_err_level_printf(LOG_WARNING, "SSL srv_dst connection failed; falling back to passthrough, fd=%d\n", ctx->fd);
-			protopassthrough_engage(ctx);
-			return;
-		}
 		pxy_conn_free(ctx, 0);
 	}
 }
@@ -679,22 +764,18 @@ prototcp_bev_eventcb_error_srv_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 static void
 prototcp_bev_eventcb_connected_src_child(UNUSED struct bufferevent *bev, pxy_conn_child_ctx_t *ctx)
 {
-	ctx->conn->atime = time(NULL);
-
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_eventcb_child_connected_src: ENTER, fd=%d, conn fd=%d\n", ctx->fd, ctx->conn->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_eventcb_connected_src_child: ENTER, fd=%d, conn fd=%d\n", ctx->fd, ctx->conn->fd);
 #endif /* DEBUG_PROXY */
 
 	ctx->conn->thr->max_fd = MAX(ctx->conn->thr->max_fd, MAX(bufferevent_getfd(ctx->src.bev), bufferevent_getfd(ctx->dst.bev)));
 }
 
 static void
-pxy_bev_eventcb_child_connected_dst(UNUSED struct bufferevent *bev, pxy_conn_child_ctx_t *ctx)
+prototcp_bev_eventcb_child_connected_dst(UNUSED struct bufferevent *bev, pxy_conn_child_ctx_t *ctx)
 {
-	ctx->conn->atime = time(NULL);
-
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_eventcb_child_connected_dst: ENTER, fd=%d, conn fd=%d\n", ctx->fd, ctx->conn->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_eventcb_child_connected_dst: ENTER, fd=%d, conn fd=%d\n", ctx->fd, ctx->conn->fd);
 #endif /* DEBUG_PROXY */
 
 	ctx->connected = 1;
@@ -708,10 +789,8 @@ pxy_bev_eventcb_child_connected_dst(UNUSED struct bufferevent *bev, pxy_conn_chi
 static void
 prototcp_bev_eventcb_eof_src_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ctx)
 {
-	ctx->conn->atime = time(NULL);
-
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_eventcb_child_eof_src: ENTER, fd=%d, conn fd=%d\n", ctx->fd, ctx->conn->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_eventcb_eof_src_child: ENTER, fd=%d, conn fd=%d\n", ctx->fd, ctx->conn->fd);
 	pxy_log_dbg_evbuf_info(ctx->conn, &ctx->src, &ctx->dst);
 #endif /* DEBUG_PROXY */
 
@@ -719,15 +798,15 @@ prototcp_bev_eventcb_eof_src_child(struct bufferevent *bev, pxy_conn_child_ctx_t
 	if (!ctx->connected) {
 		log_err_level_printf(LOG_WARNING, "EOF on outbound connection before connection establishment\n");
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_bev_eventcb_child_eof_src: EOF on outbound connection before connection establishment, fd=%d, conn fd=%d\n", ctx->fd, ctx->conn->fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINER, "prototcp_bev_eventcb_eof_src_child: EOF on outbound connection before connection establishment, fd=%d, conn fd=%d\n", ctx->fd, ctx->conn->fd);
 #endif /* DEBUG_PROXY */
 		ctx->dst.closed = 1;
 	} else if (!ctx->dst.closed) {
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_eventcb_child_eof_src: !other->closed, terminate conn, fd=%d, conn fd=%d\n", ctx->fd, ctx->conn->fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_eventcb_eof_src_child: !other->closed, terminate conn, fd=%d, conn fd=%d\n", ctx->fd, ctx->conn->fd);
 #endif /* DEBUG_PROXY */
 		pxy_consume_last_input_child(bev, ctx);
-		pxy_close_conn_end_ifnodata(&ctx->dst, ctx->conn, &pxy_bufferevent_free_and_close_fd);
+		pxy_try_close_conn_end(&ctx->dst, ctx->conn, ctx->protoctx->bufferevent_free_and_close_fd);
 	}
 	pxy_log_dbg_disconnect_child(ctx);
 	pxy_disconnect_child(ctx, &ctx->src, &prototcp_bufferevent_free_and_close_fd, &ctx->dst);
@@ -736,10 +815,8 @@ prototcp_bev_eventcb_eof_src_child(struct bufferevent *bev, pxy_conn_child_ctx_t
 void
 prototcp_bev_eventcb_eof_dst_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ctx)
 {
-	ctx->conn->atime = time(NULL);
-
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_eventcb_child_eof_dst: ENTER, fd=%d, conn fd=%d\n", ctx->fd, ctx->conn->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_eventcb_eof_dst_child: ENTER, fd=%d, conn fd=%d\n", ctx->fd, ctx->conn->fd);
 	pxy_log_dbg_evbuf_info(ctx->conn, &ctx->dst, &ctx->src);
 #endif /* DEBUG_PROXY */
 
@@ -747,32 +824,26 @@ prototcp_bev_eventcb_eof_dst_child(struct bufferevent *bev, pxy_conn_child_ctx_t
 	if (!ctx->connected) {
 		log_err_level_printf(LOG_WARNING, "EOF on outbound connection before connection establishment\n");
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_bev_eventcb_child_eof_dst: EOF on outbound connection before connection establishment, fd=%d, conn fd=%d\n", ctx->fd, ctx->conn->fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINER, "prototcp_bev_eventcb_eof_dst_child: EOF on outbound connection before connection establishment, fd=%d, conn fd=%d\n", ctx->fd, ctx->conn->fd);
 #endif /* DEBUG_PROXY */
 		ctx->src.closed = 1;
 	} else if (!ctx->src.closed) {
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_bev_eventcb_child_eof_dst: !other->closed, terminate conn, fd=%d, conn fd=%d\n", ctx->fd, ctx->conn->fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_eventcb_eof_dst_child: !other->closed, terminate conn, fd=%d, conn fd=%d\n", ctx->fd, ctx->conn->fd);
 #endif /* DEBUG_PROXY */
 		pxy_consume_last_input_child(bev, ctx);
-		pxy_close_conn_end_ifnodata(&ctx->src, ctx->conn, &prototcp_bufferevent_free_and_close_fd);
+		pxy_try_close_conn_end(&ctx->src, ctx->conn, &prototcp_bufferevent_free_and_close_fd);
 	}
 	pxy_log_dbg_disconnect_child(ctx);
-	pxy_disconnect_child(ctx, &ctx->dst, &pxy_bufferevent_free_and_close_fd, &ctx->src);
+	pxy_disconnect_child(ctx, &ctx->dst, ctx->protoctx->bufferevent_free_and_close_fd, &ctx->src);
 }
 
 static void
-prototcp_bev_eventcb_error_src_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ctx)
+prototcp_bev_eventcb_error_src_child(UNUSED struct bufferevent *bev, pxy_conn_child_ctx_t *ctx)
 {
-	ctx->conn->atime = time(NULL);
-
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_bev_eventcb_child_error_src: BEV_EVENT_ERROR, fd=%d, conn fd=%d\n", ctx->fd, ctx->conn->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINER, "prototcp_bev_eventcb_error_src_child: BEV_EVENT_ERROR, fd=%d, conn fd=%d\n", ctx->fd, ctx->conn->fd);
 #endif /* DEBUG_PROXY */
-	log_err_printf("Server-side BEV_EVENT_ERROR\n");
-	// XXX
-	protossl_log_ssl_error(bev, ctx->conn);
-	ctx->conn->thr->errors++;
 
 	if (!ctx->connected) {
 		/* the callout to the original destination failed,
@@ -783,24 +854,18 @@ prototcp_bev_eventcb_error_src_child(struct bufferevent *bev, pxy_conn_child_ctx
 		/* if the other end is still open and doesn't have data
 		 * to send, close it, otherwise its writecb will close
 		 * it after writing what's left in the output buffer */
-		pxy_close_conn_end_ifnodata(&ctx->dst, ctx->conn, &pxy_bufferevent_free_and_close_fd);
+		pxy_try_close_conn_end(&ctx->dst, ctx->conn, ctx->protoctx->bufferevent_free_and_close_fd);
 	}
 	pxy_log_dbg_disconnect_child(ctx);
 	pxy_disconnect_child(ctx, &ctx->src, &prototcp_bufferevent_free_and_close_fd, &ctx->dst);
 }
 
 void
-prototcp_bev_eventcb_error_dst_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ctx)
+prototcp_bev_eventcb_error_dst_child(UNUSED struct bufferevent *bev, pxy_conn_child_ctx_t *ctx)
 {
-	ctx->conn->atime = time(NULL);
-
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_bev_eventcb_child_error_dst: BEV_EVENT_ERROR, fd=%d, conn fd=%d\n", ctx->fd, ctx->conn->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINER, "prototcp_bev_eventcb_error_dst_child: BEV_EVENT_ERROR, fd=%d, conn fd=%d\n", ctx->fd, ctx->conn->fd);
 #endif /* DEBUG_PROXY */
-	log_err_printf("Server-side BEV_EVENT_ERROR\n");
-	// XXX
-	protossl_log_ssl_error(bev, ctx->conn);
-	ctx->conn->thr->errors++;
 
 	if (!ctx->connected) {
 		/* the callout to the original destination failed,
@@ -811,17 +876,16 @@ prototcp_bev_eventcb_error_dst_child(struct bufferevent *bev, pxy_conn_child_ctx
 		/* if the other end is still open and doesn't have data
 		 * to send, close it, otherwise its writecb will close
 		 * it after writing what's left in the output buffer */
-		pxy_close_conn_end_ifnodata(&ctx->src, ctx->conn, &prototcp_bufferevent_free_and_close_fd);
+		pxy_try_close_conn_end(&ctx->src, ctx->conn, &prototcp_bufferevent_free_and_close_fd);
 	}
 	pxy_log_dbg_disconnect_child(ctx);
-	pxy_disconnect_child(ctx, &ctx->dst, &pxy_bufferevent_free_and_close_fd, &ctx->src);
+	pxy_disconnect_child(ctx, &ctx->dst, ctx->protoctx->bufferevent_free_and_close_fd, &ctx->src);
 }
 
 void
 prototcp_bev_eventcb_src_child(struct bufferevent *bev, short events, void *arg)
 {
 	pxy_conn_child_ctx_t *ctx = arg;
-	ctx->conn->atime = time(NULL);
 
 	if (events & BEV_EVENT_CONNECTED) {
 		prototcp_bev_eventcb_connected_src_child(bev, ctx);
@@ -832,14 +896,13 @@ prototcp_bev_eventcb_src_child(struct bufferevent *bev, short events, void *arg)
 	}
 }
 
-static void
+void
 prototcp_bev_eventcb_dst_child(struct bufferevent *bev, short events, void *arg)
 {
 	pxy_conn_child_ctx_t *ctx = arg;
-	ctx->conn->atime = time(NULL);
 
 	if (events & BEV_EVENT_CONNECTED) {
-		pxy_bev_eventcb_child_connected_dst(bev, ctx);
+		prototcp_bev_eventcb_child_connected_dst(bev, ctx);
 	} else if (events & BEV_EVENT_EOF) {
 		prototcp_bev_eventcb_eof_dst_child(bev, ctx);
 	} else if (events & BEV_EVENT_ERROR) {
@@ -847,11 +910,10 @@ prototcp_bev_eventcb_dst_child(struct bufferevent *bev, short events, void *arg)
 	}
 }
 
-static void
+void
 prototcp_bev_eventcb_src(struct bufferevent *bev, short events, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
-	ctx->atime = time(NULL);
 
 	if (events & BEV_EVENT_CONNECTED) {
 		prototcp_bev_eventcb_connected_src(bev, ctx);
@@ -866,7 +928,6 @@ static void
 prototcp_bev_eventcb_dst(struct bufferevent *bev, short events, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
-	ctx->atime = time(NULL);
 
 	if (events & BEV_EVENT_CONNECTED) {
 		prototcp_bev_eventcb_connected_dst(bev, ctx);
@@ -881,7 +942,6 @@ static void
 prototcp_bev_eventcb_srv_dst(struct bufferevent *bev, short events, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
-	ctx->atime = time(NULL);
 
 	if (events & BEV_EVENT_CONNECTED) {
 		prototcp_bev_eventcb_connected_srv_dst(bev, ctx);
@@ -892,14 +952,14 @@ prototcp_bev_eventcb_srv_dst(struct bufferevent *bev, short events, void *arg)
 	}
 }
 
-void
+static void
 prototcp_bev_readcb(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
 	ctx->atime = time(NULL);
 
 	if (!ctx->connected) {
-		log_err_level_printf(LOG_CRIT, "pxy_bev_readcb_tcp: readcb called when not connected - aborting.\n");
+		log_err_level_printf(LOG_CRIT, "prototcp_bev_readcb: readcb called when not connected - aborting.\n");
 		log_exceptcb();
 		return;
 	}
@@ -911,7 +971,7 @@ prototcp_bev_readcb(struct bufferevent *bev, void *arg)
 	} else if (bev == ctx->srv_dst.bev) {
 		prototcp_bev_readcb_srv_dst(bev, arg);
 	} else {
-		log_err_printf("pxy_bev_readcb_tcp: UNKWN conn end\n");
+		log_err_printf("prototcp_bev_readcb: UNKWN conn end\n");
 	}
 }
 
@@ -928,15 +988,20 @@ prototcp_bev_writecb(struct bufferevent *bev, void *arg)
 	} else if (bev == ctx->srv_dst.bev) {
 		prototcp_bev_writecb_srv_dst(bev, arg);
 	} else {
-		log_err_printf("pxy_bev_writecb_tcp: UNKWN conn end\n");
+		log_err_printf("prototcp_bev_writecb: UNKWN conn end\n");
 	}
 }
 
-void
+static void
 prototcp_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
 	ctx->atime = time(NULL);
+
+	if (events & BEV_EVENT_ERROR) {
+		log_err_printf("prototcp_bev_eventcb: Client-side BEV_EVENT_ERROR\n");
+		ctx->thr->errors++;
+	}
 
 	if (bev == ctx->src.bev) {
 		prototcp_bev_eventcb_src(bev, events, arg);
@@ -945,18 +1010,18 @@ prototcp_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 	} else if (bev == ctx->srv_dst.bev) {
 		prototcp_bev_eventcb_srv_dst(bev, events, arg);
 	} else {
-		log_err_printf("pxy_bev_eventcb_tcp: UNKWN conn end\n");
+		log_err_printf("prototcp_bev_eventcb: UNKWN conn end\n");
 	}
 }
 
-void
+static void
 prototcp_bev_readcb_child(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_child_ctx_t *ctx = arg;
 	ctx->conn->atime = time(NULL);
 
 	if (!ctx->connected) {
-		log_err_level_printf(LOG_CRIT, "pxy_bev_readcb_tcp_child: readcb called when not connected - aborting.\n");
+		log_err_level_printf(LOG_CRIT, "prototcp_bev_readcb_child: readcb called when not connected - aborting.\n");
 		log_exceptcb();
 		return;
 	}
@@ -966,7 +1031,7 @@ prototcp_bev_readcb_child(struct bufferevent *bev, void *arg)
 	} else if (bev == ctx->dst.bev) {
 		prototcp_bev_readcb_dst_child(bev, arg);
 	} else {
-		log_err_printf("pxy_bev_readcb_tcp_child: UNKWN conn end\n");
+		log_err_printf("prototcp_bev_readcb_child: UNKWN conn end\n");
 	}
 }
 
@@ -981,22 +1046,27 @@ prototcp_bev_writecb_child(struct bufferevent *bev, void *arg)
 	} else if (bev == ctx->dst.bev) {
 		prototcp_bev_writecb_dst_child(bev, arg);
 	} else {
-		log_err_printf("pxy_bev_writecb_tcp_child: UNKWN conn end\n");
+		log_err_printf("prototcp_bev_writecb_child: UNKWN conn end\n");
 	}
 }
 
-void
+static void
 prototcp_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 {
 	pxy_conn_child_ctx_t *ctx = arg;
 	ctx->conn->atime = time(NULL);
+
+	if (events & BEV_EVENT_ERROR) {
+		log_err_printf("Server-side BEV_EVENT_ERROR\n");
+		ctx->conn->thr->errors++;
+	}
 
 	if (bev == ctx->src.bev) {
 		prototcp_bev_eventcb_src_child(bev, events, arg);
 	} else if (bev == ctx->dst.bev) {
 		prototcp_bev_eventcb_dst_child(bev, events, arg);
 	} else {
-		log_err_printf("pxy_bev_eventcb_tcp_child: UNKWN conn end\n");
+		log_err_printf("prototcp_bev_eventcb_child: UNKWN conn end\n");
 	}
 }
 
