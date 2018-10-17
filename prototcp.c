@@ -144,7 +144,7 @@ prototcp_setup_srv_dst(pxy_conn_ctx_t *ctx)
 	return 0;
 }
 
-static void
+static void NONNULL(1)
 prototcp_conn_connect(pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
@@ -210,7 +210,7 @@ prototcp_setup_dst_child(pxy_conn_child_ctx_t *ctx)
 	return 0;
 }
 
-static void
+static void NONNULL(1)
 prototcp_connect_child(pxy_conn_child_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
@@ -231,7 +231,7 @@ prototcp_fd_readcb(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 	pxy_conn_connect(ctx);
 }
 
-static void
+static void NONNULL(1)
 prototcp_bev_readcb_src(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
@@ -285,7 +285,7 @@ prototcp_bev_readcb_src(struct bufferevent *bev, void *arg)
 	pxy_set_watermark(bev, ctx, ctx->dst.bev);
 }
 
-static void
+static void NONNULL(1)
 prototcp_bev_readcb_dst(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
@@ -316,13 +316,13 @@ prototcp_bev_readcb_dst(struct bufferevent *bev, void *arg)
 	pxy_set_watermark(bev, ctx, ctx->src.bev);
 }
 
-static void
+static void NONNULL(1)
 prototcp_bev_readcb_srv_dst(UNUSED struct bufferevent *bev, UNUSED void *arg)
 {
 	log_err_printf("prototcp_bev_readcb_srv_dst: readcb called on srv_dst\n");
 }
 
-static void
+static void NONNULL(1)
 prototcp_bev_readcb_src_child(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_child_ctx_t *ctx = arg;
@@ -360,7 +360,7 @@ prototcp_bev_readcb_src_child(struct bufferevent *bev, void *arg)
 		log_err_printf("prototcp_bev_readcb_src_child: src evbuffer_remove failed, fd=%d\n", ctx->fd);
 	}
 
-	pxy_remove_sslproxy_header(packet, &packet_size, ctx);
+	pxy_remove_sslproxy_header(ctx, packet, &packet_size);
 
 	if (evbuffer_add(outbuf, packet, packet_size) == -1) {
 		log_err_printf("prototcp_bev_readcb_src_child: src evbuffer_add failed, fd=%d\n", ctx->fd);
@@ -377,7 +377,7 @@ prototcp_bev_readcb_src_child(struct bufferevent *bev, void *arg)
 	pxy_set_watermark(bev, ctx->conn, ctx->dst.bev);
 }
 
-static void
+static void NONNULL(1)
 prototcp_bev_readcb_dst_child(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_child_ctx_t *ctx = arg;
@@ -413,7 +413,7 @@ prototcp_bev_readcb_dst_child(struct bufferevent *bev, void *arg)
 	pxy_set_watermark(bev, ctx->conn, ctx->src.bev);
 }
 
-static void
+static void NONNULL(1)
 prototcp_bev_writecb_src(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
@@ -433,7 +433,7 @@ prototcp_bev_writecb_src(struct bufferevent *bev, void *arg)
 	pxy_unset_watermark(bev, ctx, &ctx->dst);
 }
 
-static void
+static void NONNULL(1,2)
 prototcp_connect_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 	if (!ctx->dst_connected) {
@@ -448,7 +448,7 @@ prototcp_connect_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	}
 }
 
-static void
+static void NONNULL(1)
 prototcp_bev_writecb_dst(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
@@ -470,7 +470,7 @@ prototcp_bev_writecb_dst(struct bufferevent *bev, void *arg)
 	pxy_unset_watermark(bev, ctx, &ctx->src);
 }
 
-static void
+static void NONNULL(1)
 prototcp_bev_writecb_srv_dst(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
@@ -480,7 +480,7 @@ prototcp_bev_writecb_srv_dst(struct bufferevent *bev, void *arg)
 	pxy_connect_srv_dst(bev, ctx);
 }
 
-static void
+static void NONNULL(1)
 prototcp_bev_writecb_src_child(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_child_ctx_t *ctx = arg;
@@ -501,7 +501,7 @@ prototcp_bev_writecb_src_child(struct bufferevent *bev, void *arg)
 	pxy_unset_watermark(bev, ctx->conn, &ctx->dst);
 }
 
-static void
+static void NONNULL(1,2)
 prototcp_connect_dst_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ctx)
 {
 	if (!ctx->connected) {
@@ -516,7 +516,7 @@ prototcp_connect_dst_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ctx)
 	}
 }
 
-static void
+static void NONNULL(1)
 prototcp_bev_writecb_dst_child(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_child_ctx_t *ctx = arg;
@@ -539,7 +539,7 @@ prototcp_bev_writecb_dst_child(struct bufferevent *bev, void *arg)
 	pxy_unset_watermark(bev, ctx->conn, &ctx->src);
 }
 
-void
+static void NONNULL(1)
 prototcp_close_srv_dst(pxy_conn_ctx_t *ctx)
 {
 	// @attention Free the srv_dst of the conn asap, we don't need it anymore, but we need its fd
@@ -554,7 +554,7 @@ prototcp_close_srv_dst(pxy_conn_ctx_t *ctx)
 	ctx->srv_dst.closed = 1;
 }
 
-static int
+static int NONNULL(1)
 prototcp_enable_src(pxy_conn_ctx_t *ctx)
 {
 	ctx->connected = 1;
@@ -586,7 +586,7 @@ prototcp_enable_src(pxy_conn_ctx_t *ctx)
 	return 0;
 }
 
-static void
+static void NONNULL(1,2)
 prototcp_bev_eventcb_connected_src(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
@@ -596,7 +596,7 @@ prototcp_bev_eventcb_connected_src(UNUSED struct bufferevent *bev, pxy_conn_ctx_
 	pxy_log_connect_src(ctx);
 }
 
-static void
+static void NONNULL(1,2)
 prototcp_bev_eventcb_connected_dst(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
@@ -616,7 +616,7 @@ prototcp_bev_eventcb_connected_dst(UNUSED struct bufferevent *bev, pxy_conn_ctx_
 	}
 }
 
-static void
+static void NONNULL(1,2)
 prototcp_bev_eventcb_connected_srv_dst(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
@@ -761,7 +761,7 @@ prototcp_bev_eventcb_error_srv_dst(UNUSED struct bufferevent *bev, pxy_conn_ctx_
 	}
 }
 
-static void
+static void NONNULL(1,2)
 prototcp_bev_eventcb_connected_src_child(UNUSED struct bufferevent *bev, pxy_conn_child_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
@@ -771,7 +771,7 @@ prototcp_bev_eventcb_connected_src_child(UNUSED struct bufferevent *bev, pxy_con
 	ctx->conn->thr->max_fd = MAX(ctx->conn->thr->max_fd, MAX(bufferevent_getfd(ctx->src.bev), bufferevent_getfd(ctx->dst.bev)));
 }
 
-static void
+static void NONNULL(1,2)
 prototcp_bev_eventcb_child_connected_dst(UNUSED struct bufferevent *bev, pxy_conn_child_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
@@ -786,7 +786,7 @@ prototcp_bev_eventcb_child_connected_dst(UNUSED struct bufferevent *bev, pxy_con
 	ctx->conn->thr->max_fd = MAX(ctx->conn->thr->max_fd, MAX(bufferevent_getfd(ctx->src.bev), bufferevent_getfd(ctx->dst.bev)));
 }
 
-static void
+static void NONNULL(1,2)
 prototcp_bev_eventcb_eof_src_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
@@ -838,7 +838,7 @@ prototcp_bev_eventcb_eof_dst_child(struct bufferevent *bev, pxy_conn_child_ctx_t
 	pxy_disconnect_child(ctx, &ctx->dst, ctx->protoctx->bufferevent_free_and_close_fd, &ctx->src);
 }
 
-static void
+static void NONNULL(1,2)
 prototcp_bev_eventcb_error_src_child(UNUSED struct bufferevent *bev, pxy_conn_child_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
@@ -924,7 +924,7 @@ prototcp_bev_eventcb_src(struct bufferevent *bev, short events, void *arg)
 	}
 }
 
-static void
+static void NONNULL(1)
 prototcp_bev_eventcb_dst(struct bufferevent *bev, short events, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
@@ -938,7 +938,7 @@ prototcp_bev_eventcb_dst(struct bufferevent *bev, short events, void *arg)
 	}
 }
 
-static void
+static void NONNULL(1)
 prototcp_bev_eventcb_srv_dst(struct bufferevent *bev, short events, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
@@ -952,7 +952,7 @@ prototcp_bev_eventcb_srv_dst(struct bufferevent *bev, short events, void *arg)
 	}
 }
 
-static void
+static void NONNULL(1)
 prototcp_bev_readcb(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
@@ -992,7 +992,7 @@ prototcp_bev_writecb(struct bufferevent *bev, void *arg)
 	}
 }
 
-static void
+static void NONNULL(1)
 prototcp_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
@@ -1014,7 +1014,7 @@ prototcp_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 	}
 }
 
-static void
+static void NONNULL(1)
 prototcp_bev_readcb_child(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_child_ctx_t *ctx = arg;
@@ -1050,7 +1050,7 @@ prototcp_bev_writecb_child(struct bufferevent *bev, void *arg)
 	}
 }
 
-static void
+static void NONNULL(1)
 prototcp_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 {
 	pxy_conn_child_ctx_t *ctx = arg;
@@ -1070,7 +1070,7 @@ prototcp_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 	}
 }
 
-enum protocol
+protocol_t
 prototcp_setup(pxy_conn_ctx_t *ctx)
 {
 	ctx->protoctx->proto = PROTO_TCP;
@@ -1085,7 +1085,7 @@ prototcp_setup(pxy_conn_ctx_t *ctx)
 	return PROTO_TCP;
 }
 
-enum protocol
+protocol_t
 prototcp_setup_child(pxy_conn_child_ctx_t *ctx)
 {
 	ctx->protoctx->proto = PROTO_TCP;

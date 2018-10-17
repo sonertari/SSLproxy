@@ -50,7 +50,7 @@
  * TODO - peek into more than just the current segment
  * TODO - add retry mechanism for short truncated ClientHello, possibly generic
  */
-int
+static int NONNULL(1)
 protoautossl_peek_and_upgrade(pxy_conn_ctx_t *ctx)
 {
 	protoautossl_ctx_t *autossl_ctx = ctx->protoctx->arg;
@@ -116,7 +116,7 @@ protoautossl_peek_and_upgrade(pxy_conn_ctx_t *ctx)
 	return 0;
 }
 
-static void
+static void NONNULL(1,2)
 protoautossl_bev_eventcb_connected_src(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
@@ -126,7 +126,7 @@ protoautossl_bev_eventcb_connected_src(UNUSED struct bufferevent *bev, pxy_conn_
 	pxy_log_connect_src(ctx);
 }
 
-static void
+static void NONNULL(1)
 protoautossl_close_srv_dst(pxy_conn_ctx_t *ctx)
 {
 	// @attention Free the srv_dst of the conn asap, we don't need it anymore, but we need its fd
@@ -147,7 +147,7 @@ protoautossl_close_srv_dst(pxy_conn_ctx_t *ctx)
 	ctx->srv_dst.closed = 1;
 }
 
-static int
+static int NONNULL(1)
 protoautossl_enable_src(pxy_conn_ctx_t *ctx)
 {
 	protoautossl_ctx_t *autossl_ctx = ctx->protoctx->arg;
@@ -175,7 +175,7 @@ protoautossl_enable_src(pxy_conn_ctx_t *ctx)
 			return rv;
 		}
 		// Replace tcp src.bev with ssl version
-		if (protossl_setup_src_sslbev(ctx) == -1) {
+		if (protossl_setup_src_new_sslbev(ctx) == -1) {
 			return -1;
 		}
 	}
@@ -209,7 +209,7 @@ protoautossl_enable_src(pxy_conn_ctx_t *ctx)
 	return 0;
 }
 
-static void
+static void NONNULL(1,2)
 protoautossl_eventcb_connected_dst(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 	protoautossl_ctx_t *autossl_ctx = ctx->protoctx->arg;
@@ -230,7 +230,7 @@ protoautossl_eventcb_connected_dst(UNUSED struct bufferevent *bev, pxy_conn_ctx_
 	}
 }
 
-static void
+static void NONNULL(1,2)
 protoautossl_bev_eventcb_connected_srv_dst(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 	protoautossl_ctx_t *autossl_ctx = ctx->protoctx->arg;
@@ -268,7 +268,7 @@ protoautossl_bev_eventcb_connected_srv_dst(UNUSED struct bufferevent *bev, pxy_c
 	}
 }
 
-static void
+static void NONNULL(1)
 protoautossl_bev_readcb_src(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
@@ -340,7 +340,7 @@ protoautossl_bev_readcb_src(struct bufferevent *bev, void *arg)
 	pxy_set_watermark(bev, ctx, ctx->dst.bev);
 }
 
-static void
+static void NONNULL(1)
 protoautossl_bev_readcb_dst(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
@@ -378,7 +378,7 @@ protoautossl_bev_readcb_dst(struct bufferevent *bev, void *arg)
 	pxy_set_watermark(bev, ctx, ctx->src.bev);
 }
 
-static void
+static void NONNULL(1)
 protoautossl_bev_readcb_srv_dst(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
@@ -410,7 +410,7 @@ protoautossl_bev_readcb_srv_dst(struct bufferevent *bev, void *arg)
 	return;
 }
 
-static void
+static void NONNULL(1)
 protoautossl_bev_readcb_complete_child(pxy_conn_child_ctx_t *ctx)
 {
 	if (OPTS_DEBUG(ctx->conn->opts)) {
@@ -420,7 +420,7 @@ protoautossl_bev_readcb_complete_child(pxy_conn_child_ctx_t *ctx)
 	if (protossl_setup_dst_ssl_child(ctx) == -1) {
 		return;
 	}
-	if (protossl_setup_dst_sslbev_child(ctx) == -1) {
+	if (protossl_setup_dst_new_sslbev_child(ctx) == -1) {
 		return;
 	}
 	bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb_child, pxy_bev_writecb_child, pxy_bev_eventcb_child, ctx);
@@ -434,7 +434,7 @@ protoautossl_bev_readcb_complete_child(pxy_conn_child_ctx_t *ctx)
 	}
 }
 
-static void
+static void NONNULL(1)
 protoautossl_bev_readcb_src_child(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_child_ctx_t *ctx = arg;
@@ -473,7 +473,7 @@ protoautossl_bev_readcb_src_child(struct bufferevent *bev, void *arg)
 		log_err_printf("protoautossl_bev_readcb_src_child: src evbuffer_remove failed, fd=%d\n", ctx->fd);
 	}
 
-	pxy_remove_sslproxy_header(packet, &packet_size, ctx);
+	pxy_remove_sslproxy_header(ctx, packet, &packet_size);
 
 	if (evbuffer_add(outbuf, packet, packet_size) == -1) {
 		log_err_printf("protoautossl_bev_readcb_src_child: src evbuffer_add failed, fd=%d\n", ctx->fd);
@@ -490,7 +490,7 @@ protoautossl_bev_readcb_src_child(struct bufferevent *bev, void *arg)
 	pxy_set_watermark(bev, ctx->conn, ctx->dst.bev);
 }
 
-static void
+static void NONNULL(1)
 protoautossl_bev_readcb_dst_child(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_child_ctx_t *ctx = arg;
@@ -526,7 +526,7 @@ protoautossl_bev_readcb_dst_child(struct bufferevent *bev, void *arg)
 	evbuffer_add_buffer(outbuf, inbuf);
 }
 
-static void
+static void NONNULL(1)
 protoautossl_bev_readcb(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
@@ -549,7 +549,7 @@ protoautossl_bev_readcb(struct bufferevent *bev, void *arg)
 	}
 }
 
-static void
+static void NONNULL(1)
 protoautossl_bev_readcb_child(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_child_ctx_t *ctx = arg;
@@ -570,7 +570,7 @@ protoautossl_bev_readcb_child(struct bufferevent *bev, void *arg)
 	}
 }
 
-static void
+static void NONNULL(1,2)
 protoautossl_bev_eventcb_connected_dst_child(UNUSED struct bufferevent *bev, pxy_conn_child_ctx_t *ctx)
 {
 	protoautossl_ctx_t *autossl_ctx = ctx->conn->protoctx->arg;
@@ -597,7 +597,7 @@ protoautossl_bev_eventcb_connected_dst_child(UNUSED struct bufferevent *bev, pxy
 	ctx->conn->thr->max_fd = MAX(ctx->conn->thr->max_fd, MAX(bufferevent_getfd(ctx->src.bev), bufferevent_getfd(ctx->dst.bev)));
 }
 
-static void
+static void NONNULL(1)
 protoautossl_conn_connect(pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
@@ -629,7 +629,7 @@ protoautossl_conn_connect(pxy_conn_ctx_t *ctx)
 	}
 }
 
-static void
+static void NONNULL(1)
 protoautossl_connect_child(pxy_conn_child_ctx_t *ctx)
 {
 	protoautossl_ctx_t *autossl_ctx = ctx->conn->protoctx->arg;
@@ -646,7 +646,7 @@ protoautossl_connect_child(pxy_conn_child_ctx_t *ctx)
 	}
 }
 
-static void
+static void NONNULL(1)
 protoautossl_bev_eventcb_src(struct bufferevent *bev, short events, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
@@ -661,7 +661,7 @@ protoautossl_bev_eventcb_src(struct bufferevent *bev, short events, void *arg)
 	}
 }
 
-static void
+static void NONNULL(1)
 protoautossl_bev_eventcb_dst(struct bufferevent *bev, short events, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
@@ -676,7 +676,7 @@ protoautossl_bev_eventcb_dst(struct bufferevent *bev, short events, void *arg)
 	}
 }
 
-static void
+static void NONNULL(1)
 protoautossl_bev_eventcb_srv_dst(struct bufferevent *bev, short events, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
@@ -691,7 +691,7 @@ protoautossl_bev_eventcb_srv_dst(struct bufferevent *bev, short events, void *ar
 	}
 }
 
-static void
+static void NONNULL(1)
 protoautossl_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
@@ -708,7 +708,7 @@ protoautossl_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 	}
 }
 
-static void
+static void NONNULL(1)
 protoautossl_bev_eventcb_dst_child(struct bufferevent *bev, short events, void *arg)
 {
 	pxy_conn_child_ctx_t *ctx = arg;
@@ -723,7 +723,7 @@ protoautossl_bev_eventcb_dst_child(struct bufferevent *bev, short events, void *
 	}
 }
 
-static void
+static void NONNULL(1)
 protoautossl_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 {
 	pxy_conn_child_ctx_t *ctx = arg;
@@ -738,7 +738,7 @@ protoautossl_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 	}
 }
 
-static void
+static void NONNULL(1,2)
 protoautossl_bufferevent_free_and_close_fd(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 	evutil_socket_t fd = bufferevent_getfd(bev);
@@ -770,7 +770,7 @@ protoautossl_bufferevent_free_and_close_fd(struct bufferevent *bev, pxy_conn_ctx
 	}
 }
 
-static void
+static void NONNULL(1)
 protoautossl_free(pxy_conn_ctx_t *ctx)
 {
 	protoautossl_ctx_t *autossl_ctx = ctx->protoctx->arg;
@@ -778,7 +778,7 @@ protoautossl_free(pxy_conn_ctx_t *ctx)
 	protossl_free(ctx);
 }
 
-enum protocol
+protocol_t
 protoautossl_setup(pxy_conn_ctx_t *ctx)
 {
 	ctx->protoctx->proto = PROTO_AUTOSSL;
@@ -812,7 +812,7 @@ protoautossl_setup(pxy_conn_ctx_t *ctx)
 	return PROTO_AUTOSSL;
 }
 
-enum protocol
+protocol_t
 protoautossl_setup_child(pxy_conn_child_ctx_t *ctx)
 {
 	ctx->protoctx->proto = PROTO_AUTOSSL;

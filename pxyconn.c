@@ -83,7 +83,7 @@ typedef struct pxy_conn_lproc_desc {
 
 int descriptor_table_size = 0;
 
-static enum protocol
+static protocol_t NONNULL(1)
 pxy_setup_proto(pxy_conn_ctx_t *ctx)
 {
 	ctx->protoctx = malloc(sizeof(proto_ctx_t));
@@ -122,7 +122,7 @@ pxy_setup_proto(pxy_conn_ctx_t *ctx)
 	}
 }
 
-static enum protocol
+static protocol_t NONNULL(1)
 pxy_setup_proto_child(pxy_conn_child_ctx_t *ctx)
 {
 	ctx->protoctx = malloc(sizeof(proto_child_ctx_t));
@@ -655,7 +655,7 @@ pxy_prepare_logging(pxy_conn_ctx_t *ctx)
 	return 0;
 }
 
-static void
+static void NONNULL(1,2)
 pxy_log_dbg_connect_type(pxy_conn_ctx_t *ctx, pxy_conn_desc_t *this)
 {
 	if (OPTS_DEBUG(ctx->opts)) {
@@ -772,7 +772,7 @@ pxy_log_dbg_disconnect_child(pxy_conn_child_ctx_t *ctx)
  * https://github.com/tmux/tmux/blob/master/compat/getdtablecount.c
  */
 int
-getdtablecount(void)
+getdtablecount()
 {
 	char path[PATH_MAX];
 	glob_t g;
@@ -885,7 +885,7 @@ pxy_insert_sslproxy_header(pxy_conn_ctx_t *ctx, unsigned char *packet, size_t *p
 }
 
 void
-pxy_remove_sslproxy_header(unsigned char *packet, size_t *packet_size, pxy_conn_child_ctx_t *ctx)
+pxy_remove_sslproxy_header(pxy_conn_child_ctx_t *ctx, unsigned char *packet, size_t *packet_size)
 {
 	unsigned char *pos = memmem(packet, *packet_size, ctx->conn->header_str, ctx->conn->header_len);
 	if (pos) {

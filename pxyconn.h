@@ -48,7 +48,7 @@
 #define STRORNONE(x)	(((x)&&*(x))?(x):"")
 
 #define WANT_CONNECT_LOG(ctx)	((ctx)->opts->connectlog||!(ctx)->opts->detach)
-// XXX: Remove passthrough condition
+// XXX: Remove passthrough condition?
 #define WANT_CONTENT_LOG(ctx)	((ctx)->opts->contentlog&&((ctx)->proto!=PROTO_PASSTHROUGH))
 
 #define SSLPROXY_KEY		"SSLproxy:"
@@ -95,6 +95,8 @@ enum protocol {
 	PROTO_SSL,
 };
 
+typedef enum protocol protocol_t;
+
 typedef struct ssl_ctx ssl_ctx_t;
 
 typedef struct proto_ctx proto_ctx_t;
@@ -121,7 +123,7 @@ struct ssl_ctx {
 };
 
 struct proto_ctx {
-	enum protocol proto;
+	protocol_t proto;
 
 	connect_func_t connectcb;
 	fd_readcb_func_t fd_readcb;
@@ -139,7 +141,7 @@ struct proto_ctx {
 };
 
 struct proto_child_ctx {
-	enum protocol proto;
+	protocol_t proto;
 
 	child_connect_func_t connectcb;
 
@@ -163,7 +165,7 @@ struct pxy_conn_ctx {
 	enum conn_type type;
 
 	pxy_conn_ctx_t *conn;                 /* parent's conn ctx is itself */
-	enum protocol proto;
+	protocol_t proto;
 
 	/* per-connection state */
 	struct pxy_conn_desc src;
@@ -265,7 +267,7 @@ struct pxy_conn_child_ctx {
 	enum conn_type type;
 
 	pxy_conn_ctx_t *conn;                              /* parent context */
-	enum protocol proto;
+	protocol_t proto;
 
 	/* per-connection state */
 	struct pxy_conn_desc src;
@@ -291,46 +293,46 @@ struct pxy_conn_child_ctx {
 	pxy_conn_child_ctx_t *next;
 };
 
-int pxy_prepare_logging(pxy_conn_ctx_t *);
-int pxy_prepare_logging_local_procinfo(pxy_conn_ctx_t *);
+int pxy_prepare_logging(pxy_conn_ctx_t *) NONNULL(1);
+int pxy_prepare_logging_local_procinfo(pxy_conn_ctx_t *) NONNULL(1);
 
-void pxy_log_connect_src(pxy_conn_ctx_t *);
-void pxy_log_connect_srv_dst(pxy_conn_ctx_t *);
+void pxy_log_connect_src(pxy_conn_ctx_t *) NONNULL(1);
+void pxy_log_connect_srv_dst(pxy_conn_ctx_t *) NONNULL(1);
 
-int pxy_log_content_inbuf(pxy_conn_ctx_t *, struct evbuffer *, int);
-int pxy_log_content_buf(pxy_conn_ctx_t *, unsigned char *, size_t, int);
-void pxy_log_connect_nonhttp(pxy_conn_ctx_t *);
-void pxy_log_dbg_evbuf_info(pxy_conn_ctx_t *, pxy_conn_desc_t *, pxy_conn_desc_t *);
+int pxy_log_content_inbuf(pxy_conn_ctx_t *, struct evbuffer *, int) NONNULL(1);
+int pxy_log_content_buf(pxy_conn_ctx_t *, unsigned char *, size_t, int) NONNULL(1);
+void pxy_log_connect_nonhttp(pxy_conn_ctx_t *) NONNULL(1);
+void pxy_log_dbg_evbuf_info(pxy_conn_ctx_t *, pxy_conn_desc_t *, pxy_conn_desc_t *) NONNULL(1,2,3);
 
-void pxy_log_dbg_disconnect(pxy_conn_ctx_t *);
-void pxy_log_dbg_disconnect_child(pxy_conn_child_ctx_t *);
+void pxy_log_dbg_disconnect(pxy_conn_ctx_t *) NONNULL(1);
+void pxy_log_dbg_disconnect_child(pxy_conn_child_ctx_t *) NONNULL(1);
 
-unsigned char *pxy_malloc_packet(size_t, pxy_conn_ctx_t *);
+unsigned char *pxy_malloc_packet(size_t, pxy_conn_ctx_t *) MALLOC NONNULL(2);
 
-int pxy_set_dstaddr(pxy_conn_ctx_t *);
+int pxy_set_dstaddr(pxy_conn_ctx_t *) NONNULL(1);
 
-void pxy_insert_sslproxy_header(pxy_conn_ctx_t *, unsigned char *, size_t *);
-void pxy_remove_sslproxy_header(unsigned char *, size_t *, pxy_conn_child_ctx_t *);
+void pxy_insert_sslproxy_header(pxy_conn_ctx_t *, unsigned char *, size_t *) NONNULL(1,2,3);
+void pxy_remove_sslproxy_header(pxy_conn_child_ctx_t *, unsigned char *, size_t *) NONNULL(1,2,3);
 
-void pxy_set_watermark(struct bufferevent *, pxy_conn_ctx_t *, struct bufferevent *);
-void pxy_unset_watermark(struct bufferevent *, pxy_conn_ctx_t *, pxy_conn_desc_t *);
+void pxy_set_watermark(struct bufferevent *, pxy_conn_ctx_t *, struct bufferevent *) NONNULL(1,2,3);
+void pxy_unset_watermark(struct bufferevent *, pxy_conn_ctx_t *, pxy_conn_desc_t *) NONNULL(1,2,3);
 
-int pxy_try_close_conn_end(pxy_conn_desc_t *, pxy_conn_ctx_t *, bufferevent_free_and_close_fd_func_t);
+int pxy_try_close_conn_end(pxy_conn_desc_t *, pxy_conn_ctx_t *, bufferevent_free_and_close_fd_func_t) NONNULL(1,2,3);
 
-void pxy_disconnect(pxy_conn_ctx_t *, pxy_conn_desc_t *, bufferevent_free_and_close_fd_func_t, pxy_conn_desc_t *, int);
-void pxy_disconnect_child(pxy_conn_child_ctx_t *, pxy_conn_desc_t *, bufferevent_free_and_close_fd_func_t, pxy_conn_desc_t *);
+void pxy_disconnect(pxy_conn_ctx_t *, pxy_conn_desc_t *, bufferevent_free_and_close_fd_func_t, pxy_conn_desc_t *, int) NONNULL(1,2,3,4);
+void pxy_disconnect_child(pxy_conn_child_ctx_t *, pxy_conn_desc_t *, bufferevent_free_and_close_fd_func_t, pxy_conn_desc_t *) NONNULL(1,2,3,4);
 
-void pxy_consume_last_input(struct bufferevent *, pxy_conn_ctx_t *);
-void pxy_consume_last_input_child(struct bufferevent *, pxy_conn_child_ctx_t *);
-void pxy_discard_inbuf(struct bufferevent *);
+void pxy_consume_last_input(struct bufferevent *, pxy_conn_ctx_t *) NONNULL(1,2);
+void pxy_consume_last_input_child(struct bufferevent *, pxy_conn_child_ctx_t *) NONNULL(1,2);
+void pxy_discard_inbuf(struct bufferevent *) NONNULL(1);
 
 void pxy_conn_ctx_free(pxy_conn_ctx_t *, int) NONNULL(1);
 void pxy_conn_free(pxy_conn_ctx_t *, int) NONNULL(1);
 void pxy_conn_free_child(pxy_conn_child_ctx_t *) NONNULL(1);
 
-void pxy_connect_srv_dst(struct bufferevent *, pxy_conn_ctx_t *);
+void pxy_connect_srv_dst(struct bufferevent *, pxy_conn_ctx_t *) NONNULL(1,2);
 
-int pxy_setup_child_listener(pxy_conn_ctx_t *);
+int pxy_setup_child_listener(pxy_conn_ctx_t *) NONNULL(1);
 
 void pxy_bev_readcb(struct bufferevent *, void *);
 void pxy_bev_writecb(struct bufferevent *, void *);
@@ -340,7 +342,7 @@ void pxy_bev_readcb_child(struct bufferevent *, void *);
 void pxy_bev_writecb_child(struct bufferevent *, void *);
 void pxy_bev_eventcb_child(struct bufferevent *, short, void *);
 
-void pxy_conn_connect(pxy_conn_ctx_t *);
+void pxy_conn_connect(pxy_conn_ctx_t *) NONNULL(1);
 void pxy_fd_readcb(evutil_socket_t, short, void *);
 void pxy_conn_setup(evutil_socket_t, struct sockaddr *, int,
                     pxy_thrmgr_ctx_t *, proxyspec_t *, opts_t *,

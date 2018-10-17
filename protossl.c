@@ -821,7 +821,7 @@ protossl_bufferevent_setup(pxy_conn_ctx_t *ctx, evutil_socket_t fd, SSL *ssl)
 	return bev;
 }
 
-static struct bufferevent *
+static struct bufferevent * NONNULL(1,3)
 protossl_bufferevent_setup_child(pxy_conn_child_ctx_t *ctx, evutil_socket_t fd, SSL *ssl)
 {
 #ifdef DEBUG_PROXY
@@ -982,7 +982,7 @@ protossl_fd_readcb(MAYBE_UNUSED evutil_socket_t fd, UNUSED short what, void *arg
 	pxy_conn_connect(ctx);
 }
 
-static int
+static int NONNULL(1)
 protossl_setup_srv_dst_ssl(pxy_conn_ctx_t *ctx)
 {
 	ctx->srv_dst.ssl = protossl_dstssl_create(ctx);
@@ -994,7 +994,7 @@ protossl_setup_srv_dst_ssl(pxy_conn_ctx_t *ctx)
 	return 0;
 }
 
-static int
+static int NONNULL(1)
 protossl_setup_srv_dst(pxy_conn_ctx_t *ctx)
 {
 	if (protossl_setup_srv_dst_ssl(ctx) == -1) {
@@ -1120,7 +1120,7 @@ protossl_setup_src_ssl(pxy_conn_ctx_t *ctx)
 }
 
 int
-protossl_setup_src_sslbev(pxy_conn_ctx_t *ctx)
+protossl_setup_src_new_sslbev(pxy_conn_ctx_t *ctx)
 {
 	ctx->src.bev = bufferevent_openssl_filter_new(ctx->evbase, ctx->src.bev, ctx->src.ssl,
 			BUFFEREVENT_SSL_ACCEPTING, BEV_OPT_DEFER_CALLBACKS);
@@ -1167,7 +1167,7 @@ protossl_setup_dst_child(pxy_conn_child_ctx_t *ctx)
 }
 
 int
-protossl_setup_dst_sslbev_child(pxy_conn_child_ctx_t *ctx)
+protossl_setup_dst_new_sslbev_child(pxy_conn_child_ctx_t *ctx)
 {
 	ctx->dst.bev = bufferevent_openssl_filter_new(ctx->conn->evbase, ctx->dst.bev, ctx->dst.ssl,
 			BUFFEREVENT_SSL_ACCEPTING, BEV_OPT_DEFER_CALLBACKS);
@@ -1182,7 +1182,7 @@ protossl_setup_dst_sslbev_child(pxy_conn_child_ctx_t *ctx)
 }
 
 int
-protossl_setup_srv_dst_sslbev(pxy_conn_ctx_t *ctx)
+protossl_setup_srv_dst_new_sslbev(pxy_conn_ctx_t *ctx)
 {
 	ctx->srv_dst.bev = bufferevent_openssl_filter_new(ctx->evbase, ctx->srv_dst.bev, ctx->srv_dst.ssl,
 			BUFFEREVENT_SSL_ACCEPTING, BEV_OPT_DEFER_CALLBACKS);
@@ -1206,25 +1206,8 @@ protossl_connect_child(pxy_conn_child_ctx_t *ctx)
 	/* create server-side socket and eventbuffer */
 	protossl_setup_dst_child(ctx);
 }
-void
-protossl_close_srv_dst(pxy_conn_ctx_t *ctx)
-{
-	// @attention Free the srv_dst of the conn asap, we don't need it anymore, but we need its fd
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINER, "protossl_close_srv_dst: Closing srv_dst, fd=%d, srv_dst fd=%d\n", ctx->fd, bufferevent_getfd(ctx->srv_dst.bev));
-#endif /* DEBUG_PROXY */
-	// So save its ssl info for logging
-	ctx->sslctx->srv_dst_ssl_version = strdup(SSL_get_version(ctx->srv_dst.ssl));
-	ctx->sslctx->srv_dst_ssl_cipher = strdup(SSL_get_cipher(ctx->srv_dst.ssl));
 
-	// @attention When both eventcb and writecb for srv_dst are enabled, either eventcb or writecb may get a NULL srv_dst bev, causing a crash with signal 10.
-	// So, from this point on, we should check if srv_dst is NULL or not.
-	protossl_bufferevent_free_and_close_fd(ctx->srv_dst.bev, ctx);
-	ctx->srv_dst.bev = NULL;
-	ctx->srv_dst.closed = 1;
-}
-
-static int
+static int NONNULL(1)
 protossl_setup_src(pxy_conn_ctx_t *ctx)
 {
 	int rv;
@@ -1243,7 +1226,25 @@ protossl_setup_src(pxy_conn_ctx_t *ctx)
 	return 0;
 }
 
-static int
+static void NONNULL(1)
+protossl_close_srv_dst(pxy_conn_ctx_t *ctx)
+{
+	// @attention Free the srv_dst of the conn asap, we don't need it anymore, but we need its fd
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINER, "protossl_close_srv_dst: Closing srv_dst, fd=%d, srv_dst fd=%d\n", ctx->fd, bufferevent_getfd(ctx->srv_dst.bev));
+#endif /* DEBUG_PROXY */
+	// So save its ssl info for logging
+	ctx->sslctx->srv_dst_ssl_version = strdup(SSL_get_version(ctx->srv_dst.ssl));
+	ctx->sslctx->srv_dst_ssl_cipher = strdup(SSL_get_cipher(ctx->srv_dst.ssl));
+
+	// @attention When both eventcb and writecb for srv_dst are enabled, either eventcb or writecb may get a NULL srv_dst bev, causing a crash with signal 10.
+	// So, from this point on, we should check if srv_dst is NULL or not.
+	protossl_bufferevent_free_and_close_fd(ctx->srv_dst.bev, ctx);
+	ctx->srv_dst.bev = NULL;
+	ctx->srv_dst.closed = 1;
+}
+
+static int NONNULL(1)
 protossl_enable_src(pxy_conn_ctx_t *ctx)
 {
 	ctx->connected = 1;
@@ -1277,7 +1278,7 @@ protossl_enable_src(pxy_conn_ctx_t *ctx)
 	return 0;
 }
 
-void
+static void NONNULL(1,2)
 protossl_bev_eventcb_connected_dst(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
@@ -1297,7 +1298,7 @@ protossl_bev_eventcb_connected_dst(UNUSED struct bufferevent *bev, pxy_conn_ctx_
 	}
 }
 
-void
+static void NONNULL(1,2)
 protossl_bev_eventcb_connected_srv_dst(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
@@ -1330,7 +1331,7 @@ protossl_bev_eventcb_connected_srv_dst(UNUSED struct bufferevent *bev, pxy_conn_
 	}
 }
 
-void
+static void NONNULL(1,2)
 protossl_bev_eventcb_error_srv_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
@@ -1354,7 +1355,7 @@ protossl_bev_eventcb_error_srv_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	}
 }
 
-void
+static void NONNULL(1)
 protossl_bev_eventcb_dst(struct bufferevent *bev, short events, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
@@ -1368,7 +1369,7 @@ protossl_bev_eventcb_dst(struct bufferevent *bev, short events, void *arg)
 	}
 }
 
-void
+static void NONNULL(1)
 protossl_bev_eventcb_srv_dst(struct bufferevent *bev, short events, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
@@ -1426,7 +1427,7 @@ protossl_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 	}
 }
 
-enum protocol
+protocol_t
 protossl_setup(pxy_conn_ctx_t *ctx)
 {
 	ctx->protoctx->proto = PROTO_SSL;
@@ -1449,7 +1450,7 @@ protossl_setup(pxy_conn_ctx_t *ctx)
 	return PROTO_SSL;
 }
 
-enum protocol
+protocol_t
 protossl_setup_child(pxy_conn_child_ctx_t *ctx)
 {
 	ctx->protoctx->proto = PROTO_SSL;

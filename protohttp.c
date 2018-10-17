@@ -39,7 +39,7 @@
 /*
  * Return 1 if uri is an OCSP GET URI, 0 if not.
  */
-static int
+static int NONNULL(1,2)
 protohttp_ocsp_is_valid_uri(const char *uri, pxy_conn_ctx_t *ctx)
 {
 	char *buf_url;
@@ -105,7 +105,7 @@ static const char ocspresp[] =
  * Reference:
  * RFC 2560: X.509 Internet PKI Online Certificate Status Protocol (OCSP)
  */
-static void
+static void NONNULL(1,2)
 protohttp_ocsp_deny(pxy_conn_ctx_t *ctx, protohttp_ctx_t *http_ctx)
 {
 	struct evbuffer *inbuf, *outbuf;
@@ -149,7 +149,7 @@ deny:
  * Returns a newly allocated string if the current line should be replaced.
  * Returns `line' if the line should be kept.
  */
-static char *
+static char * NONNULL(1,2,3)
 protohttp_filter_request_header_line(const char *line, pxy_conn_ctx_t *ctx, protohttp_ctx_t *http_ctx)
 {
 	/* parse information for connect log */
@@ -244,7 +244,7 @@ protohttp_filter_request_header_line(const char *line, pxy_conn_ctx_t *ctx, prot
 	return (char*)line;
 }
 
-void
+static void  NONNULL(1,2,3,4)
 protohttp_filter_request_header(struct evbuffer *inbuf, struct evbuffer *outbuf, pxy_conn_ctx_t *ctx, protohttp_ctx_t *http_ctx)
 {
 	char *line;
@@ -299,7 +299,7 @@ protohttp_filter_request_header(struct evbuffer *inbuf, struct evbuffer *outbuf,
 	}
 }
 
-static int
+static int NONNULL(1,2)
 protohttp_bev_readcb_src_log_preexec(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
@@ -316,7 +316,7 @@ protohttp_bev_readcb_src_log_preexec(struct bufferevent *bev, pxy_conn_ctx_t *ct
 	return 0;
 }
 
-static void
+static void NONNULL(1,2)
 protohttp_bev_readcb_src_log_postexec(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
@@ -330,7 +330,7 @@ protohttp_bev_readcb_src_log_postexec(UNUSED struct bufferevent *bev, pxy_conn_c
 	}
 }
 
-static int
+static int NONNULL(1,2)
 protohttp_bev_readcb_src_exec(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
@@ -373,7 +373,7 @@ protohttp_bev_readcb_src_exec(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	return 0;
 }
 
-static void
+static void NONNULL(1)
 protohttp_bev_readcb_src(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
@@ -394,7 +394,7 @@ protohttp_bev_readcb_src(struct bufferevent *bev, void *arg)
  * Returns a newly allocated string if the current line should be replaced.
  * Returns `line' if the line should be kept.
  */
-static char *
+static char * NONNULL(1,2,3)
 protohttp_filter_response_header_line(const char *line, pxy_conn_ctx_t *ctx, protohttp_ctx_t *http_ctx)
 {
 	/* parse information for connect log */
@@ -470,7 +470,7 @@ protohttp_filter_response_header_line(const char *line, pxy_conn_ctx_t *ctx, pro
 	return (char*)line;
 }
 
-static void
+static void NONNULL(1,2,3,4)
 protohttp_filter_response_header(struct evbuffer *inbuf, struct evbuffer *outbuf, pxy_conn_ctx_t *ctx, protohttp_ctx_t *http_ctx)
 {
 	char *line;
@@ -512,7 +512,7 @@ protohttp_filter_response_header(struct evbuffer *inbuf, struct evbuffer *outbuf
 	}
 }
 
-static void
+static void NONNULL(1)
 protohttp_log_connect(pxy_conn_ctx_t *ctx)
 {
 	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
@@ -622,7 +622,7 @@ out:
 }
 
 
-static int
+static int NONNULL(1,2)
 protohttp_bev_readcb_dst_log_preexec(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
@@ -639,7 +639,7 @@ protohttp_bev_readcb_dst_log_preexec(struct bufferevent *bev, pxy_conn_ctx_t *ct
 	return 0;
 }
 
-static void
+static void NONNULL(1,2)
 protohttp_bev_readcb_dst_log_postexec(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
@@ -656,7 +656,7 @@ protohttp_bev_readcb_dst_log_postexec(UNUSED struct bufferevent *bev, pxy_conn_c
 	}
 }
 
-static int
+static int NONNULL(1,2)
 protohttp_bev_readcb_dst_exec(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
@@ -690,7 +690,7 @@ protohttp_bev_readcb_dst_exec(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	return 0;
 }
 
-static void
+static void NONNULL(1)
 protohttp_bev_readcb_dst(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
@@ -704,13 +704,13 @@ protohttp_bev_readcb_dst(struct bufferevent *bev, void *arg)
 	protohttp_bev_readcb_dst_log_postexec(bev, ctx);
 }
 
-static void
+static void NONNULL(1)
 protohttp_bev_readcb_srv_dst(UNUSED struct bufferevent *bev, UNUSED void *arg)
 {
 	log_err_printf("protohttp_bev_readcb_srv_dst: readcb called on srv_dst\n");
 }
 
-static void
+static void NONNULL(1)
 protohttp_bev_readcb(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
@@ -733,7 +733,7 @@ protohttp_bev_readcb(struct bufferevent *bev, void *arg)
 	}
 }
 
-static void
+static void NONNULL(1)
 protohttp_bev_readcb_src_child(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_child_ctx_t *ctx = arg;
@@ -773,7 +773,7 @@ protohttp_bev_readcb_src_child(struct bufferevent *bev, void *arg)
 	pxy_set_watermark(bev, ctx->conn, ctx->dst.bev);
 }
 
-static void
+static void NONNULL(1)
 protohttp_bev_readcb_dst_child(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_child_ctx_t *ctx = arg;
@@ -812,7 +812,7 @@ protohttp_bev_readcb_dst_child(struct bufferevent *bev, void *arg)
 	pxy_set_watermark(bev, ctx->conn, ctx->src.bev);
 }
 
-static void
+static void NONNULL(1)
 protohttp_bev_readcb_child(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_child_ctx_t *ctx = arg;
@@ -834,7 +834,7 @@ protohttp_bev_readcb_child(struct bufferevent *bev, void *arg)
 	}
 }
 
-static void
+static void NONNULL(1)
 protohttp_free_ctx(protohttp_ctx_t *http_ctx)
 {
 	if (http_ctx->http_method) {
@@ -861,14 +861,14 @@ protohttp_free_ctx(protohttp_ctx_t *http_ctx)
 	free(http_ctx);
 }
 
-static void
+static void NONNULL(1)
 protohttp_free(pxy_conn_ctx_t *ctx)
 {
 	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
 	protohttp_free_ctx(http_ctx);
 }
 
-static void
+static void NONNULL(1)
 protohttps_free(pxy_conn_ctx_t *ctx)
 {
 	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
@@ -876,14 +876,14 @@ protohttps_free(pxy_conn_ctx_t *ctx)
 	protossl_free(ctx);
 }
 
-static void
+static void NONNULL(1)
 protohttp_free_child(pxy_conn_child_ctx_t *ctx)
 {
 	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
 	protohttp_free_ctx(http_ctx);
 }
 
-enum protocol
+protocol_t
 protohttp_setup(pxy_conn_ctx_t *ctx)
 {
 	ctx->protoctx->proto = PROTO_HTTP;
@@ -900,7 +900,7 @@ protohttp_setup(pxy_conn_ctx_t *ctx)
 	return PROTO_HTTP;
 }
 
-enum protocol
+protocol_t
 protohttps_setup(pxy_conn_ctx_t *ctx)
 {
 	ctx->protoctx->proto = PROTO_HTTPS;
@@ -931,7 +931,7 @@ protohttps_setup(pxy_conn_ctx_t *ctx)
 	return PROTO_HTTPS;
 }
 
-enum protocol
+protocol_t
 protohttp_setup_child(pxy_conn_child_ctx_t *ctx)
 {
 	ctx->protoctx->proto = PROTO_HTTPS;
@@ -949,7 +949,7 @@ protohttp_setup_child(pxy_conn_child_ctx_t *ctx)
 	return PROTO_HTTPS;
 }
 
-enum protocol
+protocol_t
 protohttps_setup_child(pxy_conn_child_ctx_t *ctx)
 {
 	ctx->protoctx->proto = PROTO_HTTPS;

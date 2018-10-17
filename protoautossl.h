@@ -38,8 +38,8 @@ struct protoautossl_ctx {
 	unsigned int clienthello_found : 1;      /* 1 if conn upgrade to SSL */
 };
 
-enum protocol protoautossl_setup(pxy_conn_ctx_t *);
-enum protocol protoautossl_setup_child(pxy_conn_child_ctx_t *);
+protocol_t protoautossl_setup(pxy_conn_ctx_t *) NONNULL(1);
+protocol_t protoautossl_setup_child(pxy_conn_child_ctx_t *) NONNULL(1);
 
 #endif /* PROTOAUTOSSL_H */
 

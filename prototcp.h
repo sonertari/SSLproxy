@@ -31,40 +31,40 @@
 
 #include "pxyconn.h"
 
-void prototcp_bev_writecb(struct bufferevent *, void *);
+void prototcp_bev_writecb(struct bufferevent *, void *) NONNULL(1);
 
-void prototcp_bev_eventcb_eof_src(struct bufferevent *, pxy_conn_ctx_t *);
-void prototcp_bev_eventcb_error_src(struct bufferevent *, pxy_conn_ctx_t *);
+void prototcp_bev_eventcb_eof_src(struct bufferevent *, pxy_conn_ctx_t *) NONNULL(1,2);
+void prototcp_bev_eventcb_error_src(struct bufferevent *, pxy_conn_ctx_t *) NONNULL(1,2);
 
-void prototcp_bev_eventcb_eof_dst(struct bufferevent *, pxy_conn_ctx_t *);
-void prototcp_bev_eventcb_error_dst(struct bufferevent *, pxy_conn_ctx_t *);
+void prototcp_bev_eventcb_eof_dst(struct bufferevent *, pxy_conn_ctx_t *) NONNULL(1,2);
+void prototcp_bev_eventcb_error_dst(struct bufferevent *, pxy_conn_ctx_t *) NONNULL(1,2);
 
-void prototcp_bev_eventcb_eof_srv_dst(struct bufferevent *, pxy_conn_ctx_t *);
-void prototcp_bev_eventcb_error_srv_dst(struct bufferevent *, pxy_conn_ctx_t *);
+void prototcp_bev_eventcb_eof_srv_dst(struct bufferevent *, pxy_conn_ctx_t *) NONNULL(1,2);
+void prototcp_bev_eventcb_error_srv_dst(struct bufferevent *, pxy_conn_ctx_t *) NONNULL(1,2);
 
-void prototcp_bev_eventcb_src(struct bufferevent *, short, void *);
+void prototcp_bev_eventcb_src(struct bufferevent *, short, void *) NONNULL(1);
 
-void prototcp_bev_writecb_child(struct bufferevent *, void *);
+void prototcp_bev_writecb_child(struct bufferevent *, void *) NONNULL(1);
 
-void prototcp_bev_eventcb_eof_dst_child(struct bufferevent *, pxy_conn_child_ctx_t *);
-void prototcp_bev_eventcb_error_dst_child(struct bufferevent *, pxy_conn_child_ctx_t *);
+void prototcp_bev_eventcb_eof_dst_child(struct bufferevent *, pxy_conn_child_ctx_t *) NONNULL(1,2);
+void prototcp_bev_eventcb_error_dst_child(struct bufferevent *, pxy_conn_child_ctx_t *) NONNULL(1,2);
 
-void prototcp_bev_eventcb_src_child(struct bufferevent *, short, void *);
-void prototcp_bev_eventcb_dst_child(struct bufferevent *, short, void *);
+void prototcp_bev_eventcb_src_child(struct bufferevent *, short, void *) NONNULL(1);
+void prototcp_bev_eventcb_dst_child(struct bufferevent *, short, void *) NONNULL(1);
 
-int prototcp_setup_src(pxy_conn_ctx_t *);
-int prototcp_setup_dst(pxy_conn_ctx_t *);
-int prototcp_setup_srv_dst(pxy_conn_ctx_t *);
+int prototcp_setup_src(pxy_conn_ctx_t *) NONNULL(1);
+int prototcp_setup_dst(pxy_conn_ctx_t *) NONNULL(1);
+int prototcp_setup_srv_dst(pxy_conn_ctx_t *) NONNULL(1);
 
-int prototcp_setup_src_child(pxy_conn_child_ctx_t *);
-int prototcp_setup_dst_child(pxy_conn_child_ctx_t *);
+int prototcp_setup_src_child(pxy_conn_child_ctx_t *) NONNULL(1);
+int prototcp_setup_dst_child(pxy_conn_child_ctx_t *) NONNULL(1);
 
-void prototcp_bufferevent_free_and_close_fd(struct bufferevent *, pxy_conn_ctx_t *);
+void prototcp_bufferevent_free_and_close_fd(struct bufferevent *, pxy_conn_ctx_t *) NONNULL(1,2);
 
 void prototcp_fd_readcb(evutil_socket_t, short, void *);
 
-enum protocol prototcp_setup(pxy_conn_ctx_t *);
-enum protocol prototcp_setup_child(pxy_conn_child_ctx_t *);
+protocol_t prototcp_setup(pxy_conn_ctx_t *) NONNULL(1);
+protocol_t prototcp_setup_child(pxy_conn_child_ctx_t *) NONNULL(1);
 
 #endif /* PROTOTCP_H */
 

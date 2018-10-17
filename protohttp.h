@@ -53,11 +53,11 @@ struct protohttp_ctx {
 	char *http_content_length;
 };
 
-enum protocol protohttp_setup(pxy_conn_ctx_t *);
-enum protocol protohttps_setup(pxy_conn_ctx_t *);
+protocol_t protohttp_setup(pxy_conn_ctx_t *) NONNULL(1);
+protocol_t protohttps_setup(pxy_conn_ctx_t *) NONNULL(1);
 
-enum protocol protohttp_setup_child(pxy_conn_child_ctx_t *);
-enum protocol protohttps_setup_child(pxy_conn_child_ctx_t *);
+protocol_t protohttp_setup_child(pxy_conn_child_ctx_t *) NONNULL(1);
+protocol_t protohttps_setup_child(pxy_conn_child_ctx_t *) NONNULL(1);
 
 #endif /* !PROTOHTTP_H */
 

@@ -28,12 +28,10 @@
 
 #include "protopassthrough.h"
 #include "prototcp.h"
-// XXX
-#include "protossl.h"
 
 #include <sys/param.h>
 
-static void
+static void NONNULL(1)
 protopassthrough_bev_readcb_src(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
@@ -52,7 +50,7 @@ protopassthrough_bev_readcb_src(struct bufferevent *bev, void *arg)
 	pxy_set_watermark(bev, ctx, ctx->srv_dst.bev);
 }
 
-static void
+static void NONNULL(1)
 protopassthrough_bev_readcb_srv_dst(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
@@ -71,7 +69,7 @@ protopassthrough_bev_readcb_srv_dst(struct bufferevent *bev, void *arg)
 	pxy_set_watermark(bev, ctx, ctx->src.bev);
 }
 
-static void
+static void NONNULL(1)
 protopassthrough_bev_writecb_src(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
@@ -93,7 +91,7 @@ protopassthrough_bev_writecb_src(struct bufferevent *bev, void *arg)
 	pxy_unset_watermark(bev, ctx, &ctx->srv_dst);
 }
 
-static void
+static void NONNULL(1)
 protopassthrough_bev_writecb_srv_dst(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
@@ -115,7 +113,7 @@ protopassthrough_bev_writecb_srv_dst(struct bufferevent *bev, void *arg)
 	pxy_unset_watermark(bev, ctx, &ctx->src);
 }
 
-static int
+static int NONNULL(1)
 protopassthrough_prepare_logging(pxy_conn_ctx_t *ctx)
 {
 	/* prepare logging, part 2 */
@@ -125,7 +123,7 @@ protopassthrough_prepare_logging(pxy_conn_ctx_t *ctx)
 	return 0;
 }
 
-static void
+static void NONNULL(1)
 protopassthrough_log_connect_type(pxy_conn_ctx_t *ctx)
 {
 	if (OPTS_DEBUG(ctx->opts)) {
@@ -141,7 +139,7 @@ protopassthrough_log_connect_type(pxy_conn_ctx_t *ctx)
 	}
 }
 
-static void
+static void NONNULL(1)
 protopassthrough_log_connect_src(pxy_conn_ctx_t *ctx)
 {
 	if (WANT_CONNECT_LOG(ctx) || ctx->opts->statslog) {
@@ -150,7 +148,7 @@ protopassthrough_log_connect_src(pxy_conn_ctx_t *ctx)
 	protopassthrough_log_connect_type(ctx);
 }
 
-static void
+static void NONNULL(1,2)
 protopassthrough_bev_eventcb_connected_src(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
@@ -159,7 +157,7 @@ protopassthrough_bev_eventcb_connected_src(UNUSED struct bufferevent *bev, pxy_c
 	protopassthrough_log_connect_src(ctx);
 }
 
-static int
+static int NONNULL(1)
 protopassthrough_enable_src(pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
@@ -189,7 +187,7 @@ protopassthrough_enable_src(pxy_conn_ctx_t *ctx)
 	return 0;
 }
 
-static void
+static void NONNULL(1,2)
 protopassthrough_bev_eventcb_connected_srv_dst(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
@@ -241,7 +239,7 @@ protopassthrough_engage(pxy_conn_ctx_t *ctx)
 	pxy_fd_readcb(ctx->fd, 0, ctx);
 }
 
-static void
+static void NONNULL(1,2)
 protopassthrough_bev_eventcb_eof_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
@@ -266,7 +264,7 @@ protopassthrough_bev_eventcb_eof_src(struct bufferevent *bev, pxy_conn_ctx_t *ct
 	pxy_disconnect(ctx, &ctx->src, &prototcp_bufferevent_free_and_close_fd, &ctx->srv_dst, 1);
 }
 
-static void
+static void NONNULL(1,2)
 protopassthrough_bev_eventcb_eof_srv_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
@@ -291,7 +289,7 @@ protopassthrough_bev_eventcb_eof_srv_dst(struct bufferevent *bev, pxy_conn_ctx_t
 	pxy_disconnect(ctx, &ctx->srv_dst, &prototcp_bufferevent_free_and_close_fd, &ctx->src, 0);
 }
 
-static void
+static void NONNULL(1,2)
 protopassthrough_bev_eventcb_error_src(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 	// Passthrough packets are transfered between src and srv_dst
@@ -314,7 +312,7 @@ protopassthrough_bev_eventcb_error_src(UNUSED struct bufferevent *bev, pxy_conn_
 	pxy_disconnect(ctx, &ctx->src, &prototcp_bufferevent_free_and_close_fd, &ctx->srv_dst, 1);
 }
 
-static void
+static void NONNULL(1,2)
 protopassthrough_bev_eventcb_error_srv_dst(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 	// Passthrough packets are transfered between src and srv_dst
@@ -337,7 +335,7 @@ protopassthrough_bev_eventcb_error_srv_dst(UNUSED struct bufferevent *bev, pxy_c
 	pxy_disconnect(ctx, &ctx->srv_dst, &prototcp_bufferevent_free_and_close_fd, &ctx->src, 0);
 }
 
-void
+static void NONNULL(1)
 protopassthrough_conn_connect(pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
@@ -361,7 +359,7 @@ protopassthrough_conn_connect(pxy_conn_ctx_t *ctx)
 	}
 }
 
-void
+static void NONNULL(1)
 protopassthrough_bev_readcb(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
@@ -382,7 +380,7 @@ protopassthrough_bev_readcb(struct bufferevent *bev, void *arg)
 	}
 }
 
-void
+static void NONNULL(1)
 protopassthrough_bev_writecb(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
@@ -397,7 +395,7 @@ protopassthrough_bev_writecb(struct bufferevent *bev, void *arg)
 	}
 }
 
-static void
+static void NONNULL(1)
 protopassthrough_bev_eventcb_src(struct bufferevent *bev, short events, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
@@ -412,7 +410,7 @@ protopassthrough_bev_eventcb_src(struct bufferevent *bev, short events, void *ar
 	}
 }
 
-static void
+static void NONNULL(1)
 protopassthrough_bev_eventcb_srv_dst(struct bufferevent *bev, short events, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
@@ -427,7 +425,7 @@ protopassthrough_bev_eventcb_srv_dst(struct bufferevent *bev, short events, void
 	}
 }
 
-static void
+static void NONNULL(1)
 protopassthrough_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
@@ -442,7 +440,7 @@ protopassthrough_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 	}
 }
 
-enum protocol
+protocol_t
 protopassthrough_setup(pxy_conn_ctx_t *ctx)
 {
 	// @attention Reset all callbacks while switching to passthrough mode, because we should override any/all protocol settings of the previous protocol.
