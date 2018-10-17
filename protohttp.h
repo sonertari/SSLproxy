@@ -31,28 +31,6 @@
 
 #include "pxyconn.h"
 
-typedef struct protohttp_ctx protohttp_ctx_t;
-
-struct protohttp_ctx {
-	unsigned int seen_req_header : 1; /* 0 until request header complete */
-	unsigned int seen_resp_header : 1;  /* 0 until response hdr complete */
-	unsigned int sent_http_conn_close : 1;   /* 0 until Conn: close sent */
-	unsigned int ocsp_denied : 1;                /* 1 if OCSP was denied */
-	unsigned int seen_req_header_on_entry : 1;   /* save seen_req_header */
-	unsigned int seen_resp_header_on_entry : 1;  /* save seen_resp_header */
-
-	/* log strings from HTTP request */
-	char *http_method;
-	char *http_uri;
-	char *http_host;
-	char *http_content_type;
-
-	/* log strings from HTTP response */
-	char *http_status_code;
-	char *http_status_text;
-	char *http_content_length;
-};
-
 protocol_t protohttp_setup(pxy_conn_ctx_t *) NONNULL(1);
 protocol_t protohttps_setup(pxy_conn_ctx_t *) NONNULL(1);
 

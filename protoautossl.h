@@ -31,13 +31,6 @@
 
 #include "pxyconn.h"
 
-typedef struct protoautossl_ctx protoautossl_ctx_t;
-
-struct protoautossl_ctx {
-	unsigned int clienthello_search : 1;       /* 1 if waiting for hello */
-	unsigned int clienthello_found : 1;      /* 1 if conn upgrade to SSL */
-};
-
 protocol_t protoautossl_setup(pxy_conn_ctx_t *) NONNULL(1);
 protocol_t protoautossl_setup_child(pxy_conn_child_ctx_t *) NONNULL(1);
 

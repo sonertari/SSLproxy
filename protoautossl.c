@@ -36,6 +36,13 @@
 #include <sys/param.h>
 #include <event2/bufferevent_ssl.h>
 
+typedef struct protoautossl_ctx protoautossl_ctx_t;
+
+struct protoautossl_ctx {
+	unsigned int clienthello_search : 1;       /* 1 if waiting for hello */
+	unsigned int clienthello_found : 1;      /* 1 if conn upgrade to SSL */
+};
+
 /*
  * Peek into pending data to see if it is an SSL/TLS ClientHello, and if so,
  * upgrade the connection from plain TCP to SSL/TLS.
