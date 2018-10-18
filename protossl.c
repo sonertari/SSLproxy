@@ -1306,6 +1306,7 @@ protossl_bev_eventcb_connected_srv_dst(UNUSED struct bufferevent *bev, pxy_conn_
 #endif /* DEBUG_PROXY */
 
 	ctx->srv_dst_connected = 1;
+
 	ctx->srv_dst_fd = bufferevent_getfd(ctx->srv_dst.bev);
 	ctx->thr->max_fd = MAX(ctx->thr->max_fd, ctx->srv_dst_fd);
 
@@ -1314,9 +1315,11 @@ protossl_bev_eventcb_connected_srv_dst(UNUSED struct bufferevent *bev, pxy_conn_
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINE, "protossl_bev_eventcb_connected_srv_dst: FAILED bufferevent_socket_connect for dst, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
+
 		pxy_conn_free(ctx, 1);
 		return;
 	}
+
 	ctx->dst_fd = bufferevent_getfd(ctx->dst.bev);
 	ctx->thr->max_fd = MAX(ctx->thr->max_fd, ctx->dst_fd);
 
@@ -1387,12 +1390,9 @@ void
 protossl_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
-	ctx->atime = time(NULL);
 
 	if (events & BEV_EVENT_ERROR) {
-		log_err_printf("protossl_bev_eventcb: Client-side BEV_EVENT_ERROR\n");
 		protossl_log_ssl_error(bev, ctx);
-		ctx->thr->errors++;
 	}
 
 	if (bev == ctx->src.bev) {
@@ -1410,12 +1410,9 @@ void
 protossl_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 {
 	pxy_conn_child_ctx_t *ctx = arg;
-	ctx->conn->atime = time(NULL);
 
 	if (events & BEV_EVENT_ERROR) {
-		log_err_printf("Server-side BEV_EVENT_ERROR\n");
 		protossl_log_ssl_error(bev, ctx->conn);
-		ctx->conn->thr->errors++;
 	}
 
 	if (bev == ctx->src.bev) {

@@ -74,11 +74,11 @@ protopassthrough_bev_writecb_src(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
 
-	// @attention srv_dst.bev may be NULL
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protopassthrough_bev_writecb_src: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
+	// @attention srv_dst.bev may be NULL
 	if (ctx->srv_dst.closed) {
 		if (pxy_try_close_conn_end(&ctx->src, ctx, &prototcp_bufferevent_free_and_close_fd)) {
 #ifdef DEBUG_PROXY
@@ -95,6 +95,7 @@ static void NONNULL(1)
 protopassthrough_bev_writecb_srv_dst(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
+
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protopassthrough_bev_writecb_srv_dst: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
@@ -154,6 +155,7 @@ protopassthrough_bev_eventcb_connected_src(UNUSED struct bufferevent *bev, pxy_c
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protopassthrough_bev_eventcb_connected_src: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
+
 	protopassthrough_log_connect_src(ctx);
 }
 
@@ -196,6 +198,7 @@ protopassthrough_bev_eventcb_connected_srv_dst(UNUSED struct bufferevent *bev, p
 
 	if (!ctx->srv_dst_connected) {
 		ctx->srv_dst_connected = 1;
+
 		ctx->srv_dst_fd = bufferevent_getfd(ctx->srv_dst.bev);
 		ctx->thr->max_fd = MAX(ctx->thr->max_fd, ctx->srv_dst_fd);
 	}
@@ -244,9 +247,8 @@ protopassthrough_bev_eventcb_eof_src(struct bufferevent *bev, pxy_conn_ctx_t *ct
 {
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protopassthrough_bev_eventcb_eof_src: EOF, fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
-
 	pxy_log_dbg_evbuf_info(ctx, &ctx->src, &ctx->srv_dst);
+#endif /* DEBUG_PROXY */
 
 	if (!ctx->connected) {
 		log_err_level_printf(LOG_WARNING, "EOF on outbound connection before connection establishment\n");
@@ -255,12 +257,12 @@ protopassthrough_bev_eventcb_eof_src(struct bufferevent *bev, pxy_conn_ctx_t *ct
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protopassthrough_bev_eventcb_eof_src: !other->closed, terminate conn, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
+
 		pxy_consume_last_input(bev, ctx);
 		pxy_try_close_conn_end(&ctx->srv_dst, ctx, &prototcp_bufferevent_free_and_close_fd);
 	}
 
 	pxy_log_dbg_disconnect(ctx);
-
 	pxy_disconnect(ctx, &ctx->src, &prototcp_bufferevent_free_and_close_fd, &ctx->srv_dst, 1);
 }
 
@@ -269,9 +271,8 @@ protopassthrough_bev_eventcb_eof_srv_dst(struct bufferevent *bev, pxy_conn_ctx_t
 {
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protopassthrough_bev_eventcb_eof_srv_dst: EOF, fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
-
 	pxy_log_dbg_evbuf_info(ctx, &ctx->srv_dst, &ctx->src);
+#endif /* DEBUG_PROXY */
 
 	if (!ctx->connected) {
 		log_err_level_printf(LOG_WARNING, "EOF on outbound connection before connection establishment\n");
@@ -280,27 +281,23 @@ protopassthrough_bev_eventcb_eof_srv_dst(struct bufferevent *bev, pxy_conn_ctx_t
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protopassthrough_bev_eventcb_eof_srv_dst: !other->closed, terminate conn, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
+
 		pxy_consume_last_input(bev, ctx);
 		pxy_try_close_conn_end(&ctx->src, ctx, &prototcp_bufferevent_free_and_close_fd);
 	}
 
 	pxy_log_dbg_disconnect(ctx);
-
 	pxy_disconnect(ctx, &ctx->srv_dst, &prototcp_bufferevent_free_and_close_fd, &ctx->src, 0);
 }
 
 static void NONNULL(1,2)
 protopassthrough_bev_eventcb_error_src(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
-	// Passthrough packets are transfered between src and srv_dst
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINER, "protopassthrough_bev_eventcb_error_src: BEV_EVENT_ERROR, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
-	log_err_printf("protopassthrough_bev_eventcb_error_src: Client-side BEV_EVENT_ERROR\n");
-
-	ctx->thr->errors++;
-
+	// Passthrough packets are transfered between src and srv_dst
 	if (!ctx->connected) {
 		ctx->srv_dst.closed = 1;
 	} else if (!ctx->srv_dst.closed) {
@@ -308,22 +305,17 @@ protopassthrough_bev_eventcb_error_src(UNUSED struct bufferevent *bev, pxy_conn_
 	}
 
 	pxy_log_dbg_disconnect(ctx);
-
 	pxy_disconnect(ctx, &ctx->src, &prototcp_bufferevent_free_and_close_fd, &ctx->srv_dst, 1);
 }
 
 static void NONNULL(1,2)
 protopassthrough_bev_eventcb_error_srv_dst(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
-	// Passthrough packets are transfered between src and srv_dst
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINER, "protopassthrough_bev_eventcb_error_srv_dst: BEV_EVENT_ERROR, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
-	log_err_printf("protopassthrough_bev_eventcb_error_srv_dst: Client-side BEV_EVENT_ERROR\n");
-
-	ctx->thr->errors++;
-
+	// Passthrough packets are transfered between src and srv_dst
 	if (!ctx->connected) {
 		ctx->src.closed = 1;
 	} else if (!ctx->src.closed) {
@@ -331,7 +323,6 @@ protopassthrough_bev_eventcb_error_srv_dst(UNUSED struct bufferevent *bev, pxy_c
 	}
 
 	pxy_log_dbg_disconnect(ctx);
-
 	pxy_disconnect(ctx, &ctx->srv_dst, &prototcp_bufferevent_free_and_close_fd, &ctx->src, 0);
 }
 
@@ -363,13 +354,6 @@ static void NONNULL(1)
 protopassthrough_bev_readcb(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
-	ctx->atime = time(NULL);
-
-	if (!ctx->connected) {
-		log_err_level_printf(LOG_CRIT, "protopassthrough_bev_readcb: readcb called when not connected - aborting.\n");
-		log_exceptcb();
-		return;
-	}
 
 	if (bev == ctx->src.bev) {
 		protopassthrough_bev_readcb_src(bev, arg);
@@ -384,7 +368,6 @@ static void NONNULL(1)
 protopassthrough_bev_writecb(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
-	ctx->atime = time(NULL);
 
 	if (bev == ctx->src.bev) {
 		protopassthrough_bev_writecb_src(bev, arg);
@@ -399,7 +382,6 @@ static void NONNULL(1)
 protopassthrough_bev_eventcb_src(struct bufferevent *bev, short events, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
-	ctx->atime = time(NULL);
 
 	if (events & BEV_EVENT_CONNECTED) {
 		protopassthrough_bev_eventcb_connected_src(bev, ctx);
@@ -414,7 +396,6 @@ static void NONNULL(1)
 protopassthrough_bev_eventcb_srv_dst(struct bufferevent *bev, short events, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
-	ctx->atime = time(NULL);
 
 	if (events & BEV_EVENT_CONNECTED) {
 		protopassthrough_bev_eventcb_connected_srv_dst(bev, ctx);
@@ -429,7 +410,6 @@ static void NONNULL(1)
 protopassthrough_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
-	ctx->atime = time(NULL);
 
 	if (bev == ctx->src.bev) {
 		protopassthrough_bev_eventcb_src(bev, events, arg);

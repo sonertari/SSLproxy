@@ -43,8 +43,6 @@ struct protohttp_ctx {
 	unsigned int seen_resp_header : 1;  /* 0 until response hdr complete */
 	unsigned int sent_http_conn_close : 1;   /* 0 until Conn: close sent */
 	unsigned int ocsp_denied : 1;                /* 1 if OCSP was denied */
-	unsigned int seen_req_header_on_entry : 1;   /* save seen_req_header */
-	unsigned int seen_resp_header_on_entry : 1;  /* save seen_resp_header */
 
 	/* log strings from HTTP request */
 	char *http_method;
@@ -321,55 +319,24 @@ protohttp_filter_request_header(struct evbuffer *inbuf, struct evbuffer *outbuf,
 	}
 }
 
-static int NONNULL(1,2)
-protohttp_bev_readcb_src_log_preexec(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
+static void NONNULL(1)
+protohttp_bev_readcb_src(struct bufferevent *bev, void *arg)
 {
-	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
+	pxy_conn_ctx_t *ctx = arg;
 
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_bev_readcb_src_log_preexec: ENTER, fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
-
-	// HTTP content logging at this point may record certain headers twice if have not seen all header lines yet
-	if (pxy_log_content_inbuf(ctx, bufferevent_get_input(bev), 1) == -1) {
-		return -1;
-	}
-	http_ctx->seen_req_header_on_entry = http_ctx->seen_req_header;
-	return 0;
-}
-
-static void NONNULL(1,2)
-protohttp_bev_readcb_src_log_postexec(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ctx)
-{
-	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
-
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_bev_readcb_src_log_postexec: ENTER, fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
-
-	if (!http_ctx->seen_req_header_on_entry && http_ctx->seen_req_header && http_ctx->ocsp_denied) {
-		pxy_log_content_buf(ctx, (unsigned char *)ocspresp, sizeof(ocspresp) - 1, 0/*resp*/);
-	}
-}
-
-static int NONNULL(1,2)
-protohttp_bev_readcb_src_exec(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
-{
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_bev_readcb_src_exec: ENTER, fd=%d, size=%zu\n",
 			ctx->fd, evbuffer_get_length(bufferevent_get_input(bev)));
 #endif /* DEBUG_PROXY */
 
+	if (ctx->dst.closed) {
+		pxy_discard_inbuf(bev);
+		return;
+	}
+
 	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
 	struct evbuffer *inbuf = bufferevent_get_input(bev);
 	struct evbuffer *outbuf = bufferevent_get_output(ctx->dst.bev);
-
-	ctx->thr->intif_in_bytes += evbuffer_get_length(inbuf);
-
-	if (ctx->dst.closed) {
-		pxy_discard_inbuf(bev);
-		return -1;
-	}
 
 	// We insert our special header line to the first packet we get, e.g. right after the first \r\n in the case of http
 	// @todo Should we look for GET/POST or Host header lines to detect the first packet?
@@ -384,29 +351,16 @@ protohttp_bev_readcb_src_exec(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_bev_readcb_src_exec: HTTP Request Header size=%zu, fd=%d\n", evbuffer_get_length(inbuf), ctx->fd);
 #endif /* DEBUG_PROXY */
+
 		protohttp_filter_request_header(inbuf, outbuf, ctx, http_ctx);
 	} else {
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_bev_readcb_src_exec: HTTP Request Body size=%zu, fd=%d\n", evbuffer_get_length(inbuf), ctx->fd);
 #endif /* DEBUG_PROXY */
+
 		evbuffer_add_buffer(outbuf, inbuf);
 	}
 	pxy_set_watermark(bev, ctx, ctx->dst.bev);
-	return 0;
-}
-
-static void NONNULL(1)
-protohttp_bev_readcb_src(struct bufferevent *bev, void *arg)
-{
-	pxy_conn_ctx_t *ctx = arg;
-
-	if (protohttp_bev_readcb_src_log_preexec(bev, ctx) == -1) {
-		return;
-	}
-	if (protohttp_bev_readcb_src_exec(bev, ctx) == -1) {
-		return;
-	}
-	protohttp_bev_readcb_src_log_postexec(bev, ctx);
 }
 
 /*
@@ -643,44 +597,11 @@ out:
 	return;
 }
 
-
-static int NONNULL(1,2)
-protohttp_bev_readcb_dst_log_preexec(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
+static void NONNULL(1)
+protohttp_bev_readcb_dst(struct bufferevent *bev, void *arg)
 {
-	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
+	pxy_conn_ctx_t *ctx = arg;
 
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_bev_readcb_dst_log_preexec: ENTER, fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
-
-	// HTTP content logging at this point may record certain headers twice if we have not seen all header lines yet
-	if (pxy_log_content_inbuf(ctx, bufferevent_get_input(bev), 1) == -1) {
-		return -1;
-	}
-	http_ctx->seen_resp_header_on_entry = http_ctx->seen_resp_header;
-	return 0;
-}
-
-static void NONNULL(1,2)
-protohttp_bev_readcb_dst_log_postexec(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ctx)
-{
-	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
-
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_bev_readcb_dst_log_postexec: ENTER, fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
-
-	if (!http_ctx->seen_resp_header_on_entry && http_ctx->seen_resp_header) {
-		/* response header complete: log connection */
-		if (WANT_CONNECT_LOG(ctx->conn) || ctx->opts->statslog) {
-			protohttp_log_connect(ctx);
-		}
-	}
-}
-
-static int NONNULL(1,2)
-protohttp_bev_readcb_dst_exec(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
-{
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_bev_readcb_dst_exec: ENTER, fd=%d, size=%zu\n",
 			ctx->fd, evbuffer_get_length(bufferevent_get_input(bev)));
@@ -690,40 +611,33 @@ protohttp_bev_readcb_dst_exec(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	struct evbuffer *inbuf = bufferevent_get_input(bev);
 	struct evbuffer *outbuf = bufferevent_get_output(ctx->src.bev);
 
-	ctx->thr->intif_out_bytes += evbuffer_get_length(inbuf);
-
 	if (ctx->src.closed) {
 		pxy_discard_inbuf(bev);
-		return -1;
+		return;
 	}
 
+	int seen_resp_header_on_entry = http_ctx->seen_resp_header;
 	if (!http_ctx->seen_resp_header) {
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_bev_readcb_dst_exec: HTTP Response Header size=%zu, fd=%d\n", evbuffer_get_length(inbuf), ctx->fd);
 #endif /* DEBUG_PROXY */
+
 		protohttp_filter_response_header(inbuf, outbuf, ctx, http_ctx);
 	} else {
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_bev_readcb_dst_exec: HTTP Response Body size=%zu, fd=%d\n", evbuffer_get_length(inbuf), ctx->fd);
 #endif /* DEBUG_PROXY */
+
 		evbuffer_add_buffer(outbuf, inbuf);
 	}
 	pxy_set_watermark(bev, ctx, ctx->src.bev);
-	return 0;
-}
 
-static void NONNULL(1)
-protohttp_bev_readcb_dst(struct bufferevent *bev, void *arg)
-{
-	pxy_conn_ctx_t *ctx = arg;
-
-	if (protohttp_bev_readcb_dst_log_preexec(bev, ctx) == -1) {
-		return;
+	if (!seen_resp_header_on_entry && http_ctx->seen_resp_header) {
+		/* response header complete: log connection */
+		if (WANT_CONNECT_LOG(ctx->conn) || ctx->opts->statslog) {
+			protohttp_log_connect(ctx);
+		}
 	}
-	if (protohttp_bev_readcb_dst_exec(bev, ctx) == -1) {
-		return;
-	}
-	protohttp_bev_readcb_dst_log_postexec(bev, ctx);
 }
 
 static void NONNULL(1)
@@ -736,13 +650,6 @@ static void NONNULL(1)
 protohttp_bev_readcb(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
-	ctx->atime = time(NULL);
-
-	if (!ctx->connected) {
-		log_err_level_printf(LOG_CRIT, "protohttp_bev_readcb: readcb called when not connected - aborting.\n");
-		log_exceptcb();
-		return;
-	}
 
 	if (bev == ctx->src.bev) {
 		protohttp_bev_readcb_src(bev, arg);
@@ -774,21 +681,17 @@ protohttp_bev_readcb_src_child(struct bufferevent *bev, void *arg)
 	struct evbuffer *inbuf = bufferevent_get_input(bev);
 	struct evbuffer *outbuf = bufferevent_get_output(ctx->dst.bev);
 
-	size_t inbuf_size = evbuffer_get_length(inbuf);
-
-	ctx->conn->thr->extif_out_bytes += inbuf_size;
-
 	if (!http_ctx->seen_req_header) {
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_bev_readcb_src_child: HTTP Request Header size=%zu, fd=%d\n", inbuf_size, ctx->fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_bev_readcb_src_child: HTTP Request Header size=%zu, fd=%d\n", evbuffer_get_length(inbuf), ctx->fd);
 #endif /* DEBUG_PROXY */
+
 		// @todo Just remove SSLproxy line, do not filter response on the server side?
 		protohttp_filter_request_header(inbuf, outbuf, (pxy_conn_ctx_t *)ctx, http_ctx);
 	} else {
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_bev_readcb_src_child: HTTP Request Body size=%zu, fd=%d\n", inbuf_size, ctx->fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_bev_readcb_src_child: HTTP Request Body size=%zu, fd=%d\n", evbuffer_get_length(inbuf), ctx->fd);
 #endif /* DEBUG_PROXY */
-		pxy_log_content_inbuf((pxy_conn_ctx_t *)ctx, inbuf, 1);
 
 		evbuffer_add_buffer(outbuf, inbuf);
 	}
@@ -814,21 +717,18 @@ protohttp_bev_readcb_dst_child(struct bufferevent *bev, void *arg)
 	struct evbuffer *inbuf = bufferevent_get_input(bev);
 	struct evbuffer *outbuf = bufferevent_get_output(ctx->src.bev);
 
-	size_t inbuf_size = evbuffer_get_length(inbuf);
-
-	ctx->conn->thr->extif_in_bytes += inbuf_size;
-
 	if (!http_ctx->seen_resp_header) {
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_bev_readcb_dst_child: HTTP Response Header size=%zu, fd=%d\n", inbuf_size, ctx->fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_bev_readcb_dst_child: HTTP Response Header size=%zu, fd=%d\n", evbuffer_get_length(inbuf), ctx->fd);
 #endif /* DEBUG_PROXY */
+
 		// @todo Do not filter response on the server side?
 		protohttp_filter_response_header(inbuf, outbuf, (pxy_conn_ctx_t *)ctx, http_ctx);
 	} else {
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_bev_readcb_dst_child: HTTP Response Body size=%zu, fd=%d\n", inbuf_size, ctx->fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_bev_readcb_dst_child: HTTP Response Body size=%zu, fd=%d\n", evbuffer_get_length(inbuf), ctx->fd);
 #endif /* DEBUG_PROXY */
-		pxy_log_content_inbuf((pxy_conn_ctx_t *)ctx, inbuf, 0);
+
 		evbuffer_add_buffer(outbuf, inbuf);
 	}
 	pxy_set_watermark(bev, ctx->conn, ctx->src.bev);
@@ -838,14 +738,6 @@ static void NONNULL(1)
 protohttp_bev_readcb_child(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_child_ctx_t *ctx = arg;
-
-	ctx->conn->atime = time(NULL);
-
-	if (!ctx->connected) {
-		log_err_level_printf(LOG_CRIT, "protohttp_bev_readcb_child: readcb called when not connected - aborting.\n");
-		log_exceptcb();
-		return;
-	}
 
 	if (bev == ctx->src.bev) {
 		protohttp_bev_readcb_src_child(bev, arg);

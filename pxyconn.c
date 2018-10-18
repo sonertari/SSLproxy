@@ -1174,14 +1174,32 @@ void
 pxy_bev_readcb(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
-	ctx->atime = time(NULL);
+
+	if (bev == ctx->src.bev || bev == ctx->dst.bev) {
+		struct evbuffer *inbuf = bufferevent_get_input(bev);
+		size_t inbuf_size = evbuffer_get_length(inbuf);
+
+		if (bev == ctx->src.bev) {
+			ctx->thr->intif_in_bytes += inbuf_size;
+		} else {
+			ctx->thr->intif_out_bytes += inbuf_size;
+		}
+
+		if (ctx->proto != PROTO_PASSTHROUGH) {
+			// HTTP content logging at this point may record certain headers twice, if we have not seen all header lines yet
+			if (pxy_log_content_inbuf(ctx, inbuf, (bev == ctx->src.bev)) == -1) {
+				return;
+			}
+		}
+	}
 
 	if (!ctx->connected) {
-		log_err_level_printf(LOG_CRIT, "pxy_bev_readcb: readcb called when other end not connected - aborting.\n");
+		log_err_level_printf(LOG_CRIT, "pxy_bev_readcb: readcb called when not connected - aborting.\n");
 		log_exceptcb();
 		return;
 	}
 
+	ctx->atime = time(NULL);
 	ctx->protoctx->bev_readcb(bev, ctx);
 }
 
@@ -1189,14 +1207,29 @@ void
 pxy_bev_readcb_child(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_child_ctx_t *ctx = arg;
-	ctx->conn->atime = time(NULL);
+
+	struct evbuffer *inbuf = bufferevent_get_input(bev);
+	size_t inbuf_size = evbuffer_get_length(inbuf);
+
+	if (bev == ctx->src.bev) {
+		ctx->conn->thr->extif_out_bytes += inbuf_size;
+	} else {
+		ctx->conn->thr->extif_in_bytes += inbuf_size;
+	}
+
+	if (ctx->proto != PROTO_PASSTHROUGH) {
+		if (pxy_log_content_inbuf((pxy_conn_ctx_t *)ctx, inbuf, (bev == ctx->src.bev)) == -1) {
+			return;
+		}
+	}
 
 	if (!ctx->connected) {
-		log_err_level_printf(LOG_CRIT, "pxy_bev_readcb_child: readcb called when other end not connected - aborting.\n");
+		log_err_level_printf(LOG_CRIT, "pxy_bev_readcb_child: readcb called when not connected - aborting.\n");
 		log_exceptcb();
 		return;
 	}
 
+	ctx->conn->atime = time(NULL);
 	ctx->protoctx->bev_readcb(bev, ctx);
 }
 
@@ -1209,6 +1242,7 @@ void
 pxy_bev_writecb(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
+
 	ctx->atime = time(NULL);
 	ctx->protoctx->bev_writecb(bev, ctx);
 }
@@ -1217,6 +1251,7 @@ void
 pxy_bev_writecb_child(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_child_ctx_t *ctx = arg;
+
 	ctx->conn->atime = time(NULL);
 	ctx->protoctx->bev_writecb(bev, ctx);
 }
@@ -1229,7 +1264,14 @@ void
 pxy_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
+
 	ctx->atime = time(NULL);
+
+	if (events & BEV_EVENT_ERROR) {
+		log_err_printf("Client-side BEV_EVENT_ERROR\n");
+		ctx->thr->errors++;
+	}
+
 	ctx->protoctx->bev_eventcb(bev, events, arg);
 }
 
@@ -1237,7 +1279,14 @@ void
 pxy_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 {
 	pxy_conn_child_ctx_t *ctx = arg;
+
 	ctx->conn->atime = time(NULL);
+
+	if (events & BEV_EVENT_ERROR) {
+		log_err_printf("Server-side BEV_EVENT_ERROR\n");
+		ctx->conn->thr->errors++;
+	}
+
 	ctx->protoctx->bev_eventcb(bev, events, arg);
 }
 
@@ -1285,6 +1334,7 @@ void
 pxy_fd_readcb(evutil_socket_t fd, UNUSED short what, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
+
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_fd_readcb: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
