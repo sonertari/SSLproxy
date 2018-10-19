@@ -31,6 +31,94 @@
 
 #include <sys/param.h>
 
+static int NONNULL(1)
+protopassthrough_prepare_logging(pxy_conn_ctx_t *ctx)
+{
+	/* prepare logging, part 2 */
+	if (WANT_CONNECT_LOG(ctx)) {
+		return pxy_prepare_logging_local_procinfo(ctx);
+	}
+	return 0;
+}
+
+static void NONNULL(1)
+protopassthrough_log_connect_type(pxy_conn_ctx_t *ctx)
+{
+	if (OPTS_DEBUG(ctx->opts)) {
+		/* for TCP, we get only a dst connect event,
+		 * since src was already connected from the
+		 * beginning; mirror SSL debug output anyway
+		 * in order not to confuse anyone who might be
+		 * looking closely at the output */
+		log_dbg_printf("protopassthrough_log_connect_type: TCP connected to [%s]:%s\n",
+					   STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str));
+		log_dbg_printf("protopassthrough_log_connect_type: TCP connected from [%s]:%s\n",
+					   STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str));
+	}
+}
+
+static void NONNULL(1)
+protopassthrough_log_connect_src(pxy_conn_ctx_t *ctx)
+{
+	if (WANT_CONNECT_LOG(ctx) || ctx->opts->statslog) {
+		pxy_log_connect_nonhttp(ctx);
+	}
+	protopassthrough_log_connect_type(ctx);
+}
+
+void
+protopassthrough_engage(pxy_conn_ctx_t *ctx)
+{
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINER, "protopassthrough_engage: ENTER, fd=%d\n", ctx->fd);
+#endif /* DEBUG_PROXY */
+
+	// @attention Do not call bufferevent_free_and_close_fd(), otherwise connection stalls due to ssl shutdown
+	// We get srv_dst writecb while ssl shutdown is still in progress, and srv_dst readcb never fires
+	//bufferevent_free_and_close_fd(ctx->srv_dst.bev, ctx);
+	SSL_free(ctx->srv_dst.ssl);
+	prototcp_bufferevent_free_and_close_fd(ctx->srv_dst.bev, ctx);
+	ctx->srv_dst.bev = NULL;
+	ctx->srv_dst.ssl = NULL;
+	ctx->connected = 0;
+	ctx->srv_dst_connected = 0;
+
+	// Close and free dst if open
+	if (!ctx->dst.closed) {
+		ctx->dst.closed = 1;
+		prototcp_bufferevent_free_and_close_fd(ctx->dst.bev, ctx);
+		ctx->dst.bev = NULL;
+		ctx->dst_fd = 0;
+	}
+
+	ctx->proto = protopassthrough_setup(ctx);
+	pxy_fd_readcb(ctx->fd, 0, ctx);
+}
+
+static void NONNULL(1)
+protopassthrough_conn_connect(pxy_conn_ctx_t *ctx)
+{
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protopassthrough_conn_connect: ENTER, fd=%d\n", ctx->fd);
+#endif /* DEBUG_PROXY */
+
+	if (prototcp_setup_srv_dst(ctx) == -1) {
+		return;
+	}
+
+	// @attention Sometimes dst write cb fires but not event cb, especially if this listener cb is not finished yet, so the conn stalls.
+	bufferevent_setcb(ctx->srv_dst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
+	bufferevent_enable(ctx->srv_dst.bev, EV_READ|EV_WRITE);
+	
+	/* initiate connection */
+	if (bufferevent_socket_connect(ctx->srv_dst.bev, (struct sockaddr *)&ctx->addr, ctx->addrlen) == -1) {
+		log_err_level_printf(LOG_CRIT, "protopassthrough_conn_connect: bufferevent_socket_connect for srv_dst failed\n");
+#ifdef DEBUG_PROXY
+		log_dbg_level_printf(LOG_DBG_MODE_FINER, "protopassthrough_conn_connect: bufferevent_socket_connect for srv_dst failed, fd=%d\n", ctx->fd);
+#endif /* DEBUG_PROXY */
+	}
+}
+
 static void NONNULL(1)
 protopassthrough_bev_readcb_src(struct bufferevent *bev, void *arg)
 {
@@ -114,41 +202,6 @@ protopassthrough_bev_writecb_srv_dst(struct bufferevent *bev, void *arg)
 	pxy_unset_watermark(bev, ctx, &ctx->src);
 }
 
-static int NONNULL(1)
-protopassthrough_prepare_logging(pxy_conn_ctx_t *ctx)
-{
-	/* prepare logging, part 2 */
-	if (WANT_CONNECT_LOG(ctx)) {
-		return pxy_prepare_logging_local_procinfo(ctx);
-	}
-	return 0;
-}
-
-static void NONNULL(1)
-protopassthrough_log_connect_type(pxy_conn_ctx_t *ctx)
-{
-	if (OPTS_DEBUG(ctx->opts)) {
-		/* for TCP, we get only a dst connect event,
-		 * since src was already connected from the
-		 * beginning; mirror SSL debug output anyway
-		 * in order not to confuse anyone who might be
-		 * looking closely at the output */
-		log_dbg_printf("protopassthrough_log_connect_type: TCP connected to [%s]:%s\n",
-					   STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str));
-		log_dbg_printf("protopassthrough_log_connect_type: TCP connected from [%s]:%s\n",
-					   STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str));
-	}
-}
-
-static void NONNULL(1)
-protopassthrough_log_connect_src(pxy_conn_ctx_t *ctx)
-{
-	if (WANT_CONNECT_LOG(ctx) || ctx->opts->statslog) {
-		pxy_log_connect_nonhttp(ctx);
-	}
-	protopassthrough_log_connect_type(ctx);
-}
-
 static void NONNULL(1,2)
 protopassthrough_bev_eventcb_connected_src(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
@@ -184,6 +237,7 @@ protopassthrough_enable_src(pxy_conn_ctx_t *ctx)
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protopassthrough_enable_src: Enabling src, %s, fd=%d, child_fd=%d\n", ctx->header_str, ctx->fd, ctx->child_fd);
 #endif /* DEBUG_PROXY */
+
 	// Now open the gates
 	bufferevent_enable(ctx->src.bev, EV_READ|EV_WRITE);
 	return 0;
@@ -212,34 +266,6 @@ protopassthrough_bev_eventcb_connected_srv_dst(UNUSED struct bufferevent *bev, p
 	if (ctx->connected) {
 		protopassthrough_log_connect_type(ctx);
 	}
-}
-
-void
-protopassthrough_engage(pxy_conn_ctx_t *ctx)
-{
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINER, "protopassthrough_engage: ENTER, fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
-	// @attention Do not call bufferevent_free_and_close_fd(), otherwise connection stalls due to ssl shutdown
-	// We get srv_dst writecb while ssl shutdown is still in progress, and srv_dst readcb never fires
-	//bufferevent_free_and_close_fd(ctx->srv_dst.bev, ctx);
-	SSL_free(ctx->srv_dst.ssl);
-	prototcp_bufferevent_free_and_close_fd(ctx->srv_dst.bev, ctx);
-	ctx->srv_dst.bev = NULL;
-	ctx->srv_dst.ssl = NULL;
-	ctx->connected = 0;
-	ctx->srv_dst_connected = 0;
-
-	// Close and free dst if open
-	if (!ctx->dst.closed) {
-		ctx->dst.closed = 1;
-		prototcp_bufferevent_free_and_close_fd(ctx->dst.bev, ctx);
-		ctx->dst.bev = NULL;
-		ctx->dst_fd = 0;
-	}
-
-	ctx->proto = protopassthrough_setup(ctx);
-	pxy_fd_readcb(ctx->fd, 0, ctx);
 }
 
 static void NONNULL(1,2)
@@ -324,30 +350,6 @@ protopassthrough_bev_eventcb_error_srv_dst(UNUSED struct bufferevent *bev, pxy_c
 
 	pxy_log_dbg_disconnect(ctx);
 	pxy_disconnect(ctx, &ctx->srv_dst, &prototcp_bufferevent_free_and_close_fd, &ctx->src, 0);
-}
-
-static void NONNULL(1)
-protopassthrough_conn_connect(pxy_conn_ctx_t *ctx)
-{
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protopassthrough_conn_connect: ENTER, fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
-
-	if (prototcp_setup_srv_dst(ctx) == -1) {
-		return;
-	}
-
-	// @attention Sometimes dst write cb fires but not event cb, especially if this listener cb is not finished yet, so the conn stalls.
-	bufferevent_setcb(ctx->srv_dst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
-	bufferevent_enable(ctx->srv_dst.bev, EV_READ|EV_WRITE);
-	
-	/* initiate connection */
-	if (bufferevent_socket_connect(ctx->srv_dst.bev, (struct sockaddr *)&ctx->addr, ctx->addrlen) == -1) {
-		log_err_level_printf(LOG_CRIT, "protopassthrough_conn_connect: bufferevent_socket_connect for srv_dst failed\n");
-#ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINER, "protopassthrough_conn_connect: bufferevent_socket_connect for srv_dst failed, fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
-	}
 }
 
 static void NONNULL(1)

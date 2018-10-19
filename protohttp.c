@@ -56,6 +56,115 @@ struct protohttp_ctx {
 	char *http_content_length;
 };
 
+static void NONNULL(1)
+protohttp_log_connect(pxy_conn_ctx_t *ctx)
+{
+	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
+
+	char *msg;
+#ifdef HAVE_LOCAL_PROCINFO
+	char *lpi = NULL;
+#endif /* HAVE_LOCAL_PROCINFO */
+	int rv;
+
+#ifdef HAVE_LOCAL_PROCINFO
+	if (ctx->opts->lprocinfo) {
+		rv = asprintf(&lpi, "lproc:%i:%s:%s:%s",
+		              ctx->lproc.pid,
+		              STRORDASH(ctx->lproc.user),
+		              STRORDASH(ctx->lproc.group),
+		              STRORDASH(ctx->lproc.exec_path));
+		if ((rv < 0) || !lpi) {
+			ctx->enomem = 1;
+			goto out;
+		}
+	}
+#endif /* HAVE_LOCAL_PROCINFO */
+
+	/*
+	 * The following ifdef's within asprintf arguments list generates
+	 * warnings with -Wembedded-directive on some compilers.
+	 * Not fixing the code in order to avoid more code duplication.
+	 */
+
+	if (!ctx->spec->ssl) {
+		rv = asprintf(&msg, "CONN: http %s %s %s %s %s %s %s %s %s"
+#ifdef HAVE_LOCAL_PROCINFO
+		              " %s"
+#endif /* HAVE_LOCAL_PROCINFO */
+		              "%s\n",
+		              STRORDASH(ctx->srchost_str),
+		              STRORDASH(ctx->srcport_str),
+		              STRORDASH(ctx->dsthost_str),
+		              STRORDASH(ctx->dstport_str),
+		              STRORDASH(http_ctx->http_host),
+		              STRORDASH(http_ctx->http_method),
+		              STRORDASH(http_ctx->http_uri),
+		              STRORDASH(http_ctx->http_status_code),
+		              STRORDASH(http_ctx->http_content_length),
+#ifdef HAVE_LOCAL_PROCINFO
+		              lpi,
+#endif /* HAVE_LOCAL_PROCINFO */
+		              http_ctx->ocsp_denied ? " ocsp:denied" : "");
+	} else {
+		rv = asprintf(&msg, "CONN: https %s %s %s %s %s %s %s %s %s "
+		              "sni:%s names:%s "
+		              "sproto:%s:%s dproto:%s:%s "
+		              "origcrt:%s usedcrt:%s"
+#ifdef HAVE_LOCAL_PROCINFO
+		              " %s"
+#endif /* HAVE_LOCAL_PROCINFO */
+		              "%s\n",
+		              STRORDASH(ctx->srchost_str),
+		              STRORDASH(ctx->srcport_str),
+		              STRORDASH(ctx->dsthost_str),
+		              STRORDASH(ctx->dstport_str),
+		              STRORDASH(http_ctx->http_host),
+		              STRORDASH(http_ctx->http_method),
+		              STRORDASH(http_ctx->http_uri),
+		              STRORDASH(http_ctx->http_status_code),
+		              STRORDASH(http_ctx->http_content_length),
+		              STRORDASH(ctx->sslctx->sni),
+		              STRORDASH(ctx->sslctx->ssl_names),
+		              SSL_get_version(ctx->src.ssl),
+		              SSL_get_cipher(ctx->src.ssl),
+		              !ctx->srv_dst.closed ? SSL_get_version(ctx->srv_dst.ssl):ctx->sslctx->srv_dst_ssl_version,
+		              !ctx->srv_dst.closed ? SSL_get_cipher(ctx->srv_dst.ssl):ctx->sslctx->srv_dst_ssl_cipher,
+		              STRORDASH(ctx->sslctx->origcrtfpr),
+		              STRORDASH(ctx->sslctx->usedcrtfpr),
+#ifdef HAVE_LOCAL_PROCINFO
+		              lpi,
+#endif /* HAVE_LOCAL_PROCINFO */
+		              http_ctx->ocsp_denied ? " ocsp:denied" : "");
+	}
+	if ((rv < 0 ) || !msg) {
+		ctx->enomem = 1;
+		goto out;
+	}
+	if (!ctx->opts->detach) {
+		log_err_printf("%s", msg);
+	} else if (ctx->opts->statslog) {
+		if (log_conn(msg) == -1) {
+			log_err_level_printf(LOG_WARNING, "Conn logging failed\n");
+		}
+	}
+	if (ctx->opts->connectlog) {
+		if (log_connect_print_free(msg) == -1) {
+			free(msg);
+			log_err_level_printf(LOG_WARNING, "Connection logging failed\n");
+		}
+	} else {
+		free(msg);
+	}
+out:
+#ifdef HAVE_LOCAL_PROCINFO
+	if (lpi) {
+		free(lpi);
+	}
+#endif /* HAVE_LOCAL_PROCINFO */
+	return;
+}
+
 /*
  * Return 1 if uri is an OCSP GET URI, 0 if not.
  */
@@ -107,16 +216,6 @@ protohttp_ocsp_is_valid_uri(const char *uri, pxy_conn_ctx_t *ctx)
 	return ret;
 }
 
-static const char ocspresp[] =
-	"HTTP/1.0 200 OK\r\n"
-	"Content-Type: application/ocsp-response\r\n"
-	"Content-Length: 5\r\n"
-	"Connection: close\r\n"
-	"\r\n"
-	"\x30\x03"      /* OCSPResponse: SEQUENCE */
-	"\x0a\x01"      /* OCSPResponseStatus: ENUMERATED */
-	"\x03";         /* tryLater (3) */
-
 /*
  * Called after a request header was completely read.
  * If the request is an OCSP request, deny the request by sending an
@@ -129,6 +228,15 @@ static void NONNULL(1,2)
 protohttp_ocsp_deny(pxy_conn_ctx_t *ctx, protohttp_ctx_t *http_ctx)
 {
 	struct evbuffer *inbuf, *outbuf;
+	static const char ocspresp[] =
+		"HTTP/1.0 200 OK\r\n"
+		"Content-Type: application/ocsp-response\r\n"
+		"Content-Length: 5\r\n"
+		"Connection: close\r\n"
+		"\r\n"
+		"\x30\x03"      /* OCSPResponse: SEQUENCE */
+		"\x0a\x01"      /* OCSPResponseStatus: ENUMERATED */
+		"\x03";         /* tryLater (3) */
 
 	if (!http_ctx->http_method)
 		return;
@@ -153,6 +261,7 @@ deny:
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINER, "protohttp_ocsp_deny: Closing dst, fd=%d, dst fd=%d\n", ctx->fd, bufferevent_getfd(ctx->dst.bev));
 #endif /* DEBUG_PROXY */
+
 	ctx->protoctx->bufferevent_free_and_close_fd(ctx->dst.bev, ctx);
 	ctx->dst.bev = NULL;
 	ctx->dst.closed = 1;
@@ -489,115 +598,6 @@ protohttp_filter_response_header(struct evbuffer *inbuf, struct evbuffer *outbuf
 }
 
 static void NONNULL(1)
-protohttp_log_connect(pxy_conn_ctx_t *ctx)
-{
-	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
-
-	char *msg;
-#ifdef HAVE_LOCAL_PROCINFO
-	char *lpi = NULL;
-#endif /* HAVE_LOCAL_PROCINFO */
-	int rv;
-
-#ifdef HAVE_LOCAL_PROCINFO
-	if (ctx->opts->lprocinfo) {
-		rv = asprintf(&lpi, "lproc:%i:%s:%s:%s",
-		              ctx->lproc.pid,
-		              STRORDASH(ctx->lproc.user),
-		              STRORDASH(ctx->lproc.group),
-		              STRORDASH(ctx->lproc.exec_path));
-		if ((rv < 0) || !lpi) {
-			ctx->enomem = 1;
-			goto out;
-		}
-	}
-#endif /* HAVE_LOCAL_PROCINFO */
-
-	/*
-	 * The following ifdef's within asprintf arguments list generates
-	 * warnings with -Wembedded-directive on some compilers.
-	 * Not fixing the code in order to avoid more code duplication.
-	 */
-
-	if (!ctx->spec->ssl) {
-		rv = asprintf(&msg, "CONN: http %s %s %s %s %s %s %s %s %s"
-#ifdef HAVE_LOCAL_PROCINFO
-		              " %s"
-#endif /* HAVE_LOCAL_PROCINFO */
-		              "%s\n",
-		              STRORDASH(ctx->srchost_str),
-		              STRORDASH(ctx->srcport_str),
-		              STRORDASH(ctx->dsthost_str),
-		              STRORDASH(ctx->dstport_str),
-		              STRORDASH(http_ctx->http_host),
-		              STRORDASH(http_ctx->http_method),
-		              STRORDASH(http_ctx->http_uri),
-		              STRORDASH(http_ctx->http_status_code),
-		              STRORDASH(http_ctx->http_content_length),
-#ifdef HAVE_LOCAL_PROCINFO
-		              lpi,
-#endif /* HAVE_LOCAL_PROCINFO */
-		              http_ctx->ocsp_denied ? " ocsp:denied" : "");
-	} else {
-		rv = asprintf(&msg, "CONN: https %s %s %s %s %s %s %s %s %s "
-		              "sni:%s names:%s "
-		              "sproto:%s:%s dproto:%s:%s "
-		              "origcrt:%s usedcrt:%s"
-#ifdef HAVE_LOCAL_PROCINFO
-		              " %s"
-#endif /* HAVE_LOCAL_PROCINFO */
-		              "%s\n",
-		              STRORDASH(ctx->srchost_str),
-		              STRORDASH(ctx->srcport_str),
-		              STRORDASH(ctx->dsthost_str),
-		              STRORDASH(ctx->dstport_str),
-		              STRORDASH(http_ctx->http_host),
-		              STRORDASH(http_ctx->http_method),
-		              STRORDASH(http_ctx->http_uri),
-		              STRORDASH(http_ctx->http_status_code),
-		              STRORDASH(http_ctx->http_content_length),
-		              STRORDASH(ctx->sslctx->sni),
-		              STRORDASH(ctx->sslctx->ssl_names),
-		              SSL_get_version(ctx->src.ssl),
-		              SSL_get_cipher(ctx->src.ssl),
-		              !ctx->srv_dst.closed ? SSL_get_version(ctx->srv_dst.ssl):ctx->sslctx->srv_dst_ssl_version,
-		              !ctx->srv_dst.closed ? SSL_get_cipher(ctx->srv_dst.ssl):ctx->sslctx->srv_dst_ssl_cipher,
-		              STRORDASH(ctx->sslctx->origcrtfpr),
-		              STRORDASH(ctx->sslctx->usedcrtfpr),
-#ifdef HAVE_LOCAL_PROCINFO
-		              lpi,
-#endif /* HAVE_LOCAL_PROCINFO */
-		              http_ctx->ocsp_denied ? " ocsp:denied" : "");
-	}
-	if ((rv < 0 ) || !msg) {
-		ctx->enomem = 1;
-		goto out;
-	}
-	if (!ctx->opts->detach) {
-		log_err_printf("%s", msg);
-	} else if (ctx->opts->statslog) {
-		if (log_conn(msg) == -1) {
-			log_err_level_printf(LOG_WARNING, "Conn logging failed\n");
-		}
-	}
-	if (ctx->opts->connectlog) {
-		if (log_connect_print_free(msg) == -1) {
-			free(msg);
-			log_err_level_printf(LOG_WARNING, "Connection logging failed\n");
-		}
-	} else {
-		free(msg);
-	}
-out:
-#ifdef HAVE_LOCAL_PROCINFO
-	if (lpi) {
-		free(lpi);
-	}
-#endif /* HAVE_LOCAL_PROCINFO */
-	return;
-}
-
-static void NONNULL(1)
 protohttp_bev_readcb_dst(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
@@ -607,16 +607,17 @@ protohttp_bev_readcb_dst(struct bufferevent *bev, void *arg)
 			ctx->fd, evbuffer_get_length(bufferevent_get_input(bev)));
 #endif /* DEBUG_PROXY */
 
-	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
-	struct evbuffer *inbuf = bufferevent_get_input(bev);
-	struct evbuffer *outbuf = bufferevent_get_output(ctx->src.bev);
-
 	if (ctx->src.closed) {
 		pxy_discard_inbuf(bev);
 		return;
 	}
 
+	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
+	struct evbuffer *inbuf = bufferevent_get_input(bev);
+	struct evbuffer *outbuf = bufferevent_get_output(ctx->src.bev);
+
 	int seen_resp_header_on_entry = http_ctx->seen_resp_header;
+
 	if (!http_ctx->seen_resp_header) {
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_bev_readcb_dst_exec: HTTP Response Header size=%zu, fd=%d\n", evbuffer_get_length(inbuf), ctx->fd);
@@ -644,22 +645,6 @@ static void NONNULL(1)
 protohttp_bev_readcb_srv_dst(UNUSED struct bufferevent *bev, UNUSED void *arg)
 {
 	log_err_printf("protohttp_bev_readcb_srv_dst: readcb called on srv_dst\n");
-}
-
-static void NONNULL(1)
-protohttp_bev_readcb(struct bufferevent *bev, void *arg)
-{
-	pxy_conn_ctx_t *ctx = arg;
-
-	if (bev == ctx->src.bev) {
-		protohttp_bev_readcb_src(bev, arg);
-	} else if (bev == ctx->dst.bev) {
-		protohttp_bev_readcb_dst(bev, arg);
-	} else if (bev == ctx->srv_dst.bev) {
-		protohttp_bev_readcb_srv_dst(bev, arg);
-	} else {
-		log_err_printf("protohttp_bev_readcb: UNKWN conn end\n");
-	}
 }
 
 static void NONNULL(1)
@@ -732,6 +717,22 @@ protohttp_bev_readcb_dst_child(struct bufferevent *bev, void *arg)
 		evbuffer_add_buffer(outbuf, inbuf);
 	}
 	pxy_set_watermark(bev, ctx->conn, ctx->src.bev);
+}
+
+static void NONNULL(1)
+protohttp_bev_readcb(struct bufferevent *bev, void *arg)
+{
+	pxy_conn_ctx_t *ctx = arg;
+
+	if (bev == ctx->src.bev) {
+		protohttp_bev_readcb_src(bev, arg);
+	} else if (bev == ctx->dst.bev) {
+		protohttp_bev_readcb_dst(bev, arg);
+	} else if (bev == ctx->srv_dst.bev) {
+		protohttp_bev_readcb_srv_dst(bev, arg);
+	} else {
+		log_err_printf("protohttp_bev_readcb: UNKWN conn end\n");
+	}
 }
 
 static void NONNULL(1)

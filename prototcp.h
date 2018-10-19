@@ -31,6 +31,9 @@
 
 #include "pxyconn.h"
 
+void prototcp_bufferevent_free_and_close_fd(struct bufferevent *, pxy_conn_ctx_t *) NONNULL(1,2);
+void prototcp_fd_readcb(evutil_socket_t, short, void *);
+
 void prototcp_bev_writecb(struct bufferevent *, void *) NONNULL(1);
 
 void prototcp_bev_eventcb_eof_src(struct bufferevent *, pxy_conn_ctx_t *) NONNULL(1,2);
@@ -58,10 +61,6 @@ int prototcp_setup_srv_dst(pxy_conn_ctx_t *) NONNULL(1);
 
 int prototcp_setup_src_child(pxy_conn_child_ctx_t *) NONNULL(1);
 int prototcp_setup_dst_child(pxy_conn_child_ctx_t *) NONNULL(1);
-
-void prototcp_bufferevent_free_and_close_fd(struct bufferevent *, pxy_conn_ctx_t *) NONNULL(1,2);
-
-void prototcp_fd_readcb(evutil_socket_t, short, void *);
 
 protocol_t prototcp_setup(pxy_conn_ctx_t *) NONNULL(1);
 protocol_t prototcp_setup_child(pxy_conn_child_ctx_t *) NONNULL(1);

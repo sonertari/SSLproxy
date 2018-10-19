@@ -177,6 +177,7 @@ prototcp_conn_connect(pxy_conn_ctx_t *ctx)
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINER, "prototcp_conn_connect: bufferevent_socket_connect for srv_dst failed, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
+
 		// @attention Do not try to close the conn here, otherwise both pxy_conn_connect() and eventcb try to free the conn using pxy_conn_free(),
 		// they are running on different threads, causing multithreading issues, e.g. signal 10.
 		// @todo Should we use thrmgr->mutex? Can we?
@@ -225,9 +226,11 @@ void
 prototcp_fd_readcb(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
+
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_fd_readcb: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
+
 	pxy_conn_connect(ctx);
 }
 
@@ -256,9 +259,7 @@ prototcp_bev_readcb_src(struct bufferevent *bev, void *arg)
 		return;
 	}
 
-	if (evbuffer_remove(inbuf, packet, packet_size) == -1) {
-		log_err_printf("prototcp_bev_readcb_src: evbuffer_remove failed, fd=%d\n", ctx->fd);
-	}
+	evbuffer_remove(inbuf, packet, packet_size);
 
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_readcb_src: ORIG packet (size=%zu), fd=%d:\n%.*s\n",
@@ -266,10 +267,7 @@ prototcp_bev_readcb_src(struct bufferevent *bev, void *arg)
 #endif /* DEBUG_PROXY */
 
 	pxy_insert_sslproxy_header(ctx, packet, &packet_size);
-
-	if (evbuffer_add(outbuf, packet, packet_size) == -1) {
-		log_err_printf("prototcp_bev_readcb_src: evbuffer_add failed, fd=%d\n", ctx->fd);
-	}
+	evbuffer_add(outbuf, packet, packet_size);
 
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_readcb_src: NEW packet (size=%zu), fd=%d:\n%.*s\n",
@@ -336,15 +334,9 @@ prototcp_bev_readcb_src_child(struct bufferevent *bev, void *arg)
 		return;
 	}
 
-	if (evbuffer_remove(inbuf, packet, packet_size) == -1) {
-		log_err_printf("prototcp_bev_readcb_src_child: src evbuffer_remove failed, fd=%d\n", ctx->fd);
-	}
-
+	evbuffer_remove(inbuf, packet, packet_size);
 	pxy_remove_sslproxy_header(ctx, packet, &packet_size);
-
-	if (evbuffer_add(outbuf, packet, packet_size) == -1) {
-		log_err_printf("prototcp_bev_readcb_src_child: src evbuffer_add failed, fd=%d\n", ctx->fd);
-	}
+	evbuffer_add(outbuf, packet, packet_size);
 
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_readcb_src_child: src packet (size=%zu), fd=%d, conn fd=%d:\n%.*s\n",
@@ -390,6 +382,7 @@ prototcp_bev_writecb_src(struct bufferevent *bev, void *arg)
 #ifdef DEBUG_PROXY
 			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_writecb_src: other->closed, terminate conn, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
+
 			pxy_conn_free(ctx, 1);
 		}			
 		return;
@@ -404,6 +397,7 @@ prototcp_connect_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINE, "prototcp_connect_dst: writecb before connected, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
+
 		// @attention Sometimes dst write cb fires but not event cb, especially if the listener cb is not finished yet, so the conn stalls.
 		// This is a workaround for this error condition, nothing else seems to work.
 		// @attention Do not try to free the conn here, since the listener cb may not be finished yet, which causes multithreading issues
@@ -428,6 +422,7 @@ prototcp_bev_writecb_dst(struct bufferevent *bev, void *arg)
 #ifdef DEBUG_PROXY
 			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_writecb_dst: other->closed, terminate conn, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
+
 			pxy_conn_free(ctx, 0);
 		}			
 		return;
@@ -461,6 +456,7 @@ prototcp_bev_writecb_src_child(struct bufferevent *bev, void *arg)
 #ifdef DEBUG_PROXY
 			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_writecb_src_child: other->closed, terminate conn, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
+
 			pxy_conn_free_child(ctx);
 		}			
 		return;
@@ -475,6 +471,7 @@ prototcp_connect_dst_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ctx)
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINE, "prototcp_connect_dst_child: writecb before connected, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
+
 		// @attention Sometimes dst write cb fires but not event cb, especially if the listener cb is not finished yet, so the conn stalls.
 		// This is a workaround for this error condition, nothing else seems to work.
 		// @attention Do not try to free the conn here, since the listener cb may not be finished yet, which causes multithreading issues
@@ -499,6 +496,7 @@ prototcp_bev_writecb_dst_child(struct bufferevent *bev, void *arg)
 #ifdef DEBUG_PROXY
 			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_writecb_dst_child: other->closed, terminate conn, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
+
 			pxy_conn_free_child(ctx);
 		}			
 		return;
@@ -509,11 +507,11 @@ prototcp_bev_writecb_dst_child(struct bufferevent *bev, void *arg)
 static void NONNULL(1)
 prototcp_close_srv_dst(pxy_conn_ctx_t *ctx)
 {
-	// @attention Free the srv_dst of the conn asap, we don't need it anymore, but we need its fd
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINER, "prototcp_close_srv_dst: Closing srv_dst, fd=%d, srv_dst fd=%d\n", ctx->fd, bufferevent_getfd(ctx->srv_dst.bev));
 #endif /* DEBUG_PROXY */
 
+	// @attention Free the srv_dst of the conn asap, we don't need it anymore, but we need its fd
 	// @attention When both eventcb and writecb for srv_dst are enabled, either eventcb or writecb may get a NULL srv_dst bev, causing a crash with signal 10.
 	// So, from this point on, we should check if srv_dst is NULL or not.
 	prototcp_bufferevent_free_and_close_fd(ctx->srv_dst.bev, ctx);
@@ -548,6 +546,7 @@ prototcp_enable_src(pxy_conn_ctx_t *ctx)
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_enable_src: Enabling src, %s, fd=%d, child_fd=%d\n", ctx->header_str, ctx->fd, ctx->child_fd);
 #endif /* DEBUG_PROXY */
+
 	// Now open the gates
 	bufferevent_enable(ctx->src.bev, EV_READ|EV_WRITE);
 	return 0;
@@ -849,34 +848,6 @@ prototcp_bev_eventcb_error_dst_child(UNUSED struct bufferevent *bev, pxy_conn_ch
 }
 
 void
-prototcp_bev_eventcb_src_child(struct bufferevent *bev, short events, void *arg)
-{
-	pxy_conn_child_ctx_t *ctx = arg;
-
-	if (events & BEV_EVENT_CONNECTED) {
-		prototcp_bev_eventcb_connected_src_child(bev, ctx);
-	} else if (events & BEV_EVENT_EOF) {
-		prototcp_bev_eventcb_eof_src_child(bev, ctx);
-	} else if (events & BEV_EVENT_ERROR) {
-		prototcp_bev_eventcb_error_src_child(bev, ctx);
-	}
-}
-
-void
-prototcp_bev_eventcb_dst_child(struct bufferevent *bev, short events, void *arg)
-{
-	pxy_conn_child_ctx_t *ctx = arg;
-
-	if (events & BEV_EVENT_CONNECTED) {
-		prototcp_bev_eventcb_connected_dst_child(bev, ctx);
-	} else if (events & BEV_EVENT_EOF) {
-		prototcp_bev_eventcb_eof_dst_child(bev, ctx);
-	} else if (events & BEV_EVENT_ERROR) {
-		prototcp_bev_eventcb_error_dst_child(bev, ctx);
-	}
-}
-
-void
 prototcp_bev_eventcb_src(struct bufferevent *bev, short events, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
@@ -915,6 +886,34 @@ prototcp_bev_eventcb_srv_dst(struct bufferevent *bev, short events, void *arg)
 		prototcp_bev_eventcb_eof_srv_dst(bev, ctx);
 	} else if (events & BEV_EVENT_ERROR) {
 		prototcp_bev_eventcb_error_srv_dst(bev, ctx);
+	}
+}
+
+void
+prototcp_bev_eventcb_src_child(struct bufferevent *bev, short events, void *arg)
+{
+	pxy_conn_child_ctx_t *ctx = arg;
+
+	if (events & BEV_EVENT_CONNECTED) {
+		prototcp_bev_eventcb_connected_src_child(bev, ctx);
+	} else if (events & BEV_EVENT_EOF) {
+		prototcp_bev_eventcb_eof_src_child(bev, ctx);
+	} else if (events & BEV_EVENT_ERROR) {
+		prototcp_bev_eventcb_error_src_child(bev, ctx);
+	}
+}
+
+void
+prototcp_bev_eventcb_dst_child(struct bufferevent *bev, short events, void *arg)
+{
+	pxy_conn_child_ctx_t *ctx = arg;
+
+	if (events & BEV_EVENT_CONNECTED) {
+		prototcp_bev_eventcb_connected_dst_child(bev, ctx);
+	} else if (events & BEV_EVENT_EOF) {
+		prototcp_bev_eventcb_eof_dst_child(bev, ctx);
+	} else if (events & BEV_EVENT_ERROR) {
+		prototcp_bev_eventcb_error_dst_child(bev, ctx);
 	}
 }
 
