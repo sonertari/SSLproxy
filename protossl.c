@@ -809,6 +809,7 @@ protossl_bufferevent_setup(pxy_conn_ctx_t *ctx, evutil_socket_t fd, SSL *ssl)
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protossl_bufferevent_setup: bufferevent_openssl_set_allow_dirty_shutdown\n");
 #endif /* DEBUG_PROXY */
+
 	/* Prevent unclean (dirty) shutdowns to cause error
 	 * events on the SSL socket bufferevent. */
 	bufferevent_openssl_set_allow_dirty_shutdown(bev, 1);
@@ -839,6 +840,7 @@ protossl_bufferevent_setup_child(pxy_conn_child_ctx_t *ctx, evutil_socket_t fd, 
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protossl_bufferevent_setup_child: bufferevent_openssl_set_allow_dirty_shutdown\n");
 #endif /* DEBUG_PROXY */
+
 	/* Prevent unclean (dirty) shutdowns to cause error
 	 * events on the SSL socket bufferevent. */
 	bufferevent_openssl_set_allow_dirty_shutdown(bev, 1);
@@ -1110,6 +1112,7 @@ protossl_conn_connect(pxy_conn_ctx_t *ctx)
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINER, "protossl_conn_connect: bufferevent_socket_connect for srv_dst failed, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
+
 		// @attention Do not try to close the conn here, otherwise both pxy_conn_connect() and eventcb try to free the conn using pxy_conn_free(),
 		// they are running on different threads, causing multithreading issues, e.g. signal 10.
 		// @todo Should we use thrmgr->mutex? Can we?
@@ -1248,22 +1251,12 @@ protossl_close_srv_dst(pxy_conn_ctx_t *ctx)
 static int NONNULL(1)
 protossl_enable_src(pxy_conn_ctx_t *ctx)
 {
-	ctx->connected = 1;
-
 	int rv;
 	if ((rv = protossl_setup_src(ctx)) != 0) {
 		// Might have switched to passthrough mode
 		return rv;
 	}
 	bufferevent_setcb(ctx->src.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
-
-	if (pxy_set_dstaddr(ctx) == -1) {
-		return -1;
-	}
-
-	if (pxy_prepare_logging(ctx) == -1) {
-		return -1;
-	}
 
 	protossl_close_srv_dst(ctx);
 
@@ -1274,6 +1267,7 @@ protossl_enable_src(pxy_conn_ctx_t *ctx)
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protossl_enable_src: Enabling src, %s, fd=%d, child_fd=%d\n", ctx->header_str, ctx->fd, ctx->child_fd);
 #endif /* DEBUG_PROXY */
+
 	// Now open the gates
 	bufferevent_enable(ctx->src.bev, EV_READ|EV_WRITE);
 	return 0;
@@ -1289,13 +1283,11 @@ protossl_bev_eventcb_connected_dst(UNUSED struct bufferevent *bev, pxy_conn_ctx_
 	ctx->dst_connected = 1;
 
 	if (ctx->srv_dst_connected && ctx->dst_connected && !ctx->connected) {
+		ctx->connected = 1;
+
 		if (protossl_enable_src(ctx) == -1) {
 			return;
 		}
-	}
-
-	if (ctx->connected) {
-		pxy_log_connect_srv_dst(ctx);
 	}
 }
 
@@ -1325,13 +1317,11 @@ protossl_bev_eventcb_connected_srv_dst(UNUSED struct bufferevent *bev, pxy_conn_
 	ctx->thr->max_fd = MAX(ctx->thr->max_fd, ctx->dst_fd);
 
 	if (ctx->srv_dst_connected && ctx->dst_connected && !ctx->connected) {
+		ctx->connected = 1;
+
 		if (protossl_enable_src(ctx) == -1) {
 			return;
 		}
-	}
-
-	if (ctx->connected) {
-		pxy_log_connect_srv_dst(ctx);
 	}
 }
 
@@ -1346,6 +1336,7 @@ protossl_bev_eventcb_error_srv_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINE, "protossl_bev_eventcb_error_srv_dst: ERROR !ctx->connected, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
+
 		/* the callout to the original destination failed,
 		 * e.g. because it asked for client cert auth, so
 		 * close the accepted socket and clean up */
@@ -1404,6 +1395,19 @@ protossl_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 		protossl_bev_eventcb_srv_dst(bev, events, arg);
 	} else {
 		log_err_printf("protossl_bev_eventcb: UNKWN conn end\n");
+		return;
+	}
+
+	if (events & BEV_EVENT_CONNECTED) {
+		if (bev == ctx->src.bev) {
+			pxy_log_connect_src(ctx);
+		} else if (ctx->connected) {
+			if (pxy_prepare_logging(ctx) == -1) {
+				return;
+			}
+			// Doesn't log connect if proto is http, http has its own connect log
+			pxy_log_connect_srv_dst(ctx);
+		}
 	}
 }
 
@@ -1457,7 +1461,6 @@ protossl_setup_child(pxy_conn_child_ctx_t *ctx)
 	ctx->protoctx->bev_eventcb = protossl_bev_eventcb_child;
 
 	ctx->protoctx->bufferevent_free_and_close_fd = protossl_bufferevent_free_and_close_fd;
-
 	return PROTO_SSL;
 }
 

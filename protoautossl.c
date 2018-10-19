@@ -137,11 +137,7 @@ protoautossl_bufferevent_free_and_close_fd(struct bufferevent *bev, pxy_conn_ctx
 	if (ssl) {
 		pxy_ssl_shutdown(ctx->opts, ctx->evbase, ssl, fd);
 	} else {
-		if (evutil_closesocket(fd) == -1) {
-#ifdef DEBUG_PROXY
-			log_dbg_level_printf(LOG_DBG_MODE_FINE, "protoautossl_bufferevent_free_and_close_fd: evutil_closesocket FAILED, fd=%d\n", fd);
-#endif /* DEBUG_PROXY */
-		}
+		evutil_closesocket(fd);
 	}
 }
 
@@ -181,6 +177,7 @@ static void NONNULL(1)
 protoautossl_connect_child(pxy_conn_child_ctx_t *ctx)
 {
 	protoautossl_ctx_t *autossl_ctx = ctx->conn->protoctx->arg;
+
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protoautossl_connect_child: ENTER, conn fd=%d, child_fd=%d\n", ctx->conn->fd, ctx->conn->child_fd);
 #endif /* DEBUG_PROXY */
@@ -310,9 +307,7 @@ protoautossl_bev_readcb_srv_dst(struct bufferevent *bev, void *arg)
 
 	// Discard packets to client while searching for clienthello in autossl mode, because child conn passes them along already
 	// Otherwise client would receive the same packet twice
-	if (evbuffer_drain(inbuf, inbuf_size) == -1) {
-		log_err_printf("protoautossl_bev_readcb_srv_dst: clienthello_search evbuffer_drain failed, fd=%d\n", ctx->fd);
-	}
+	evbuffer_drain(inbuf, inbuf_size);
 }
 
 static void NONNULL(1,2)
@@ -321,8 +316,6 @@ protoautossl_bev_eventcb_connected_src(UNUSED struct bufferevent *bev, pxy_conn_
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protoautossl_bev_eventcb_connected_src: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
-
-	pxy_log_connect_src(ctx);
 }
 
 static void NONNULL(1)
@@ -356,8 +349,6 @@ protoautossl_enable_src(pxy_conn_ctx_t *ctx)
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protoautossl_enable_src: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
-	ctx->connected = 1;
-
 	// Create and set up src.bev
 	if (!autossl_ctx->clienthello_found) {
 		// Create tcp src.bev first
@@ -380,14 +371,6 @@ protoautossl_enable_src(pxy_conn_ctx_t *ctx)
 		}
 	}
 	bufferevent_setcb(ctx->src.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
-
-	if (pxy_set_dstaddr(ctx) == -1) {
-		return -1;
-	}
-
-	if (pxy_prepare_logging(ctx) == -1) {
-		return -1;
-	}
 
 	// srv_dst is not needed after clienthello search is over
 	if (ctx->srv_dst.bev && !autossl_ctx->clienthello_search) {
@@ -422,13 +405,11 @@ protoautossl_eventcb_connected_dst(UNUSED struct bufferevent *bev, pxy_conn_ctx_
 	ctx->dst_connected = 1;
 
 	if (ctx->srv_dst_connected && ctx->dst_connected && (!ctx->connected || (autossl_ctx->clienthello_found && ctx->srv_dst.bev))) {
+		ctx->connected = 1;
+
 		if (protoautossl_enable_src(ctx) == -1) {
 			return;
 		}
-	}
-
-	if (ctx->connected) {
-		pxy_log_connect_srv_dst(ctx);
 	}
 }
 
@@ -463,14 +444,12 @@ protoautossl_bev_eventcb_connected_srv_dst(UNUSED struct bufferevent *bev, pxy_c
 		ctx->thr->max_fd = MAX(ctx->thr->max_fd, ctx->dst_fd);
 	}
 
-	if (ctx->srv_dst_connected && ctx->dst_connected && (!ctx->connected || (autossl_ctx->clienthello_found && ctx->srv_dst.bev))) {
+	if (ctx->srv_dst_connected && ctx->dst_connected && (!ctx->connected || autossl_ctx->clienthello_found)) {
+		ctx->connected = 1;
+
 		if (protoautossl_enable_src(ctx) == -1) {
 			return;
 		}
-	}
-
-	if (ctx->connected) {
-		pxy_log_connect_srv_dst(ctx);
 	}
 }
 
@@ -703,6 +682,18 @@ protoautossl_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 		protoautossl_bev_eventcb_srv_dst(bev, events, arg);
 	} else {
 		log_err_printf("protoautossl_bev_eventcb: UNKWN conn end\n");
+		return;
+	}
+
+	if (events & BEV_EVENT_CONNECTED) {
+		if (bev == ctx->src.bev) {
+			pxy_log_connect_src(ctx);
+		} else if (ctx->connected) {
+			if (pxy_prepare_logging(ctx) == -1) {
+				return;
+			}
+			pxy_log_connect_srv_dst(ctx);
+		}
 	}
 }
 

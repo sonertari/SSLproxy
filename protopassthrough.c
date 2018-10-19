@@ -172,6 +172,7 @@ protopassthrough_bev_writecb_src(struct bufferevent *bev, void *arg)
 #ifdef DEBUG_PROXY
 			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protopassthrough_bev_writecb_src: other->closed, terminate conn, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
+
 			pxy_conn_free(ctx, 1);
 		}			
 		return;
@@ -195,6 +196,7 @@ protopassthrough_bev_writecb_srv_dst(struct bufferevent *bev, void *arg)
 #ifdef DEBUG_PROXY
 			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protopassthrough_bev_writecb_srv_dst: other->closed, terminate conn, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
+
 			pxy_conn_free(ctx, 0);
 		}			
 		return;
@@ -208,8 +210,6 @@ protopassthrough_bev_eventcb_connected_src(UNUSED struct bufferevent *bev, pxy_c
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protopassthrough_bev_eventcb_connected_src: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
-
-	protopassthrough_log_connect_src(ctx);
 }
 
 static int NONNULL(1)
@@ -219,20 +219,10 @@ protopassthrough_enable_src(pxy_conn_ctx_t *ctx)
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protopassthrough_enable_src: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
-	ctx->connected = 1;
-
 	if (prototcp_setup_src(ctx) == -1) {
 		return -1;
 	}
 	bufferevent_setcb(ctx->src.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
-
-	if (pxy_set_dstaddr(ctx) == -1) {
-		return -1;
-	}
-
-	if (protopassthrough_prepare_logging(ctx) == -1) {
-		return -1;
-	}
 
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protopassthrough_enable_src: Enabling src, %s, fd=%d, child_fd=%d\n", ctx->header_str, ctx->fd, ctx->child_fd);
@@ -258,13 +248,11 @@ protopassthrough_bev_eventcb_connected_srv_dst(UNUSED struct bufferevent *bev, p
 	}
 
 	if (ctx->srv_dst_connected && !ctx->connected) {
+		ctx->connected = 1;
+
 		if (protopassthrough_enable_src(ctx) == -1) {
 			return;
 		}
-	}
-
-	if (ctx->connected) {
-		protopassthrough_log_connect_type(ctx);
 	}
 }
 
@@ -419,6 +407,22 @@ protopassthrough_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 		protopassthrough_bev_eventcb_srv_dst(bev, events, arg);
 	} else {
 		log_err_printf("protopassthrough_bev_eventcb: UNKWN conn end\n");
+		return;
+	}
+
+	if (events & BEV_EVENT_CONNECTED) {
+		if (bev == ctx->src.bev) {
+			protopassthrough_log_connect_src(ctx);
+		} else if (ctx->connected) {
+			// @todo Do we need to set dstaddr here? It must have already been set by the original proto.
+			if (pxy_set_dstaddr(ctx) == -1) {
+				return;
+			}
+			if (protopassthrough_prepare_logging(ctx) == -1) {
+				return;
+			}
+			protopassthrough_log_connect_type(ctx);
+		}
 	}
 }
 

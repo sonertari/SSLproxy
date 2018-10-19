@@ -616,8 +616,6 @@ protohttp_bev_readcb_dst(struct bufferevent *bev, void *arg)
 	struct evbuffer *inbuf = bufferevent_get_input(bev);
 	struct evbuffer *outbuf = bufferevent_get_output(ctx->src.bev);
 
-	int seen_resp_header_on_entry = http_ctx->seen_resp_header;
-
 	if (!http_ctx->seen_resp_header) {
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_bev_readcb_dst_exec: HTTP Response Header size=%zu, fd=%d\n", evbuffer_get_length(inbuf), ctx->fd);
@@ -632,13 +630,6 @@ protohttp_bev_readcb_dst(struct bufferevent *bev, void *arg)
 		evbuffer_add_buffer(outbuf, inbuf);
 	}
 	pxy_set_watermark(bev, ctx, ctx->src.bev);
-
-	if (!seen_resp_header_on_entry && http_ctx->seen_resp_header) {
-		/* response header complete: log connection */
-		if (WANT_CONNECT_LOG(ctx->conn) || ctx->opts->statslog) {
-			protohttp_log_connect(ctx);
-		}
-	}
 }
 
 static void NONNULL(1)
@@ -723,6 +714,9 @@ static void NONNULL(1)
 protohttp_bev_readcb(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
+	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
+
+	int seen_resp_header_on_entry = http_ctx->seen_resp_header;
 
 	if (bev == ctx->src.bev) {
 		protohttp_bev_readcb_src(bev, arg);
@@ -732,6 +726,13 @@ protohttp_bev_readcb(struct bufferevent *bev, void *arg)
 		protohttp_bev_readcb_srv_dst(bev, arg);
 	} else {
 		log_err_printf("protohttp_bev_readcb: UNKWN conn end\n");
+	}
+
+	if (!seen_resp_header_on_entry && http_ctx->seen_resp_header) {
+		/* response header complete: log connection */
+		if (WANT_CONNECT_LOG(ctx->conn) || ctx->opts->statslog) {
+			protohttp_log_connect(ctx);
+		}
 	}
 }
 
@@ -812,6 +813,7 @@ protohttp_setup(pxy_conn_ctx_t *ctx)
 		return PROTO_ERROR;
 	}
 	memset(ctx->protoctx->arg, 0, sizeof(protohttp_ctx_t));
+
 	return PROTO_HTTP;
 }
 
@@ -861,6 +863,7 @@ protohttp_setup_child(pxy_conn_child_ctx_t *ctx)
 		return PROTO_ERROR;
 	}
 	memset(ctx->protoctx->arg, 0, sizeof(protohttp_ctx_t));
+
 	return PROTO_HTTPS;
 }
 
@@ -882,6 +885,7 @@ protohttps_setup_child(pxy_conn_child_ctx_t *ctx)
 		return PROTO_ERROR;
 	}
 	memset(ctx->protoctx->arg, 0, sizeof(protohttp_ctx_t));
+
 	return PROTO_HTTPS;
 }
 

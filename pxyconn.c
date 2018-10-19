@@ -866,7 +866,7 @@ pxy_insert_sslproxy_header(pxy_conn_ctx_t *ctx, unsigned char *packet, size_t *p
 	// @attention Cannot use string manipulation functions; we are dealing with binary arrays here, not NULL-terminated strings
 	if (!ctx->sent_header) {
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_insert_sslproxy_header: INSERTED SSLproxy header, fd=%d\n", ctx->fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_insert_sslproxy_header: INSERT SSLproxy header, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
 		memmove(packet + ctx->header_len + 2, packet, *packet_size);
@@ -883,7 +883,7 @@ pxy_remove_sslproxy_header(pxy_conn_child_ctx_t *ctx, unsigned char *packet, siz
 	unsigned char *pos = memmem(packet, *packet_size, ctx->conn->header_str, ctx->conn->header_len);
 	if (pos) {
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_remove_sslproxy_header: REMOVED SSLproxy header, fd=%d, conn fd=%d\n", ctx->fd, ctx->conn->fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_remove_sslproxy_header: REMOVE SSLproxy header, fd=%d, conn fd=%d\n", ctx->fd, ctx->conn->fd);
 #endif /* DEBUG_PROXY */
 
 		memmove(pos, pos + ctx->conn->header_len + 2, *packet_size - (pos - packet) - (ctx->conn->header_len + 2));
@@ -1037,6 +1037,10 @@ pxy_setup_child_listener(pxy_conn_ctx_t *ctx)
 	char addr[INET_ADDRSTRLEN];
 	if (!inet_ntop(AF_INET, &child_listener_addr.sin_addr, addr, INET_ADDRSTRLEN)) {
 		pxy_conn_free(ctx, 1);
+		return -1;
+	}
+
+	if (pxy_set_dstaddr(ctx) == -1) {
 		return -1;
 	}
 

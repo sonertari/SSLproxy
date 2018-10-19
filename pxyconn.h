@@ -81,7 +81,7 @@ enum conn_type {
 	CONN_TYPE_CHILD,
 };
 
-enum protocol {
+typedef enum protocol {
 	PROTO_ERROR = -1,
 	PROTO_PASSTHROUGH = 0,
 	PROTO_HTTP,
@@ -93,9 +93,7 @@ enum protocol {
 	PROTO_AUTOSSL,
 	PROTO_TCP,
 	PROTO_SSL,
-};
-
-typedef enum protocol protocol_t;
+} protocol_t;
 
 typedef struct ssl_ctx ssl_ctx_t;
 
