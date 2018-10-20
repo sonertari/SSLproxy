@@ -119,6 +119,7 @@ static void
 pxy_ssl_shutdown_cb(evutil_socket_t fd, UNUSED short what, void *arg)
 {
 	pxy_ssl_shutdown_ctx_t *ctx = arg;
+
 	// @attention Increasing the delay to 500 or more fixes some ssl shutdown failures, they report SSL_ERROR_WANT_READ before eventually succeeding
 	// @todo Can/should we set an adaptive delay per conn here? Does it matter?
 	struct timeval retry_delay = {0, 100};
@@ -147,9 +148,11 @@ pxy_ssl_shutdown_cb(evutil_socket_t fd, UNUSED short what, void *arg)
 	}
 	
 	sslerr = SSL_get_error(ctx->ssl, rv);
+
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_ssl_shutdown_cb: %s, retries=%d, fd=%d\n", pxy_ssl_shutdown_get_sslerr_name(sslerr), ctx->retries, fd);
 #endif /* DEBUG_PROXY */
+
 	switch (sslerr) {
 		case SSL_ERROR_WANT_READ:
 			want = EV_READ;
@@ -165,8 +168,9 @@ pxy_ssl_shutdown_cb(evutil_socket_t fd, UNUSED short what, void *arg)
 		default:
 			log_err_level_printf(LOG_CRIT, "Unhandled SSL_shutdown() error %i. Closing fd\n", sslerr);
 #ifdef DEBUG_PROXY
-			log_dbg_level_printf(LOG_DBG_MODE_FINER, "Unhandled SSL_shutdown() error %i. Closing fd, fd=%d\n", sslerr, fd);
+			log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_ssl_shutdown_cb: Unhandled SSL_shutdown() error %i. Closing fd, fd=%d\n", sslerr, fd);
 #endif /* DEBUG_PROXY */
+
 			goto complete;
 	}
 	goto complete;
@@ -175,28 +179,31 @@ retry:
 	if (ctx->retries++ >= 50) {
 		log_err_level_printf(LOG_WARNING, "Failed to shutdown SSL connection cleanly: Max retries reached. Closing fd\n");
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINER, "WARNING: Failed to shutdown SSL connection cleanly: Max retries reached. Closing fd, fd=%d\n", fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_ssl_shutdown_cb: Failed to shutdown SSL connection cleanly: Max retries reached. Closing fd, fd=%d\n", fd);
 #endif /* DEBUG_PROXY */
+
 		goto complete;
 	}
+
 	ctx->ev = event_new(ctx->evbase, fd, want, pxy_ssl_shutdown_cb, ctx);
 	if (ctx->ev) {
 		event_add(ctx->ev, &retry_delay);
 		return;
 	}
+
 	log_err_printf("Failed to shutdown SSL connection cleanly: Cannot create event. Closing fd\n");
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINER, "ERROR: Failed to shutdown SSL connection cleanly: Cannot create event. Closing fd, fd=%d\n", fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_ssl_shutdown_cb: Failed to shutdown SSL connection cleanly: Cannot create event. Closing fd, fd=%d\n", fd);
 #endif /* DEBUG_PROXY */
 
 complete:
 	if (OPTS_DEBUG(ctx->opts)) {
-		char *msg;
-		if (asprintf(&msg, "pxy_ssl_shutdown_cb: fd=%d, SSL_free() in state ", fd) != -1) {
-			log_dbg_print_free(ssl_ssl_state_to_str(ctx->ssl, msg));
-			free(msg);
-		}
+		log_dbg_print_free(ssl_ssl_state_to_str(ctx->ssl, "SSL_free() in state "));
 	}
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_ssl_shutdown_cb: fd=%d, %s", fd, ssl_ssl_state_to_str(ctx->ssl, "SSL_free() in state "));
+#endif /* DEBUG_PROXY */
+
 	SSL_free(ctx->ssl);
 	evutil_closesocket(fd);
 	pxy_ssl_shutdown_ctx_free(ctx);
@@ -221,12 +228,12 @@ pxy_ssl_shutdown(opts_t *opts, struct event_base *evbase, SSL *ssl,
 	sslshutctx = pxy_ssl_shutdown_ctx_new(opts, evbase, ssl);
 	if (!sslshutctx) {
 		if (OPTS_DEBUG(opts)) {
-			char *msg;
-			if (asprintf(&msg, "pxy_ssl_shutdown: fd=%d, SSL_free() in state ", fd) != -1) {
-				log_dbg_print_free(ssl_ssl_state_to_str(ssl, msg));
-				free(msg);
-			}
+			log_dbg_print_free(ssl_ssl_state_to_str(ssl, "SSL_free() in state "));
 		}
+#ifdef DEBUG_PROXY
+		log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_ssl_shutdown: fd=%d, %s", fd, ssl_ssl_state_to_str(ssl, "SSL_free() in state "));
+#endif /* DEBUG_PROXY */
+
 		SSL_free(ssl);
 		evutil_closesocket(fd);
 		return;

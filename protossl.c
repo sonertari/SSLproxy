@@ -863,7 +863,7 @@ protossl_bufferevent_free_and_close_fd(struct bufferevent *bev, pxy_conn_ctx_t *
 	evutil_socket_t fd = bufferevent_getfd(bev);
 
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINER, "protossl_bufferevent_free_and_close_fd: ENTER i:%zu o:%zu, fd=%d\n",
+	log_dbg_level_printf(LOG_DBG_MODE_FINER, "protossl_bufferevent_free_and_close_fd: in=%zu, out=%zu, fd=%d\n",
 			evbuffer_get_length(bufferevent_get_input(bev)), evbuffer_get_length(bufferevent_get_output(bev)), fd);
 #endif /* DEBUG_PROXY */
 
@@ -956,7 +956,7 @@ protossl_fd_readcb(MAYBE_UNUSED evutil_socket_t fd, UNUSED short what, void *arg
 	if (n == -1) {
 		log_err_printf("Error peeking on fd, aborting connection\n");
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINER, "ERROR: Error peeking on fd, aborting connection, fd=%d\n", ctx->fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, "ERROR: Error peeking on fd, aborting connection, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 		evutil_closesocket(fd);
 		pxy_conn_ctx_free(ctx, 1);
@@ -966,7 +966,7 @@ protossl_fd_readcb(MAYBE_UNUSED evutil_socket_t fd, UNUSED short what, void *arg
 		/* socket got closed while we were waiting */
 		log_err_printf("Socket got closed while waiting\n");
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINER, "ERROR: Socket got closed while waiting, fd=%d\n", ctx->fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, "ERROR: Socket got closed while waiting, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 		evutil_closesocket(fd);
 		pxy_conn_ctx_free(ctx, 1);
@@ -977,7 +977,7 @@ protossl_fd_readcb(MAYBE_UNUSED evutil_socket_t fd, UNUSED short what, void *arg
 	if ((rv == 1) && !chello) {
 		log_err_printf("Peeking did not yield a (truncated) ClientHello message, aborting connection\n");
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINER, "ERROR: Peeking did not yield a (truncated) ClientHello message, aborting connection, fd=%d\n", ctx->fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, "ERROR: Peeking did not yield a (truncated) ClientHello message, aborting connection, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 		evutil_closesocket(fd);
 		pxy_conn_ctx_free(ctx, 1);
@@ -1003,7 +1003,7 @@ protossl_fd_readcb(MAYBE_UNUSED evutil_socket_t fd, UNUSED short what, void *arg
 		if (!ctx->ev) {
 			log_err_level_printf(LOG_CRIT, "Error creating retry event, aborting connection\n");
 #ifdef DEBUG_PROXY
-			log_dbg_level_printf(LOG_DBG_MODE_FINER, "Error creating retry event, aborting connection, fd=%d\n", ctx->fd);
+			log_dbg_level_printf(LOG_DBG_MODE_FINE, "ERROR: Error creating retry event, aborting connection, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 			evutil_closesocket(fd);
 			pxy_conn_ctx_free(ctx, 1);
@@ -1110,7 +1110,7 @@ protossl_conn_connect(pxy_conn_ctx_t *ctx)
 	if (bufferevent_socket_connect(ctx->srv_dst.bev, (struct sockaddr *)&ctx->addr, ctx->addrlen) == -1) {
 		log_err_level_printf(LOG_CRIT, "protossl_conn_connect: bufferevent_socket_connect for srv_dst failed\n");
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINER, "protossl_conn_connect: bufferevent_socket_connect for srv_dst failed, fd=%d\n", ctx->fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, "protossl_conn_connect: bufferevent_socket_connect for srv_dst failed, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
 		// @attention Do not try to close the conn here, otherwise both pxy_conn_connect() and eventcb try to free the conn using pxy_conn_free(),
@@ -1155,7 +1155,7 @@ void
 protossl_connect_child(pxy_conn_child_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protossl_connect_child: ENTER, conn fd=%d, child_fd=%d\n", ctx->conn->fd, ctx->conn->child_fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protossl_connect_child: ENTER, child fd=%d, fd=%d\n", ctx->fd, ctx->conn->fd);
 #endif /* DEBUG_PROXY */
 
 	/* create server-side socket and eventbuffer */
@@ -1265,7 +1265,7 @@ protossl_enable_src(pxy_conn_ctx_t *ctx)
 	}
 
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protossl_enable_src: Enabling src, %s, fd=%d, child_fd=%d\n", ctx->header_str, ctx->fd, ctx->child_fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINER, "protossl_enable_src: Enabling src, %s, fd=%d, child_fd=%d\n", ctx->sslproxy_header, ctx->fd, ctx->child_fd);
 #endif /* DEBUG_PROXY */
 
 	// Now open the gates
@@ -1323,7 +1323,7 @@ static void NONNULL(1,2)
 protossl_bev_eventcb_error_srv_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINER, "protossl_bev_eventcb_error_srv_dst: BEV_EVENT_ERROR, fd=%d\n", ctx->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINE, "protossl_bev_eventcb_error_srv_dst: BEV_EVENT_ERROR, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
 	if (!ctx->connected) {

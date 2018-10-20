@@ -90,7 +90,7 @@ protoautossl_peek_and_upgrade(pxy_conn_ctx_t *ctx)
 			}
 
 #ifdef DEBUG_PROXY
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protoautossl_peek_and_upgrade: Enabling srv_dst, fd=%d\n", ctx->fd);
+			log_dbg_level_printf(LOG_DBG_MODE_FINER, "protoautossl_peek_and_upgrade: Enabling srv_dst, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
 			bufferevent_setcb(ctx->srv_dst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
@@ -119,7 +119,7 @@ protoautossl_bufferevent_free_and_close_fd(struct bufferevent *bev, pxy_conn_ctx
 	evutil_socket_t fd = bufferevent_getfd(bev);
 
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINER, "protoautossl_bufferevent_free_and_close_fd: ENTER i:%zu o:%zu, fd=%d\n",
+	log_dbg_level_printf(LOG_DBG_MODE_FINER, "protoautossl_bufferevent_free_and_close_fd: in=%zu, out=%zu, fd=%d\n",
 			evbuffer_get_length(bufferevent_get_input(bev)), evbuffer_get_length(bufferevent_get_output(bev)), fd);
 #endif /* DEBUG_PROXY */
 
@@ -168,7 +168,7 @@ protoautossl_conn_connect(pxy_conn_ctx_t *ctx)
 	if (bufferevent_socket_connect(ctx->srv_dst.bev, (struct sockaddr *)&ctx->addr, ctx->addrlen) == -1) {
 		log_err_level_printf(LOG_CRIT, "protoautossl_conn_connect: bufferevent_socket_connect for srv_dst failed\n");
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINER, "protoautossl_conn_connect: bufferevent_socket_connect for srv_dst failed, fd=%d\n", ctx->fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, "protoautossl_conn_connect: bufferevent_socket_connect for srv_dst failed, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 	}
 }
@@ -179,15 +179,15 @@ protoautossl_connect_child(pxy_conn_child_ctx_t *ctx)
 	protoautossl_ctx_t *autossl_ctx = ctx->conn->protoctx->arg;
 
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protoautossl_connect_child: ENTER, conn fd=%d, child_fd=%d\n", ctx->conn->fd, ctx->conn->child_fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protoautossl_connect_child: ENTER, child fd=%d, fd=%d\n", ctx->fd, ctx->conn->fd);
 #endif /* DEBUG_PROXY */
 
 	/* create server-side socket and eventbuffer */
 	// Children rely on the findings of parent
-	if (autossl_ctx->clienthello_found) {
-		protossl_setup_dst_child(ctx);
-	} else {
+	if (!autossl_ctx->clienthello_found) {
 		prototcp_setup_dst_child(ctx);
+	} else {
+		protossl_setup_dst_child(ctx);
 	}
 }
 
@@ -198,8 +198,8 @@ protoautossl_bev_readcb_src(struct bufferevent *bev, void *arg)
 	protoautossl_ctx_t *autossl_ctx = ctx->protoctx->arg;
 
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protoautossl_bev_readcb_src: ENTER, fd=%d, size=%zu\n",
-			ctx->fd, evbuffer_get_length(bufferevent_get_input(bev)));
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protoautossl_bev_readcb_src: ENTER, size=%zu, fd=%d\n",
+			evbuffer_get_length(bufferevent_get_input(bev)), ctx->fd);
 #endif /* DEBUG_PROXY */
 
 	if (autossl_ctx->clienthello_search) {
@@ -218,7 +218,7 @@ protoautossl_bev_readcb_src(struct bufferevent *bev, void *arg)
 
 	size_t packet_size = evbuffer_get_length(inbuf);
 	// +2 is for \r\n
-	unsigned char *packet = pxy_malloc_packet(packet_size + ctx->header_len + 2, ctx);
+	unsigned char *packet = pxy_malloc_packet(packet_size + ctx->sslproxy_header_len + 2, ctx);
 	if (!packet) {
 		return;
 	}
@@ -226,13 +226,13 @@ protoautossl_bev_readcb_src(struct bufferevent *bev, void *arg)
 	evbuffer_remove(inbuf, packet, packet_size);
 
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protoautossl_bev_readcb_src: ORIG packet (size=%zu), fd=%d:\n%.*s\n",
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protoautossl_bev_readcb_src: ORIG packet, size=%zu, fd=%d:\n%.*s\n",
 			packet_size, ctx->fd, (int)packet_size, packet);
 #endif /* DEBUG_PROXY */
 
 	if (autossl_ctx->clienthello_search) {
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protoautossl_bev_readcb_src: clienthello_search Duping packet to srv_dst (size=%zu), fd=%d:\n%.*s\n",
+		log_dbg_level_printf(LOG_DBG_MODE_FINER, "protoautossl_bev_readcb_src: clienthello_search Duping packet to srv_dst, size=%zu, fd=%d:\n%.*s\n",
 				packet_size, ctx->fd, (int)packet_size, packet);
 #endif /* DEBUG_PROXY */
 
@@ -240,13 +240,13 @@ protoautossl_bev_readcb_src(struct bufferevent *bev, void *arg)
 		evbuffer_add(bufferevent_get_output(ctx->srv_dst.bev), packet, packet_size);
 	}
 
-	if (!ctx->sent_header) {
+	if (!ctx->sent_sslproxy_header) {
 		pxy_insert_sslproxy_header(ctx, packet, &packet_size);
 	}
 	evbuffer_add(outbuf, packet, packet_size);
 
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protoautossl_bev_readcb_src: NEW packet (size=%zu), fd=%d:\n%.*s\n",
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protoautossl_bev_readcb_src: NEW packet, size=%zu, fd=%d:\n%.*s\n",
 			packet_size, ctx->fd, (int)packet_size, packet);
 #endif /* DEBUG_PROXY */
 
@@ -261,8 +261,8 @@ protoautossl_bev_readcb_dst(struct bufferevent *bev, void *arg)
 	protoautossl_ctx_t *autossl_ctx = ctx->protoctx->arg;
 
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protoautossl_bev_readcb_dst: ENTER, fd=%d, size=%zu\n",
-			ctx->fd, evbuffer_get_length(bufferevent_get_input(bev)));
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protoautossl_bev_readcb_dst: ENTER, size=%zu, fd=%d\n",
+			evbuffer_get_length(bufferevent_get_input(bev)), ctx->fd);
 #endif /* DEBUG_PROXY */
 
 	if (autossl_ctx->clienthello_search) {
@@ -289,8 +289,8 @@ protoautossl_bev_readcb_srv_dst(struct bufferevent *bev, void *arg)
 	protoautossl_ctx_t *autossl_ctx = ctx->protoctx->arg;
 
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protoautossl_bev_readcb_srv_dst: ENTER, fd=%d, size=%zu\n",
-			ctx->fd, evbuffer_get_length(bufferevent_get_input(bev)));
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protoautossl_bev_readcb_srv_dst: ENTER, size=%zu, fd=%d\n",
+			evbuffer_get_length(bufferevent_get_input(bev)), ctx->fd);
 #endif /* DEBUG_PROXY */
 
 	if (autossl_ctx->clienthello_search) {
@@ -303,7 +303,7 @@ protoautossl_bev_readcb_srv_dst(struct bufferevent *bev, void *arg)
 	size_t inbuf_size = evbuffer_get_length(inbuf);
 
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protoautossl_bev_readcb_srv_dst: clienthello_search Discarding packet, size=%zu, fd=%d\n",
+	log_dbg_level_printf(LOG_DBG_MODE_FINER, "protoautossl_bev_readcb_srv_dst: clienthello_search Discarding packet, size=%zu, fd=%d\n",
 			inbuf_size, ctx->fd);
 #endif /* DEBUG_PROXY */
 
@@ -324,7 +324,7 @@ static void NONNULL(1)
 protoautossl_close_srv_dst(pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINER, "protoautossl_close_srv_dst: Closing srv_dst, fd=%d, srv_dst fd=%d\n", ctx->fd, bufferevent_getfd(ctx->srv_dst.bev));
+	log_dbg_level_printf(LOG_DBG_MODE_FINER, "protoautossl_close_srv_dst: Closing srv_dst, srv_dst fd=%d, fd=%d\n", bufferevent_getfd(ctx->srv_dst.bev), ctx->fd);
 #endif /* DEBUG_PROXY */
 
 	// @attention Free the srv_dst of the conn asap, we don't need it anymore, but we need its fd
@@ -387,7 +387,7 @@ protoautossl_enable_src(pxy_conn_ctx_t *ctx)
 	}
 
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_autossl_enable_src: Enabling src, %s, fd=%d, child_fd=%d\n", ctx->header_str, ctx->fd, ctx->child_fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_autossl_enable_src: Enabling src, %s, child_fd=%d, fd=%d\n", ctx->sslproxy_header, ctx->child_fd, ctx->fd);
 #endif /* DEBUG_PROXY */
 
 	// Now open the gates, perhaps for a second time in autossl mode
@@ -465,7 +465,7 @@ protoautossl_bev_readcb_complete_child(pxy_conn_child_ctx_t *ctx)
 	bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb_child, pxy_bev_writecb_child, pxy_bev_eventcb_child, ctx);
 
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protoautossl_bev_readcb_complete_child: Enabling dst, fd=%d\n", ctx->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINER, "protoautossl_bev_readcb_complete_child: Enabling dst, child fd=%d, fd=%d\n", ctx->fd, ctx->conn->fd);
 #endif /* DEBUG_PROXY */
 
 	bufferevent_enable(ctx->dst.bev, EV_READ|EV_WRITE);
@@ -478,8 +478,8 @@ protoautossl_bev_readcb_src_child(struct bufferevent *bev, void *arg)
 	protoautossl_ctx_t *autossl_ctx = ctx->conn->protoctx->arg;
 
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protoautossl_bev_readcb_src_child: ENTER, fd=%d, conn fd=%d, size=%zu\n",
-			ctx->fd, ctx->conn->fd, evbuffer_get_length(bufferevent_get_input(bev)));
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protoautossl_bev_readcb_src_child: ENTER, size=%zu, child fd=%d, fd=%d\n",
+			evbuffer_get_length(bufferevent_get_input(bev)), ctx->fd, ctx->conn->fd);
 #endif /* DEBUG_PROXY */
 		
 	// Autossl upgrade on child connections follows the findings of parent
@@ -496,7 +496,7 @@ protoautossl_bev_readcb_src_child(struct bufferevent *bev, void *arg)
 	struct evbuffer *inbuf = bufferevent_get_input(bev);
 	struct evbuffer *outbuf = bufferevent_get_output(ctx->dst.bev);
 
-	if (!ctx->removed_header) {
+	if (!ctx->removed_sslproxy_header) {
 		size_t packet_size = evbuffer_get_length(inbuf);
 		unsigned char *packet = pxy_malloc_packet(packet_size, ctx->conn);
 		if (!packet) {
@@ -508,7 +508,7 @@ protoautossl_bev_readcb_src_child(struct bufferevent *bev, void *arg)
 		evbuffer_add(outbuf, packet, packet_size);
 
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protoautossl_bev_readcb_src_child: src packet (size=%zu), fd=%d, conn fd=%d:\n%.*s\n",
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protoautossl_bev_readcb_src_child: NEW packet, size=%zu, child fd=%d, fd=%d:\n%.*s\n",
 				packet_size, ctx->fd, ctx->conn->fd, (int)packet_size, packet);
 #endif /* DEBUG_PROXY */
 
@@ -526,8 +526,8 @@ protoautossl_bev_readcb_dst_child(struct bufferevent *bev, void *arg)
 	protoautossl_ctx_t *autossl_ctx = ctx->conn->protoctx->arg;
 
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protoautossl_bev_readcb_dst_child: ENTER, fd=%d, conn fd=%d, size=%zu\n",
-			ctx->fd, ctx->conn->fd, evbuffer_get_length(bufferevent_get_input(bev)));
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protoautossl_bev_readcb_dst_child: ENTER, size=%zu, child fd=%d, fd=%d\n",
+			evbuffer_get_length(bufferevent_get_input(bev)), ctx->fd, ctx->conn->fd);
 #endif /* DEBUG_PROXY */
 		
 	// Autossl upgrade on child connections follows the findings of parent
@@ -543,11 +543,6 @@ protoautossl_bev_readcb_dst_child(struct bufferevent *bev, void *arg)
 
 	struct evbuffer *inbuf = bufferevent_get_input(bev);
 	struct evbuffer *outbuf = bufferevent_get_output(ctx->src.bev);
-
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protoautossl_bev_readcb_dst_child: dst packet size=%zu, fd=%d\n", evbuffer_get_length(inbuf), ctx->fd);
-#endif /* DEBUG_PROXY */
-
 	evbuffer_add_buffer(outbuf, inbuf);
 	pxy_try_set_watermark(bev, ctx->conn, ctx->src.bev);
 }
@@ -558,7 +553,7 @@ protoautossl_bev_eventcb_connected_dst_child(UNUSED struct bufferevent *bev, pxy
 	protoautossl_ctx_t *autossl_ctx = ctx->conn->protoctx->arg;
 
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protoautossl_bev_eventcb_connected_dst_child: ENTER, fd=%d, conn fd=%d\n", ctx->fd, ctx->conn->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protoautossl_bev_eventcb_connected_dst_child: ENTER, child fd=%d, fd=%d\n", ctx->fd, ctx->conn->fd);
 #endif /* DEBUG_PROXY */
 
 	ctx->connected = 1;
@@ -571,7 +566,7 @@ protoautossl_bev_eventcb_connected_dst_child(UNUSED struct bufferevent *bev, pxy
 	// So, if we don't call readcb here, the connection would stall
 	if (autossl_ctx->clienthello_found && evbuffer_get_length(bufferevent_get_input(ctx->src.bev))) {
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protoautossl_bev_eventcb_connected_dst_child: clienthello_found src inbuf len > 0, Calling pxy_bev_readcb_child for src, fd=%d, conn fd=%d\n", ctx->fd, ctx->conn->fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINER, "protoautossl_bev_eventcb_connected_dst_child: clienthello_found src inbuf len > 0, calling pxy_bev_readcb_child for src, child fd=%d, fd=%d\n", ctx->fd, ctx->conn->fd);
 #endif /* DEBUG_PROXY */
 
 		pxy_bev_readcb_child(ctx->src.bev, ctx);

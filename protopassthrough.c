@@ -42,7 +42,7 @@ protopassthrough_prepare_logging(pxy_conn_ctx_t *ctx)
 }
 
 static void NONNULL(1)
-protopassthrough_log_connect_type(pxy_conn_ctx_t *ctx)
+protopassthrough_log_dbg_connect_type(pxy_conn_ctx_t *ctx)
 {
 	if (OPTS_DEBUG(ctx->opts)) {
 		/* for TCP, we get only a dst connect event,
@@ -50,9 +50,9 @@ protopassthrough_log_connect_type(pxy_conn_ctx_t *ctx)
 		 * beginning; mirror SSL debug output anyway
 		 * in order not to confuse anyone who might be
 		 * looking closely at the output */
-		log_dbg_printf("protopassthrough_log_connect_type: TCP connected to [%s]:%s\n",
+		log_dbg_printf("PASSTHROUGH connected to [%s]:%s\n",
 					   STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str));
-		log_dbg_printf("protopassthrough_log_connect_type: TCP connected from [%s]:%s\n",
+		log_dbg_printf("PASSTHROUGH connected from [%s]:%s\n",
 					   STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str));
 	}
 }
@@ -63,14 +63,14 @@ protopassthrough_log_connect_src(pxy_conn_ctx_t *ctx)
 	if (WANT_CONNECT_LOG(ctx) || ctx->opts->statslog) {
 		pxy_log_connect_nonhttp(ctx);
 	}
-	protopassthrough_log_connect_type(ctx);
+	protopassthrough_log_dbg_connect_type(ctx);
 }
 
 void
 protopassthrough_engage(pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINER, "protopassthrough_engage: ENTER, fd=%d\n", ctx->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINE, "protopassthrough_engage: fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
 	// @attention Do not call bufferevent_free_and_close_fd(), otherwise connection stalls due to ssl shutdown
@@ -114,7 +114,7 @@ protopassthrough_conn_connect(pxy_conn_ctx_t *ctx)
 	if (bufferevent_socket_connect(ctx->srv_dst.bev, (struct sockaddr *)&ctx->addr, ctx->addrlen) == -1) {
 		log_err_level_printf(LOG_CRIT, "protopassthrough_conn_connect: bufferevent_socket_connect for srv_dst failed\n");
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINER, "protopassthrough_conn_connect: bufferevent_socket_connect for srv_dst failed, fd=%d\n", ctx->fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, "protopassthrough_conn_connect: bufferevent_socket_connect for srv_dst failed, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 	}
 }
@@ -123,9 +123,10 @@ static void NONNULL(1)
 protopassthrough_bev_readcb_src(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
+
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protopassthrough_bev_readcb_src: ENTER, fd=%d, size=%zu\n",
-			ctx->fd, evbuffer_get_length(bufferevent_get_input(bev)));
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protopassthrough_bev_readcb_src: ENTER, size=%zu, fd=%d\n",
+			evbuffer_get_length(bufferevent_get_input(bev)), ctx->fd);
 #endif /* DEBUG_PROXY */
 
 	// Passthrough packets are transfered between src and srv_dst
@@ -142,9 +143,10 @@ static void NONNULL(1)
 protopassthrough_bev_readcb_srv_dst(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
+
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protopassthrough_bev_readcb_srv_dst: ENTER, fd=%d, size=%zu\n",
-			ctx->fd, evbuffer_get_length(bufferevent_get_input(bev)));
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protopassthrough_bev_readcb_srv_dst: ENTER, size=%zu, fd=%d\n",
+			evbuffer_get_length(bufferevent_get_input(bev)), ctx->fd);
 #endif /* DEBUG_PROXY */
 
 	// Passthrough packets are transfered between src and srv_dst
@@ -225,7 +227,7 @@ protopassthrough_enable_src(pxy_conn_ctx_t *ctx)
 	bufferevent_setcb(ctx->src.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
 
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protopassthrough_enable_src: Enabling src, %s, fd=%d, child_fd=%d\n", ctx->header_str, ctx->fd, ctx->child_fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINER, "protopassthrough_enable_src: Enabling src, %s, child_fd=%d, fd=%d\n", ctx->sslproxy_header, ctx->child_fd, ctx->fd);
 #endif /* DEBUG_PROXY */
 
 	// Now open the gates
@@ -257,12 +259,16 @@ static void NONNULL(1,2)
 protopassthrough_bev_eventcb_eof_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protopassthrough_bev_eventcb_eof_src: EOF, fd=%d\n", ctx->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protopassthrough_bev_eventcb_eof_src: ENTER, fd=%d\n", ctx->fd);
 	pxy_log_dbg_evbuf_info(ctx, &ctx->src, &ctx->srv_dst);
 #endif /* DEBUG_PROXY */
 
 	if (!ctx->connected) {
 		log_err_level_printf(LOG_WARNING, "EOF on outbound connection before connection establishment\n");
+#ifdef DEBUG_PROXY
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, "protopassthrough_bev_eventcb_eof_src: EOF on outbound connection before connection establishment, fd=%d\n", ctx->fd);
+#endif /* DEBUG_PROXY */
+
 		ctx->srv_dst.closed = 1;
 	} else if (!ctx->srv_dst.closed) {
 #ifdef DEBUG_PROXY
@@ -286,6 +292,10 @@ protopassthrough_bev_eventcb_eof_srv_dst(struct bufferevent *bev, pxy_conn_ctx_t
 
 	if (!ctx->connected) {
 		log_err_level_printf(LOG_WARNING, "EOF on outbound connection before connection establishment\n");
+#ifdef DEBUG_PROXY
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, "protopassthrough_bev_eventcb_eof_srv_dst: EOF on outbound connection before connection establishment, fd=%d\n", ctx->fd);
+#endif /* DEBUG_PROXY */
+
 		ctx->src.closed = 1;
 	} else if (!ctx->src.closed) {
 #ifdef DEBUG_PROXY
@@ -303,7 +313,7 @@ static void NONNULL(1,2)
 protopassthrough_bev_eventcb_error_src(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINER, "protopassthrough_bev_eventcb_error_src: BEV_EVENT_ERROR, fd=%d\n", ctx->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINE, "protopassthrough_bev_eventcb_error_src: BEV_EVENT_ERROR, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
 	// Passthrough packets are transfered between src and srv_dst
@@ -320,7 +330,7 @@ static void NONNULL(1,2)
 protopassthrough_bev_eventcb_error_srv_dst(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINER, "protopassthrough_bev_eventcb_error_srv_dst: BEV_EVENT_ERROR, fd=%d\n", ctx->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINE, "protopassthrough_bev_eventcb_error_srv_dst: BEV_EVENT_ERROR, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
 	// Passthrough packets are transfered between src and srv_dst
@@ -414,7 +424,7 @@ protopassthrough_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 			if (protopassthrough_prepare_logging(ctx) == -1) {
 				return;
 			}
-			protopassthrough_log_connect_type(ctx);
+			protopassthrough_log_dbg_connect_type(ctx);
 		}
 	}
 }

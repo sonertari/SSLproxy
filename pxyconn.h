@@ -48,7 +48,6 @@
 #define STRORNONE(x)	(((x)&&*(x))?(x):"")
 
 #define WANT_CONNECT_LOG(ctx)	((ctx)->opts->connectlog||!(ctx)->opts->detach)
-// XXX: Remove passthrough condition?
 #define WANT_CONTENT_LOG(ctx)	((ctx)->opts->contentlog&&((ctx)->proto!=PROTO_PASSTHROUGH))
 
 #define SSLPROXY_KEY		"SSLproxy:"
@@ -224,10 +223,10 @@ struct pxy_conn_ctx {
 	evutil_socket_t child_fd;
 	struct evconnlistener *child_evcl;
 
-	// SSL proxy specific info: The IP:port address the children are listening on, orig client addr, and orig target addr
-	char *header_str;
-	size_t header_len;
-	int sent_header;
+	// SSL proxy specific info: ip:port address the children are listening on, orig client addr, and orig target addr
+	char *sslproxy_header;
+	size_t sslproxy_header_len;
+	int sent_sslproxy_header;
 
 	// Child list of the conn
 	pxy_conn_child_ctx_t *children;
@@ -284,7 +283,7 @@ struct pxy_conn_child_ctx {
 	evutil_socket_t src_fd;
 	evutil_socket_t dst_fd;
 
-	int removed_header;
+	int removed_sslproxy_header;
 
 	// Child index
 	unsigned int idx;
