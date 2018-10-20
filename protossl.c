@@ -99,7 +99,7 @@ protossl_log_ssl_error(struct bufferevent *bev, UNUSED pxy_conn_ctx_t *ctx)
 int
 protossl_log_masterkey(pxy_conn_ctx_t *ctx, pxy_conn_desc_t *this)
 {
-	// XXX: Remove ssl check
+	// XXX: Remove ssl check? But the caller function is called by non-ssl protos.
 	if (this->ssl) {
 		/* log master key */
 		if (ctx->opts->masterkeylog) {
@@ -1300,9 +1300,6 @@ protossl_bev_eventcb_connected_srv_dst(UNUSED struct bufferevent *bev, pxy_conn_
 
 	ctx->srv_dst_connected = 1;
 
-	ctx->srv_dst_fd = bufferevent_getfd(ctx->srv_dst.bev);
-	ctx->thr->max_fd = MAX(ctx->thr->max_fd, ctx->srv_dst_fd);
-
 	// @attention Create and enable dst.bev before, but connect here, because we check if dst.bev is NULL elsewhere
 	if (bufferevent_socket_connect(ctx->dst.bev, (struct sockaddr *)&ctx->spec->conn_dst_addr, ctx->spec->conn_dst_addrlen) == -1) {
 #ifdef DEBUG_PROXY
@@ -1312,9 +1309,6 @@ protossl_bev_eventcb_connected_srv_dst(UNUSED struct bufferevent *bev, pxy_conn_
 		pxy_conn_free(ctx, 1);
 		return;
 	}
-
-	ctx->dst_fd = bufferevent_getfd(ctx->dst.bev);
-	ctx->thr->max_fd = MAX(ctx->thr->max_fd, ctx->dst_fd);
 
 	if (ctx->srv_dst_connected && ctx->dst_connected && !ctx->connected) {
 		ctx->connected = 1;
@@ -1395,19 +1389,6 @@ protossl_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 		protossl_bev_eventcb_srv_dst(bev, events, arg);
 	} else {
 		log_err_printf("protossl_bev_eventcb: UNKWN conn end\n");
-		return;
-	}
-
-	if (events & BEV_EVENT_CONNECTED) {
-		if (bev == ctx->src.bev) {
-			pxy_log_connect_src(ctx);
-		} else if (ctx->connected) {
-			if (pxy_prepare_logging(ctx) == -1) {
-				return;
-			}
-			// Doesn't log connect if proto is http, http has its own connect log
-			pxy_log_connect_srv_dst(ctx);
-		}
 	}
 }
 

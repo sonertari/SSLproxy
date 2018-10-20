@@ -469,7 +469,7 @@ protohttp_bev_readcb_src(struct bufferevent *bev, void *arg)
 
 		evbuffer_add_buffer(outbuf, inbuf);
 	}
-	pxy_set_watermark(bev, ctx, ctx->dst.bev);
+	pxy_try_set_watermark(bev, ctx, ctx->dst.bev);
 }
 
 /*
@@ -629,7 +629,7 @@ protohttp_bev_readcb_dst(struct bufferevent *bev, void *arg)
 
 		evbuffer_add_buffer(outbuf, inbuf);
 	}
-	pxy_set_watermark(bev, ctx, ctx->src.bev);
+	pxy_try_set_watermark(bev, ctx, ctx->src.bev);
 }
 
 static void NONNULL(1)
@@ -671,7 +671,7 @@ protohttp_bev_readcb_src_child(struct bufferevent *bev, void *arg)
 
 		evbuffer_add_buffer(outbuf, inbuf);
 	}
-	pxy_set_watermark(bev, ctx->conn, ctx->dst.bev);
+	pxy_try_set_watermark(bev, ctx->conn, ctx->dst.bev);
 }
 
 static void NONNULL(1)
@@ -707,7 +707,7 @@ protohttp_bev_readcb_dst_child(struct bufferevent *bev, void *arg)
 
 		evbuffer_add_buffer(outbuf, inbuf);
 	}
-	pxy_set_watermark(bev, ctx->conn, ctx->src.bev);
+	pxy_try_set_watermark(bev, ctx->conn, ctx->src.bev);
 }
 
 static void NONNULL(1)
@@ -726,6 +726,7 @@ protohttp_bev_readcb(struct bufferevent *bev, void *arg)
 		protohttp_bev_readcb_srv_dst(bev, arg);
 	} else {
 		log_err_printf("protohttp_bev_readcb: UNKWN conn end\n");
+		return;
 	}
 
 	if (!seen_resp_header_on_entry && http_ctx->seen_resp_header) {
