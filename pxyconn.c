@@ -587,9 +587,11 @@ pxy_log_content_inbuf(pxy_conn_ctx_t *ctx, struct evbuffer *inbuf, int req)
 			return -1;
 		}
 		if (evbuffer_copyout(inbuf, buf, sz) == -1) {
+			free(buf);
 			return -1;
 		}
 		if (pxy_log_content_buf(ctx, buf, sz, req) == -1) {
+			free(buf);
 			return -1;
 		}
 	}
@@ -971,7 +973,7 @@ pxy_listener_acceptcb_child(UNUSED struct evconnlistener *listener, evutil_socke
 		return;
 	}
 
-	// @todo Is this the same as fd?
+	// src_fd is different from fd
 	ctx->src_fd = bufferevent_getfd(ctx->src.bev);
 	ctx->conn->child_src_fd = ctx->src_fd;
 	ctx->conn->thr->max_fd = MAX(ctx->conn->thr->max_fd, ctx->src_fd);
@@ -1034,7 +1036,7 @@ pxy_setup_child_listener(pxy_conn_ctx_t *ctx)
 	evconnlistener_set_error_cb(child_evcl, proxy_listener_errorcb);
 
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_setup_child_listener: Finished setting up child, fd=%d, NEW child_fd=%d\n", ctx->fd, ctx->child_fd);	
+	log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_setup_child_listener: Finished setting up child, NEW child_fd=%d, fd=%d\n", ctx->child_fd, ctx->fd);	
 #endif /* DEBUG_PROXY */
 
 	struct sockaddr_in child_listener_addr;

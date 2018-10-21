@@ -1068,7 +1068,7 @@ int
 protossl_setup_srv_dst_new_sslbev(pxy_conn_ctx_t *ctx)
 {
 	ctx->srv_dst.bev = bufferevent_openssl_filter_new(ctx->evbase, ctx->srv_dst.bev, ctx->srv_dst.ssl,
-			BUFFEREVENT_SSL_ACCEPTING, BEV_OPT_DEFER_CALLBACKS);
+			BUFFEREVENT_SSL_CONNECTING, BEV_OPT_DEFER_CALLBACKS);
 	if (!ctx->srv_dst.bev) {
 		log_err_level_printf(LOG_CRIT, "Error creating srv_dst bufferevent\n");
 		SSL_free(ctx->srv_dst.ssl);
@@ -1218,7 +1218,7 @@ int
 protossl_setup_dst_new_sslbev_child(pxy_conn_child_ctx_t *ctx)
 {
 	ctx->dst.bev = bufferevent_openssl_filter_new(ctx->conn->evbase, ctx->dst.bev, ctx->dst.ssl,
-			BUFFEREVENT_SSL_ACCEPTING, BEV_OPT_DEFER_CALLBACKS);
+			BUFFEREVENT_SSL_CONNECTING, BEV_OPT_DEFER_CALLBACKS);
 	if (!ctx->dst.bev) {
 		log_err_level_printf(LOG_CRIT, "Error creating dst bufferevent\n");
 		SSL_free(ctx->dst.ssl);

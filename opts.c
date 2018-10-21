@@ -513,7 +513,7 @@ proxyspec_str(proxyspec_t *spec)
 	}
 	if (asprintf(&s, "listen=[%s]:%s %s%s%s%s%s %s%s%s", lhbuf, lpbuf,
 	             (spec->ssl ? "ssl" : "tcp"),
-	             (spec->upgrade ? "|upgrade" : ""),
+	             (spec->upgrade ? "|autossl" : ""),
 	             (spec->http ? "|http" : ""),
 	             (spec->pop3 ? "|pop3" : ""),
 	             (spec->smtp ? "|smtp" : ""),

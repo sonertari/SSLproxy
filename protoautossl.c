@@ -238,6 +238,7 @@ protoautossl_bev_readcb_src(struct bufferevent *bev, void *arg)
 
 		// Dup packet to server while searching for clienthello in autossl mode, without adding SSLproxy specific header
 		evbuffer_add(bufferevent_get_output(ctx->srv_dst.bev), packet, packet_size);
+		pxy_try_set_watermark(bev, ctx, ctx->srv_dst.bev);
 	}
 
 	if (!ctx->sent_sslproxy_header) {
@@ -396,12 +397,12 @@ protoautossl_enable_src(pxy_conn_ctx_t *ctx)
 }
 
 static void NONNULL(1,2)
-protoautossl_eventcb_connected_dst(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ctx)
+protoautossl_bev_eventcb_connected_dst(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 	protoautossl_ctx_t *autossl_ctx = ctx->protoctx->arg;
 
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protoautossl_eventcb_connected_dst: ENTER, fd=%d\n", ctx->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protoautossl_bev_eventcb_connected_dst: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
 	ctx->dst_connected = 1;
@@ -593,7 +594,7 @@ protoautossl_bev_eventcb_dst(struct bufferevent *bev, short events, void *arg)
 	pxy_conn_ctx_t *ctx = arg;
 
 	if (events & BEV_EVENT_CONNECTED) {
-		protoautossl_eventcb_connected_dst(bev, ctx);
+		protoautossl_bev_eventcb_connected_dst(bev, ctx);
 	} else if (events & BEV_EVENT_EOF) {
 		prototcp_bev_eventcb_eof_dst(bev, ctx);
 	} else if (events & BEV_EVENT_ERROR) {
@@ -663,6 +664,11 @@ static void NONNULL(1)
 protoautossl_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
+	protoautossl_ctx_t *autossl_ctx = ctx->protoctx->arg;
+
+	if ((events & BEV_EVENT_ERROR) && autossl_ctx->clienthello_found) {
+		protossl_log_ssl_error(bev, ctx);
+	}
 
 	if (bev == ctx->src.bev) {
 		protoautossl_bev_eventcb_src(bev, events, arg);
