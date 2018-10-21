@@ -1229,6 +1229,11 @@ pxy_bev_readcb(struct bufferevent *bev, void *arg)
 
 	ctx->atime = time(NULL);
 	ctx->protoctx->bev_readcb(bev, ctx);
+
+	/* out of memory condition? */
+	if (ctx->enomem) {
+		pxy_conn_free(ctx, (bev == ctx->src.bev));
+	}
 }
 
 void
@@ -1259,6 +1264,11 @@ pxy_bev_readcb_child(struct bufferevent *bev, void *arg)
 
 	ctx->conn->atime = time(NULL);
 	ctx->protoctx->bev_readcb(bev, ctx);
+
+	/* out of memory condition? */
+	if (ctx->conn->enomem) {
+		pxy_conn_free(ctx->conn, (bev == ctx->src.bev));
+	}
 }
 
 /*

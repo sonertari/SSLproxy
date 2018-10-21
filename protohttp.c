@@ -397,6 +397,10 @@ protohttp_filter_request_header(struct evbuffer *inbuf, struct evbuffer *outbuf,
 #ifdef DEBUG_PROXY
 			log_dbg_level_printf(LOG_DBG_MODE_FINER, "protohttp_filter_request_header: REMOVE= %s, fd=%d\n", line, ctx->fd);
 #endif /* DEBUG_PROXY */
+
+			if (ctx->conn->enomem) {
+				return;
+			}
 		}
 		free(line);
 
@@ -417,10 +421,7 @@ protohttp_filter_request_header(struct evbuffer *inbuf, struct evbuffer *outbuf,
 			protohttp_ocsp_deny(ctx, http_ctx);
 		}
 
-		// @todo Fix this
-		/* out of memory condition? */
 		if (ctx->conn->enomem) {
-			pxy_conn_free(ctx->conn, 1);
 			return;
 		}
 
@@ -466,6 +467,9 @@ protohttp_bev_readcb_src(struct bufferevent *bev, void *arg)
 #endif /* DEBUG_PROXY */
 
 		protohttp_filter_request_header(inbuf, outbuf, ctx, http_ctx);
+		if (ctx->enomem) {
+			return;
+		}
 	} else {
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_bev_readcb_src: HTTP Request Body, size=%zu, fd=%d\n", evbuffer_get_length(inbuf), ctx->fd);
@@ -583,18 +587,15 @@ protohttp_filter_response_header(struct evbuffer *inbuf, struct evbuffer *outbuf
 #ifdef DEBUG_PROXY
 			log_dbg_level_printf(LOG_DBG_MODE_FINER, "protohttp_filter_response_header: REMOVE= %s, fd=%d\n", line, ctx->fd);
 #endif /* DEBUG_PROXY */
+
+			if (ctx->conn->enomem) {
+				return;
+			}
 		}
 		free(line);
 	}
 
 	if (http_ctx->seen_resp_header) {
-		// @todo Fix this
-		/* out of memory condition? */
-		if (ctx->conn->enomem) {
-			pxy_conn_free(ctx->conn, 0);
-			return;
-		}
-
 		/* no data left after parsing headers? */
 		if (evbuffer_get_length(inbuf) == 0) {
 			return;
@@ -628,6 +629,9 @@ protohttp_bev_readcb_dst(struct bufferevent *bev, void *arg)
 #endif /* DEBUG_PROXY */
 
 		protohttp_filter_response_header(inbuf, outbuf, ctx, http_ctx);
+		if (ctx->enomem) {
+			return;
+		}
 	} else {
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_bev_readcb_dst: HTTP Response Body, size=%zu, fd=%d\n", evbuffer_get_length(inbuf), ctx->fd);
@@ -675,6 +679,9 @@ protohttp_bev_readcb_src_child(struct bufferevent *bev, void *arg)
 
 		// @todo Just remove SSLproxy line, do not filter response on the server side?
 		protohttp_filter_request_header(inbuf, outbuf, (pxy_conn_ctx_t *)ctx, http_ctx);
+		if (ctx->conn->enomem) {
+			return;
+		}
 	} else {
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_bev_readcb_src_child: HTTP Request Body, size=%zu, child fd=%d, fd=%d\n",
@@ -713,6 +720,9 @@ protohttp_bev_readcb_dst_child(struct bufferevent *bev, void *arg)
 
 		// @todo Do not filter response on the server side?
 		protohttp_filter_response_header(inbuf, outbuf, (pxy_conn_ctx_t *)ctx, http_ctx);
+		if (ctx->conn->enomem) {
+			return;
+		}
 	} else {
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_bev_readcb_dst_child: HTTP Response Body, size=%zu, child fd=%d, fd=%d\n",
@@ -740,6 +750,10 @@ protohttp_bev_readcb(struct bufferevent *bev, void *arg)
 		protohttp_bev_readcb_srv_dst(bev, arg);
 	} else {
 		log_err_printf("protohttp_bev_readcb: UNKWN conn end\n");
+		return;
+	}
+
+	if (ctx->enomem) {
 		return;
 	}
 
