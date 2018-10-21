@@ -297,6 +297,7 @@ pxy_conn_ctx_free_child(pxy_conn_child_ctx_t *ctx)
 	}
 	free(ctx->protoctx);
 	free(ctx);
+	ctx = NULL;
 }
 
 static void NONNULL(1,2)
@@ -397,6 +398,7 @@ pxy_conn_ctx_free(pxy_conn_ctx_t *ctx, int by_requestor)
 	}
 	free(ctx->protoctx);
 	free(ctx);
+	ctx = NULL;
 }
 
 void
@@ -797,9 +799,7 @@ pxy_malloc_packet(size_t sz, pxy_conn_ctx_t *ctx)
 {
 	unsigned char *packet = malloc(sz);
 	if (!packet) {
-		// @todo Should we just set enomem?
 		ctx->enomem = 1;
-		pxy_conn_free(ctx, 1);
 		return NULL;
 	}
 	return packet;
@@ -1230,6 +1230,10 @@ pxy_bev_readcb(struct bufferevent *bev, void *arg)
 	ctx->atime = time(NULL);
 	ctx->protoctx->bev_readcb(bev, ctx);
 
+	if (!ctx) {
+		return;
+	}
+
 	/* out of memory condition? */
 	if (ctx->enomem) {
 		pxy_conn_free(ctx, (bev == ctx->src.bev));
@@ -1264,6 +1268,10 @@ pxy_bev_readcb_child(struct bufferevent *bev, void *arg)
 
 	ctx->conn->atime = time(NULL);
 	ctx->protoctx->bev_readcb(bev, ctx);
+
+	if (!ctx) {
+		return;
+	}
 
 	/* out of memory condition? */
 	if (ctx->conn->enomem) {
@@ -1312,6 +1320,10 @@ pxy_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 
 	ctx->protoctx->bev_eventcb(bev, events, arg);
 
+	if (!ctx) {
+		return;
+	}
+
 	if (events & BEV_EVENT_CONNECTED) {
 		// Passthrough proto does its own connect logging
 		if (ctx->proto != PROTO_PASSTHROUGH) {
@@ -1354,6 +1366,10 @@ pxy_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 	}
 
 	ctx->protoctx->bev_eventcb(bev, events, arg);
+
+	if (!ctx) {
+		return;
+	}
 
 	if (events & BEV_EVENT_CONNECTED) {
 		ctx->conn->thr->max_fd = MAX(ctx->conn->thr->max_fd, MAX(bufferevent_getfd(ctx->src.bev), bufferevent_getfd(ctx->dst.bev)));
