@@ -109,7 +109,7 @@ protossl_log_masterkey(pxy_conn_ctx_t *ctx, pxy_conn_desc_t *this)
 				(log_masterkey_print_free(keystr) == -1)) {
 				if (errno == ENOMEM)
 					ctx->enomem = 1;
-				pxy_conn_free(ctx, 1);
+				pxy_conn_term(ctx, 1);
 				return -1;
 			}
 		}
@@ -1040,7 +1040,7 @@ protossl_setup_srvdst_ssl(pxy_conn_ctx_t *ctx)
 	ctx->srvdst.ssl = protossl_dstssl_create(ctx);
 	if (!ctx->srvdst.ssl) {
 		log_err_level_printf(LOG_CRIT, "Error creating SSL for srvdst\n");
-		pxy_conn_free(ctx, 1);
+		pxy_conn_term(ctx, 1);
 		return -1;
 	}
 	return 0;
@@ -1058,7 +1058,7 @@ protossl_setup_srvdst(pxy_conn_ctx_t *ctx)
 		log_err_level_printf(LOG_CRIT, "Error creating srvdst\n");
 		SSL_free(ctx->srvdst.ssl);
 		ctx->srvdst.ssl = NULL;
-		pxy_conn_free(ctx, 1);
+		pxy_conn_term(ctx, 1);
 		return -1;
 	}
 	return 0;
@@ -1073,7 +1073,7 @@ protossl_setup_srvdst_new_bev_ssl_connecting(pxy_conn_ctx_t *ctx)
 		log_err_level_printf(LOG_CRIT, "Error creating srvdst bufferevent\n");
 		SSL_free(ctx->srvdst.ssl);
 		ctx->srvdst.ssl = NULL;
-		pxy_conn_free(ctx, 1);
+		pxy_conn_term(ctx, 1);
 		return -1;
 	}
 	return 0;
@@ -1127,7 +1127,7 @@ protossl_setup_dst_ssl_child(pxy_conn_child_ctx_t *ctx)
 	if (!ctx->dst.ssl) {
 		log_err_level_printf(LOG_CRIT, "Error creating SSL\n");
 		// pxy_conn_free()>pxy_conn_free_child() will close the fd, since we have a non-NULL src.bev now
-		pxy_conn_free(ctx->conn, 1);
+		pxy_conn_term(ctx->conn, 1);
 		return -1;
 	}
 	return 0;
@@ -1145,7 +1145,7 @@ protossl_setup_dst_child(pxy_conn_child_ctx_t *ctx)
 		log_err_level_printf(LOG_CRIT, "Error creating dst bufferevent\n");
 		SSL_free(ctx->dst.ssl);
 		ctx->dst.ssl = NULL;
-		pxy_conn_free(ctx->conn, 1);
+		pxy_conn_term(ctx->conn, 1);
 		return -1;
 	}
 	return 0;
@@ -1174,7 +1174,7 @@ protossl_setup_src_ssl(pxy_conn_ctx_t *ctx)
 			// report protocol change by returning 1
 			return 1;
 		}
-		pxy_conn_free(ctx, 1);
+		pxy_conn_term(ctx, 1);
 		return -1;
 	}
 	return 0;
@@ -1193,7 +1193,7 @@ protossl_setup_src(pxy_conn_ctx_t *ctx)
 		log_err_level_printf(LOG_CRIT, "Error creating src bufferevent\n");
 		SSL_free(ctx->src.ssl);
 		ctx->src.ssl = NULL;
-		pxy_conn_free(ctx, 1);
+		pxy_conn_term(ctx, 1);
 		return -1;
 	}
 	return 0;
@@ -1208,7 +1208,7 @@ protossl_setup_src_new_bev_ssl_accepting(pxy_conn_ctx_t *ctx)
 		log_err_level_printf(LOG_CRIT, "Error creating src bufferevent\n");
 		SSL_free(ctx->src.ssl);
 		ctx->src.ssl = NULL;
-		pxy_conn_free(ctx, 1);
+		pxy_conn_term(ctx, 1);
 		return -1;
 	}
 	return 0;
@@ -1223,7 +1223,7 @@ protossl_setup_dst_new_bev_ssl_connecting_child(pxy_conn_child_ctx_t *ctx)
 		log_err_level_printf(LOG_CRIT, "Error creating dst bufferevent\n");
 		SSL_free(ctx->dst.ssl);
 		ctx->dst.ssl = NULL;
-		pxy_conn_free(ctx->conn, 1);
+		pxy_conn_term(ctx->conn, 1);
 		return -1;
 	}
 	return 0;
@@ -1306,7 +1306,7 @@ protossl_bev_eventcb_connected_srvdst(UNUSED struct bufferevent *bev, pxy_conn_c
 		log_dbg_level_printf(LOG_DBG_MODE_FINE, "protossl_bev_eventcb_connected_srvdst: FAILED bufferevent_socket_connect for dst, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
-		pxy_conn_free(ctx, 1);
+		pxy_conn_term(ctx, 1);
 		return;
 	}
 
@@ -1340,7 +1340,7 @@ protossl_bev_eventcb_error_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 			protopassthrough_engage(ctx);
 			return;
 		}
-		pxy_conn_free(ctx, 0);
+		pxy_conn_term(ctx, 0);
 	}
 }
 

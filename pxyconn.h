@@ -188,8 +188,10 @@ struct pxy_conn_ctx {
 	/* status flags */
 	unsigned int connected : 1;       /* 0 until both ends are connected */
 	unsigned int enomem : 1;                       /* 1 if out of memory */
-	unsigned int srvdst_connected : 1;   /* 0 until server is connected */
+	unsigned int srvdst_connected : 1;    /* 0 until server is connected */
 	unsigned int dst_connected : 1;          /* 0 until dst is connected */
+	unsigned int term : 1;                     /* 0 until term requested */
+	unsigned int term_requestor : 1;
 
 	struct pxy_conn_desc srvdst;
 
@@ -278,6 +280,7 @@ struct pxy_conn_child_ctx {
 
 	/* status flags */
 	unsigned int connected : 1;       /* 0 until both ends are connected */
+	unsigned int term : 1;                     /* 0 until term requested */
 
 	// For max fd stats
 	evutil_socket_t src_fd;
@@ -324,7 +327,8 @@ void pxy_discard_inbuf(struct bufferevent *) NONNULL(1);
 
 void pxy_conn_ctx_free(pxy_conn_ctx_t *, int) NONNULL(1);
 void pxy_conn_free(pxy_conn_ctx_t *, int) NONNULL(1);
-void pxy_conn_free_child(pxy_conn_child_ctx_t *) NONNULL(1);
+void pxy_conn_term(pxy_conn_ctx_t *, int) NONNULL(1);
+void pxy_conn_term_child(pxy_conn_child_ctx_t *) NONNULL(1);
 
 void pxy_connect_srvdst(struct bufferevent *, pxy_conn_ctx_t *) NONNULL(1,2);
 

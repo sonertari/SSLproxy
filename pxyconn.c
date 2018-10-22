@@ -246,7 +246,7 @@ pxy_conn_ctx_new_child(evutil_socket_t fd, pxy_conn_ctx_t *conn)
 	assert(conn != NULL);
 
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_new_child: ENTER, fd=%d\n", fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_new_child: ENTER, child fd=%d, fd=%d\n", fd, conn->fd);
 #endif /* DEBUG_PROXY */
 
 	pxy_conn_child_ctx_t *ctx = malloc(sizeof(pxy_conn_child_ctx_t));
@@ -304,7 +304,7 @@ static void NONNULL(1,2)
 pxy_conn_remove_child(pxy_conn_child_ctx_t *child, pxy_conn_child_ctx_t **head)
 {
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_remove_child: ENTER, fd=%d\n", child->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_remove_child: ENTER, child fd=%d, fd=%d\n", child->fd, child->conn->fd);
 #endif /* DEBUG_PROXY */
 
     if (child->fd == (*head)->fd) {
@@ -325,13 +325,13 @@ pxy_conn_remove_child(pxy_conn_child_ctx_t *child, pxy_conn_child_ctx_t **head)
     return;
 }
 
-void
+static void
 pxy_conn_free_child(pxy_conn_child_ctx_t *ctx)
 {
 	assert(ctx->conn != NULL);
 
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_free_child: ENTER, fd=%d\n", ctx->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_free_child: ENTER, child fd=%d, fd=%d\n", ctx->fd, ctx->conn->fd);
 #endif /* DEBUG_PROXY */
 
 	pxy_conn_desc_t *dst = &ctx->dst;
@@ -348,6 +348,16 @@ pxy_conn_free_child(pxy_conn_child_ctx_t *ctx)
 
 	pxy_conn_remove_child(ctx, &ctx->conn->children);
 	pxy_conn_ctx_free_child(ctx);
+}
+
+void
+pxy_conn_term_child(pxy_conn_child_ctx_t *ctx)
+{
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_term_child: ENTER, child fd=%d, fd=%d\n", ctx->fd, ctx->conn->fd);
+#endif /* DEBUG_PROXY */
+
+	ctx->term = 1;
 }
 
 void
@@ -405,8 +415,7 @@ void
 pxy_conn_free(pxy_conn_ctx_t *ctx, int by_requestor)
 {
 #ifdef DEBUG_PROXY
-	evutil_socket_t child_fd = ctx->child_fd;
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_free: ENTER, fd=%d, child_fd=%d\n", ctx->fd, child_fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_free: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
 	pxy_conn_desc_t *src = &ctx->src;
@@ -454,6 +463,17 @@ pxy_conn_free(pxy_conn_ctx_t *ctx, int by_requestor)
 	}
 
 	pxy_conn_ctx_free(ctx, by_requestor);
+}
+
+void
+pxy_conn_term(pxy_conn_ctx_t *ctx, int by_requestor)
+{
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_term: ENTER, fd=%d\n", ctx->fd);
+#endif /* DEBUG_PROXY */
+
+	ctx->term = 1;
+	ctx->term_requestor = by_requestor;
 }
 
 void
@@ -622,7 +642,7 @@ pxy_prepare_logging_local_procinfo(UNUSED pxy_conn_ctx_t *ctx)
 			if (!ctx->lproc.user ||
 				!ctx->lproc.group) {
 				ctx->enomem = 1;
-				pxy_conn_free(ctx, 1);
+				pxy_conn_term(ctx, 1);
 				return -1;
 			}
 		}
@@ -652,7 +672,7 @@ pxy_prepare_logging(pxy_conn_ctx_t *ctx)
 							) == -1) {
 			if (errno == ENOMEM)
 				ctx->enomem = 1;
-			pxy_conn_free(ctx, 1);
+			pxy_conn_term(ctx, 1);
 			return -1;
 		}
 	}
@@ -932,8 +952,8 @@ pxy_listener_acceptcb_child(UNUSED struct evconnlistener *listener, evutil_socke
 	if (!conn->addrlen) {
 		log_err_level_printf(LOG_CRIT, "Child no target address; aborting connection\n");
 		evutil_closesocket(fd);
-		pxy_conn_free(conn, 1);
-		return;
+		pxy_conn_term(conn, 1);
+		goto out;
 	}
 
 	int dtable_count = getdtablecount();
@@ -948,16 +968,16 @@ pxy_listener_acceptcb_child(UNUSED struct evconnlistener *listener, evutil_socke
 		errno = EMFILE;
 		log_err_level_printf(LOG_CRIT, "Out of file descriptors\n");
 		evutil_closesocket(fd);
-		pxy_conn_free(conn, 1);
-		return;
+		pxy_conn_term(conn, 1);
+		goto out;
 	}
 
 	pxy_conn_child_ctx_t *ctx = pxy_conn_ctx_new_child(fd, conn);
 	if (!ctx) {
 		log_err_level_printf(LOG_CRIT, "Error allocating memory\n");
 		evutil_closesocket(fd);
-		pxy_conn_free(conn, 1);
-		return;
+		pxy_conn_term(conn, 1);
+		goto out;
 	}
 
 	// Prepend child ctx to conn ctx child list
@@ -970,7 +990,7 @@ pxy_listener_acceptcb_child(UNUSED struct evconnlistener *listener, evutil_socke
 
 	// @attention Do not enable src events here yet, they will be enabled after dst connects
 	if (prototcp_setup_src_child(ctx) == -1) {
-		return;
+		goto out;
 	}
 
 	// src_fd is different from fd
@@ -981,6 +1001,10 @@ pxy_listener_acceptcb_child(UNUSED struct evconnlistener *listener, evutil_socke
 	/* create server-side socket and eventbuffer */
 	// Children rely on the findings of parent
 	ctx->protoctx->connectcb(ctx);
+
+	if (ctx->conn->term || ctx->conn->enomem) {
+		goto out;
+	}
 
 	bufferevent_enable(ctx->dst.bev, EV_READ|EV_WRITE);
 
@@ -1002,6 +1026,19 @@ pxy_listener_acceptcb_child(UNUSED struct evconnlistener *listener, evutil_socke
 	ctx->dst_fd = bufferevent_getfd(ctx->dst.bev);
 	ctx->conn->child_dst_fd = ctx->dst_fd;
 	ctx->conn->thr->max_fd = MAX(ctx->conn->thr->max_fd, ctx->dst_fd);
+
+out:
+	// @attention Do not use ctx->conn here, ctx may be uninitialized
+	// @attention Call pxy_conn_free() directly, not term functions here
+	// This is our last chance to close and free the conn
+	if (conn->term) {
+		pxy_conn_free(conn, conn->term_requestor);
+		return;
+	}
+
+	if (conn->enomem) {
+		pxy_conn_free(conn, 1);
+	}
 }
 
 int
@@ -1012,7 +1049,7 @@ pxy_setup_child_listener(pxy_conn_ctx_t *ctx)
 	// Child evcls use the evbase of the parent thread, otherwise we would get multithreading issues.
 	if ((ctx->child_fd = privsep_client_opensock_child(ctx->clisock, ctx->spec)) == -1) {
 		log_err_level_printf(LOG_CRIT, "Error opening child socket: %s (%i)\n", strerror(errno), errno);
-		pxy_conn_free(ctx, 1);
+		pxy_conn_term(ctx, 1);
 		return -1;
 	}
 	ctx->thr->max_fd = MAX(ctx->thr->max_fd, ctx->child_fd);
@@ -1028,7 +1065,7 @@ pxy_setup_child_listener(pxy_conn_ctx_t *ctx)
 		// @attention Cannot call proxy_listener_ctx_free() on child_evcl, child_evcl does not have any ctx with next listener
 		// @attention Close child fd separately, because child evcl does not exist yet, hence fd would not be closed by calling pxy_conn_free()
 		evutil_closesocket(ctx->child_fd);
-		pxy_conn_free(ctx, 1);
+		pxy_conn_term(ctx, 1);
 		return -1;
 	}
 	ctx->child_evcl = child_evcl;
@@ -1046,14 +1083,14 @@ pxy_setup_child_listener(pxy_conn_ctx_t *ctx)
 		log_err_level_printf(LOG_CRIT, "Error in getsockname: %s\n", strerror(errno));
 		// @todo If getsockname() fails, should we really terminate the connection?
 		// @attention Do not close the child fd here, because child evcl exists now, hence pxy_conn_free() will close it while freeing child_evcl
-		pxy_conn_free(ctx, 1);
+		pxy_conn_term(ctx, 1);
 		return -1;
 	}
 
 	// @attention Children are always listening on an IPv4 loopback address
 	char addr[INET_ADDRSTRLEN];
 	if (!inet_ntop(AF_INET, &child_listener_addr.sin_addr, addr, INET_ADDRSTRLEN)) {
-		pxy_conn_free(ctx, 1);
+		pxy_conn_term(ctx, 1);
 		return -1;
 	}
 
@@ -1071,7 +1108,7 @@ pxy_setup_child_listener(pxy_conn_ctx_t *ctx)
 	// +1 for NULL
 	ctx->sslproxy_header = malloc(ctx->sslproxy_header_len + 1);
 	if (!ctx->sslproxy_header) {
-		pxy_conn_free(ctx, 1);
+		pxy_conn_term(ctx, 1);
 		return -1;
 	}
 
@@ -1131,7 +1168,7 @@ pxy_try_disconnect(pxy_conn_ctx_t *ctx, pxy_conn_desc_t *this,
 
 		// Uses only ctx to log disconnect, never any of the bevs
 		pxy_log_dbg_disconnect(ctx);
-		pxy_conn_free(ctx, is_requestor);
+		pxy_conn_term(ctx, is_requestor);
 	}
 }
 
@@ -1149,7 +1186,7 @@ pxy_try_disconnect_child(pxy_conn_child_ctx_t *ctx, pxy_conn_desc_t *this,
 
 		// Uses only ctx to log disconnect, never any of the bevs
 		pxy_log_dbg_disconnect_child(ctx);
-		pxy_conn_free_child(ctx);
+		pxy_conn_term_child(ctx);
 	}
 }
 
@@ -1186,7 +1223,7 @@ pxy_set_dstaddr(pxy_conn_ctx_t *ctx)
 {
 	if (sys_sockaddr_str((struct sockaddr *)&ctx->addr, ctx->addrlen, &ctx->dsthost_str, &ctx->dstport_str) != 0) {
 		ctx->enomem = 1;
-		pxy_conn_free(ctx, 1);
+		pxy_conn_term(ctx, 1);
 		return -1;
 	}
 	return 0;
@@ -1229,11 +1266,11 @@ pxy_bev_readcb(struct bufferevent *bev, void *arg)
 	ctx->protoctx->bev_readcb(bev, ctx);
 
 memout:
-	if (!ctx) {
+	if (ctx->term) {
+		pxy_conn_free(ctx, ctx->term_requestor);
 		return;
 	}
 
-	/* out of memory condition? */
 	if (ctx->enomem) {
 		pxy_conn_free(ctx, (bev == ctx->src.bev));
 	}
@@ -1269,13 +1306,18 @@ pxy_bev_readcb_child(struct bufferevent *bev, void *arg)
 	ctx->protoctx->bev_readcb(bev, ctx);
 
 memout:
-	if (!ctx) {
+	if (ctx->conn->term) {
+		pxy_conn_free(ctx->conn, ctx->conn->term_requestor);
 		return;
 	}
 
-	/* out of memory condition? */
 	if (ctx->conn->enomem) {
 		pxy_conn_free(ctx->conn, (bev == ctx->src.bev));
+		return;
+	}
+
+	if (ctx->term) {
+		pxy_conn_free_child(ctx);
 	}
 }
 
@@ -1291,6 +1333,15 @@ pxy_bev_writecb(struct bufferevent *bev, void *arg)
 
 	ctx->atime = time(NULL);
 	ctx->protoctx->bev_writecb(bev, ctx);
+
+	if (ctx->term) {
+		pxy_conn_free(ctx, ctx->term_requestor);
+		return;
+	}
+
+	if (ctx->enomem) {
+		pxy_conn_free(ctx, (bev == ctx->src.bev));
+	}
 }
 
 void
@@ -1300,6 +1351,20 @@ pxy_bev_writecb_child(struct bufferevent *bev, void *arg)
 
 	ctx->conn->atime = time(NULL);
 	ctx->protoctx->bev_writecb(bev, ctx);
+
+	if (ctx->conn->term) {
+		pxy_conn_free(ctx->conn, ctx->conn->term_requestor);
+		return;
+	}
+
+	if (ctx->conn->enomem) {
+		pxy_conn_free(ctx->conn, (bev == ctx->src.bev));
+		return;
+	}
+
+	if (ctx->term) {
+		pxy_conn_free_child(ctx);
+	}
 }
 
 /*
@@ -1320,13 +1385,8 @@ pxy_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 
 	ctx->protoctx->bev_eventcb(bev, events, arg);
 
-	if (!ctx) {
-		return;
-	}
-
-	// EOF eventcb may call readcb possibly causing enomem
-	if (ctx->enomem) {
-		pxy_conn_free(ctx, (bev == ctx->src.bev));
+	if (ctx->term || ctx->enomem) {
+		goto out;
 	}
 
 	if (events & BEV_EVENT_CONNECTED) {
@@ -1337,7 +1397,7 @@ pxy_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 				pxy_log_connect_src(ctx);
 			} else if (ctx->connected) {
 				if (pxy_prepare_logging(ctx) == -1) {
-					return;
+					goto out;
 				}
 				// Doesn't log connect if proto is http, http proto does its own connect logging
 				pxy_log_connect_srvdst(ctx);
@@ -1356,6 +1416,18 @@ pxy_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 			}
 		}
 	}
+
+out:
+	// Logging functions may set term or enomem too
+	if (ctx->term) {
+		pxy_conn_free(ctx, ctx->term_requestor);
+		return;
+	}
+
+	// EOF eventcb may call readcb possibly causing enomem
+	if (ctx->enomem) {
+		pxy_conn_free(ctx, (bev == ctx->src.bev));
+	}
 }
 
 void
@@ -1372,13 +1444,20 @@ pxy_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 
 	ctx->protoctx->bev_eventcb(bev, events, arg);
 
-	if (!ctx) {
+	if (ctx->conn->term) {
+		pxy_conn_free(ctx->conn, ctx->conn->term_requestor);
 		return;
 	}
 
 	// EOF eventcb may call readcb possibly causing enomem
 	if (ctx->conn->enomem) {
 		pxy_conn_free(ctx->conn, (bev == ctx->src.bev));
+		return;
+	}
+
+	if (ctx->term) {
+		pxy_conn_free_child(ctx);
+		return;
 	}
 
 	if (events & BEV_EVENT_CONNECTED) {
@@ -1416,6 +1495,15 @@ pxy_conn_connect(pxy_conn_ctx_t *ctx)
 	}
 
 	ctx->protoctx->connectcb(ctx);
+
+	if (ctx->term) {
+		pxy_conn_free(ctx, ctx->term_requestor);
+		return;
+	}
+
+	if (ctx->enomem) {
+		pxy_conn_free(ctx, 1);
+	}
 	// @attention Do not do anything else with the ctx after connecting socket, otherwise if pxy_bev_eventcb fires on error, such as due to "No route to host",
 	// the conn is closed and freed up, and we get multithreading issues, e.g. signal 11. We are on the thrmgr thread. So, just return.
 }

@@ -173,7 +173,7 @@ protopassthrough_bev_writecb_src(struct bufferevent *bev, void *arg)
 			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protopassthrough_bev_writecb_src: other->closed, terminate conn, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
-			pxy_conn_free(ctx, 1);
+			pxy_conn_term(ctx, 1);
 		}			
 		return;
 	}
@@ -199,7 +199,7 @@ protopassthrough_bev_writecb_srvdst(struct bufferevent *bev, void *arg)
 			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protopassthrough_bev_writecb_srvdst: other->closed, terminate conn, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
-			pxy_conn_free(ctx, 0);
+			pxy_conn_term(ctx, 0);
 		}			
 		return;
 	}
@@ -413,8 +413,8 @@ protopassthrough_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 		return;
 	}
 
-	if (!ctx) {
-		return;
+	if (ctx->term || ctx->enomem) {
+		goto memout;
 	}
 
 	if (events & BEV_EVENT_CONNECTED) {
@@ -423,13 +423,23 @@ protopassthrough_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 		} else if (ctx->connected) {
 			// @todo Do we need to set dstaddr here? It must have already been set by the original proto.
 			if (pxy_set_dstaddr(ctx) == -1) {
-				return;
+				goto memout;
 			}
 			if (protopassthrough_prepare_logging(ctx) == -1) {
-				return;
+				goto memout;
 			}
 			protopassthrough_log_dbg_connect_type(ctx);
 		}
+	}
+
+memout:
+	if (ctx->term) {
+		pxy_conn_free(ctx, ctx->term_requestor);
+		return;
+	}
+
+	if (ctx->enomem) {
+		pxy_conn_free(ctx, (bev == ctx->src.bev));
 	}
 }
 

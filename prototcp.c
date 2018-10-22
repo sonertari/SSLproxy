@@ -115,7 +115,7 @@ prototcp_setup_src(pxy_conn_ctx_t *ctx)
 	ctx->src.bev = prototcp_bufferevent_setup(ctx, ctx->fd);
 	if (!ctx->src.bev) {
 		log_err_level_printf(LOG_CRIT, "Error creating src bufferevent\n");
-		pxy_conn_free(ctx, 1);
+		pxy_conn_term(ctx, 1);
 		return -1;
 	}
 	return 0;
@@ -128,7 +128,7 @@ prototcp_setup_dst(pxy_conn_ctx_t *ctx)
 	ctx->dst.bev = prototcp_bufferevent_setup(ctx, -1);
 	if (!ctx->dst.bev) {
 		log_err_level_printf(LOG_CRIT, "Error creating parent dst\n");
-		pxy_conn_free(ctx, 1);
+		pxy_conn_term(ctx, 1);
 		return -1;
 	}
 	return 0;
@@ -141,7 +141,7 @@ prototcp_setup_srvdst(pxy_conn_ctx_t *ctx)
 	ctx->srvdst.bev = prototcp_bufferevent_setup(ctx, -1);
 	if (!ctx->srvdst.bev) {
 		log_err_level_printf(LOG_CRIT, "Error creating srvdst\n");
-		pxy_conn_free(ctx, 1);
+		pxy_conn_term(ctx, 1);
 		return -1;
 	}
 	return 0;
@@ -195,7 +195,7 @@ prototcp_setup_src_child(pxy_conn_child_ctx_t *ctx)
 	if (!ctx->src.bev) {
 		log_err_level_printf(LOG_CRIT, "Error creating child src\n");
 		evutil_closesocket(ctx->fd);
-		pxy_conn_free(ctx->conn, 1);
+		pxy_conn_term(ctx->conn, 1);
 		return -1;
 	}
 	return 0;
@@ -208,7 +208,7 @@ prototcp_setup_dst_child(pxy_conn_child_ctx_t *ctx)
 	ctx->dst.bev = prototcp_bufferevent_setup_child(ctx, -1);
 	if (!ctx->dst.bev) {
 		log_err_level_printf(LOG_CRIT, "Error creating bufferevent\n");
-		pxy_conn_free(ctx->conn, 1);
+		pxy_conn_term(ctx->conn, 1);
 		return -1;
 	}
 	return 0;
@@ -394,7 +394,7 @@ prototcp_bev_writecb_src(struct bufferevent *bev, void *arg)
 			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_writecb_src: other->closed, terminate conn, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
-			pxy_conn_free(ctx, 1);
+			pxy_conn_term(ctx, 1);
 		}			
 		return;
 	}
@@ -434,7 +434,7 @@ prototcp_bev_writecb_dst(struct bufferevent *bev, void *arg)
 			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_writecb_dst: other->closed, terminate conn, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
-			pxy_conn_free(ctx, 0);
+			pxy_conn_term(ctx, 0);
 		}			
 		return;
 	}
@@ -470,7 +470,7 @@ prototcp_bev_writecb_src_child(struct bufferevent *bev, void *arg)
 			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_writecb_src_child: other->closed, terminate conn, child fd=%d, fd=%d\n", ctx->fd, ctx->conn->fd);
 #endif /* DEBUG_PROXY */
 
-			pxy_conn_free_child(ctx);
+			pxy_conn_term_child(ctx);
 		}			
 		return;
 	}
@@ -510,7 +510,7 @@ prototcp_bev_writecb_dst_child(struct bufferevent *bev, void *arg)
 			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_writecb_dst_child: other->closed, terminate conn, child fd=%d, fd=%d\n", ctx->fd, ctx->conn->fd);
 #endif /* DEBUG_PROXY */
 
-			pxy_conn_free_child(ctx);
+			pxy_conn_term_child(ctx);
 		}			
 		return;
 	}
@@ -596,7 +596,7 @@ prototcp_bev_eventcb_connected_srvdst(UNUSED struct bufferevent *bev, pxy_conn_c
 		log_dbg_level_printf(LOG_DBG_MODE_FINE, "prototcp_bev_eventcb_connected_srvdst: FAILED bufferevent_socket_connect for dst, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
-		pxy_conn_free(ctx, 1);
+		pxy_conn_term(ctx, 1);
 		return;
 	}
 
@@ -666,12 +666,12 @@ prototcp_bev_eventcb_eof_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 void
 prototcp_bev_eventcb_eof_srvdst(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
-	log_err_level_printf(LOG_WARNING, "EOF on outbound connection before connection establishment on srvdst\n");
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINE, "prototcp_bev_eventcb_eof_srvdst: EOF on outbound connection before connection establishment, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
-	pxy_conn_free(ctx, 0);
+	log_err_level_printf(LOG_WARNING, "EOF on outbound connection before connection establishment on srvdst\n");
+	pxy_conn_term(ctx, 0);
 }
 
 void
@@ -718,7 +718,7 @@ prototcp_bev_eventcb_error_srvdst(UNUSED struct bufferevent *bev, pxy_conn_ctx_t
 		log_dbg_level_printf(LOG_DBG_MODE_FINE, "prototcp_bev_eventcb_error_srvdst: ERROR !ctx->connected, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
-		pxy_conn_free(ctx, 0);
+		pxy_conn_term(ctx, 0);
 	}
 }
 
