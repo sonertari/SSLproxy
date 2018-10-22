@@ -424,10 +424,10 @@ pxy_conn_free(pxy_conn_ctx_t *ctx, int by_requestor)
 		}
 	}
 
-	pxy_conn_desc_t *srv_dst = &ctx->srv_dst;
-	if (srv_dst->bev) {
-		ctx->protoctx->bufferevent_free_and_close_fd(srv_dst->bev, ctx);
-		srv_dst->bev = NULL;
+	pxy_conn_desc_t *srvdst = &ctx->srvdst;
+	if (srvdst->bev) {
+		ctx->protoctx->bufferevent_free_and_close_fd(srvdst->bev, ctx);
+		srvdst->bev = NULL;
 	}
 
 	pxy_conn_desc_t *dst = &ctx->dst;
@@ -520,8 +520,8 @@ pxy_log_connect_nonhttp(pxy_conn_ctx_t *ctx)
 		              STRORDASH(ctx->sslctx->ssl_names),
 		              SSL_get_version(ctx->src.ssl),
 		              SSL_get_cipher(ctx->src.ssl),
-		              !ctx->srv_dst.closed && ctx->srv_dst.ssl ? SSL_get_version(ctx->srv_dst.ssl):ctx->sslctx->srv_dst_ssl_version,
-		              !ctx->srv_dst.closed && ctx->srv_dst.ssl ? SSL_get_cipher(ctx->srv_dst.ssl):ctx->sslctx->srv_dst_ssl_cipher,
+		              !ctx->srvdst.closed && ctx->srvdst.ssl ? SSL_get_version(ctx->srvdst.ssl):ctx->sslctx->srvdst_ssl_version,
+		              !ctx->srvdst.closed && ctx->srvdst.ssl ? SSL_get_cipher(ctx->srvdst.ssl):ctx->sslctx->srvdst_ssl_cipher,
 		              STRORDASH(ctx->sslctx->origcrtfpr),
 		              STRORDASH(ctx->sslctx->usedcrtfpr)
 #ifdef HAVE_LOCAL_PROCINFO
@@ -711,20 +711,20 @@ pxy_log_connect_src(pxy_conn_ctx_t *ctx)
 }
 
 void
-pxy_log_connect_srv_dst(pxy_conn_ctx_t *ctx)
+pxy_log_connect_srvdst(pxy_conn_ctx_t *ctx)
 {
-	// @attention srv_dst.bev may be NULL, if its writecb fires first
-	if (ctx->srv_dst.bev) {
+	// @attention srvdst.bev may be NULL, if its writecb fires first
+	if (ctx->srvdst.bev) {
 		/* log connection if we don't analyze any headers */
-		if (!ctx->srv_dst.ssl && !ctx->spec->http && (WANT_CONNECT_LOG(ctx) || ctx->opts->statslog)) {
+		if (!ctx->srvdst.ssl && !ctx->spec->http && (WANT_CONNECT_LOG(ctx) || ctx->opts->statslog)) {
 			pxy_log_connect_nonhttp(ctx);
 		}
 
-		if (protossl_log_masterkey(ctx, &ctx->srv_dst) == -1) {
+		if (protossl_log_masterkey(ctx, &ctx->srvdst) == -1) {
 			return;
 		}
 
-		pxy_log_dbg_connect_type(ctx, &ctx->srv_dst);
+		pxy_log_dbg_connect_type(ctx, &ctx->srvdst);
 	}
 }
 
@@ -809,7 +809,7 @@ pxy_malloc_packet(size_t sz, pxy_conn_ctx_t *ctx)
 char *bev_names[] = {
 	"src",
 	"dst",
-	"srv_dst",
+	"srvdst",
 	"NULL",
 	"UNKWN"
 };
@@ -822,7 +822,7 @@ pxy_get_event_name(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		return bev_names[0];
 	} else if (bev == ctx->dst.bev) {
 		return bev_names[1];
-	} else if (bev == ctx->srv_dst.bev) {
+	} else if (bev == ctx->srvdst.bev) {
 		return bev_names[2];
 	} else if (bev == NULL) {
 		log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_get_event_name: event_name=NULL\n");
@@ -1103,10 +1103,10 @@ pxy_try_close_conn_end(pxy_conn_desc_t *conn_end, pxy_conn_ctx_t *ctx, buffereve
 }
 
 void
-pxy_connect_srv_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
+pxy_connect_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_connect_srv_dst: writecb before connected, fd=%d\n", ctx->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_connect_srvdst: writecb before connected, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
 	// @attention Sometimes dst write cb fires but not event cb, especially if the listener cb is not finished yet, so the conn stalls.
@@ -1120,7 +1120,7 @@ void
 pxy_try_disconnect(pxy_conn_ctx_t *ctx, pxy_conn_desc_t *this,
 		bufferevent_free_and_close_fd_func_t this_free_and_close_fd_func, pxy_conn_desc_t *other, int is_requestor)
 {
-	// @attention srv_dst should never reach here unless in passthrough mode, its bev may be NULL
+	// @attention srvdst should never reach here unless in passthrough mode, its bev may be NULL
 	this->closed = 1;
 	this_free_and_close_fd_func(this->bev, ctx);
 	this->bev = NULL;
@@ -1340,14 +1340,14 @@ pxy_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 					return;
 				}
 				// Doesn't log connect if proto is http, http proto does its own connect logging
-				pxy_log_connect_srv_dst(ctx);
+				pxy_log_connect_srvdst(ctx);
 			}
 		}
 
-		if (bev == ctx->srv_dst.bev) {
+		if (bev == ctx->srvdst.bev) {
 			// src and other fd stats are collected in acceptcb functions
-			ctx->srv_dst_fd = bufferevent_getfd(ctx->srv_dst.bev);
-			ctx->thr->max_fd = MAX(ctx->thr->max_fd, ctx->srv_dst_fd);
+			ctx->srvdst_fd = bufferevent_getfd(ctx->srvdst.bev);
+			ctx->thr->max_fd = MAX(ctx->thr->max_fd, ctx->srvdst_fd);
 
 			// Passthrough proto may have a NULL dst.bev
 			if (ctx->dst.bev) {

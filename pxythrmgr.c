@@ -188,9 +188,9 @@ pxy_thrmgr_print_thr_info(pxy_thr_ctx_t *tctx)
 			}
 
 #ifdef DEBUG_PROXY
-			if (asprintf(&lmsg, "PARENT CONN: thr=%d, id=%u, fd=%d, child_fd=%d, dst=%d, srv_dst=%d, child_src=%d, child_dst=%d, p=%d-%d-%d c=%d-%d, ce=%d cc=%d, at=%lld ct=%lld%s%s\n",
-					tctx->thridx, idx, ctx->fd, ctx->child_fd, ctx->dst_fd, ctx->srv_dst_fd, ctx->child_src_fd, ctx->child_dst_fd,
-					ctx->src.closed, ctx->dst.closed, ctx->srv_dst.closed, ctx->children ? ctx->children->src.closed : 0, ctx->children ? ctx->children->dst.closed : 0,
+			if (asprintf(&lmsg, "PARENT CONN: thr=%d, id=%u, fd=%d, child_fd=%d, dst=%d, srvdst=%d, child_src=%d, child_dst=%d, p=%d-%d-%d c=%d-%d, ce=%d cc=%d, at=%lld ct=%lld%s%s\n",
+					tctx->thridx, idx, ctx->fd, ctx->child_fd, ctx->dst_fd, ctx->srvdst_fd, ctx->child_src_fd, ctx->child_dst_fd,
+					ctx->src.closed, ctx->dst.closed, ctx->srvdst.closed, ctx->children ? ctx->children->src.closed : 0, ctx->children ? ctx->children->dst.closed : 0,
 					ctx->children ? 1:0, ctx->child_count, (long long)atime, (long long)ctime, STRORNONE(src_addr), STRORNONE(dst_addr)) < 0) {
 				goto leave;
 			}
@@ -222,7 +222,7 @@ pxy_thrmgr_print_thr_info(pxy_thr_ctx_t *tctx)
 				dst_addr = NULL;
 			}
 
-			max_fd = MAX(max_fd, MAX(ctx->fd, MAX(ctx->child_fd, MAX(ctx->dst_fd, MAX(ctx->srv_dst_fd, MAX(ctx->child_src_fd, ctx->child_dst_fd))))));
+			max_fd = MAX(max_fd, MAX(ctx->fd, MAX(ctx->child_fd, MAX(ctx->dst_fd, MAX(ctx->srvdst_fd, MAX(ctx->child_src_fd, ctx->child_dst_fd))))));
 			max_atime = MAX(max_atime, atime);
 			max_ctime = MAX(max_ctime, ctime);
 

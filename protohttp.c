@@ -128,8 +128,8 @@ protohttp_log_connect(pxy_conn_ctx_t *ctx)
 		              STRORDASH(ctx->sslctx->ssl_names),
 		              SSL_get_version(ctx->src.ssl),
 		              SSL_get_cipher(ctx->src.ssl),
-		              !ctx->srv_dst.closed ? SSL_get_version(ctx->srv_dst.ssl):ctx->sslctx->srv_dst_ssl_version,
-		              !ctx->srv_dst.closed ? SSL_get_cipher(ctx->srv_dst.ssl):ctx->sslctx->srv_dst_ssl_cipher,
+		              !ctx->srvdst.closed ? SSL_get_version(ctx->srvdst.ssl):ctx->sslctx->srvdst_ssl_version,
+		              !ctx->srvdst.closed ? SSL_get_cipher(ctx->srvdst.ssl):ctx->sslctx->srvdst_ssl_cipher,
 		              STRORDASH(ctx->sslctx->origcrtfpr),
 		              STRORDASH(ctx->sslctx->usedcrtfpr),
 #ifdef HAVE_LOCAL_PROCINFO
@@ -643,12 +643,12 @@ protohttp_bev_readcb_dst(struct bufferevent *bev, void *arg)
 }
 
 static void NONNULL(1)
-protohttp_bev_readcb_srv_dst(UNUSED struct bufferevent *bev, UNUSED void *arg)
+protohttp_bev_readcb_srvdst(UNUSED struct bufferevent *bev, UNUSED void *arg)
 {
-	log_err_printf("protohttp_bev_readcb_srv_dst: readcb called on srv_dst\n");
+	log_err_printf("protohttp_bev_readcb_srvdst: readcb called on srvdst\n");
 #ifdef DEBUG_PROXY
 	pxy_conn_ctx_t *ctx = arg;
-	log_dbg_level_printf(LOG_DBG_MODE_FINE, "protohttp_bev_readcb_srv_dst: readcb called on srv_dst, fd=%d\n", ctx->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINE, "protohttp_bev_readcb_srvdst: readcb called on srvdst, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 }
 
@@ -746,8 +746,8 @@ protohttp_bev_readcb(struct bufferevent *bev, void *arg)
 		protohttp_bev_readcb_src(bev, arg);
 	} else if (bev == ctx->dst.bev) {
 		protohttp_bev_readcb_dst(bev, arg);
-	} else if (bev == ctx->srv_dst.bev) {
-		protohttp_bev_readcb_srv_dst(bev, arg);
+	} else if (bev == ctx->srvdst.bev) {
+		protohttp_bev_readcb_srvdst(bev, arg);
 	} else {
 		log_err_printf("protohttp_bev_readcb: UNKWN conn end\n");
 		return;

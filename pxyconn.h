@@ -115,8 +115,8 @@ struct ssl_ctx {
 
 	X509 *origcrt;
 
-	char *srv_dst_ssl_version;
-	char *srv_dst_ssl_cipher;
+	char *srvdst_ssl_version;
+	char *srvdst_ssl_cipher;
 };
 
 struct proto_ctx {
@@ -188,10 +188,10 @@ struct pxy_conn_ctx {
 	/* status flags */
 	unsigned int connected : 1;       /* 0 until both ends are connected */
 	unsigned int enomem : 1;                       /* 1 if out of memory */
-	unsigned int srv_dst_connected : 1;   /* 0 until server is connected */
+	unsigned int srvdst_connected : 1;   /* 0 until server is connected */
 	unsigned int dst_connected : 1;          /* 0 until dst is connected */
 
-	struct pxy_conn_desc srv_dst;
+	struct pxy_conn_desc srvdst;
 
 	struct event *ev;
 
@@ -214,7 +214,7 @@ struct pxy_conn_ctx {
 	struct evdns_base *dnsbase;
 
 	evutil_socket_t dst_fd;
-	evutil_socket_t srv_dst_fd;
+	evutil_socket_t srvdst_fd;
 
 	// Priv sep socket to obtain a socket for children
 	evutil_socket_t clisock;
@@ -296,7 +296,7 @@ int pxy_prepare_logging(pxy_conn_ctx_t *) NONNULL(1);
 int pxy_prepare_logging_local_procinfo(pxy_conn_ctx_t *) NONNULL(1);
 
 void pxy_log_connect_src(pxy_conn_ctx_t *) NONNULL(1);
-void pxy_log_connect_srv_dst(pxy_conn_ctx_t *) NONNULL(1);
+void pxy_log_connect_srvdst(pxy_conn_ctx_t *) NONNULL(1);
 
 int pxy_log_content_inbuf(pxy_conn_ctx_t *, struct evbuffer *, int) NONNULL(1);
 int pxy_log_content_buf(pxy_conn_ctx_t *, unsigned char *, size_t, int) NONNULL(1);
@@ -326,7 +326,7 @@ void pxy_conn_ctx_free(pxy_conn_ctx_t *, int) NONNULL(1);
 void pxy_conn_free(pxy_conn_ctx_t *, int) NONNULL(1);
 void pxy_conn_free_child(pxy_conn_child_ctx_t *) NONNULL(1);
 
-void pxy_connect_srv_dst(struct bufferevent *, pxy_conn_ctx_t *) NONNULL(1,2);
+void pxy_connect_srvdst(struct bufferevent *, pxy_conn_ctx_t *) NONNULL(1,2);
 
 int pxy_setup_child_listener(pxy_conn_ctx_t *) NONNULL(1);
 
