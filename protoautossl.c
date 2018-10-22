@@ -82,10 +82,11 @@ protoautossl_peek_and_upgrade(pxy_conn_ctx_t *ctx)
 				log_dbg_printf("Peek found ClientHello\n");
 			}
 
+			// @attention We need srv_dst ssl to setup src ssl, otherwise srv_dst is closed asap
 			if (protossl_setup_srv_dst_ssl(ctx) == -1) {
 				return -1;
 			}
-			if (protossl_setup_srv_dst_new_sslbev(ctx) == -1) {
+			if (protossl_setup_srv_dst_new_bev_ssl_connecting(ctx) == -1) {
 				return -1;
 			}
 
@@ -369,7 +370,7 @@ protoautossl_enable_src(pxy_conn_ctx_t *ctx)
 			return rv;
 		}
 		// Replace tcp src.bev with ssl version
-		if (protossl_setup_src_new_sslbev(ctx) == -1) {
+		if (protossl_setup_src_new_bev_ssl_accepting(ctx) == -1) {
 			return -1;
 		}
 	}
@@ -407,6 +408,7 @@ protoautossl_bev_eventcb_connected_dst(UNUSED struct bufferevent *bev, pxy_conn_
 
 	ctx->dst_connected = 1;
 
+	// @todo Reduce this if condition
 	if (ctx->srv_dst_connected && ctx->dst_connected && (!ctx->connected || (autossl_ctx->clienthello_found && ctx->srv_dst.bev))) {
 		ctx->connected = 1;
 
@@ -451,7 +453,7 @@ protoautossl_bev_eventcb_connected_srv_dst(UNUSED struct bufferevent *bev, pxy_c
 }
 
 static void NONNULL(1)
-protoautossl_bev_readcb_complete_child(pxy_conn_child_ctx_t *ctx)
+protoautossl_bev_readcb_complete_upgrade_child(pxy_conn_child_ctx_t *ctx)
 {
 	if (OPTS_DEBUG(ctx->conn->opts)) {
 		log_dbg_printf("Completing autossl upgrade on child conn\n");
@@ -460,13 +462,13 @@ protoautossl_bev_readcb_complete_child(pxy_conn_child_ctx_t *ctx)
 	if (protossl_setup_dst_ssl_child(ctx) == -1) {
 		return;
 	}
-	if (protossl_setup_dst_new_sslbev_child(ctx) == -1) {
+	if (protossl_setup_dst_new_bev_ssl_connecting_child(ctx) == -1) {
 		return;
 	}
 	bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb_child, pxy_bev_writecb_child, pxy_bev_eventcb_child, ctx);
 
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINER, "protoautossl_bev_readcb_complete_child: Enabling dst, child fd=%d, fd=%d\n", ctx->fd, ctx->conn->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINER, "protoautossl_bev_readcb_complete_upgrade_child: Enabling dst, child fd=%d, fd=%d\n", ctx->fd, ctx->conn->fd);
 #endif /* DEBUG_PROXY */
 
 	bufferevent_enable(ctx->dst.bev, EV_READ|EV_WRITE);
@@ -485,7 +487,7 @@ protoautossl_bev_readcb_src_child(struct bufferevent *bev, void *arg)
 		
 	// Autossl upgrade on child connections follows the findings of parent
 	if (autossl_ctx->clienthello_found && !ctx->dst.ssl) {
-		protoautossl_bev_readcb_complete_child(ctx);
+		protoautossl_bev_readcb_complete_upgrade_child(ctx);
 		return;
 	}
 
@@ -533,7 +535,7 @@ protoautossl_bev_readcb_dst_child(struct bufferevent *bev, void *arg)
 		
 	// Autossl upgrade on child connections follows the findings of parent
 	if (autossl_ctx->clienthello_found && !ctx->dst.ssl) {
-		protoautossl_bev_readcb_complete_child(ctx);
+		protoautossl_bev_readcb_complete_upgrade_child(ctx);
 		return;
 	}
 

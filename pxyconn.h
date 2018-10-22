@@ -326,7 +326,7 @@ void pxy_conn_ctx_free(pxy_conn_ctx_t *, int) NONNULL(1);
 void pxy_conn_free(pxy_conn_ctx_t *, int) NONNULL(1);
 void pxy_conn_free_child(pxy_conn_child_ctx_t *) NONNULL(1);
 
-void pxy_try_connect_srv_dst(struct bufferevent *, pxy_conn_ctx_t *) NONNULL(1,2);
+void pxy_connect_srv_dst(struct bufferevent *, pxy_conn_ctx_t *) NONNULL(1,2);
 
 int pxy_setup_child_listener(pxy_conn_ctx_t *) NONNULL(1);
 

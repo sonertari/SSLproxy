@@ -1103,19 +1103,17 @@ pxy_try_close_conn_end(pxy_conn_desc_t *conn_end, pxy_conn_ctx_t *ctx, buffereve
 }
 
 void
-pxy_try_connect_srv_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
+pxy_connect_srv_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
-	if (!ctx->srv_dst_connected) {
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_try_connect_srv_dst: writecb before connected, fd=%d\n", ctx->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_connect_srv_dst: writecb before connected, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
-		// @attention Sometimes dst write cb fires but not event cb, especially if the listener cb is not finished yet, so the conn stalls.
-		// This is a workaround for this error condition, nothing else seems to work.
-		// @attention Do not try to free the conn here, since the listener cb may not be finished yet, which causes multithreading issues
-		// XXX: Workaround, should find the real cause: BEV_OPT_DEFER_CALLBACKS?
-		ctx->protoctx->bev_eventcb(bev, BEV_EVENT_CONNECTED, ctx);
-	}
+	// @attention Sometimes dst write cb fires but not event cb, especially if the listener cb is not finished yet, so the conn stalls.
+	// This is a workaround for this error condition, nothing else seems to work.
+	// @attention Do not try to free the conn here, since the listener cb may not be finished yet, which causes multithreading issues
+	// XXX: Workaround, should find the real cause: BEV_OPT_DEFER_CALLBACKS?
+	ctx->protoctx->bev_eventcb(bev, BEV_EVENT_CONNECTED, ctx);
 }
 
 void
@@ -1216,7 +1214,7 @@ pxy_bev_readcb(struct bufferevent *bev, void *arg)
 		if (ctx->proto != PROTO_PASSTHROUGH) {
 			// HTTP content logging at this point may record certain headers twice, if we have not seen all header lines yet
 			if (pxy_log_content_inbuf(ctx, inbuf, (bev == ctx->src.bev)) == -1) {
-				return;
+				goto memout;
 			}
 		}
 	}
@@ -1230,6 +1228,7 @@ pxy_bev_readcb(struct bufferevent *bev, void *arg)
 	ctx->atime = time(NULL);
 	ctx->protoctx->bev_readcb(bev, ctx);
 
+memout:
 	if (!ctx) {
 		return;
 	}
@@ -1256,7 +1255,7 @@ pxy_bev_readcb_child(struct bufferevent *bev, void *arg)
 
 	if (ctx->proto != PROTO_PASSTHROUGH) {
 		if (pxy_log_content_inbuf((pxy_conn_ctx_t *)ctx, inbuf, (bev == ctx->src.bev)) == -1) {
-			return;
+			goto memout;
 		}
 	}
 
@@ -1269,6 +1268,7 @@ pxy_bev_readcb_child(struct bufferevent *bev, void *arg)
 	ctx->conn->atime = time(NULL);
 	ctx->protoctx->bev_readcb(bev, ctx);
 
+memout:
 	if (!ctx) {
 		return;
 	}
@@ -1324,6 +1324,11 @@ pxy_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 		return;
 	}
 
+	// EOF eventcb may call readcb possibly causing enomem
+	if (ctx->enomem) {
+		pxy_conn_free(ctx, (bev == ctx->src.bev));
+	}
+
 	if (events & BEV_EVENT_CONNECTED) {
 		// Passthrough proto does its own connect logging
 		if (ctx->proto != PROTO_PASSTHROUGH) {
@@ -1369,6 +1374,11 @@ pxy_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 
 	if (!ctx) {
 		return;
+	}
+
+	// EOF eventcb may call readcb possibly causing enomem
+	if (ctx->conn->enomem) {
+		pxy_conn_free(ctx->conn, (bev == ctx->src.bev));
 	}
 
 	if (events & BEV_EVENT_CONNECTED) {

@@ -402,19 +402,17 @@ prototcp_bev_writecb_src(struct bufferevent *bev, void *arg)
 }
 
 static void NONNULL(1,2)
-prototcp_try_connect_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
+prototcp_connect_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
-	if (!ctx->dst_connected) {
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINE, "prototcp_try_connect_dst: writecb before connected, fd=%d\n", ctx->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINE, "prototcp_connect_dst: writecb before connected, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
-		// @attention Sometimes dst write cb fires but not event cb, especially if the listener cb is not finished yet, so the conn stalls.
-		// This is a workaround for this error condition, nothing else seems to work.
-		// @attention Do not try to free the conn here, since the listener cb may not be finished yet, which causes multithreading issues
-		// XXX: Workaround, should find the real cause: BEV_OPT_DEFER_CALLBACKS?
-		ctx->protoctx->bev_eventcb(bev, BEV_EVENT_CONNECTED, ctx);
-	}
+	// @attention Sometimes dst write cb fires but not event cb, especially if the listener cb is not finished yet, so the conn stalls.
+	// This is a workaround for this error condition, nothing else seems to work.
+	// @attention Do not try to free the conn here, since the listener cb may not be finished yet, which causes multithreading issues
+	// XXX: Workaround, should find the real cause: BEV_OPT_DEFER_CALLBACKS?
+	ctx->protoctx->bev_eventcb(bev, BEV_EVENT_CONNECTED, ctx);
 }
 
 static void NONNULL(1)
@@ -426,7 +424,9 @@ prototcp_bev_writecb_dst(struct bufferevent *bev, void *arg)
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_writecb_dst: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
-	prototcp_try_connect_dst(bev, ctx);
+	if (!ctx->dst_connected) {
+		prototcp_connect_dst(bev, ctx);
+	}
 
 	if (ctx->src.closed) {
 		if (pxy_try_close_conn_end(&ctx->dst, ctx, &prototcp_bufferevent_free_and_close_fd) == 1) {
@@ -450,7 +450,9 @@ prototcp_bev_writecb_srv_dst(struct bufferevent *bev, void *arg)
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_writecb_srv_dst: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
-	pxy_try_connect_srv_dst(bev, ctx);
+	if (!ctx->srv_dst_connected) {
+		pxy_connect_srv_dst(bev, ctx);
+	}
 }
 
 static void NONNULL(1)
@@ -476,19 +478,17 @@ prototcp_bev_writecb_src_child(struct bufferevent *bev, void *arg)
 }
 
 static void NONNULL(1,2)
-prototcp_try_connect_dst_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ctx)
+prototcp_connect_dst_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ctx)
 {
-	if (!ctx->connected) {
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINE, "prototcp_try_connect_dst_child: writecb before connected, child fd=%d, fd=%d\n", ctx->fd, ctx->conn->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINE, "prototcp_connect_dst_child: writecb before connected, child fd=%d, fd=%d\n", ctx->fd, ctx->conn->fd);
 #endif /* DEBUG_PROXY */
 
-		// @attention Sometimes dst write cb fires but not event cb, especially if the listener cb is not finished yet, so the conn stalls.
-		// This is a workaround for this error condition, nothing else seems to work.
-		// @attention Do not try to free the conn here, since the listener cb may not be finished yet, which causes multithreading issues
-		// XXX: Workaround, should find the real cause: BEV_OPT_DEFER_CALLBACKS?
-		ctx->protoctx->bev_eventcb(bev, BEV_EVENT_CONNECTED, ctx);
-	}
+	// @attention Sometimes dst write cb fires but not event cb, especially if the listener cb is not finished yet, so the conn stalls.
+	// This is a workaround for this error condition, nothing else seems to work.
+	// @attention Do not try to free the conn here, since the listener cb may not be finished yet, which causes multithreading issues
+	// XXX: Workaround, should find the real cause: BEV_OPT_DEFER_CALLBACKS?
+	ctx->protoctx->bev_eventcb(bev, BEV_EVENT_CONNECTED, ctx);
 }
 
 static void NONNULL(1)
@@ -500,7 +500,9 @@ prototcp_bev_writecb_dst_child(struct bufferevent *bev, void *arg)
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_writecb_dst_child: ENTER, child fd=%d, fd=%d\n", ctx->fd, ctx->conn->fd);
 #endif /* DEBUG_PROXY */
 
-	prototcp_try_connect_dst_child(bev, ctx);
+	if (!ctx->connected) {
+		prototcp_connect_dst_child(bev, ctx);
+	}
 
 	if (ctx->src.closed) {
 		if (pxy_try_close_conn_end(&ctx->dst, ctx->conn, ctx->protoctx->bufferevent_free_and_close_fd) == 1) {

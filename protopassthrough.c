@@ -47,9 +47,7 @@ protopassthrough_log_dbg_connect_type(pxy_conn_ctx_t *ctx)
 	if (OPTS_DEBUG(ctx->opts)) {
 		/* for TCP, we get only a dst connect event,
 		 * since src was already connected from the
-		 * beginning; mirror SSL debug output anyway
-		 * in order not to confuse anyone who might be
-		 * looking closely at the output */
+		 * beginning */
 		log_dbg_printf("PASSTHROUGH connected to [%s]:%s\n",
 					   STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str));
 		log_dbg_printf("PASSTHROUGH connected from [%s]:%s\n",
@@ -191,7 +189,9 @@ protopassthrough_bev_writecb_srv_dst(struct bufferevent *bev, void *arg)
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protopassthrough_bev_writecb_srv_dst: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
-	pxy_try_connect_srv_dst(bev, ctx);
+	if (!ctx->srv_dst_connected) {
+		pxy_connect_srv_dst(bev, ctx);
+	}
 
 	if (ctx->src.closed) {
 		if (pxy_try_close_conn_end(&ctx->srv_dst, ctx, &prototcp_bufferevent_free_and_close_fd) == 1) {
@@ -410,6 +410,10 @@ protopassthrough_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 		protopassthrough_bev_eventcb_srv_dst(bev, events, arg);
 	} else {
 		log_err_printf("protopassthrough_bev_eventcb: UNKWN conn end\n");
+		return;
+	}
+
+	if (!ctx) {
 		return;
 	}
 
