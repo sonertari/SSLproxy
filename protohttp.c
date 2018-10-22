@@ -434,10 +434,8 @@ protohttp_filter_request_header(struct evbuffer *inbuf, struct evbuffer *outbuf,
 }
 
 static void NONNULL(1)
-protohttp_bev_readcb_src(struct bufferevent *bev, void *arg)
+protohttp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
-	pxy_conn_ctx_t *ctx = arg;
-
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_bev_readcb_src: ENTER, size=%zu, fd=%d\n",
 			evbuffer_get_length(bufferevent_get_input(bev)), ctx->fd);
@@ -605,10 +603,8 @@ protohttp_filter_response_header(struct evbuffer *inbuf, struct evbuffer *outbuf
 }
 
 static void NONNULL(1)
-protohttp_bev_readcb_dst(struct bufferevent *bev, void *arg)
+protohttp_bev_readcb_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
-	pxy_conn_ctx_t *ctx = arg;
-
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_bev_readcb_dst: ENTER, size=%zu, fd=%d\n",
 			evbuffer_get_length(bufferevent_get_input(bev)), ctx->fd);
@@ -643,21 +639,18 @@ protohttp_bev_readcb_dst(struct bufferevent *bev, void *arg)
 }
 
 static void NONNULL(1)
-protohttp_bev_readcb_srvdst(UNUSED struct bufferevent *bev, UNUSED void *arg)
+protohttp_bev_readcb_srvdst(UNUSED struct bufferevent *bev, UNUSED pxy_conn_ctx_t *ctx)
 {
-	log_err_printf("protohttp_bev_readcb_srvdst: readcb called on srvdst\n");
 #ifdef DEBUG_PROXY
-	pxy_conn_ctx_t *ctx = arg;
 	log_dbg_level_printf(LOG_DBG_MODE_FINE, "protohttp_bev_readcb_srvdst: readcb called on srvdst, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
+
+	log_err_printf("protohttp_bev_readcb_srvdst: readcb called on srvdst\n");
 }
 
 static void NONNULL(1)
-protohttp_bev_readcb_src_child(struct bufferevent *bev, void *arg)
+protohttp_bev_readcb_src_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ctx)
 {
-	pxy_conn_child_ctx_t *ctx = arg;
-	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
-
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_bev_readcb_src_child: ENTER, size=%zu, child fd=%d, fd=%d\n",
 			evbuffer_get_length(bufferevent_get_input(bev)), ctx->fd, ctx->conn->fd);
@@ -668,6 +661,7 @@ protohttp_bev_readcb_src_child(struct bufferevent *bev, void *arg)
 		return;
 	}
 
+	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
 	struct evbuffer *inbuf = bufferevent_get_input(bev);
 	struct evbuffer *outbuf = bufferevent_get_output(ctx->dst.bev);
 
@@ -694,11 +688,8 @@ protohttp_bev_readcb_src_child(struct bufferevent *bev, void *arg)
 }
 
 static void NONNULL(1)
-protohttp_bev_readcb_dst_child(struct bufferevent *bev, void *arg)
+protohttp_bev_readcb_dst_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ctx)
 {
-	pxy_conn_child_ctx_t *ctx = arg;
-	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
-
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_bev_readcb_dst_child: ENTER, size=%zu, child fd=%d, fd=%d\n",
 			evbuffer_get_length(bufferevent_get_input(bev)), ctx->fd, ctx->conn->fd);
@@ -709,6 +700,7 @@ protohttp_bev_readcb_dst_child(struct bufferevent *bev, void *arg)
 		return;
 	}
 
+	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
 	struct evbuffer *inbuf = bufferevent_get_input(bev);
 	struct evbuffer *outbuf = bufferevent_get_output(ctx->src.bev);
 
@@ -743,11 +735,11 @@ protohttp_bev_readcb(struct bufferevent *bev, void *arg)
 	int seen_resp_header_on_entry = http_ctx->seen_resp_header;
 
 	if (bev == ctx->src.bev) {
-		protohttp_bev_readcb_src(bev, arg);
+		protohttp_bev_readcb_src(bev, ctx);
 	} else if (bev == ctx->dst.bev) {
-		protohttp_bev_readcb_dst(bev, arg);
+		protohttp_bev_readcb_dst(bev, ctx);
 	} else if (bev == ctx->srvdst.bev) {
-		protohttp_bev_readcb_srvdst(bev, arg);
+		protohttp_bev_readcb_srvdst(bev, ctx);
 	} else {
 		log_err_printf("protohttp_bev_readcb: UNKWN conn end\n");
 		return;
@@ -771,9 +763,9 @@ protohttp_bev_readcb_child(struct bufferevent *bev, void *arg)
 	pxy_conn_child_ctx_t *ctx = arg;
 
 	if (bev == ctx->src.bev) {
-		protohttp_bev_readcb_src_child(bev, arg);
+		protohttp_bev_readcb_src_child(bev, ctx);
 	} else if (bev == ctx->dst.bev) {
-		protohttp_bev_readcb_dst_child(bev, arg);
+		protohttp_bev_readcb_dst_child(bev, ctx);
 	} else {
 		log_err_printf("protohttp_bev_readcb_child: UNKWN conn end\n");
 	}

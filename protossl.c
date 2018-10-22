@@ -1345,10 +1345,8 @@ protossl_bev_eventcb_error_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 }
 
 static void NONNULL(1)
-protossl_bev_eventcb_dst(struct bufferevent *bev, short events, void *arg)
+protossl_bev_eventcb_dst(struct bufferevent *bev, short events, pxy_conn_ctx_t *ctx)
 {
-	pxy_conn_ctx_t *ctx = arg;
-
 	if (events & BEV_EVENT_CONNECTED) {
 		protossl_bev_eventcb_connected_dst(bev, ctx);
 	} else if (events & BEV_EVENT_EOF) {
@@ -1359,10 +1357,8 @@ protossl_bev_eventcb_dst(struct bufferevent *bev, short events, void *arg)
 }
 
 static void NONNULL(1)
-protossl_bev_eventcb_srvdst(struct bufferevent *bev, short events, void *arg)
+protossl_bev_eventcb_srvdst(struct bufferevent *bev, short events, pxy_conn_ctx_t *ctx)
 {
-	pxy_conn_ctx_t *ctx = arg;
-
 	if (events & BEV_EVENT_CONNECTED) {
 		protossl_bev_eventcb_connected_srvdst(bev, ctx);
 	} else if (events & BEV_EVENT_EOF) {
@@ -1382,11 +1378,11 @@ protossl_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 	}
 
 	if (bev == ctx->src.bev) {
-		prototcp_bev_eventcb_src(bev, events, arg);
+		prototcp_bev_eventcb_src(bev, events, ctx);
 	} else if (bev == ctx->dst.bev) {
-		protossl_bev_eventcb_dst(bev, events, arg);
+		protossl_bev_eventcb_dst(bev, events, ctx);
 	} else if (bev == ctx->srvdst.bev) {
-		protossl_bev_eventcb_srvdst(bev, events, arg);
+		protossl_bev_eventcb_srvdst(bev, events, ctx);
 	} else {
 		log_err_printf("protossl_bev_eventcb: UNKWN conn end\n");
 	}
@@ -1402,9 +1398,9 @@ protossl_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 	}
 
 	if (bev == ctx->src.bev) {
-		prototcp_bev_eventcb_src_child(bev, events, arg);
+		prototcp_bev_eventcb_src_child(bev, events, ctx);
 	} else if (bev == ctx->dst.bev) {
-		prototcp_bev_eventcb_dst_child(bev, events, arg);
+		prototcp_bev_eventcb_dst_child(bev, events, ctx);
 	} else {
 		log_err_printf("protossl_bev_eventcb_child: UNKWN conn end\n");
 	}

@@ -118,10 +118,8 @@ protopassthrough_conn_connect(pxy_conn_ctx_t *ctx)
 }
 
 static void NONNULL(1)
-protopassthrough_bev_readcb_src(struct bufferevent *bev, void *arg)
+protopassthrough_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
-	pxy_conn_ctx_t *ctx = arg;
-
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protopassthrough_bev_readcb_src: ENTER, size=%zu, fd=%d\n",
 			evbuffer_get_length(bufferevent_get_input(bev)), ctx->fd);
@@ -138,10 +136,8 @@ protopassthrough_bev_readcb_src(struct bufferevent *bev, void *arg)
 }
 
 static void NONNULL(1)
-protopassthrough_bev_readcb_srvdst(struct bufferevent *bev, void *arg)
+protopassthrough_bev_readcb_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
-	pxy_conn_ctx_t *ctx = arg;
-
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protopassthrough_bev_readcb_srvdst: ENTER, size=%zu, fd=%d\n",
 			evbuffer_get_length(bufferevent_get_input(bev)), ctx->fd);
@@ -158,10 +154,8 @@ protopassthrough_bev_readcb_srvdst(struct bufferevent *bev, void *arg)
 }
 
 static void NONNULL(1)
-protopassthrough_bev_writecb_src(struct bufferevent *bev, void *arg)
+protopassthrough_bev_writecb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
-	pxy_conn_ctx_t *ctx = arg;
-
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protopassthrough_bev_writecb_src: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
@@ -181,10 +175,8 @@ protopassthrough_bev_writecb_src(struct bufferevent *bev, void *arg)
 }
 
 static void NONNULL(1)
-protopassthrough_bev_writecb_srvdst(struct bufferevent *bev, void *arg)
+protopassthrough_bev_writecb_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
-	pxy_conn_ctx_t *ctx = arg;
-
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protopassthrough_bev_writecb_srvdst: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
@@ -349,9 +341,9 @@ protopassthrough_bev_readcb(struct bufferevent *bev, void *arg)
 	pxy_conn_ctx_t *ctx = arg;
 
 	if (bev == ctx->src.bev) {
-		protopassthrough_bev_readcb_src(bev, arg);
+		protopassthrough_bev_readcb_src(bev, ctx);
 	} else if (bev == ctx->srvdst.bev) {
-		protopassthrough_bev_readcb_srvdst(bev, arg);
+		protopassthrough_bev_readcb_srvdst(bev, ctx);
 	} else {
 		log_err_printf("protopassthrough_bev_readcb: UNKWN conn end\n");
 	}
@@ -363,19 +355,17 @@ protopassthrough_bev_writecb(struct bufferevent *bev, void *arg)
 	pxy_conn_ctx_t *ctx = arg;
 
 	if (bev == ctx->src.bev) {
-		protopassthrough_bev_writecb_src(bev, arg);
+		protopassthrough_bev_writecb_src(bev, ctx);
 	} else if (bev == ctx->srvdst.bev) {
-		protopassthrough_bev_writecb_srvdst(bev, arg);
+		protopassthrough_bev_writecb_srvdst(bev, ctx);
 	} else {
 		log_err_printf("protopassthrough_bev_writecb: UNKWN conn end\n");
 	}
 }
 
 static void NONNULL(1)
-protopassthrough_bev_eventcb_src(struct bufferevent *bev, short events, void *arg)
+protopassthrough_bev_eventcb_src(struct bufferevent *bev, short events, pxy_conn_ctx_t *ctx)
 {
-	pxy_conn_ctx_t *ctx = arg;
-
 	if (events & BEV_EVENT_CONNECTED) {
 		protopassthrough_bev_eventcb_connected_src(bev, ctx);
 	} else if (events & BEV_EVENT_EOF) {
@@ -386,10 +376,8 @@ protopassthrough_bev_eventcb_src(struct bufferevent *bev, short events, void *ar
 }
 
 static void NONNULL(1)
-protopassthrough_bev_eventcb_srvdst(struct bufferevent *bev, short events, void *arg)
+protopassthrough_bev_eventcb_srvdst(struct bufferevent *bev, short events, pxy_conn_ctx_t *ctx)
 {
-	pxy_conn_ctx_t *ctx = arg;
-
 	if (events & BEV_EVENT_CONNECTED) {
 		protopassthrough_bev_eventcb_connected_srvdst(bev, ctx);
 	} else if (events & BEV_EVENT_EOF) {
@@ -405,9 +393,9 @@ protopassthrough_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 	pxy_conn_ctx_t *ctx = arg;
 
 	if (bev == ctx->src.bev) {
-		protopassthrough_bev_eventcb_src(bev, events, arg);
+		protopassthrough_bev_eventcb_src(bev, events, ctx);
 	} else if (bev == ctx->srvdst.bev) {
-		protopassthrough_bev_eventcb_srvdst(bev, events, arg);
+		protopassthrough_bev_eventcb_srvdst(bev, events, ctx);
 	} else {
 		log_err_printf("protopassthrough_bev_eventcb: UNKWN conn end\n");
 		return;

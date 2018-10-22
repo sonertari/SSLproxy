@@ -238,10 +238,8 @@ prototcp_fd_readcb(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 }
 
 static void NONNULL(1)
-prototcp_bev_readcb_src(struct bufferevent *bev, void *arg)
+prototcp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
-	pxy_conn_ctx_t *ctx = arg;
-
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_readcb_src: ENTER, size=%zu, fd=%d\n",
 			evbuffer_get_length(bufferevent_get_input(bev)), ctx->fd);
@@ -287,10 +285,8 @@ prototcp_bev_readcb_src(struct bufferevent *bev, void *arg)
 }
 
 static void NONNULL(1)
-prototcp_bev_readcb_dst(struct bufferevent *bev, void *arg)
+prototcp_bev_readcb_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
-	pxy_conn_ctx_t *ctx = arg;
-
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_readcb_dst: ENTER, size=%zu, fd=%d\n",
 			evbuffer_get_length(bufferevent_get_input(bev)), ctx->fd);
@@ -308,20 +304,18 @@ prototcp_bev_readcb_dst(struct bufferevent *bev, void *arg)
 }
 
 static void NONNULL(1)
-prototcp_bev_readcb_srvdst(UNUSED struct bufferevent *bev, UNUSED void *arg)
+prototcp_bev_readcb_srvdst(UNUSED struct bufferevent *bev, UNUSED pxy_conn_ctx_t *ctx)
 {
-	log_err_printf("prototcp_bev_readcb_srvdst: readcb called on srvdst\n");
 #ifdef DEBUG_PROXY
-	pxy_conn_ctx_t *ctx = arg;
 	log_dbg_level_printf(LOG_DBG_MODE_FINE, "prototcp_bev_readcb_srvdst: readcb called on srvdst, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
+
+	log_err_printf("prototcp_bev_readcb_srvdst: readcb called on srvdst\n");
 }
 
 static void NONNULL(1)
-prototcp_bev_readcb_src_child(struct bufferevent *bev, void *arg)
+prototcp_bev_readcb_src_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ctx)
 {
-	pxy_conn_child_ctx_t *ctx = arg;
-
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_readcb_src_child: ENTER, size=%zu, child fd=%d, fd=%d\n",
 			evbuffer_get_length(bufferevent_get_input(bev)), ctx->fd, ctx->conn->fd);
@@ -359,10 +353,8 @@ prototcp_bev_readcb_src_child(struct bufferevent *bev, void *arg)
 }
 
 static void NONNULL(1)
-prototcp_bev_readcb_dst_child(struct bufferevent *bev, void *arg)
+prototcp_bev_readcb_dst_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ctx)
 {
-	pxy_conn_child_ctx_t *ctx = arg;
-
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_readcb_dst_child: ENTER, size=%zu, child fd=%d, fd=%d\n",
 			evbuffer_get_length(bufferevent_get_input(bev)), ctx->fd, ctx->conn->fd);
@@ -380,10 +372,8 @@ prototcp_bev_readcb_dst_child(struct bufferevent *bev, void *arg)
 }
 
 static void NONNULL(1)
-prototcp_bev_writecb_src(struct bufferevent *bev, void *arg)
+prototcp_bev_writecb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
-	pxy_conn_ctx_t *ctx = arg;
-
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_writecb_src: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
@@ -416,10 +406,8 @@ prototcp_connect_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 }
 
 static void NONNULL(1)
-prototcp_bev_writecb_dst(struct bufferevent *bev, void *arg)
+prototcp_bev_writecb_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
-	pxy_conn_ctx_t *ctx = arg;
-
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_writecb_dst: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
@@ -442,10 +430,8 @@ prototcp_bev_writecb_dst(struct bufferevent *bev, void *arg)
 }
 
 static void NONNULL(1)
-prototcp_bev_writecb_srvdst(struct bufferevent *bev, void *arg)
+prototcp_bev_writecb_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
-	pxy_conn_ctx_t *ctx = arg;
-
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_writecb_srvdst: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
@@ -456,10 +442,8 @@ prototcp_bev_writecb_srvdst(struct bufferevent *bev, void *arg)
 }
 
 static void NONNULL(1)
-prototcp_bev_writecb_src_child(struct bufferevent *bev, void *arg)
+prototcp_bev_writecb_src_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ctx)
 {
-	pxy_conn_child_ctx_t *ctx = arg;
-
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_writecb_src_child: ENTER, child fd=%d, fd=%d\n", ctx->fd, ctx->conn->fd);
 #endif /* DEBUG_PROXY */
@@ -492,10 +476,8 @@ prototcp_connect_dst_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ctx)
 }
 
 static void NONNULL(1)
-prototcp_bev_writecb_dst_child(struct bufferevent *bev, void *arg)
+prototcp_bev_writecb_dst_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ctx)
 {
-	pxy_conn_child_ctx_t *ctx = arg;
-
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_writecb_dst_child: ENTER, child fd=%d, fd=%d\n", ctx->fd, ctx->conn->fd);
 #endif /* DEBUG_PROXY */
@@ -844,10 +826,8 @@ prototcp_bev_eventcb_error_dst_child(UNUSED struct bufferevent *bev, pxy_conn_ch
 }
 
 void
-prototcp_bev_eventcb_src(struct bufferevent *bev, short events, void *arg)
+prototcp_bev_eventcb_src(struct bufferevent *bev, short events, pxy_conn_ctx_t *ctx)
 {
-	pxy_conn_ctx_t *ctx = arg;
-
 	if (events & BEV_EVENT_CONNECTED) {
 		prototcp_bev_eventcb_connected_src(bev, ctx);
 	} else if (events & BEV_EVENT_EOF) {
@@ -858,10 +838,8 @@ prototcp_bev_eventcb_src(struct bufferevent *bev, short events, void *arg)
 }
 
 static void NONNULL(1)
-prototcp_bev_eventcb_dst(struct bufferevent *bev, short events, void *arg)
+prototcp_bev_eventcb_dst(struct bufferevent *bev, short events, pxy_conn_ctx_t *ctx)
 {
-	pxy_conn_ctx_t *ctx = arg;
-
 	if (events & BEV_EVENT_CONNECTED) {
 		prototcp_bev_eventcb_connected_dst(bev, ctx);
 	} else if (events & BEV_EVENT_EOF) {
@@ -872,10 +850,8 @@ prototcp_bev_eventcb_dst(struct bufferevent *bev, short events, void *arg)
 }
 
 static void NONNULL(1)
-prototcp_bev_eventcb_srvdst(struct bufferevent *bev, short events, void *arg)
+prototcp_bev_eventcb_srvdst(struct bufferevent *bev, short events, pxy_conn_ctx_t *ctx)
 {
-	pxy_conn_ctx_t *ctx = arg;
-
 	if (events & BEV_EVENT_CONNECTED) {
 		prototcp_bev_eventcb_connected_srvdst(bev, ctx);
 	} else if (events & BEV_EVENT_EOF) {
@@ -886,10 +862,8 @@ prototcp_bev_eventcb_srvdst(struct bufferevent *bev, short events, void *arg)
 }
 
 void
-prototcp_bev_eventcb_src_child(struct bufferevent *bev, short events, void *arg)
+prototcp_bev_eventcb_src_child(struct bufferevent *bev, short events, pxy_conn_child_ctx_t *ctx)
 {
-	pxy_conn_child_ctx_t *ctx = arg;
-
 	if (events & BEV_EVENT_CONNECTED) {
 		prototcp_bev_eventcb_connected_src_child(bev, ctx);
 	} else if (events & BEV_EVENT_EOF) {
@@ -900,10 +874,8 @@ prototcp_bev_eventcb_src_child(struct bufferevent *bev, short events, void *arg)
 }
 
 void
-prototcp_bev_eventcb_dst_child(struct bufferevent *bev, short events, void *arg)
+prototcp_bev_eventcb_dst_child(struct bufferevent *bev, short events, pxy_conn_child_ctx_t *ctx)
 {
-	pxy_conn_child_ctx_t *ctx = arg;
-
 	if (events & BEV_EVENT_CONNECTED) {
 		prototcp_bev_eventcb_connected_dst_child(bev, ctx);
 	} else if (events & BEV_EVENT_EOF) {
@@ -919,11 +891,11 @@ prototcp_bev_readcb(struct bufferevent *bev, void *arg)
 	pxy_conn_ctx_t *ctx = arg;
 
 	if (bev == ctx->src.bev) {
-		prototcp_bev_readcb_src(bev, arg);
+		prototcp_bev_readcb_src(bev, ctx);
 	} else if (bev == ctx->dst.bev) {
-		prototcp_bev_readcb_dst(bev, arg);
+		prototcp_bev_readcb_dst(bev, ctx);
 	} else if (bev == ctx->srvdst.bev) {
-		prototcp_bev_readcb_srvdst(bev, arg);
+		prototcp_bev_readcb_srvdst(bev, ctx);
 	} else {
 		log_err_printf("prototcp_bev_readcb: UNKWN conn end\n");
 	}
@@ -935,11 +907,11 @@ prototcp_bev_writecb(struct bufferevent *bev, void *arg)
 	pxy_conn_ctx_t *ctx = arg;
 
 	if (bev == ctx->src.bev) {
-		prototcp_bev_writecb_src(bev, arg);
+		prototcp_bev_writecb_src(bev, ctx);
 	} else if (bev == ctx->dst.bev) {
-		prototcp_bev_writecb_dst(bev, arg);
+		prototcp_bev_writecb_dst(bev, ctx);
 	} else if (bev == ctx->srvdst.bev) {
-		prototcp_bev_writecb_srvdst(bev, arg);
+		prototcp_bev_writecb_srvdst(bev, ctx);
 	} else {
 		log_err_printf("prototcp_bev_writecb: UNKWN conn end\n");
 	}
@@ -951,11 +923,11 @@ prototcp_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 	pxy_conn_ctx_t *ctx = arg;
 
 	if (bev == ctx->src.bev) {
-		prototcp_bev_eventcb_src(bev, events, arg);
+		prototcp_bev_eventcb_src(bev, events, ctx);
 	} else if (bev == ctx->dst.bev) {
-		prototcp_bev_eventcb_dst(bev, events, arg);
+		prototcp_bev_eventcb_dst(bev, events, ctx);
 	} else if (bev == ctx->srvdst.bev) {
-		prototcp_bev_eventcb_srvdst(bev, events, arg);
+		prototcp_bev_eventcb_srvdst(bev, events, ctx);
 	} else {
 		log_err_printf("prototcp_bev_eventcb: UNKWN conn end\n");
 	}
@@ -967,9 +939,9 @@ prototcp_bev_readcb_child(struct bufferevent *bev, void *arg)
 	pxy_conn_child_ctx_t *ctx = arg;
 
 	if (bev == ctx->src.bev) {
-		prototcp_bev_readcb_src_child(bev, arg);
+		prototcp_bev_readcb_src_child(bev, ctx);
 	} else if (bev == ctx->dst.bev) {
-		prototcp_bev_readcb_dst_child(bev, arg);
+		prototcp_bev_readcb_dst_child(bev, ctx);
 	} else {
 		log_err_printf("prototcp_bev_readcb_child: UNKWN conn end\n");
 	}
@@ -981,9 +953,9 @@ prototcp_bev_writecb_child(struct bufferevent *bev, void *arg)
 	pxy_conn_child_ctx_t *ctx = arg;
 
 	if (bev == ctx->src.bev) {
-		prototcp_bev_writecb_src_child(bev, arg);
+		prototcp_bev_writecb_src_child(bev, ctx);
 	} else if (bev == ctx->dst.bev) {
-		prototcp_bev_writecb_dst_child(bev, arg);
+		prototcp_bev_writecb_dst_child(bev, ctx);
 	} else {
 		log_err_printf("prototcp_bev_writecb_child: UNKWN conn end\n");
 	}
@@ -995,9 +967,9 @@ prototcp_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 	pxy_conn_child_ctx_t *ctx = arg;
 
 	if (bev == ctx->src.bev) {
-		prototcp_bev_eventcb_src_child(bev, events, arg);
+		prototcp_bev_eventcb_src_child(bev, events, ctx);
 	} else if (bev == ctx->dst.bev) {
-		prototcp_bev_eventcb_dst_child(bev, events, arg);
+		prototcp_bev_eventcb_dst_child(bev, events, ctx);
 	} else {
 		log_err_printf("prototcp_bev_eventcb_child: UNKWN conn end\n");
 	}
