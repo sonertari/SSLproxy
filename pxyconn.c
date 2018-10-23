@@ -297,7 +297,6 @@ pxy_conn_ctx_free_child(pxy_conn_child_ctx_t *ctx)
 	}
 	free(ctx->protoctx);
 	free(ctx);
-	ctx = NULL;
 }
 
 static void NONNULL(1,2)
@@ -361,6 +360,31 @@ pxy_conn_term_child(pxy_conn_child_ctx_t *ctx)
 }
 
 void
+pxy_conn_free_children(pxy_conn_ctx_t *ctx)
+{
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_free_children: ENTER, fd=%d\n", ctx->fd);
+#endif /* DEBUG_PROXY */
+
+	// @attention Free the child ctxs asap, we need their fds
+	while (ctx->children) {
+		pxy_conn_free_child(ctx->children);
+	}
+
+	// @attention Parent may be closing before there was any child at all nor was child_evcl ever created
+	if (ctx->child_evcl) {
+#ifdef DEBUG_PROXY
+		log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_conn_free_children: Freeing child_evcl, child fd=%d, children->fd=%d, fd=%d\n",
+				ctx->child_fd, ctx->children ? ctx->children->fd : -1, ctx->fd);
+#endif /* DEBUG_PROXY */
+
+		// @attention child_evcl was created with LEV_OPT_CLOSE_ON_FREE, so do not close ctx->child_fd
+		evconnlistener_free(ctx->child_evcl);
+		ctx->child_evcl = NULL;
+	}
+}
+
+void
 pxy_conn_ctx_free(pxy_conn_ctx_t *ctx, int by_requestor)
 {
 #ifdef DEBUG_PROXY
@@ -408,7 +432,6 @@ pxy_conn_ctx_free(pxy_conn_ctx_t *ctx, int by_requestor)
 	}
 	free(ctx->protoctx);
 	free(ctx);
-	ctx = NULL;
 }
 
 void
@@ -445,23 +468,7 @@ pxy_conn_free(pxy_conn_ctx_t *ctx, int by_requestor)
 		dst->bev = NULL;
 	}
 
-	// @attention Free the child ctxs asap, we need their fds
-	while (ctx->children) {
-		pxy_conn_free_child(ctx->children);
-	}
-
-	// @attention Parent may be closing before there was any child at all nor was child_evcl ever created
-	if (ctx->child_evcl) {
-#ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_conn_free: Freeing child_evcl, child fd=%d, children->fd=%d, fd=%d\n",
-				ctx->child_fd, ctx->children ? ctx->children->fd : -1, ctx->fd);
-#endif /* DEBUG_PROXY */
-
-		// @attention child_evcl was created with LEV_OPT_CLOSE_ON_FREE, so do not close ctx->child_fd
-		evconnlistener_free(ctx->child_evcl);
-		ctx->child_evcl = NULL;
-	}
-
+	pxy_conn_free_children(ctx);
 	pxy_conn_ctx_free(ctx, by_requestor);
 }
 

@@ -89,6 +89,16 @@ protopassthrough_engage(pxy_conn_ctx_t *ctx)
 		ctx->dst_fd = 0;
 	}
 
+	// Free any children of the previous proto
+	pxy_conn_free_children(ctx);
+
+	// Free any/all data of the previous proto
+	if (ctx->protoctx->proto_free) {
+		ctx->protoctx->proto_free(ctx);
+	}
+	// Disable proto_free callback of the previous proto, or it is called while passthrough is closing too
+	ctx->protoctx->proto_free = NULL;
+
 	ctx->proto = protopassthrough_setup(ctx);
 	pxy_fd_readcb(ctx->fd, 0, ctx);
 }
@@ -219,7 +229,7 @@ protopassthrough_enable_src(pxy_conn_ctx_t *ctx)
 	bufferevent_setcb(ctx->src.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
 
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINER, "protopassthrough_enable_src: Enabling src, %s, child_fd=%d, fd=%d\n", ctx->sslproxy_header, ctx->child_fd, ctx->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINER, "protopassthrough_enable_src: Enabling src, child_fd=%d, fd=%d\n", ctx->child_fd, ctx->fd);
 #endif /* DEBUG_PROXY */
 
 	// Now open the gates
@@ -401,8 +411,9 @@ protopassthrough_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 		return;
 	}
 
+	// The topmost eventcb handles the term and enomem flags, frees the conn
 	if (ctx->term || ctx->enomem) {
-		goto memout;
+		return;
 	}
 
 	if (events & BEV_EVENT_CONNECTED) {
@@ -411,23 +422,13 @@ protopassthrough_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 		} else if (ctx->connected) {
 			// @todo Do we need to set dstaddr here? It must have already been set by the original proto.
 			if (pxy_set_dstaddr(ctx) == -1) {
-				goto memout;
+				return;
 			}
 			if (protopassthrough_prepare_logging(ctx) == -1) {
-				goto memout;
+				return;
 			}
 			protopassthrough_log_dbg_connect_type(ctx);
 		}
-	}
-
-memout:
-	if (ctx->term) {
-		pxy_conn_free(ctx, ctx->term_requestor);
-		return;
-	}
-
-	if (ctx->enomem) {
-		pxy_conn_free(ctx, (bev == ctx->src.bev));
 	}
 }
 
