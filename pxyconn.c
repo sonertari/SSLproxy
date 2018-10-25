@@ -798,7 +798,7 @@ pxy_log_dbg_disconnect_child(pxy_conn_child_ctx_t *ctx)
 	}
 }
 
-#ifdef HAVE_NETFILTER
+#ifdef __linux__
 /*
  * Copied from:
  * https://github.com/tmux/tmux/blob/master/compat/getdtablecount.c
@@ -819,7 +819,7 @@ getdtablecount()
 	globfree(&g);
 	return n;
 }
-#endif /* HAVE_NETFILTER */
+#endif /* __linux__ */
 
 unsigned char *
 pxy_malloc_packet(size_t sz, pxy_conn_ctx_t *ctx)
@@ -1229,6 +1229,7 @@ int
 pxy_set_dstaddr(pxy_conn_ctx_t *ctx)
 {
 	if (sys_sockaddr_str((struct sockaddr *)&ctx->addr, ctx->addrlen, &ctx->dsthost_str, &ctx->dstport_str) != 0) {
+		// sys_sockaddr_str() may fail due to either malloc() or getnameinfo()
 		ctx->enomem = 1;
 		pxy_conn_term(ctx, 1);
 		return -1;

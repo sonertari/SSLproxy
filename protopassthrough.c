@@ -95,9 +95,9 @@ protopassthrough_engage(pxy_conn_ctx_t *ctx)
 	// Free any/all data of the previous proto
 	if (ctx->protoctx->proto_free) {
 		ctx->protoctx->proto_free(ctx);
+		// Disable proto_free callback of the previous proto, otherwise it is called while passthrough is closing too
+		ctx->protoctx->proto_free = NULL;
 	}
-	// Disable proto_free callback of the previous proto, or it is called while passthrough is closing too
-	ctx->protoctx->proto_free = NULL;
 
 	ctx->proto = protopassthrough_setup(ctx);
 	pxy_fd_readcb(ctx->fd, 0, ctx);
@@ -420,7 +420,7 @@ protopassthrough_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 		if (bev == ctx->src.bev) {
 			protopassthrough_log_connect_src(ctx);
 		} else if (ctx->connected) {
-			// @todo Do we need to set dstaddr here? It must have already been set by the original proto.
+			// @attention dstaddr may not have been set by the original proto.
 			if (pxy_set_dstaddr(ctx) == -1) {
 				return;
 			}
