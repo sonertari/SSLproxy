@@ -123,7 +123,7 @@ static int protossl_ossl_servername_cb(SSL *ssl, int *al, void *arg);
 #endif /* !OPENSSL_NO_TLSEXT */
 static int protossl_ossl_sessnew_cb(SSL *, SSL_SESSION *);
 static void protossl_ossl_sessremove_cb(SSL_CTX *, SSL_SESSION *);
-#if (OPENSSL_VERSION_NUMBER < 0x10100000L) || defined(LIBRESSL_VERSION_NUMBER)
+#if (OPENSSL_VERSION_NUMBER < 0x10100000L) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER < 0x20800000L)
 static SSL_SESSION * protossl_ossl_sessget_cb(SSL *, unsigned char *, int, int *);
 #else /* OPENSSL_VERSION_NUMBER >= 0x10100000L */
 static SSL_SESSION * protossl_ossl_sessget_cb(SSL *, const unsigned char *, int, int *);
@@ -226,7 +226,7 @@ protossl_ossl_sessremove_cb(UNUSED SSL_CTX *sslctx, SSL_SESSION *sess)
  * Called by OpenSSL when a src SSL session is requested by the client.
  */
 static SSL_SESSION *
-#if (OPENSSL_VERSION_NUMBER < 0x10100000L) || defined(LIBRESSL_VERSION_NUMBER)
+#if (OPENSSL_VERSION_NUMBER < 0x10100000L) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER < 0x20800000L)
 protossl_ossl_sessget_cb(UNUSED SSL *ssl, unsigned char *id, int idlen, int *copy)
 #else /* OPENSSL_VERSION_NUMBER >= 0x10100000L */
 protossl_ossl_sessget_cb(UNUSED SSL *ssl, const unsigned char *id, int idlen, int *copy)
