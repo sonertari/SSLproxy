@@ -1038,13 +1038,8 @@ out:
 	// @attention Do not use ctx->conn here, ctx may be uninitialized
 	// @attention Call pxy_conn_free() directly, not term functions here
 	// This is our last chance to close and free the conn
-	if (conn->term) {
-		pxy_conn_free(conn, conn->term_requestor);
-		return;
-	}
-
-	if (conn->enomem) {
-		pxy_conn_free(conn, 1);
+	if (conn->term || conn->enomem) {
+		pxy_conn_free(conn, conn->term ? conn->term_requestor : 1);
 	}
 }
 
@@ -1261,10 +1256,8 @@ pxy_bev_readcb_preexec_logging_and_stats(struct bufferevent *bev, pxy_conn_ctx_t
 		}
 
 		if (ctx->proto != PROTO_PASSTHROUGH) {
-			// HTTP content logging at this point may record certain headers twice, if we have not seen all header lines yet
-			if (pxy_log_content_inbuf(ctx, inbuf, (bev == ctx->src.bev)) == -1) {
-				return -1;
-			}
+			// HTTP content logging at this point may record certain header lines twice, if we have not seen all headers yet
+			return pxy_log_content_inbuf(ctx, inbuf, (bev == ctx->src.bev));
 		}
 	}
 	return 0;
@@ -1293,13 +1286,8 @@ pxy_bev_readcb(struct bufferevent *bev, void *arg)
 	ctx->protoctx->bev_readcb(bev, ctx);
 
 memout:
-	if (ctx->term) {
-		pxy_conn_free(ctx, ctx->term_requestor);
-		return;
-	}
-
-	if (ctx->enomem) {
-		pxy_conn_free(ctx, (bev == ctx->src.bev));
+	if (ctx->term || ctx->enomem) {
+		pxy_conn_free(ctx, ctx->term ? ctx->term_requestor : (bev == ctx->src.bev));
 	}
 }
 
@@ -1316,9 +1304,7 @@ pxy_bev_readcb_preexec_logging_and_stats_child(struct bufferevent *bev, pxy_conn
 	}
 
 	if (ctx->proto != PROTO_PASSTHROUGH) {
-		if (pxy_log_content_inbuf((pxy_conn_ctx_t *)ctx, inbuf, (bev == ctx->src.bev)) == -1) {
-			return -1;
-		}
+		return pxy_log_content_inbuf((pxy_conn_ctx_t *)ctx, inbuf, (bev == ctx->src.bev));
 	}
 	return 0;
 }
@@ -1342,13 +1328,8 @@ pxy_bev_readcb_child(struct bufferevent *bev, void *arg)
 	ctx->protoctx->bev_readcb(bev, ctx);
 
 memout:
-	if (ctx->conn->term) {
-		pxy_conn_free(ctx->conn, ctx->conn->term_requestor);
-		return;
-	}
-
-	if (ctx->conn->enomem) {
-		pxy_conn_free(ctx->conn, (bev == ctx->src.bev));
+	if (ctx->conn->term || ctx->conn->enomem) {
+		pxy_conn_free(ctx->conn, ctx->conn->term ? ctx->conn->term_requestor : (bev == ctx->src.bev));
 		return;
 	}
 
@@ -1370,13 +1351,8 @@ pxy_bev_writecb(struct bufferevent *bev, void *arg)
 	ctx->atime = time(NULL);
 	ctx->protoctx->bev_writecb(bev, ctx);
 
-	if (ctx->term) {
-		pxy_conn_free(ctx, ctx->term_requestor);
-		return;
-	}
-
-	if (ctx->enomem) {
-		pxy_conn_free(ctx, (bev == ctx->src.bev));
+	if (ctx->term || ctx->enomem) {
+		pxy_conn_free(ctx, ctx->term ? ctx->term_requestor : (bev == ctx->src.bev));
 	}
 }
 
@@ -1388,13 +1364,8 @@ pxy_bev_writecb_child(struct bufferevent *bev, void *arg)
 	ctx->conn->atime = time(NULL);
 	ctx->protoctx->bev_writecb(bev, ctx);
 
-	if (ctx->conn->term) {
-		pxy_conn_free(ctx->conn, ctx->conn->term_requestor);
-		return;
-	}
-
-	if (ctx->conn->enomem) {
-		pxy_conn_free(ctx->conn, (bev == ctx->src.bev));
+	if (ctx->conn->term || ctx->conn->enomem) {
+		pxy_conn_free(ctx->conn, ctx->conn->term ? ctx->conn->term_requestor : (bev == ctx->src.bev));
 		return;
 	}
 
@@ -1461,14 +1432,9 @@ pxy_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 	pxy_bev_eventcb_postexec_logging_and_stats(bev, events, ctx);
 
 	// Logging functions may set term or enomem too
-	if (ctx->term) {
-		pxy_conn_free(ctx, ctx->term_requestor);
-		return;
-	}
-
 	// EOF eventcb may call readcb possibly causing enomem
-	if (ctx->enomem) {
-		pxy_conn_free(ctx, (bev == ctx->src.bev));
+	if (ctx->term || ctx->enomem) {
+		pxy_conn_free(ctx, ctx->term ? ctx->term_requestor : (bev == ctx->src.bev));
 	}
 }
 
@@ -1494,14 +1460,9 @@ pxy_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 
 	ctx->protoctx->bev_eventcb(bev, events, arg);
 
-	if (ctx->conn->term) {
-		pxy_conn_free(ctx->conn, ctx->conn->term_requestor);
-		return;
-	}
-
 	// EOF eventcb may call readcb possibly causing enomem
-	if (ctx->conn->enomem) {
-		pxy_conn_free(ctx->conn, (bev == ctx->src.bev));
+	if (ctx->conn->term || ctx->conn->enomem) {
+		pxy_conn_free(ctx->conn, ctx->conn->term ? ctx->conn->term_requestor : (bev == ctx->src.bev));
 		return;
 	}
 
@@ -1544,13 +1505,8 @@ pxy_conn_connect(pxy_conn_ctx_t *ctx)
 
 	ctx->protoctx->connectcb(ctx);
 
-	if (ctx->term) {
-		pxy_conn_free(ctx, ctx->term_requestor);
-		return;
-	}
-
-	if (ctx->enomem) {
-		pxy_conn_free(ctx, 1);
+	if (ctx->term || ctx->enomem) {
+		pxy_conn_free(ctx, ctx->term ? ctx->term_requestor : 1);
 	}
 	// @attention Do not do anything else with the ctx after connecting socket, otherwise if pxy_bev_eventcb fires on error, such as due to "No route to host",
 	// the conn is closed and freed up, and we get multithreading issues, e.g. signal 11. We are on the thrmgr thread. So, just return.

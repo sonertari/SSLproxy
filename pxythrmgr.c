@@ -311,6 +311,7 @@ pxy_thrmgr_timer_cb(UNUSED evutil_socket_t fd, UNUSED short what,
 			log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_thrmgr_timer_cb: Delete timed out conn thr=%d, fd=%d, child_fd=%d, at=%lld ct=%lld\n",
 					expired->thr->thridx, expired->fd, expired->child_fd, (long long)(now - expired->atime), (long long)(now - expired->ctime));
 #endif /* DEBUG_PROXY */
+			// @attention Do not call the term function here, free the conn directly
 			pxy_conn_free(expired, 1);
 			ctx->timedout_conns++;
 
