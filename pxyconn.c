@@ -1146,7 +1146,7 @@ pxy_try_close_conn_end(pxy_conn_desc_t *conn_end, pxy_conn_ctx_t *ctx, buffereve
 	return 0;
 }
 
-void
+int
 pxy_connect_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
@@ -1158,6 +1158,8 @@ pxy_connect_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	// @attention Do not try to free the conn here, since the listener cb may not be finished yet, which causes multithreading issues
 	// XXX: Workaround, should find the real cause: BEV_OPT_DEFER_CALLBACKS?
 	ctx->protoctx->bev_eventcb(bev, BEV_EVENT_CONNECTED, ctx);
+
+	return pxy_bev_eventcb_postexec_logging_and_stats(bev, BEV_EVENT_CONNECTED, ctx);
 }
 
 void
@@ -1197,7 +1199,7 @@ pxy_try_disconnect_child(pxy_conn_child_ctx_t *ctx, pxy_conn_desc_t *this,
 	}
 }
 
-void
+int
 pxy_try_consume_last_input(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 	/* if there is data pending in the closed connection,
@@ -1207,11 +1209,15 @@ pxy_try_consume_last_input(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_try_consume_last_input: evbuffer_get_length(inbuf) > 0, terminate conn, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
+		if (pxy_bev_readcb_preexec_logging_and_stats(bev, ctx) == -1) {
+			return -1;
+		}
 		ctx->protoctx->bev_readcb(bev, ctx);
 	}
+	return 0;
 }
 
-void
+int
 pxy_try_consume_last_input_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ctx)
 {
 	/* if there is data pending in the closed connection,
@@ -1221,8 +1227,12 @@ pxy_try_consume_last_input_child(struct bufferevent *bev, pxy_conn_child_ctx_t *
 		log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_try_consume_last_input_child: evbuffer_get_length(inbuf) > 0, terminate conn, child fd=%d, fd=%d\n", ctx->fd, ctx->conn->fd);
 #endif /* DEBUG_PROXY */
 
+		if (pxy_bev_readcb_preexec_logging_and_stats_child(bev, ctx) == -1) {
+			return -1;
+		}
 		ctx->protoctx->bev_readcb(bev, ctx);
 	}
+	return 0;
 }
 
 int
@@ -1237,15 +1247,9 @@ pxy_set_dstaddr(pxy_conn_ctx_t *ctx)
 	return 0;
 }
 
-/*
- * Callback for read events on the up- and downstream connection bufferevents.
- * Called when there is data ready in the input evbuffer.
- */
-void
-pxy_bev_readcb(struct bufferevent *bev, void *arg)
+int
+pxy_bev_readcb_preexec_logging_and_stats(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
-	pxy_conn_ctx_t *ctx = arg;
-
 	if (bev == ctx->src.bev || bev == ctx->dst.bev) {
 		struct evbuffer *inbuf = bufferevent_get_input(bev);
 		size_t inbuf_size = evbuffer_get_length(inbuf);
@@ -1259,9 +1263,24 @@ pxy_bev_readcb(struct bufferevent *bev, void *arg)
 		if (ctx->proto != PROTO_PASSTHROUGH) {
 			// HTTP content logging at this point may record certain headers twice, if we have not seen all header lines yet
 			if (pxy_log_content_inbuf(ctx, inbuf, (bev == ctx->src.bev)) == -1) {
-				goto memout;
+				return -1;
 			}
 		}
+	}
+	return 0;
+}
+
+/*
+ * Callback for read events on the up- and downstream connection bufferevents.
+ * Called when there is data ready in the input evbuffer.
+ */
+void
+pxy_bev_readcb(struct bufferevent *bev, void *arg)
+{
+	pxy_conn_ctx_t *ctx = arg;
+
+	if (pxy_bev_readcb_preexec_logging_and_stats(bev, ctx) == -1) {
+		goto memout;
 	}
 
 	if (!ctx->connected) {
@@ -1284,11 +1303,9 @@ memout:
 	}
 }
 
-void
-pxy_bev_readcb_child(struct bufferevent *bev, void *arg)
+int
+pxy_bev_readcb_preexec_logging_and_stats_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ctx)
 {
-	pxy_conn_child_ctx_t *ctx = arg;
-
 	struct evbuffer *inbuf = bufferevent_get_input(bev);
 	size_t inbuf_size = evbuffer_get_length(inbuf);
 
@@ -1300,8 +1317,19 @@ pxy_bev_readcb_child(struct bufferevent *bev, void *arg)
 
 	if (ctx->proto != PROTO_PASSTHROUGH) {
 		if (pxy_log_content_inbuf((pxy_conn_ctx_t *)ctx, inbuf, (bev == ctx->src.bev)) == -1) {
-			goto memout;
+			return -1;
 		}
+	}
+	return 0;
+}
+
+void
+pxy_bev_readcb_child(struct bufferevent *bev, void *arg)
+{
+	pxy_conn_child_ctx_t *ctx = arg;
+
+	if (pxy_bev_readcb_preexec_logging_and_stats_child(bev, ctx) == -1) {
+		goto memout;
 	}
 
 	if (!ctx->connected) {
@@ -1375,26 +1403,11 @@ pxy_bev_writecb_child(struct bufferevent *bev, void *arg)
 	}
 }
 
-/*
- * Callback for meta events on the up- and downstream connection bufferevents.
- * Called when EOF has been reached, a connection has been made, and on errors.
- */
-void
-pxy_bev_eventcb(struct bufferevent *bev, short events, void *arg)
+int
+pxy_bev_eventcb_postexec_logging_and_stats(struct bufferevent *bev, short events, pxy_conn_ctx_t *ctx)
 {
-	pxy_conn_ctx_t *ctx = arg;
-
-	ctx->atime = time(NULL);
-
-	if (events & BEV_EVENT_ERROR) {
-		log_err_printf("Client-side BEV_EVENT_ERROR\n");
-		ctx->thr->errors++;
-	}
-
-	ctx->protoctx->bev_eventcb(bev, events, arg);
-
 	if (ctx->term || ctx->enomem) {
-		goto out;
+		return -1;
 	}
 
 	if (events & BEV_EVENT_CONNECTED) {
@@ -1405,7 +1418,7 @@ pxy_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 				pxy_log_connect_src(ctx);
 			} else if (ctx->connected) {
 				if (pxy_prepare_logging(ctx) == -1) {
-					goto out;
+					return -1;
 				}
 				// Doesn't log connect if proto is http, http proto does its own connect logging
 				pxy_log_connect_srvdst(ctx);
@@ -1424,8 +1437,29 @@ pxy_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 			}
 		}
 	}
+	return 0;
+}
 
-out:
+/*
+ * Callback for meta events on the up- and downstream connection bufferevents.
+ * Called when EOF has been reached, a connection has been made, and on errors.
+ */
+void
+pxy_bev_eventcb(struct bufferevent *bev, short events, void *arg)
+{
+	pxy_conn_ctx_t *ctx = arg;
+
+	ctx->atime = time(NULL);
+
+	if (events & BEV_EVENT_ERROR) {
+		log_err_printf("Client-side BEV_EVENT_ERROR\n");
+		ctx->thr->errors++;
+	}
+
+	ctx->protoctx->bev_eventcb(bev, events, arg);
+
+	pxy_bev_eventcb_postexec_logging_and_stats(bev, events, ctx);
+
 	// Logging functions may set term or enomem too
 	if (ctx->term) {
 		pxy_conn_free(ctx, ctx->term_requestor);
@@ -1435,6 +1469,14 @@ out:
 	// EOF eventcb may call readcb possibly causing enomem
 	if (ctx->enomem) {
 		pxy_conn_free(ctx, (bev == ctx->src.bev));
+	}
+}
+
+void
+pxy_bev_eventcb_postexec_stats_child(short events, pxy_conn_child_ctx_t *ctx)
+{
+	if (events & BEV_EVENT_CONNECTED) {
+		ctx->conn->thr->max_fd = MAX(ctx->conn->thr->max_fd, MAX(bufferevent_getfd(ctx->src.bev), bufferevent_getfd(ctx->dst.bev)));
 	}
 }
 
@@ -1468,9 +1510,7 @@ pxy_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 		return;
 	}
 
-	if (events & BEV_EVENT_CONNECTED) {
-		ctx->conn->thr->max_fd = MAX(ctx->conn->thr->max_fd, MAX(bufferevent_getfd(ctx->src.bev), bufferevent_getfd(ctx->dst.bev)));
-	}
+	pxy_bev_eventcb_postexec_stats_child(events, ctx);
 }
 
 /*

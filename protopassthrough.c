@@ -192,7 +192,9 @@ protopassthrough_bev_writecb_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx
 #endif /* DEBUG_PROXY */
 
 	if (!ctx->srvdst_connected) {
-		pxy_connect_srvdst(bev, ctx);
+		if (pxy_connect_srvdst(bev, ctx) == -1) {
+			return;
+		}
 	}
 
 	if (ctx->src.closed) {
@@ -277,7 +279,9 @@ protopassthrough_bev_eventcb_eof_src(struct bufferevent *bev, pxy_conn_ctx_t *ct
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protopassthrough_bev_eventcb_eof_src: !other->closed, terminate conn, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
-		pxy_try_consume_last_input(bev, ctx);
+		if (pxy_try_consume_last_input(bev, ctx) == -1) {
+			return;
+		}
 		pxy_try_close_conn_end(&ctx->srvdst, ctx, &prototcp_bufferevent_free_and_close_fd);
 	}
 
@@ -304,7 +308,9 @@ protopassthrough_bev_eventcb_eof_srvdst(struct bufferevent *bev, pxy_conn_ctx_t 
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protopassthrough_bev_eventcb_eof_srvdst: !other->closed, terminate conn, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
-		pxy_try_consume_last_input(bev, ctx);
+		if (pxy_try_consume_last_input(bev, ctx) == -1) {
+			return;
+		}
 		pxy_try_close_conn_end(&ctx->src, ctx, &prototcp_bufferevent_free_and_close_fd);
 	}
 

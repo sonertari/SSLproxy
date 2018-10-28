@@ -321,8 +321,8 @@ int pxy_try_close_conn_end(pxy_conn_desc_t *, pxy_conn_ctx_t *, bufferevent_free
 void pxy_try_disconnect(pxy_conn_ctx_t *, pxy_conn_desc_t *, bufferevent_free_and_close_fd_func_t, pxy_conn_desc_t *, int) NONNULL(1,2,3,4);
 void pxy_try_disconnect_child(pxy_conn_child_ctx_t *, pxy_conn_desc_t *, bufferevent_free_and_close_fd_func_t, pxy_conn_desc_t *) NONNULL(1,2,3,4);
 
-void pxy_try_consume_last_input(struct bufferevent *, pxy_conn_ctx_t *) NONNULL(1,2);
-void pxy_try_consume_last_input_child(struct bufferevent *, pxy_conn_child_ctx_t *) NONNULL(1,2);
+int pxy_try_consume_last_input(struct bufferevent *, pxy_conn_ctx_t *) NONNULL(1,2);
+int pxy_try_consume_last_input_child(struct bufferevent *, pxy_conn_child_ctx_t *) NONNULL(1,2);
 void pxy_discard_inbuf(struct bufferevent *) NONNULL(1);
 
 void pxy_conn_ctx_free(pxy_conn_ctx_t *, int) NONNULL(1);
@@ -331,13 +331,19 @@ void pxy_conn_term(pxy_conn_ctx_t *, int) NONNULL(1);
 void pxy_conn_term_child(pxy_conn_child_ctx_t *) NONNULL(1);
 void pxy_conn_free_children(pxy_conn_ctx_t *) NONNULL(1);
 
-void pxy_connect_srvdst(struct bufferevent *, pxy_conn_ctx_t *) NONNULL(1,2);
+int pxy_connect_srvdst(struct bufferevent *, pxy_conn_ctx_t *) NONNULL(1,2);
 
 int pxy_setup_child_listener(pxy_conn_ctx_t *) NONNULL(1);
+
+int pxy_bev_readcb_preexec_logging_and_stats(struct bufferevent *, pxy_conn_ctx_t *) NONNULL(1,2);
+int pxy_bev_eventcb_postexec_logging_and_stats(struct bufferevent *, short , pxy_conn_ctx_t *) NONNULL(1,3);
 
 void pxy_bev_readcb(struct bufferevent *, void *);
 void pxy_bev_writecb(struct bufferevent *, void *);
 void pxy_bev_eventcb(struct bufferevent *, short, void *);
+
+int pxy_bev_readcb_preexec_logging_and_stats_child(struct bufferevent *, pxy_conn_child_ctx_t *) NONNULL(1,2);
+void pxy_bev_eventcb_postexec_stats_child(short, pxy_conn_child_ctx_t *) NONNULL(2);
 
 void pxy_bev_readcb_child(struct bufferevent *, void *);
 void pxy_bev_writecb_child(struct bufferevent *, void *);

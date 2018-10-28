@@ -563,7 +563,10 @@ protoautossl_bev_eventcb_connected_dst_child(UNUSED struct bufferevent *bev, pxy
 		log_dbg_level_printf(LOG_DBG_MODE_FINER, "protoautossl_bev_eventcb_connected_dst_child: clienthello_found src inbuf len > 0, calling pxy_bev_readcb_child for src, child fd=%d, fd=%d\n", ctx->fd, ctx->conn->fd);
 #endif /* DEBUG_PROXY */
 
-		pxy_bev_readcb_child(ctx->src.bev, ctx);
+		if (pxy_bev_readcb_preexec_logging_and_stats_child(bev, ctx) == -1) {
+			return;
+		}
+		ctx->protoctx->bev_readcb(ctx->src.bev, ctx);
 	}
 }
 
