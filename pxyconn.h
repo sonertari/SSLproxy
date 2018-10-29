@@ -61,7 +61,7 @@ typedef void (*connect_func_t)(pxy_conn_ctx_t *);
 typedef void (*callback_func_t)(struct bufferevent *, void *);
 typedef void (*eventcb_func_t)(struct bufferevent *, short, void *);
 
-typedef void (*bufferevent_free_and_close_fd_func_t)(struct bufferevent *, pxy_conn_ctx_t *);
+typedef void (*bev_free_func_t)(struct bufferevent *, pxy_conn_ctx_t *);
 
 typedef void (*proto_free_func_t)(pxy_conn_ctx_t *);
 
@@ -73,6 +73,7 @@ typedef struct pxy_conn_desc {
 	struct bufferevent *bev;
 	SSL *ssl;
 	unsigned int closed : 1;
+	bev_free_func_t free;
 } pxy_conn_desc_t;
 
 enum conn_type {
@@ -129,8 +130,6 @@ struct proto_ctx {
 	callback_func_t bev_writecb;
 	eventcb_func_t bev_eventcb;
 
-	bufferevent_free_and_close_fd_func_t bufferevent_free_and_close_fd;
-
 	proto_free_func_t proto_free;
 
 	// For protocol specific fields, if any
@@ -145,8 +144,6 @@ struct proto_child_ctx {
 	callback_func_t bev_readcb;
 	callback_func_t bev_writecb;
 	eventcb_func_t bev_eventcb;
-
-	bufferevent_free_and_close_fd_func_t bufferevent_free_and_close_fd;
 
 	child_proto_free_func_t proto_free;
 
@@ -316,10 +313,10 @@ void pxy_try_remove_sslproxy_header(pxy_conn_child_ctx_t *, unsigned char *, siz
 void pxy_try_set_watermark(struct bufferevent *, pxy_conn_ctx_t *, struct bufferevent *) NONNULL(1,2,3);
 void pxy_try_unset_watermark(struct bufferevent *, pxy_conn_ctx_t *, pxy_conn_desc_t *) NONNULL(1,2,3);
 
-int pxy_try_close_conn_end(pxy_conn_desc_t *, pxy_conn_ctx_t *, bufferevent_free_and_close_fd_func_t) NONNULL(1,2,3);
+int pxy_try_close_conn_end(pxy_conn_desc_t *, pxy_conn_ctx_t *) NONNULL(1,2);
 
-void pxy_try_disconnect(pxy_conn_ctx_t *, pxy_conn_desc_t *, bufferevent_free_and_close_fd_func_t, pxy_conn_desc_t *, int) NONNULL(1,2,3,4);
-void pxy_try_disconnect_child(pxy_conn_child_ctx_t *, pxy_conn_desc_t *, bufferevent_free_and_close_fd_func_t, pxy_conn_desc_t *) NONNULL(1,2,3,4);
+void pxy_try_disconnect(pxy_conn_ctx_t *, pxy_conn_desc_t *, pxy_conn_desc_t *, int) NONNULL(1,2,3);
+void pxy_try_disconnect_child(pxy_conn_child_ctx_t *, pxy_conn_desc_t *, pxy_conn_desc_t *) NONNULL(1,2,3);
 
 int pxy_try_consume_last_input(struct bufferevent *, pxy_conn_ctx_t *) NONNULL(1,2);
 int pxy_try_consume_last_input_child(struct bufferevent *, pxy_conn_child_ctx_t *) NONNULL(1,2);

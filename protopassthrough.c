@@ -71,11 +71,10 @@ protopassthrough_engage(pxy_conn_ctx_t *ctx)
 	log_dbg_level_printf(LOG_DBG_MODE_FINE, "protopassthrough_engage: fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
-	// @attention Do not call bufferevent_free_and_close_fd(), otherwise connection stalls due to ssl shutdown
+	// @todo When we call bufferevent_free_and_close_fd(), connection stalls due to ssl shutdown?
 	// We get srvdst writecb while ssl shutdown is still in progress, and srvdst readcb never fires
-	//bufferevent_free_and_close_fd(ctx->srvdst.bev, ctx);
 	SSL_free(ctx->srvdst.ssl);
-	prototcp_bufferevent_free_and_close_fd(ctx->srvdst.bev, ctx);
+	ctx->srvdst.free(ctx->srvdst.bev, ctx);
 	ctx->srvdst.bev = NULL;
 	ctx->srvdst.ssl = NULL;
 	ctx->connected = 0;
@@ -84,7 +83,7 @@ protopassthrough_engage(pxy_conn_ctx_t *ctx)
 	// Close and free dst if open
 	if (!ctx->dst.closed) {
 		ctx->dst.closed = 1;
-		prototcp_bufferevent_free_and_close_fd(ctx->dst.bev, ctx);
+		ctx->dst.free(ctx->dst.bev, ctx);
 		ctx->dst.bev = NULL;
 		ctx->dst_fd = 0;
 	}
@@ -172,7 +171,7 @@ protopassthrough_bev_writecb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 
 	// @attention srvdst.bev may be NULL
 	if (ctx->srvdst.closed) {
-		if (pxy_try_close_conn_end(&ctx->src, ctx, &prototcp_bufferevent_free_and_close_fd)) {
+		if (pxy_try_close_conn_end(&ctx->src, ctx)) {
 #ifdef DEBUG_PROXY
 			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protopassthrough_bev_writecb_src: other->closed, terminate conn, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
@@ -198,7 +197,7 @@ protopassthrough_bev_writecb_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx
 	}
 
 	if (ctx->src.closed) {
-		if (pxy_try_close_conn_end(&ctx->srvdst, ctx, &prototcp_bufferevent_free_and_close_fd) == 1) {
+		if (pxy_try_close_conn_end(&ctx->srvdst, ctx) == 1) {
 #ifdef DEBUG_PROXY
 			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protopassthrough_bev_writecb_srvdst: other->closed, terminate conn, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
@@ -282,10 +281,10 @@ protopassthrough_bev_eventcb_eof_src(struct bufferevent *bev, pxy_conn_ctx_t *ct
 		if (pxy_try_consume_last_input(bev, ctx) == -1) {
 			return;
 		}
-		pxy_try_close_conn_end(&ctx->srvdst, ctx, &prototcp_bufferevent_free_and_close_fd);
+		pxy_try_close_conn_end(&ctx->srvdst, ctx);
 	}
 
-	pxy_try_disconnect(ctx, &ctx->src, &prototcp_bufferevent_free_and_close_fd, &ctx->srvdst, 1);
+	pxy_try_disconnect(ctx, &ctx->src, &ctx->srvdst, 1);
 }
 
 static void NONNULL(1,2)
@@ -311,10 +310,10 @@ protopassthrough_bev_eventcb_eof_srvdst(struct bufferevent *bev, pxy_conn_ctx_t 
 		if (pxy_try_consume_last_input(bev, ctx) == -1) {
 			return;
 		}
-		pxy_try_close_conn_end(&ctx->src, ctx, &prototcp_bufferevent_free_and_close_fd);
+		pxy_try_close_conn_end(&ctx->src, ctx);
 	}
 
-	pxy_try_disconnect(ctx, &ctx->srvdst, &prototcp_bufferevent_free_and_close_fd, &ctx->src, 0);
+	pxy_try_disconnect(ctx, &ctx->srvdst, &ctx->src, 0);
 }
 
 static void NONNULL(1,2)
@@ -328,10 +327,10 @@ protopassthrough_bev_eventcb_error_src(UNUSED struct bufferevent *bev, pxy_conn_
 	if (!ctx->connected) {
 		ctx->srvdst.closed = 1;
 	} else if (!ctx->srvdst.closed) {
-		pxy_try_close_conn_end(&ctx->srvdst, ctx, &prototcp_bufferevent_free_and_close_fd);
+		pxy_try_close_conn_end(&ctx->srvdst, ctx);
 	}
 
-	pxy_try_disconnect(ctx, &ctx->src, &prototcp_bufferevent_free_and_close_fd, &ctx->srvdst, 1);
+	pxy_try_disconnect(ctx, &ctx->src, &ctx->srvdst, 1);
 }
 
 static void NONNULL(1,2)
@@ -345,10 +344,10 @@ protopassthrough_bev_eventcb_error_srvdst(UNUSED struct bufferevent *bev, pxy_co
 	if (!ctx->connected) {
 		ctx->src.closed = 1;
 	} else if (!ctx->src.closed) {
-		pxy_try_close_conn_end(&ctx->src, ctx, &prototcp_bufferevent_free_and_close_fd);
+		pxy_try_close_conn_end(&ctx->src, ctx);
 	}
 
-	pxy_try_disconnect(ctx, &ctx->srvdst, &prototcp_bufferevent_free_and_close_fd, &ctx->src, 0);
+	pxy_try_disconnect(ctx, &ctx->srvdst, &ctx->src, 0);
 }
 
 static void NONNULL(1)
@@ -451,7 +450,6 @@ protopassthrough_setup(pxy_conn_ctx_t *ctx)
 	ctx->protoctx->bev_writecb = protopassthrough_bev_writecb;
 	ctx->protoctx->bev_eventcb = protopassthrough_bev_eventcb;
 
-	ctx->protoctx->bufferevent_free_and_close_fd = prototcp_bufferevent_free_and_close_fd;
 	return PROTO_PASSTHROUGH;
 }
 

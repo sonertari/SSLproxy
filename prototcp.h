@@ -31,7 +31,6 @@
 
 #include "pxyconn.h"
 
-void prototcp_bufferevent_free_and_close_fd(struct bufferevent *, pxy_conn_ctx_t *) NONNULL(1,2);
 void prototcp_fd_readcb(evutil_socket_t, short, void *);
 
 void prototcp_bev_writecb(struct bufferevent *, void *) NONNULL(1);

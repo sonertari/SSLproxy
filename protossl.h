@@ -38,7 +38,6 @@ void protossl_log_ssl_error(struct bufferevent *, pxy_conn_ctx_t *) NONNULL(1,2)
 void protossl_srccert_write(pxy_conn_ctx_t *) NONNULL(1);
 SSL *protossl_dstssl_create(pxy_conn_ctx_t *) NONNULL(1);
 
-void protossl_bufferevent_free_and_close_fd(struct bufferevent *, pxy_conn_ctx_t *) NONNULL(1,2);
 void protossl_free(pxy_conn_ctx_t *) NONNULL(1);
 void protossl_fd_readcb(evutil_socket_t, short, void *);
 void protossl_conn_connect(pxy_conn_ctx_t *) NONNULL(1);

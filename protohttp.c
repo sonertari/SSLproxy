@@ -262,7 +262,7 @@ deny:
 	log_dbg_level_printf(LOG_DBG_MODE_FINER, "protohttp_ocsp_deny: Closing dst, dst fd=%d, fd=%d\n", bufferevent_getfd(ctx->dst.bev), ctx->fd);
 #endif /* DEBUG_PROXY */
 
-	ctx->protoctx->bufferevent_free_and_close_fd(ctx->dst.bev, ctx);
+	ctx->dst.free(ctx->dst.bev, ctx);
 	ctx->dst.bev = NULL;
 	ctx->dst.closed = 1;
 
@@ -848,7 +848,6 @@ protohttps_setup(pxy_conn_ctx_t *ctx)
 	ctx->protoctx->bev_readcb = protohttp_bev_readcb;
 	ctx->protoctx->bev_eventcb = protossl_bev_eventcb;
 
-	ctx->protoctx->bufferevent_free_and_close_fd = protossl_bufferevent_free_and_close_fd;
 	ctx->protoctx->proto_free = protohttps_free;
 
 	ctx->protoctx->arg = malloc(sizeof(protohttp_ctx_t));
@@ -897,7 +896,6 @@ protohttps_setup_child(pxy_conn_child_ctx_t *ctx)
 	ctx->protoctx->bev_readcb = protohttp_bev_readcb_child;
 	ctx->protoctx->bev_eventcb = protossl_bev_eventcb_child;
 
-	ctx->protoctx->bufferevent_free_and_close_fd = protossl_bufferevent_free_and_close_fd;
 	ctx->protoctx->proto_free = protohttp_free_child;
 
 	ctx->protoctx->arg = malloc(sizeof(protohttp_ctx_t));

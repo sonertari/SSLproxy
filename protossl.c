@@ -857,7 +857,7 @@ protossl_bufferevent_setup_child(pxy_conn_child_ctx_t *ctx, evutil_socket_t fd, 
  * Free bufferenvent and close underlying socket properly.
  * For OpenSSL bufferevents, this will shutdown the SSL connection.
  */
-void
+static void
 protossl_bufferevent_free_and_close_fd(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 	evutil_socket_t fd = bufferevent_getfd(bev);
@@ -869,7 +869,7 @@ protossl_bufferevent_free_and_close_fd(struct bufferevent *bev, pxy_conn_ctx_t *
 
 	SSL *ssl = bufferevent_openssl_get_ssl(bev); /* does not inc refc */
 
-	// @todo Check if we need to NULL all cbs?
+	// @todo Do we need to NULL all cbs?
 	// @see https://stackoverflow.com/questions/31688709/knowing-all-callbacks-have-run-with-libevent-and-bufferevent-free
 	//bufferevent_setcb(bev, NULL, NULL, NULL, NULL);
 	bufferevent_free(bev); /* does not free SSL unless the option BEV_OPT_CLOSE_ON_FREE was set */
@@ -1061,6 +1061,7 @@ protossl_setup_srvdst(pxy_conn_ctx_t *ctx)
 		pxy_conn_term(ctx, 1);
 		return -1;
 	}
+	ctx->srvdst.free = protossl_bufferevent_free_and_close_fd;
 	return 0;
 }
 
@@ -1076,6 +1077,7 @@ protossl_setup_srvdst_new_bev_ssl_connecting(pxy_conn_ctx_t *ctx)
 		pxy_conn_term(ctx, 1);
 		return -1;
 	}
+	ctx->srvdst.free = protossl_bufferevent_free_and_close_fd;
 	return 0;
 }
 
@@ -1148,6 +1150,7 @@ protossl_setup_dst_child(pxy_conn_child_ctx_t *ctx)
 		pxy_conn_term(ctx->conn, 1);
 		return -1;
 	}
+	ctx->dst.free = protossl_bufferevent_free_and_close_fd;
 	return 0;
 }
 
@@ -1196,6 +1199,7 @@ protossl_setup_src(pxy_conn_ctx_t *ctx)
 		pxy_conn_term(ctx, 1);
 		return -1;
 	}
+	ctx->src.free = protossl_bufferevent_free_and_close_fd;
 	return 0;
 }
 
@@ -1211,6 +1215,7 @@ protossl_setup_src_new_bev_ssl_accepting(pxy_conn_ctx_t *ctx)
 		pxy_conn_term(ctx, 1);
 		return -1;
 	}
+	ctx->src.free = protossl_bufferevent_free_and_close_fd;
 	return 0;
 }
 
@@ -1226,6 +1231,7 @@ protossl_setup_dst_new_bev_ssl_connecting_child(pxy_conn_child_ctx_t *ctx)
 		pxy_conn_term(ctx->conn, 1);
 		return -1;
 	}
+	ctx->dst.free = protossl_bufferevent_free_and_close_fd;
 	return 0;
 }
 
@@ -1243,7 +1249,7 @@ protossl_close_srvdst(pxy_conn_ctx_t *ctx)
 
 	// @attention When both eventcb and writecb for srvdst are enabled, either eventcb or writecb may get a NULL srvdst bev, causing a crash with signal 10.
 	// So, from this point on, we should check if srvdst is NULL or not.
-	protossl_bufferevent_free_and_close_fd(ctx->srvdst.bev, ctx);
+	ctx->srvdst.free(ctx->srvdst.bev, ctx);
 	ctx->srvdst.bev = NULL;
 	ctx->srvdst.closed = 1;
 }
@@ -1415,7 +1421,6 @@ protossl_setup(pxy_conn_ctx_t *ctx)
 	
 	ctx->protoctx->bev_eventcb = protossl_bev_eventcb;
 
-	ctx->protoctx->bufferevent_free_and_close_fd = protossl_bufferevent_free_and_close_fd;
 	ctx->protoctx->proto_free = protossl_free;
 
 	ctx->sslctx = malloc(sizeof(ssl_ctx_t));
@@ -1437,7 +1442,6 @@ protossl_setup_child(pxy_conn_child_ctx_t *ctx)
 
 	ctx->protoctx->bev_eventcb = protossl_bev_eventcb_child;
 
-	ctx->protoctx->bufferevent_free_and_close_fd = protossl_bufferevent_free_and_close_fd;
 	return PROTO_SSL;
 }
 

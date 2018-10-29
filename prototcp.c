@@ -94,7 +94,7 @@ prototcp_bufferevent_setup_child(pxy_conn_child_ctx_t *ctx, evutil_socket_t fd)
 /*
  * Free bufferenvent and close underlying socket properly.
  */
-void
+static void
 prototcp_bufferevent_free_and_close_fd(struct bufferevent *bev, UNUSED pxy_conn_ctx_t *ctx)
 {
 	evutil_socket_t fd = bufferevent_getfd(bev);
@@ -118,6 +118,7 @@ prototcp_setup_src(pxy_conn_ctx_t *ctx)
 		pxy_conn_term(ctx, 1);
 		return -1;
 	}
+	ctx->src.free = prototcp_bufferevent_free_and_close_fd;
 	return 0;
 }
 
@@ -131,6 +132,7 @@ prototcp_setup_dst(pxy_conn_ctx_t *ctx)
 		pxy_conn_term(ctx, 1);
 		return -1;
 	}
+	ctx->dst.free = prototcp_bufferevent_free_and_close_fd;
 	return 0;
 }
 
@@ -144,6 +146,7 @@ prototcp_setup_srvdst(pxy_conn_ctx_t *ctx)
 		pxy_conn_term(ctx, 1);
 		return -1;
 	}
+	ctx->srvdst.free = prototcp_bufferevent_free_and_close_fd;
 	return 0;
 }
 
@@ -198,6 +201,7 @@ prototcp_setup_src_child(pxy_conn_child_ctx_t *ctx)
 		pxy_conn_term(ctx->conn, 1);
 		return -1;
 	}
+	ctx->src.free = prototcp_bufferevent_free_and_close_fd;
 	return 0;
 }
 
@@ -211,6 +215,7 @@ prototcp_setup_dst_child(pxy_conn_child_ctx_t *ctx)
 		pxy_conn_term(ctx->conn, 1);
 		return -1;
 	}
+	ctx->dst.free = prototcp_bufferevent_free_and_close_fd;
 	return 0;
 }
 
@@ -379,7 +384,7 @@ prototcp_bev_writecb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 #endif /* DEBUG_PROXY */
 
 	if (ctx->dst.closed) {
-		if (pxy_try_close_conn_end(&ctx->src, ctx, ctx->protoctx->bufferevent_free_and_close_fd) == 1) {
+		if (pxy_try_close_conn_end(&ctx->src, ctx) == 1) {
 #ifdef DEBUG_PROXY
 			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_writecb_src: other->closed, terminate conn, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
@@ -421,7 +426,7 @@ prototcp_bev_writecb_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	}
 
 	if (ctx->src.closed) {
-		if (pxy_try_close_conn_end(&ctx->dst, ctx, &prototcp_bufferevent_free_and_close_fd) == 1) {
+		if (pxy_try_close_conn_end(&ctx->dst, ctx) == 1) {
 #ifdef DEBUG_PROXY
 			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_writecb_dst: other->closed, terminate conn, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
@@ -453,7 +458,7 @@ prototcp_bev_writecb_src_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ct
 #endif /* DEBUG_PROXY */
 
 	if (ctx->dst.closed) {
-		if (pxy_try_close_conn_end(&ctx->src, ctx->conn, &prototcp_bufferevent_free_and_close_fd) == 1) {
+		if (pxy_try_close_conn_end(&ctx->src, ctx->conn) == 1) {
 #ifdef DEBUG_PROXY
 			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_writecb_src_child: other->closed, terminate conn, child fd=%d, fd=%d\n", ctx->fd, ctx->conn->fd);
 #endif /* DEBUG_PROXY */
@@ -493,7 +498,7 @@ prototcp_bev_writecb_dst_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ct
 	}
 
 	if (ctx->src.closed) {
-		if (pxy_try_close_conn_end(&ctx->dst, ctx->conn, ctx->protoctx->bufferevent_free_and_close_fd) == 1) {
+		if (pxy_try_close_conn_end(&ctx->dst, ctx->conn) == 1) {
 #ifdef DEBUG_PROXY
 			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_writecb_dst_child: other->closed, terminate conn, child fd=%d, fd=%d\n", ctx->fd, ctx->conn->fd);
 #endif /* DEBUG_PROXY */
@@ -515,7 +520,7 @@ prototcp_close_srvdst(pxy_conn_ctx_t *ctx)
 	// @attention Free the srvdst of the conn asap, we don't need it anymore, but we need its fd
 	// @attention When both eventcb and writecb for srvdst are enabled, either eventcb or writecb may get a NULL srvdst bev, causing a crash with signal 10.
 	// So, from this point on, we should check if srvdst is NULL or not.
-	prototcp_bufferevent_free_and_close_fd(ctx->srvdst.bev, ctx);
+	ctx->srvdst.free(ctx->srvdst.bev, ctx);
 	ctx->srvdst.bev = NULL;
 	ctx->srvdst.closed = 1;
 }
@@ -620,10 +625,10 @@ prototcp_bev_eventcb_eof_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		if (pxy_try_consume_last_input(bev, ctx) == -1) {
 			return;
 		}
-		pxy_try_close_conn_end(&ctx->dst, ctx, &prototcp_bufferevent_free_and_close_fd);
+		pxy_try_close_conn_end(&ctx->dst, ctx);
 	}
 
-	pxy_try_disconnect(ctx, &ctx->src, ctx->protoctx->bufferevent_free_and_close_fd, &ctx->dst, 1);
+	pxy_try_disconnect(ctx, &ctx->src, &ctx->dst, 1);
 }
 
 void
@@ -649,10 +654,10 @@ prototcp_bev_eventcb_eof_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		if (pxy_try_consume_last_input(bev, ctx) == -1) {
 			return;
 		}
-		pxy_try_close_conn_end(&ctx->src, ctx, ctx->protoctx->bufferevent_free_and_close_fd);
+		pxy_try_close_conn_end(&ctx->src, ctx);
 	}
 
-	pxy_try_disconnect(ctx, &ctx->dst, &prototcp_bufferevent_free_and_close_fd, &ctx->src, 0);
+	pxy_try_disconnect(ctx, &ctx->dst, &ctx->src, 0);
 }
 
 void
@@ -676,10 +681,10 @@ prototcp_bev_eventcb_error_src(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *c
 	if (!ctx->connected) {
 		ctx->dst.closed = 1;
 	} else if (!ctx->dst.closed) {
-		pxy_try_close_conn_end(&ctx->dst, ctx, &prototcp_bufferevent_free_and_close_fd);
+		pxy_try_close_conn_end(&ctx->dst, ctx);
 	}
 
-	pxy_try_disconnect(ctx, &ctx->src, ctx->protoctx->bufferevent_free_and_close_fd, &ctx->dst, 1);
+	pxy_try_disconnect(ctx, &ctx->src, &ctx->dst, 1);
 }
 
 void
@@ -692,10 +697,10 @@ prototcp_bev_eventcb_error_dst(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *c
 	if (!ctx->connected) {
 		ctx->src.closed = 1;
 	} else if (!ctx->src.closed) {
-		pxy_try_close_conn_end(&ctx->src, ctx, ctx->protoctx->bufferevent_free_and_close_fd);
+		pxy_try_close_conn_end(&ctx->src, ctx);
 	}
 
-	pxy_try_disconnect(ctx, &ctx->dst, &prototcp_bufferevent_free_and_close_fd, &ctx->src, 0);
+	pxy_try_disconnect(ctx, &ctx->dst, &ctx->src, 0);
 }
 
 void
@@ -759,10 +764,10 @@ prototcp_bev_eventcb_eof_src_child(struct bufferevent *bev, pxy_conn_child_ctx_t
 		if (pxy_try_consume_last_input_child(bev, ctx) == -1) {
 			return;
 		}
-		pxy_try_close_conn_end(&ctx->dst, ctx->conn, ctx->protoctx->bufferevent_free_and_close_fd);
+		pxy_try_close_conn_end(&ctx->dst, ctx->conn);
 	}
 
-	pxy_try_disconnect_child(ctx, &ctx->src, &prototcp_bufferevent_free_and_close_fd, &ctx->dst);
+	pxy_try_disconnect_child(ctx, &ctx->src, &ctx->dst);
 }
 
 void
@@ -789,10 +794,10 @@ prototcp_bev_eventcb_eof_dst_child(struct bufferevent *bev, pxy_conn_child_ctx_t
 		if (pxy_try_consume_last_input_child(bev, ctx) == -1) {
 			return;
 		}
-		pxy_try_close_conn_end(&ctx->src, ctx->conn, &prototcp_bufferevent_free_and_close_fd);
+		pxy_try_close_conn_end(&ctx->src, ctx->conn);
 	}
 
-	pxy_try_disconnect_child(ctx, &ctx->dst, ctx->protoctx->bufferevent_free_and_close_fd, &ctx->src);
+	pxy_try_disconnect_child(ctx, &ctx->dst, &ctx->src);
 }
 
 static void NONNULL(1,2)
@@ -811,10 +816,10 @@ prototcp_bev_eventcb_error_src_child(UNUSED struct bufferevent *bev, pxy_conn_ch
 		/* if the other end is still open and doesn't have data
 		 * to send, close it, otherwise its writecb will close
 		 * it after writing what's left in the output buffer */
-		pxy_try_close_conn_end(&ctx->dst, ctx->conn, ctx->protoctx->bufferevent_free_and_close_fd);
+		pxy_try_close_conn_end(&ctx->dst, ctx->conn);
 	}
 
-	pxy_try_disconnect_child(ctx, &ctx->src, &prototcp_bufferevent_free_and_close_fd, &ctx->dst);
+	pxy_try_disconnect_child(ctx, &ctx->src, &ctx->dst);
 }
 
 void
@@ -833,10 +838,10 @@ prototcp_bev_eventcb_error_dst_child(UNUSED struct bufferevent *bev, pxy_conn_ch
 		/* if the other end is still open and doesn't have data
 		 * to send, close it, otherwise its writecb will close
 		 * it after writing what's left in the output buffer */
-		pxy_try_close_conn_end(&ctx->src, ctx->conn, &prototcp_bufferevent_free_and_close_fd);
+		pxy_try_close_conn_end(&ctx->src, ctx->conn);
 	}
 
-	pxy_try_disconnect_child(ctx, &ctx->dst, ctx->protoctx->bufferevent_free_and_close_fd, &ctx->src);
+	pxy_try_disconnect_child(ctx, &ctx->dst, &ctx->src);
 }
 
 void
@@ -1000,7 +1005,6 @@ prototcp_setup(pxy_conn_ctx_t *ctx)
 	ctx->protoctx->bev_writecb = prototcp_bev_writecb;
 	ctx->protoctx->bev_eventcb = prototcp_bev_eventcb;
 
-	ctx->protoctx->bufferevent_free_and_close_fd = prototcp_bufferevent_free_and_close_fd;
 	return PROTO_TCP;
 }
 
@@ -1014,7 +1018,6 @@ prototcp_setup_child(pxy_conn_child_ctx_t *ctx)
 	ctx->protoctx->bev_writecb = prototcp_bev_writecb_child;
 	ctx->protoctx->bev_eventcb = prototcp_bev_eventcb_child;
 
-	ctx->protoctx->bufferevent_free_and_close_fd = prototcp_bufferevent_free_and_close_fd;
 	return PROTO_TCP;
 }
 

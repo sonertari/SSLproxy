@@ -110,34 +110,6 @@ protoautossl_peek_and_upgrade(pxy_conn_ctx_t *ctx)
 	return 0;
 }
 
-static void NONNULL(1,2)
-protoautossl_bufferevent_free_and_close_fd(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
-{
-	evutil_socket_t fd = bufferevent_getfd(bev);
-
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINER, "protoautossl_bufferevent_free_and_close_fd: in=%zu, out=%zu, fd=%d\n",
-			evbuffer_get_length(bufferevent_get_input(bev)), evbuffer_get_length(bufferevent_get_output(bev)), fd);
-#endif /* DEBUG_PROXY */
-
-	SSL *ssl = NULL;
-
-	protoautossl_ctx_t *autossl_ctx = ctx->protoctx->arg;
-	if (autossl_ctx->clienthello_found) {
-		ssl = bufferevent_openssl_get_ssl(bev); /* does not inc refc */
-	}
-
-	// @todo Check if we need to NULL all cbs?
-	// @see https://stackoverflow.com/questions/31688709/knowing-all-callbacks-have-run-with-libevent-and-bufferevent-free
-	//bufferevent_setcb(bev, NULL, NULL, NULL, NULL);
-	bufferevent_free(bev); /* does not free SSL unless the option BEV_OPT_CLOSE_ON_FREE was set */
-	if (ssl) {
-		pxy_ssl_shutdown(ctx->opts, ctx->evbase, ssl, fd);
-	} else {
-		evutil_closesocket(fd);
-	}
-}
-
 static void NONNULL(1)
 protoautossl_conn_connect(pxy_conn_ctx_t *ctx)
 {
@@ -332,7 +304,7 @@ protoautossl_close_srvdst(pxy_conn_ctx_t *ctx)
 
 	// @attention When both eventcb and writecb for srvdst are enabled, either eventcb or writecb may get a NULL srvdst bev, causing a crash with signal 10.
 	// So, from this point on, we should check if srvdst is NULL or not.
-	ctx->protoctx->bufferevent_free_and_close_fd(ctx->srvdst.bev, ctx);
+	ctx->srvdst.free(ctx->srvdst.bev, ctx);
 	ctx->srvdst.bev = NULL;
 	ctx->srvdst.closed = 1;
 }
@@ -702,7 +674,6 @@ protoautossl_setup(pxy_conn_ctx_t *ctx)
 	ctx->protoctx->bev_writecb = prototcp_bev_writecb;
 	ctx->protoctx->bev_eventcb = protoautossl_bev_eventcb;
 
-	ctx->protoctx->bufferevent_free_and_close_fd = protoautossl_bufferevent_free_and_close_fd;
 	ctx->protoctx->proto_free = protoautossl_free;
 
 	ctx->protoctx->arg = malloc(sizeof(protoautossl_ctx_t));
@@ -735,7 +706,6 @@ protoautossl_setup_child(pxy_conn_child_ctx_t *ctx)
 	ctx->protoctx->bev_writecb = prototcp_bev_writecb_child;
 	ctx->protoctx->bev_eventcb = protoautossl_bev_eventcb_child;
 
-	ctx->protoctx->bufferevent_free_and_close_fd = protoautossl_bufferevent_free_and_close_fd;
 	return PROTO_AUTOSSL;
 }
 

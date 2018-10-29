@@ -333,16 +333,14 @@ pxy_conn_free_child(pxy_conn_child_ctx_t *ctx)
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_free_child: ENTER, child fd=%d, fd=%d\n", ctx->fd, ctx->conn->fd);
 #endif /* DEBUG_PROXY */
 
-	pxy_conn_desc_t *dst = &ctx->dst;
-	if (dst->bev) {
-		ctx->protoctx->bufferevent_free_and_close_fd(dst->bev, ctx->conn);
-		dst->bev = NULL;
+	if (ctx->dst.bev) {
+		ctx->dst.free(ctx->dst.bev, ctx->conn);
+		ctx->dst.bev = NULL;
 	}
 
-	pxy_conn_desc_t *src = &ctx->src;
-	if (src->bev) {
-		prototcp_bufferevent_free_and_close_fd(src->bev, ctx->conn);
-		src->bev = NULL;
+	if (ctx->src.bev) {
+		ctx->src.free(ctx->src.bev, ctx->conn);
+		ctx->src.bev = NULL;
 	}
 
 	pxy_conn_remove_child(ctx, &ctx->conn->children);
@@ -441,11 +439,10 @@ pxy_conn_free(pxy_conn_ctx_t *ctx, int by_requestor)
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_free: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
-	pxy_conn_desc_t *src = &ctx->src;
-	if (!src->closed) {
-		if (src->bev) {
-			ctx->protoctx->bufferevent_free_and_close_fd(src->bev, ctx);
-			src->bev = NULL;
+	if (!ctx->src.closed) {
+		if (ctx->src.bev) {
+			ctx->src.free(ctx->src.bev, ctx);
+			ctx->src.bev = NULL;
 		} else {
 #ifdef DEBUG_PROXY
 			log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_conn_free: evutil_closesocket on NULL src->bev, fd=%d\n", ctx->fd);
@@ -456,16 +453,14 @@ pxy_conn_free(pxy_conn_ctx_t *ctx, int by_requestor)
 		}
 	}
 
-	pxy_conn_desc_t *srvdst = &ctx->srvdst;
-	if (srvdst->bev) {
-		ctx->protoctx->bufferevent_free_and_close_fd(srvdst->bev, ctx);
-		srvdst->bev = NULL;
+	if (ctx->srvdst.bev) {
+		ctx->srvdst.free(ctx->srvdst.bev, ctx);
+		ctx->srvdst.bev = NULL;
 	}
 
-	pxy_conn_desc_t *dst = &ctx->dst;
-	if (dst->bev) {
-		prototcp_bufferevent_free_and_close_fd(dst->bev, ctx);
-		dst->bev = NULL;
+	if (ctx->dst.bev) {
+		ctx->dst.free(ctx->dst.bev, ctx);
+		ctx->dst.bev = NULL;
 	}
 
 	pxy_conn_free_children(ctx);
@@ -1123,7 +1118,7 @@ pxy_setup_child_listener(pxy_conn_ctx_t *ctx)
 }
 
 int
-pxy_try_close_conn_end(pxy_conn_desc_t *conn_end, pxy_conn_ctx_t *ctx, bufferevent_free_and_close_fd_func_t free_and_close_fd_func)
+pxy_try_close_conn_end(pxy_conn_desc_t *conn_end, pxy_conn_ctx_t *ctx)
 {
 	/* if the other end is still open and doesn't have data
 	 * to send, close it, otherwise its writecb will close
@@ -1133,7 +1128,7 @@ pxy_try_close_conn_end(pxy_conn_desc_t *conn_end, pxy_conn_ctx_t *ctx, buffereve
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_try_close_conn_end: evbuffer_get_length(outbuf) == 0, terminate conn, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
-		free_and_close_fd_func(conn_end->bev, ctx);
+		conn_end->free(conn_end->bev, ctx);
 		conn_end->bev = NULL;
 		conn_end->closed = 1;
 		return 1;
@@ -1158,12 +1153,11 @@ pxy_connect_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 }
 
 void
-pxy_try_disconnect(pxy_conn_ctx_t *ctx, pxy_conn_desc_t *this,
-		bufferevent_free_and_close_fd_func_t this_free_and_close_fd_func, pxy_conn_desc_t *other, int is_requestor)
+pxy_try_disconnect(pxy_conn_ctx_t *ctx, pxy_conn_desc_t *this, pxy_conn_desc_t *other, int is_requestor)
 {
 	// @attention srvdst should never reach here unless in passthrough mode, its bev may be NULL
 	this->closed = 1;
-	this_free_and_close_fd_func(this->bev, ctx);
+	this->free(this->bev, ctx);
 	this->bev = NULL;
 	if (other->closed) {
 #ifdef DEBUG_PROXY
@@ -1177,11 +1171,10 @@ pxy_try_disconnect(pxy_conn_ctx_t *ctx, pxy_conn_desc_t *this,
 }
 
 void
-pxy_try_disconnect_child(pxy_conn_child_ctx_t *ctx, pxy_conn_desc_t *this,
-		bufferevent_free_and_close_fd_func_t this_free_and_close_fd_func, pxy_conn_desc_t *other)
+pxy_try_disconnect_child(pxy_conn_child_ctx_t *ctx, pxy_conn_desc_t *this, pxy_conn_desc_t *other)
 {
 	this->closed = 1;
-	this_free_and_close_fd_func(this->bev, ctx->conn);
+	this->free(this->bev, ctx->conn);
 	this->bev = NULL;
 	if (other->closed) {
 #ifdef DEBUG_PROXY
