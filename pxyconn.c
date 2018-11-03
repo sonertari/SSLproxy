@@ -776,7 +776,11 @@ pxy_log_dbg_disconnect_child(pxy_conn_child_ctx_t *ctx)
 	}
 }
 
-#if defined(__linux__) || defined(__APPLE__)
+#ifdef __APPLE__
+#define getdtablecount() 0
+#endif /* __APPLE__ */
+
+#ifdef __linux__
 /*
  * Copied from:
  * https://github.com/tmux/tmux/blob/master/compat/getdtablecount.c
@@ -811,7 +815,7 @@ getdtablecount()
 	globfree(&g);
 	return n;
 }
-#endif /* defined(__linux__) || defined(__APPLE__) */
+#endif /* __linux__ */
 
 unsigned char *
 pxy_malloc_packet(size_t sz, pxy_conn_ctx_t *ctx)
