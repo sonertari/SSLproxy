@@ -61,7 +61,7 @@ extern logger_t *masterkey_log;
 #define log_masterkey_print_free(s) \
         logger_print_freebuf(masterkey_log, NULL, 0, (s))
 #define log_masterkey_write_free(buf, sz) \
-        logger_write_freebuf(masterkey_log, 0, NULL, 0, (buf), (sz))
+        logger_write_freebuf(masterkey_log, NULL, 0, (buf), (sz))
 
 extern logger_t *connect_log;
 #define log_connect_printf(fmt, ...) \
@@ -73,17 +73,28 @@ extern logger_t *connect_log;
 #define log_connect_print_free(s) \
         logger_print_freebuf(connect_log, NULL, 0, (s))
 #define log_connect_write_free(buf, sz) \
-        logger_write_freebuf(connect_log, 0, NULL, 0, (buf), (sz))
+        logger_write_freebuf(connect_log, NULL, 0, (buf), (sz))
 
 int log_stats(const char *);
 int log_conn(const char *);
 
 typedef struct log_content_ctx log_content_ctx_t;
-int log_content_open(log_content_ctx_t **, opts_t *, char *, char *, char *,
-                     char *, char *, char *, char *) NONNULL(1,2,3) WUNRES;
+struct log_content_file_ctx;
+struct log_content_pcap_ctx;
+struct log_content_mirror_ctx;
+struct log_content_ctx {
+	struct log_content_file_ctx *file;
+	struct log_content_pcap_ctx *pcap;
+	struct log_content_mirror_ctx *mirror;
+};
+int log_content_open(log_content_ctx_t *, opts_t *,
+                     const struct sockaddr *, socklen_t,
+                     const struct sockaddr *, socklen_t,
+                     char *, char *, char *, char *,
+                     char *, char *, char *) NONNULL(1,2,3) WUNRES;
 int log_content_submit(log_content_ctx_t *, logbuf_t *, int)
                        NONNULL(1,2) WUNRES;
-int log_content_close(log_content_ctx_t **, int) NONNULL(1) WUNRES;
+int log_content_close(log_content_ctx_t *, int) NONNULL(1) WUNRES;
 int log_content_split_pathspec(const char *, char **,
                                char **) NONNULL(1,2,3) WUNRES;
 
@@ -91,7 +102,7 @@ int log_cert_submit(const char *, X509 *) NONNULL(1,2) WUNRES;
 
 int log_preinit(opts_t *) NONNULL(1) WUNRES;
 void log_preinit_undo(void);
-int log_init(opts_t *, proxy_ctx_t *, int, int) NONNULL(1,2) WUNRES;
+int log_init(opts_t *, proxy_ctx_t *, int[3]) NONNULL(1,2) WUNRES;
 void log_fini(void);
 int log_reopen(void) WUNRES;
 void log_exceptcb(void);

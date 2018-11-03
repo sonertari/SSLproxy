@@ -53,10 +53,13 @@
 #include <getopt.h>
 #endif /* !__BSD__ */
 
-#include <event2/event.h>
-
 #include <openssl/ssl.h>
 #include <openssl/x509.h>
+#include <event2/event.h>
+#ifndef WITHOUT_MIRROR
+#include <libnet.h>
+#include <pcap.h>
+#endif /* !WITHOUT_MIRROR */
 
 #if __APPLE__
 #undef daemon
@@ -115,6 +118,22 @@ main_version(void)
 	ssl_openssl_version();
 	fprintf(stderr, "compiled against libevent %s\n", LIBEVENT_VERSION);
 	fprintf(stderr, "rtlinked against libevent %s\n", event_get_version());
+#ifndef WITHOUT_MIRROR
+	fprintf(stderr, "compiled against libnet %s\n", LIBNET_VERSION);
+#ifndef __OpenBSD__
+	const char *lnv = libnet_version();
+	if (!strncmp(lnv, "libnet version ", 15))
+		lnv += 15;
+	fprintf(stderr, "rtlinked against libnet %s\n", lnv);
+#else /* __OpenBSD__ */
+	fprintf(stderr, "rtlinked against libnet n/a\n");
+#endif /* __OpenBSD__ */
+	fprintf(stderr, "compiled against libpcap n/a\n");
+	const char *lpv = pcap_lib_version();
+	if (!strncmp(lpv, "libpcap version ", 16))
+		lpv += 16;
+	fprintf(stderr, "rtlinked against libpcap %s\n", lpv);
+#endif /* !WITHOUT_MIRROR */
 	fprintf(stderr, "%d CPU cores detected\n", sys_get_cpu_cores());
 }
 
@@ -125,7 +144,7 @@ static void
 main_usage(void)
 {
 	const char *dflt, *warn;
-	const char *usagefmt =
+	const char *usagefmt1 =
 "Usage: %s [-D] [-f conffile] [-o opt=val] [options...] [proxyspecs...]\n"
 "  -f conffile use conffile to load configuration from\n"
 "  -o opt=val  override conffile option opt with value val\n"
@@ -177,7 +196,7 @@ main_usage(void)
 "  -j jaildir  chroot() to jaildir (impacts sni proxyspecs, see manual page)\n"
 "  -p pidfile  write pid to pidfile (default: no pid file)\n"
 "  -l logfile  connect log: log one line summary per connection to logfile\n"
-"  -I          enable connection statistics logging\n"
+"  -J          enable connection statistics logging\n"
 "  -L logfile  content log: full data to file or named pipe (excludes -S/-F)\n"
 "  -S logdir   content log: full data to separate files in dir (excludes -L/-F)\n"
 "  -F pathspec content log: full data to sep files with %% subst (excl. -L/-S):\n"
@@ -197,17 +216,34 @@ main_usage(void)
 "              %%%% - literal '%%'\n"
 #ifdef HAVE_LOCAL_PROCINFO
 "      e.g.    \"/var/log/sslproxy/%%X/%%u-%%s-%%d-%%T.log\"\n"
+#else /* !HAVE_LOCAL_PROCINFO */
+"      e.g.    \"/var/log/sslproxy/%%T-%%s-%%d.log\"\n"
+#endif /* HAVE_LOCAL_PROCINFO */
+"  -X pcapfile pcap log: packets to pcapfile (excludes -Y/-y)\n"
+"  -Y pcapdir  pcap log: packets to separate files in dir (excludes -X/-y)\n"
+"  -y pathspec pcap log: packets to sep files with %% subst (excl. -X/-Y):\n"
+"              see option -F for pathspec format\n"
+#ifndef WITHOUT_MIRROR
+"  -I if       mirror packets to interface\n"
+"  -T addr     mirror packets to target address (used with -I)\n"
+#define OPT_I "I:"
+#define OPT_T "T:"
+#else /* WITHOUT_MIRROR */
+#define OPT_I 
+#define OPT_T 
+#endif /* WITHOUT_MIRROR */
+"  -M logfile  log master keys to logfile in SSLKEYLOGFILE format\n"
+#ifdef HAVE_LOCAL_PROCINFO
 "  -i          look up local process owning each connection for logging\n"
 #define OPT_i "i"
 #else /* !HAVE_LOCAL_PROCINFO */
-"      e.g.    \"/var/log/sslproxy/%%T-%%s-%%d.log\"\n"
 #define OPT_i 
 #endif /* HAVE_LOCAL_PROCINFO */
-"  -M logfile  log master keys to logfile in SSLKEYLOGFILE format\n"
 "  -d          daemon mode: run in background, log error messages to syslog\n"
 "  -D          debug mode: run in foreground, log debug messages on stderr\n"
 "  -V          print version information and exit\n"
-"  -h          print usage information and exit\n"
+"  -h          print usage information and exit\n";
+	const char *usagefmt2 =
 "  proxyspec = type listenaddr+port  \"up:\"port\n"
 "                [natengine|targetaddr+port|\"sni\"+port]\n"
 "      e.g.    http 0.0.0.0 8080 up:8080 roe.ch 80    # http/4; static\n"
@@ -233,7 +269,8 @@ main_usage(void)
 		warn = "";
 	}
 
-	fprintf(stderr, usagefmt, build_pkgname, dflt, build_pkgname, warn);
+	fprintf(stderr, usagefmt1, build_pkgname, dflt);
+	fprintf(stderr, usagefmt2, build_pkgname, warn);
 }
 
 /*
@@ -313,9 +350,10 @@ main(int argc, char *argv[])
 		natengine = NULL;
 	}
 
-	while ((ch = getopt(argc, argv, OPT_g OPT_G OPT_Z OPT_i OPT_x
+	while ((ch = getopt(argc, argv,
+	                    OPT_g OPT_G OPT_Z OPT_i OPT_x OPT_T OPT_I
 	                    "k:c:C:K:t:OPa:b:s:r:R:e:Eu:m:j:p:l:L:S:F:M:"
-	                    "dD::VhW:w:q:f:o:I")) != -1) {
+	                    "dD::VhW:w:q:f:o:X:Y:y:J")) != -1) {
 		switch (ch) {
 			case 'f':
 				if (opts->conffile)
@@ -326,7 +364,9 @@ main(int argc, char *argv[])
 				if (load_conffile(opts, argv0, &natengine) == -1) {
 					exit(EXIT_FAILURE);
 				}
+#ifdef DEBUG_OPTS
 				fprintf(stderr, "Conf file: %s\n", opts->conffile);
+#endif /* DEBUG_OPTS */
 				break;
 			case 'o':
 				if (opts_set_option(opts, argv0, optarg, &natengine) == -1) {
@@ -418,7 +458,7 @@ main(int argc, char *argv[])
 			case 'l':
 				opts_set_connectlog(opts, argv0, optarg);
 				break;
-			case 'I':
+			case 'J':
 				opts_set_statslog(opts);
 				break;
 			case 'L':
@@ -430,6 +470,23 @@ main(int argc, char *argv[])
 			case 'F':
 				opts_set_contentlogpathspec(opts, argv0, optarg);
 				break;
+			case 'X':
+				opts_set_pcaplog(opts, argv0, optarg);
+				break;
+			case 'Y':
+				opts_set_pcaplogdir(opts, argv0, optarg);
+				break;
+			case 'y':
+				opts_set_pcaplogpathspec(opts, argv0, optarg);
+				break;
+#ifndef WITHOUT_MIRROR
+			case 'I':
+				opts_set_mirrorif(opts, argv0, optarg);
+				break;
+			case 'T':
+				opts_set_mirrortarget(opts, argv0, optarg);
+				break;
+#endif /* !WITHOUT_MIRROR */
 			case 'W':
 				opts_set_certgendir_writeall(opts, argv0, optarg);
 				break;
@@ -469,13 +526,23 @@ main(int argc, char *argv[])
 	argc -= optind;
 	argv += optind;
 	proxyspec_parse(&argc, &argv, natengine, &opts->spec);
-	
+
 	/* usage checks before defaults */
 	if (opts->detach && OPTS_DEBUG(opts)) {
 		fprintf(stderr, "%s: -d and -D are mutually exclusive.\n",
 		                argv0);
 		exit(EXIT_FAILURE);
 	}
+#ifndef WITHOUT_MIRROR
+	if (opts->mirrortarget && !opts->mirrorif) {
+		fprintf(stderr, "%s: -T depends on -I.\n", argv0);
+		exit(EXIT_FAILURE);
+	}
+	if (opts->mirrorif && !opts->mirrortarget) {
+		fprintf(stderr, "%s: -I depends on -T.\n", argv0);
+		exit(EXIT_FAILURE);
+	}
+#endif /* !WITHOUT_MIRROR */
 	if (!opts->spec) {
 		fprintf(stderr, "%s: no proxyspec specified.\n", argv0);
 		exit(EXIT_FAILURE);
@@ -572,11 +639,59 @@ main(int argc, char *argv[])
 		}
 #endif /* __APPLE__ */
 	}
+	if (opts->dropuser && sys_isgeteuid(opts->dropuser)) {
+		if (opts->dropgroup) {
+			fprintf(stderr, "%s: cannot use -m when -u is "
+			        "current user\n", argv0);
+			exit(EXIT_FAILURE);
+		}
+		free(opts->dropuser);
+		opts->dropuser = NULL;
+	}
 
 	/* usage checks after defaults */
 	if (opts->dropgroup && !opts->dropuser) {
-		fprintf(stderr, "%s: -m depends on -u.\n", argv0);
+		fprintf(stderr, "%s: -m depends on -u\n", argv0);
 		exit(EXIT_FAILURE);
+	}
+
+	/* Warn about options that require per-connection privileged operations
+	 * to be executed through privsep, but only if dropuser is set and is
+	 * not root, because privsep will fastpath in that situation, skipping
+	 * the latency-incurring overhead. */
+	int privsep_warn = 0;
+	if (opts->dropuser) {
+		if (opts->contentlog_isdir) {
+			log_dbg_printf("| Warning: -F requires a privileged "
+			               "operation for each connection!\n");
+			privsep_warn = 1;
+		}
+		if (opts->contentlog_isspec) {
+			log_dbg_printf("| Warning: -S requires a privileged "
+			               "operation for each connection!\n");
+			privsep_warn = 1;
+		}
+		if (opts->pcaplog_isdir) {
+			log_dbg_printf("| Warning: -Y requires a privileged "
+			               "operation for each connection!\n");
+			privsep_warn = 1;
+		}
+		if (opts->pcaplog_isspec) {
+			log_dbg_printf("| Warning: -y requires a privileged "
+			               "operation for each connection!\n");
+			privsep_warn = 1;
+		}
+		if (opts->certgendir) {
+			log_dbg_printf("| Warning: -w/-W require a privileged "
+			               "op for each connection!\n");
+			privsep_warn = 1;
+		}
+	}
+	if (privsep_warn) {
+		log_dbg_printf("| Privileged operations require communication "
+		               "between parent and child process\n"
+		               "| and will negatively impact latency and "
+		               "performance on each connection.\n");
 	}
 
 	/* debug log, part 1 */
@@ -586,15 +701,7 @@ main(int argc, char *argv[])
 
 	/* generate leaf key */
 	if (opts_has_ssl_spec(opts) && opts->cakey && !opts->key) {
-		/*
-		 * While browsers still generally accept it, use a leaf key
-		 * size of 1024 bit for leaf keys.  When browsers start to
-		 * sunset 1024 bit RSA in leaf keys, we will need to make this
-		 * value bigger, and/or configurable.  Until then, users who
-		 * want a different size can always use their own pre-generated
-		 * leaf key instead of generating one.
-		 */
-		opts->key = ssl_key_genrsa(1024);
+		opts->key = ssl_key_genrsa(DFLT_LEAFKEY_RSABITS);
 		if (!opts->key) {
 			fprintf(stderr, "%s: error generating RSA key:\n",
 			                argv0);
@@ -722,13 +829,15 @@ main(int argc, char *argv[])
 	descriptor_table_size = getdtablesize();
 
 	/* Fork into parent monitor process and (potentially unprivileged)
-	 * child process doing the actual work.  We request 3 privsep client
-	 * sockets: content logger thread, cert writer thread, and the child
-	 * process main thread (main proxy thread) */
-	int clisock[3];
-	if (privsep_fork(opts, clisock, 3) != 0) {
+	 * child process doing the actual work.  We request 6 privsep client
+	 * sockets: five logger threads, and the child process main thread,
+	 * which will become the main proxy thread.  First slot is main thread,
+	 * remaining slots are passed down to log subsystem. */
+	int clisock[6];
+	if (privsep_fork(opts, clisock,
+	                 sizeof(clisock)/sizeof(clisock[0])) != 0) {
 		/* parent has exited the monitor loop after waiting for child,
-		 * or an error occured */
+		 * or an error occurred */
 		if (opts->pidfile) {
 			sys_pidf_close(pidfd, opts->pidfile);
 		}
@@ -764,7 +873,7 @@ main(int argc, char *argv[])
 	}
 
 	/* Post-privdrop/chroot/detach initialization, thread spawning */
-	if (log_init(opts, proxy, clisock[1], clisock[2]) == -1) {
+	if (log_init(opts, proxy, &clisock[1]) == -1) {
 		fprintf(stderr, "%s: failed to init log facility: %s\n",
 		                argv0, strerror(errno));
 		goto out_log_failed;

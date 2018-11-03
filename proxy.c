@@ -208,9 +208,9 @@ proxy_signal_cb(evutil_socket_t fd, UNUSED short what, void *arg)
 	case SIGTERM:
 	case SIGQUIT:
 	case SIGINT:
-	case SIGHUP:
 		proxy_loopbreak(ctx);
 		break;
+	case SIGHUP:
 	case SIGUSR1:
 		if (log_reopen() == -1) {
 			log_err_level_printf(LOG_WARNING, "Failed to reopen logs\n");
@@ -376,7 +376,7 @@ leave0:
 }
 
 /*
- * Run the event loop.  Returns when the event loop is cancelled by a signal
+ * Run the event loop.  Returns when the event loop is canceled by a signal
  * or on failure.
  */
 void

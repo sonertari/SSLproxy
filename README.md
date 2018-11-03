@@ -14,14 +14,14 @@ as UTM services, for deep SSL inspection. See [this
 presentation](https://drive.google.com/open?id=12YaGIGs0-xfpqMNAY3rzUbIyed-Tso8W) 
 for a summary.
 
-SSLproxy is designed to transparently terminate connections that are redirected 
-to it using a network address translation engine.  SSLproxy then terminates 
-SSL/TLS and initiates a new SSL/TLS connection to the original destination 
-address. Packets received on the client side are decrypted and sent to the 
-program listening on a port given in the proxy specification. SSLproxy inserts 
-in the first packet the address and port it is expecting to receive the packets 
-back from the program. Upon receiving the packets back, SSLproxy re-encrypts 
-and sends them to their original destination. The return traffic follows the 
+SSLproxy is designed to transparently terminate connections that are redirected
+to it using a network address translation engine.  SSLproxy then terminates
+SSL/TLS and initiates a new SSL/TLS connection to the original destination
+address. Packets received on the client side are decrypted and sent to the
+program listening on a port given in the proxy specification. SSLproxy inserts
+in the first packet the address and port it is expecting to receive the packets
+back from the program. Upon receiving the packets back, SSLproxy re-encrypts
+and sends them to their original destination. The return traffic follows the
 same path back to the client in reverse order.
 
 ![Mode of Operation 
@@ -77,18 +77,18 @@ Indication (SNI) and is able to work with RSA, DSA and ECDSA keys and DHE and
 ECDHE cipher suites.  Depending on the version of OpenSSL, SSLproxy supports 
 SSL 3.0, TLS 1.0, TLS 1.1 and TLS 1.2, and optionally SSL 2.0 as well.
 
-For SSL and HTTPS connections, SSLproxy generates and signs forged X509v3 
-certificates on-the-fly, mimicking the original server certificate's subject 
-DN, subjectAltName extension and other characteristics.  SSLproxy has the 
-ability to use existing certificates of which the private key is available, 
-instead of generating forged ones.  SSLproxy supports NULL-prefix CN 
-certificates but otherwise does not implement exploits against specific 
+For SSL and HTTPS connections, SSLproxy generates and signs forged X509v3
+certificates on-the-fly, mimicking the original server certificate's subject
+DN, subjectAltName extension and other characteristics.  SSLproxy has the
+ability to use existing certificates of which the private key is available,
+instead of generating forged ones.  SSLproxy supports NULL-prefix CN
+certificates but otherwise does not implement exploits against specific
 certificate verification vulnerabilities in SSL/TLS stacks.
 
-SSLproxy implements a number of defenses against mechanisms which would 
-normally prevent MitM attacks or make them more difficult.  SSLproxy can deny 
-OCSP requests in a generic way.  For HTTP and HTTPS connections, SSLproxy 
-mangles headers to prevent server-instructed public key pinning (HPKP), avoid 
+SSLproxy implements a number of defences against mechanisms which would
+normally prevent MitM attacks or make them more difficult.  SSLproxy can deny
+OCSP requests in a generic way.  For HTTP and HTTPS connections, SSLproxy
+mangles headers to prevent server-instructed public key pinning (HPKP), avoid
 strict transport security restrictions (HSTS), avoid Certificate Transparency
 enforcement (Expect-CT) and prevent switching to QUIC/SPDY, HTTP/2 or
 WebSockets (Upgrade, Alternate Protocols).  HTTP compression, encodings and
@@ -99,12 +99,18 @@ usage. Accordingly, connections are closed if they remain idle for a certain
 period of time. The default timeout is 120 seconds, which can be changed in a 
 configuration file.
 
-SSLproxy verifies upstream certificates by default. If the verification fails, the 
-connection is terminated immediately. This is in contrast to SSLsplit, because 
-in order to maximize the chances that a connection can be successfully split, 
-SSLsplit accepts all certificates including self-signed ones. See [The Risks of 
-SSL Inspection](https://insights.sei.cmu.edu/cert/2015/03/the-risks-of-ssl-inspection.html)
+SSLproxy verifies upstream certificates by default. If the verification fails,
+the connection is terminated immediately. This is in contrast to SSLsplit,
+because in order to maximize the chances that a connection can be successfully
+split, SSLsplit accepts all certificates by default, including self-signed
+ones. See [The Risks of SSL Inspection]
+(https://insights.sei.cmu.edu/cert/2015/03/the-risks-of-ssl-inspection.html)
 for the reasons of this difference.
+
+Logging options include traditional SSLproxy connect and content log files as
+well as PCAP files and mirroring decrypted traffic to a network interface.
+Additionally, certificates, master secrets and local process information can be
+logged.
 
 As SSLproxy is based on SSLsplit, this is a modified SSLsplit README file.
 See the manual page sslproxy(1) for details on using SSLproxy and setting up
@@ -113,10 +119,11 @@ the various NAT engines.
 
 ## Requirements
 
-SSLproxy depends on the OpenSSL and libevent 2.x libraries.
-The build depends on GNU make and a POSIX.2 environment in `PATH`.
-If available, pkg-config is used to locate and configure the dependencies.
-The optional unit tests depend on the check library.
+SSLproxy depends on the OpenSSL, libevent 2.x, libpcap and libnet 1.1.x
+libraries by default; libpcap and libnet are not needed if the mirroring
+feature is omitted.  The build depends on GNU make and a POSIX.2 environment in
+`PATH`.  If available, pkg-config is used to locate and configure the
+dependencies.  The optional unit tests depend on the check library.
 
 SSLproxy currently supports the following operating systems and NAT mechanisms:
 
@@ -129,13 +136,13 @@ Support for local process information (`-i`) is currently available on Mac OS X
 and FreeBSD.
 
 SSL/TLS features and compatibility greatly depend on the version of OpenSSL
-linked against; for optimal results, use a recent release of OpenSSL proper.
-OpenSSL forks like BoringSSL may or may not work.
+linked against.  For optimal results, use a recent release of OpenSSL or
+LibreSSL.
 
 
 ## Installation
 
-With OpenSSL, libevent 2.x, pkg-config and check available, run:
+With the requirements above available, run:
 
     make
     make test       # optional unit tests
@@ -144,31 +151,35 @@ With OpenSSL, libevent 2.x, pkg-config and check available, run:
 
 Dependencies are autoconfigured using pkg-config.  If dependencies are not
 picked up and fixing `PKG_CONFIG_PATH` does not help, you can specify their
-respective locations manually by setting `OPENSSL_BASE`, `LIBEVENT_BASE` and/or
-`CHECK_BASE` to the respective prefixes.
+respective locations manually by setting `OPENSSL_BASE`, `LIBEVENT_BASE`,
+`LIBPCAP_BASE`, `LIBNET_BASE` and/or `CHECK_BASE` to the respective prefixes.
 
 You can override the default install prefix (`/usr/local`) by setting `PREFIX`.
-For more build options see `GNUmakefile` and `defaults.h`.
+For more build options and build-time defaults see [`GNUmakefile`](GNUmakefile)
+and [`defaults.h`](defaults.h).
 
 
 ## Documentation
 
-See the manual page `sslproxy.1` for user documentation.
-See `NEWS.md` for release notes listing significant changes between releases.
+See the manual pages `sslproxy(1)` and `sslproxy.conf(5)` for user
+documentation.  See [`NEWS.md`](NEWS.md) for release notes listing significant
+changes between releases and [`SECURITY.md`](SECURITY.md) for information on
+security vulnerability disclosure.
 
 
 ## License
 
 SSLsplit is provided under a 2-clause BSD license.
 SSLsplit contains components licensed under the MIT and APSL licenses.
-See `LICENSE`, `LICENSE.contrib` and `LICENSE.third` as well as the respective
-source file headers for details.
+See [`LICENSE`](LICENSE), [`LICENSE.contrib`](LICENSE.contrib) and
+[`LICENSE.third`](LICENSE.third) as well as the respective source file headers
+for details.
 The modifications for SSLproxy are licensed under the same terms as SSLsplit.
 
 
 ## Credits
 
-See `AUTHORS.md` for the list of contributors.
+See [`AUTHORS.md`](AUTHORS.md) for the list of contributors.
 
 SSLsplit was inspired by `mitm-ssl` by Claes M. Nyberg and `sslsniff` by Moxie
 Marlinspike, but shares no source code with them.

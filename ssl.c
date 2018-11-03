@@ -148,12 +148,12 @@ ssl_openssl_version(void)
 		                "---------------------------------------\n");
 	}
 #ifdef LIBRESSL_VERSION_NUMBER
-	fprintf(stderr, "LibreSSL detected: %s (%lx)\n",
+	fprintf(stderr, "OpenSSL API provided by LibreSSL: %s (%lx)\n",
 	                LIBRESSL_VERSION_TEXT,
 	                (long unsigned int)LIBRESSL_VERSION_NUMBER);
 #endif /* LIBRESSL_VERSION_NUMBER */
 #ifdef OPENSSL_IS_BORINGSSL
-	fprintf(stderr, "BoringSSL detected\n")
+	fprintf(stderr, "OpenSSL API provided by BoringSSL\n")
 #endif /* OPENSSL_IS_BORINGSSL */
 #ifndef OPENSSL_NO_TLSEXT
 	fprintf(stderr, "OpenSSL has support for TLS extensions\n"
@@ -484,7 +484,8 @@ ssl_fini(void)
 	ERR_remove_state(0); /* current thread */
 #endif
 
-#if defined(OPENSSL_THREADS) && ((OPENSSL_VERSION_NUMBER < 0x10100000L) || defined(LIBRESSL_VERSION_NUMBER))
+#if defined(OPENSSL_THREADS) && \
+    ((OPENSSL_VERSION_NUMBER < 0x10100000L) || defined(LIBRESSL_VERSION_NUMBER))
 	CRYPTO_set_locking_callback(NULL);
 	CRYPTO_set_dynlock_create_callback(NULL);
 	CRYPTO_set_dynlock_lock_callback(NULL);
@@ -500,7 +501,8 @@ ssl_fini(void)
 	free(ssl_mutex);
 #endif
 
-#if !defined(OPENSSL_NO_ENGINE) && ((OPENSSL_VERSION_NUMBER < 0x10100000L) || defined(LIBRESSL_VERSION_NUMBER))
+#if !defined(OPENSSL_NO_ENGINE) && \
+    ((OPENSSL_VERSION_NUMBER < 0x10100000L) || defined(LIBRESSL_VERSION_NUMBER))
 	ENGINE_cleanup();
 #endif /* !OPENSSL_NO_ENGINE && OPENSSL_VERSION_NUMBER < 0x10100000L */
 	CONF_modules_finish();
@@ -510,6 +512,8 @@ ssl_fini(void)
 	EVP_cleanup();
 	ERR_free_strings();
 	CRYPTO_cleanup_all_ex_data();
+
+	ssl_initialized = 0;
 }
 
 /*
@@ -602,10 +606,10 @@ ssl_ssl_masterkey_to_str(SSL *ssl)
 	r = &rbuf[0];
 	SSL_SESSION_get_master_key(SSL_get0_session(ssl), k, sizeof(kbuf));
 	SSL_get_client_random(ssl, r, sizeof(rbuf));
-#else /* (OPENSSL_VERSION_NUMBER < 0x10100000L) || defined(LIBRESSL_VERSION_NUMBER) */
+#else /* OPENSSL_VERSION_NUMBER < 0x10100000L */
 	k = ssl->session->master_key;
 	r = ssl->s3->client_random;
-#endif /* (OPENSSL_VERSION_NUMBER < 0x10100000L) || defined(LIBRESSL_VERSION_NUMBER) */
+#endif /* OPENSSL_VERSION_NUMBER < 0x10100000L */
 	rv = asprintf(&str,
 	              "CLIENT_RANDOM "
 	              "%02X%02X%02X%02X%02X%02X%02X%02X"
@@ -876,7 +880,7 @@ ssl_rand(void *p, size_t sz)
 	rv = RAND_pseudo_bytes((unsigned char*)p, sz);
 	if (rv == 1)
 		return 0;
-#endif /* (OPENSSL_VERSION_NUMBER < 0x10100000L) || defined(LIBRESSL_VERSION_NUMBER) */
+#endif /* OPENSSL_VERSION_NUMBER < 0x10100000L */
 	rv = RAND_bytes((unsigned char*)p, sz);
 	if (rv == 1)
 		return 0;
@@ -1265,18 +1269,21 @@ leave1:
  * Copies the certificate stack to the SSL_CTX internal data structures
  * and increases reference counts accordingly.
  */
-void
+int
 ssl_x509chain_use(SSL_CTX *sslctx, X509 *crt, STACK_OF(X509) *chain)
 {
-	SSL_CTX_use_certificate(sslctx, crt);
+	if (SSL_CTX_use_certificate(sslctx, crt) != 1)
+		return -1;
 
 	for (int i = 0; i < sk_X509_num(chain); i++) {
 		X509 *tmpcrt;
 
 		tmpcrt = sk_X509_value(chain, i);
 		ssl_x509_refcount_inc(tmpcrt);
-		SSL_CTX_add_extra_chain_cert(sslctx, tmpcrt);
+		if (SSL_CTX_add_extra_chain_cert(sslctx, tmpcrt) != 1)
+			return -1;
 	}
+	return 0;
 }
 
 /*
@@ -1371,11 +1378,11 @@ ssl_key_genrsa(const int keysize)
 		RSA_free(rsa);
 		return NULL;
 	}
-#else /* (OPENSSL_VERSION_NUMBER < 0x10100000L) || defined(LIBRESSL_VERSION_NUMBER) */
+#else /* OPENSSL_VERSION_NUMBER < 0x10100000L */
 	rsa = RSA_generate_key(keysize, 3, NULL, NULL);
 	if (!rsa)
 		return NULL;
-#endif /* (OPENSSL_VERSION_NUMBER < 0x10100000L) || defined(LIBRESSL_VERSION_NUMBER) */
+#endif /* OPENSSL_VERSION_NUMBER < 0x10100000L */
 	pkey = EVP_PKEY_new();
 	EVP_PKEY_assign_RSA(pkey, rsa); /* does not increment refcount */
 	return pkey;
@@ -1930,7 +1937,7 @@ ssl_session_to_str(SSL_SESSION *sess)
 
 /*
  * Returns non-zero if the session timeout has not expired yet,
- * zero if the session has expired or an error occured.
+ * zero if the session has expired or an error occurred.
  */
 int
 ssl_session_is_valid(SSL_SESSION *sess)
@@ -1974,7 +1981,7 @@ ssl_is_ocspreq(const unsigned char *buf, size_t sz)
  *
  * The OpenSSL SNI API only allows to read the indicated server name at the
  * time when we have to provide the server certificate.  OpenSSL does not
- * allow to asynchroniously read the indicated server name, wait for some
+ * allow to asynchronously read the indicated server name, wait for some
  * unrelated event to happen, and then later to provide the server certificate
  * to use and continue the handshake.  Therefore we resort to parsing the
  * server name from the ClientHello manually before OpenSSL gets to work on it.

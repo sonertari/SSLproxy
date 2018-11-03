@@ -181,7 +181,7 @@ struct pxy_conn_ctx {
 	char *dstport_str;
 
 	/* content log context */
-	log_content_ctx_t *logctx;
+	log_content_ctx_t logctx;
 
 	/* status flags */
 	unsigned int connected : 1;       /* 0 until both ends are connected */
@@ -195,9 +195,11 @@ struct pxy_conn_ctx {
 
 	struct event *ev;
 
-	/* original destination address, family and certificate */
-	struct sockaddr_storage addr;
-	socklen_t addrlen;
+	/* original source and destination address, and family */
+	struct sockaddr_storage srcaddr;
+	socklen_t srcaddrlen;
+	struct sockaddr_storage dstaddr;
+	socklen_t dstaddrlen;
 	int af;
 
 	// Thread that the conn is attached to

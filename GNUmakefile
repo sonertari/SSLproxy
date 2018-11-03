@@ -7,6 +7,8 @@
 #
 # OPENSSL_BASE	Prefix of OpenSSL library and headers to build against
 # LIBEVENT_BASE	Prefix of libevent library and headers to build against
+# LIBPCAP_BASE	Prefix of libpcap library and headers to build against
+# LIBNET_BASE	Prefix of libnet library and headers to build against
 # CHECK_BASE	Prefix of check library and headers to build against (optional)
 # PKGCONFIG	Name/path of pkg-config program to use for auto-detection
 # PCFLAGS	Additional pkg-config flags
@@ -28,9 +30,35 @@
 # CPPFLAGS	Additional pre-processor flags
 # LDFLAGS	Additional linker flags
 # LIBS		Additional libraries to link against
+# SOURCE_DATE_EPOCH	Set to epoch time to make the build reproducible
 #
-# You can e.g. create a statically linked binary by running:
+# On macOS, the following build environment variables are respected:
+#
+# DEVELOPER_DIR		Override Xcode Command Line Developer Tools directory
+# MACOSX_VERSION_MIN	Minimal version of macOS to target, e.g. 10.11
+# SDK			SDK name to build against, e.g. macosx, macosx10.11
+#
+# Examples:
+#
+# Build against custom installed libraries under /opt:
+# % OPENSSL_BASE=/opt/openssl LIBEVENT_BASE=/opt/libevent make
+#
+# Create a statically linked binary:
 # % PCFLAGS='--static' CFLAGS='-static' LDFLAGS='-static' make
+#
+# Build a macOS binary for El Capitan using the default SDK from Xcode 7.3.1:
+# % MACOSX_VERSION_MIN=10.11 DEVELOPER_DIR=/Applications/Xcode-7.3.1.app/Contents/Developer make
+
+
+### Mirroring
+
+# Define to disable support for mirroring connection content as emulated
+# packets to a network interface (-I/-T options).  Doing so will remove the
+# dependency on both libnet and libpcap.  Use this for constrained environments
+# or on platforms without usable libnet/libpcap.  Logging connection content to
+# PCAP files will remain fully functional (-X/-Y/-y options) as it does not
+# make use of libnet and libpcap.
+#FEATURES+=	-DWITHOUT_MIRROR
 
 
 ### OpenSSL tweaking
@@ -71,6 +99,9 @@ DEBUG_CFLAGS?=	-g
 # Define to add privilege separation server event loop debugging.
 #FEATURES+=	-DDEBUG_PRIVSEP_SERVER
 
+# Define to add diagnostic output for debugging option parsing.
+#FEATURES+=	-DDEBUG_OPTS
+
 # When debugging OpenSSL related issues, make sure you use a debug build of
 # OpenSSL and consider enabling its debugging options -DREF_PRINT -DREF_CHECK
 # for debugging reference counting of OpenSSL objects and/or
@@ -89,6 +120,7 @@ DEBUG_CFLAGS?=	-g
 # Note that you can override the XNU headers used by defining XNU_VERSION.
 
 ifeq ($(shell uname),Darwin)
+include Mk/xcode.mk
 ifneq ($(wildcard /usr/include/libproc.h),)
 FEATURES+=	-DHAVE_DARWIN_LIBPROC
 endif
@@ -153,20 +185,28 @@ INSTALLGID?=	0
 BINUID?=	$(INSTALLUID)
 BINGID?=	$(INSTALLGID)
 BINMODE?=	0755
+CNFUID?=	$(INSTALLUID)
+CNFGID?=	$(INSTALLGID)
+CNFMODE?=	0644
 MANUID?=	$(INSTALLUID)
 MANGID?=	$(INSTALLGID)
 MANMODE?=	0644
 EXAMPLESMODE?=	0444
 ifeq ($(shell id -u),0)
 BINOWNERFLAGS?=	-o $(BINUID) -g $(BINGID)
+CNFOWNERFLAGS?=	-o $(CNFUID) -g $(CNFGID)
 MANOWNERFLAGS?=	-o $(MANUID) -g $(MANGID)
 else
 BINOWNERFLAGS?=	
+CNFOWNERFLAGS?=	
 MANOWNERFLAGS?=	
 endif
 
 OPENSSL?=	openssl
-PKGCONFIG?=	pkg-config
+PKGCONFIG?=	$(shell command -v pkg-config||echo false)
+ifeq ($(PKGCONFIG),false)
+$(warning pkg-config not found - guessing paths/flags for dependencies)
+endif
 
 BASENAME?=	basename
 CAT?=		cat
@@ -182,12 +222,13 @@ SORT?=		sort
 ### Variables only used for developer targets
 
 KHASH_URL?=	https://github.com/attractivechaos/klib/raw/master/khash.h
-GPGSIGNKEY?=	0xB5D3397E
+GPGSIGNKEY?=	0xE1520675375F5E35
 
 CPPCHECK?=	cppcheck
 GPG?=		gpg
 GIT?=		git
 WGET?=		wget
+DOCKER?=	docker
 
 BZIP2?=		bzip2
 COL?=		col
@@ -204,6 +245,7 @@ TARGET:=	$(PKGNAME)
 SRCS:=		$(filter-out $(wildcard *.t.c),$(wildcard *.c))
 HDRS:=		$(wildcard *.h)
 OBJS:=		$(SRCS:.c=.o)
+MKFS=		$(wildcard GNUmakefile Mk/*.mk)
 FEATURES:=	$(sort $(FEATURES))
 
 TSRCS:=		$(wildcard *.t.c)
@@ -212,6 +254,9 @@ TOBJS+=		$(filter-out main.o,$(OBJS))
 
 include Mk/buildinfo.mk
 VERSION:=	$(BUILD_VERSION)
+ifdef GITDIR
+CFLAGS+=	$(DEBUG_CFLAGS)
+endif
 
 # Autodetect dependencies known to pkg-config
 PKGS:=		
@@ -227,26 +272,33 @@ PKGS+=		$(shell $(PKGCONFIG) $(PCFLAGS) --exists libevent_openssl \
 PKGS+=		$(shell $(PKGCONFIG) $(PCFLAGS) --exists libevent_pthreads \
 		&& echo libevent_pthreads)
 endif
+ifneq ($(filter -DWITHOUT_MIRROR,$(FEATURES)),-DWITHOUT_MIRROR)
+ifndef LIBPCAP_BASE
+PKGS+=		$(shell $(PKGCONFIG) $(PCFLAGS) --exists libpcap \
+		&& echo libpcap)
+endif
+endif
 TPKGS:=		
 ifndef CHECK_BASE
 TPKGS+=		$(shell $(PKGCONFIG) $(PCFLAGS) --exists check \
 		&& echo check)
 endif
 
+# Function: Generate list of base paths to search when locating packages
+# $1 packagename
+bases=		/usr/local/opt/$(1) \
+		/opt/local \
+		/usr/local \
+		/usr
+
+# Function: Locate base path for a package we depend on
+# $1 packagename, $2 pattern suffix, $3 override path(s)
+locate=		$(subst /$(2),,$(word 1,$(wildcard \
+		$(addsuffix /$(2),$(if $(3),$(3),$(call bases,$(1)))))))
+
 # Autodetect dependencies not known to pkg-config
 ifeq (,$(filter openssl,$(PKGS)))
-OPENSSL_PAT:=	include/openssl/ssl.h
-ifdef OPENSSL_BASE
-OPENSSL_FIND:=	$(wildcard $(OPENSSL_BASE)/$(OPENSSL_PAT))
-else
-OPENSSL_FIND:=	$(wildcard \
-		/usr/local/opt/openssl/$(OPENSSL_PAT) \
-		/opt/local/$(OPENSSL_PAT) \
-		/usr/local/$(OPENSSL_PAT) \
-		/usr/$(OPENSSL_PAT))
-endif
-OPENSSL_AVAIL:=	$(OPENSSL_FIND:/$(OPENSSL_PAT)=)
-OPENSSL_FOUND:=	$(word 1,$(OPENSSL_AVAIL))
+OPENSSL_FOUND:=	$(call locate,openssl,include/openssl/ssl.h,$(OPENSSL_BASE))
 OPENSSL:=	$(OPENSSL_FOUND)/bin/openssl
 ifndef OPENSSL_FOUND
 $(error dependency 'OpenSSL' not found; \
@@ -254,38 +306,40 @@ $(error dependency 'OpenSSL' not found; \
 endif
 endif
 ifeq (,$(filter libevent,$(PKGS)))
-LIBEVENT_PAT:=	include/event2/event.h
-ifdef LIBEVENT_BASE
-LIBEVENT_FIND:=	$(wildcard $(LIBEVENT_BASE)/$(LIBEVENT_PAT))
-else
-LIBEVENT_FIND:=	$(wildcard \
-		/usr/local/opt/libevent/$(LIBEVENT_PAT) \
-		/opt/local/$(LIBEVENT_PAT) \
-		/usr/local/$(LIBEVENT_PAT) \
-		/usr/$(LIBEVENT_PAT))
-endif
-LIBEVENT_AVAIL:=$(LIBEVENT_FIND:/$(LIBEVENT_PAT)=)
-LIBEVENT_FOUND:=$(word 1,$(LIBEVENT_AVAIL))
+LIBEVENT_FOUND:=$(call locate,libevent,include/event2/event.h,$(LIBEVENT_BASE))
 ifndef LIBEVENT_FOUND
 $(error dependency 'libevent 2.x' not found; \
 	install it or point LIBEVENT_BASE to base path)
 endif
 endif
-ifeq (,$(filter check,$(TPKGS)))
-CHECK_PAT:=	include/check.h
-ifdef CHECK_BASE
-CHECK_FIND:=	$(wildcard $(CHECK_BASE)/$(CHECK_PAT))
-else
-CHECK_FIND:=	$(wildcard \
-		/usr/local/opt/check/$(CHECK_PAT) \
-		/opt/local/$(CHECK_PAT) \
-		/usr/local/$(CHECK_PAT) \
-		/usr/$(CHECK_PAT))
+ifneq ($(filter -DWITHOUT_MIRROR,$(FEATURES)),-DWITHOUT_MIRROR)
+ifeq (,$(filter libpcap,$(PKGS)))
+LIBPCAP_FOUND:=	$(call locate,libpcap,include/pcap.h,$(LIBPCAP_BASE))
+ifndef LIBPCAP_FOUND
+$(error dependency 'libpcap' not found; \
+	install it or point LIBPCAP_BASE to base path)
 endif
-CHECK_AVAIL:=	$(CHECK_FIND:/$(CHECK_PAT)=)
-CHECK_FOUND:=	$(word 1,$(CHECK_AVAIL))
+endif
+endif
+ifeq (,$(filter check,$(TPKGS)))
+CHECK_FOUND:=	$(call locate,check,include/check.h,$(CHECK_BASE))
 ifndef CHECK_FOUND
 CHECK_MISSING:=	1
+endif
+endif
+
+# Always search filesystem for libnet because libnet-config is unreliable
+ifneq ($(filter -DWITHOUT_MIRROR,$(FEATURES)),-DWITHOUT_MIRROR)
+LIBNET_FOUND:=	$(call locate,libnet,include/libnet-1.1/libnet.h,$(LIBNET_BASE))
+ifdef LIBNET_FOUND
+LIBNET_FOUND_INC:=	$(LIBNET_FOUND)/include/libnet-1.1
+else
+LIBNET_FOUND:=	$(call locate,libnet,include/libnet.h,$(LIBNET_BASE))
+LIBNET_FOUND_INC:=	$(LIBNET_FOUND)/include
+endif
+ifndef LIBNET_FOUND
+$(error dependency 'libnet' not found; \
+	install it or point LIBNET_BASE to base path)
 endif
 endif
 
@@ -304,6 +358,18 @@ PKG_LIBS+=	-levent_openssl
 endif
 ifeq (,$(filter libevent_pthreads,$(PKGS)))
 PKG_LIBS+=	-levent_pthreads
+endif
+ifneq ($(filter -DWITHOUT_MIRROR,$(FEATURES)),-DWITHOUT_MIRROR)
+ifdef LIBNET_FOUND
+PKG_CPPFLAGS+=	-I$(LIBNET_FOUND_INC)
+PKG_LDFLAGS+=	-L$(LIBNET_FOUND)/lib
+PKG_LIBS+=	-lnet
+endif
+ifdef LIBPCAP_FOUND
+PKG_CPPFLAGS+=	-I$(LIBPCAP_FOUND)/include
+PKG_LDFLAGS+=	-L$(LIBPCAP_FOUND)/lib
+PKG_LIBS+=	-lpcap
+endif
 endif
 ifdef CHECK_FOUND
 TPKG_CPPFLAGS+=	-I$(CHECK_FOUND)/include
@@ -350,8 +416,6 @@ endif
 
 # _FORTIFY_SOURCE requires -O on Linux
 ifeq (,$(findstring -O,$(CFLAGS)))
-# TODO: -O w/o -g is failing bufferevent_socket_connect for parent dst,
-# so either enable -O w/ -g, or disable -O w/o -g (-O2 is failing too?)
 CFLAGS+=	-O2
 endif
 
@@ -378,6 +442,12 @@ endif
 ifdef LIBEVENT_FOUND
 $(info LIBEVENT_BASE:  $(strip $(LIBEVENT_FOUND)))
 endif
+ifdef LIBPCAP_FOUND
+$(info LIBPCAP_BASE:   $(strip $(LIBPCAP_FOUND)))
+endif
+ifdef LIBNET_FOUND
+$(info LIBNET_BASE:    $(strip $(LIBNET_FOUND)))
+endif
 ifdef CHECK_FOUND
 $(info CHECK_BASE:     $(strip $(CHECK_FOUND)))
 endif
@@ -393,13 +463,16 @@ endif
 
 all: $(TARGET)
 
+$(TARGET).test: $(TOBJS)
+	$(CC) $(LDFLAGS) $(TPKG_LDFLAGS) -o $@ $^ $(LIBS) $(TPKG_LIBS)
+
 $(TARGET): $(OBJS)
 	$(CC) $(LDFLAGS) -o $@ $^ $(LIBS)
 
 build.o: CPPFLAGS+=$(BUILD_CPPFLAGS)
 build.o: build.c FORCE
 
-%.t.o: %.t.c $(HDRS) GNUmakefile
+%.t.o: %.t.c $(HDRS) $(MKFS)
 ifdef CHECK_MISSING
 	$(error unit test dependency 'check' not found; \
 	install it or point CHECK_BASE to base path)
@@ -407,24 +480,23 @@ endif
 	$(CC) -c $(CPPFLAGS) $(TCPPFLAGS) $(CFLAGS) $(TPKG_CFLAGS) -o $@ \
 		-x c $<
 
-%.o: %.c $(HDRS) GNUmakefile
+%.o: %.c $(HDRS) $(MKFS)
 	$(CC) -c $(CPPFLAGS) $(CFLAGS) -o $@ $<
+
+buildtest: TCPPFLAGS+=-D"TEST_ZEROUSR=\"$(shell id -u -n root||echo 0)\""
+buildtest: TCPPFLAGS+=-D"TEST_ZEROGRP=\"$(shell id -g -n root||echo 0)\""
+buildtest: $(TARGET).test
+	$(MAKE) -C extra/engine
+	$(MAKE) -C extra/pki testreqs
+
+test: buildtest
+	./$(TARGET).test
+
+sudotest: buildtest
+	sudo ./$(TARGET).test
 
 travis: TCPPFLAGS+=-DTRAVIS
 travis: test
-
-test: TCPPFLAGS+=-D"TEST_ZEROUSR=\"$(shell id -u -n root||echo 0)\""
-test: TCPPFLAGS+=-D"TEST_ZEROGRP=\"$(shell id -g -n root||echo 0)\""
-test: $(TARGET).test
-	$(MAKE) -C extra/engine
-	$(MAKE) -C extra/pki testreqs
-	./$(TARGET).test
-
-sudotest: test
-	sudo ./$(TARGET).test
-
-$(TARGET).test: $(TOBJS)
-	$(CC) $(LDFLAGS) $(TPKG_LDFLAGS) -o $@ $^ $(LIBS) $(TPKG_LIBS)
 
 clean:
 	$(MAKE) -C extra/engine clean
@@ -437,7 +509,7 @@ install: $(TARGET)
 		$(MKDIR) -p $(DESTDIR)$(PREFIX)/$(MANDIR)/man1
 	test -d $(DESTDIR)$(PREFIX)/$(MANDIR)/man5 || \
 		$(MKDIR) -p $(DESTDIR)$(PREFIX)/$(MANDIR)/man5
-	test -d $(DESTDIR)$(PREFIX)/$(EXAMPLESDIR)/sslproxy || \
+	test -d $(DESTDIR)$(PREFIX)/$(EXAMPLESDIR)/$(TARGET) || \
 		$(MKDIR) -p $(DESTDIR)$(PREFIX)/$(EXAMPLESDIR)/$(TARGET)
 	$(INSTALL) $(BINOWNERFLAGS) -m $(BINMODE) \
 		$(TARGET) $(DESTDIR)$(PREFIX)/bin/
@@ -457,14 +529,16 @@ ifdef GITDIR
 lint:
 	$(CPPCHECK) $(CPPCHECKFLAGS) --force --enable=all --error-exitcode=1 .
 
-manlint: $(TARGET).1
+manlint: $(TARGET).1 $(TARGET).conf.5
 	$(CHECKNR) $(TARGET).1
 
-mantest: $(TARGET).1
-	$(RM) -f man1
+mantest: $(TARGET).1 $(TARGET).conf.5
+	$(RM) -f man1 man5
 	$(LN) -sf . man1
+	$(LN) -sf . man5
 	$(MAN) -M . 1 $(TARGET)
-	$(RM) man1
+	$(MAN) -M . 5 $(TARGET).conf
+	$(RM) man1 man5
 
 copyright: *.c *.h *.1 *.5 extra/*/*.c
 	Mk/bin/copyright.py $^
@@ -475,10 +549,16 @@ $(PKGNAME)-$(VERSION).1.txt: $(TARGET).1
 	$(MAN) -M . 1 $(TARGET) | $(COL) -b >$@
 	$(RM) man1
 
-man: $(PKGNAME)-$(VERSION).1.txt
+$(PKGNAME)-$(VERSION).conf.5.txt: $(TARGET).conf.5
+	$(RM) -f man5
+	$(LN) -sf . man5
+	$(MAN) -M . 5 $(TARGET).conf | $(COL) -b >$@
+	$(RM) man5
+
+man: $(PKGNAME)-$(VERSION).1.txt $(PKGNAME)-$(VERSION).conf.5.txt
 
 manclean:
-	$(RM) -f $(PKGNAME)-*.1.txt
+	$(RM) -f $(PKGNAME)-*.1.txt $(PKGNAME)-*.conf.5.txt
 
 fetchdeps:
 	$(WGET) -O- $(KHASH_URL) >khash.h
@@ -516,8 +596,14 @@ realclean: distclean manclean clean
 	$(MAKE) -C extra/pki clean
 endif
 
+docker:
+	$(DOCKER) build -f docker/sslproxy/Dockerfile --target builder -t sslproxy-builder:$(VERSION) .
+	$(DOCKER) build -f docker/sslproxy/Dockerfile --target production -t sslproxy:$(VERSION) .
+	$(DOCKER) run sslproxy:$(VERSION)
+
 FORCE:
 
-.PHONY: all config clean test travis lint install deinstall copyright manlint \
-        mantest man manclean fetchdeps dist disttest distclean realclean
+.PHONY: all config clean buildtest test sudotest travis lint \
+        install deinstall copyright manlint mantest man manclean fetchdeps \
+        dist disttest distclean realclean docker
 

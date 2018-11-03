@@ -32,7 +32,6 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <string.h>
-#include <sys/syslog.h>
 
 /*
  * Dynamic log buffer with zero-copy chaining, generic void * file handle
@@ -46,7 +45,7 @@
  * logbuf_new() in case it fails returning NULL.
  */
 logbuf_t *
-logbuf_new(int level, void *buf, size_t sz, void *fh, logbuf_t *next)
+logbuf_new(int level, void *buf, size_t sz, logbuf_t *next)
 {
 	logbuf_t *lb;
 
@@ -58,9 +57,15 @@ logbuf_new(int level, void *buf, size_t sz, void *fh, logbuf_t *next)
 	lb->prio = level;
 	lb->buf = buf;
 	lb->sz = sz;
-	lb->fh = fh;
-	lb->ctl = 0;
-	lb->next = next;
+	if (next) {
+		lb->fh = next->fh;
+		lb->ctl = next->ctl;
+		lb->next = next;
+	} else {
+		lb->fh = NULL;
+		lb->ctl = 0;
+		lb->next = NULL;
+	}
 	return lb;
 }
 
@@ -68,7 +73,7 @@ logbuf_new(int level, void *buf, size_t sz, void *fh, logbuf_t *next)
  * Create new logbuf, allocating sz bytes into the internal buffer.
  */
 logbuf_t *
-logbuf_new_alloc(size_t sz, void *fh, logbuf_t *next)
+logbuf_new_alloc(size_t sz, logbuf_t *next)
 {
 	logbuf_t *lb;
 
@@ -79,9 +84,15 @@ logbuf_new_alloc(size_t sz, void *fh, logbuf_t *next)
 		return NULL;
 	}
 	lb->sz = sz;
-	lb->fh = fh;
-	lb->ctl = 0;
-	lb->next = next;
+	if (next) {
+		lb->fh = next->fh;
+		lb->ctl = next->ctl;
+		lb->next = next;
+	} else {
+		lb->fh = NULL;
+		lb->ctl = 0;
+		lb->next = NULL;
+	}
 	return lb;
 }
 
@@ -89,7 +100,7 @@ logbuf_new_alloc(size_t sz, void *fh, logbuf_t *next)
  * Create new logbuf, copying buf into a newly allocated internal buffer.
  */
 logbuf_t *
-logbuf_new_copy(const void *buf, size_t sz, void *fh, logbuf_t *next)
+logbuf_new_copy(const void *buf, size_t sz, logbuf_t *next)
 {
 	logbuf_t *lb;
 
@@ -101,17 +112,23 @@ logbuf_new_copy(const void *buf, size_t sz, void *fh, logbuf_t *next)
 	}
 	memcpy(lb->buf, buf, sz);
 	lb->sz = sz;
-	lb->fh = fh;
-	lb->ctl = 0;
-	lb->next = next;
+	if (next) {
+		lb->fh = next->fh;
+		lb->ctl = next->ctl;
+		lb->next = next;
+	} else {
+		lb->fh = NULL;
+		lb->ctl = 0;
+		lb->next = NULL;
+	}
 	return lb;
 }
 
 /*
- * Create new logbuf using printf, setting fh and next.
+ * Create new logbuf using printf.
  */
 logbuf_t *
-logbuf_new_printf(void *fh, logbuf_t *next, const char *fmt, ...)
+logbuf_new_printf(logbuf_t *next, const char *fmt, ...)
 {
 	va_list ap;
 	logbuf_t *lb;
@@ -125,9 +142,76 @@ logbuf_new_printf(void *fh, logbuf_t *next, const char *fmt, ...)
 		free(lb);
 		return NULL;
 	}
-	lb->fh = fh;
-	lb->ctl = 0;
-	lb->next = next;
+	if (next) {
+		lb->fh = next->fh;
+		lb->ctl = next->ctl;
+		lb->next = next;
+	} else {
+		lb->fh = NULL;
+		lb->ctl = 0;
+		lb->next = NULL;
+	}
+	return lb;
+}
+
+/*
+ * Create new logbuf from lb.  If combine is set, combine all the buffer
+ * segments into a single contiguous one.  Otherwise, copy segment by segment.
+ */
+logbuf_t *
+logbuf_new_deepcopy(logbuf_t *lb, int combine)
+{
+	logbuf_t *lbnew;
+	unsigned char *p;
+
+	if (!lb)
+		return NULL;
+
+	if (combine) {
+		lbnew = logbuf_new_alloc(logbuf_size(lb), NULL);
+		if (!lbnew)
+			return NULL;
+		lbnew->fh = lb->fh;
+		lbnew->ctl = lb->ctl;
+		p = lbnew->buf;
+		while (lb) {
+			memcpy(p, lb->buf, lb->sz);
+			p += lb->sz;
+			lb = lb->next;
+		}
+	} else {
+		lbnew = logbuf_new_copy(lb->buf, lb->sz, NULL);
+		if (!lbnew)
+			return NULL;
+		lbnew->fh = lb->fh;
+		lbnew->ctl = lb->ctl;
+		lbnew->next = logbuf_new_deepcopy(lb->next, 0);
+	}
+	return lbnew;
+}
+
+logbuf_t *
+logbuf_make_contiguous(logbuf_t *lb) {
+	unsigned char *p;
+	logbuf_t *lbtmp;
+
+	if (!lb)
+		return NULL;
+	if (!lb->next)
+		return lb;
+	p = realloc(lb->buf, logbuf_size(lb));
+	if (!p)
+		return NULL;
+	lb->buf = p;
+	lbtmp = lb;
+	p += lbtmp->sz;
+	while ((lbtmp = lbtmp->next)) {
+		memcpy(p, lbtmp->buf, lbtmp->sz);
+		lb->sz += lbtmp->sz;
+		p += lbtmp->sz;
+	}
+	logbuf_free(lb->next);
+	lb->next = NULL;
 	return lb;
 }
 
@@ -155,8 +239,7 @@ ssize_t
 logbuf_write_free(logbuf_t *lb, writefunc_t writefunc)
 {
 	ssize_t rv1, rv2 = 0;
-
-	rv1 = writefunc(lb->prio, lb->fh, lb->buf, lb->sz);
+	rv1 = writefunc(lb->prio, lb->fh, lb->ctl, lb->buf, lb->sz);
 	if (lb->buf) {
 		free(lb->buf);
 	}
@@ -176,7 +259,7 @@ logbuf_write_free(logbuf_t *lb, writefunc_t writefunc)
 }
 
 /*
- * Free dynbuf including internal and chained buffers.
+ * Free logbuf including internal and chained buffers.
  */
 void
 logbuf_free(logbuf_t *lb)

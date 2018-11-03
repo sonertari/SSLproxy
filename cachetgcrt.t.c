@@ -111,13 +111,10 @@ START_TEST(cache_tgcrt_04)
 	cachemgr_fini();
 	fail_unless(c1->references == 1, "refcount != 1");
 	cert_free(c2);
-#ifndef LIBRESSL_VERSION_NUMBER
+#if 0
 	/* deliberate access of free'd cert_t* */
 	fail_unless(c1->references == 0, "refcount != 0");
-#else /* LIBRESSL_VERSION_NUMBER */
-	fprintf(stderr, "deliberate access after free test in cache_tgcrt_04 "
-			"omitted because LibreSSL fails with refcount != 0\n");
-#endif /* LIBRESSL_VERSION_NUMBER */
+#endif
 	fail_unless(cachemgr_preinit() != -1, "reinit");
 }
 END_TEST

@@ -390,7 +390,7 @@ pxy_conn_ctx_free(pxy_conn_ctx_t *ctx, int by_requestor)
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_free: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
-	if (WANT_CONTENT_LOG(ctx) && ctx->logctx) {
+	if (WANT_CONTENT_LOG(ctx)) {
 		if (log_content_close(&ctx->logctx, by_requestor) == -1) {
 			log_err_level_printf(LOG_WARNING, "Content log close failed\n");
 		}
@@ -585,13 +585,13 @@ pxy_log_content_buf(pxy_conn_ctx_t *ctx, unsigned char *buf, size_t sz, int req)
 {
 	if (WANT_CONTENT_LOG(ctx->conn)) {
 		if (buf) {
-			logbuf_t *lb = logbuf_new_alloc(sz, NULL, NULL);
+			logbuf_t *lb = logbuf_new_alloc(sz, NULL);
 			if (!lb) {
 				ctx->conn->enomem = 1;
 				return -1;
 			}
 			memcpy(lb->buf, buf, lb->sz);
-			if (log_content_submit(ctx->conn->logctx, lb, req) == -1) {
+			if (log_content_submit(&ctx->conn->logctx, lb, req) == -1) {
 				logbuf_free(lb);
 				log_err_level_printf(LOG_WARNING, "Content log submission failed\n");
 				return -1;
@@ -659,10 +659,16 @@ pxy_prepare_logging(pxy_conn_ctx_t *ctx)
 {
 	/* prepare logging, part 2 */
 	if (WANT_CONNECT_LOG(ctx) || WANT_CONTENT_LOG(ctx)) {
-		return pxy_prepare_logging_local_procinfo(ctx);
+		if (pxy_prepare_logging_local_procinfo(ctx) == -1) {
+			return -1;
+		}
 	}
 	if (WANT_CONTENT_LOG(ctx)) {
 		if (log_content_open(&ctx->logctx, ctx->opts,
+							(struct sockaddr *)&ctx->srcaddr,
+							ctx->srcaddrlen,
+							(struct sockaddr *)&ctx->dstaddr,
+							ctx->dstaddrlen,
 							 STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str),
 							 STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
 #ifdef HAVE_LOCAL_PROCINFO
@@ -952,7 +958,7 @@ pxy_listener_acceptcb_child(UNUSED struct evconnlistener *listener, evutil_socke
 	}
 #endif /* DEBUG_PROXY */
 
-	if (!conn->addrlen) {
+	if (!conn->dstaddrlen) {
 		log_err_level_printf(LOG_CRIT, "Child no target address; aborting connection\n");
 		evutil_closesocket(fd);
 		pxy_conn_term(conn, 1);
@@ -1013,7 +1019,7 @@ pxy_listener_acceptcb_child(UNUSED struct evconnlistener *listener, evutil_socke
 
 	if (OPTS_DEBUG(ctx->conn->opts)) {
 		char *host, *port;
-		if (sys_sockaddr_str((struct sockaddr *)&ctx->conn->addr, ctx->conn->addrlen, &host, &port) == 0) {
+		if (sys_sockaddr_str((struct sockaddr *)&ctx->conn->dstaddr, ctx->conn->dstaddrlen, &host, &port) == 0) {
 			log_dbg_printf("Child connecting to [%s]:%s\n", host, port);
 			free(host);
 			free(port);
@@ -1024,7 +1030,7 @@ pxy_listener_acceptcb_child(UNUSED struct evconnlistener *listener, evutil_socke
 
 	/* initiate connection */
 	// @attention No need to check retval here, the eventcb should handle the errors
-	bufferevent_socket_connect(ctx->dst.bev, (struct sockaddr *)&ctx->conn->addr, ctx->conn->addrlen);
+	bufferevent_socket_connect(ctx->dst.bev, (struct sockaddr *)&ctx->conn->dstaddr, ctx->conn->dstaddrlen);
 	
 	ctx->dst_fd = bufferevent_getfd(ctx->dst.bev);
 	ctx->conn->child_dst_fd = ctx->dst_fd;
@@ -1227,7 +1233,7 @@ pxy_try_consume_last_input_child(struct bufferevent *bev, pxy_conn_child_ctx_t *
 int
 pxy_set_dstaddr(pxy_conn_ctx_t *ctx)
 {
-	if (sys_sockaddr_str((struct sockaddr *)&ctx->addr, ctx->addrlen, &ctx->dsthost_str, &ctx->dstport_str) != 0) {
+	if (sys_sockaddr_str((struct sockaddr *)&ctx->dstaddr, ctx->dstaddrlen, &ctx->dsthost_str, &ctx->dstport_str) != 0) {
 		// sys_sockaddr_str() may fail due to either malloc() or getnameinfo()
 		ctx->enomem = 1;
 		pxy_conn_term(ctx, 1);
@@ -1479,7 +1485,7 @@ pxy_conn_connect(pxy_conn_ctx_t *ctx)
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_connect: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
-	if (!ctx->addrlen) {
+	if (!ctx->dstaddrlen) {
 		log_err_level_printf(LOG_CRIT, "No target address; aborting connection\n");
 		evutil_closesocket(ctx->fd);
 		pxy_conn_ctx_free(ctx, 1);
@@ -1488,7 +1494,7 @@ pxy_conn_connect(pxy_conn_ctx_t *ctx)
 
 	if (OPTS_DEBUG(ctx->opts)) {
 		char *host, *port;
-		if (sys_sockaddr_str((struct sockaddr *)&ctx->addr, ctx->addrlen, &host, &port) == 0) {
+		if (sys_sockaddr_str((struct sockaddr *)&ctx->dstaddr, ctx->dstaddrlen, &host, &port) == 0) {
 			log_dbg_printf("Connecting to [%s]:%s\n", host, port);
 			free(host);
 			free(port);
@@ -1590,8 +1596,8 @@ pxy_conn_setup(evutil_socket_t fd,
 	/* determine original destination of connection */
 	if (spec->natlookup) {
 		/* NAT engine lookup */
-		ctx->addrlen = sizeof(struct sockaddr_storage);
-		if (spec->natlookup((struct sockaddr *)&ctx->addr, &ctx->addrlen, fd, peeraddr, peeraddrlen) == -1) {
+		ctx->dstaddrlen = sizeof(struct sockaddr_storage);
+		if (spec->natlookup((struct sockaddr *)&ctx->dstaddr, &ctx->dstaddrlen, fd, peeraddr, peeraddrlen) == -1) {
 			log_err_printf("Connection not found in NAT state table, aborting connection\n");
 			evutil_closesocket(fd);
 			pxy_conn_ctx_free(ctx, 1);
@@ -1599,8 +1605,8 @@ pxy_conn_setup(evutil_socket_t fd,
 		}
 	} else if (spec->connect_addrlen > 0) {
 		/* static forwarding */
-		ctx->addrlen = spec->connect_addrlen;
-		memcpy(&ctx->addr, &spec->connect_addr, ctx->addrlen);
+		ctx->dstaddrlen = spec->connect_addrlen;
+		memcpy(&ctx->dstaddr, &spec->connect_addr, ctx->dstaddrlen);
 	} else {
 		/* SNI mode */
 		if (!ctx->spec->ssl) {
@@ -1617,13 +1623,16 @@ pxy_conn_setup(evutil_socket_t fd,
 	}
 
 	/* prepare logging, part 1 */
-	if (WANT_CONNECT_LOG(ctx) || WANT_CONTENT_LOG(ctx)) {
+	if (opts->pcaplog
+#ifndef WITHOUT_MIRROR
+	    || opts->mirrorif
+#endif /* !WITHOUT_MIRROR */
 #ifdef HAVE_LOCAL_PROCINFO
-		if (ctx->opts->lprocinfo) {
-			memcpy(&ctx->lproc.srcaddr, peeraddr, peeraddrlen);
-			ctx->lproc.srcaddrlen = peeraddrlen;
-		}
+	    || opts->lprocinfo
 #endif /* HAVE_LOCAL_PROCINFO */
+	    ) {
+		ctx->srcaddrlen = peeraddrlen;
+		memcpy(&ctx->srcaddr, peeraddr, ctx->srcaddrlen);
 	}
 
 	/* for SSL, defer dst connection setup to initial_readcb */

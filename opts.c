@@ -147,6 +147,20 @@ opts_free(opts_t *opts)
 	if (opts->masterkeylog) {
 		free(opts->masterkeylog);
 	}
+	if (opts->pcaplog) {
+		free(opts->pcaplog);
+	}
+	if (opts->pcaplog_basedir) {
+		free(opts->pcaplog_basedir);
+	}
+#ifndef WITHOUT_MIRROR
+	if (opts->mirrorif) {
+		free(opts->mirrorif);
+	}
+	if (opts->mirrortarget) {
+		free(opts->mirrortarget);
+	}
+#endif /* !WITHOUT_MIRROR */
 	memset(opts, 0, sizeof(opts_t));
 	free(opts);
 }
@@ -251,7 +265,8 @@ opts_proto_dbg_dump(opts_t *opts)
  * Parse proxyspecs using a simple state machine.
  */
 void
-proxyspec_parse(int *argc, char **argv[], const char *natengine, proxyspec_t **opts_spec)
+proxyspec_parse(int *argc, char **argv[], const char *natengine,
+                proxyspec_t **opts_spec)
 {
 	proxyspec_t *spec = NULL;
 	char *addr = NULL;
@@ -540,12 +555,10 @@ opts_set_cacrt(opts_t *opts, const char *argv0, const char *optarg)
 		X509_free(opts->cacrt);
 	opts->cacrt = ssl_x509_load(optarg);
 	if (!opts->cacrt) {
-		fprintf(stderr, "%s: error loading CA "
-						"cert from '%s':\n",
-						argv0, optarg);
+		fprintf(stderr, "%s: error loading CA cert from '%s':\n",
+		        argv0, optarg);
 		if (errno) {
-			fprintf(stderr, "%s\n",
-					strerror(errno));
+			fprintf(stderr, "%s\n", strerror(errno));
 		} else {
 			ERR_print_errors_fp(stderr);
 		}
@@ -561,7 +574,9 @@ opts_set_cacrt(opts_t *opts, const char *argv0, const char *optarg)
 		opts->dh = ssl_dh_load(optarg);
 	}
 #endif /* !OPENSSL_NO_DH */
+#ifdef DEBUG_OPTS
 	log_dbg_printf("CACert: %s\n", optarg);
+#endif /* DEBUG_OPTS */
 }
 
 void
@@ -571,12 +586,10 @@ opts_set_cakey(opts_t *opts, const char *argv0, const char *optarg)
 		EVP_PKEY_free(opts->cakey);
 	opts->cakey = ssl_key_load(optarg);
 	if (!opts->cakey) {
-		fprintf(stderr, "%s: error loading CA "
-						"key from '%s':\n",
-						argv0, optarg);
+		fprintf(stderr, "%s: error loading CA key from '%s':\n",
+		        argv0, optarg);
 		if (errno) {
-			fprintf(stderr, "%s\n",
-					strerror(errno));
+			fprintf(stderr, "%s\n", strerror(errno));
 		} else {
 			ERR_print_errors_fp(stderr);
 		}
@@ -585,10 +598,8 @@ opts_set_cakey(opts_t *opts, const char *argv0, const char *optarg)
 	if (!opts->cacrt) {
 		opts->cacrt = ssl_x509_load(optarg);
 		if (opts->cacrt) {
-			ssl_x509_refcount_inc(
-						   opts->cacrt);
-			sk_X509_insert(opts->chain,
-						   opts->cacrt, 0);
+			ssl_x509_refcount_inc(opts->cacrt);
+			sk_X509_insert(opts->chain, opts->cacrt, 0);
 		}
 	}
 #ifndef OPENSSL_NO_DH
@@ -596,26 +607,27 @@ opts_set_cakey(opts_t *opts, const char *argv0, const char *optarg)
 		opts->dh = ssl_dh_load(optarg);
 	}
 #endif /* !OPENSSL_NO_DH */
+#ifdef DEBUG_OPTS
 	log_dbg_printf("CAKey: %s\n", optarg);
+#endif /* DEBUG_OPTS */
 }
 
 void
 opts_set_chain(opts_t *opts, const char *argv0, const char *optarg)
 {
-	if (ssl_x509chain_load(NULL, &opts->chain,
-						   optarg) == -1) {
-		fprintf(stderr, "%s: error loading "
-						"chain from '%s':\n",
-						argv0, optarg);
+	if (ssl_x509chain_load(NULL, &opts->chain, optarg) == -1) {
+		fprintf(stderr, "%s: error loading chain from '%s':\n",
+		        argv0, optarg);
 		if (errno) {
-			fprintf(stderr, "%s\n",
-					strerror(errno));
+			fprintf(stderr, "%s\n", strerror(errno));
 		} else {
 			ERR_print_errors_fp(stderr);
 		}
 		exit(EXIT_FAILURE);
 	}
+#ifdef DEBUG_OPTS
 	log_dbg_printf("CAChain: %s\n", optarg);
+#endif /* DEBUG_OPTS */
 }
 
 void
@@ -625,12 +637,10 @@ opts_set_key(opts_t *opts, const char *argv0, const char *optarg)
 		EVP_PKEY_free(opts->key);
 	opts->key = ssl_key_load(optarg);
 	if (!opts->key) {
-		fprintf(stderr, "%s: error loading lea"
-						"f key from '%s':\n",
-						argv0, optarg);
+		fprintf(stderr, "%s: error loading leaf key from '%s':\n",
+		        argv0, optarg);
 		if (errno) {
-			fprintf(stderr, "%s\n",
-					strerror(errno));
+			fprintf(stderr, "%s\n", strerror(errno));
 		} else {
 			ERR_print_errors_fp(stderr);
 		}
@@ -641,7 +651,9 @@ opts_set_key(opts_t *opts, const char *argv0, const char *optarg)
 		opts->dh = ssl_dh_load(optarg);
 	}
 #endif /* !OPENSSL_NO_DH */
+#ifdef DEBUG_OPTS
 	log_dbg_printf("LeafCerts: %s\n", optarg);
+#endif /* DEBUG_OPTS */
 }
 
 void
@@ -650,16 +662,17 @@ opts_set_crl(opts_t *opts, const char *optarg)
 	if (opts->crlurl)
 		free(opts->crlurl);
 	opts->crlurl = strdup(optarg);
+#ifdef DEBUG_OPTS
 	log_dbg_printf("CRL: %s\n", opts->crlurl);
+#endif /* DEBUG_OPTS */
 }
 
 void
 opts_set_tgcrtdir(opts_t *opts, const char *argv0, const char *optarg)
 {
 	if (!sys_isdir(optarg)) {
-		fprintf(stderr, "%s: '%s' is not a "
-						"directory\n",
-						argv0, optarg);
+		fprintf(stderr, "%s: '%s' is not a directory\n",
+		        argv0, optarg);
 		exit(EXIT_FAILURE);
 	}
 	if (opts->tgcrtdir)
@@ -667,7 +680,9 @@ opts_set_tgcrtdir(opts_t *opts, const char *argv0, const char *optarg)
 	opts->tgcrtdir = strdup(optarg);
 	if (!opts->tgcrtdir)
 		oom_die(argv0);
+#ifdef DEBUG_OPTS
 	log_dbg_printf("TargetCertDir: %s\n", opts->tgcrtdir);
+#endif /* DEBUG_OPTS */
 }
 
 static void
@@ -681,21 +696,27 @@ set_certgendir(opts_t *opts, const char *argv0, const char *optarg)
 }
 
 void
-opts_set_certgendir_writegencerts(opts_t *opts, const char *argv0, const char *optarg)
+opts_set_certgendir_writegencerts(opts_t *opts, const char *argv0,
+                                  const char *optarg)
 {
 	opts->certgen_writeall = 0;
 	set_certgendir(opts, argv0, optarg);
+#ifdef DEBUG_OPTS
 	log_dbg_printf("WriteGenCertsDir: certgendir=%s, writeall=%u\n",
 	               opts->certgendir, opts->certgen_writeall);
+#endif /* DEBUG_OPTS */
 }
 
 void
-opts_set_certgendir_writeall(opts_t *opts, const char *argv0, const char *optarg)
+opts_set_certgendir_writeall(opts_t *opts, const char *argv0,
+                             const char *optarg)
 {
 	opts->certgen_writeall = 1;
 	set_certgendir(opts, argv0, optarg);
+#ifdef DEBUG_OPTS
 	log_dbg_printf("WriteAllCertsDir: certgendir=%s, writeall=%u\n",
 	               opts->certgendir, opts->certgen_writeall);
+#endif /* DEBUG_OPTS */
 }
 
 void
@@ -729,18 +750,18 @@ opts_set_clientcrt(opts_t *opts, const char *argv0, const char *optarg)
 		X509_free(opts->clientcrt);
 	opts->clientcrt = ssl_x509_load(optarg);
 	if (!opts->clientcrt) {
-		fprintf(stderr, "%s: error loading cli"
-						"ent cert from '%s':\n",
-						argv0, optarg);
+		fprintf(stderr, "%s: error loading client cert from '%s':\n",
+		        argv0, optarg);
 		if (errno) {
-			fprintf(stderr, "%s\n",
-					strerror(errno));
+			fprintf(stderr, "%s\n", strerror(errno));
 		} else {
 			ERR_print_errors_fp(stderr);
 		}
 		exit(EXIT_FAILURE);
 	}
+#ifdef DEBUG_OPTS
 	log_dbg_printf("ClientCert: %s\n", optarg);
+#endif /* DEBUG_OPTS */
 }
 
 void
@@ -750,18 +771,18 @@ opts_set_clientkey(opts_t *opts, const char *argv0, const char *optarg)
 		EVP_PKEY_free(opts->clientkey);
 	opts->clientkey = ssl_key_load(optarg);
 	if (!opts->clientkey) {
-		fprintf(stderr, "%s: error loading cli"
-						"ent key from '%s':\n",
-						argv0, optarg);
+		fprintf(stderr, "%s: error loading client key from '%s':\n",
+		        argv0, optarg);
 		if (errno) {
-			fprintf(stderr, "%s\n",
-					strerror(errno));
+			fprintf(stderr, "%s\n", strerror(errno));
 		} else {
 			ERR_print_errors_fp(stderr);
 		}
 		exit(EXIT_FAILURE);
 	}
+#ifdef DEBUG_OPTS
 	log_dbg_printf("ClientKey: %s\n", optarg);
+#endif /* DEBUG_OPTS */
 }
 
 #ifndef OPENSSL_NO_DH
@@ -772,18 +793,18 @@ opts_set_dh(opts_t *opts, const char *argv0, const char *optarg)
 		DH_free(opts->dh);
 	opts->dh = ssl_dh_load(optarg);
 	if (!opts->dh) {
-		fprintf(stderr, "%s: error loading DH "
-						"params from '%s':\n",
-						argv0, optarg);
+		fprintf(stderr, "%s: error loading DH params from '%s':\n",
+		        argv0, optarg);
 		if (errno) {
-			fprintf(stderr, "%s\n",
-					strerror(errno));
+			fprintf(stderr, "%s\n", strerror(errno));
 		} else {
 			ERR_print_errors_fp(stderr);
 		}
 		exit(EXIT_FAILURE);
 	}
+#ifdef DEBUG_OPTS
 	log_dbg_printf("DHGroupParams: %s\n", optarg);
+#endif /* DEBUG_OPTS */
 }
 #endif /* !OPENSSL_NO_DH */
 
@@ -795,16 +816,16 @@ opts_set_ecdhcurve(opts_t *opts, const char *argv0, const char *optarg)
 	if (opts->ecdhcurve)
 		free(opts->ecdhcurve);
 	if (!(ec = ssl_ec_by_name(optarg))) {
-		fprintf(stderr, "%s: unknown curve "
-						"'%s'\n",
-						argv0, optarg);
+		fprintf(stderr, "%s: unknown curve '%s'\n", argv0, optarg);
 		exit(EXIT_FAILURE);
 	}
 	EC_KEY_free(ec);
 	opts->ecdhcurve = strdup(optarg);
 	if (!opts->ecdhcurve)
 		oom_die(argv0);
+#ifdef DEBUG_OPTS
 	log_dbg_printf("ECDHCurve: %s\n", opts->ecdhcurve);
+#endif /* DEBUG_OPTS */
 }
 #endif /* !OPENSSL_NO_ECDH */
 
@@ -828,7 +849,9 @@ opts_set_ciphers(opts_t *opts, const char *argv0, const char *optarg)
 	opts->ciphers = strdup(optarg);
 	if (!opts->ciphers)
 		oom_die(argv0);
+#ifdef DEBUG_OPTS
 	log_dbg_printf("Ciphers: %s\n", opts->ciphers);
+#endif /* DEBUG_OPTS */
 }
 
 #ifndef OPENSSL_NO_ENGINE
@@ -840,7 +863,9 @@ opts_set_openssl_engine(opts_t *opts, const char *argv0, const char *optarg)
 	opts->openssl_engine = strdup(optarg);
 	if (!opts->openssl_engine)
 		oom_die(argv0);
+#ifdef DEBUG_OPTS
 	log_dbg_printf("OpenSSLEngine: %s\n", opts->openssl_engine);
+#endif /* DEBUG_OPTS */
 }
 #endif /* !OPENSSL_NO_ENGINE */
 
@@ -918,7 +943,9 @@ opts_force_proto(opts_t *opts, const char *argv0, const char *optarg)
 		                argv0, optarg);
 		exit(EXIT_FAILURE);
 	}
+#ifdef DEBUG_OPTS
 	log_dbg_printf("ForceSSLProto: %s\n", optarg);
+#endif /* DEBUG_OPTS */
 }
 
 /*
@@ -958,16 +985,17 @@ opts_disable_proto(opts_t *opts, const char *argv0, const char *optarg)
 		                argv0, optarg);
 		exit(EXIT_FAILURE);
 	}
+#ifdef DEBUG_OPTS
 	log_dbg_printf("DisableSSLProto: %s\n", optarg);
+#endif /* DEBUG_OPTS */
 }
 
 void
 opts_set_user(opts_t *opts, const char *argv0, const char *optarg)
 {
 	if (!sys_isuser(optarg)) {
-		fprintf(stderr, "%s: '%s' is not an "
-						"existing user\n",
-						argv0, optarg);
+		fprintf(stderr, "%s: '%s' is not an existing user\n",
+		        argv0, optarg);
 		exit(EXIT_FAILURE);
 	}
 	if (opts->dropuser)
@@ -975,7 +1003,9 @@ opts_set_user(opts_t *opts, const char *argv0, const char *optarg)
 	opts->dropuser = strdup(optarg);
 	if (!opts->dropuser)
 		oom_die(argv0);
+#ifdef DEBUG_OPTS
 	log_dbg_printf("User: %s\n", opts->dropuser);
+#endif /* DEBUG_OPTS */
 }
 
 void
@@ -983,9 +1013,8 @@ opts_set_group(opts_t *opts, const char *argv0, const char *optarg)
 {
 
 	if (!sys_isgroup(optarg)) {
-		fprintf(stderr, "%s: '%s' is not an "
-						"existing group\n",
-						argv0, optarg);
+		fprintf(stderr, "%s: '%s' is not an existing group\n",
+		        argv0, optarg);
 		exit(EXIT_FAILURE);
 	}
 	if (opts->dropgroup)
@@ -993,30 +1022,29 @@ opts_set_group(opts_t *opts, const char *argv0, const char *optarg)
 	opts->dropgroup = strdup(optarg);
 	if (!opts->dropgroup)
 		oom_die(argv0);
+#ifdef DEBUG_OPTS
 	log_dbg_printf("Group: %s\n", opts->dropgroup);
+#endif /* DEBUG_OPTS */
 }
 
 void
 opts_set_jaildir(opts_t *opts, const char *argv0, const char *optarg)
 {
 	if (!sys_isdir(optarg)) {
-		fprintf(stderr, "%s: '%s' is not a "
-						"directory\n",
-						argv0, optarg);
+		fprintf(stderr, "%s: '%s' is not a directory\n", argv0, optarg);
 		exit(EXIT_FAILURE);
 	}
 	if (opts->jaildir)
 		free(opts->jaildir);
 	opts->jaildir = realpath(optarg, NULL);
 	if (!opts->jaildir) {
-		fprintf(stderr, "%s: Failed to "
-						"canonicalize '%s': "
-						"%s (%i)\n",
-						argv0, optarg,
-						strerror(errno), errno);
+		fprintf(stderr, "%s: Failed to realpath '%s': %s (%i)\n",
+		        argv0, optarg, strerror(errno), errno);
 		exit(EXIT_FAILURE);
 	}
+#ifdef DEBUG_OPTS
 	log_dbg_printf("Chroot: %s\n", opts->jaildir);
+#endif /* DEBUG_OPTS */
 }
 
 void
@@ -1027,7 +1055,9 @@ opts_set_pidfile(opts_t *opts, const char *argv0, const char *optarg)
 	opts->pidfile = strdup(optarg);
 	if (!opts->pidfile)
 		oom_die(argv0);
+#ifdef DEBUG_OPTS
 	log_dbg_printf("PidFile: %s\n", opts->pidfile);
+#endif /* DEBUG_OPTS */
 }
 
 void
@@ -1035,10 +1065,20 @@ opts_set_connectlog(opts_t *opts, const char *argv0, const char *optarg)
 {
 	if (opts->connectlog)
 		free(opts->connectlog);
-	opts->connectlog = strdup(optarg);
-	if (!opts->connectlog)
-		oom_die(argv0);
+	if (!(opts->connectlog = sys_realdir(optarg))) {
+		if (errno == ENOENT) {
+			fprintf(stderr, "Directory part of '%s' does not "
+			                "exist\n", optarg);
+			exit(EXIT_FAILURE);
+		} else {
+			fprintf(stderr, "Failed to realpath '%s': %s (%i)\n",
+			              optarg, strerror(errno), errno);
+			oom_die(argv0);
+		}
+	}
+#ifdef DEBUG_OPTS
 	log_dbg_printf("ConnectLog: %s\n", opts->connectlog);
+#endif /* DEBUG_OPTS */
 }
 
 void
@@ -1046,41 +1086,49 @@ opts_set_contentlog(opts_t *opts, const char *argv0, const char *optarg)
 {
 	if (opts->contentlog)
 		free(opts->contentlog);
-	opts->contentlog = strdup(optarg);
-	if (!opts->contentlog)
-		oom_die(argv0);
+	if (!(opts->contentlog = sys_realdir(optarg))) {
+		if (errno == ENOENT) {
+			fprintf(stderr, "Directory part of '%s' does not "
+			                "exist\n", optarg);
+			exit(EXIT_FAILURE);
+		} else {
+			fprintf(stderr, "Failed to realpath '%s': %s (%i)\n",
+			              optarg, strerror(errno), errno);
+			oom_die(argv0);
+		}
+	}
 	opts->contentlog_isdir = 0;
 	opts->contentlog_isspec = 0;
+#ifdef DEBUG_OPTS
 	log_dbg_printf("ContentLog: %s\n", opts->contentlog);
+#endif /* DEBUG_OPTS */
 }
 
 void
 opts_set_contentlogdir(opts_t *opts, const char *argv0, const char *optarg)
 {
 	if (!sys_isdir(optarg)) {
-		fprintf(stderr, "%s: '%s' is not a "
-						"directory\n",
-						argv0, optarg);
+		fprintf(stderr, "%s: '%s' is not a directory\n", argv0, optarg);
 		exit(EXIT_FAILURE);
 	}
 	if (opts->contentlog)
 		free(opts->contentlog);
 	opts->contentlog = realpath(optarg, NULL);
 	if (!opts->contentlog) {
-		fprintf(stderr, "%s: Failed to "
-						"canonicalize '%s': "
-						"%s (%i)\n",
-						argv0, optarg,
-						strerror(errno), errno);
+		fprintf(stderr, "%s: Failed to realpath '%s': %s (%i)\n",
+		        argv0, optarg, strerror(errno), errno);
 		exit(EXIT_FAILURE);
 	}
 	opts->contentlog_isdir = 1;
 	opts->contentlog_isspec = 0;
+#ifdef DEBUG_OPTS
 	log_dbg_printf("ContentLogDir: %s\n", opts->contentlog);
+#endif /* DEBUG_OPTS */
 }
 
 static void
-opts_set_logbasedir(const char *argv0, const char *optarg, char **basedir, char **log)
+opts_set_logbasedir(const char *argv0, const char *optarg,
+                    char **basedir, char **log)
 {
 	char *lhs, *rhs, *p, *q;
 	size_t n;
@@ -1088,13 +1136,10 @@ opts_set_logbasedir(const char *argv0, const char *optarg, char **basedir, char 
 		free(*basedir);
 	if (*log)
 		free(*log);
-	if (log_content_split_pathspec(optarg, &lhs,
-								   &rhs) == -1) {
-		fprintf(stderr, "%s: Failed to split "
-						"'%s' in lhs/rhs: "
-						"%s (%i)\n",
-						argv0, optarg,
-						strerror(errno), errno);
+	if (log_content_split_pathspec(optarg, &lhs, &rhs) == -1) {
+		fprintf(stderr, "%s: Failed to split '%s' in lhs/rhs:"
+		                " %s (%i)\n", argv0, optarg,
+		                strerror(errno), errno);
 		exit(EXIT_FAILURE);
 	}
 	/* eliminate %% from lhs */
@@ -1107,19 +1152,14 @@ opts_set_logbasedir(const char *argv0, const char *optarg, char **basedir, char 
 	*q = '\0';
 	/* all %% in lhs resolved to % */
 	if (sys_mkpath(lhs, 0777) == -1) {
-		fprintf(stderr, "%s: Failed to create "
-						"'%s': %s (%i)\n",
-						argv0, lhs,
-						strerror(errno), errno);
+		fprintf(stderr, "%s: Failed to create '%s': %s (%i)\n",
+		        argv0, lhs, strerror(errno), errno);
 		exit(EXIT_FAILURE);
 	}
 	*basedir = realpath(lhs, NULL);
 	if (!*basedir) {
-		fprintf(stderr, "%s: Failed to "
-						"canonicalize '%s': "
-						"%s (%i)\n",
-						argv0, lhs,
-						strerror(errno), errno);
+		fprintf(stderr, "%s: Failed to realpath '%s': %s (%i)\n",
+		        argv0, lhs, strerror(errno), errno);
 		exit(EXIT_FAILURE);
 	}
 	/* count '%' in basedir */
@@ -1143,8 +1183,7 @@ opts_set_logbasedir(const char *argv0, const char *optarg, char **basedir, char 
 	}
 	*q = '\0';
 	/* lhs contains encoded realpathed basedir */
-	if (asprintf(log,
-				 "%s/%s", lhs, rhs) < 0)
+	if (asprintf(log, "%s/%s", lhs, rhs) < 0)
 		oom_die(argv0);
 	free(lhs);
 	free(rhs);
@@ -1153,11 +1192,14 @@ opts_set_logbasedir(const char *argv0, const char *optarg, char **basedir, char 
 void
 opts_set_contentlogpathspec(opts_t *opts, const char *argv0, const char *optarg)
 {
-	opts_set_logbasedir(argv0, optarg, &opts->contentlog_basedir, &opts->contentlog);
+	opts_set_logbasedir(argv0, optarg, &opts->contentlog_basedir,
+	                    &opts->contentlog);
 	opts->contentlog_isdir = 0;
 	opts->contentlog_isspec = 1;
+#ifdef DEBUG_OPTS
 	log_dbg_printf("ContentLogPathSpec: basedir=%s, %s\n",
 	               opts->contentlog_basedir, opts->contentlog);
+#endif /* DEBUG_OPTS */
 }
 
 #ifdef HAVE_LOCAL_PROCINFO
@@ -1179,11 +1221,107 @@ opts_set_masterkeylog(opts_t *opts, const char *argv0, const char *optarg)
 {
 	if (opts->masterkeylog)
 		free(opts->masterkeylog);
-	opts->masterkeylog = strdup(optarg);
-	if (!opts->masterkeylog)
-		oom_die(argv0);
+	if (!(opts->masterkeylog = sys_realdir(optarg))) {
+		if (errno == ENOENT) {
+			fprintf(stderr, "Directory part of '%s' does not "
+			                "exist\n", optarg);
+			exit(EXIT_FAILURE);
+		} else {
+			fprintf(stderr, "Failed to realpath '%s': %s (%i)\n",
+			              optarg, strerror(errno), errno);
+			oom_die(argv0);
+		}
+	}
+#ifdef DEBUG_OPTS
 	log_dbg_printf("MasterKeyLog: %s\n", opts->masterkeylog);
+#endif /* DEBUG_OPTS */
 }
+
+void
+opts_set_pcaplog(opts_t *opts, const char *argv0, const char *optarg)
+{
+	if (opts->pcaplog)
+		free(opts->pcaplog);
+	if (!(opts->pcaplog = sys_realdir(optarg))) {
+		if (errno == ENOENT) {
+			fprintf(stderr, "Directory part of '%s' does not "
+			                "exist\n", optarg);
+			exit(EXIT_FAILURE);
+		} else {
+			fprintf(stderr, "Failed to realpath '%s': %s (%i)\n",
+			              optarg, strerror(errno), errno);
+			oom_die(argv0);
+		}
+	}
+	opts->pcaplog_isdir = 0;
+	opts->pcaplog_isspec = 0;
+#ifdef DEBUG_OPTS
+	log_dbg_printf("PcapLog: %s\n", opts->pcaplog);
+#endif /* DEBUG_OPTS */
+}
+
+void
+opts_set_pcaplogdir(opts_t *opts, const char *argv0, const char *optarg)
+{
+	if (!sys_isdir(optarg)) {
+		fprintf(stderr, "%s: '%s' is not a directory\n", argv0, optarg);
+		exit(EXIT_FAILURE);
+	}
+	if (opts->pcaplog)
+		free(opts->pcaplog);
+	opts->pcaplog = realpath(optarg, NULL);
+	if (!opts->pcaplog) {
+		fprintf(stderr, "%s: Failed to realpath '%s': %s (%i)\n",
+		        argv0, optarg, strerror(errno), errno);
+		exit(EXIT_FAILURE);
+	}
+	opts->pcaplog_isdir = 1;
+	opts->pcaplog_isspec = 0;
+#ifdef DEBUG_OPTS
+	log_dbg_printf("PcapLogDir: %s\n", opts->pcaplog);
+#endif /* DEBUG_OPTS */
+}
+
+void
+opts_set_pcaplogpathspec(opts_t *opts, const char *argv0, const char *optarg)
+{
+	opts_set_logbasedir(argv0, optarg, &opts->pcaplog_basedir,
+	                    &opts->pcaplog);
+	opts->pcaplog_isdir = 0;
+	opts->pcaplog_isspec = 1;
+#ifdef DEBUG_OPTS
+	log_dbg_printf("PcapLogPathSpec: basedir=%s, %s\n",
+	               opts->pcaplog_basedir, opts->pcaplog);
+#endif /* DEBUG_OPTS */
+}
+
+#ifndef WITHOUT_MIRROR
+void
+opts_set_mirrorif(opts_t *opts, const char *argv0, const char *optarg)
+{
+	if (opts->mirrorif)
+		free(opts->mirrorif);
+	opts->mirrorif = strdup(optarg);
+	if (!opts->mirrorif)
+		oom_die(argv0);
+#ifdef DEBUG_OPTS
+	log_dbg_printf("MirrorIf: %s\n", opts->mirrorif);
+#endif /* DEBUG_OPTS */
+}
+
+void
+opts_set_mirrortarget(opts_t *opts, const char *argv0, const char *optarg)
+{
+	if (opts->mirrortarget)
+		free(opts->mirrortarget);
+	opts->mirrortarget = strdup(optarg);
+	if (!opts->mirrortarget)
+		oom_die(argv0);
+#ifdef DEBUG_OPTS
+	log_dbg_printf("MirrorTarget: %s\n", opts->mirrortarget);
+#endif /* DEBUG_OPTS */
+}
+#endif /* !WITHOUT_MIRROR */
 
 void
 opts_set_daemon(opts_t *opts)
@@ -1225,7 +1363,9 @@ opts_set_debug_level(const char *optarg)
 		fprintf(stderr, "Invalid DebugLevel '%s', use 2-4\n", optarg);
 		exit(EXIT_FAILURE);
 	}
+#ifdef DEBUG_OPTS
 	log_dbg_printf("DebugLevel: %s\n", optarg);
+#endif /* DEBUG_OPTS */
 }
 
 void
@@ -1304,7 +1444,8 @@ check_value_yesno(const char *value, const char *name, int line_num)
 #define MAX_TOKEN 10
 
 static int
-set_option(opts_t *opts, const char *argv0, const char *name, char *value, char **natengine, int line_num)
+set_option(opts_t *opts, const char *argv0,
+           const char *name, char *value, char **natengine, int line_num)
 {
 	int yes;
 	int retval = -1;
@@ -1336,14 +1477,18 @@ set_option(opts_t *opts, const char *argv0, const char *name, char *value, char 
 			goto leave;
 		}
 		yes ? opts_set_deny_ocsp(opts) : opts_unset_deny_ocsp(opts);
+#ifdef DEBUG_OPTS
 		log_dbg_printf("DenyOCSP: %u\n", opts->deny_ocsp);
+#endif /* DEBUG_OPTS */
 	} else if (!strncmp(name, "Passthrough", 12)) {
 		yes = check_value_yesno(value, "Passthrough", line_num);
 		if (yes == -1) {
 			goto leave;
 		}
 		yes ? opts_set_passthrough(opts) : opts_unset_passthrough(opts);
+#ifdef DEBUG_OPTS
 		log_dbg_printf("Passthrough: %u\n", opts->passthrough);
+#endif /* DEBUG_OPTS */
 #ifndef OPENSSL_NO_DH
 	} else if (!strncmp(name, "DHGroupParams", 14)) {
 		opts_set_dh(opts, argv0, value);
@@ -1359,7 +1504,9 @@ set_option(opts_t *opts, const char *argv0, const char *name, char *value, char 
 			goto leave;
 		}
 		yes ? opts_set_sslcomp(opts) : opts_unset_sslcomp(opts);
+#ifdef DEBUG_OPTS
 		log_dbg_printf("SSLCompression: %u\n", opts->sslcomp);
+#endif /* DEBUG_OPTS */
 #endif /* SSL_OP_NO_COMPRESSION */
 	} else if (!strncmp(name, "ForceSSLProto", 14)) {
 		opts_force_proto(opts, argv0, value);
@@ -1377,7 +1524,9 @@ set_option(opts_t *opts, const char *argv0, const char *name, char *value, char 
 		*natengine = strdup(value);
 		if (!*natengine)
 			goto leave;
+#ifdef DEBUG_OPTS
 		log_dbg_printf("NATEngine: %s\n", *natengine);
+#endif /* DEBUG_OPTS */
 	} else if (!strncmp(name, "User", 5)) {
 		opts_set_user(opts, argv0, value);
 	} else if (!strncmp(name, "Group", 6)) {
@@ -1401,24 +1550,42 @@ set_option(opts_t *opts, const char *argv0, const char *name, char *value, char 
 			goto leave;
 		}
 		yes ? opts_set_lprocinfo(opts) : opts_unset_lprocinfo(opts);
+#ifdef DEBUG_OPTS
 		log_dbg_printf("LogProcInfo: %u\n", opts->lprocinfo);
+#endif /* DEBUG_OPTS */
 #endif /* HAVE_LOCAL_PROCINFO */
 	} else if (!strncmp(name, "MasterKeyLog", 13)) {
 		opts_set_masterkeylog(opts, argv0, value);
+	} else if (!strncmp(name, "PcapLog", 8)) {
+		opts_set_pcaplog(opts, argv0, value);
+	} else if (!strncmp(name, "PcapLogDir", 11)) {
+		opts_set_pcaplogdir(opts, argv0, value);
+	} else if (!strncmp(name, "PcapLogPathSpec", 16)) {
+		opts_set_pcaplogpathspec(opts, argv0, value);
+#ifndef WITHOUT_MIRROR
+	} else if (!strncmp(name, "MirrorIf", 9)) {
+		opts_set_mirrorif(opts, argv0, value);
+	} else if (!strncmp(name, "MirrorTarget", 13)) {
+		opts_set_mirrortarget(opts, argv0, value);
+#endif /* !WITHOUT_MIRROR */
 	} else if (!strncmp(name, "Daemon", 7)) {
 		yes = check_value_yesno(value, "Daemon", line_num);
 		if (yes == -1) {
 			goto leave;
 		}
 		yes ? opts_set_daemon(opts) : opts_unset_daemon(opts);
+#ifdef DEBUG_OPTS
 		log_dbg_printf("Daemon: %u\n", opts->detach);
+#endif /* DEBUG_OPTS */
 	} else if (!strncmp(name, "Debug", 6)) {
 		yes = check_value_yesno(value, "Debug", line_num);
 		if (yes == -1) {
 			goto leave;
 		}
 		yes ? opts_set_debug(opts) : opts_unset_debug(opts);
+#ifdef DEBUG_OPTS
 		log_dbg_printf("Debug: %u\n", opts->debug);
+#endif /* DEBUG_OPTS */
 	} else if (!strncmp(name, "DebugLevel", 11)) {
 		opts_set_debug_level(value);
 	} else if (!strncmp(name, "ProxySpec", 10)) {
@@ -1428,7 +1595,9 @@ set_option(opts_t *opts, const char *argv0, const char *name, char *value, char 
 		int argc = 0;
 		char *p, *last = NULL;
 
-		for ((p = strtok_r(value, " ", &last)); p; (p = strtok_r(NULL, " ", &last))) {
+		for ((p = strtok_r(value, " ", &last));
+		     p;
+		     (p = strtok_r(NULL, " ", &last))) {
 			/* Limit max # token */
 			if (argc < MAX_TOKEN) {
 				argv[argc++] = p;
@@ -1445,14 +1614,19 @@ set_option(opts_t *opts, const char *argv0, const char *name, char *value, char 
 			goto leave;
 		}
 		yes ? opts_set_verify_peer(opts) : opts_unset_verify_peer(opts);
+#ifdef DEBUG_OPTS
 		log_dbg_printf("VerifyPeer: %u\n", opts->verify_peer);
+#endif /* DEBUG_OPTS */
 	} else if (!strncasecmp(name, "AllowWrongHost", 15)) {
 		yes = check_value_yesno(value, "AllowWrongHost", line_num);
 		if (yes == -1) {
 			goto leave;
 		}
-		yes ? opts_set_allow_wrong_host(opts) : opts_unset_allow_wrong_host(opts);
+		yes ? opts_set_allow_wrong_host(opts)
+		    : opts_unset_allow_wrong_host(opts);
+#ifdef DEBUG_OPTS
 		log_dbg_printf("AllowWrongHost: %u\n", opts->allow_wrong_host);
+#endif /* DEBUG_OPTS */
 	} else if (!strncasecmp(name, "ConnIdleTimeout", 16)) {
 		unsigned int i = atoi(value);
 		if (i >= 10 && i <= 3600) {
@@ -1461,7 +1635,9 @@ set_option(opts_t *opts, const char *argv0, const char *name, char *value, char 
 			fprintf(stderr, "Invalid ConnIdleTimeout %s at line %d, use 10-3600\n", value, line_num);
 			goto leave;
 		}
+#ifdef DEBUG_OPTS
 		log_dbg_printf("ConnIdleTimeout: %u\n", opts->conn_idle_timeout);
+#endif /* DEBUG_OPTS */
 	} else if (!strncasecmp(name, "ExpiredConnCheckPeriod", 23)) {
 		unsigned int i = atoi(value);
 		if (i >= 10 && i <= 60) {
@@ -1470,7 +1646,9 @@ set_option(opts_t *opts, const char *argv0, const char *name, char *value, char 
 			fprintf(stderr, "Invalid ExpiredConnCheckPeriod %s at line %d, use 10-60\n", value, line_num);
 			goto leave;
 		}
+#ifdef DEBUG_OPTS
 		log_dbg_printf("ExpiredConnCheckPeriod: %u\n", opts->expired_conn_check_period);
+#endif /* DEBUG_OPTS */
 	} else if (!strncasecmp(name, "SSLShutdownRetryDelay", 22)) {
 		unsigned int i = atoi(value);
 		if (i >= 100 && i <= 10000) {
@@ -1479,14 +1657,18 @@ set_option(opts_t *opts, const char *argv0, const char *name, char *value, char 
 			fprintf(stderr, "Invalid SSLShutdownRetryDelay %s at line %d, use 100-10000\n", value, line_num);
 			goto leave;
 		}
+#ifdef DEBUG_OPTS
 		log_dbg_printf("SSLShutdownRetryDelay: %u\n", opts->ssl_shutdown_retry_delay);
+#endif /* DEBUG_OPTS */
 	} else if (!strncasecmp(name, "LogStats", 9)) {
 		yes = check_value_yesno(value, "LogStats", line_num);
 		if (yes == -1) {
 			goto leave;
 		}
 		yes ? opts_set_statslog(opts) : opts_unset_statslog(opts);
+#ifdef DEBUG_OPTS
 		log_dbg_printf("LogStats: %u\n", opts->statslog);
+#endif /* DEBUG_OPTS */
 	} else if (!strncasecmp(name, "StatsPeriod", 12)) {
 		unsigned int i = atoi(value);
 		if (i >= 1 && i <= 10) {
@@ -1495,23 +1677,30 @@ set_option(opts_t *opts, const char *argv0, const char *name, char *value, char 
 			fprintf(stderr, "Invalid StatsPeriod %s at line %d, use 1-10\n", value, line_num);
 			goto leave;
 		}
+#ifdef DEBUG_OPTS
 		log_dbg_printf("StatsPeriod: %u\n", opts->stats_period);
+#endif /* DEBUG_OPTS */
 	} else if (!strncasecmp(name, "RemoveHTTPAcceptEncoding", 25)) {
 		yes = check_value_yesno(value, "RemoveHTTPAcceptEncoding", line_num);
 		if (yes == -1) {
 			goto leave;
 		}
 		yes ? opts_set_remove_http_accept_encoding(opts) : opts_unset_remove_http_accept_encoding(opts);
+#ifdef DEBUG_OPTS
 		log_dbg_printf("RemoveHTTPAcceptEncoding: %u\n", opts->remove_http_accept_encoding);
+#endif /* DEBUG_OPTS */
 	} else if (!strncasecmp(name, "RemoveHTTPReferer", 18)) {
 		yes = check_value_yesno(value, "RemoveHTTPReferer", line_num);
 		if (yes == -1) {
 			goto leave;
 		}
 		yes ? opts_set_remove_http_referer(opts) : opts_unset_remove_http_referer(opts);
+#ifdef DEBUG_OPTS
 		log_dbg_printf("RemoveHTTPReferer: %u\n", opts->remove_http_referer);
+#endif /* DEBUG_OPTS */
 	} else {
-		fprintf(stderr, "Error in conf: Unknown option '%s' at line %d\n", name, line_num);
+		fprintf(stderr, "Error in conf: Unknown option "
+		                "'%s' at line %d\n", name, line_num);
 		goto leave;
 	}
 
@@ -1589,7 +1778,8 @@ leave:
 }
 
 int
-opts_set_option(opts_t *opts, const char *argv0, const char *optarg, char **natengine)
+opts_set_option(opts_t *opts, const char *argv0, const char *optarg,
+                char **natengine)
 {
 	char *name, *value;
 	int retval = -1;

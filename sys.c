@@ -33,10 +33,13 @@
 
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/ioctl.h>
 #include <sys/uio.h>
 #include <sys/stat.h>
 #include <sys/file.h>
 #include <sys/un.h>
+#include <sys/time.h>
+#include <net/if.h>
 #include <netinet/in.h>
 #include <netdb.h>
 #include <fcntl.h>
@@ -143,7 +146,37 @@ error:
 	if (pw) {
 		endpwent();
 	}
+	if (gr) {
+		endgrent();
+	}
 	return ret;
+}
+
+/*
+ * If the user exists and on successful lookup, return 0 and if uid != NULL,
+ * write the uid of *username* to the value pointed to by uid.
+ * Return -1 on failure or if the user does not exist.
+ */
+int
+sys_uid(const char *username, uid_t *uid)
+{
+	struct passwd *pw;
+	int rv;
+
+	errno = 0;
+	if (!(pw = getpwnam(username))) {
+		if (errno != 0 && errno != ENOENT) {
+			log_err_level_printf(LOG_CRIT, "Failed to load user '%s': %s (%i)\n",
+			               username, strerror(errno), errno);
+		}
+		rv = -1;
+	} else {
+		if (uid)
+			*uid = pw->pw_uid;
+		rv = 0;
+	}
+	endpwent();
+	return rv;
 }
 
 /*
@@ -152,17 +185,34 @@ error:
 int
 sys_isuser(const char *username)
 {
-	errno = 0;
-	if (!getpwnam(username)) {
-		if (errno != 0 && errno != ENOENT) {
-			log_err_level_printf(LOG_CRIT, "Failed to load user '%s': %s (%i)\n",
-			               username, strerror(errno), errno);
-		}
-		return 0;
-	}
+	return sys_uid(username, NULL) == 0;
+}
 
-	endpwent();
-	return 1;
+/*
+ * If the group exists and on successful lookup, return 0 and if gid != NULL,
+ * write the gid of *groupname* to the value pointed to by gid.
+ * Return -1 on failure or if the group does not exist.
+ */
+int
+sys_gid(const char *groupname, gid_t *gid)
+{
+	struct group *gr;
+	int rv;
+
+	errno = 0;
+	if (!(gr = getgrnam(groupname))) {
+		if (errno != 0 && errno != ENOENT) {
+			log_err_level_printf(LOG_CRIT, "Failed to load group '%s': %s (%i)\n",
+			               groupname, strerror(errno), errno);
+		}
+		rv = -1;
+	} else {
+		if (gid)
+			*gid = gr->gr_gid;
+		rv = 0;
+	}
+	endgrent();
+	return rv;
 }
 
 /*
@@ -171,15 +221,23 @@ sys_isuser(const char *username)
 int
 sys_isgroup(const char *groupname)
 {
-	errno = 0;
-	if (!getgrnam(groupname)) {
-		if (errno != 0 && errno != ENOENT) {
-			log_err_level_printf(LOG_CRIT, "Failed to load group '%s': %s (%i)\n",
-			               groupname, strerror(errno), errno);
-		}
+	return sys_gid(groupname, NULL) == 0;
+}
+
+/*
+ * Returns 1 if username is equivalent to the current effective UID.
+ * Returns 0 otherwise.
+ */
+int
+sys_isgeteuid(const char *username)
+{
+	uid_t uid;
+
+	if (sys_uid(username, &uid) == -1)
 		return 0;
-	}
-	return 1;
+	if (uid == geteuid())
+		return 1;
+	return 0;
 }
 
 /*
@@ -356,7 +414,7 @@ sys_group_str(gid_t gid)
  * Determine address family of addr
  */
 int
-sys_get_af(char *addr)
+sys_get_af(const char *addr)
 {
 	if (strstr(addr, ":"))
 		return AF_INET6;
@@ -475,6 +533,33 @@ sys_ip46str_sanitize(const char *s)
 }
 
 /*
+ * Returns the MTU of the interface with name *ifname* or 0 on errors.
+ */
+size_t
+sys_get_mtu(const char *ifname)
+{
+	struct ifreq ifr;
+	size_t ifnamelen;
+	int s;
+
+	ifnamelen = strlen(ifname);
+	if (ifnamelen > sizeof(ifr.ifr_name) + 1)
+		return 0;
+	memcpy(ifr.ifr_name, ifname, ifnamelen);
+	ifr.ifr_name[ifnamelen] = '\0';
+
+	s = socket(PF_INET, SOCK_DGRAM, IPPROTO_IP);
+	if (s == -1)
+		return 0;
+	if (ioctl(s, SIOCGIFMTU, &ifr) == -1) {
+		close(s);
+		return 0;
+	}
+	close(s);
+	return ifr.ifr_mtu;
+}
+
+/*
  * Returns 1 if path points to an existing directory node in the filesystem.
  * Returns 0 if path is NULL, does not exist, or points to a file of some kind.
  */
@@ -540,6 +625,54 @@ sys_mkpath(const char *path, mode_t mode)
 	} while (p);
 
 	return 0;
+}
+
+/*
+ * Return realpath(dirname(path)) + / + basename(path) in a newly allocated
+ * string.  Returns NULL on failure and sets errno to ENOENT if the directory
+ * part does not exist.
+ */
+char *
+sys_realdir(const char *path)
+{
+	char *sep, *udir, *rdir, *p;
+	int rerrno, rv;
+
+	if (path[0] == '\0') {
+		errno = EINVAL;
+		return NULL;
+	}
+
+	udir = strdup(path);
+	if (!udir)
+		return NULL;
+
+	sep = strrchr(udir, '/');
+	if (!sep) {
+		free(udir);
+		rv = asprintf(&udir, "./%s", path);
+		if (rv == -1)
+			return NULL;
+		sep = udir + 1;
+	} else if (sep == udir) {
+		return udir;
+	}
+	*sep = '\0';
+	rdir = realpath(udir, NULL);
+	if (!rdir) {
+		rerrno = errno;
+		free(udir);
+		errno = rerrno;
+		return NULL;
+	}
+	rv = asprintf(&p, "%s/%s", rdir, sep + 1);
+	rerrno = errno;
+	free(rdir);
+	free(udir);
+	errno = rerrno;
+	if (rv == -1)
+		return NULL;
+	return p;
 }
 
 /*
@@ -876,6 +1009,34 @@ sys_dump_fds(void)
 		}
 		printf("\n");
 	}
+}
+
+static int sys_rand_seeded = 0;
+
+static void
+sys_rand_seed(void) {
+	struct timeval seed;
+
+	if (gettimeofday(&seed, NULL) == -1) {
+		srandom((unsigned)time(NULL));
+	} else {
+		srandom((unsigned)(seed.tv_sec ^ seed.tv_usec));
+	}
+	sys_rand_seeded = 1;
+}
+
+uint16_t
+sys_rand16(void) {
+	if (unlikely(!sys_rand_seeded))
+		sys_rand_seed();
+	return random();
+}
+
+uint32_t
+sys_rand32(void) {
+	if (unlikely(!sys_rand_seeded))
+		sys_rand_seed();
+	return random();
 }
 
 /* vim: set noet ft=c: */

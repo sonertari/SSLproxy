@@ -29,25 +29,25 @@
 .\" ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 .\" POSSIBILITY OF SUCH DAMAGE.
 .\"
-.TH SSLPROXY 1  "15 Sep 2018"
+.TH "sslproxy" "1" "03 Nov 2018" "v0.5.8" "SSLproxy"
 .SH NAME
 sslproxy \-\- transparent SSL/TLS proxy for decrypting and diverting network 
 traffic to other programs for deep SSL inspection
 .SH SYNOPSIS
 .na
 .B sslproxy
-[\fB-kCKqwWOPZdDgGsrRxeumjplILSFiMab\fP] \fB-c\fP \fIpem\fP
+[\fB-kCKqwWOPZdDgGsrRxeumjplLSFXYyTIMiab\fP] \fB-c\fP \fIpem\fP
 \fIproxyspecs\fP [...]
 .br
 .B sslproxy
-[\fB-kCKqwWOPZdDgGsrRxeumjplILSFiMab\fP] \fB-c\fP \fIpem\fP \fB-t\fP \fIdir\fP
+[\fB-kCKqwWOPZdDgGsrRxeumjplLSFXYyTIMiab\fP] \fB-c\fP \fIpem\fP \fB-t\fP \fIdir\fP
 \fIproxyspecs\fP [...]
 .br
 .B sslproxy
-[\fB-OPZwWdDgGsrRxeumjplILSFiMab\fP] \fB-t\fP \fIdir\fP
+[\fB-OPZwWdDgGsrRxeumjplLSFXYyTIMiab\fP] \fB-t\fP \fIdir\fP
 \fIproxyspecs\fP [...]
 .br
-.B sslproxy [\fB-kCKwWOPZdDgGsrRxeumjplILSFiM\fP] -f \fIconffile\fP
+.B sslproxy [\fB-kCKwWOPZdDgGsrRxeumjplLSFXYyTIMi\fP] -f \fIconffile\fP
 .br
 .B sslproxy -E
 .br
@@ -69,7 +69,7 @@ program listening on the port given in the proxy specification. SSLproxy
 inserts in the first packet the address and port it is expecting to receive the 
 packets back from the program. Upon receiving the packets back, SSLproxy 
 re-encrypts and sends them to their original destination. The return traffic 
-follows the same path back to the client.
+follows the same path back to the client in reverse order.
 .LP
 This is similar in principle to divert sockets, divert(4), where the packet 
 filter diverts the packets to a program listening on a divert socket, and after 
@@ -101,10 +101,10 @@ instead of generating forged ones.  SSLproxy supports NULL-prefix CN
 certificates but otherwise does not implement exploits against specific 
 certificate verification vulnerabilities in SSL/TLS stacks.
 .LP
-SSLproxy implements a number of defenses against mechanisms which would 
+SSLproxy implements a number of defences against mechanisms which would 
 normally prevent MitM attacks or make them more difficult.  SSLproxy can deny 
 OCSP requests in a generic way.
-For HTTP and HTTPS connections, SSLsplit mangles headers to
+For HTTP and HTTPS connections, SSLproxy mangles headers to
 prevent server-instructed public key pinning (HPKP),
 avoid strict transport security restrictions (HSTS),
 avoid Certificate Transparency enforcement (Expect-CT) and
@@ -121,7 +121,13 @@ configuration file.
 SSLproxy verifies upstream certificates by default. If the verification fails, 
 the connection is terminated immediately. This is in contrast to SSLsplit, 
 because in order to maximize the chances that a connection can be successfully 
-split, SSLsplit accepts all certificates including self-signed ones.
+split, SSLsplit accepts all certificates by default, including self-signed 
+ones.
+.LP
+Logging options include traditional SSLproxy connect and content log files as
+well as PCAP files and mirroring decrypted traffic to a network interface.
+Additionally, certificates, master secrets and local process information can be
+logged.
 .LP
 SSLproxy does not automagically redirect any network traffic.  To actually
 implement a proxy, you also need to redirect the traffic to the system
@@ -177,13 +183,14 @@ List all supported NAT engines available on the system and exit.  See
 NAT ENGINES for a list of NAT engines currently supported by SSLproxy.
 .TP
 .B \-f \fIconffile\fP
-Read configuraion from \fIconffile\fP.
+Read configuration from \fIconffile\fP.
 .TP
 .B \-F \fIlogspec\fP
 Log connection content to separate log files with the given path specification
 (see LOG SPECIFICATIONS below).  For each connection, a log file will be
 written, which will contain both directions of data as transmitted.
 Information about the connection will be contained in the filename only.
+Only one of \fB-F\fP, \fB-L\fP and \fB-S\fP may be used (last one wins).
 .TP
 .B \-g \fIpemfile\fP
 Use Diffie-Hellman group parameters from \fIpemfile\fP for Ephemereal
@@ -212,6 +219,11 @@ connect log and enables the respective \fB-F\fP path specification directives.
 \fB-i\fP is available on Mac OS X and FreeBSD; support for other platforms has
 not been implemented yet.
 .TP
+.B \-I \fIif\fP
+Mirror connection content as emulated packets to interface \fIif\fP with
+destination address given by \fB-T\fP.  This option is not available if
+SSLproxy was built without mirroring support.
+.TP
 .B \-j \fIjaildir\fP
 Change the root directory to \fIjaildir\fP using chroot(2) after opening files.
 Note that this has implications for \fBsni\fP \fIproxyspecs\fP.
@@ -220,6 +232,9 @@ Depending on your operating system, you will need to copy files such as
 Using \fBsni\fP proxyspecs depends on name resolution.
 Some operating systems require special device nodes such as \fB/dev/null\fP
 to be present within the jail.  Check your system's documentation for details.
+.TP
+.B \-J
+Enable connection statistics logging.
 .TP
 .B \-k \fIpemfile\fP
 Use CA private key from \fIpemfile\fP to sign certificates forged on-the-fly.
@@ -237,16 +252,14 @@ If \fB-K\fP is not given, SSLproxy will generate a random 1024-bit RSA key.
 .B \-l \fIlogfile\fP
 Log connections to \fIlogfile\fP in a single line per connection format,
 including addresses and ports and some HTTP and SSL information, if available.
-SIGUSR1 will cause \fIlogfile\fP to be re-opened.
-.TP
-.B \-I
-Enable connection statistics logging.
+SIGHUP or SIGUSR1 will cause \fIlogfile\fP to be re-opened.
 .TP
 .B \-L \fIlogfile\fP
 Log connection content to \fIlogfile\fP.  The content log will contain a
 parsable log format with transmitted data, prepended with headers identifying
 the connection and the data length of each logged segment.
-SIGUSR1 will cause \fIlogfile\fP to be re-opened.
+SIGHUP or SIGUSR1 will cause \fIlogfile\fP to be re-opened.
+Only one of \fB-F\fP, \fB-L\fP and \fB-S\fP may be used (last one wins).
 .TP
 .B \-m
 When dropping privileges using \fB-u\fP, override the target primary group
@@ -257,8 +270,8 @@ Log master keys to \fIlogfile\fP in SSLKEYLOGFILE format as defined by Mozilla.
 Logging master keys in this format allows for decryption of SSL/TLS traffic
 using Wireshark.
 Note that unlike browsers implementing this feature, setting the SSLKEYLOGFILE
-environment variable has no effect on SSLsplit.
-SIGUSR1 will cause \fIlogfile\fP to be re-opened.
+environment variable has no effect on SSLproxy.
+SIGHUP or SIGUSR1 will cause \fIlogfile\fP to be re-opened.
 .TP
 .B \-O
 Deny all Online Certificate Status Protocol (OCSP) requests on all
@@ -277,6 +290,20 @@ within the \fIcertdir\fP specified by \fB-t\fP.
 .B \-p \fIpidfile\fP
 Write the process ID to \fIpidfile\fP and refuse to run if the \fIpidfile\fP
 is already in use by another process.
+.TP
+.B \-P
+Passthrough SSL/TLS connections which cannot be split instead of dropping them.
+Connections cannot be split if \fB-c\fP and \fB-k\fP are not given and the
+site does not match any certificate loaded using \fB-t\fP, or if the connection
+to the original server gives SSL/TLS errors.  Specifically, this happens if the
+site requests a client certificate.
+In these situations, passthrough with \fB-P\fP results in uninterrupted service
+for the clients, while dropping is the more secure alternative if unmonitored
+connections must be prevented.
+Passthrough mode currently does not apply to SSL/TLS errors in the connection
+from the client, since the connection from the client cannot easily be retried.
+Specifically, \fB-P\fP does not currently work for clients that do not accept
+forged certificates.
 .TP
 .B \-q \fIcrlurl\fP
 Set CRL distribution point (CDP) \fIcrlurl\fP on forged leaf certificates.
@@ -328,6 +355,7 @@ Log connection content to separate log files under \fIlogdir\fP.  For each
 connection, a log file will be written, which will contain both directions of
 data as transmitted.  Information about the connection will be contained in
 the filename only.
+Only one of \fB-F\fP, \fB-L\fP and \fB-S\fP may be used (last one wins).
 .TP
 .B \-t \fIcertdir\fP
 Use private key, certificate and certificate chain from PEM files in
@@ -343,14 +371,23 @@ loaded from \fIcertdir\fP.
 Otherwise, connections matching no certificate will be dropped, or if
 \fB-P\fP is given, passed through without splitting SSL/TLS.
 .TP
-.B \-u
+.B \-T \fIaddr\fP
+Mirror connection content as emulated packets to destination address \fIaddr\fP
+on the interface given by \fB-I\fP.  Only IPv4 target addresses are currently
+supported.  This option is not available if SSLproxy was built without
+mirroring support.
+.TP
+.B \-u \fIuser\fP
 Drop privileges after opening sockets and files by setting the real,
 effective and stored user IDs to \fIuser\fP and loading the appropriate
 primary and ancillary groups.  If \fB-u\fP is not given, SSLproxy will drop
 privileges to the stored UID if EUID != UID (setuid bit scenario), or to
 \fBnobody\fP if running with full \fBroot\fP privileges (EUID == UID == 0).
-The user needs to be allowed to make outbound TCP connections, and in some
-configurations, also to perform DNS resolution.
+User \fIuser\fP needs to be allowed to make outbound TCP connections, and in
+some configurations, to also perform DNS resolution.
+Dropping privileges enables privilege separation, which incurs latency for
+certain options, such as separate per-connection log files.  By using
+\fB-u root\fP, SSLproxy can be run as root without dropping privileges.
 Due to an Apple bug, \fB-u\fP cannot be used with \fBpf\fP proxyspecs on
 Mac OS X.
 .TP
@@ -363,6 +400,23 @@ engine dynamically linked library and loaded by path, regardless of global
 OpenSSL configuration.
 This option is only available if built against a version of OpenSSL with engine
 support.
+.TP
+.B \-X \fIpcapfile\fP
+Log connection content to \fIpcapfile\fP in PCAP format, with emulated TCP, IP
+and Ethernet headers.
+SIGHUP or SIGUSR1 will cause \fIpcapfile\fP to be re-opened.
+Only one of \fB-X\fP, \fB-Y\fP and \fB-y\fP may be used (last one wins).
+.TP
+.B \-Y \fIpcapdir\fP
+Log connection content to separate PCAP files under \fIpcapdir\fP.  For each
+connection, a separate PCAP file will be written.
+Only one of \fB-X\fP, \fB-Y\fP and \fB-y\fP may be used (last one wins).
+.TP
+.B \-y \fIpcapspec\fP
+Log connection content to separate PCAP files with the given path specification
+(see LOG SPECIFICATIONS below).  For each connection, a separate PCAP file will
+be written.
+Only one of \fB-X\fP, \fB-Y\fP and \fB-y\fP may be used (last one wins).
 .TP
 .B \-V
 Display version and compiled features information and exit.
@@ -440,6 +494,13 @@ Plain TCP connection without SSL/TLS and without any lower level protocol
 decoding; decrypted connection content is treated as opaque stream of bytes
 and not modified.
 .TP
+\fBautossl\fP
+Plain TCP connection until a Client Hello SSL/TLS message appears in the byte
+stream, then automatic upgrade to SSL/TLS interception.
+This is generic, protocol-independent STARTTLS support, that may erroneously
+trigger on byte sequences that look like Client Hello messages even though
+there was no actual STARTTLS command issued.
+.TP
 .I listenaddr port
 IPv4 or IPv6 address and port or service name to listen on.  This is the
 address and port where the NAT engine should redirect connections to.
@@ -448,10 +509,14 @@ address and port where the NAT engine should redirect connections to.
 Port or service name that the program is listening for connections.  This is the
 port where the traffic should be diverted to.
 .SH SIGNALS
-A running \fBsslproxy\fP accepts SIGINT and SIGQUIT for a clean shutdown and
-SIGUSR1 to re-open the long-living log files (\fB-l\fP and \fB-L\fP).
-Per-connection log files (\fB-S\fP and \fB-F\fP) are not re-opened because
-their filename is specific to the connection.
+A running \fBsslproxy\fP accepts SIGINT and SIGQUIT for a clean shutdown, and
+SIGHUP and SIGUSR1 to re-open the single-file log files (such as \fB-l\fP,
+\fB-L\fP and \fB-X\fP).  The canonical way to rotate or post-process logs is to
+rename the active log file, send SIGHUP or SIGUSR1 to the PID in the PID file
+given by \fB-p\fP, give SSLproxy some time to flush buffers after closing the
+old file, and then post-process the renamed log file.
+Per-connection log files (such as \fB-S\fP and \fB-F\fP) are not re-opened
+because their filename is specific to the connection.
 .SH "LOG SPECIFICATIONS"
 Log specifications are composed of zero or more printf-style directives;
 ordinary characters are included directly in the output path.
@@ -703,6 +768,18 @@ DNS lookups are performed asynchronously.
 SSLproxy uses SSL session caching on both ends to minimize the amount of full
 SSL handshakes, but even then, the limiting factor in handling SSL connections
 are the actual bignum computations.
+.LP
+For high performance and low latency and when running SSLproxy as root or
+otherwise in a privilege separation mode, avoid using options which require a
+privileged operation to be invoked through privilege separation for each
+connection.  These are currently all per-connection log types:
+content log to per-stream file in dir or filespec (\fB-F\fP, \fB-S\fP),
+content log to per-stream PCAP in dir or filespec (\fB-Y\fP, \fB-y\fP), and
+generated or all certificates to files in directory (\fB-w\fP, \fB-W\fP).
+Instead, use the respective single-file variants where available.
+It is possible, albeit not recommended, to bypass the default privilege
+separation when run as root by using \fB-u root\fP, thereby bypassing
+privilege separation entirely.
 .SH "SEE ALSO"
 sslproxy.conf(5), openssl(1), ciphers(1), speed(1),
 pf(4), ipfw(8), iptables(8), ip6tables(8), ip(8),
@@ -721,7 +798,9 @@ chronological order of their first contribution:
 Steve Wills, Landon Fuller, Wayne Jensen, Rory McNamara, Alexander Neumann,
 Adam Jacob Muller, Richard Poole, Maciej Kotowicz, Eun Soo Park, Christian
 Groschupp, Alexander Savchenkov, Soner Tari, Petr Vanek, Hilko Bengen,
-Philip Duldig, Levente Polyak and Nick French.
+Philip Duldig, Levente Polyak, Nick French and Cihan Komecoglu.
+
+SSLsplit contains work sponsored by HackerOne.
 .SH BUGS
 Use Github for submission of bug reports or patches:
 .LP

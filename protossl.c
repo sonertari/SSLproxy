@@ -540,8 +540,8 @@ protossl_srcssl_create(pxy_conn_ctx_t *ctx, SSL *origssl)
 {
 	cert_t *cert;
 
-	cachemgr_dsess_set((struct sockaddr*)&ctx->addr,
-	                   ctx->addrlen, ctx->sslctx->sni,
+	cachemgr_dsess_set((struct sockaddr*)&ctx->dstaddr,
+	                   ctx->dstaddrlen, ctx->sslctx->sni,
 	                   SSL_get0_session(origssl));
 
 	ctx->sslctx->origcrt = SSL_get_peer_certificate(origssl);
@@ -769,8 +769,8 @@ protossl_dstssl_create(pxy_conn_ctx_t *ctx)
 #endif /* SSL_MODE_RELEASE_BUFFERS */
 
 	/* session resuming based on remote endpoint address and port */
-	sess = cachemgr_dsess_get((struct sockaddr *)&ctx->addr,
-	                          ctx->addrlen, ctx->sslctx->sni); /* new sess inst */
+	sess = cachemgr_dsess_get((struct sockaddr *)&ctx->dstaddr,
+	                          ctx->dstaddrlen, ctx->sslctx->sni); /* new sess inst */
 	if (sess) {
 		if (OPTS_DEBUG(ctx->opts)) {
 			log_dbg_printf("Attempt reuse dst SSL session\n");
@@ -924,8 +924,8 @@ protossl_sni_resolve_cb(int errcode, struct evutil_addrinfo *ai, void *arg)
 		return;
 	}
 
-	memcpy(&ctx->addr, ai->ai_addr, ai->ai_addrlen);
-	ctx->addrlen = ai->ai_addrlen;
+	memcpy(&ctx->dstaddr, ai->ai_addr, ai->ai_addrlen);
+	ctx->dstaddrlen = ai->ai_addrlen;
 	evutil_freeaddrinfo(ai);
 	pxy_conn_connect(ctx);
 }
@@ -1016,7 +1016,7 @@ protossl_fd_readcb(MAYBE_UNUSED evutil_socket_t fd, UNUSED short what, void *arg
 	event_free(ctx->ev);
 	ctx->ev = NULL;
 
-	if (ctx->sslctx->sni && !ctx->addrlen && ctx->spec->sni_port) {
+	if (ctx->sslctx->sni && !ctx->dstaddrlen && ctx->spec->sni_port) {
 		char sniport[6];
 		struct evutil_addrinfo hints;
 
@@ -1110,7 +1110,7 @@ protossl_conn_connect(pxy_conn_ctx_t *ctx)
 	bufferevent_enable(ctx->srvdst.bev, EV_WRITE);
 	
 	/* initiate connection */
-	if (bufferevent_socket_connect(ctx->srvdst.bev, (struct sockaddr *)&ctx->addr, ctx->addrlen) == -1) {
+	if (bufferevent_socket_connect(ctx->srvdst.bev, (struct sockaddr *)&ctx->dstaddr, ctx->dstaddrlen) == -1) {
 		log_err_level_printf(LOG_CRIT, "protossl_conn_connect: bufferevent_socket_connect for srvdst failed\n");
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINE, "protossl_conn_connect: bufferevent_socket_connect for srvdst failed, fd=%d\n", ctx->fd);

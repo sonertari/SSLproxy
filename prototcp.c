@@ -179,7 +179,7 @@ prototcp_conn_connect(pxy_conn_ctx_t *ctx)
 	bufferevent_enable(ctx->srvdst.bev, EV_WRITE);
 	
 	/* initiate connection */
-	if (bufferevent_socket_connect(ctx->srvdst.bev, (struct sockaddr *)&ctx->addr, ctx->addrlen) == -1) {
+	if (bufferevent_socket_connect(ctx->srvdst.bev, (struct sockaddr *)&ctx->dstaddr, ctx->dstaddrlen) == -1) {
 		log_err_level_printf(LOG_CRIT, "prototcp_conn_connect: bufferevent_socket_connect for srvdst failed\n");
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINE, "prototcp_conn_connect: bufferevent_socket_connect for srvdst failed, fd=%d\n", ctx->fd);
