@@ -778,6 +778,48 @@ pxy_log_dbg_disconnect_child(pxy_conn_child_ctx_t *ctx)
 
 #ifdef __APPLE__
 #define getdtablecount() 0
+
+/*
+ * Copied from:
+ * opensmtpd-201801101641p1/openbsd-compat/imsg.c
+ * 
+ * Copyright (c) 2003, 2004 Henning Brauer <henning@openbsd.org>
+ *
+ * Permission to use, copy, modify, and distribute this software for any
+ * purpose with or without fee is hereby granted, provided that the above
+ * copyright notice and this permission notice appear in all copies.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+ * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ */
+static int
+available_fds(unsigned int n)
+{
+	unsigned int i;
+	int ret, fds[256];
+
+	if (n > (sizeof(fds)/sizeof(fds[0])))
+		return -1;
+
+	ret = 0;
+	for (i = 0; i < n; i++) {
+		fds[i] = -1;
+		if ((fds[i] = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+			ret = -1;
+			break;
+		}
+	}
+
+	for (i = 0; i < n && fds[i] >= 0; i++)
+		close(fds[i]);
+
+	return ret;
+}
 #endif /* __APPLE__ */
 
 #ifdef __linux__
@@ -974,6 +1016,16 @@ pxy_listener_acceptcb_child(UNUSED struct evconnlistener *listener, evutil_socke
 		pxy_conn_term(conn, 1);
 		goto out;
 	}
+
+#ifdef __APPLE__
+	if (available_fds(FD_RESERVE) == -1) {
+		errno = EMFILE;
+		log_err_level_printf(LOG_CRIT, "Out of file descriptors\n");
+		evutil_closesocket(fd);
+		pxy_conn_term(conn, 1);
+		goto out;
+	}
+#endif /* __APPLE__ */
 
 	pxy_conn_child_ctx_t *ctx = pxy_conn_ctx_new_child(fd, conn);
 	if (!ctx) {
@@ -1575,6 +1627,15 @@ pxy_conn_setup(evutil_socket_t fd,
 		evutil_closesocket(fd);
 		return;
 	}
+
+#ifdef __APPLE__
+	if (available_fds(FD_RESERVE) == -1) {
+		errno = EMFILE;
+		log_err_level_printf(LOG_CRIT, "Out of file descriptors\n");
+		evutil_closesocket(fd);
+		return;
+	}
+#endif /* __APPLE__ */
 
 	/* create per connection state and attach to thread */
 	pxy_conn_ctx_t *ctx = pxy_conn_ctx_new(fd, thrmgr, spec, opts, clisock);
