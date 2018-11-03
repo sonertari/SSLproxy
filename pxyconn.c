@@ -58,30 +58,6 @@
  */
 #define OUTBUF_LIMIT	(128*1024)
 
-/*
- * Proxy connection context state, describes a proxy connection
- * with source and destination socket bufferevents, SSL context and
- * other session state.  One of these exists per handled proxy
- * connection.
- */
-
-#ifdef HAVE_LOCAL_PROCINFO
-/* local process data - filled in iff pid != -1 */
-typedef struct pxy_conn_lproc_desc {
-	struct sockaddr_storage srcaddr;
-	socklen_t srcaddrlen;
-
-	pid_t pid;
-	uid_t uid;
-	gid_t gid;
-
-	/* derived log strings */
-	char *exec_path;
-	char *user;
-	char *group;
-} pxy_conn_lproc_desc_t;
-#endif /* HAVE_LOCAL_PROCINFO */
-
 int descriptor_table_size = 0;
 
 // @attention The order of names should match the order in protocol enum

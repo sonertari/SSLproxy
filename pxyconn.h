@@ -69,6 +69,13 @@ typedef void (*proto_free_func_t)(pxy_conn_ctx_t *);
 typedef void (*child_connect_func_t)(pxy_conn_child_ctx_t *);
 typedef void (*child_proto_free_func_t)(pxy_conn_child_ctx_t *);
 
+/*
+ * Proxy connection context state, describes a proxy connection
+ * with source and destination socket bufferevents, SSL context and
+ * other session state.  One of these exists per handled proxy
+ * connection.
+ */
+
 /* single socket bufferevent descriptor */
 typedef struct pxy_conn_desc {
 	struct bufferevent *bev;
@@ -151,6 +158,23 @@ struct proto_child_ctx {
 	// For protocol specific fields, if any
 	void *arg;
 };
+
+#ifdef HAVE_LOCAL_PROCINFO
+/* local process data - filled in iff pid != -1 */
+typedef struct pxy_conn_lproc_desc {
+	struct sockaddr_storage srcaddr;
+	socklen_t srcaddrlen;
+
+	pid_t pid;
+	uid_t uid;
+	gid_t gid;
+
+	/* derived log strings */
+	char *exec_path;
+	char *user;
+	char *group;
+} pxy_conn_lproc_desc_t;
+#endif /* HAVE_LOCAL_PROCINFO */
 
 /* parent connection state consisting of three connection descriptors,
  * connection-wide state and the specs and options */
