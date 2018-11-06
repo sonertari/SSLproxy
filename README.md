@@ -103,8 +103,7 @@ SSLproxy verifies upstream certificates by default. If the verification fails,
 the connection is terminated immediately. This is in contrast to SSLsplit,
 because in order to maximize the chances that a connection can be successfully
 split, SSLsplit accepts all certificates by default, including self-signed
-ones. See [The Risks of SSL Inspection]
-(https://insights.sei.cmu.edu/cert/2015/03/the-risks-of-ssl-inspection.html)
+ones. See [The Risks of SSL Inspection](https://insights.sei.cmu.edu/cert/2015/03/the-risks-of-ssl-inspection.html)
 for the reasons of this difference.
 
 Logging options include traditional SSLproxy connect and content log files as
