@@ -546,6 +546,12 @@ pxy_thrmgr_attach(pxy_conn_ctx_t *ctx)
 	pxy_thrmgr_ctx_t *tmctx = ctx->thrmgr;
 	pthread_mutex_lock(&tmctx->mutex);
 
+	ctx->id = ctx->thrmgr->conn_count++;
+
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_attach: id=%llu, fd=%d\n", ctx->id, ctx->fd);
+#endif /* DEBUG_PROXY */
+	
 	minload = tmctx->thr[thridx]->load;
 #ifdef DEBUG_THREAD
 	log_dbg_printf("===> Proxy connection handler thread status:\n"
@@ -565,13 +571,13 @@ pxy_thrmgr_attach(pxy_conn_ctx_t *ctx)
 	ctx->thr->load++;
 	ctx->thr->max_load = MAX(ctx->thr->max_load, ctx->thr->load);
 
+	ctx->next = ctx->thr->conns;
+	ctx->thr->conns = ctx;
+
 	pthread_mutex_unlock(&tmctx->mutex);
 
 	ctx->evbase = ctx->thr->evbase;
 	ctx->dnsbase = ctx->thr->dnsbase;
-
-	ctx->next = ctx->thr->conns;
-	ctx->thr->conns = ctx;
 
 	// @attention We are running on the thrmgr thread, do not call conn thread functions here.
 	//pxy_thrmgr_print_thr_info(ctx->thr);

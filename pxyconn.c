@@ -171,12 +171,6 @@ pxy_conn_ctx_new(evutil_socket_t fd,
 	}
 	memset(ctx, 0, sizeof(pxy_conn_ctx_t));
 
-	ctx->id = thrmgr->conn_count++;
-
-#if defined (DEBUG_PROXY)
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_new: id=%llu, fd=%d\n", ctx->id, fd);
-#endif /* DEBUG_PROXY */
-	
 	ctx->type = CONN_TYPE_PARENT;
 	ctx->fd = fd;
 	ctx->conn = ctx;
@@ -206,11 +200,11 @@ pxy_conn_ctx_new(evutil_socket_t fd,
 
 	ctx->ctime = time(NULL);
 	ctx->atime = ctx->ctime;
-	
+
 	ctx->next = NULL;
 
 	pxy_thrmgr_attach(ctx);
-	
+
 #ifdef HAVE_LOCAL_PROCINFO
 	ctx->lproc.pid = -1;
 #endif /* HAVE_LOCAL_PROCINFO */
