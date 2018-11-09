@@ -171,6 +171,12 @@ pxy_conn_ctx_new(evutil_socket_t fd,
 	}
 	memset(ctx, 0, sizeof(pxy_conn_ctx_t));
 
+	ctx->id = thrmgr->conn_count++;
+
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_new: id=%llu, fd=%d\n", ctx->id, fd);
+#endif /* DEBUG_PROXY */
+	
 	ctx->type = CONN_TYPE_PARENT;
 	ctx->fd = fd;
 	ctx->conn = ctx;
