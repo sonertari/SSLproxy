@@ -87,31 +87,37 @@ pxy_setup_proto(pxy_conn_ctx_t *ctx)
 	// Default to tcp
 	prototcp_setup(ctx);
 
+	protocol_t rv;
 	if (ctx->spec->upgrade) {
-		return protoautossl_setup(ctx);
+		rv = protoautossl_setup(ctx);
 	} else if (ctx->spec->http) {
 		if (ctx->spec->ssl) {
-			return protohttps_setup(ctx);
+			rv = protohttps_setup(ctx);
 		} else {
-			return protohttp_setup(ctx);
+			rv = protohttp_setup(ctx);
 		}
 	} else if (ctx->spec->pop3) {
 		if (ctx->spec->ssl) {
-			return (protossl_setup(ctx) != PROTO_ERROR) ? PROTO_POP3S : PROTO_ERROR;
+			rv = (protossl_setup(ctx) != PROTO_ERROR) ? PROTO_POP3S : PROTO_ERROR;
 		} else {
-			return PROTO_POP3;
+			rv = PROTO_POP3;
 		}
 	} else if (ctx->spec->smtp) {
 		if (ctx->spec->ssl) {
-			return (protossl_setup(ctx) != PROTO_ERROR) ? PROTO_SMTPS : PROTO_ERROR;
+			rv = (protossl_setup(ctx) != PROTO_ERROR) ? PROTO_SMTPS : PROTO_ERROR;
 		} else {
-			return PROTO_SMTP;
+			rv = PROTO_SMTP;
 		}
 	} else if (ctx->spec->ssl) {
-		return protossl_setup(ctx);
+		rv = protossl_setup(ctx);
 	} else {
-		return PROTO_TCP;
+		rv = PROTO_TCP;
 	}
+
+	if (rv == PROTO_ERROR) {
+		free(ctx->protoctx);
+	}
+	return rv;
 }
 
 static protocol_t NONNULL(1)
@@ -126,31 +132,37 @@ pxy_setup_proto_child(pxy_conn_child_ctx_t *ctx)
 	// Default to tcp
 	prototcp_setup_child(ctx);
 
+	protocol_t rv;
 	if (ctx->conn->spec->upgrade) {
-		return protoautossl_setup_child(ctx);
+		rv = protoautossl_setup_child(ctx);
 	} else if (ctx->conn->spec->http) {
 		if (ctx->conn->spec->ssl) {
-			return protohttps_setup_child(ctx);
+			rv = protohttps_setup_child(ctx);
 		} else {
-			return protohttp_setup_child(ctx);
+			rv = protohttp_setup_child(ctx);
 		}
 	} else if (ctx->conn->spec->pop3) {
 		if (ctx->conn->spec->ssl) {
-			return (protossl_setup_child(ctx) != PROTO_ERROR) ? PROTO_POP3S : PROTO_ERROR;
+			rv = (protossl_setup_child(ctx) != PROTO_ERROR) ? PROTO_POP3S : PROTO_ERROR;
 		} else {
-			return PROTO_POP3;
+			rv = PROTO_POP3;
 		}
 	} else if (ctx->conn->spec->smtp) {
 		if (ctx->conn->spec->ssl) {
-			return (protossl_setup_child(ctx) != PROTO_ERROR) ? PROTO_SMTPS : PROTO_ERROR;
+			rv = (protossl_setup_child(ctx) != PROTO_ERROR) ? PROTO_SMTPS : PROTO_ERROR;
 		} else {
-			return PROTO_SMTP;
+			rv = PROTO_SMTP;
 		}
 	} else if (ctx->conn->spec->ssl) {
-		return protossl_setup_child(ctx);
+		rv = protossl_setup_child(ctx);
 	} else {
-		return PROTO_TCP;
+		rv = PROTO_TCP;
 	}
+
+	if (rv == PROTO_ERROR) {
+		free(ctx->protoctx);
+	}
+	return rv;
 }
 
 static pxy_conn_ctx_t * MALLOC NONNULL(2,3,4)
@@ -183,20 +195,10 @@ pxy_conn_ctx_new(evutil_socket_t fd,
 	ctx->thrmgr = thrmgr;
 	ctx->spec = spec;
 
-	ctx->protoctx = malloc(sizeof(proto_ctx_t));
-	if (!ctx->protoctx) {
-		log_err_level_printf(LOG_CRIT, "Error allocating memory\n");
-		evutil_closesocket(fd);
-		free(ctx);
-		return NULL;
-	}
-	memset(ctx->protoctx, 0, sizeof(proto_ctx_t));
-
 	ctx->proto = pxy_setup_proto(ctx);
 	if (ctx->proto == PROTO_ERROR) {
 		log_err_level_printf(LOG_CRIT, "Error allocating memory\n");
 		evutil_closesocket(fd);
-		free(ctx->protoctx);
 		free(ctx);
 		return NULL;
 	}
@@ -236,20 +238,10 @@ pxy_conn_ctx_new_child(evutil_socket_t fd, pxy_conn_ctx_t *conn)
 	ctx->fd = fd;
 	ctx->conn = conn;
 
-	ctx->protoctx = malloc(sizeof(proto_ctx_t));
-	if (!ctx->protoctx) {
-		log_err_level_printf(LOG_CRIT, "Error allocating memory\n");
-		evutil_closesocket(fd);
-		free(ctx);
-		return NULL;
-	}
-	memset(ctx->protoctx, 0, sizeof(proto_ctx_t));
-
 	ctx->proto = pxy_setup_proto_child(ctx);
 	if (ctx->proto == PROTO_ERROR) {
 		log_err_level_printf(LOG_CRIT, "Error allocating memory\n");
 		evutil_closesocket(fd);
-		free(ctx->protoctx);
 		free(ctx);
 		return NULL;
 	}

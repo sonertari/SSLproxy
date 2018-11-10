@@ -831,7 +831,6 @@ protohttp_setup(pxy_conn_ctx_t *ctx)
 
 	ctx->protoctx->arg = malloc(sizeof(protohttp_ctx_t));
 	if (!ctx->protoctx->arg) {
-		free(ctx->protoctx);
 		return PROTO_ERROR;
 	}
 	memset(ctx->protoctx->arg, 0, sizeof(protohttp_ctx_t));
@@ -853,7 +852,6 @@ protohttps_setup(pxy_conn_ctx_t *ctx)
 
 	ctx->protoctx->arg = malloc(sizeof(protohttp_ctx_t));
 	if (!ctx->protoctx->arg) {
-		free(ctx->protoctx);
 		return PROTO_ERROR;
 	}
 	memset(ctx->protoctx->arg, 0, sizeof(protohttp_ctx_t));
@@ -861,7 +859,6 @@ protohttps_setup(pxy_conn_ctx_t *ctx)
 	ctx->sslctx = malloc(sizeof(ssl_ctx_t));
 	if (!ctx->sslctx) {
 		free(ctx->protoctx->arg);
-		free(ctx->protoctx);
 		return PROTO_ERROR;
 	}
 	memset(ctx->sslctx, 0, sizeof(ssl_ctx_t));
@@ -880,7 +877,6 @@ protohttp_setup_child(pxy_conn_child_ctx_t *ctx)
 
 	ctx->protoctx->arg = malloc(sizeof(protohttp_ctx_t));
 	if (!ctx->protoctx->arg) {
-		free(ctx->protoctx);
 		return PROTO_ERROR;
 	}
 	memset(ctx->protoctx->arg, 0, sizeof(protohttp_ctx_t));
@@ -901,7 +897,6 @@ protohttps_setup_child(pxy_conn_child_ctx_t *ctx)
 
 	ctx->protoctx->arg = malloc(sizeof(protohttp_ctx_t));
 	if (!ctx->protoctx->arg) {
-		free(ctx->protoctx);
 		return PROTO_ERROR;
 	}
 	memset(ctx->protoctx->arg, 0, sizeof(protohttp_ctx_t));
