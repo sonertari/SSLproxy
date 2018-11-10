@@ -87,37 +87,37 @@ pxy_setup_proto(pxy_conn_ctx_t *ctx)
 	// Default to tcp
 	prototcp_setup(ctx);
 
-	protocol_t rv;
+	protocol_t proto;
 	if (ctx->spec->upgrade) {
-		rv = protoautossl_setup(ctx);
+		proto = protoautossl_setup(ctx);
 	} else if (ctx->spec->http) {
 		if (ctx->spec->ssl) {
-			rv = protohttps_setup(ctx);
+			proto = protohttps_setup(ctx);
 		} else {
-			rv = protohttp_setup(ctx);
+			proto = protohttp_setup(ctx);
 		}
 	} else if (ctx->spec->pop3) {
 		if (ctx->spec->ssl) {
-			rv = (protossl_setup(ctx) != PROTO_ERROR) ? PROTO_POP3S : PROTO_ERROR;
+			proto = (protossl_setup(ctx) != PROTO_ERROR) ? PROTO_POP3S : PROTO_ERROR;
 		} else {
-			rv = PROTO_POP3;
+			proto = PROTO_POP3;
 		}
 	} else if (ctx->spec->smtp) {
 		if (ctx->spec->ssl) {
-			rv = (protossl_setup(ctx) != PROTO_ERROR) ? PROTO_SMTPS : PROTO_ERROR;
+			proto = (protossl_setup(ctx) != PROTO_ERROR) ? PROTO_SMTPS : PROTO_ERROR;
 		} else {
-			rv = PROTO_SMTP;
+			proto = PROTO_SMTP;
 		}
 	} else if (ctx->spec->ssl) {
-		rv = protossl_setup(ctx);
+		proto = protossl_setup(ctx);
 	} else {
-		rv = PROTO_TCP;
+		proto = PROTO_TCP;
 	}
 
-	if (rv == PROTO_ERROR) {
+	if (proto == PROTO_ERROR) {
 		free(ctx->protoctx);
 	}
-	return rv;
+	return proto;
 }
 
 static protocol_t NONNULL(1)
@@ -132,37 +132,37 @@ pxy_setup_proto_child(pxy_conn_child_ctx_t *ctx)
 	// Default to tcp
 	prototcp_setup_child(ctx);
 
-	protocol_t rv;
+	protocol_t proto;
 	if (ctx->conn->spec->upgrade) {
-		rv = protoautossl_setup_child(ctx);
+		proto = protoautossl_setup_child(ctx);
 	} else if (ctx->conn->spec->http) {
 		if (ctx->conn->spec->ssl) {
-			rv = protohttps_setup_child(ctx);
+			proto = protohttps_setup_child(ctx);
 		} else {
-			rv = protohttp_setup_child(ctx);
+			proto = protohttp_setup_child(ctx);
 		}
 	} else if (ctx->conn->spec->pop3) {
 		if (ctx->conn->spec->ssl) {
-			rv = (protossl_setup_child(ctx) != PROTO_ERROR) ? PROTO_POP3S : PROTO_ERROR;
+			proto = (protossl_setup_child(ctx) != PROTO_ERROR) ? PROTO_POP3S : PROTO_ERROR;
 		} else {
-			rv = PROTO_POP3;
+			proto = PROTO_POP3;
 		}
 	} else if (ctx->conn->spec->smtp) {
 		if (ctx->conn->spec->ssl) {
-			rv = (protossl_setup_child(ctx) != PROTO_ERROR) ? PROTO_SMTPS : PROTO_ERROR;
+			proto = (protossl_setup_child(ctx) != PROTO_ERROR) ? PROTO_SMTPS : PROTO_ERROR;
 		} else {
-			rv = PROTO_SMTP;
+			proto = PROTO_SMTP;
 		}
 	} else if (ctx->conn->spec->ssl) {
-		rv = protossl_setup_child(ctx);
+		proto = protossl_setup_child(ctx);
 	} else {
-		rv = PROTO_TCP;
+		proto = PROTO_TCP;
 	}
 
-	if (rv == PROTO_ERROR) {
+	if (proto == PROTO_ERROR) {
 		free(ctx->protoctx);
 	}
-	return rv;
+	return proto;
 }
 
 static pxy_conn_ctx_t * MALLOC NONNULL(2,3,4)
@@ -944,7 +944,7 @@ pxy_insert_sslproxy_header(pxy_conn_ctx_t *ctx, unsigned char *packet, size_t *p
 	memmove(packet + ctx->sslproxy_header_len + 2, packet, *packet_size);
 	memcpy(packet, ctx->sslproxy_header, ctx->sslproxy_header_len);
 	memcpy(packet + ctx->sslproxy_header_len, "\r\n", 2);
-	*packet_size+= ctx->sslproxy_header_len + 2;
+	*packet_size += ctx->sslproxy_header_len + 2;
 	ctx->sent_sslproxy_header = 1;
 }
 
@@ -959,7 +959,7 @@ pxy_try_remove_sslproxy_header(pxy_conn_child_ctx_t *ctx, unsigned char *packet,
 #endif /* DEBUG_PROXY */
 
 		memmove(pos, pos + ctx->conn->sslproxy_header_len + 2, *packet_size - (pos - packet) - (ctx->conn->sslproxy_header_len + 2));
-		*packet_size-= ctx->conn->sslproxy_header_len + 2;
+		*packet_size -= ctx->conn->sslproxy_header_len + 2;
 		ctx->removed_sslproxy_header = 1;
 	}
 }
@@ -1311,7 +1311,7 @@ pxy_bev_readcb(struct bufferevent *bev, void *arg)
 	pxy_conn_ctx_t *ctx = arg;
 
 	if (pxy_bev_readcb_preexec_logging_and_stats(bev, ctx) == -1) {
-		goto memout;
+		goto out;
 	}
 
 	if (!ctx->connected) {
@@ -1323,7 +1323,7 @@ pxy_bev_readcb(struct bufferevent *bev, void *arg)
 	ctx->atime = time(NULL);
 	ctx->protoctx->bev_readcb(bev, ctx);
 
-memout:
+out:
 	if (ctx->term || ctx->enomem) {
 		pxy_conn_free(ctx, ctx->term ? ctx->term_requestor : (bev == ctx->src.bev));
 	}
@@ -1353,7 +1353,7 @@ pxy_bev_readcb_child(struct bufferevent *bev, void *arg)
 	pxy_conn_child_ctx_t *ctx = arg;
 
 	if (pxy_bev_readcb_preexec_logging_and_stats_child(bev, ctx) == -1) {
-		goto memout;
+		goto out;
 	}
 
 	if (!ctx->connected) {
@@ -1365,7 +1365,7 @@ pxy_bev_readcb_child(struct bufferevent *bev, void *arg)
 	ctx->conn->atime = time(NULL);
 	ctx->protoctx->bev_readcb(bev, ctx);
 
-memout:
+out:
 	if (ctx->conn->term || ctx->conn->enomem) {
 		pxy_conn_free(ctx->conn, ctx->conn->term ? ctx->conn->term_requestor : (bev == ctx->src.bev));
 		return;
