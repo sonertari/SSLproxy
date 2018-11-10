@@ -1426,7 +1426,6 @@ protossl_setup(pxy_conn_ctx_t *ctx)
 
 	ctx->sslctx = malloc(sizeof(ssl_ctx_t));
 	if (!ctx->sslctx) {
-		free(ctx->protoctx->arg);
 		free(ctx->protoctx);
 		return PROTO_ERROR;
 	}
