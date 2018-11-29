@@ -124,6 +124,8 @@ protopassthrough_conn_connect(pxy_conn_ctx_t *ctx)
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINE, "protopassthrough_conn_connect: bufferevent_socket_connect for srvdst failed, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
+
+		pxy_conn_term(ctx, 1);
 	}
 }
 

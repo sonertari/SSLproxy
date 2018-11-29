@@ -213,7 +213,7 @@ void opts_set_statslog(opts_t *) NONNULL(1);
 int opts_set_option(opts_t *, const char *, const char *, char **)
     NONNULL(1,2,3);
 
-int load_conffile(opts_t *, const char *, char **) NONNULL(1,2);
+int opts_load_conffile(opts_t *, const char *, char **) NONNULL(1,2);
 #endif /* !OPTS_H */
 
 /* vim: set noet ft=c: */

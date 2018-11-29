@@ -1803,7 +1803,7 @@ opts_set_option(opts_t *opts, const char *argv0, const char *optarg,
 }
 
 int
-load_conffile(opts_t *opts, const char *argv0, char **natengine)
+opts_load_conffile(opts_t *opts, const char *argv0, char **natengine)
 {
 	int retval, line_num;
 	char *line, *name, *value;

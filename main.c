@@ -361,7 +361,7 @@ main(int argc, char *argv[])
 				opts->conffile = strdup(optarg);
 				if (!opts->conffile)
 					oom_die(argv0);
-				if (load_conffile(opts, argv0, &natengine) == -1) {
+				if (opts_load_conffile(opts, argv0, &natengine) == -1) {
 					exit(EXIT_FAILURE);
 				}
 #ifdef DEBUG_OPTS
@@ -825,8 +825,6 @@ main(int argc, char *argv[])
 		               "\n", opts->pidfile, strerror(errno), errno);
 		return -1;
 	}
-
-	descriptor_table_size = getdtablesize();
 
 	/* Fork into parent monitor process and (potentially unprivileged)
 	 * child process doing the actual work.  We request 6 privsep client
