@@ -577,7 +577,7 @@ pxy_log_content_inbuf(pxy_conn_ctx_t *ctx, struct evbuffer *inbuf, int req)
 
 #ifdef HAVE_LOCAL_PROCINFO
 int
-pxy_prepare_logging_local_procinfo(UNUSED pxy_conn_ctx_t *ctx)
+pxy_prepare_logging_local_procinfo(pxy_conn_ctx_t *ctx)
 {
 	if (ctx->opts->lprocinfo) {
 		/* fetch process info */
@@ -741,7 +741,7 @@ pxy_log_dbg_disconnect_child(pxy_conn_child_ctx_t *ctx)
 
 #ifdef DEBUG_PROXY
 void
-pxy_log_dbg_evbuf_info(UNUSED pxy_conn_ctx_t *ctx, UNUSED pxy_conn_desc_t *this, UNUSED pxy_conn_desc_t *other)
+pxy_log_dbg_evbuf_info(pxy_conn_ctx_t *ctx, pxy_conn_desc_t *this, pxy_conn_desc_t *other)
 {
 	// Use ctx->conn, because this function is used by child conns too
 	if (OPTS_DEBUG(ctx->conn->opts)) {
