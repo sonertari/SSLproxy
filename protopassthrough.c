@@ -32,6 +32,7 @@
 
 #include <sys/param.h>
 
+#ifdef HAVE_LOCAL_PROCINFO
 static int NONNULL(1)
 protopassthrough_prepare_logging(pxy_conn_ctx_t *ctx)
 {
@@ -41,6 +42,7 @@ protopassthrough_prepare_logging(pxy_conn_ctx_t *ctx)
 	}
 	return 0;
 }
+#endif /* HAVE_LOCAL_PROCINFO */
 
 static void NONNULL(1)
 protopassthrough_log_dbg_connect_type(pxy_conn_ctx_t *ctx)
@@ -432,9 +434,11 @@ protopassthrough_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 			if (pxy_set_dstaddr(ctx) == -1) {
 				return;
 			}
+#ifdef HAVE_LOCAL_PROCINFO
 			if (protopassthrough_prepare_logging(ctx) == -1) {
 				return;
 			}
+#endif /* HAVE_LOCAL_PROCINFO */
 			protopassthrough_log_dbg_connect_type(ctx);
 		}
 	}

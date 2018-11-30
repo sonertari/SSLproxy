@@ -547,52 +547,38 @@ out:
 }
 
 int
-pxy_log_content_buf(pxy_conn_ctx_t *ctx, unsigned char *buf, size_t sz, int req)
-{
-	if (WANT_CONTENT_LOG(ctx->conn)) {
-		if (buf) {
-			logbuf_t *lb = logbuf_new_alloc(sz, NULL);
-			if (!lb) {
-				ctx->conn->enomem = 1;
-				return -1;
-			}
-			memcpy(lb->buf, buf, lb->sz);
-			if (log_content_submit(&ctx->conn->logctx, lb, req) == -1) {
-				logbuf_free(lb);
-				log_err_level_printf(LOG_WARNING, "Content log submission failed\n");
-				return -1;
-			}
-		}
-	}
-	return 0;
-}
-
-int
 pxy_log_content_inbuf(pxy_conn_ctx_t *ctx, struct evbuffer *inbuf, int req)
 {
-	if (WANT_CONTENT_LOG(ctx->conn)) {
-		size_t sz = evbuffer_get_length(inbuf);
-		unsigned char *buf = malloc(sz);
-		if (!buf) {
-			ctx->conn->enomem = 1;
-			return -1;
-		}
-		if (evbuffer_copyout(inbuf, buf, sz) == -1) {
-			free(buf);
-			return -1;
-		}
-		if (pxy_log_content_buf(ctx, buf, sz, req) == -1) {
-			free(buf);
-			return -1;
-		}
+	size_t sz = evbuffer_get_length(inbuf);
+	unsigned char *buf = malloc(sz);
+	if (!buf) {
+		ctx->conn->enomem = 1;
+		return -1;
+	}
+	if (evbuffer_copyout(inbuf, buf, sz) == -1) {
+		free(buf);
+		return -1;
+	}
+	logbuf_t *lb = logbuf_new_alloc(sz, NULL);
+	if (!lb) {
+		free(buf);
+		ctx->conn->enomem = 1;
+		return -1;
+	}
+	memcpy(lb->buf, buf, lb->sz);
+	free(buf);
+	if (log_content_submit(&ctx->conn->logctx, lb, req) == -1) {
+		logbuf_free(lb);
+		log_err_level_printf(LOG_WARNING, "Content log submission failed\n");
+		return -1;
 	}
 	return 0;
 }
 
+#ifdef HAVE_LOCAL_PROCINFO
 int
 pxy_prepare_logging_local_procinfo(UNUSED pxy_conn_ctx_t *ctx)
 {
-#ifdef HAVE_LOCAL_PROCINFO
 	if (ctx->opts->lprocinfo) {
 		/* fetch process info */
 		if (proc_pid_for_addr(&ctx->lproc.pid,
@@ -616,19 +602,21 @@ pxy_prepare_logging_local_procinfo(UNUSED pxy_conn_ctx_t *ctx)
 			}
 		}
 	}
-#endif /* HAVE_LOCAL_PROCINFO */
 	return 0;
 }
+#endif /* HAVE_LOCAL_PROCINFO */
 
-int
+static int
 pxy_prepare_logging(pxy_conn_ctx_t *ctx)
 {
 	/* prepare logging, part 2 */
+#ifdef HAVE_LOCAL_PROCINFO
 	if (WANT_CONNECT_LOG(ctx) || WANT_CONTENT_LOG(ctx)) {
 		if (pxy_prepare_logging_local_procinfo(ctx) == -1) {
 			return -1;
 		}
 	}
+#endif /* HAVE_LOCAL_PROCINFO */
 	if (WANT_CONTENT_LOG(ctx)) {
 		if (log_content_open(&ctx->logctx, ctx->opts,
 							(struct sockaddr *)&ctx->srcaddr,
@@ -723,21 +711,6 @@ pxy_log_connect_srvdst(pxy_conn_ctx_t *ctx)
 	}
 }
 
-void
-pxy_log_dbg_evbuf_info(UNUSED pxy_conn_ctx_t *ctx, UNUSED pxy_conn_desc_t *this, UNUSED pxy_conn_desc_t *other)
-{
-#ifdef DEBUG_PROXY
-	// Use ctx->conn, because this function is used by child conns too
-	if (OPTS_DEBUG(ctx->conn->opts)) {
-		log_dbg_printf("evbuffer size at EOF: i:%zu o:%zu i:%zu o:%zu\n",
-						evbuffer_get_length(bufferevent_get_input(this->bev)),
-						evbuffer_get_length(bufferevent_get_output(this->bev)),
-						other->closed ? 0 : evbuffer_get_length(bufferevent_get_input(other->bev)),
-						other->closed ? 0 : evbuffer_get_length(bufferevent_get_output(other->bev)));
-	}
-#endif /* DEBUG_PROXY */
-}
-
 static void
 pxy_log_dbg_disconnect(pxy_conn_ctx_t *ctx)
 {
@@ -765,6 +738,21 @@ pxy_log_dbg_disconnect_child(pxy_conn_child_ctx_t *ctx)
 					   STRORDASH(ctx->conn->srchost_str), STRORDASH(ctx->conn->srcport_str), ctx->fd, ctx->conn->fd);
 	}
 }
+
+#ifdef DEBUG_PROXY
+void
+pxy_log_dbg_evbuf_info(UNUSED pxy_conn_ctx_t *ctx, UNUSED pxy_conn_desc_t *this, UNUSED pxy_conn_desc_t *other)
+{
+	// Use ctx->conn, because this function is used by child conns too
+	if (OPTS_DEBUG(ctx->conn->opts)) {
+		log_dbg_printf("evbuffer size at EOF: i:%zu o:%zu i:%zu o:%zu\n",
+						evbuffer_get_length(bufferevent_get_input(this->bev)),
+						evbuffer_get_length(bufferevent_get_output(this->bev)),
+						other->closed ? 0 : evbuffer_get_length(bufferevent_get_input(other->bev)),
+						other->closed ? 0 : evbuffer_get_length(bufferevent_get_output(other->bev)));
+	}
+}
+#endif /* DEBUG_PROXY */
 
 unsigned char *
 pxy_malloc_packet(size_t sz, pxy_conn_ctx_t *ctx)
@@ -1184,9 +1172,11 @@ pxy_bev_readcb_preexec_logging_and_stats(struct bufferevent *bev, pxy_conn_ctx_t
 			ctx->thr->intif_out_bytes += inbuf_size;
 		}
 
-		if (ctx->proto != PROTO_PASSTHROUGH) {
-			// HTTP content logging at this point may record certain header lines twice, if we have not seen all headers yet
-			return pxy_log_content_inbuf(ctx, inbuf, (bev == ctx->src.bev));
+		if (WANT_CONTENT_LOG(ctx->conn)) {
+			if (ctx->proto != PROTO_PASSTHROUGH) {
+				// HTTP content logging at this point may record certain header lines twice, if we have not seen all headers yet
+				return pxy_log_content_inbuf(ctx, inbuf, (bev == ctx->src.bev));
+			}
 		}
 	}
 	return 0;
@@ -1232,8 +1222,10 @@ pxy_bev_readcb_preexec_logging_and_stats_child(struct bufferevent *bev, pxy_conn
 		ctx->conn->thr->extif_in_bytes += inbuf_size;
 	}
 
-	if (ctx->proto != PROTO_PASSTHROUGH) {
-		return pxy_log_content_inbuf((pxy_conn_ctx_t *)ctx, inbuf, (bev == ctx->src.bev));
+	if (WANT_CONTENT_LOG(ctx->conn)) {
+		if (ctx->proto != PROTO_PASSTHROUGH) {
+			return pxy_log_content_inbuf((pxy_conn_ctx_t *)ctx, inbuf, (bev == ctx->src.bev));
+		}
 	}
 	return 0;
 }
