@@ -441,10 +441,15 @@ The \fB-Z\fP option is only available if SSLproxy was built against a version
 of OpenSSL which supports disabling compression.
 .SH "PROXY SPECIFICATIONS"
 Proxy specifications (\fIproxyspecs\fP) consist of the connection type, listen
-address and program port:
+address and program port. You can also specify program and return address,
+otherwise they default to the loopback address 127.0.0.1. The program and
+remote address options help you divert packets to remote locations. However,
+beware that the diverted traffic is always unencrypted:
 .LP
 .na
 \fBhttps\fP \fIlistenaddr port\fP \fIup:port\fP
+.br
+\fBhttps\fP \fIlistenaddr port\fP \fIup:port\fP \fIua:addr\fP \fIra:addr\fP
 .br
 \fBpop3s\fP \fIlistenaddr port\fP \fIup:port\fP
 .br
@@ -508,6 +513,17 @@ address and port where the NAT engine should redirect connections to.
 .I up:port
 Port or service name that the program is listening for connections.  This is the
 port where the traffic should be diverted to.
+.TP
+.I ua:addr
+Address that the program is listening for connections.  This is the address
+where the traffic should be diverted to.  If not specified, defaults to
+127.0.0.1.
+.TP
+.I ra:addr
+Address that the program should return packets to.  This is the address where
+SSLproxy is listening for returned packets from the program.  This address is 
+inserted into the SSLproxy header line along with the dynamically assigned port
+number.  If not specified, defaults to 127.0.0.1.
 .SH SIGNALS
 A running \fBsslproxy\fP accepts SIGINT and SIGQUIT for a clean shutdown, and
 SIGHUP and SIGUSR1 to re-open the single-file log files (such as \fB-l\fP,

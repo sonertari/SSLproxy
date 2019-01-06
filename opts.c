@@ -356,17 +356,33 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine,
 			case 3:
 				// UTM port is mandatory
 				// The UTM port is set/used in pf and UTM service config.
-				// @todo Need IPv6?
+				// @todo IPv6?
 				if (strstr(**argv, "up:")) {
+					char *up = **argv + 3;
+					char *ua = "127.0.0.1";
+					char *ra = "127.0.0.1";
+
+					// ua and ra are optional, if both specified, ua should come before ra
+					// UTM address
+					if (*argc && strstr(*((*argv) + 1), "ua:")) {
+						(*argv)++; (*argc)--;
+						ua = **argv + 3;
+					}
+					// UTM return address
+					if (*argc && strstr(*((*argv) + 1), "ra:")) {
+						(*argv)++; (*argc)--;
+						ra = **argv + 3;
+					}
+
 					int utm_af = sys_sockaddr_parse(&spec->conn_dst_addr,
 										&spec->conn_dst_addrlen,
-										"127.0.0.1", **argv + 3, AF_INET, EVUTIL_AI_PASSIVE);
+										ua, up, AF_INET, EVUTIL_AI_PASSIVE);
 					if (utm_af == -1) {
 						exit(EXIT_FAILURE);
 					}
 					utm_af = sys_sockaddr_parse(&spec->child_src_addr,
 										&spec->child_src_addrlen,
-										"127.0.0.1", "0", AF_INET, EVUTIL_AI_PASSIVE);
+										ra, "0", AF_INET, EVUTIL_AI_PASSIVE);
 					if (utm_af == -1) {
 						exit(EXIT_FAILURE);
 					}

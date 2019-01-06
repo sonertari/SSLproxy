@@ -1008,7 +1008,8 @@ pxy_setup_child_listener(pxy_conn_ctx_t *ctx)
 		return -1;
 	}
 
-	// @attention Children are always listening on an IPv4 loopback address
+	// @attention Children are assumed to be listening on an IPv4 address
+	// @todo IPv6?
 	char addr[INET_ADDRSTRLEN];
 	if (!inet_ntop(AF_INET, &child_listener_addr.sin_addr, addr, INET_ADDRSTRLEN)) {
 		pxy_conn_term(ctx, 1);
