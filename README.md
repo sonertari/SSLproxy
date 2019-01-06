@@ -69,6 +69,23 @@ letter is either s or p, for SSL/TLS encrypted or plain traffic respectively.
 This information is also important for the program, because it cannot reliably 
 determine if the actual network traffic it is processing was encrypted or not.
 
+This mode of operation allows you to divert decrypted packets to remote 
+listening programs too. For example, given the following proxy specification:
+
+	https 127.0.0.1 8443 up:8080 ua:192.168.0.1 ra:192.168.1.1
+
+The ua option tells SSLproxy to divert decrypted packets to 192.168.0.1:8080, 
+instead of 127.0.0.1:8080 as in the previous example. Also, the ra option 
+tells SSLproxy to listen for returned packets from the program on 192.168.1.1. 
+Accordingly, the line SSLproxy inserts into the first packet in the connection 
+now becomes:
+
+	SSLproxy: [192.168.1.1]:34649,[192.168.3.24]:47286,[192.168.111.130]:443,s
+
+So, the listening program can be running on a machine anywhere in the world. 
+Since the packets between SSLproxy and the listening program are unencrypted, 
+you should be careful while using such a setup.
+
 SSLproxy supports plain TCP, plain SSL, HTTP, HTTPS, POP3, POP3S, SMTP, and 
 SMTPS connections over both IPv4 and IPv6.  It also has the ability to 
 dynamically upgrade plain TCP to SSL in order to generically support SMTP 
