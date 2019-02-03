@@ -672,7 +672,7 @@ protohttp_bev_readcb_src_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ct
 				evbuffer_get_length(inbuf), ctx->fd, ctx->conn->fd);
 #endif /* DEBUG_PROXY */
 
-		// @todo Just remove SSLproxy line, do not filter response on the server side?
+		// @todo Just remove SSLproxy line, do not filter request on the server side?
 		protohttp_filter_request_header(inbuf, outbuf, (pxy_conn_ctx_t *)ctx, http_ctx);
 		if (ctx->conn->enomem) {
 			return;
