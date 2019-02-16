@@ -66,6 +66,7 @@
 #define PRIVSEP_REQ_OPENSOCK	3	/* open socket and pass fd */
 #define PRIVSEP_REQ_CERTFILE	4	/* open cert file in certgendir */
 #define PRIVSEP_REQ_OPENSOCK_CHILD	5	/* open child socket and pass fd */
+#define PRIVSEP_REQ_UPDATE_ATIME	6	/* update ip,user atime */
 /* response byte */
 #define PRIVSEP_ANS_SUCCESS	0	/* success */
 #define PRIVSEP_ANS_UNK_CMD	1	/* unknown command */
@@ -376,6 +377,54 @@ privsep_server_certfile(const char *fn)
 	return fd;
 }
 
+static int WUNRES
+privsep_server_update_atime(opts_t *opts, const dbkeys_t *keys)
+{
+	log_dbg_printf("privsep_server_update_atime: ENTER\n");
+//	struct sqlite3_stmt *opts->update_user_atime_sql_stmt;
+
+//	sqlite3 *userdb;
+//	if (sqlite3_open("/var/db/duaf.db", &userdb)) {
+//		fprintf(stderr, "Error opening user db file: %s\n", sqlite3_errmsg(userdb));
+//		sqlite3_close(userdb);
+//		exit(EXIT_FAILURE);
+//	}
+
+//	int rc = sqlite3_prepare_v2(opts->userdb, "UPDATE ip2user SET atime = ?1 WHERE ip = ?2 AND user = ?3", 100, &update_user_atime_sql_stmt, NULL);
+//	if (rc) {
+//		log_err_level_printf(LOG_CRIT, "Error preparing update_user_atime_sql_stmt: %s\n", sqlite3_errmsg(opts->userdb));
+//		sqlite3_close(opts->userdb);
+//		return -1;
+//	}
+	time_t atime = time(NULL);
+	sqlite3_reset(opts->update_user_atime_sql_stmt);
+	sqlite3_bind_int(opts->update_user_atime_sql_stmt, 1, atime);
+	sqlite3_bind_text(opts->update_user_atime_sql_stmt, 2, keys->ip, -1, NULL);
+//	sqlite3_bind_text(update_user_atime_sql_stmt, 2, "192.168.16.2", -1, NULL);
+	sqlite3_bind_text(opts->update_user_atime_sql_stmt, 3, keys->user, -1, NULL);
+//	sqlite3_bind_text(update_user_atime_sql_stmt, 3, "soner", -1, NULL);
+//	int count = 0;
+//	while (count++ < 50) {
+	if (sqlite3_step(opts->update_user_atime_sql_stmt) == SQLITE_DONE) {
+//#ifdef DEBUG_PROXY
+//		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "privsep_server_update_atime: Updated atime of user %s=%lld\n", keys->user, atime);
+		log_err_level_printf(LOG_CRIT, "privsep_server_update_atime: Updated atime of user %s=%lld\n", "soner", atime);
+//#endif /* DEBUG_PROXY */
+	} else {
+		log_err_level_printf(LOG_CRIT, "privsep_server_update_atime: Error updating user atime: %s\n", sqlite3_errmsg(opts->userdb));
+//#ifdef DEBUG_PROXY
+//		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "privsep_server_update_atime: Error updating user atime: %s\n", sqlite3_errmsg(opts->userdb));
+//#endif /* DEBUG_PROXY */
+//		sqlite3_close(userdb);
+//		return -1;
+	}
+	sqlite3_reset(opts->update_user_atime_sql_stmt);
+//	usleep(100);
+//	}
+//	sqlite3_close(opts->userdb);
+	return 0;
+}
+
 /*
  * Handle a single request on a readable server socket.
  * Returns 0 on success, 1 on EOF and -1 on error.
@@ -553,6 +602,67 @@ privsep_server_handle_req(opts_t *opts, int srvsock)
 				return -1;
 			}
 			evutil_closesocket(s);
+			return 0;
+		}
+		/* not reached */
+		break;
+	}
+	case PRIVSEP_REQ_UPDATE_ATIME: {
+		dbkeys_t *arg;
+//		int s;
+
+		log_dbg_printf("ENTER PRIVSEP_REQ_UPDATE_ATIME\n");
+		if (n != sizeof(char) + sizeof(dbkeys_t)) {
+			ans[0] = PRIVSEP_ANS_INVALID;
+			if (sys_sendmsgfd(srvsock, ans, 1, -1) == -1) {
+				log_err_level_printf(LOG_CRIT, "Sending message failed: %s (%i"
+				               ")\n", strerror(errno), errno);
+				log_dbg_printf("Sending message failed: %s (%i"
+				               ")\n", strerror(errno), errno);
+				return -1;
+			}
+			log_dbg_printf(">>>>>>>>> Returning: n=%zd, arg+1=%lu\n", n, sizeof(char) + sizeof(dbkeys_t));
+			return 0;
+		}
+
+		log_dbg_printf(">>>>>>>>> Continue n=%zd, arg+1=%lu\n", n, sizeof(char) + sizeof(dbkeys_t));
+
+		if (!(arg = malloc(n))) {
+			ans[0] = PRIVSEP_ANS_SYS_ERR;
+			*((int*)&ans[1]) = errno;
+			if (sys_sendmsgfd(srvsock, ans, 1 + sizeof(int),
+			                  -1) == -1) {
+				log_err_level_printf(LOG_CRIT, "Sending message failed: %s (%i"
+				               ")\n", strerror(errno), errno);
+				return -1;
+			}
+			return 0;
+		}
+		memcpy(arg, req + 1, n - 1);
+
+		log_dbg_printf("Calling privsep_server_update_atime\n");
+//		arg = *(dbkeys_t**)(&req[1]);
+		if (privsep_server_update_atime(opts, arg) == -1) {
+			free(arg);
+			ans[0] = PRIVSEP_ANS_SYS_ERR;
+			*((int*)&ans[1]) = errno;
+			if (sys_sendmsgfd(srvsock, ans, 1 + sizeof(int),
+			                  -1) == -1) {
+				log_err_level_printf(LOG_CRIT, "Sending message failed child 1: %s (%i"
+				               ")\n", strerror(errno), errno);
+				return -1;
+			}
+			return 0;
+		} else {
+			free(arg);
+			ans[0] = PRIVSEP_ANS_SUCCESS;
+			if (sys_sendmsgfd(srvsock, ans, 1, 0) == -1) {
+//				evutil_closesocket(s);
+				log_err_level_printf(LOG_CRIT, "Sending message failed child 2: %s (%i"
+				               ")\n", strerror(errno), errno);
+				return -1;
+			}
+//			evutil_closesocket(s);
 			return 0;
 		}
 		/* not reached */
@@ -998,6 +1108,56 @@ privsep_client_close(int clisock)
 
 	close(clisock);
 	return 0;
+}
+
+int
+privsep_client_update_atime(int clisock, const dbkeys_t *dbkeys)
+{
+	char ans[PRIVSEP_MAX_ANS_SIZE];
+	char req[1 + sizeof(dbkeys_t)];
+//	char req[1 + sizeof(dbkeys)];
+	int rv = -1;
+	ssize_t n;
+
+	req[0] = PRIVSEP_REQ_UPDATE_ATIME;
+//	*((const dbkeys_t **)&req[1]) = dbkeys;
+//	*((const dbkeys_t **)&req[1]) = memcpy(&req[1], dbkeys, sizeof(dbkeys_t));
+	memcpy(req + 1, dbkeys, sizeof(req) - 1);
+
+	if (sys_sendmsgfd(clisock, req, sizeof(req), -1) == -1) {
+		return -1;
+	}
+
+	if ((n = sys_recvmsgfd(clisock, ans, sizeof(ans), &rv)) == -1) {
+		return -1;
+	}
+
+	if (n < 1) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	switch (ans[0]) {
+	case PRIVSEP_ANS_SUCCESS:
+		break;
+	case PRIVSEP_ANS_DENIED:
+		errno = EACCES;
+		return -1;
+	case PRIVSEP_ANS_SYS_ERR:
+		if (n < (ssize_t)(1 + sizeof(int))) {
+			errno = EINVAL;
+			return -1;
+		}
+		errno = *((int*)&ans[1]);
+		return -1;
+	case PRIVSEP_ANS_UNK_CMD:
+	case PRIVSEP_ANS_INVALID:
+	default:
+		errno = EINVAL;
+		return -1;
+	}
+
+	return rv;
 }
 
 /*

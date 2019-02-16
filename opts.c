@@ -71,6 +71,21 @@ opts_new(void)
 	opts->remove_http_referer = 1;
 	opts->verify_peer = 1;
 
+	// @todo Check if we can pass the db var into the child process for privsep
+	// https://www.sqlite.org/faq.html:
+	// "Under Unix, you should not carry an open SQLite database across a fork() system call into the child process."
+	if (sqlite3_open("/var/db/duaf.db", &opts->userdb)) {
+		fprintf(stderr, "Error opening user db file: %s\n", sqlite3_errmsg(opts->userdb));
+		sqlite3_close(opts->userdb);
+		exit(EXIT_FAILURE);
+	}
+	int rc = sqlite3_prepare_v2(opts->userdb, "UPDATE ip2user SET atime = ?1 WHERE ip = ?2 AND user = ?3", 100, &opts->update_user_atime_sql_stmt, NULL);
+	if (rc) {
+		log_err_level_printf(LOG_CRIT, "Error preparing update_user_atime_sql_stmt: %s\n", sqlite3_errmsg(opts->userdb));
+		sqlite3_close(opts->userdb);
+		exit(EXIT_FAILURE);
+	}
+
 	return opts;
 }
 
@@ -161,6 +176,8 @@ opts_free(opts_t *opts)
 		free(opts->mirrortarget);
 	}
 #endif /* !WITHOUT_MIRROR */
+	sqlite3_finalize(opts->update_user_atime_sql_stmt);
+	sqlite3_close(opts->userdb);
 	memset(opts, 0, sizeof(opts_t));
 	free(opts);
 }

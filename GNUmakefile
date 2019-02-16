@@ -82,7 +82,7 @@ DEBUG_CFLAGS?=	-g
 #FEATURES+=	-DPURIFY
 
 # Define to add proxy state machine debugging; dump state in debug mode.
-#FEATURES+=	-DDEBUG_PROXY
+FEATURES+=	-DDEBUG_PROXY
 
 # Define to add certificate debugging; dump all certificates in debug mode.
 #FEATURES+=	-DDEBUG_CERTIFICATE
@@ -97,7 +97,7 @@ DEBUG_CFLAGS?=	-g
 #FEATURES+=	-DDEBUG_THREAD
 
 # Define to add privilege separation server event loop debugging.
-#FEATURES+=	-DDEBUG_PRIVSEP_SERVER
+FEATURES+=	-DDEBUG_PRIVSEP_SERVER
 
 # Define to add diagnostic output for debugging option parsing.
 #FEATURES+=	-DDEBUG_OPTS
@@ -278,6 +278,10 @@ PKGS+=		$(shell $(PKGCONFIG) $(PCFLAGS) --exists libpcap \
 		&& echo libpcap)
 endif
 endif
+ifndef SQLITE_BASE
+PKGS+=		$(shell $(PKGCONFIG) $(PCFLAGS) --exists sqlite3 \
+		&& echo sqlite3)
+endif
 TPKGS:=		
 ifndef CHECK_BASE
 TPKGS+=		$(shell $(PKGCONFIG) $(PCFLAGS) --exists check \
@@ -319,6 +323,13 @@ ifndef LIBPCAP_FOUND
 $(error dependency 'libpcap' not found; \
 	install it or point LIBPCAP_BASE to base path)
 endif
+endif
+endif
+ifeq (,$(filter sqlite3,$(PKGS)))
+SQLITE_FOUND:=$(call locate,sqlite3,include/sqlite3.h,$(SQLITE_BASE))
+ifndef SQLITE_FOUND
+$(error dependency 'SQLite3' not found; \
+	install it or point SQLITE_BASE to base path)
 endif
 endif
 ifeq (,$(filter check,$(TPKGS)))
@@ -371,6 +382,11 @@ PKG_LDFLAGS+=	-L$(LIBPCAP_FOUND)/lib
 PKG_LIBS+=	-lpcap
 endif
 endif
+ifdef SQLITE_FOUND
+PKG_CPPFLAGS+=	-I$(SQLITE_FOUND)/include
+PKG_LDFLAGS+=	-L$(SQLITE_FOUND)/lib
+PKG_LIBS+=	-lsqlite3
+endif
 ifdef CHECK_FOUND
 TPKG_CPPFLAGS+=	-I$(CHECK_FOUND)/include
 TPKG_LDFLAGS+=	-L$(CHECK_FOUND)/lib
@@ -416,7 +432,8 @@ endif
 
 # _FORTIFY_SOURCE requires -O on Linux
 ifeq (,$(findstring -O,$(CFLAGS)))
-CFLAGS+=	-O2
+#CFLAGS+=	-O2
+CFLAGS+=	-g
 endif
 
 export VERSION
@@ -447,6 +464,9 @@ $(info LIBPCAP_BASE:   $(strip $(LIBPCAP_FOUND)))
 endif
 ifdef LIBNET_FOUND
 $(info LIBNET_BASE:    $(strip $(LIBNET_FOUND)))
+endif
+ifdef SQLITE_FOUND
+$(info SQLITE_BASE:    $(strip $(SQLITE_FOUND)))
 endif
 ifdef CHECK_FOUND
 $(info CHECK_BASE:     $(strip $(CHECK_FOUND)))

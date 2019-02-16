@@ -394,6 +394,22 @@ pxy_thrmgr_run(pxy_thrmgr_ctx_t *ctx)
 	}
 	memset(ctx->thr, 0, ctx->num_thr * sizeof(pxy_thr_ctx_t*));
 
+//	// https://www.sqlite.org/faq.html:
+//	// "Under Unix, you should not carry an open SQLite database across a fork() system call into the child process."
+//	if (sqlite3_open("/var/db/sslproxy/duaf.db", &ctx->db)) {
+//		log_err_level_printf(LOG_CRIT, "Error opening user db file: %s\n", sqlite3_errmsg(ctx->db));
+//		sqlite3_close(ctx->db);
+//		goto leave;
+//	}
+//	ctx->userdb = db;
+
+//	int rc = sqlite3_prepare_v2(ctx->userdb, "SELECT user FROM ip2user WHERE ip = ?1", 100, &ctx->get_user_sql_stmt, NULL);
+//	if (rc) {
+//		log_err_level_printf(LOG_CRIT, "Error preparing sql stmt: %s\n", sqlite3_errmsg(ctx->userdb));
+//		sqlite3_close(ctx->userdb);
+//		goto leave;
+//	}
+
 	for (idx = 0; idx < ctx->num_thr; idx++) {
 		if (!(ctx->thr[idx] = malloc(sizeof(pxy_thr_ctx_t)))) {
 			log_dbg_printf("Failed to allocate memory\n");
@@ -421,6 +437,18 @@ pxy_thrmgr_run(pxy_thrmgr_ctx_t *ctx)
 		ctx->thr[idx]->thridx = idx;
 		ctx->thr[idx]->timeout_count = 0;
 		ctx->thr[idx]->thrmgr = ctx;
+
+		int rc;
+		rc = sqlite3_prepare_v2(ctx->opts->userdb, "SELECT user FROM ip2user WHERE ip = ?1", 100, &ctx->thr[idx]->get_user_sql_stmt, NULL);
+		if (rc) {
+			log_err_level_printf(LOG_CRIT, "Error preparing get_user_sql_stmt: %s\n", sqlite3_errmsg(ctx->opts->userdb));
+			goto leave;
+		}
+//		rc = sqlite3_prepare_v2(ctx->userdb, "UPDATE ip2user SET atime = ?1 WHERE ip = ?2", 100, &ctx->thr[idx]->update_user_atime_sql_stmt, NULL);
+//		if (rc) {
+//			log_err_level_printf(LOG_CRIT, "Error preparing update_user_atime_sql_stmt: %s\n", sqlite3_errmsg(ctx->userdb));
+//			goto leave;
+//		}
 	}
 
 	log_dbg_printf("Initialized %d connection handling threads\n",
@@ -477,6 +505,8 @@ void
 pxy_thrmgr_free(pxy_thrmgr_ctx_t *ctx)
 {
 	pthread_mutex_destroy(&ctx->mutex);
+//	sqlite3_close(ctx->db);
+//	sqlite3_finalize(ctx->get_user_sql_stmt);
 	if (ctx->thr) {
 		for (int idx = 0; idx < ctx->num_thr; idx++) {
 			event_base_loopbreak(ctx->thr[idx]->evbase);
@@ -492,6 +522,7 @@ pxy_thrmgr_free(pxy_thrmgr_ctx_t *ctx)
 			if (ctx->thr[idx]->evbase) {
 				event_base_free(ctx->thr[idx]->evbase);
 			}
+			sqlite3_finalize(ctx->thr[idx]->get_user_sql_stmt);
 			free(ctx->thr[idx]);
 		}
 		free(ctx->thr);

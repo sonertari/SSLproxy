@@ -38,6 +38,7 @@
 #include <event2/event.h>
 #include <event2/dns.h>
 #include <pthread.h>
+#include <sqlite3.h>
 
 typedef struct pxy_conn_ctx pxy_conn_ctx_t;
 typedef struct pxy_thrmgr_ctx pxy_thrmgr_ctx_t;
@@ -63,6 +64,8 @@ typedef struct pxy_thr_ctx {
 	long long unsigned int extif_out_bytes;
 	unsigned short stats_idx;
 	pxy_conn_ctx_t *conns;
+	struct sqlite3_stmt *get_user_sql_stmt;
+//	struct sqlite3_stmt *update_user_atime_sql_stmt;
 } pxy_thr_ctx_t;
 
 struct pxy_thrmgr_ctx {
@@ -70,6 +73,8 @@ struct pxy_thrmgr_ctx {
 	opts_t *opts;
 	pxy_thr_ctx_t **thr;
 	pthread_mutex_t mutex;
+//	sqlite3 *userdb;
+//	struct sqlite3_stmt *get_user_sql_stmt;
 	long long unsigned int conn_count;
 };
 

@@ -52,6 +52,8 @@
 #include <glob.h>
 #endif /* HAVE_NETFILTER */
 
+//#include <sqlite3.h>
+
 /*
  * Maximum size of data to buffer per connection direction before
  * temporarily stopping to read data from the other end.
@@ -361,6 +363,25 @@ pxy_conn_ctx_free(pxy_conn_ctx_t *ctx, int by_requestor)
 			log_err_level_printf(LOG_WARNING, "Content log close failed\n");
 		}
 	}
+
+	struct dbkeys *ipuser = malloc(sizeof(struct dbkeys));
+	if (ipuser) {
+		memset(ipuser, 0, sizeof(dbkeys_t));
+		memcpy(ipuser->ip, ctx->srchost_str, strlen(ctx->srchost_str));
+		memcpy(ipuser->user, ctx->user, strlen(ctx->user));
+
+		if (privsep_client_update_atime(ctx->clisock, ipuser) == -1) {
+#ifdef DEBUG_PROXY
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_free: Error updating user atime: %s, ctx->fd=%d\n", sqlite3_errmsg(ctx->opts->userdb), ctx->fd);
+#endif /* DEBUG_PROXY */
+		} else {
+#ifdef DEBUG_PROXY
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_free: Successfully updated user atime, ctx->fd=%d\n", ctx->fd);
+#endif /* DEBUG_PROXY */
+		}
+		free(ipuser);
+	}	
+
 	pxy_thrmgr_detach(ctx);
 	if (ctx->srchost_str) {
 		free(ctx->srchost_str);
@@ -1453,6 +1474,95 @@ pxy_fd_readcb(evutil_socket_t fd, UNUSED short what, void *arg)
 	ctx->protoctx->fd_readcb(fd, what, arg);
 }
 
+static void
+pxy_conn_identify_user(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
+{
+	pxy_conn_ctx_t *ctx = arg;
+
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_identify_user: ENTER, ctx->fd=%d\n", ctx->fd);
+#endif /* DEBUG_PROXY */
+
+	if (ctx->identify_user_count++ < 50) {
+		int rc;
+
+		sqlite3_reset(ctx->thr->get_user_sql_stmt);
+		sqlite3_bind_text(ctx->thr->get_user_sql_stmt, 1, ctx->srchost_str, -1, NULL);
+		rc = sqlite3_step(ctx->thr->get_user_sql_stmt);
+		if (rc == SQLITE_ROW) {
+			ctx->user = strdup((char *)sqlite3_column_text(ctx->thr->get_user_sql_stmt, 0));
+			sqlite3_reset(ctx->thr->get_user_sql_stmt);
+
+#ifdef DEBUG_PROXY
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_identify_user: Conn user=%s, ctx->fd=%d\n", ctx->user, ctx->fd);
+#endif /* DEBUG_PROXY */
+
+//			struct dbkeys *ipuser = malloc(sizeof(struct dbkeys));
+//			memset(ipuser, 0, sizeof(dbkeys_t));
+//			memcpy(ipuser->ip, ctx->srchost_str, strlen(ctx->srchost_str));
+////			ipuser->ip = strdup(ctx->srchost_str);
+//			memcpy(ipuser->user, ctx->user, strlen(ctx->user));
+////			ipuser->user = strdup(ctx->user);
+//			
+////			sqlite3_finalize(ctx->thr->get_user_sql_stmt);
+////			sqlite3_close(ctx->opts->userdb);
+//			
+//			if (privsep_client_update_atime(ctx->clisock, ipuser) == -1) {
+////			sqlite3_reset(ctx->thr->update_user_atime_sql_stmt);
+////			sqlite3_bind_int(ctx->thr->update_user_atime_sql_stmt, 1, ctx->atime);
+////			sqlite3_bind_text(ctx->thr->update_user_atime_sql_stmt, 2, ctx->srchost_str, -1, NULL);
+////			if (sqlite3_step(ctx->thr->update_user_atime_sql_stmt) == SQLITE_DONE) {
+////#ifdef DEBUG_PROXY
+////				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_identify_user: Updated atime of user %s=%lld, ctx->fd=%d\n", ctx->user, ctx->atime, ctx->fd);
+////#endif /* DEBUG_PROXY */
+////			} else {
+////				log_err_level_printf(LOG_CRIT, "Error updating user atime: %s\n", sqlite3_errmsg(ctx->thrmgr->userdb));
+////#ifdef DEBUG_PROXY
+////				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_identify_user: Error updating user atime: %s, ctx->fd=%d\n", sqlite3_errmsg(ctx->thrmgr->userdb), ctx->fd);
+////#endif /* DEBUG_PROXY */
+//			}
+		} else if (rc == SQLITE_DONE) {
+#ifdef DEBUG_PROXY
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_identify_user: Conn has no user, ctx->fd=%d\n", ctx->fd);
+#endif /* DEBUG_PROXY */
+		}
+
+//		sqlite3_finalize(stmt);
+//		sqlite3_close(db);
+
+		event_free(ctx->ev);
+		// Retry in case we cannot acquire db file or database: SQLITE_BUSY or SQLITE_LOCKED respectively
+		if (rc == SQLITE_BUSY || rc == SQLITE_LOCKED) {
+			ctx->ev = event_new(ctx->evbase, -1, 0, pxy_conn_identify_user, ctx);
+			if (!ctx->ev)
+				goto memout;
+			struct timeval retry_delay = {0, 100};
+			event_add(ctx->ev, &retry_delay);
+			return;
+		}
+	}
+
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_identify_user: Passed user identification, ctx->fd=%d\n", ctx->fd);
+#endif /* DEBUG_PROXY */
+	/* for SSL, defer dst connection setup to initial_readcb */
+	if (ctx->spec->ssl) {
+		// @todo Move this code to fd_readcb of ssl proto
+		ctx->ev = event_new(ctx->evbase, ctx->fd, EV_READ, ctx->protoctx->fd_readcb, ctx);
+		if (!ctx->ev)
+			goto memout;
+		event_add(ctx->ev, NULL);
+	} else {
+		ctx->protoctx->fd_readcb(ctx->fd, 0, ctx);
+	}
+	return;
+
+memout:
+	log_err_level_printf(LOG_CRIT, "Aborting connection user identification!\n");
+	evutil_closesocket(ctx->fd);
+	pxy_conn_ctx_free(ctx, 1);
+}
+
 /*
  * Callback for accept events on the socket listener bufferevent.
  * Called when a new incoming connection has been accepted.
@@ -1535,15 +1645,19 @@ pxy_conn_setup(evutil_socket_t fd,
 		memcpy(&ctx->srcaddr, peeraddr, ctx->srcaddrlen);
 	}
 
-	/* for SSL, defer dst connection setup to initial_readcb */
-	if (ctx->spec->ssl) {
-		ctx->ev = event_new(ctx->evbase, fd, EV_READ, ctx->protoctx->fd_readcb, ctx);
-		if (!ctx->ev)
-			goto memout;
-		event_add(ctx->ev, NULL);
-	} else {
-		ctx->protoctx->fd_readcb(fd, 0, ctx);
-	}
+//	/* for SSL, defer dst connection setup to initial_readcb */
+//	if (ctx->spec->ssl) {
+//		ctx->ev = event_new(ctx->evbase, fd, EV_READ, ctx->protoctx->fd_readcb, ctx);
+//		if (!ctx->ev)
+//			goto memout;
+//		event_add(ctx->ev, NULL);
+//	} else {
+//		ctx->protoctx->fd_readcb(fd, 0, ctx);
+//	}
+	ctx->ev = event_new(ctx->evbase, -1, 0, pxy_conn_identify_user, ctx);
+	if (!ctx->ev)
+		goto memout;
+	event_active(ctx->ev, 0, 0);
 	return;
 
 memout:

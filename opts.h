@@ -36,6 +36,7 @@
 
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sqlite3.h>
 
 typedef struct proxyspec {
 	unsigned int ssl : 1;
@@ -142,7 +143,14 @@ typedef struct opts {
 	unsigned int remove_http_referer: 1;
 	unsigned int verify_peer: 1;
 	unsigned int allow_wrong_host: 1;
+	sqlite3 *userdb;
+	struct sqlite3_stmt *update_user_atime_sql_stmt;
 } opts_t;
+
+typedef struct dbkeys {
+	char ip[46];
+	char user[32];
+} dbkeys_t;
 
 void NORET oom_die(const char *) NONNULL(1);
 

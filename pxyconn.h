@@ -276,6 +276,9 @@ struct pxy_conn_ctx {
 	// Expired conns are link-listed using this pointer
 	pxy_conn_ctx_t *next_expired;
 
+	unsigned int identify_user_count;
+	char *user;
+
 #ifdef HAVE_LOCAL_PROCINFO
 	/* local process information */
 	pxy_conn_lproc_desc_t lproc;
