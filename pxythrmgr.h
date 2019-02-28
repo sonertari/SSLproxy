@@ -63,7 +63,7 @@ typedef struct pxy_thr_ctx {
 	long long unsigned int extif_out_bytes;
 	unsigned short stats_idx;
 	pxy_conn_ctx_t *conns;
-	struct sqlite3_stmt *get_user_sql_stmt;
+	struct sqlite3_stmt *get_user;
 } pxy_thr_ctx_t;
 
 struct pxy_thrmgr_ctx {

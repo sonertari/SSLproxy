@@ -422,9 +422,7 @@ pxy_thrmgr_run(pxy_thrmgr_ctx_t *ctx)
 		ctx->thr[idx]->timeout_count = 0;
 		ctx->thr[idx]->thrmgr = ctx;
 
-		int rc;
-		rc = sqlite3_prepare_v2(ctx->opts->userdb, "SELECT user FROM ip2user WHERE ip = ?1", 100, &ctx->thr[idx]->get_user_sql_stmt, NULL);
-		if (rc) {
+		if (ctx->opts->user_auth && sqlite3_prepare_v2(ctx->opts->userdb, "SELECT user,mac,atime FROM ip2user WHERE ip = ?1", 100, &ctx->thr[idx]->get_user, NULL)) {
 			log_err_level_printf(LOG_CRIT, "Error preparing get_user_sql_stmt: %s\n", sqlite3_errmsg(ctx->opts->userdb));
 			goto leave;
 		}
@@ -499,7 +497,9 @@ pxy_thrmgr_free(pxy_thrmgr_ctx_t *ctx)
 			if (ctx->thr[idx]->evbase) {
 				event_base_free(ctx->thr[idx]->evbase);
 			}
-			sqlite3_finalize(ctx->thr[idx]->get_user_sql_stmt);
+			if (ctx->opts->user_auth) {
+				sqlite3_finalize(ctx->thr[idx]->get_user);
+			}
 			free(ctx->thr[idx]);
 		}
 		free(ctx->thr);

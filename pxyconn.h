@@ -278,6 +278,9 @@ struct pxy_conn_ctx {
 
 	unsigned int identify_user_count;
 	char *user;
+	char *ether;
+	unsigned int ether_count;
+	unsigned int redirected : 1;
 
 #ifdef HAVE_LOCAL_PROCINFO
 	/* local process information */

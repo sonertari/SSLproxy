@@ -48,9 +48,15 @@
 
 #include <event2/listener.h>
 
-#ifdef HAVE_NETFILTER
-#include <glob.h>
-#endif /* HAVE_NETFILTER */
+#include <net/if_arp.h>
+#include <sys/ioctl.h>
+#include <sys/socket.h>
+#include <sys/sysctl.h>
+#include <net/route.h>
+#include <netinet/if_ether.h>
+#ifdef __OpenBSD__
+#include <net/if_dl.h>
+#endif /* __OpenBSD__ */
 
 /*
  * Maximum size of data to buffer per connection direction before
@@ -362,23 +368,27 @@ pxy_conn_ctx_free(pxy_conn_ctx_t *ctx, int by_requestor)
 		}
 	}
 
-	struct dbkeys *ipuser = malloc(sizeof(struct dbkeys));
-	if (ipuser) {
-		memset(ipuser, 0, sizeof(dbkeys_t));
-		memcpy(ipuser->ip, ctx->srchost_str, strlen(ctx->srchost_str));
-		memcpy(ipuser->user, ctx->user, strlen(ctx->user));
+	if (ctx->opts->user_auth && ctx->srchost_str && ctx->user && ctx->ether) {
+		struct userdbkeys *keys = malloc(sizeof(userdbkeys_t));
+		if (keys) {
+			memset(keys, 0, sizeof(userdbkeys_t));
+			// @todo Should limit copy with max dest size?
+			memcpy(keys->ip, ctx->srchost_str, strlen(ctx->srchost_str));
+			memcpy(keys->user, ctx->user, strlen(ctx->user));
+			memcpy(keys->ether, ctx->ether, strlen(ctx->ether));
 
-		if (privsep_client_update_atime(ctx->clisock, ipuser) == -1) {
+			if (privsep_client_update_atime(ctx->clisock, keys) == -1) {
 #ifdef DEBUG_PROXY
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_free: Error updating user atime: %s, ctx->fd=%d\n", sqlite3_errmsg(ctx->opts->userdb), ctx->fd);
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_free: Error updating user atime: %s, ctx->fd=%d\n", sqlite3_errmsg(ctx->opts->userdb), ctx->fd);
 #endif /* DEBUG_PROXY */
-		} else {
+			} else {
 #ifdef DEBUG_PROXY
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_free: Successfully updated user atime, ctx->fd=%d\n", ctx->fd);
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_free: Successfully updated user atime, ctx->fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
+			}
+			free(keys);
 		}
-		free(ipuser);
-	}	
+	}
 
 	pxy_thrmgr_detach(ctx);
 	if (ctx->srchost_str) {
@@ -415,6 +425,13 @@ pxy_conn_ctx_free(pxy_conn_ctx_t *ctx, int by_requestor)
 		ctx->protoctx->proto_free(ctx);
 	}
 	free(ctx->protoctx);
+
+	if (ctx->user) {
+		free(ctx->user);
+	}
+	if (ctx->ether) {
+		free(ctx->ether);
+	}
 	free(ctx);
 }
 
@@ -1472,50 +1489,102 @@ pxy_fd_readcb(evutil_socket_t fd, UNUSED short what, void *arg)
 	ctx->protoctx->fd_readcb(fd, what, arg);
 }
 
+#ifdef __OpenBSD__
 static void
-pxy_conn_identify_user(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
+identify_user(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
 
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_identify_user: ENTER, ctx->fd=%d\n", ctx->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: ENTER, ctx->fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
-	if (ctx->identify_user_count++ < 50) {
+	if (ctx->ev) {
+		event_free(ctx->ev);
+		ctx->ev = NULL;
+	}
+
+	if (ctx->identify_user_count++ >= 50) {
+#ifdef DEBUG_PROXY
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: Cannot get conn user, ctx->fd=%d\n", ctx->fd);
+#endif /* DEBUG_PROXY */
+
+		goto redirect;
+	} else {
 		int rc;
 
-		sqlite3_reset(ctx->thr->get_user_sql_stmt);
-		sqlite3_bind_text(ctx->thr->get_user_sql_stmt, 1, ctx->srchost_str, -1, NULL);
-		rc = sqlite3_step(ctx->thr->get_user_sql_stmt);
-		if (rc == SQLITE_ROW) {
-			ctx->user = strdup((char *)sqlite3_column_text(ctx->thr->get_user_sql_stmt, 0));
-			sqlite3_reset(ctx->thr->get_user_sql_stmt);
+		sqlite3_reset(ctx->thr->get_user);
+		sqlite3_bind_text(ctx->thr->get_user, 1, ctx->srchost_str, -1, NULL);
+		rc = sqlite3_step(ctx->thr->get_user);
 
-#ifdef DEBUG_PROXY
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_identify_user: Conn user=%s, ctx->fd=%d\n", ctx->user, ctx->fd);
-#endif /* DEBUG_PROXY */
-
-		} else if (rc == SQLITE_DONE) {
-#ifdef DEBUG_PROXY
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_identify_user: Conn has no user, ctx->fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
-		}
-
-		event_free(ctx->ev);
 		// Retry in case we cannot acquire db file or database: SQLITE_BUSY or SQLITE_LOCKED respectively
 		if (rc == SQLITE_BUSY || rc == SQLITE_LOCKED) {
-			ctx->ev = event_new(ctx->evbase, -1, 0, pxy_conn_identify_user, ctx);
+			ctx->ev = event_new(ctx->evbase, -1, 0, identify_user, ctx);
 			if (!ctx->ev)
 				goto memout;
 			struct timeval retry_delay = {0, 100};
 			event_add(ctx->ev, &retry_delay);
 			return;
+		} else if (rc == SQLITE_DONE) {
+#ifdef DEBUG_PROXY
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: Conn has no user, ctx->fd=%d\n", ctx->fd);
+#endif /* DEBUG_PROXY */
+
+			goto redirect;
+		} else if (rc == SQLITE_ROW) {
+			char *ether = (char *)sqlite3_column_text(ctx->thr->get_user, 1);
+			if (strncmp(ether, ctx->ether, 17)) {
+#ifdef DEBUG_PROXY
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: Ethernet addresses do not match, db=%s, arp cache=%s, ctx->fd=%d\n", ether, ctx->ether, ctx->fd);
+#endif /* DEBUG_PROXY */
+
+				goto redirect;
+			}
+
+#ifdef DEBUG_PROXY
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: Passed ethernet address test, %s, ctx->fd=%d\n", ether, ctx->fd);
+#endif /* DEBUG_PROXY */
+
+			int atime = sqlite3_column_int(ctx->thr->get_user, 2);
+			time_t now = time(NULL);
+			if (now - atime > 300) {
+#ifdef DEBUG_PROXY
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: User entry timed out, now=%lld, atime=%u, ctx->fd=%d\n", (long long)now, atime, ctx->fd);
+#endif /* DEBUG_PROXY */
+
+				goto redirect;
+			}
+
+#ifdef DEBUG_PROXY
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: Passed atime test, %u, ctx->fd=%d\n", atime, ctx->fd);
+#endif /* DEBUG_PROXY */
+
+			ctx->user = strdup((char *)sqlite3_column_text(ctx->thr->get_user, 0));
+
+#ifdef DEBUG_PROXY
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: Conn user=%s, ctx->fd=%d\n", ctx->user, ctx->fd);
+#endif /* DEBUG_PROXY */
 		}
 	}
 
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_identify_user: Passed user identification, ctx->fd=%d\n", ctx->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: Passed user identification, ctx->fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
+
+redirect:
+	sqlite3_reset(ctx->thr->get_user);
+
+	// @todo Make this a callback function for different protos?
+	// Redirect http only
+	if (!ctx->spec->http) {
+		goto memout;
+	}
+
+	if (ctx->ev) {
+		event_free(ctx->ev);
+		ctx->ev = NULL;
+	}
+
 	/* for SSL, defer dst connection setup to initial_readcb */
 	if (ctx->spec->ssl) {
 		// @todo Move this code to fd_readcb of ssl proto
@@ -1533,6 +1602,120 @@ memout:
 	evutil_closesocket(ctx->fd);
 	pxy_conn_ctx_free(ctx, 1);
 }
+
+/*
+ * This is a modified version of the same function from OpenBSD sources,
+ * which has a 3-clause BSD license.
+ */
+static char *
+ether_str(struct sockaddr_dl *sdl)
+{
+	char hbuf[NI_MAXHOST];
+	u_char *cp;
+
+	if (sdl->sdl_alen) {
+		cp = (u_char *)LLADDR(sdl);
+		snprintf(hbuf, sizeof(hbuf), "%02x:%02x:%02x:%02x:%02x:%02x",
+		    cp[0], cp[1], cp[2], cp[3], cp[4], cp[5]);
+		return strdup(hbuf);
+	} else {
+		return NULL;
+	}
+}
+
+/*
+ * This is a modified version of a similar function from OpenBSD sources,
+ * which has a 3-clause BSD license.
+ */
+static int
+get_client_ether(in_addr_t addr, pxy_conn_ctx_t *ctx)
+{
+	int mib[7];
+	size_t needed;
+	char *lim, *buf = NULL, *next;
+	struct rt_msghdr *rtm;
+	struct sockaddr_inarp *sin;
+	struct sockaddr_dl *sdl;
+	int found_entry = 0;
+	int rdomain = getrtable();
+
+	mib[0] = CTL_NET;
+	mib[1] = PF_ROUTE;
+	mib[2] = 0;
+	mib[3] = AF_INET;
+	mib[4] = NET_RT_FLAGS;
+	mib[5] = RTF_LLINFO;
+	mib[6] = rdomain;
+	while (1) {
+		if (sysctl(mib, 7, NULL, &needed, NULL, 0) == -1) {
+			log_err_level_printf(LOG_WARNING, "route-sysctl-estimate\n");
+		}
+		if (needed == 0) {
+			return found_entry;
+		}
+		if ((buf = realloc(buf, needed)) == NULL) {
+			return -1;
+		}
+		if (sysctl(mib, 7, buf, &needed, NULL, 0) == -1) {
+			if (errno == ENOMEM)
+				continue;
+#ifdef DEBUG_PROXY
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "actual retrieval of routing table\n");
+#endif /* DEBUG_PROXY */
+		}
+		lim = buf + needed;
+		break;
+	}
+
+	int expired = 0;
+	int incomplete = 0;
+	for (next = buf; next < lim; next += rtm->rtm_msglen) {
+		rtm = (struct rt_msghdr *)next;
+		if (rtm->rtm_version != RTM_VERSION)
+			continue;
+		sin = (struct sockaddr_inarp *)(next + rtm->rtm_hdrlen);
+		sdl = (struct sockaddr_dl *)(sin + 1);
+		if (addr) {
+			if (addr != sin->sin_addr.s_addr)
+				continue;
+			found_entry++;
+		}
+
+		char *expire = NULL;
+		if (rtm->rtm_flags & (RTF_PERMANENT_ARP | RTF_LOCAL)) {
+			expire = "permanent";
+		} else if (rtm->rtm_rmx.rmx_expire == 0) {
+			expire = "static";
+		} else if (rtm->rtm_rmx.rmx_expire > time(NULL)) {
+			expire = "active";
+		} else {
+			expire = "expired";
+			expired++;
+		}
+
+		char *ether = ether_str(sdl);
+		if (ether) {
+			// Record the first unexpired complete entry
+			if (!ctx->ether && (found_entry - expired) == 1) {
+				// Dup before assignment because we free local var ether below
+				ctx->ether = strdup(ether);
+			}
+		} else {
+			incomplete++;
+		}
+
+#ifdef DEBUG_PROXY
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "Arp entry %u for %s: %s (%s)\n", found_entry, inet_ntoa(sin->sin_addr), ether ? ether : "incomplete", expire);
+#endif /* DEBUG_PROXY */
+
+		if (ether) {
+			free(ether);
+		}
+	}
+	free(buf);
+	return found_entry - expired - incomplete;
+}
+#endif /* __OpenBSD__ */
 
 /*
  * Callback for accept events on the socket listener bufferevent.
@@ -1616,14 +1799,43 @@ pxy_conn_setup(evutil_socket_t fd,
 		memcpy(&ctx->srcaddr, peeraddr, ctx->srcaddrlen);
 	}
 
-	ctx->ev = event_new(ctx->evbase, -1, 0, pxy_conn_identify_user, ctx);
-	if (!ctx->ev)
-		goto memout;
-	event_active(ctx->ev, 0, 0);
-	return;
+	if (ctx->opts->user_auth) {
+#ifdef __OpenBSD__
+		int ec = get_client_ether(((struct sockaddr_in *)peeraddr)->sin_addr.s_addr, ctx);
+		if (ec == 1) {
+			ctx->ev = event_new(ctx->evbase, -1, 0, identify_user, ctx);
+			if (!ctx->ev)
+				goto memout;
+			event_active(ctx->ev, 0, 0);
+			return;
+		} else if (ec == 0) {
+			log_err_level_printf(LOG_CRIT, "Cannot find ethernet address of client IP address\n");
+		} else if (ec > 1) {
+			log_err_level_printf(LOG_CRIT, "Multiple ethernet addresses for the same client IP address\n");
+		} else {
+			// ec == -1
+			goto memout;
+		}
+#endif /* __OpenBSD__ */
+		log_err_level_printf(LOG_CRIT, "Aborting connection setup (user auth)!\n");
+		goto out;
+	} else {
+		/* for SSL, defer dst connection setup to initial_readcb */
+		if (ctx->spec->ssl) {
+			// @todo Move this code to fd_readcb of ssl proto
+			ctx->ev = event_new(ctx->evbase, ctx->fd, EV_READ, ctx->protoctx->fd_readcb, ctx);
+			if (!ctx->ev)
+				goto memout;
+			event_add(ctx->ev, NULL);
+		} else {
+			ctx->protoctx->fd_readcb(ctx->fd, 0, ctx);
+		}
+		return;
+	}
 
 memout:
 	log_err_level_printf(LOG_CRIT, "Aborting connection setup (out of memory)!\n");
+out:
 	evutil_closesocket(fd);
 	pxy_conn_ctx_free(ctx, 1);
 }

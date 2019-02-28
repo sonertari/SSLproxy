@@ -70,22 +70,6 @@ opts_new(void)
 	opts->remove_http_accept_encoding = 1;
 	opts->remove_http_referer = 1;
 	opts->verify_peer = 1;
-
-	// @todo Check if we can pass the db var into the child process for privsep
-	// https://www.sqlite.org/faq.html:
-	// "Under Unix, you should not carry an open SQLite database across a fork() system call into the child process."
-	if (sqlite3_open("/var/db/duaf.db", &opts->userdb)) {
-		fprintf(stderr, "Error opening user db file: %s\n", sqlite3_errmsg(opts->userdb));
-		sqlite3_close(opts->userdb);
-		exit(EXIT_FAILURE);
-	}
-	int rc = sqlite3_prepare_v2(opts->userdb, "UPDATE ip2user SET atime = ?1 WHERE ip = ?2 AND user = ?3", 100, &opts->update_user_atime_sql_stmt, NULL);
-	if (rc) {
-		log_err_level_printf(LOG_CRIT, "Error preparing update_user_atime_sql_stmt: %s\n", sqlite3_errmsg(opts->userdb));
-		sqlite3_close(opts->userdb);
-		exit(EXIT_FAILURE);
-	}
-
 	return opts;
 }
 
@@ -176,8 +160,13 @@ opts_free(opts_t *opts)
 		free(opts->mirrortarget);
 	}
 #endif /* !WITHOUT_MIRROR */
-	sqlite3_finalize(opts->update_user_atime_sql_stmt);
-	sqlite3_close(opts->userdb);
+	if (opts->user_auth_url) {
+		free(opts->user_auth_url);
+	}
+	if (opts->user_auth) {
+		sqlite3_finalize(opts->update_user_atime);
+		sqlite3_close(opts->userdb);
+	}
 	memset(opts, 0, sizeof(opts_t));
 	free(opts);
 }
@@ -1461,6 +1450,32 @@ opts_unset_allow_wrong_host(opts_t *opts)
 	opts->allow_wrong_host = 0;
 }
 
+static void
+opts_set_user_auth(UNUSED opts_t *opts)
+{
+#ifdef __OpenBSD__
+	// Enable user auth only on OpenBSD
+	opts->user_auth = 1;
+#endif /* __OpenBSD__ */
+}
+
+static void
+opts_unset_user_auth(opts_t *opts)
+{
+	opts->user_auth = 0;
+}
+
+static void
+opts_set_user_auth_url(opts_t *opts, const char *optarg)
+{
+	if (opts->user_auth_url)
+		free(opts->user_auth_url);
+	opts->user_auth_url = strdup(optarg);
+#ifdef DEBUG_OPTS
+	log_dbg_printf("UserAuthURL: %s\n", opts->user_auth_url);
+#endif /* DEBUG_OPTS */
+}
+
 static int
 check_value_yesno(const char *value, const char *name, int line_num)
 {
@@ -1621,6 +1636,17 @@ set_option(opts_t *opts, const char *argv0,
 #endif /* DEBUG_OPTS */
 	} else if (!strncmp(name, "DebugLevel", 11)) {
 		opts_set_debug_level(value);
+	} else if (!strncmp(name, "UserAuth", 9)) {
+		yes = check_value_yesno(value, "UserAuth", line_num);
+		if (yes == -1) {
+			goto leave;
+		}
+		yes ? opts_set_user_auth(opts) : opts_unset_user_auth(opts);
+#ifdef DEBUG_OPTS
+		log_dbg_printf("UserAuth: %u\n", opts->user_auth);
+#endif /* DEBUG_OPTS */
+	} else if (!strncmp(name, "UserAuthURL", 12)) {
+		opts_set_user_auth_url(opts, value);
 	} else if (!strncmp(name, "ProxySpec", 10)) {
 		/* Use MAX_TOKEN instead of computing the actual number of tokens in value */
 		char **argv = malloc(sizeof(char *) * MAX_TOKEN);

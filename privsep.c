@@ -378,30 +378,26 @@ privsep_server_certfile(const char *fn)
 }
 
 static int WUNRES
-privsep_server_update_atime(opts_t *opts, const dbkeys_t *keys)
+privsep_server_update_atime(opts_t *opts, const userdbkeys_t *keys)
 {
 	log_dbg_printf("privsep_server_update_atime: ENTER\n");
 
 	time_t atime = time(NULL);
-	sqlite3_reset(opts->update_user_atime_sql_stmt);
-	sqlite3_bind_int(opts->update_user_atime_sql_stmt, 1, atime);
-	sqlite3_bind_text(opts->update_user_atime_sql_stmt, 2, keys->ip, -1, NULL);
-	sqlite3_bind_text(opts->update_user_atime_sql_stmt, 3, keys->user, -1, NULL);
+	sqlite3_reset(opts->update_user_atime);
+	sqlite3_bind_int(opts->update_user_atime, 1, atime);
+	sqlite3_bind_text(opts->update_user_atime, 2, keys->ip, -1, NULL);
+	sqlite3_bind_text(opts->update_user_atime, 3, keys->user, -1, NULL);
+	sqlite3_bind_text(opts->update_user_atime, 4, keys->ether, -1, NULL);
 
-	int count = 0;
-	int rc;
-	do {
-		rc = sqlite3_step(opts->update_user_atime_sql_stmt);
-		usleep(100);
-		// Retry in case we cannot acquire db file or database: SQLITE_BUSY or SQLITE_LOCKED respectively
-	} while ((rc == SQLITE_BUSY || rc == SQLITE_LOCKED) && count++ < 5);
+	int rc = sqlite3_step(opts->update_user_atime);
+	// @todo Should we retry in case we cannot acquire db file or database: SQLITE_BUSY or SQLITE_LOCKED respectively?
 
 	if (rc == SQLITE_DONE) {
-		log_err_level_printf(LOG_CRIT, "privsep_server_update_atime: Updated atime of user %s=%lld\n", "soner", (long long)atime);
+		log_dbg_printf("privsep_server_update_atime: Updated atime of user %s=%lld\n", keys->user, (long long)atime);
 	} else {
-		log_err_level_printf(LOG_CRIT, "privsep_server_update_atime: Error updating user atime: %s\n", sqlite3_errmsg(opts->userdb));
+		log_err_level_printf(LOG_ERR, "privsep_server_update_atime: Error updating user atime: %s\n", sqlite3_errmsg(opts->userdb));
 	}
-	sqlite3_reset(opts->update_user_atime_sql_stmt);
+	sqlite3_reset(opts->update_user_atime);
 	return 0;
 }
 
@@ -588,10 +584,9 @@ privsep_server_handle_req(opts_t *opts, int srvsock)
 		break;
 	}
 	case PRIVSEP_REQ_UPDATE_ATIME: {
-		dbkeys_t *arg;
+		userdbkeys_t *arg;
 
-		log_dbg_printf("ENTER PRIVSEP_REQ_UPDATE_ATIME\n");
-		if (n != sizeof(char) + sizeof(dbkeys_t)) {
+		if (n != sizeof(char) + sizeof(userdbkeys_t)) {
 			ans[0] = PRIVSEP_ANS_INVALID;
 			if (sys_sendmsgfd(srvsock, ans, 1, -1) == -1) {
 				log_err_level_printf(LOG_CRIT, "Sending message failed: %s (%i"
@@ -600,11 +595,8 @@ privsep_server_handle_req(opts_t *opts, int srvsock)
 				               ")\n", strerror(errno), errno);
 				return -1;
 			}
-			log_dbg_printf(">>>>>>>>> Returning: n=%zd, arg+1=%lu\n", n, sizeof(char) + sizeof(dbkeys_t));
 			return 0;
 		}
-
-		log_dbg_printf(">>>>>>>>> Continue n=%zd, arg+1=%lu\n", n, sizeof(char) + sizeof(dbkeys_t));
 
 		if (!(arg = malloc(n))) {
 			ans[0] = PRIVSEP_ANS_SYS_ERR;
@@ -1087,15 +1079,15 @@ privsep_client_close(int clisock)
 }
 
 int
-privsep_client_update_atime(int clisock, const dbkeys_t *dbkeys)
+privsep_client_update_atime(int clisock, const userdbkeys_t *keys)
 {
 	char ans[PRIVSEP_MAX_ANS_SIZE];
-	char req[1 + sizeof(dbkeys_t)];
+	char req[1 + sizeof(userdbkeys_t)];
 	int rv = -1;
 	ssize_t n;
 
 	req[0] = PRIVSEP_REQ_UPDATE_ATIME;
-	memcpy(req + 1, dbkeys, sizeof(req) - 1);
+	memcpy(req + 1, keys, sizeof(req) - 1);
 
 	if (sys_sendmsgfd(clisock, req, sizeof(req), -1) == -1) {
 		return -1;

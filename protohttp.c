@@ -374,7 +374,7 @@ protohttp_filter_request_header_line(const char *line, pxy_conn_ctx_t *ctx, prot
 	return (char*)line;
 }
 
-static void  NONNULL(1,2,3,4)
+static void NONNULL(1,2,3,4)
 protohttp_filter_request_header(struct evbuffer *inbuf, struct evbuffer *outbuf, pxy_conn_ctx_t *ctx, protohttp_ctx_t *http_ctx)
 {
 	char *line;
@@ -434,9 +434,66 @@ protohttp_filter_request_header(struct evbuffer *inbuf, struct evbuffer *outbuf,
 	}
 }
 
+static char * NONNULL(1,2)
+protohttp_get_url(struct evbuffer *inbuf, pxy_conn_ctx_t *ctx)
+{
+	char *line;
+	char *path = NULL;
+	char *host = NULL;
+	char *url = NULL;
+
+	while ((!host || !path) && (line = evbuffer_readln(inbuf, NULL, EVBUFFER_EOL_CRLF))) {
+#ifdef DEBUG_PROXY
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_get_url: %s, fd=%d\n", line, ctx->fd);
+#endif /* DEBUG_PROXY */
+
+		//GET / HTTP/1.1
+		if (!path && !strncasecmp(line, "GET ", 4)) {
+			path = strdup(util_skipws(line + 4));
+			path = strsep(&path, " \t");
+#ifdef DEBUG_PROXY
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_get_url: path=%s, fd=%d\n", path, ctx->fd);
+#endif /* DEBUG_PROXY */
+		//Host: example.com
+		} else if (!host && !strncasecmp(line, "Host:", 5)) {
+			host = strdup(util_skipws(line + 5));
+#ifdef DEBUG_PROXY
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_get_url: host=%s, fd=%d\n", host, ctx->fd);
+#endif /* DEBUG_PROXY */
+		}
+		free(line);
+	}
+
+	if (host && path) {
+		// Assume that path will always have a leading /, so do not insert an extra / in between host and path
+		size_t url_size = 4 + 1 + 3 + strlen(host) + strlen(path) + 1;
+		url = malloc(url_size);
+		snprintf(url, url_size, "http%s://%s%s", ctx->spec->ssl ? "s": "", host, path);
+
+#ifdef DEBUG_PROXY
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_get_url: url=%s, fd=%d\n", url, ctx->fd);
+#endif /* DEBUG_PROXY */
+	}
+
+	if (host)
+		free(host);
+	if (path)
+		free(path);
+	return url;
+}
+
 static void NONNULL(1)
 protohttp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
+	const char redirect[] =
+		"HTTP/1.1 302 Found\r\n"
+		"Location: %s\r\n"
+		"\r\n";
+	const char redirect_url[] =
+		"HTTP/1.1 302 Found\r\n"
+		"Location: %s?SSLproxy=%s\r\n"
+		"\r\n";
+
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_bev_readcb_src: ENTER, size=%zu, fd=%d\n",
 			evbuffer_get_length(bufferevent_get_input(bev)), ctx->fd);
@@ -450,6 +507,23 @@ protohttp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
 	struct evbuffer *inbuf = bufferevent_get_input(bev);
 	struct evbuffer *outbuf = bufferevent_get_output(ctx->dst.bev);
+
+	if (ctx->opts->user_auth && !ctx->user) {
+#ifdef DEBUG_PROXY
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_bev_readcb_src: Redirecting conn, fd=%d\n", ctx->fd);
+#endif /* DEBUG_PROXY */
+
+		char *url = protohttp_get_url(inbuf, ctx);
+		pxy_discard_inbuf(bev);
+		if (url) {
+			evbuffer_add_printf(bufferevent_get_output(bev), redirect_url, ctx->opts->user_auth_url, url);
+			free(url);
+		} else {
+			evbuffer_add_printf(bufferevent_get_output(bev), redirect, ctx->opts->user_auth_url);
+		}
+		ctx->redirected = 1;
+		return;
+	}
 
 	// We insert our special header line to the first packet we get, e.g. right after the first \r\n in the case of http
 	// @todo Should we look for GET/POST or Host header lines to detect the first packet?
