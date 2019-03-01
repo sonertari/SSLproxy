@@ -1489,6 +1489,22 @@ pxy_fd_readcb(evutil_socket_t fd, UNUSED short what, void *arg)
 	ctx->protoctx->fd_readcb(fd, what, arg);
 }
 
+static int
+call_fd_readcb(pxy_conn_ctx_t *ctx)
+{
+	/* for SSL, defer dst connection setup to initial_readcb */
+	if (ctx->spec->ssl) {
+		// @todo Move this code to fd_readcb of ssl proto?
+		ctx->ev = event_new(ctx->evbase, ctx->fd, EV_READ, ctx->protoctx->fd_readcb, ctx);
+		if (!ctx->ev)
+			return -1;
+		event_add(ctx->ev, NULL);
+	} else {
+		ctx->protoctx->fd_readcb(ctx->fd, 0, ctx);
+	}
+	return 0;
+}
+
 #ifdef __OpenBSD__
 static void
 identify_user(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
@@ -1585,15 +1601,8 @@ redirect:
 		ctx->ev = NULL;
 	}
 
-	/* for SSL, defer dst connection setup to initial_readcb */
-	if (ctx->spec->ssl) {
-		// @todo Move this code to fd_readcb of ssl proto
-		ctx->ev = event_new(ctx->evbase, ctx->fd, EV_READ, ctx->protoctx->fd_readcb, ctx);
-		if (!ctx->ev)
-			goto memout;
-		event_add(ctx->ev, NULL);
-	} else {
-		ctx->protoctx->fd_readcb(ctx->fd, 0, ctx);
+	if (call_fd_readcb(ctx) == -1) {
+		goto memout;
 	}
 	return;
 
@@ -1820,15 +1829,8 @@ pxy_conn_setup(evutil_socket_t fd,
 		log_err_level_printf(LOG_CRIT, "Aborting connection setup (user auth)!\n");
 		goto out;
 	} else {
-		/* for SSL, defer dst connection setup to initial_readcb */
-		if (ctx->spec->ssl) {
-			// @todo Move this code to fd_readcb of ssl proto
-			ctx->ev = event_new(ctx->evbase, ctx->fd, EV_READ, ctx->protoctx->fd_readcb, ctx);
-			if (!ctx->ev)
-				goto memout;
-			event_add(ctx->ev, NULL);
-		} else {
-			ctx->protoctx->fd_readcb(ctx->fd, 0, ctx);
+		if (call_fd_readcb(ctx) == -1) {
+			goto memout;
 		}
 		return;
 	}

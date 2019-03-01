@@ -450,6 +450,11 @@ protohttp_get_url(struct evbuffer *inbuf, pxy_conn_ctx_t *ctx)
 		//GET / HTTP/1.1
 		if (!path && !strncasecmp(line, "GET ", 4)) {
 			path = strdup(util_skipws(line + 4));
+			if (!path) {
+				ctx->enomem = 1;
+				free(line);
+				goto memout;
+			}
 			path = strsep(&path, " \t");
 #ifdef DEBUG_PROXY
 			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_get_url: path=%s, fd=%d\n", path, ctx->fd);
@@ -457,6 +462,11 @@ protohttp_get_url(struct evbuffer *inbuf, pxy_conn_ctx_t *ctx)
 		//Host: example.com
 		} else if (!host && !strncasecmp(line, "Host:", 5)) {
 			host = strdup(util_skipws(line + 5));
+			if (!host) {
+				ctx->enomem = 1;
+				free(line);
+				goto memout;
+			}
 #ifdef DEBUG_PROXY
 			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_get_url: host=%s, fd=%d\n", host, ctx->fd);
 #endif /* DEBUG_PROXY */
@@ -468,13 +478,16 @@ protohttp_get_url(struct evbuffer *inbuf, pxy_conn_ctx_t *ctx)
 		// Assume that path will always have a leading /, so do not insert an extra / in between host and path
 		size_t url_size = 4 + 1 + 3 + strlen(host) + strlen(path) + 1;
 		url = malloc(url_size);
+		if (!url) {
+			ctx->enomem = 1;
+			goto memout;
+		}
 		snprintf(url, url_size, "http%s://%s%s", ctx->spec->ssl ? "s": "", host, path);
-
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_get_url: url=%s, fd=%d\n", url, ctx->fd);
 #endif /* DEBUG_PROXY */
 	}
-
+memout:
 	if (host)
 		free(host);
 	if (path)

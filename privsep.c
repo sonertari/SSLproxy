@@ -380,8 +380,6 @@ privsep_server_certfile(const char *fn)
 static int WUNRES
 privsep_server_update_atime(opts_t *opts, const userdbkeys_t *keys)
 {
-	log_dbg_printf("privsep_server_update_atime: ENTER\n");
-
 	time_t atime = time(NULL);
 	sqlite3_reset(opts->update_user_atime);
 	sqlite3_bind_int(opts->update_user_atime, 1, atime);
@@ -390,8 +388,8 @@ privsep_server_update_atime(opts_t *opts, const userdbkeys_t *keys)
 	sqlite3_bind_text(opts->update_user_atime, 4, keys->ether, -1, NULL);
 
 	int rc = sqlite3_step(opts->update_user_atime);
-	// @todo Should we retry in case we cannot acquire db file or database: SQLITE_BUSY or SQLITE_LOCKED respectively?
 
+	// @todo Should we retry in case we cannot acquire db file or database: SQLITE_BUSY or SQLITE_LOCKED respectively?
 	if (rc == SQLITE_DONE) {
 		log_dbg_printf("privsep_server_update_atime: Updated atime of user %s=%lld\n", keys->user, (long long)atime);
 	} else {
@@ -611,7 +609,6 @@ privsep_server_handle_req(opts_t *opts, int srvsock)
 		}
 		memcpy(arg, req + 1, n - 1);
 
-		log_dbg_printf("Calling privsep_server_update_atime\n");
 		if (privsep_server_update_atime(opts, arg) == -1) {
 			free(arg);
 			ans[0] = PRIVSEP_ANS_SYS_ERR;
