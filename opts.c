@@ -70,6 +70,7 @@ opts_new(void)
 	opts->remove_http_accept_encoding = 1;
 	opts->remove_http_referer = 1;
 	opts->verify_peer = 1;
+	opts->user_timeout = 300;
 	return opts;
 }
 
@@ -160,6 +161,9 @@ opts_free(opts_t *opts)
 		free(opts->mirrortarget);
 	}
 #endif /* !WITHOUT_MIRROR */
+	if (opts->userdb_path) {
+		free(opts->userdb_path);
+	}
 	if (opts->user_auth_url) {
 		free(opts->user_auth_url);
 	}
@@ -1466,6 +1470,17 @@ opts_unset_user_auth(opts_t *opts)
 }
 
 static void
+opts_set_userdb_path(opts_t *opts, const char *optarg)
+{
+	if (opts->userdb_path)
+		free(opts->userdb_path);
+	opts->userdb_path = strdup(optarg);
+#ifdef DEBUG_OPTS
+	log_dbg_printf("UserDBPath: %s\n", opts->userdb_path);
+#endif /* DEBUG_OPTS */
+}
+
+static void
 opts_set_user_auth_url(opts_t *opts, const char *optarg)
 {
 	if (opts->user_auth_url)
@@ -1645,8 +1660,21 @@ set_option(opts_t *opts, const char *argv0,
 #ifdef DEBUG_OPTS
 		log_dbg_printf("UserAuth: %u\n", opts->user_auth);
 #endif /* DEBUG_OPTS */
+	} else if (!strncmp(name, "UserDBPath", 11)) {
+		opts_set_userdb_path(opts, value);
 	} else if (!strncmp(name, "UserAuthURL", 12)) {
 		opts_set_user_auth_url(opts, value);
+	} else if (!strncasecmp(name, "UserTimeout", 12)) {
+		unsigned int i = atoi(value);
+		if (i <= 86400) {
+			opts->user_timeout = i;
+		} else {
+			fprintf(stderr, "Invalid UserTimeout %s at line %d, use 0-86400\n", value, line_num);
+			goto leave;
+		}
+#ifdef DEBUG_OPTS
+		log_dbg_printf("UserTimeout: %u\n", opts->user_timeout);
+#endif /* DEBUG_OPTS */
 	} else if (!strncmp(name, "ProxySpec", 10)) {
 		/* Use MAX_TOKEN instead of computing the actual number of tokens in value */
 		char **argv = malloc(sizeof(char *) * MAX_TOKEN);

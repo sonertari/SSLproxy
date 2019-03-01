@@ -1563,7 +1563,7 @@ identify_user(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 
 			int atime = sqlite3_column_int(ctx->thr->get_user, 2);
 			time_t now = time(NULL);
-			if (now - atime > 300) {
+			if (now - atime > ctx->opts->user_timeout) {
 #ifdef DEBUG_PROXY
 				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: User entry timed out, now=%lld, atime=%u, ctx->fd=%d\n", (long long)now, atime, ctx->fd);
 #endif /* DEBUG_PROXY */

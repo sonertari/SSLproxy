@@ -144,9 +144,11 @@ typedef struct opts {
 	unsigned int verify_peer: 1;
 	unsigned int allow_wrong_host: 1;
 	unsigned int user_auth: 1;
-	char *user_auth_url;
+	char *userdb_path;
 	sqlite3 *userdb;
+	char *user_auth_url;
 	struct sqlite3_stmt *update_user_atime;
+	unsigned int user_timeout;
 } opts_t;
 
 typedef struct userdbkeys {

@@ -619,18 +619,21 @@ main(int argc, char *argv[])
 	}
 
 	if (opts->user_auth) {
+		if (!opts->userdb_path) {
+			fprintf(stderr, "User auth requires userdb path\n");
+			exit(EXIT_FAILURE);
+		}
 		// @todo Check if we can really pass the db var into the child process for privsep
 		// https://www.sqlite.org/faq.html:
 		// "Under Unix, you should not carry an open SQLite database across a fork() system call into the child process."
-		if (sqlite3_open("/var/db/duaf.db", &opts->userdb)) {
+		if (sqlite3_open(opts->userdb_path, &opts->userdb)) {
 			fprintf(stderr, "Error opening user db file: %s\n", sqlite3_errmsg(opts->userdb));
 			sqlite3_close(opts->userdb);
 			exit(EXIT_FAILURE);
 		}
 		// @todo Change mac column to ether
-		int rc = sqlite3_prepare_v2(opts->userdb, "UPDATE ip2user SET atime = ?1 WHERE ip = ?2 AND user = ?3 AND mac = ?4", 200, &opts->update_user_atime, NULL);
-		if (rc) {
-			log_err_level_printf(LOG_CRIT, "Error preparing update_user_atime sql stmt: %s\n", sqlite3_errmsg(opts->userdb));
+		if (sqlite3_prepare_v2(opts->userdb, "UPDATE ip2user SET atime = ?1 WHERE ip = ?2 AND user = ?3 AND mac = ?4", 200, &opts->update_user_atime, NULL)) {
+			fprintf(stderr, "Error preparing update_user_atime sql stmt: %s\n", sqlite3_errmsg(opts->userdb));
 			sqlite3_close(opts->userdb);
 			exit(EXIT_FAILURE);
 		}
