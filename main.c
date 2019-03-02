@@ -631,8 +631,7 @@ main(int argc, char *argv[])
 			sqlite3_close(opts->userdb);
 			exit(EXIT_FAILURE);
 		}
-		// @todo Change mac column to ether
-		if (sqlite3_prepare_v2(opts->userdb, "UPDATE ip2user SET atime = ?1 WHERE ip = ?2 AND user = ?3 AND mac = ?4", 200, &opts->update_user_atime, NULL)) {
+		if (sqlite3_prepare_v2(opts->userdb, "UPDATE users SET atime = ?1 WHERE ip = ?2 AND user = ?3 AND ether = ?4", 200, &opts->update_user_atime, NULL)) {
 			fprintf(stderr, "Error preparing update_user_atime sql stmt: %s\n", sqlite3_errmsg(opts->userdb));
 			sqlite3_close(opts->userdb);
 			exit(EXIT_FAILURE);
