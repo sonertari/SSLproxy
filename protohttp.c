@@ -534,7 +534,6 @@ protohttp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		} else {
 			evbuffer_add_printf(bufferevent_get_output(bev), redirect, ctx->opts->user_auth_url);
 		}
-		ctx->redirected = 1;
 		return;
 	}
 

@@ -385,12 +385,18 @@ prototcp_bev_writecb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_writecb_src: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
-	if (ctx->opts->user_auth && !ctx->user && ctx->redirected) {
+	if (ctx->opts->user_auth && !ctx->user) {
+		size_t outbuflen = evbuffer_get_length(bufferevent_get_output(bev));
+		if (outbuflen > 0) {
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_writecb_src: Closing redirected conn, fd=%d\n", ctx->fd);
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_writecb_src: Not closing redirected conn, outbuflen=%zu, fd=%d\n", outbuflen, ctx->fd);
 #endif /* DEBUG_PROXY */
-
-		pxy_conn_term(ctx, 1);
+		} else {
+#ifdef DEBUG_PROXY
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_writecb_src: Closing redirected conn, fd=%d\n", ctx->fd);
+#endif /* DEBUG_PROXY */
+			pxy_conn_term(ctx, 1);
+		}
 		return;
 	}
 
