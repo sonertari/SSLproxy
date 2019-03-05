@@ -34,6 +34,9 @@
 
 void prototcp_fd_readcb(evutil_socket_t, short, void *);
 
+int prototcp_try_send_userauth_msg(struct bufferevent *, pxy_conn_ctx_t *) NONNULL(1);
+int prototcp_try_close_unauth_conn(struct bufferevent *, pxy_conn_ctx_t *) NONNULL(1);
+
 void prototcp_bev_writecb(struct bufferevent *, void *) NONNULL(1);
 
 void prototcp_bev_eventcb_eof_src(struct bufferevent *, pxy_conn_ctx_t *) NONNULL(1,2);

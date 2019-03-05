@@ -54,6 +54,8 @@
 #define SSLPROXY_KEY		"SSLproxy:"
 #define SSLPROXY_KEY_LEN	strlen(SSLPROXY_KEY)
 
+#define USERAUTH_MSG		"You must authenticate to access the Internet at %s"
+
 typedef struct pxy_conn_child_ctx pxy_conn_child_ctx_t;
 
 typedef void (*fd_readcb_func_t)(evutil_socket_t,  short, void *);
@@ -279,6 +281,7 @@ struct pxy_conn_ctx {
 	unsigned int identify_user_count;
 	char *user;
 	char *ether;
+	unsigned int sent_userauth_msg : 1;
 
 #ifdef HAVE_LOCAL_PROCINFO
 	/* local process information */

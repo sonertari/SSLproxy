@@ -145,6 +145,10 @@ protopassthrough_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		return;
 	}
 
+	if (prototcp_try_send_userauth_msg(bev, ctx)) {
+		return;
+	}
+
 	evbuffer_add_buffer(bufferevent_get_output(ctx->srvdst.bev), bufferevent_get_input(bev));
 	pxy_try_set_watermark(bev, ctx, ctx->srvdst.bev);
 }
@@ -173,6 +177,10 @@ protopassthrough_bev_writecb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protopassthrough_bev_writecb_src: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
+
+	if (prototcp_try_close_unauth_conn(bev, ctx)) {
+		return;
+	}
 
 	// @attention srvdst.bev may be NULL
 	if (ctx->srvdst.closed) {

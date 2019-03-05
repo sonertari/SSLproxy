@@ -244,6 +244,22 @@ prototcp_fd_readcb(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 	pxy_conn_connect(ctx);
 }
 
+int
+prototcp_try_send_userauth_msg(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
+{
+	if (ctx->opts->user_auth && !ctx->user) {
+#ifdef DEBUG_PROXY
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_try_send_userauth_msg: Sending userauth message, fd=%d\n", ctx->fd);
+#endif /* DEBUG_PROXY */
+
+		pxy_discard_inbuf(bev);
+		evbuffer_add_printf(bufferevent_get_output(bev), USERAUTH_MSG, ctx->opts->user_auth_url);
+		ctx->sent_userauth_msg = 1;
+		return 1;
+	}
+	return 0;
+}
+
 static void NONNULL(1)
 prototcp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
@@ -254,6 +270,10 @@ prototcp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 
 	if (ctx->dst.closed) {
 		pxy_discard_inbuf(bev);
+		return;
+	}
+
+	if (prototcp_try_send_userauth_msg(bev, ctx)) {
 		return;
 	}
 
@@ -378,6 +398,30 @@ prototcp_bev_readcb_dst_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ctx
 	pxy_try_set_watermark(bev, ctx->conn, ctx->src.bev);
 }
 
+int
+prototcp_try_close_unauth_conn(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
+{
+	if (ctx->opts->user_auth && !ctx->user) {
+		size_t outbuflen = evbuffer_get_length(bufferevent_get_output(bev));
+		if (outbuflen > 0) {
+#ifdef DEBUG_PROXY
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_try_close_unauth_conn: Not closing unauth conn, outbuflen=%zu, fd=%d\n", outbuflen, ctx->fd);
+#endif /* DEBUG_PROXY */
+		} else if (ctx->sent_userauth_msg) {
+#ifdef DEBUG_PROXY
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_try_close_unauth_conn: Closing unauth conn, fd=%d\n", ctx->fd);
+#endif /* DEBUG_PROXY */
+			pxy_conn_term(ctx, 1);
+		} else {
+#ifdef DEBUG_PROXY
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_try_close_unauth_conn: Not sent userauth msg yet, fd=%d\n", ctx->fd);
+#endif /* DEBUG_PROXY */
+		}
+		return 1;
+	}
+	return 0;
+}
+
 static void NONNULL(1)
 prototcp_bev_writecb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
@@ -385,18 +429,7 @@ prototcp_bev_writecb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_writecb_src: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
-	if (ctx->opts->user_auth && !ctx->user) {
-		size_t outbuflen = evbuffer_get_length(bufferevent_get_output(bev));
-		if (outbuflen > 0) {
-#ifdef DEBUG_PROXY
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_writecb_src: Not closing redirected conn, outbuflen=%zu, fd=%d\n", outbuflen, ctx->fd);
-#endif /* DEBUG_PROXY */
-		} else {
-#ifdef DEBUG_PROXY
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bev_writecb_src: Closing redirected conn, fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
-			pxy_conn_term(ctx, 1);
-		}
+	if (prototcp_try_close_unauth_conn(bev, ctx)) {
 		return;
 	}
 

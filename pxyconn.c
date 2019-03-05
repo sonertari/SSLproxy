@@ -1590,12 +1590,6 @@ identify_user(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 redirect:
 	sqlite3_reset(ctx->thr->get_user);
 
-	// @todo Make this a callback function for different protos?
-	// Redirect http only
-	if (!ctx->spec->http) {
-		goto memout;
-	}
-
 	if (ctx->ev) {
 		event_free(ctx->ev);
 		ctx->ev = NULL;

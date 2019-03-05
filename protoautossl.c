@@ -173,6 +173,10 @@ protoautossl_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 
 	protoautossl_ctx_t *autossl_ctx = ctx->protoctx->arg;
 
+	if (prototcp_try_send_userauth_msg(bev, ctx)) {
+		return;
+	}
+
 	if (autossl_ctx->clienthello_search) {
 		if (protoautossl_peek_and_upgrade(ctx)) {
 			return;
