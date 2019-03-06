@@ -544,7 +544,7 @@ protohttp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	// @attention We cannot append the ssl proxy address at the end of the packet or in between the header and the content,
 	// because (1) the packet may be just the first fragment split somewhere not appropriate for appending a header,
 	// and (2) there may not be any content.
-	// And we are dealing pop3 and smtp also, not just http.
+	// And we are dealing with pop3 and smtp also, not just http.
 
 	/* request header munging */
 	if (!http_ctx->seen_req_header) {

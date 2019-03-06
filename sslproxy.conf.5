@@ -3,7 +3,7 @@
 .\" https://github.com/sonertari/SSLproxy
 .\"
 .\" Copyright (c) 2009-2018, Daniel Roethlisberger <daniel@roe.ch>.
-.\" Copyright (c) 2017-2018, Soner Tari <sonertari@gmail.com>.
+.\" Copyright (c) 2017-2019, Soner Tari <sonertari@gmail.com>.
 .\" All rights reserved.
 .\"
 .\" Redistribution and use in source and binary forms, with or without
@@ -26,7 +26,7 @@
 .\" ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 .\" POSSIBILITY OF SUCH DAMAGE.
 .\"
-.TH "sslproxy.conf" "5" "09 Dec 2018" "v0.5.9" "SSLproxy"
+.TH "sslproxy.conf" "5" "06 Mar 2019" "v0.5.10" "SSLproxy"
 .SH "NAME"
 .LP 
 \fBsslproxy.conf\fR \- Configuration file for SSLproxy
@@ -237,7 +237,23 @@ provided by the client does not match the server certificate's CN/SAN. Helps
 pass the wrong.host test at https://badssl.com.
 .br
 Default: no
-.TP 
+.TP
+\fBUserAuth BOOL\fR
+Require authentication for users to use SSLproxy.
+.br
+Default: no
+.TP
+\fBUserDBPath STRING\fR
+Path to user db file.
+.TP
+\fBUserTimeout NUMBER\fR
+Time users out after this many seconds of idle time.
+.br 
+Default: 300.
+.TP
+\fBUserAuthURL STRING\fR
+Redirect URL for users to log in to the system.
+.TP
 \fBProxySpec STRING\fR
 Proxy specification: type listenaddr+port up:port ua:addr ra:addr. Multiple specs are allowed, one on each line.
 .SH "FILES"

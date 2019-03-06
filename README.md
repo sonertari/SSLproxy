@@ -1,6 +1,6 @@
 # SSLproxy - transparent SSL/TLS proxy for decrypting and diverting network traffic to other programs for deep SSL inspection [![Build Status](https://travis-ci.org/sonertari/SSLproxy.svg?branch=master)](https://travis-ci.org/sonertari/SSLproxy)
 
-Copyright (C) 2017-2018, [Soner Tari](http://comixwall.org).  
+Copyright (C) 2017-2019, [Soner Tari](http://comixwall.org).  
 https://github.com/sonertari/SSLproxy
 
 Copyright (C) 2009-2018, [Daniel Roethlisberger](//daniel.roe.ch/).  
@@ -122,6 +122,29 @@ because in order to maximize the chances that a connection can be successfully
 split, SSLsplit accepts all certificates by default, including self-signed
 ones. See [The Risks of SSL Inspection](https://insights.sei.cmu.edu/cert/2015/03/the-risks-of-ssl-inspection.html)
 for the reasons of this difference.
+
+If enabled the UserAuth option requires network users to log in to the system 
+to use SSLproxy (this feature is currently available on OpenBSD only). When 
+users are logged in, they should be recorded on the users table in an SQLite3 
+database. The users table is created using the following SQL statement:
+
+	CREATE TABLE USERS(
+	   IP             CHAR(45)     PRIMARY KEY     NOT NULL,
+	   USER           CHAR(31)     NOT NULL,
+	   ETHER          CHAR(17)     NOT NULL,
+	   ATIME          INT          NOT NULL,
+	   DESC           CHAR(50)
+	);
+
+When SSLproxy accepts a connection, it obtains the ethernet address of the
+client IP address from the arp cache of the system, then compares it with
+the value in the users table. If the ethernet addresses do not match, the 
+connection is redirected to the login page. SSLproxy also compares the atime 
+value in the users table with the current system time. If the difference is 
+larger than the configured value of the user timeout option, then the 
+connection is redirected to the login page. The atime of the IP address in the 
+users table is updated with the system time while the connection is being 
+terminated.
 
 Logging options include traditional SSLproxy connect and content log files as
 well as PCAP files and mirroring decrypted traffic to a network interface.
