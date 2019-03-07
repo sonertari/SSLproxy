@@ -31,6 +31,7 @@
 #include "protopassthrough.h"
 
 #include <sys/param.h>
+#include <string.h>
 
 /*
  * Set up a bufferevent structure for either a dst or src connection,
@@ -260,7 +261,33 @@ prototcp_try_send_userauth_msg(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	return 0;
 }
 
-static void NONNULL(1)
+static int NONNULL(1,2,3,4)
+prototcp_try_validate_proto(struct bufferevent *bev, pxy_conn_ctx_t *ctx, struct evbuffer *inbuf, struct evbuffer *outbuf)
+{
+	if (ctx->opts->validate_proto && ctx->protoctx->validatecb && !ctx->protoctx->is_valid) {
+		size_t packet_size = evbuffer_get_length(inbuf);
+		char *packet = (char *)pxy_malloc_packet(packet_size, ctx);
+		if (!packet) {
+			return -1;
+		}
+		if (evbuffer_copyout(inbuf, packet, packet_size) == -1) {
+			free(packet);
+			return -1;
+		}
+		if (ctx->protoctx->validatecb(ctx, packet, packet_size) == -1) {
+			evbuffer_add(bufferevent_get_output(bev), PROTOERROR_MSG, PROTOERROR_MSG_LEN);
+			ctx->sent_protoerror_msg = 1;
+			pxy_discard_inbuf(bev);
+			evbuffer_drain(outbuf, evbuffer_get_length(outbuf));
+			free(packet);
+			return 1;
+		}
+		free(packet);
+	}
+	return 0;
+}
+
+static void NONNULL(1,2)
 prototcp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
@@ -279,6 +306,10 @@ prototcp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 
 	struct evbuffer *inbuf = bufferevent_get_input(bev);
 	struct evbuffer *outbuf = bufferevent_get_output(ctx->dst.bev);
+		
+	if (prototcp_try_validate_proto(bev, ctx, inbuf, outbuf) != 0) {
+		return;
+	}
 
 	if (!ctx->sent_sslproxy_header) {
 		size_t packet_size = evbuffer_get_length(inbuf);
@@ -422,6 +453,26 @@ prototcp_try_close_unauth_conn(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	return 0;
 }
 
+static int NONNULL(1,2)
+prototcp_try_close_protoerror_conn(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
+{
+	if (ctx->opts->validate_proto && ctx->sent_protoerror_msg) {
+		size_t outbuflen = evbuffer_get_length(bufferevent_get_output(bev));
+		if (outbuflen > 0) {
+#ifdef DEBUG_PROXY
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_try_close_protoerror_conn: Not closing protoerror conn, outbuflen=%zu, fd=%d\n", outbuflen, ctx->fd);
+#endif /* DEBUG_PROXY */
+		} else {
+#ifdef DEBUG_PROXY
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_try_close_protoerror_conn: Closing protoerror conn, fd=%d\n", ctx->fd);
+#endif /* DEBUG_PROXY */
+			pxy_conn_term(ctx, 1);
+		}
+		return 1;
+	}
+	return 0;
+}
+
 static void NONNULL(1)
 prototcp_bev_writecb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
@@ -430,6 +481,10 @@ prototcp_bev_writecb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 #endif /* DEBUG_PROXY */
 
 	if (prototcp_try_close_unauth_conn(bev, ctx)) {
+		return;
+	}
+
+	if (prototcp_try_close_protoerror_conn(bev, ctx)) {
 		return;
 	}
 

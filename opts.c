@@ -71,6 +71,7 @@ opts_new(void)
 	opts->remove_http_referer = 1;
 	opts->verify_peer = 1;
 	opts->user_timeout = 300;
+	opts->max_http_header_size = 8192;
 	return opts;
 }
 
@@ -1491,6 +1492,18 @@ opts_set_user_auth_url(opts_t *opts, const char *optarg)
 #endif /* DEBUG_OPTS */
 }
 
+static void
+opts_set_validate_proto(opts_t *opts)
+{
+	opts->validate_proto = 1;
+}
+
+static void
+opts_unset_validate_proto(opts_t *opts)
+{
+	opts->validate_proto = 0;
+}
+
 static int
 check_value_yesno(const char *value, const char *name, int line_num)
 {
@@ -1674,6 +1687,26 @@ set_option(opts_t *opts, const char *argv0,
 		}
 #ifdef DEBUG_OPTS
 		log_dbg_printf("UserTimeout: %u\n", opts->user_timeout);
+#endif /* DEBUG_OPTS */
+	} else if (!strncmp(name, "ValidateProto", 14)) {
+		yes = check_value_yesno(value, "ValidateProto", line_num);
+		if (yes == -1) {
+			goto leave;
+		}
+		yes ? opts_set_validate_proto(opts) : opts_unset_validate_proto(opts);
+#ifdef DEBUG_OPTS
+		log_dbg_printf("ValidateProto: %u\n", opts->validate_proto);
+#endif /* DEBUG_OPTS */
+	} else if (!strncasecmp(name, "MaxHTTPHeaderSize", 18)) {
+		unsigned int i = atoi(value);
+		if (i >= 1024 && i <= 65536) {
+			opts->max_http_header_size = i;
+		} else {
+			fprintf(stderr, "Invalid MaxHTTPHeaderSize %s at line %d, use 1024-65536\n", value, line_num);
+			goto leave;
+		}
+#ifdef DEBUG_OPTS
+		log_dbg_printf("MaxHTTPHeaderSize: %u\n", opts->max_http_header_size);
 #endif /* DEBUG_OPTS */
 	} else if (!strncmp(name, "ProxySpec", 10)) {
 		/* Use MAX_TOKEN instead of computing the actual number of tokens in value */

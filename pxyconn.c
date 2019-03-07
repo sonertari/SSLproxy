@@ -32,6 +32,8 @@
 #include "prototcp.h"
 #include "protossl.h"
 #include "protohttp.h"
+#include "protopop3.h"
+#include "protosmtp.h"
 #include "protoautossl.h"
 #include "protopassthrough.h"
 
@@ -102,15 +104,15 @@ pxy_setup_proto(pxy_conn_ctx_t *ctx)
 		}
 	} else if (ctx->spec->pop3) {
 		if (ctx->spec->ssl) {
-			proto = (protossl_setup(ctx) != PROTO_ERROR) ? PROTO_POP3S : PROTO_ERROR;
+			proto = protopop3s_setup(ctx);
 		} else {
-			proto = PROTO_POP3;
+			proto = protopop3_setup(ctx);
 		}
 	} else if (ctx->spec->smtp) {
 		if (ctx->spec->ssl) {
-			proto = (protossl_setup(ctx) != PROTO_ERROR) ? PROTO_SMTPS : PROTO_ERROR;
+			proto = protosmtps_setup(ctx);
 		} else {
-			proto = PROTO_SMTP;
+			proto = protosmtp_setup(ctx);
 		}
 	} else if (ctx->spec->ssl) {
 		proto = protossl_setup(ctx);

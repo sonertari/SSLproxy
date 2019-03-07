@@ -149,6 +149,8 @@ typedef struct opts {
 	char *user_auth_url;
 	struct sqlite3_stmt *update_user_atime;
 	unsigned int user_timeout;
+	unsigned int validate_proto : 1;
+	unsigned int max_http_header_size;
 } opts_t;
 
 typedef struct userdbkeys {

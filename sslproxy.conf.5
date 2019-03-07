@@ -26,7 +26,7 @@
 .\" ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 .\" POSSIBILITY OF SUCH DAMAGE.
 .\"
-.TH "sslproxy.conf" "5" "06 Mar 2019" "v0.5.10" "SSLproxy"
+.TH "sslproxy.conf" "5" "07 Mar 2019" "v0.5.10" "SSLproxy"
 .SH "NAME"
 .LP 
 \fBsslproxy.conf\fR \- Configuration file for SSLproxy
@@ -253,6 +253,16 @@ Default: 300.
 .TP
 \fBUserAuthURL STRING\fR
 Redirect URL for users to log in to the system.
+.TP
+\fBValidateProto BOOL\fR
+Validate proxy spec protocols.
+.br
+Default: no
+.TP
+\fBMaxHTTPHeaderSize NUMBER\fR
+Max HTTP header size in bytes for protocol validation.
+.br 
+Default: 8192.
 .TP
 \fBProxySpec STRING\fR
 Proxy specification: type listenaddr+port up:port ua:addr ra:addr. Multiple specs are allowed, one on each line.

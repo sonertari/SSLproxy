@@ -29,7 +29,7 @@
 .\" ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 .\" POSSIBILITY OF SUCH DAMAGE.
 .\"
-.TH "sslproxy" "1" "06 Mar 2019" "v0.5.10" "SSLproxy"
+.TH "sslproxy" "1" "07 Mar 2019" "v0.5.10" "SSLproxy"
 .SH NAME
 sslproxy \-\- transparent SSL/TLS proxy for decrypting and diverting network 
 traffic to other programs for deep SSL inspection
@@ -124,7 +124,7 @@ because in order to maximize the chances that a connection can be successfully
 split, SSLsplit accepts all certificates by default, including self-signed 
 ones.
 .LP
-If enabled the UserAuth option requires network users to log in to the system 
+If enabled, the UserAuth option requires network users to log in to the system 
 to use SSLproxy (this feature is currently available on OpenBSD only). When 
 users are logged in, they should be recorded on the users table in an SQLite3 
 database. The users table is created using the following SQL statement:
@@ -146,6 +146,10 @@ larger than the configured value of the user timeout option, then the
 connection is redirected to the login page. The atime of the IP address in the 
 users table is updated with the system time while the connection is being 
 terminated.
+.LP
+If enabled, the ValidateProto option validates protocols in proxy 
+specifications. If a connection cannot pass protocol validation, then it is 
+terminated. This feature currently supports HTTP, POP3, and SMTP protocols.
 .LP
 Logging options include traditional SSLproxy connect and content log files as
 well as PCAP files and mirroring decrypted traffic to a network interface.

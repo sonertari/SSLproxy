@@ -123,7 +123,7 @@ split, SSLsplit accepts all certificates by default, including self-signed
 ones. See [The Risks of SSL Inspection](https://insights.sei.cmu.edu/cert/2015/03/the-risks-of-ssl-inspection.html)
 for the reasons of this difference.
 
-If enabled the UserAuth option requires network users to log in to the system 
+If enabled, the UserAuth option requires network users to log in to the system 
 to use SSLproxy (this feature is currently available on OpenBSD only). When 
 users are logged in, they should be recorded on the users table in an SQLite3 
 database. The users table is created using the following SQL statement:
@@ -145,6 +145,10 @@ larger than the configured value of the user timeout option, then the
 connection is redirected to the login page. The atime of the IP address in the 
 users table is updated with the system time while the connection is being 
 terminated.
+
+If enabled, the ValidateProto option validates protocols in proxy 
+specifications. If a connection cannot pass protocol validation, then it is 
+terminated. This feature currently supports HTTP, POP3, and SMTP protocols.
 
 Logging options include traditional SSLproxy connect and content log files as
 well as PCAP files and mirroring decrypted traffic to a network interface.

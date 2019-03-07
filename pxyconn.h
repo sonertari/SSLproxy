@@ -54,7 +54,10 @@
 #define SSLPROXY_KEY		"SSLproxy:"
 #define SSLPROXY_KEY_LEN	strlen(SSLPROXY_KEY)
 
-#define USERAUTH_MSG		"You must authenticate to access the Internet at %s"
+#define USERAUTH_MSG		"You must authenticate to access the Internet at %s\r\n"
+
+#define PROTOERROR_MSG		"Connection is terminated due to protocol error\r\n"
+#define PROTOERROR_MSG_LEN	strlen(PROTOERROR_MSG)
 
 typedef struct pxy_conn_child_ctx pxy_conn_child_ctx_t;
 
@@ -67,6 +70,7 @@ typedef void (*eventcb_func_t)(struct bufferevent *, short, void *);
 typedef void (*bev_free_func_t)(struct bufferevent *, pxy_conn_ctx_t *);
 
 typedef void (*proto_free_func_t)(pxy_conn_ctx_t *);
+typedef int (*proto_validate_func_t)(pxy_conn_ctx_t *, char *, size_t);
 
 typedef void (*child_connect_func_t)(pxy_conn_child_ctx_t *);
 typedef void (*child_proto_free_func_t)(pxy_conn_child_ctx_t *);
@@ -141,6 +145,8 @@ struct proto_ctx {
 	eventcb_func_t bev_eventcb;
 
 	proto_free_func_t proto_free;
+	proto_validate_func_t validatecb;
+	unsigned int is_valid : 1;        /* 0 until passed proto validation */
 
 	// For protocol specific fields, if any
 	void *arg;
@@ -282,6 +288,7 @@ struct pxy_conn_ctx {
 	char *user;
 	char *ether;
 	unsigned int sent_userauth_msg : 1;
+	unsigned int sent_protoerror_msg : 1;
 
 #ifdef HAVE_LOCAL_PROCINFO
 	/* local process information */
