@@ -519,16 +519,16 @@ pxy_log_connect_nonhttp(pxy_conn_ctx_t *ctx)
 #ifdef HAVE_LOCAL_PROCINFO
 		              " %s"
 #endif /* HAVE_LOCAL_PROCINFO */
-		              "\n",
+		              " user:%s\n",
 		              ctx->proto == PROTO_PASSTHROUGH ? "passthrough" : (ctx->proto == PROTO_POP3 ? "pop3" : (ctx->proto == PROTO_SMTP ? "smtp" : "tcp")),
 		              STRORDASH(ctx->srchost_str),
 		              STRORDASH(ctx->srcport_str),
 		              STRORDASH(ctx->dsthost_str),
-		              STRORDASH(ctx->dstport_str)
+		              STRORDASH(ctx->dstport_str),
 #ifdef HAVE_LOCAL_PROCINFO
-		              , lpi
+		              lpi,
 #endif /* HAVE_LOCAL_PROCINFO */
-		             );
+		              STRORDASH(ctx->user));
 	} else {
 		rv = asprintf(&msg, "CONN: %s %s %s %s %s "
 		              "sni:%s names:%s "
@@ -537,7 +537,7 @@ pxy_log_connect_nonhttp(pxy_conn_ctx_t *ctx)
 #ifdef HAVE_LOCAL_PROCINFO
 		              " %s"
 #endif /* HAVE_LOCAL_PROCINFO */
-		              "\n",
+		              " user:%s\n",
 		              ctx->proto == PROTO_AUTOSSL ? "autossl" : (ctx->proto == PROTO_POP3S ? "pop3s" : (ctx->proto == PROTO_SMTPS ? "smtps" : "ssl")),
 		              STRORDASH(ctx->srchost_str),
 		              STRORDASH(ctx->srcport_str),
@@ -550,11 +550,11 @@ pxy_log_connect_nonhttp(pxy_conn_ctx_t *ctx)
 		              !ctx->srvdst.closed && ctx->srvdst.ssl ? SSL_get_version(ctx->srvdst.ssl):ctx->sslctx->srvdst_ssl_version,
 		              !ctx->srvdst.closed && ctx->srvdst.ssl ? SSL_get_cipher(ctx->srvdst.ssl):ctx->sslctx->srvdst_ssl_cipher,
 		              STRORDASH(ctx->sslctx->origcrtfpr),
-		              STRORDASH(ctx->sslctx->usedcrtfpr)
+		              STRORDASH(ctx->sslctx->usedcrtfpr),
 #ifdef HAVE_LOCAL_PROCINFO
-		              , lpi
+		              lpi,
 #endif /* HAVE_LOCAL_PROCINFO */
-		              );
+		              STRORDASH(ctx->user));
 	}
 	if ((rv < 0) || !msg) {
 		ctx->enomem = 1;

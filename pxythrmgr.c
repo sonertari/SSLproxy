@@ -67,43 +67,21 @@ pxy_thrmgr_get_thr_expired_conns(pxy_thr_ctx_t *tctx, pxy_conn_ctx_t **expired_c
 		}
 
 		if (tctx->thrmgr->opts->statslog) {
-			char *src_addr = NULL;
-			char *dst_addr = NULL;
-
 			ctx = *expired_conns;
 			while (ctx) {
-				src_addr = NULL;
-				if (ctx->srchost_str && ctx->srcport_str) {
-					if (asprintf(&src_addr, ", src_addr=%s:%s", ctx->srchost_str, ctx->srcport_str) < 0) {
-						goto leave;
-					}
-				}
-
-				dst_addr = NULL;
-				if (ctx->dsthost_str && ctx->dstport_str) {
-					if (asprintf(&dst_addr, ", dst_addr=%s:%s", ctx->dsthost_str, ctx->dstport_str) < 0) {
-						goto leave;
-					}
-				}
-
 #ifdef DEBUG_PROXY
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_get_expired_conns: thr=%d, fd=%d, child_fd=%d, time=%lld%s%s\n",
-						ctx->thr->thridx, ctx->fd, ctx->child_fd, (long long)(now - ctx->atime), STRORNONE(src_addr), STRORNONE(dst_addr));
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_get_expired_conns: thr=%d, fd=%d, child_fd=%d, time=%lld, src_addr=%s:%s, dst_addr=%s:%s, user=%s, valid=%d\n",
+						ctx->thr->thridx, ctx->fd, ctx->child_fd, (long long)(now - ctx->atime),
+						STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
+						STRORDASH(ctx->user), ctx->protoctx->is_valid);
 #endif /* DEBUG_PROXY */
 
 				char *msg;
-				if (asprintf(&msg, "EXPIRED: thr=%d, time=%lld%s%s\n", 
-						ctx->thr->thridx, (long long)(now - ctx->atime), STRORNONE(src_addr), STRORNONE(dst_addr)) < 0) {
-					goto leave;
-				}
-
-				if (src_addr) {
-					free(src_addr);
-					src_addr = NULL;
-				}
-				if (dst_addr) {
-					free(dst_addr);
-					dst_addr = NULL;
+				if (asprintf(&msg, "EXPIRED: thr=%d, time=%lld, src_addr=%s:%s, dst_addr=%s:%s, user=%s, valid=%d\n", 
+						ctx->thr->thridx, (long long)(now - ctx->atime),
+						STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
+						STRORDASH(ctx->user), ctx->protoctx->is_valid) < 0) {
+					break;
 				}
 
 				if (log_conn(msg) == -1) {
@@ -112,13 +90,6 @@ pxy_thrmgr_get_thr_expired_conns(pxy_thr_ctx_t *tctx, pxy_conn_ctx_t **expired_c
 				free(msg);
 
 				ctx = ctx->next_expired;
-			}
-leave:
-			if (src_addr) {
-				free(src_addr);
-			}
-			if (dst_addr) {
-				free(dst_addr);
 			}
 		}
 	}
@@ -164,9 +135,6 @@ pxy_thrmgr_print_thr_info(pxy_thr_ctx_t *tctx)
 #endif /* DEBUG_PROXY */
 	char *smsg = NULL;
 
-	char *src_addr = NULL;
-	char *dst_addr = NULL;
-
 	if (tctx->conns) {
 		time_t now = time(NULL);
 
@@ -175,24 +143,13 @@ pxy_thrmgr_print_thr_info(pxy_thr_ctx_t *tctx)
 			time_t atime = now - ctx->atime;
 			time_t ctime = now - ctx->ctime;
 			
-			src_addr = NULL;
-			if (ctx->srchost_str && ctx->srcport_str) {
-				if (asprintf(&src_addr, ", src_addr=%s:%s", ctx->srchost_str, ctx->srcport_str) < 0) {
-					goto leave;
-				}
-			}
-			dst_addr = NULL;
-			if (ctx->dsthost_str && ctx->dstport_str) {
-				if (asprintf(&dst_addr, ", dst_addr=%s:%s", ctx->dsthost_str, ctx->dstport_str) < 0) {
-					goto leave;
-				}
-			}
-
 #ifdef DEBUG_PROXY
-			if (asprintf(&lmsg, "PARENT CONN: thr=%d, id=%u, fd=%d, child_fd=%d, dst=%d, srvdst=%d, child_src=%d, child_dst=%d, p=%d-%d-%d c=%d-%d, ce=%d cc=%d, at=%lld ct=%lld%s%s\n",
+			if (asprintf(&lmsg, "PARENT CONN: thr=%d, id=%u, fd=%d, child_fd=%d, dst=%d, srvdst=%d, child_src=%d, child_dst=%d, p=%d-%d-%d c=%d-%d, ce=%d cc=%d, at=%lld ct=%lld, src_addr=%s:%s, dst_addr=%s:%s, user=%s, valid=%d\n",
 					tctx->thridx, idx, ctx->fd, ctx->child_fd, ctx->dst_fd, ctx->srvdst_fd, ctx->child_src_fd, ctx->child_dst_fd,
 					ctx->src.closed, ctx->dst.closed, ctx->srvdst.closed, ctx->children ? ctx->children->src.closed : 0, ctx->children ? ctx->children->dst.closed : 0,
-					ctx->children ? 1:0, ctx->child_count, (long long)atime, (long long)ctime, STRORNONE(src_addr), STRORNONE(dst_addr)) < 0) {
+					ctx->children ? 1:0, ctx->child_count, (long long)atime, (long long)ctime,
+					STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
+					STRORDASH(ctx->user), ctx->protoctx->is_valid) < 0) {
 				goto leave;
 			}
 			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_print_thr_info: %s", lmsg);
@@ -202,8 +159,10 @@ pxy_thrmgr_print_thr_info(pxy_thr_ctx_t *tctx)
 
 			// @attention Report idle connections only, i.e. the conns which have been idle since the last time we checked for expired conns
 			if (atime >= (time_t)tctx->thrmgr->opts->expired_conn_check_period) {
-				if (asprintf(&smsg, "IDLE: thr=%d, id=%u, ce=%d cc=%d, at=%lld ct=%lld%s%s\n",
-						tctx->thridx, idx, ctx->children ? 1:0, ctx->child_count, (long long)atime, (long long)ctime, STRORNONE(src_addr), STRORNONE(dst_addr)) < 0) {
+				if (asprintf(&smsg, "IDLE: thr=%d, id=%u, ce=%d cc=%d, at=%lld ct=%lld, src_addr=%s:%s, dst_addr=%s:%s, user=%s, valid=%d\n",
+						tctx->thridx, idx, ctx->children ? 1:0, ctx->child_count, (long long)atime, (long long)ctime,
+					STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
+					STRORDASH(ctx->user), ctx->protoctx->is_valid) < 0) {
 					goto leave;
 				}
 
@@ -212,15 +171,6 @@ pxy_thrmgr_print_thr_info(pxy_thr_ctx_t *tctx)
 				}
 				free(smsg);
 				smsg = NULL;
-			}
-
-			if (src_addr) {
-				free(src_addr);
-				src_addr = NULL;
-			}
-			if (dst_addr) {
-				free(dst_addr);
-				dst_addr = NULL;
 			}
 
 			max_fd = MAX(max_fd, MAX(ctx->fd, MAX(ctx->child_fd, MAX(ctx->dst_fd, MAX(ctx->srvdst_fd, MAX(ctx->child_src_fd, ctx->child_dst_fd))))));
@@ -269,12 +219,6 @@ pxy_thrmgr_print_thr_info(pxy_thr_ctx_t *tctx)
 	tctx->max_load = tctx->load;
 
 leave:
-	if (src_addr) {
-		free(src_addr);
-	}
-	if (dst_addr) {
-		free(dst_addr);
-	}
 #ifdef DEBUG_PROXY
 	if (lmsg) {
 		free(lmsg);

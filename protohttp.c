@@ -97,7 +97,7 @@ protohttp_log_connect(pxy_conn_ctx_t *ctx)
 #ifdef HAVE_LOCAL_PROCINFO
 		              " %s"
 #endif /* HAVE_LOCAL_PROCINFO */
-		              "%s\n",
+		              "%s user:%s\n",
 		              STRORDASH(ctx->srchost_str),
 		              STRORDASH(ctx->srcport_str),
 		              STRORDASH(ctx->dsthost_str),
@@ -110,7 +110,8 @@ protohttp_log_connect(pxy_conn_ctx_t *ctx)
 #ifdef HAVE_LOCAL_PROCINFO
 		              lpi,
 #endif /* HAVE_LOCAL_PROCINFO */
-		              http_ctx->ocsp_denied ? " ocsp:denied" : "");
+		              http_ctx->ocsp_denied ? " ocsp:denied" : "",
+		              STRORDASH(ctx->user));
 	} else {
 		rv = asprintf(&msg, "CONN: https %s %s %s %s %s %s %s %s %s "
 		              "sni:%s names:%s "
@@ -119,7 +120,7 @@ protohttp_log_connect(pxy_conn_ctx_t *ctx)
 #ifdef HAVE_LOCAL_PROCINFO
 		              " %s"
 #endif /* HAVE_LOCAL_PROCINFO */
-		              "%s\n",
+		              "%s user:%s\n",
 		              STRORDASH(ctx->srchost_str),
 		              STRORDASH(ctx->srcport_str),
 		              STRORDASH(ctx->dsthost_str),
@@ -140,7 +141,8 @@ protohttp_log_connect(pxy_conn_ctx_t *ctx)
 #ifdef HAVE_LOCAL_PROCINFO
 		              lpi,
 #endif /* HAVE_LOCAL_PROCINFO */
-		              http_ctx->ocsp_denied ? " ocsp:denied" : "");
+		              http_ctx->ocsp_denied ? " ocsp:denied" : "",
+		              STRORDASH(ctx->user));
 	}
 	if ((rv < 0 ) || !msg) {
 		ctx->enomem = 1;
