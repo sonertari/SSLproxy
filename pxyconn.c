@@ -1491,7 +1491,7 @@ pxy_fd_readcb(evutil_socket_t fd, UNUSED short what, void *arg)
 	ctx->protoctx->fd_readcb(fd, what, arg);
 }
 
-static int
+static int NONNULL(1)
 call_fd_readcb(pxy_conn_ctx_t *ctx)
 {
 	/* for SSL, defer dst connection setup to initial_readcb */
@@ -1507,7 +1507,7 @@ call_fd_readcb(pxy_conn_ctx_t *ctx)
 	return 0;
 }
 
-#ifdef __OpenBSD__
+#if defined(__OpenBSD__) || defined(__linux__)
 static void
 identify_user(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 {
@@ -1551,7 +1551,7 @@ identify_user(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 			goto redirect;
 		} else if (rc == SQLITE_ROW) {
 			char *ether = (char *)sqlite3_column_text(ctx->thr->get_user, 1);
-			if (strncmp(ether, ctx->ether, 17)) {
+			if (strncasecmp(ether, ctx->ether, 17)) {
 #ifdef DEBUG_PROXY
 				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: Ethernet addresses do not match, db=%s, arp cache=%s, ctx->fd=%d\n", ether, ctx->ether, ctx->fd);
 #endif /* DEBUG_PROXY */
@@ -1607,7 +1607,53 @@ memout:
 	evutil_closesocket(ctx->fd);
 	pxy_conn_ctx_free(ctx, 1);
 }
+#endif /* __OpenBSD__ || __linux__ */
 
+#ifdef __linux__
+// Assume proc filesystem support
+#define ARP_CACHE "/proc/net/arp"
+
+/*
+ * We do not care about multiple matches or expiration status of arp cache entries on Linux.
+ */
+static int NONNULL(1)
+get_client_ether(pxy_conn_ctx_t *ctx)
+{
+	int rv = 0;
+
+	FILE *arp_cache = fopen(ARP_CACHE, "r");
+	if (!arp_cache) {
+		log_err_level_printf(LOG_CRIT, "Failed to open arp cache: \"" ARP_CACHE "\"\n");
+		return -1;
+	}
+
+	// Skip the first line, which contains the header
+	char header[1024];
+	if (!fgets(header, sizeof(header), arp_cache)) {
+		log_err_level_printf(LOG_CRIT, "Failed to skip arp cache header\n");
+		rv = -1;
+		goto out;
+	}
+
+	char ip[46], ether[18];
+	//192.168.0.1     0x1         0x2         00:50:56:2c:bf:e0     *        enp3s0f1
+	while (fscanf(arp_cache, "%45s %*s %*s %17s %*s %*s", ip, ether) == 2) {
+		if (!strncasecmp(ip, ctx->srchost_str, 45)) {
+			ctx->ether = strdup(ether);
+			rv = 1;
+#ifdef DEBUG_PROXY
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "Arp entry for %s: %s\n", ip, ether);
+#endif /* DEBUG_PROXY */
+			goto out;
+		}
+	}
+out:
+	fclose(arp_cache);
+	return rv;
+}
+#endif /* __linux__ */
+
+#ifdef __OpenBSD__
 /*
  * This is a modified version of the same function from OpenBSD sources,
  * which has a 3-clause BSD license.
@@ -1632,7 +1678,7 @@ ether_str(struct sockaddr_dl *sdl)
  * This is a modified version of a similar function from OpenBSD sources,
  * which has a 3-clause BSD license.
  */
-static int
+static int NONNULL(2)
 get_client_ether(in_addr_t addr, pxy_conn_ctx_t *ctx)
 {
 	int mib[7];
@@ -1805,8 +1851,13 @@ pxy_conn_setup(evutil_socket_t fd,
 	}
 
 	if (ctx->opts->user_auth) {
-#ifdef __OpenBSD__
-		int ec = get_client_ether(((struct sockaddr_in *)peeraddr)->sin_addr.s_addr, ctx);
+#if defined(__OpenBSD__) || defined(__linux__)
+		int ec;
+#if defined(__OpenBSD__)
+		ec = get_client_ether(((struct sockaddr_in *)peeraddr)->sin_addr.s_addr, ctx);
+#else /* __linux__ */
+		ec = get_client_ether(ctx);
+#endif /* __linux__ */
 		if (ec == 1) {
 			ctx->ev = event_new(ctx->evbase, -1, 0, identify_user, ctx);
 			if (!ctx->ev)
@@ -1821,7 +1872,7 @@ pxy_conn_setup(evutil_socket_t fd,
 			// ec == -1
 			goto memout;
 		}
-#endif /* __OpenBSD__ */
+#endif /* __OpenBSD__ || __linux__ */
 		log_err_level_printf(LOG_CRIT, "Aborting connection setup (user auth)!\n");
 		goto out;
 	} else {

@@ -393,7 +393,7 @@ privsep_server_update_atime(opts_t *opts, const userdbkeys_t *keys)
 	if (rc == SQLITE_DONE) {
 		log_dbg_printf("privsep_server_update_atime: Updated atime of user %s=%lld\n", keys->user, (long long)atime);
 	} else {
-		log_err_level_printf(LOG_ERR, "privsep_server_update_atime: Error updating user atime: %s\n", sqlite3_errmsg(opts->userdb));
+		log_err_printf("privsep_server_update_atime: Error updating user atime: %s\n", sqlite3_errmsg(opts->userdb));
 	}
 	sqlite3_reset(opts->update_user_atime);
 	return 0;

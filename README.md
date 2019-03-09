@@ -124,9 +124,10 @@ ones. See [The Risks of SSL Inspection](https://insights.sei.cmu.edu/cert/2015/0
 for the reasons of this difference.
 
 If enabled, the UserAuth option requires network users to log in to the system 
-to use SSLproxy (this feature is currently available on OpenBSD only). When 
-users are logged in, they should be recorded on the users table in an SQLite3 
-database. The users table is created using the following SQL statement:
+to use SSLproxy (this feature is currently available on OpenBSD and Linux 
+only). When users are logged in, they should be recorded on the users table in 
+an SQLite3 database. The users table is created using the following SQL 
+statement:
 
 	CREATE TABLE USERS(
 	   IP             CHAR(45)     PRIMARY KEY     NOT NULL,

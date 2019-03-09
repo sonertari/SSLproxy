@@ -1458,10 +1458,10 @@ opts_unset_allow_wrong_host(opts_t *opts)
 static void
 opts_set_user_auth(UNUSED opts_t *opts)
 {
-#ifdef __OpenBSD__
-	// Enable user auth only on OpenBSD
+#if defined(__OpenBSD__) || defined(__linux__)
+	// Enable user auth on OpenBSD and Linux only
 	opts->user_auth = 1;
-#endif /* __OpenBSD__ */
+#endif /* __OpenBSD__ || __linux__ */
 }
 
 static void
