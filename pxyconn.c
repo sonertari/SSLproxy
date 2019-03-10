@@ -50,6 +50,10 @@
 
 #include <event2/listener.h>
 
+#ifdef __linux__
+#include <glob.h>
+#endif /* __linux__ */
+
 #include <net/if_arp.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
@@ -65,6 +69,8 @@
  * temporarily stopping to read data from the other end.
  */
 #define OUTBUF_LIMIT	(128*1024)
+
+int descriptor_table_size = 0;
 
 // @attention The order of names should match the order in protocol enum
 char *protocol_names[] = {
@@ -913,6 +919,89 @@ pxy_try_remove_sslproxy_header(pxy_conn_child_ctx_t *ctx, unsigned char *packet,
 	}
 }
 
+#ifdef __APPLE__
+#define getdtablecount() 0
+
+/*
+ * Copied from:
+ * opensmtpd-201801101641p1/openbsd-compat/imsg.c
+ * 
+ * Copyright (c) 2003, 2004 Henning Brauer <henning@openbsd.org>
+ *
+ * Permission to use, copy, modify, and distribute this software for any
+ * purpose with or without fee is hereby granted, provided that the above
+ * copyright notice and this permission notice appear in all copies.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+ * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ */
+static int
+available_fds(unsigned int n)
+{
+	unsigned int i;
+	int ret, fds[256];
+
+	if (n > (sizeof(fds)/sizeof(fds[0])))
+		return -1;
+
+	ret = 0;
+	for (i = 0; i < n; i++) {
+		fds[i] = -1;
+		if ((fds[i] = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+			ret = -1;
+			break;
+		}
+	}
+
+	for (i = 0; i < n && fds[i] >= 0; i++)
+		close(fds[i]);
+
+	return ret;
+}
+#endif /* __APPLE__ */
+
+#ifdef __linux__
+/*
+ * Copied from:
+ * https://github.com/tmux/tmux/blob/master/compat/getdtablecount.c
+ * 
+ * Copyright (c) 2017 Nicholas Marriott <nicholas.marriott@gmail.com>
+ *
+ * Permission to use, copy, modify, and distribute this software for any
+ * purpose with or without fee is hereby granted, provided that the above
+ * copyright notice and this permission notice appear in all copies.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+ * WHATSOEVER RESULTING FROM LOSS OF MIND, USE, DATA OR PROFITS, WHETHER
+ * IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
+ * OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ */
+int
+getdtablecount()
+{
+	char path[PATH_MAX];
+	glob_t g;
+	int n = 0;
+
+	if (snprintf(path, sizeof path, "/proc/%ld/fd/*", (long)getpid()) < 0) {
+		log_err_level_printf(LOG_CRIT, "snprintf overflow\n");
+		return 0;
+	}
+	if (glob(path, 0, NULL, &g) == 0)
+		n = g.gl_pathc;
+	globfree(&g);
+	return n;
+}
+#endif /* __linux__ */
+
 /*
  * Callback for accept events on the socket listener bufferevent.
  */
@@ -941,6 +1030,32 @@ pxy_listener_acceptcb_child(UNUSED struct evconnlistener *listener, evutil_socke
 		pxy_conn_term(conn, 1);
 		goto out;
 	}
+
+	int dtable_count = getdtablecount();
+
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_listener_acceptcb_child: descriptor_table_size=%d, current fd count=%d, reserve=%d, child fd=%d, fd=%d\n",
+			descriptor_table_size, dtable_count, FD_RESERVE, fd, conn->fd);
+#endif /* DEBUG_PROXY */
+
+	// Close the conn if we are out of file descriptors, or libevent will crash us, @see pxy_conn_setup() for explanation
+	if (dtable_count + FD_RESERVE >= descriptor_table_size) {
+		errno = EMFILE;
+		log_err_level_printf(LOG_CRIT, "Out of file descriptors\n");
+		evutil_closesocket(fd);
+		pxy_conn_term(conn, 1);
+		goto out;
+	}
+
+#ifdef __APPLE__
+	if (available_fds(FD_RESERVE) == -1) {
+		errno = EMFILE;
+		log_err_level_printf(LOG_CRIT, "Out of file descriptors\n");
+		evutil_closesocket(fd);
+		pxy_conn_term(conn, 1);
+		goto out;
+	}
+#endif /* __APPLE__ */
 
 	pxy_conn_child_ctx_t *ctx = pxy_conn_ctx_new_child(fd, conn);
 	if (!ctx) {
@@ -1809,6 +1924,8 @@ pxy_conn_setup(evutil_socket_t fd,
                proxyspec_t *spec, opts_t *opts,
 			   evutil_socket_t clisock)
 {
+	int dtable_count = getdtablecount();
+
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_setup: ENTER, fd=%d\n", fd);
 
@@ -1818,7 +1935,36 @@ pxy_conn_setup(evutil_socket_t fd,
 		free(host);
 		free(port);
 	}
+
+	log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_conn_setup: descriptor_table_size=%d, current fd count=%d, reserve=%d, fd=%d\n",
+			descriptor_table_size, dtable_count, FD_RESERVE, fd);
 #endif /* DEBUG_PROXY */
+
+	// Close the conn if we are out of file descriptors, or libevent will crash us
+	// @attention We cannot guess the number of children in a connection at conn setup time. So, FD_RESERVE is just a ball park figure.
+	// But what if a connection passes the check below, but eventually tries to create more children than FD_RESERVE allows for? This will crash us the same.
+	// Beware, this applies to all current conns, not just the last connection setup.
+	// For example, 20x conns pass the check below before creating any children, at which point we reach at the last FD_RESERVE fds,
+	// then they all start creating children, which crashes us again.
+	// So, no matter how large an FD_RESERVE we choose, there will always be a risk of running out of fds, if we check the number of fds here only.
+	// If we are left with less than FD_RESERVE fds, we should not create more children than FD_RESERVE allows for either.
+	// Therefore, we check if we are out of fds in proxy_listener_acceptcb_child() and close the conn there too.
+	// @attention These checks are expected to slow us further down, but it is critical to avoid a crash in case we run out of fds.
+	if (dtable_count + FD_RESERVE >= descriptor_table_size) {
+		errno = EMFILE;
+		log_err_level_printf(LOG_CRIT, "Out of file descriptors\n");
+		evutil_closesocket(fd);
+		return;
+	}
+
+#ifdef __APPLE__
+	if (available_fds(FD_RESERVE) == -1) {
+		errno = EMFILE;
+		log_err_level_printf(LOG_CRIT, "Out of file descriptors\n");
+		evutil_closesocket(fd);
+		return;
+	}
+#endif /* __APPLE__ */
 
 	/* create per connection state and attach to thread */
 	pxy_conn_ctx_t *ctx = pxy_conn_ctx_new(fd, thrmgr, spec, opts, clisock);

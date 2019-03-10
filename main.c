@@ -846,6 +846,8 @@ main(int argc, char *argv[])
 		return -1;
 	}
 
+	descriptor_table_size = getdtablesize();
+
 	/* Fork into parent monitor process and (potentially unprivileged)
 	 * child process doing the actual work.  We request 6 privsep client
 	 * sockets: five logger threads, and the child process main thread,
