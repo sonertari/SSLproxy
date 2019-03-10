@@ -52,7 +52,7 @@ prototcp_bufferevent_setup(pxy_conn_ctx_t *ctx, evutil_socket_t fd)
 #endif /* DEBUG_PROXY */
 
 	// @todo Do we really need to defer callbacks? BEV_OPT_DEFER_CALLBACKS seems responsible for the issue with srvdst: We get writecb sometimes, no eventcb for CONNECTED event
-	struct bufferevent *bev = bufferevent_socket_new(ctx->evbase, fd, BEV_OPT_DEFER_CALLBACKS);
+	struct bufferevent *bev = bufferevent_socket_new(ctx->evbase, fd, BEV_OPT_DEFER_CALLBACKS|BEV_OPT_THREADSAFE);
 	if (!bev) {
 		log_err_level_printf(LOG_CRIT, "Error creating bufferevent socket\n");
 #ifdef DEBUG_PROXY
@@ -76,7 +76,7 @@ prototcp_bufferevent_setup_child(pxy_conn_child_ctx_t *ctx, evutil_socket_t fd)
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_bufferevent_setup_child: ENTER, fd=%d\n", fd);
 #endif /* DEBUG_PROXY */
 
-	struct bufferevent *bev = bufferevent_socket_new(ctx->conn->evbase, fd, BEV_OPT_DEFER_CALLBACKS);
+	struct bufferevent *bev = bufferevent_socket_new(ctx->conn->evbase, fd, BEV_OPT_DEFER_CALLBACKS|BEV_OPT_THREADSAFE);
 	if (!bev) {
 		log_err_level_printf(LOG_CRIT, "Error creating bufferevent socket\n");
 #ifdef DEBUG_PROXY
@@ -113,7 +113,7 @@ prototcp_bufferevent_free_and_close_fd(struct bufferevent *bev, UNUSED pxy_conn_
 int
 prototcp_setup_src(pxy_conn_ctx_t *ctx)
 {
-	ctx->src.ssl= NULL;
+	ctx->src.ssl = NULL;
 	ctx->src.bev = prototcp_bufferevent_setup(ctx, ctx->fd);
 	if (!ctx->src.bev) {
 		log_err_level_printf(LOG_CRIT, "Error creating src bufferevent\n");
@@ -127,7 +127,7 @@ prototcp_setup_src(pxy_conn_ctx_t *ctx)
 int
 prototcp_setup_dst(pxy_conn_ctx_t *ctx)
 {
-	ctx->dst.ssl= NULL;
+	ctx->dst.ssl = NULL;
 	ctx->dst.bev = prototcp_bufferevent_setup(ctx, -1);
 	if (!ctx->dst.bev) {
 		log_err_level_printf(LOG_CRIT, "Error creating parent dst\n");
@@ -141,7 +141,7 @@ prototcp_setup_dst(pxy_conn_ctx_t *ctx)
 int
 prototcp_setup_srvdst(pxy_conn_ctx_t *ctx)
 {
-	ctx->srvdst.ssl= NULL;
+	ctx->srvdst.ssl = NULL;
 	ctx->srvdst.bev = prototcp_bufferevent_setup(ctx, -1);
 	if (!ctx->srvdst.bev) {
 		log_err_level_printf(LOG_CRIT, "Error creating srvdst\n");

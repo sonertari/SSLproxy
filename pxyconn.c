@@ -1546,6 +1546,10 @@ identify_user(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 
 		// Retry in case we cannot acquire db file or database: SQLITE_BUSY or SQLITE_LOCKED respectively
 		if (rc == SQLITE_BUSY || rc == SQLITE_LOCKED) {
+#ifdef DEBUG_PROXY
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: User db busy or locked, retrying, count=%d, ctx->fd=%d\n", ctx->identify_user_count, ctx->fd);
+#endif /* DEBUG_PROXY */
+
 			// Do not forget to reset sqlite stmt, or else the userdb may remain busy/locked
 			sqlite3_reset(ctx->thr->get_user);
 
