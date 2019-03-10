@@ -371,24 +371,32 @@ pxy_conn_ctx_free(pxy_conn_ctx_t *ctx, int by_requestor)
 	}
 
 	if (ctx->opts->user_auth && ctx->srchost_str && ctx->user && ctx->ether) {
-		struct userdbkeys *keys = malloc(sizeof(userdbkeys_t));
-		if (keys) {
-			memset(keys, 0, sizeof(userdbkeys_t));
-			// @todo Should limit copy with max dest size?
-			memcpy(keys->ip, ctx->srchost_str, strlen(ctx->srchost_str));
-			memcpy(keys->user, ctx->user, strlen(ctx->user));
-			memcpy(keys->ether, ctx->ether, strlen(ctx->ether));
+		// Update userdb atime if idle time is more than 50% of user timeout, which is expected to reduce update frequency
+		unsigned int idletime = ctx->idletime + (time(NULL) - ctx->ctime);
+		if (idletime > (ctx->opts->user_timeout / 2)) {
+			struct userdbkeys *keys = malloc(sizeof(userdbkeys_t));
+			if (keys) {
+				memset(keys, 0, sizeof(userdbkeys_t));
+				// @todo Should limit copy with max dest size?
+				memcpy(keys->ip, ctx->srchost_str, strlen(ctx->srchost_str));
+				memcpy(keys->user, ctx->user, strlen(ctx->user));
+				memcpy(keys->ether, ctx->ether, strlen(ctx->ether));
 
-			if (privsep_client_update_atime(ctx->clisock, keys) == -1) {
+				if (privsep_client_update_atime(ctx->clisock, keys) == -1) {
 #ifdef DEBUG_PROXY
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_free: Error updating user atime: %s, ctx->fd=%d\n", sqlite3_errmsg(ctx->opts->userdb), ctx->fd);
+					log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_free: Error updating user atime: %s, ctx->fd=%d\n", sqlite3_errmsg(ctx->opts->userdb), ctx->fd);
 #endif /* DEBUG_PROXY */
-			} else {
+				} else {
 #ifdef DEBUG_PROXY
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_free: Successfully updated user atime, ctx->fd=%d\n", ctx->fd);
+					log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_free: Successfully updated user atime, ctx->fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
+				}
+				free(keys);
 			}
-			free(keys);
+		} else {
+#ifdef DEBUG_PROXY
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_free: Will not update user atime, idletime=%u, ctx->fd=%d\n", idletime, ctx->fd);
+#endif /* DEBUG_PROXY */
 		}
 	}
 
@@ -1500,7 +1508,8 @@ call_fd_readcb(pxy_conn_ctx_t *ctx)
 		ctx->ev = event_new(ctx->evbase, ctx->fd, EV_READ, ctx->protoctx->fd_readcb, ctx);
 		if (!ctx->ev)
 			return -1;
-		event_add(ctx->ev, NULL);
+		if (event_add(ctx->ev, NULL) == -1)
+			return -1;
 	} else {
 		ctx->protoctx->fd_readcb(ctx->fd, 0, ctx);
 	}
@@ -1537,11 +1546,15 @@ identify_user(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 
 		// Retry in case we cannot acquire db file or database: SQLITE_BUSY or SQLITE_LOCKED respectively
 		if (rc == SQLITE_BUSY || rc == SQLITE_LOCKED) {
+			// Do not forget to reset sqlite stmt, or else the userdb may remain busy/locked
+			sqlite3_reset(ctx->thr->get_user);
+
 			ctx->ev = event_new(ctx->evbase, -1, 0, identify_user, ctx);
 			if (!ctx->ev)
 				goto memout;
 			struct timeval retry_delay = {0, 100};
-			event_add(ctx->ev, &retry_delay);
+			if (event_add(ctx->ev, &retry_delay) == -1)
+				goto memout;
 			return;
 		} else if (rc == SQLITE_DONE) {
 #ifdef DEBUG_PROXY
@@ -1563,18 +1576,17 @@ identify_user(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: Passed ethernet address test, %s, ctx->fd=%d\n", ether, ctx->fd);
 #endif /* DEBUG_PROXY */
 
-			int atime = sqlite3_column_int(ctx->thr->get_user, 2);
-			time_t now = time(NULL);
-			if (now - atime > ctx->opts->user_timeout) {
+			ctx->idletime = time(NULL) - sqlite3_column_int(ctx->thr->get_user, 2);
+			if (ctx->idletime > ctx->opts->user_timeout) {
 #ifdef DEBUG_PROXY
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: User entry timed out, now=%lld, atime=%u, ctx->fd=%d\n", (long long)now, atime, ctx->fd);
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: User entry timed out, idletime=%u, ctx->fd=%d\n", ctx->idletime, ctx->fd);
 #endif /* DEBUG_PROXY */
 
 				goto redirect;
 			}
 
 #ifdef DEBUG_PROXY
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: Passed atime test, %u, ctx->fd=%d\n", atime, ctx->fd);
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: Passed timeout test, idletime=%u, ctx->fd=%d\n", ctx->idletime, ctx->fd);
 #endif /* DEBUG_PROXY */
 
 			ctx->user = strdup((char *)sqlite3_column_text(ctx->thr->get_user, 0));
@@ -1750,6 +1762,12 @@ get_client_ether(in_addr_t addr, pxy_conn_ctx_t *ctx)
 			if (!ctx->ether && (found_entry - expired) == 1) {
 				// Dup before assignment because we free local var ether below
 				ctx->ether = strdup(ether);
+#ifdef DEBUG_PROXY
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "Arp entry for %s: %s\n", inet_ntoa(sin->sin_addr), ether);
+#endif /* DEBUG_PROXY */
+				// Do not care about multiple matches, return immediately
+				free(ether);
+				goto out;
 			}
 		} else {
 			incomplete++;
@@ -1763,6 +1781,7 @@ get_client_ether(in_addr_t addr, pxy_conn_ctx_t *ctx)
 			free(ether);
 		}
 	}
+out:
 	free(buf);
 	return found_entry - expired - incomplete;
 }
@@ -1859,10 +1878,7 @@ pxy_conn_setup(evutil_socket_t fd,
 		ec = get_client_ether(ctx);
 #endif /* __linux__ */
 		if (ec == 1) {
-			ctx->ev = event_new(ctx->evbase, -1, 0, identify_user, ctx);
-			if (!ctx->ev)
-				goto memout;
-			event_active(ctx->ev, 0, 0);
+			identify_user(0, 0, ctx);
 			return;
 		} else if (ec == 0) {
 			log_err_level_printf(LOG_CRIT, "Cannot find ethernet address of client IP address\n");

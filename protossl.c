@@ -959,9 +959,7 @@ protossl_fd_readcb(MAYBE_UNUSED evutil_socket_t fd, UNUSED short what, void *arg
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINE, "ERROR: Error peeking on fd, aborting connection, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
-		evutil_closesocket(fd);
-		pxy_conn_ctx_free(ctx, 1);
-		return;
+		goto out;
 	}
 	if (n == 0) {
 		/* socket got closed while we were waiting */
@@ -969,9 +967,7 @@ protossl_fd_readcb(MAYBE_UNUSED evutil_socket_t fd, UNUSED short what, void *arg
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINE, "ERROR: Socket got closed while waiting, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
-		evutil_closesocket(fd);
-		pxy_conn_ctx_free(ctx, 1);
-		return;
+		goto out;
 	}
 
 	rv = ssl_tls_clienthello_parse(buf, n, 0, &chello, &ctx->sslctx->sni);
@@ -980,9 +976,7 @@ protossl_fd_readcb(MAYBE_UNUSED evutil_socket_t fd, UNUSED short what, void *arg
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINE, "ERROR: Peeking did not yield a (truncated) ClientHello message, aborting connection, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
-		evutil_closesocket(fd);
-		pxy_conn_ctx_free(ctx, 1);
-		return;
+		goto out;
 	}
 	if (OPTS_DEBUG(ctx->opts)) {
 		log_dbg_printf("SNI peek: [%s] [%s], fd=%d\n", ctx->sslctx->sni ? ctx->sslctx->sni : "n/a",
@@ -1006,11 +1000,10 @@ protossl_fd_readcb(MAYBE_UNUSED evutil_socket_t fd, UNUSED short what, void *arg
 #ifdef DEBUG_PROXY
 			log_dbg_level_printf(LOG_DBG_MODE_FINE, "ERROR: Error creating retry event, aborting connection, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
-			evutil_closesocket(fd);
-			pxy_conn_ctx_free(ctx, 1);
-			return;
+			goto out;
 		}
-		event_add(ctx->ev, &retry_delay);
+		if (event_add(ctx->ev, &retry_delay) == -1)
+			goto out;
 		return;
 	}
 	event_free(ctx->ev);
@@ -1033,6 +1026,10 @@ protossl_fd_readcb(MAYBE_UNUSED evutil_socket_t fd, UNUSED short what, void *arg
 #endif /* !OPENSSL_NO_TLSEXT */
 
 	pxy_conn_connect(ctx);
+	return;
+out:
+	evutil_closesocket(fd);
+	pxy_conn_ctx_free(ctx, 1);
 }
 
 int

@@ -287,6 +287,7 @@ struct pxy_conn_ctx {
 	unsigned int identify_user_count;
 	char *user;
 	char *ether;
+	unsigned int idletime;
 	unsigned int sent_userauth_msg : 1;
 	unsigned int sent_protoerror_msg : 1;
 
