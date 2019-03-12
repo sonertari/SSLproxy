@@ -1003,6 +1003,45 @@ getdtablecount()
 #endif /* __linux__ */
 
 /*
+ * Check if we are out of file descriptors to close the conn, or else libevent will crash us
+ * @attention We cannot guess the number of children in a connection at conn setup time. So, FD_RESERVE is just a ball park figure.
+ * But what if a connection passes the check below, but eventually tries to create more children than FD_RESERVE allows for? This will crash us the same.
+ * Beware, this applies to all current conns, not just the last connection setup.
+ * For example, 20x conns pass the check below before creating any children, at which point we reach at the last FD_RESERVE fds,
+ * then they all start creating children, which crashes us again.
+ * So, no matter how large an FD_RESERVE we choose, there will always be a risk of running out of fds, if we check the number of fds here only.
+ * If we are left with less than FD_RESERVE fds, we should not create more children than FD_RESERVE allows for either.
+ * Therefore, we check if we are out of fds in proxy_listener_acceptcb_child() and close the conn there too.
+ * @attention These checks are expected to slow us further down, but it is critical to avoid a crash in case we run out of fds.
+ */
+static int
+check_fd_usage(UNUSED evutil_socket_t fd)
+{
+	int dtable_count = getdtablecount();
+
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINER, "check_fd_usage: descriptor_table_size=%d, dtablecount=%d, reserve=%d, fd=%d\n",
+			descriptor_table_size, dtable_count, FD_RESERVE, fd);
+#endif /* DEBUG_PROXY */
+
+	if (dtable_count + FD_RESERVE >= descriptor_table_size) {
+		goto out;
+	}
+
+#ifdef __APPLE__
+	if (available_fds(FD_RESERVE) == -1) {
+		goto out;
+	}
+#endif /* __APPLE__ */
+
+	return 0;
+out:
+	errno = EMFILE;
+	log_err_level_printf(LOG_CRIT, "Out of file descriptors\n");
+	return -1;
+}
+
+/*
  * Callback for accept events on the socket listener bufferevent.
  */
 static void
@@ -1031,31 +1070,11 @@ pxy_listener_acceptcb_child(UNUSED struct evconnlistener *listener, evutil_socke
 		goto out;
 	}
 
-	int dtable_count = getdtablecount();
-
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_listener_acceptcb_child: descriptor_table_size=%d, current fd count=%d, reserve=%d, child fd=%d, fd=%d\n",
-			descriptor_table_size, dtable_count, FD_RESERVE, fd, conn->fd);
-#endif /* DEBUG_PROXY */
-
-	// Close the conn if we are out of file descriptors, or libevent will crash us, @see pxy_conn_setup() for explanation
-	if (dtable_count + FD_RESERVE >= descriptor_table_size) {
-		errno = EMFILE;
-		log_err_level_printf(LOG_CRIT, "Out of file descriptors\n");
+	if (check_fd_usage(conn->fd) == -1) {
 		evutil_closesocket(fd);
 		pxy_conn_term(conn, 1);
 		goto out;
 	}
-
-#ifdef __APPLE__
-	if (available_fds(FD_RESERVE) == -1) {
-		errno = EMFILE;
-		log_err_level_printf(LOG_CRIT, "Out of file descriptors\n");
-		evutil_closesocket(fd);
-		pxy_conn_term(conn, 1);
-		goto out;
-	}
-#endif /* __APPLE__ */
 
 	pxy_conn_child_ctx_t *ctx = pxy_conn_ctx_new_child(fd, conn);
 	if (!ctx) {
@@ -1923,8 +1942,6 @@ pxy_conn_setup(evutil_socket_t fd,
                proxyspec_t *spec, opts_t *opts,
 			   evutil_socket_t clisock)
 {
-	int dtable_count = getdtablecount();
-
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_setup: ENTER, fd=%d\n", fd);
 
@@ -1934,36 +1951,12 @@ pxy_conn_setup(evutil_socket_t fd,
 		free(host);
 		free(port);
 	}
-
-	log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_conn_setup: descriptor_table_size=%d, current fd count=%d, reserve=%d, fd=%d\n",
-			descriptor_table_size, dtable_count, FD_RESERVE, fd);
 #endif /* DEBUG_PROXY */
 
-	// Close the conn if we are out of file descriptors, or libevent will crash us
-	// @attention We cannot guess the number of children in a connection at conn setup time. So, FD_RESERVE is just a ball park figure.
-	// But what if a connection passes the check below, but eventually tries to create more children than FD_RESERVE allows for? This will crash us the same.
-	// Beware, this applies to all current conns, not just the last connection setup.
-	// For example, 20x conns pass the check below before creating any children, at which point we reach at the last FD_RESERVE fds,
-	// then they all start creating children, which crashes us again.
-	// So, no matter how large an FD_RESERVE we choose, there will always be a risk of running out of fds, if we check the number of fds here only.
-	// If we are left with less than FD_RESERVE fds, we should not create more children than FD_RESERVE allows for either.
-	// Therefore, we check if we are out of fds in proxy_listener_acceptcb_child() and close the conn there too.
-	// @attention These checks are expected to slow us further down, but it is critical to avoid a crash in case we run out of fds.
-	if (dtable_count + FD_RESERVE >= descriptor_table_size) {
-		errno = EMFILE;
-		log_err_level_printf(LOG_CRIT, "Out of file descriptors\n");
+	if (check_fd_usage(fd) == -1) {
 		evutil_closesocket(fd);
 		return;
 	}
-
-#ifdef __APPLE__
-	if (available_fds(FD_RESERVE) == -1) {
-		errno = EMFILE;
-		log_err_level_printf(LOG_CRIT, "Out of file descriptors\n");
-		evutil_closesocket(fd);
-		return;
-	}
-#endif /* __APPLE__ */
 
 	/* create per connection state and attach to thread */
 	pxy_conn_ctx_t *ctx = pxy_conn_ctx_new(fd, thrmgr, spec, opts, clisock);
@@ -1982,9 +1975,7 @@ pxy_conn_setup(evutil_socket_t fd,
 		ctx->dstaddrlen = sizeof(struct sockaddr_storage);
 		if (spec->natlookup((struct sockaddr *)&ctx->dstaddr, &ctx->dstaddrlen, fd, peeraddr, peeraddrlen) == -1) {
 			log_err_printf("Connection not found in NAT state table, aborting connection\n");
-			evutil_closesocket(fd);
-			pxy_conn_ctx_free(ctx, 1);
-			return;
+			goto out;
 		}
 	} else if (spec->connect_addrlen > 0) {
 		/* static forwarding */
@@ -1995,9 +1986,7 @@ pxy_conn_setup(evutil_socket_t fd,
 		if (!ctx->spec->ssl) {
 			/* if this happens, the proxyspec parser is broken */
 			log_err_printf("SNI mode used for non-SSL connection; aborting connection\n");
-			evutil_closesocket(fd);
-			pxy_conn_ctx_free(ctx, 1);
-			return;
+			goto out;
 		}
 	}
 
