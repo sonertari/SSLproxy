@@ -109,7 +109,9 @@ static void NONNULL(1)
 protopassthrough_conn_connect(pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protopassthrough_conn_connect: ENTER, fd=%d\n", ctx->fd);
+	// Make a copy of fd, to prevent multithreading issues in case the conn is terminated
+	int fd = ctx->fd;
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protopassthrough_conn_connect: ENTER, fd=%d\n", fd);
 #endif /* DEBUG_PROXY */
 
 	if (prototcp_setup_srvdst(ctx) == -1) {
@@ -124,10 +126,10 @@ protopassthrough_conn_connect(pxy_conn_ctx_t *ctx)
 	if (bufferevent_socket_connect(ctx->srvdst.bev, (struct sockaddr *)&ctx->dstaddr, ctx->dstaddrlen) == -1) {
 		log_err_level_printf(LOG_CRIT, "protopassthrough_conn_connect: bufferevent_socket_connect for srvdst failed\n");
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINE, "protopassthrough_conn_connect: bufferevent_socket_connect for srvdst failed, fd=%d\n", ctx->fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, "protopassthrough_conn_connect: bufferevent_socket_connect for srvdst failed, fd=%d\n", fd);
 #endif /* DEBUG_PROXY */
 
-		pxy_conn_term(ctx, 1);
+		// @attention Do not try to term/close conns on the thrmgr thread after setting event callbacks and/or socket connect. Just return.
 	}
 }
 

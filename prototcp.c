@@ -156,20 +156,25 @@ static void NONNULL(1)
 prototcp_conn_connect(pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_conn_connect: ENTER, fd=%d\n", ctx->fd);
+	// Make a copy of fd, to prevent multithreading issues in case the conn is terminated
+	int fd = ctx->fd;
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_conn_connect: ENTER, fd=%d\n", fd);
 #endif /* DEBUG_PROXY */
 
 	if (prototcp_setup_dst(ctx) == -1) {
 		return;
 	}
 
-	bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
-	bufferevent_enable(ctx->dst.bev, EV_READ|EV_WRITE);
-
 	/* create server-side socket and eventbuffer */
 	if (prototcp_setup_srvdst(ctx) == -1) {
 		return;
 	}
+
+	// @attention Do not try to term/close conns on the thrmgr thread after setting event callbacks and/or socket connect, i.e. from this point on.
+	// Otherwise, the data structures of the conn are freed, and the conn handling threads cause signal 6 crash,
+	// or the other way around. We are on the thrmgr thread here.
+	bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
+	bufferevent_enable(ctx->dst.bev, EV_READ|EV_WRITE);
 
 	// @attention Sometimes dst write cb fires but not event cb, especially if this listener cb is not finished yet, so the conn stalls.
 	// @todo Why does event cb not fire sometimes?
@@ -183,13 +188,12 @@ prototcp_conn_connect(pxy_conn_ctx_t *ctx)
 	if (bufferevent_socket_connect(ctx->srvdst.bev, (struct sockaddr *)&ctx->dstaddr, ctx->dstaddrlen) == -1) {
 		log_err_level_printf(LOG_CRIT, "prototcp_conn_connect: bufferevent_socket_connect for srvdst failed\n");
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINE, "prototcp_conn_connect: bufferevent_socket_connect for srvdst failed, fd=%d\n", ctx->fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, "prototcp_conn_connect: bufferevent_socket_connect for srvdst failed, fd=%d\n", fd);
 #endif /* DEBUG_PROXY */
 
-		// @attention Do not try to close the conn here, otherwise both pxy_conn_connect() and eventcb try to free the conn using pxy_conn_free(),
-		// they are running on different threads, causing multithreading issues, e.g. signal 10.
-		// @todo Should we use thrmgr->mutex? Can we?
-		pxy_conn_term(ctx, 1);
+		// @attention Do not try to close the conn here on the thrmgr thread, otherwise both pxy_conn_connect() and eventcb try to free the conn using pxy_conn_free(),
+		// they are running on different threads, causing multithreading issues, e.g. signal 10. Just return.
+		// @todo Should we use thrmgr->mutex? Can we? Seems impossible or too difficult.
 	}
 }
 

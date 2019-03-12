@@ -115,33 +115,35 @@ static void NONNULL(1)
 protoautossl_conn_connect(pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protoautossl_conn_connect: ENTER, fd=%d\n", ctx->fd);
+	// Make a copy of fd, to prevent multithreading issues in case the conn is terminated
+	int fd = ctx->fd;
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protoautossl_conn_connect: ENTER, fd=%d\n", fd);
 #endif /* DEBUG_PROXY */
 
 	if (prototcp_setup_dst(ctx) == -1) {
 		return;
 	}
 
-	bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
-	bufferevent_enable(ctx->dst.bev, EV_READ|EV_WRITE);
-
 	/* create server-side socket and eventbuffer */
 	if (prototcp_setup_srvdst(ctx) == -1) {
 		return;
 	}
 	
+	bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
+	bufferevent_enable(ctx->dst.bev, EV_READ|EV_WRITE);
+
 	// Enable srvdst r cb for autossl mode
 	bufferevent_setcb(ctx->srvdst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
 	bufferevent_enable(ctx->srvdst.bev, EV_READ|EV_WRITE);
-	
+
 	/* initiate connection */
 	if (bufferevent_socket_connect(ctx->srvdst.bev, (struct sockaddr *)&ctx->dstaddr, ctx->dstaddrlen) == -1) {
 		log_err_level_printf(LOG_CRIT, "protoautossl_conn_connect: bufferevent_socket_connect for srvdst failed\n");
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINE, "protoautossl_conn_connect: bufferevent_socket_connect for srvdst failed, fd=%d\n", ctx->fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, "protoautossl_conn_connect: bufferevent_socket_connect for srvdst failed, fd=%d\n", fd);
 #endif /* DEBUG_PROXY */
 
-		pxy_conn_term(ctx, 1);
+		// @attention Do not try to term/close conns on the thrmgr thread after setting event callbacks and/or socket connect. Just return.
 	}
 }
 

@@ -1588,11 +1588,10 @@ pxy_conn_connect(pxy_conn_ctx_t *ctx)
 
 	ctx->protoctx->connectcb(ctx);
 
+	// @attention Do not try to close conns on the thrmgr thread after setting event callbacks and/or socket connect.
 	if (ctx->term || ctx->enomem) {
 		pxy_conn_free(ctx, ctx->term ? ctx->term_requestor : 1);
 	}
-	// @attention Do not do anything else with the ctx after connecting socket, otherwise if pxy_bev_eventcb fires on error, such as due to "No route to host",
-	// the conn is closed and freed up, and we get multithreading issues, e.g. signal 11. We are on the thrmgr thread. So, just return.
 }
 
 /*
