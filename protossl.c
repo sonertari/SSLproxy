@@ -3,7 +3,7 @@
  * https://www.roe.ch/SSLsplit
  *
  * Copyright (c) 2009-2018, Daniel Roethlisberger <daniel@roe.ch>.
- * Copyright (c) 2018, Soner Tari <sonertari@gmail.com>.
+ * Copyright (c) 2017-2019, Soner Tari <sonertari@gmail.com>.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without

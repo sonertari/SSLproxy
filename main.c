@@ -97,7 +97,7 @@ main_version(void)
 		fprintf(stderr, "---------------------------------------"
 		                "---------------------------------------\n");
 	}
-	fprintf(stderr, "Copyright (c) 2017-2018, Soner Tari <sonertari@gmail.com>\n");
+	fprintf(stderr, "Copyright (c) 2017-2019, Soner Tari <sonertari@gmail.com>\n");
 	fprintf(stderr, "https://github.com/sonertari/SSLproxy\n");
 	fprintf(stderr, "Copyright (c) 2009-2018, "
 	                "Daniel Roethlisberger <daniel@roe.ch>\n");
