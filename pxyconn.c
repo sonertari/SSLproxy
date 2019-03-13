@@ -382,11 +382,12 @@ pxy_conn_ctx_free(pxy_conn_ctx_t *ctx, int by_requestor)
 		if (idletime > (ctx->opts->user_timeout / 2)) {
 			struct userdbkeys *keys = malloc(sizeof(userdbkeys_t));
 			if (keys) {
+				// Zero out for NULL termination
 				memset(keys, 0, sizeof(userdbkeys_t));
-				// @todo Should limit copy with max dest size?
-				memcpy(keys->ip, ctx->srchost_str, strlen(ctx->srchost_str));
-				memcpy(keys->user, ctx->user, strlen(ctx->user));
-				memcpy(keys->ether, ctx->ether, strlen(ctx->ether));
+				// Leave room for NULL to make sure the strings are always NULL terminated
+				strncpy(keys->ip, ctx->srchost_str, sizeof(keys->ip) - 1);
+				strncpy(keys->user, ctx->user, sizeof(keys->user) - 1);
+				strncpy(keys->ether, ctx->ether, sizeof(keys->ether) - 1);
 
 				if (privsep_client_update_atime(ctx->clisock, keys) == -1) {
 #ifdef DEBUG_PROXY
@@ -1605,11 +1606,13 @@ pxy_conn_connect(pxy_conn_ctx_t *ctx)
 		}
 	}
 
-	ctx->protoctx->connectcb(ctx);
-
-	// @attention Do not try to close conns on the thrmgr thread after setting event callbacks and/or socket connect.
-	if (ctx->term || ctx->enomem) {
-		pxy_conn_free(ctx, ctx->term ? ctx->term_requestor : 1);
+	if (ctx->protoctx->connectcb(ctx) == -1) {
+		// @attention Do not try to close conns on the thrmgr thread after setting event callbacks and/or socket connect.
+		// The return value of -1 from connectcb indicates that there was a fatal error before event callbacks were set, so we can terminate the connection.
+		// Otherwise, it is up to the event callbacks to terminate the connection. This is necessary to avoid multithreading issues.
+		if (ctx->term || ctx->enomem) {
+			pxy_conn_free(ctx, ctx->term ? ctx->term_requestor : 1);
+		}
 	}
 }
 
@@ -1632,6 +1635,12 @@ pxy_fd_readcb(evutil_socket_t fd, UNUSED short what, void *arg)
 	ctx->protoctx->fd_readcb(fd, what, arg);
 }
 
+/*
+ * @attention Do not try to close conns on the thrmgr thread after setting event callbacks and/or socket connect.
+ * fd_readcb calls pxy_conn_connect() which sets event callbacks and connects sockets.
+ * The return value of -1 from call_fd_readcb indicates that there was a fatal error before event callbacks were set, so we can terminate the connection.
+ * Otherwise, it is up to the event callbacks to terminate the connection. This is necessary to avoid multithreading issues.
+ */
 static int NONNULL(1)
 call_fd_readcb(pxy_conn_ctx_t *ctx)
 {
@@ -1747,6 +1756,8 @@ redirect:
 	}
 
 	if (call_fd_readcb(ctx) == -1) {
+		// The return value of -1 from call_fd_readcb indicates that there was a fatal error before event callbacks were set,
+		// so we can terminate the connection.
 		goto memout;
 	}
 	return;
@@ -2031,6 +2042,8 @@ pxy_conn_setup(evutil_socket_t fd,
 		goto out;
 	} else {
 		if (call_fd_readcb(ctx) == -1) {
+			// The return value of -1 from call_fd_readcb indicates that there was a fatal error before event callbacks were set,
+			// so we can terminate the connection.
 			goto memout;
 		}
 		return;

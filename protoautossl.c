@@ -111,7 +111,7 @@ protoautossl_peek_and_upgrade(pxy_conn_ctx_t *ctx)
 	return 0;
 }
 
-static void NONNULL(1)
+static int NONNULL(1)
 protoautossl_conn_connect(pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
@@ -121,12 +121,12 @@ protoautossl_conn_connect(pxy_conn_ctx_t *ctx)
 #endif /* DEBUG_PROXY */
 
 	if (prototcp_setup_dst(ctx) == -1) {
-		return;
+		return -1;
 	}
 
 	/* create server-side socket and eventbuffer */
 	if (prototcp_setup_srvdst(ctx) == -1) {
-		return;
+		return -1;
 	}
 	
 	bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
@@ -143,8 +143,9 @@ protoautossl_conn_connect(pxy_conn_ctx_t *ctx)
 		log_dbg_level_printf(LOG_DBG_MODE_FINE, "protoautossl_conn_connect: bufferevent_socket_connect for srvdst failed, fd=%d\n", fd);
 #endif /* DEBUG_PROXY */
 
-		// @attention Do not try to term/close conns on the thrmgr thread after setting event callbacks and/or socket connect. Just return.
+		// @attention Do not try to term/close conns on the thrmgr thread after setting event callbacks and/or socket connect. Just return 0.
 	}
+	return 0;
 }
 
 static void NONNULL(1)

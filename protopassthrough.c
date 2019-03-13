@@ -105,7 +105,7 @@ protopassthrough_engage(pxy_conn_ctx_t *ctx)
 	pxy_fd_readcb(ctx->fd, 0, ctx);
 }
 
-static void NONNULL(1)
+static int NONNULL(1)
 protopassthrough_conn_connect(pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
@@ -115,7 +115,7 @@ protopassthrough_conn_connect(pxy_conn_ctx_t *ctx)
 #endif /* DEBUG_PROXY */
 
 	if (prototcp_setup_srvdst(ctx) == -1) {
-		return;
+		return -1;
 	}
 
 	// @attention Sometimes dst write cb fires but not event cb, especially if this listener cb is not finished yet, so the conn stalls.
@@ -129,8 +129,9 @@ protopassthrough_conn_connect(pxy_conn_ctx_t *ctx)
 		log_dbg_level_printf(LOG_DBG_MODE_FINE, "protopassthrough_conn_connect: bufferevent_socket_connect for srvdst failed, fd=%d\n", fd);
 #endif /* DEBUG_PROXY */
 
-		// @attention Do not try to term/close conns on the thrmgr thread after setting event callbacks and/or socket connect. Just return.
+		// @attention Do not try to term/close conns on the thrmgr thread after setting event callbacks and/or socket connect. Just return 0.
 	}
+	return 0;
 }
 
 static void NONNULL(1)

@@ -62,7 +62,7 @@
 typedef struct pxy_conn_child_ctx pxy_conn_child_ctx_t;
 
 typedef void (*fd_readcb_func_t)(evutil_socket_t,  short, void *);
-typedef void (*connect_func_t)(pxy_conn_ctx_t *);
+typedef int (*connect_func_t)(pxy_conn_ctx_t *);
 
 typedef void (*callback_func_t)(struct bufferevent *, void *);
 typedef void (*eventcb_func_t)(struct bufferevent *, short, void *);

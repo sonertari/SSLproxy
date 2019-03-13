@@ -152,7 +152,7 @@ prototcp_setup_srvdst(pxy_conn_ctx_t *ctx)
 	return 0;
 }
 
-static void NONNULL(1)
+static int NONNULL(1)
 prototcp_conn_connect(pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
@@ -162,12 +162,12 @@ prototcp_conn_connect(pxy_conn_ctx_t *ctx)
 #endif /* DEBUG_PROXY */
 
 	if (prototcp_setup_dst(ctx) == -1) {
-		return;
+		return -1;
 	}
 
 	/* create server-side socket and eventbuffer */
 	if (prototcp_setup_srvdst(ctx) == -1) {
-		return;
+		return -1;
 	}
 
 	// @attention Do not try to term/close conns on the thrmgr thread after setting event callbacks and/or socket connect, i.e. from this point on.
@@ -192,9 +192,10 @@ prototcp_conn_connect(pxy_conn_ctx_t *ctx)
 #endif /* DEBUG_PROXY */
 
 		// @attention Do not try to close the conn here on the thrmgr thread, otherwise both pxy_conn_connect() and eventcb try to free the conn using pxy_conn_free(),
-		// they are running on different threads, causing multithreading issues, e.g. signal 10. Just return.
+		// they are running on different threads, causing multithreading issues, e.g. signal 10. Just return 0.
 		// @todo Should we use thrmgr->mutex? Can we? Seems impossible or too difficult.
 	}
+	return 0;
 }
 
 int
