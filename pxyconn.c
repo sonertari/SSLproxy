@@ -1616,8 +1616,7 @@ pxy_conn_connect(pxy_conn_ctx_t *ctx)
 		}
 	}
 
-	// Defer adding the conn to the conn list of its thread until after a successful conn setup,
-	// otherwise pxy_thrmgr_timer_cb() may try to access the conn ctx while it is being freed on failure (signal 6 crash)
+	// Conn setup is successful, so add the conn to the conn list of its thread
 	pxy_thrmgr_add_conn(ctx);
 }
 
@@ -2008,11 +2007,12 @@ pxy_conn_setup(evutil_socket_t fd,
 	}
 
 	if (sys_sockaddr_str(peeraddr, peeraddrlen, &ctx->srchost_str, &ctx->srcport_str) != 0) {
-		goto memout;
+		log_err_level_printf(LOG_CRIT, "Aborting connection setup (out of memory)!\n");
+		goto out;
 	}
 
-	/* prepare logging, part 1 */
-	if (opts->pcaplog
+	/* prepare logging, part 1, and user auth */
+	if (opts->pcaplog || opts->user_auth
 #ifndef WITHOUT_MIRROR
 	    || opts->mirrorif
 #endif /* !WITHOUT_MIRROR */
@@ -2020,17 +2020,13 @@ pxy_conn_setup(evutil_socket_t fd,
 	    || opts->lprocinfo
 #endif /* HAVE_LOCAL_PROCINFO */
 	    ) {
+		ctx->srcaddrlen = peeraddrlen;
+		memcpy(&ctx->srcaddr, peeraddr, ctx->srcaddrlen);
 	}
-
-	// srcaddr is used by packet logging and userauth
-	ctx->srcaddrlen = peeraddrlen;
-	memcpy(&ctx->srcaddr, peeraddr, ctx->srcaddrlen);
 
 	ctx->protoctx->fd_readcb(ctx->fd, 0, ctx);
 	return;
 
-memout:
-	log_err_level_printf(LOG_CRIT, "Aborting connection setup (out of memory)!\n");
 out:
 	evutil_closesocket(fd);
 	pxy_conn_ctx_free(ctx, 1);
