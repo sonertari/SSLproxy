@@ -257,6 +257,11 @@ pxy_thrmgr_timer_cb(UNUSED evutil_socket_t fd, UNUSED short what,
 			log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_thrmgr_timer_cb: Delete timed out conn thr=%d, fd=%d, child_fd=%d, at=%lld ct=%lld\n",
 					expired->thr->thridx, expired->fd, expired->child_fd, (long long)(now - expired->atime), (long long)(now - expired->ctime));
 #endif /* DEBUG_PROXY */
+
+			// We have already locked the thr mutex, do not lock again, otherwise we get signal 6 crash
+			// When detach_unlocked is set, *_ctx_free() functions call non-thread-safe detach functions
+			expired->detach_unlocked = 1;
+
 			// @attention Do not call the term function here, free the conn directly
 			pxy_conn_free(expired, 1);
 			ctx->timedout_conns++;
@@ -458,6 +463,19 @@ pxy_thrmgr_free(pxy_thrmgr_ctx_t *ctx)
 void 
 pxy_thrmgr_add_conn(pxy_conn_ctx_t *ctx)
 {
+	if (ctx->added_to_thr_conns) {
+		// Do not add conns twice
+		// While switching to passthrough mode, the conn must have already been added to its thread list by the previous proto
+#ifdef DEBUG_PROXY
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_add_conn: Will not add conn twice, id=%llu, fd=%d\n", ctx->id, ctx->fd);
+#endif /* DEBUG_PROXY */
+		return;
+	}
+
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_add_conn: Adding conn, id=%llu, fd=%d\n", ctx->id, ctx->fd);
+#endif /* DEBUG_PROXY */
+	
 	pthread_mutex_lock(&ctx->thr->mutex);
 	ctx->next = ctx->thr->conns;
 	ctx->thr->conns = ctx;
@@ -569,12 +587,25 @@ pxy_thrmgr_attach_child(pxy_conn_ctx_t *ctx)
 void
 pxy_thrmgr_detach(pxy_conn_ctx_t *ctx)
 {
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_detach: ENTER\n");
+#endif /* DEBUG_PROXY */
+
 	assert(ctx->children == NULL);
 
-	pthread_mutex_lock(&ctx->thr->mutex);
 	ctx->thr->load--;
-	if (ctx->added_to_thr_conns)
+	if (ctx->added_to_thr_conns) {
 		pxy_thrmgr_remove_conn(ctx, &ctx->thr->conns);
+		// Shouldn't need to reset the added_to_thr_conns flag, because the conn ctx will be freed next, but just in case
+		ctx->added_to_thr_conns = 0;
+	}
+}
+
+void
+pxy_thrmgr_detach_locked(pxy_conn_ctx_t *ctx)
+{
+	pthread_mutex_lock(&ctx->thr->mutex);
+	pxy_thrmgr_detach(ctx);
 	pthread_mutex_unlock(&ctx->thr->mutex);
 }
 
@@ -585,8 +616,14 @@ pxy_thrmgr_detach_child(pxy_conn_ctx_t *ctx)
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_detach_child: ENTER\n");
 #endif /* DEBUG_PROXY */
 
-	pthread_mutex_lock(&ctx->thr->mutex);
 	ctx->thr->load--;
+}
+
+void
+pxy_thrmgr_detach_child_locked(pxy_conn_ctx_t *ctx)
+{
+	pthread_mutex_lock(&ctx->thr->mutex);
+	pxy_thrmgr_detach_child(ctx);
 	pthread_mutex_unlock(&ctx->thr->mutex);
 }
 

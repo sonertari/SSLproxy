@@ -292,6 +292,7 @@ struct pxy_conn_ctx {
 	unsigned int sent_protoerror_msg : 1;
 
 	unsigned int added_to_thr_conns : 1;
+	unsigned int detach_unlocked : 1;
 
 #ifdef HAVE_LOCAL_PROCINFO
 	/* local process information */

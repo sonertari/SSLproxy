@@ -270,7 +270,11 @@ pxy_conn_ctx_free_child(pxy_conn_child_ctx_t *ctx)
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_free_child: ENTER, child fd=%d, fd=%d\n", ctx->fd, ctx->conn->fd);
 #endif /* DEBUG_PROXY */
 
-	pxy_thrmgr_detach_child(ctx->conn);
+	if (ctx->conn->detach_unlocked) {
+		pxy_thrmgr_detach_child(ctx->conn);
+	} else {
+		pxy_thrmgr_detach_child_locked(ctx->conn);
+	}
 
 	// If the proto doesn't have special args, proto_free() callback is NULL
 	if (ctx->protoctx->proto_free) {
@@ -407,7 +411,12 @@ pxy_conn_ctx_free(pxy_conn_ctx_t *ctx, int by_requestor)
 		}
 	}
 
-	pxy_thrmgr_detach(ctx);
+	if (ctx->conn->detach_unlocked) {
+		pxy_thrmgr_detach(ctx);
+	} else {
+		pxy_thrmgr_detach_locked(ctx);
+	}
+
 	if (ctx->srchost_str) {
 		free(ctx->srchost_str);
 	}

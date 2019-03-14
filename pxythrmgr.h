@@ -86,7 +86,9 @@ void pxy_thrmgr_add_conn(pxy_conn_ctx_t *) NONNULL(1);
 void pxy_thrmgr_attach(pxy_conn_ctx_t *) NONNULL(1);
 void pxy_thrmgr_attach_child(pxy_conn_ctx_t *) NONNULL(1);
 void pxy_thrmgr_detach(pxy_conn_ctx_t *) NONNULL(1);
+void pxy_thrmgr_detach_locked(pxy_conn_ctx_t *) NONNULL(1);
 void pxy_thrmgr_detach_child(pxy_conn_ctx_t *) NONNULL(1);
+void pxy_thrmgr_detach_child_locked(pxy_conn_ctx_t *) NONNULL(1);
 
 #endif /* !PXYTHRMGR_H */
 
