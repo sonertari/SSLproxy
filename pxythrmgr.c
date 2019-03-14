@@ -239,6 +239,7 @@ pxy_thrmgr_timer_cb(UNUSED evutil_socket_t fd, UNUSED short what,
 {
 	pxy_thr_ctx_t *ctx = arg;
 
+	pthread_mutex_lock(&ctx->mutex);
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_timer_cb: thr=%d, load=%lu, to=%u\n", ctx->thridx, ctx->load, ctx->timeout_count);
 #endif /* DEBUG_PROXY */
@@ -272,6 +273,7 @@ pxy_thrmgr_timer_cb(UNUSED evutil_socket_t fd, UNUSED short what,
 			pxy_thrmgr_print_thr_info(ctx);
 		}
 	}
+	pthread_mutex_unlock(&ctx->mutex);
 }
 
 /*
@@ -327,11 +329,6 @@ pxy_thrmgr_run(pxy_thrmgr_ctx_t *ctx)
 
 	dns = opts_has_dns_spec(ctx->opts);
 
-	if (pthread_mutex_init(&ctx->mutex, NULL)) {
-		log_dbg_printf("Failed to initialize mutex\n");
-		goto leave;
-	}
-
 	if (!(ctx->thr = malloc(ctx->num_thr * sizeof(pxy_thr_ctx_t*)))) {
 		log_dbg_printf("Failed to allocate memory\n");
 		goto leave;
@@ -368,6 +365,10 @@ pxy_thrmgr_run(pxy_thrmgr_ctx_t *ctx)
 
 		if (ctx->opts->user_auth && sqlite3_prepare_v2(ctx->opts->userdb, "SELECT user,ether,atime FROM users WHERE ip = ?1", 100, &ctx->thr[idx]->get_user, NULL)) {
 			log_err_level_printf(LOG_CRIT, "Error preparing get_user sql stmt: %s\n", sqlite3_errmsg(ctx->opts->userdb));
+			goto leave;
+		}
+		if (pthread_mutex_init(&ctx->thr[idx]->mutex, NULL)) {
+			log_dbg_printf("Failed to initialize thr mutex\n");
 			goto leave;
 		}
 	}
@@ -407,11 +408,14 @@ leave:
 			if (ctx->thr[idx]->evbase) {
 				event_base_free(ctx->thr[idx]->evbase);
 			}
+			if (ctx->opts->user_auth) {
+				sqlite3_finalize(ctx->thr[idx]->get_user);
+			}
+			pthread_mutex_destroy(&ctx->thr[idx]->mutex);
 			free(ctx->thr[idx]);
 		}
 		idx--;
 	}
-	pthread_mutex_destroy(&ctx->mutex);
 	if (ctx->thr) {
 		free(ctx->thr);
 		ctx->thr = NULL;
@@ -425,7 +429,6 @@ leave:
 void
 pxy_thrmgr_free(pxy_thrmgr_ctx_t *ctx)
 {
-	pthread_mutex_destroy(&ctx->mutex);
 	if (ctx->thr) {
 		for (int idx = 0; idx < ctx->num_thr; idx++) {
 			event_base_loopbreak(ctx->thr[idx]->evbase);
@@ -444,11 +447,22 @@ pxy_thrmgr_free(pxy_thrmgr_ctx_t *ctx)
 			if (ctx->opts->user_auth) {
 				sqlite3_finalize(ctx->thr[idx]->get_user);
 			}
+			pthread_mutex_destroy(&ctx->thr[idx]->mutex);
 			free(ctx->thr[idx]);
 		}
 		free(ctx->thr);
 	}
 	free(ctx);
+}
+
+void 
+pxy_thrmgr_add_conn(pxy_conn_ctx_t *ctx)
+{
+	pthread_mutex_lock(&ctx->thr->mutex);
+	ctx->next = ctx->thr->conns;
+	ctx->thr->conns = ctx;
+	ctx->added_to_thr_conns = 1;
+	pthread_mutex_unlock(&ctx->thr->mutex);
 }
 
 static void 
@@ -482,6 +496,8 @@ pxy_thrmgr_remove_conn(pxy_conn_ctx_t *node, pxy_conn_ctx_t **head)
 /*
  * Attach a new connection to a thread.  Chooses the thread with the fewest
  * currently active connections, returns the appropriate event bases.
+ * No need to be so accurate about balancing thread loads, so uses 
+ * thread-level mutexes, instead of a thrmgr level mutex.
  * Returns the index of the chosen thread (for passing to _detach later).
  * This function cannot fail.
  */
@@ -496,14 +512,16 @@ pxy_thrmgr_attach(pxy_conn_ctx_t *ctx)
 	size_t minload;
 
 	pxy_thrmgr_ctx_t *tmctx = ctx->thrmgr;
-	pthread_mutex_lock(&tmctx->mutex);
+	pthread_mutex_lock(&tmctx->thr[0]->mutex);
+	minload = tmctx->thr[0]->load;
+	pthread_mutex_unlock(&tmctx->thr[0]->mutex);
 
-	minload = tmctx->thr[thridx]->load;
 #ifdef DEBUG_THREAD
 	log_dbg_printf("===> Proxy connection handler thread status:\n"
-	               "thr[%d]: %zu\n", thridx, minload);
+	               "thr[0]: %zu\n", minload);
 #endif /* DEBUG_THREAD */
 	for (int idx = 1; idx < tmctx->num_thr; idx++) {
+		pthread_mutex_lock(&tmctx->thr[idx]->mutex);
 #ifdef DEBUG_THREAD
 		log_dbg_printf("thr[%d]: %zu\n", idx, tmctx->thr[idx]->load);
 #endif /* DEBUG_THREAD */
@@ -511,22 +529,20 @@ pxy_thrmgr_attach(pxy_conn_ctx_t *ctx)
 			minload = tmctx->thr[idx]->load;
 			thridx = idx;
 		}
+		pthread_mutex_unlock(&tmctx->thr[idx]->mutex);
 	}
 
 	ctx->thr = tmctx->thr[thridx];
+
+	pthread_mutex_lock(&ctx->thr->mutex);
 	ctx->thr->load++;
 	ctx->thr->max_load = MAX(ctx->thr->max_load, ctx->thr->load);
-
-	ctx->next = ctx->thr->conns;
-	ctx->thr->conns = ctx;
-
-	pthread_mutex_unlock(&tmctx->mutex);
+	// Defer adding the conn to the conn list of its thread until after a successful conn setup
+	// otherwise pxy_thrmgr_timer_cb() may try to access the conn ctx while it is being freed on failure (signal 6 crash)
+	pthread_mutex_unlock(&ctx->thr->mutex);
 
 	ctx->evbase = ctx->thr->evbase;
 	ctx->dnsbase = ctx->thr->dnsbase;
-
-	// @attention We are running on the thrmgr thread, do not call conn thread functions here.
-	//pxy_thrmgr_print_thr_info(ctx->thr);
 
 #ifdef DEBUG_THREAD
 	log_dbg_printf("thridx: %d\n", thridx);
@@ -540,10 +556,10 @@ pxy_thrmgr_attach_child(pxy_conn_ctx_t *ctx)
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_attach_child: ENTER\n");
 #endif /* DEBUG_PROXY */
 
-	pthread_mutex_lock(&ctx->thrmgr->mutex);
+	pthread_mutex_lock(&ctx->thr->mutex);
 	ctx->thr->load++;
 	ctx->thr->max_load = MAX(ctx->thr->max_load, ctx->thr->load);
-	pthread_mutex_unlock(&ctx->thrmgr->mutex);
+	pthread_mutex_unlock(&ctx->thr->mutex);
 }
 
 /*
@@ -555,10 +571,11 @@ pxy_thrmgr_detach(pxy_conn_ctx_t *ctx)
 {
 	assert(ctx->children == NULL);
 
-	pthread_mutex_lock(&ctx->thrmgr->mutex);
+	pthread_mutex_lock(&ctx->thr->mutex);
 	ctx->thr->load--;
-	pxy_thrmgr_remove_conn(ctx, &ctx->thr->conns);
-	pthread_mutex_unlock(&ctx->thrmgr->mutex);
+	if (ctx->added_to_thr_conns)
+		pxy_thrmgr_remove_conn(ctx, &ctx->thr->conns);
+	pthread_mutex_unlock(&ctx->thr->mutex);
 }
 
 void
@@ -568,9 +585,9 @@ pxy_thrmgr_detach_child(pxy_conn_ctx_t *ctx)
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_detach_child: ENTER\n");
 #endif /* DEBUG_PROXY */
 
-	pthread_mutex_lock(&ctx->thrmgr->mutex);
+	pthread_mutex_lock(&ctx->thr->mutex);
 	ctx->thr->load--;
-	pthread_mutex_unlock(&ctx->thrmgr->mutex);
+	pthread_mutex_unlock(&ctx->thr->mutex);
 }
 
 /* vim: set noet ft=c: */

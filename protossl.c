@@ -945,6 +945,17 @@ protossl_fd_readcb(MAYBE_UNUSED evutil_socket_t fd, UNUSED short what, void *arg
 #endif /* DEBUG_PROXY */
 
 #ifndef OPENSSL_NO_TLSEXT
+	// ctx->ev is NULL during initial conn setup
+	if (!ctx->ev) {
+		/* for SSL, defer dst connection setup to initial_readcb */
+		ctx->ev = event_new(ctx->evbase, ctx->fd, EV_READ, ctx->protoctx->fd_readcb, ctx);
+		if (!ctx->ev)
+			goto out;
+		if (event_add(ctx->ev, NULL) == -1)
+			goto out;
+		return;
+	}
+
 	// Child connections will use the sni info obtained by the parent conn
 	/* for SSL, peek ClientHello and parse SNI from it */
 
@@ -1088,17 +1099,10 @@ protossl_conn_connect(pxy_conn_ctx_t *ctx)
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protossl_conn_connect: ENTER, fd=%d\n", fd);
 #endif /* DEBUG_PROXY */
 
-	if (prototcp_setup_dst(ctx) == -1) {
-		return -1;
-	}
-
 	/* create server-side socket and eventbuffer */
 	if (protossl_setup_srvdst(ctx) == -1) {
 		return -1;
 	}
-
-	bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
-	bufferevent_enable(ctx->dst.bev, EV_READ|EV_WRITE);
 
 	// @attention Sometimes dst write cb fires but not event cb, especially if this listener cb is not finished yet, so the conn stalls.
 	// @todo Why does event cb not fire sometimes?
@@ -1106,7 +1110,6 @@ protossl_conn_connect(pxy_conn_ctx_t *ctx)
 	// @see Launching connections on socket-based bufferevents at http://www.wangafu.net/~nickm/libevent-book/Ref6_bufferevent.html
 	// Disable and NULL r cb, we do nothing for srvdst in r cb
 	bufferevent_setcb(ctx->srvdst.bev, NULL, pxy_bev_writecb, pxy_bev_eventcb, ctx);
-	bufferevent_enable(ctx->srvdst.bev, EV_WRITE);
 	
 	/* initiate connection */
 	if (bufferevent_socket_connect(ctx->srvdst.bev, (struct sockaddr *)&ctx->dstaddr, ctx->dstaddrlen) == -1) {
@@ -1304,8 +1307,13 @@ protossl_bev_eventcb_connected_srvdst(UNUSED struct bufferevent *bev, pxy_conn_c
 #endif /* DEBUG_PROXY */
 
 	ctx->srvdst_connected = 1;
-
-	// @attention Create and enable dst.bev before, but connect here, because we check if dst.bev is NULL elsewhere
+	bufferevent_enable(ctx->srvdst.bev, EV_WRITE);
+	
+	if (prototcp_setup_dst(ctx) == -1) {
+		return;
+	}
+	bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
+	bufferevent_enable(ctx->dst.bev, EV_READ|EV_WRITE);
 	if (bufferevent_socket_connect(ctx->dst.bev, (struct sockaddr *)&ctx->spec->conn_dst_addr, ctx->spec->conn_dst_addrlen) == -1) {
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINE, "protossl_bev_eventcb_connected_srvdst: FAILED bufferevent_socket_connect for dst, fd=%d\n", ctx->fd);
@@ -1321,6 +1329,10 @@ protossl_bev_eventcb_connected_srvdst(UNUSED struct bufferevent *bev, pxy_conn_c
 		if (protossl_enable_src(ctx) == -1) {
 			return;
 		}
+	}
+
+	if (!ctx->term && !ctx->enomem) {
+		pxy_userauth(ctx);
 	}
 }
 

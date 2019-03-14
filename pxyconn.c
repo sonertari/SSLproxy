@@ -1612,8 +1612,13 @@ pxy_conn_connect(pxy_conn_ctx_t *ctx)
 		// Otherwise, it is up to the event callbacks to terminate the connection. This is necessary to avoid multithreading issues.
 		if (ctx->term || ctx->enomem) {
 			pxy_conn_free(ctx, ctx->term ? ctx->term_requestor : 1);
+			return;
 		}
 	}
+
+	// Defer adding the conn to the conn list of its thread until after a successful conn setup,
+	// otherwise pxy_thrmgr_timer_cb() may try to access the conn ctx while it is being freed on failure (signal 6 crash)
+	pxy_thrmgr_add_conn(ctx);
 }
 
 /*
@@ -1633,29 +1638,6 @@ pxy_fd_readcb(evutil_socket_t fd, UNUSED short what, void *arg)
 
 	ctx->atime = time(NULL);
 	ctx->protoctx->fd_readcb(fd, what, arg);
-}
-
-/*
- * @attention Do not try to close conns on the thrmgr thread after setting event callbacks and/or socket connect.
- * fd_readcb calls pxy_conn_connect() which sets event callbacks and connects sockets.
- * The return value of -1 from call_fd_readcb indicates that there was a fatal error before event callbacks were set, so we can terminate the connection.
- * Otherwise, it is up to the event callbacks to terminate the connection. This is necessary to avoid multithreading issues.
- */
-static int NONNULL(1)
-call_fd_readcb(pxy_conn_ctx_t *ctx)
-{
-	/* for SSL, defer dst connection setup to initial_readcb */
-	if (ctx->spec->ssl) {
-		// @todo Move this code to fd_readcb of ssl proto?
-		ctx->ev = event_new(ctx->evbase, ctx->fd, EV_READ, ctx->protoctx->fd_readcb, ctx);
-		if (!ctx->ev)
-			return -1;
-		if (event_add(ctx->ev, NULL) == -1)
-			return -1;
-	} else {
-		ctx->protoctx->fd_readcb(ctx->fd, 0, ctx);
-	}
-	return 0;
 }
 
 #if defined(__OpenBSD__) || defined(__linux__)
@@ -1753,12 +1735,6 @@ redirect:
 	if (ctx->ev) {
 		event_free(ctx->ev);
 		ctx->ev = NULL;
-	}
-
-	if (call_fd_readcb(ctx) == -1) {
-		// The return value of -1 from call_fd_readcb indicates that there was a fatal error before event callbacks were set,
-		// so we can terminate the connection.
-		goto memout;
 	}
 	return;
 
@@ -1935,6 +1911,36 @@ out:
 }
 #endif /* __OpenBSD__ */
 
+int
+pxy_userauth(pxy_conn_ctx_t *ctx)
+{
+	if (ctx->opts->user_auth && !ctx->user) {
+#if defined(__OpenBSD__) || defined(__linux__)
+		int ec;
+#if defined(__OpenBSD__)
+		ec = get_client_ether(((struct sockaddr_in *)&ctx->srcaddr)->sin_addr.s_addr, ctx);
+#else /* __linux__ */
+		ec = get_client_ether(ctx);
+#endif /* __linux__ */
+		if (ec == 1) {
+			identify_user(0, 0, ctx);
+			return 0;
+		} else if (ec == 0) {
+			log_err_level_printf(LOG_CRIT, "Cannot find ethernet address of client IP address\n");
+		} else if (ec > 1) {
+			log_err_level_printf(LOG_CRIT, "Multiple ethernet addresses for the same client IP address\n");
+		} else {
+			// ec == -1
+			log_err_level_printf(LOG_CRIT, "Aborting connection setup (out of memory)!\n");
+		}
+#endif /* __OpenBSD__ || __linux__ */
+		log_err_level_printf(LOG_CRIT, "Aborting connection setup (user auth)!\n");
+		pxy_conn_term(ctx, 1);
+		return -1;
+	}
+	return 0;
+}
+
 /*
  * Callback for accept events on the socket listener bufferevent.
  * Called when a new incoming connection has been accepted.
@@ -2014,40 +2020,14 @@ pxy_conn_setup(evutil_socket_t fd,
 	    || opts->lprocinfo
 #endif /* HAVE_LOCAL_PROCINFO */
 	    ) {
-		ctx->srcaddrlen = peeraddrlen;
-		memcpy(&ctx->srcaddr, peeraddr, ctx->srcaddrlen);
 	}
 
-	if (ctx->opts->user_auth) {
-#if defined(__OpenBSD__) || defined(__linux__)
-		int ec;
-#if defined(__OpenBSD__)
-		ec = get_client_ether(((struct sockaddr_in *)peeraddr)->sin_addr.s_addr, ctx);
-#else /* __linux__ */
-		ec = get_client_ether(ctx);
-#endif /* __linux__ */
-		if (ec == 1) {
-			identify_user(0, 0, ctx);
-			return;
-		} else if (ec == 0) {
-			log_err_level_printf(LOG_CRIT, "Cannot find ethernet address of client IP address\n");
-		} else if (ec > 1) {
-			log_err_level_printf(LOG_CRIT, "Multiple ethernet addresses for the same client IP address\n");
-		} else {
-			// ec == -1
-			goto memout;
-		}
-#endif /* __OpenBSD__ || __linux__ */
-		log_err_level_printf(LOG_CRIT, "Aborting connection setup (user auth)!\n");
-		goto out;
-	} else {
-		if (call_fd_readcb(ctx) == -1) {
-			// The return value of -1 from call_fd_readcb indicates that there was a fatal error before event callbacks were set,
-			// so we can terminate the connection.
-			goto memout;
-		}
-		return;
-	}
+	// srcaddr is used by packet logging and userauth
+	ctx->srcaddrlen = peeraddrlen;
+	memcpy(&ctx->srcaddr, peeraddr, ctx->srcaddrlen);
+
+	ctx->protoctx->fd_readcb(ctx->fd, 0, ctx);
+	return;
 
 memout:
 	log_err_level_printf(LOG_CRIT, "Aborting connection setup (out of memory)!\n");

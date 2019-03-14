@@ -120,7 +120,6 @@ protopassthrough_conn_connect(pxy_conn_ctx_t *ctx)
 
 	// @attention Sometimes dst write cb fires but not event cb, especially if this listener cb is not finished yet, so the conn stalls.
 	bufferevent_setcb(ctx->srvdst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
-	bufferevent_enable(ctx->srvdst.bev, EV_READ|EV_WRITE);
 	
 	/* initiate connection */
 	if (bufferevent_socket_connect(ctx->srvdst.bev, (struct sockaddr *)&ctx->dstaddr, ctx->dstaddrlen) == -1) {
@@ -263,6 +262,7 @@ protopassthrough_bev_eventcb_connected_srvdst(UNUSED struct bufferevent *bev, px
 
 	if (!ctx->srvdst_connected) {
 		ctx->srvdst_connected = 1;
+		bufferevent_enable(ctx->srvdst.bev, EV_READ|EV_WRITE);
 	}
 
 	if (ctx->srvdst_connected && !ctx->connected) {
@@ -271,6 +271,10 @@ protopassthrough_bev_eventcb_connected_srvdst(UNUSED struct bufferevent *bev, px
 		if (protopassthrough_enable_src(ctx) == -1) {
 			return;
 		}
+	}
+
+	if (!ctx->term && !ctx->enomem) {
+		pxy_userauth(ctx);
 	}
 }
 

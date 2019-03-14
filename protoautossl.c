@@ -120,21 +120,13 @@ protoautossl_conn_connect(pxy_conn_ctx_t *ctx)
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protoautossl_conn_connect: ENTER, fd=%d\n", fd);
 #endif /* DEBUG_PROXY */
 
-	if (prototcp_setup_dst(ctx) == -1) {
-		return -1;
-	}
-
 	/* create server-side socket and eventbuffer */
 	if (prototcp_setup_srvdst(ctx) == -1) {
 		return -1;
 	}
 	
-	bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
-	bufferevent_enable(ctx->dst.bev, EV_READ|EV_WRITE);
-
 	// Enable srvdst r cb for autossl mode
 	bufferevent_setcb(ctx->srvdst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
-	bufferevent_enable(ctx->srvdst.bev, EV_READ|EV_WRITE);
 
 	/* initiate connection */
 	if (bufferevent_socket_connect(ctx->srvdst.bev, (struct sockaddr *)&ctx->dstaddr, ctx->dstaddrlen) == -1) {
@@ -405,8 +397,12 @@ protoautossl_bev_eventcb_connected_srvdst(UNUSED struct bufferevent *bev, pxy_co
 	// srvdst may be already connected while upgrading to ssl
 	if (!ctx->srvdst_connected) {
 		ctx->srvdst_connected = 1;
+		bufferevent_enable(ctx->srvdst.bev, EV_READ|EV_WRITE);
 
-		// @attention Create and enable dst.bev before, but connect here, because we check if dst.bev is NULL elsewhere
+		if (prototcp_setup_dst(ctx) == -1) {
+			return;
+		}
+		bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
 		if (bufferevent_socket_connect(ctx->dst.bev, (struct sockaddr *)&ctx->spec->conn_dst_addr,
 				ctx->spec->conn_dst_addrlen) == -1) {
 #ifdef DEBUG_PROXY
@@ -424,6 +420,10 @@ protoautossl_bev_eventcb_connected_srvdst(UNUSED struct bufferevent *bev, pxy_co
 		if (protoautossl_enable_src(ctx) == -1) {
 			return;
 		}
+	}
+
+	if (!ctx->term && !ctx->enomem) {
+		pxy_userauth(ctx);
 	}
 }
 

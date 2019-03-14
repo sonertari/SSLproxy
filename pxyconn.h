@@ -291,6 +291,8 @@ struct pxy_conn_ctx {
 	unsigned int sent_userauth_msg : 1;
 	unsigned int sent_protoerror_msg : 1;
 
+	unsigned int added_to_thr_conns : 1;
+
 #ifdef HAVE_LOCAL_PROCINFO
 	/* local process information */
 	pxy_conn_lproc_desc_t lproc;
@@ -390,6 +392,7 @@ void pxy_bev_eventcb_child(struct bufferevent *, short, void *);
 
 void pxy_conn_connect(pxy_conn_ctx_t *) NONNULL(1);
 void pxy_fd_readcb(evutil_socket_t, short, void *);
+int pxy_userauth(pxy_conn_ctx_t *) NONNULL(1);
 void pxy_conn_setup(evutil_socket_t, struct sockaddr *, int,
                     pxy_thrmgr_ctx_t *, proxyspec_t *, opts_t *,
 					evutil_socket_t)

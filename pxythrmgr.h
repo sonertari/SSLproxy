@@ -67,19 +67,21 @@ typedef struct pxy_thr_ctx {
 	unsigned short stats_idx;
 	pxy_conn_ctx_t *conns;
 	struct sqlite3_stmt *get_user;
+	pthread_mutex_t mutex;
 } pxy_thr_ctx_t;
 
 struct pxy_thrmgr_ctx {
 	int num_thr;
 	opts_t *opts;
 	pxy_thr_ctx_t **thr;
-	pthread_mutex_t mutex;
 	long long unsigned int conn_count;
 };
 
 pxy_thrmgr_ctx_t * pxy_thrmgr_new(opts_t *) MALLOC;
 int pxy_thrmgr_run(pxy_thrmgr_ctx_t *) NONNULL(1) WUNRES;
 void pxy_thrmgr_free(pxy_thrmgr_ctx_t *) NONNULL(1);
+
+void pxy_thrmgr_add_conn(pxy_conn_ctx_t *) NONNULL(1);
 
 void pxy_thrmgr_attach(pxy_conn_ctx_t *) NONNULL(1);
 void pxy_thrmgr_attach_child(pxy_conn_ctx_t *) NONNULL(1);

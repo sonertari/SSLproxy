@@ -161,20 +161,10 @@ prototcp_conn_connect(pxy_conn_ctx_t *ctx)
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_conn_connect: ENTER, fd=%d\n", fd);
 #endif /* DEBUG_PROXY */
 
-	if (prototcp_setup_dst(ctx) == -1) {
-		return -1;
-	}
-
 	/* create server-side socket and eventbuffer */
 	if (prototcp_setup_srvdst(ctx) == -1) {
 		return -1;
 	}
-
-	// @attention Do not try to term/close conns on the thrmgr thread after setting event callbacks and/or socket connect, i.e. from this point on.
-	// Otherwise, the data structures of the conn are freed, and the conn handling threads cause signal 6 crash,
-	// or the other way around. We are on the thrmgr thread here.
-	bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
-	bufferevent_enable(ctx->dst.bev, EV_READ|EV_WRITE);
 
 	// @attention Sometimes dst write cb fires but not event cb, especially if this listener cb is not finished yet, so the conn stalls.
 	// @todo Why does event cb not fire sometimes?
@@ -182,7 +172,6 @@ prototcp_conn_connect(pxy_conn_ctx_t *ctx)
 	// @see Launching connections on socket-based bufferevents at http://www.wangafu.net/~nickm/libevent-book/Ref6_bufferevent.html
 	// Disable and NULL r cb, we do nothing for srvdst in r cb
 	bufferevent_setcb(ctx->srvdst.bev, NULL, pxy_bev_writecb, pxy_bev_eventcb, ctx);
-	bufferevent_enable(ctx->srvdst.bev, EV_WRITE);
 	
 	/* initiate connection */
 	if (bufferevent_socket_connect(ctx->srvdst.bev, (struct sockaddr *)&ctx->dstaddr, ctx->dstaddrlen) == -1) {
@@ -692,8 +681,13 @@ prototcp_bev_eventcb_connected_srvdst(UNUSED struct bufferevent *bev, pxy_conn_c
 #endif /* DEBUG_PROXY */
 
 	ctx->srvdst_connected = 1;
+	bufferevent_enable(ctx->srvdst.bev, EV_WRITE);
 
-	// @attention Create and enable dst.bev before, but connect here, because we check if dst.bev is NULL elsewhere
+	if (prototcp_setup_dst(ctx) == -1) {
+		return;
+	}
+	bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
+	bufferevent_enable(ctx->dst.bev, EV_READ|EV_WRITE);
 	if (bufferevent_socket_connect(ctx->dst.bev, (struct sockaddr *)&ctx->spec->conn_dst_addr, ctx->spec->conn_dst_addrlen) == -1) {
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINE, "prototcp_bev_eventcb_connected_srvdst: FAILED bufferevent_socket_connect for dst, fd=%d\n", ctx->fd);
@@ -709,6 +703,10 @@ prototcp_bev_eventcb_connected_srvdst(UNUSED struct bufferevent *bev, pxy_conn_c
 		if (prototcp_enable_src(ctx) == -1) {
 			return;
 		}
+	}
+
+	if (!ctx->term && !ctx->enomem) {
+		pxy_userauth(ctx);
 	}
 }
 
