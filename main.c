@@ -620,7 +620,7 @@ main(int argc, char *argv[])
 
 	if (opts->user_auth) {
 		if (!opts->userdb_path) {
-			fprintf(stderr, "User auth requires userdb path\n");
+			fprintf(stderr, "User auth requires a userdb path\n");
 			exit(EXIT_FAILURE);
 		}
 		// @todo Check if we can really pass the db var into the child process for privsep

@@ -150,7 +150,7 @@ connection is redirected to the login page. The atime of the IP address in the
 users table is updated with the system time while the connection is being 
 terminated. Since this atime update is run using a privsep command, it is 
 expensive. So, to reduce the frequency of such updates, it is deferred until 
-the connection idle time is more than half of the timeout period.
+the user idle time is more than half of the timeout period.
 .LP
 If enabled, the ValidateProto option validates protocols in proxy 
 specifications. If a connection cannot pass protocol validation, then it is 

@@ -236,6 +236,8 @@ struct pxy_conn_ctx {
 
 	// Thread that the conn is attached to
 	pxy_thr_ctx_t *thr;
+	unsigned int thr_locked : 1;          /* 1 to prevent double locking */
+	unsigned int in_thr_conns : 1;          /* 1 to prevent adding twice */
 
 	// Unique id of the conn
 	long long unsigned int id;
@@ -284,15 +286,15 @@ struct pxy_conn_ctx {
 	// Expired conns are link-listed using this pointer
 	pxy_conn_ctx_t *next_expired;
 
+	// Number of times we try to acquire user db before giving up
 	unsigned int identify_user_count;
 	char *user;
 	char *ether;
+	// Idle time of user, each user conn resets this time to 0
 	unsigned int idletime;
-	unsigned int sent_userauth_msg : 1;
-	unsigned int sent_protoerror_msg : 1;
-
-	unsigned int added_to_thr_conns : 1;
-	unsigned int detach_unlocked : 1;
+	// We send redirect/error msg to client if user auth or proto validation fails
+	unsigned int sent_userauth_msg : 1;     /* 1 until error msg is sent */
+	unsigned int sent_protoerror_msg : 1;   /* 1 until error msg is sent */
 
 #ifdef HAVE_LOCAL_PROCINFO
 	/* local process information */

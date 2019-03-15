@@ -182,7 +182,6 @@ prototcp_conn_connect(pxy_conn_ctx_t *ctx)
 
 		// @attention Do not try to close the conn here on the thrmgr thread, otherwise both pxy_conn_connect() and eventcb try to free the conn using pxy_conn_free(),
 		// they are running on different threads, causing multithreading issues, e.g. signal 10. Just return 0.
-		// @todo Should we use thrmgr->mutex? Can we? Seems impossible or too difficult.
 	}
 	return 0;
 }

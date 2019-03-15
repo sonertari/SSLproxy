@@ -270,7 +270,7 @@ pxy_conn_ctx_free_child(pxy_conn_child_ctx_t *ctx)
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_free_child: ENTER, child fd=%d, fd=%d\n", ctx->fd, ctx->conn->fd);
 #endif /* DEBUG_PROXY */
 
-	if (ctx->conn->detach_unlocked) {
+	if (ctx->conn->thr_locked) {
 		pxy_thrmgr_detach_child(ctx->conn);
 	} else {
 		pxy_thrmgr_detach_child_locked(ctx->conn);
@@ -411,7 +411,7 @@ pxy_conn_ctx_free(pxy_conn_ctx_t *ctx, int by_requestor)
 		}
 	}
 
-	if (ctx->conn->detach_unlocked) {
+	if (ctx->conn->thr_locked) {
 		pxy_thrmgr_detach(ctx);
 	} else {
 		pxy_thrmgr_detach_locked(ctx);
@@ -1142,7 +1142,7 @@ pxy_listener_acceptcb_child(UNUSED struct evconnlistener *listener, evutil_socke
 	ctx->dst_fd = bufferevent_getfd(ctx->dst.bev);
 	ctx->conn->child_dst_fd = ctx->dst_fd;
 	ctx->conn->thr->max_fd = MAX(ctx->conn->thr->max_fd, ctx->dst_fd);
-
+	// Do not return here, but continue and check term/enomem flags below
 out:
 	// @attention Do not use ctx->conn here, ctx may be uninitialized
 	// @attention Call pxy_conn_free() directly, not term functions here
@@ -1625,7 +1625,7 @@ pxy_conn_connect(pxy_conn_ctx_t *ctx)
 		}
 	}
 
-	// Conn setup is successful, so add the conn to the conn list of its thread
+	// Conn setup is successful, so add the conn to the conn list of its thread now
 	pxy_thrmgr_add_conn(ctx);
 }
 
@@ -1936,6 +1936,7 @@ pxy_userauth(pxy_conn_ctx_t *ctx)
 		} else if (ec == 0) {
 			log_err_level_printf(LOG_CRIT, "Cannot find ethernet address of client IP address\n");
 		} else if (ec > 1) {
+			// get_client_ether() does not return multiple matches, but keep this in case a future version does
 			log_err_level_printf(LOG_CRIT, "Multiple ethernet addresses for the same client IP address\n");
 		} else {
 			// ec == -1
@@ -2020,7 +2021,7 @@ pxy_conn_setup(evutil_socket_t fd,
 		goto out;
 	}
 
-	/* prepare logging, part 1, and user auth */
+	/* prepare logging part 1 and user auth */
 	if (opts->pcaplog || opts->user_auth
 #ifndef WITHOUT_MIRROR
 	    || opts->mirrorif
