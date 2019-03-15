@@ -104,7 +104,7 @@ protopassthrough_engage(pxy_conn_ctx_t *ctx)
 	pxy_fd_readcb(ctx->fd, 0, ctx);
 }
 
-static int NONNULL(1)
+static int NONNULL(1) WUNRES
 protopassthrough_conn_connect(pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY

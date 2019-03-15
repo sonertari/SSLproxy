@@ -111,7 +111,7 @@ protoautossl_peek_and_upgrade(pxy_conn_ctx_t *ctx)
 	return 0;
 }
 
-static int NONNULL(1)
+static int NONNULL(1) WUNRES
 protoautossl_conn_connect(pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY

@@ -1025,7 +1025,11 @@ getdtablecount()
  * @attention These checks are expected to slow us further down, but it is critical to avoid a crash in case we run out of fds.
  */
 static int
-check_fd_usage(UNUSED evutil_socket_t fd)
+check_fd_usage(
+#ifdef DEBUG_PROXY
+	evutil_socket_t fd
+#endif /* DEBUG_PROXY */
+	)
 {
 	int dtable_count = getdtablecount();
 
@@ -1080,7 +1084,11 @@ pxy_listener_acceptcb_child(UNUSED struct evconnlistener *listener, evutil_socke
 		goto out;
 	}
 
-	if (check_fd_usage(conn->fd) == -1) {
+	if (check_fd_usage(
+#ifdef DEBUG_PROXY
+			conn->fd
+#endif /* DEBUG_PROXY */
+			) == -1) {
 		evutil_closesocket(fd);
 		pxy_conn_term(conn, 1);
 		goto out;
@@ -1145,7 +1153,7 @@ pxy_listener_acceptcb_child(UNUSED struct evconnlistener *listener, evutil_socke
 	// Do not return here, but continue and check term/enomem flags below
 out:
 	// @attention Do not use ctx->conn here, ctx may be uninitialized
-	// @attention Call pxy_conn_free() directly, not term functions here
+	// @attention Call pxy_conn_free() directly, not pxy_conn_term() here
 	// This is our last chance to close and free the conn
 	if (conn->term || conn->enomem) {
 		pxy_conn_free(conn, conn->term ? conn->term_requestor : 1);
@@ -1216,7 +1224,6 @@ pxy_setup_child_listener(pxy_conn_ctx_t *ctx)
 	// SSLPROXY_KEY_LEN + 1 + 1 + strlen(addr) + 1 + 1 + 5 + 1 + 1 + strlen(ctx->srchost_str) + 1 + 1 + strlen(ctx->srcport_str) + 1 + 1 + strlen(ctx->dsthost_str) + 1 + 1 + strlen(ctx->dstport_str) + 1 + 1
 	ctx->sslproxy_header_len = SSLPROXY_KEY_LEN + strlen(addr) + strlen(ctx->srchost_str) + strlen(ctx->srcport_str) + strlen(ctx->dsthost_str) + strlen(ctx->dstport_str) + 19;
 
-	// @todo Always check malloc retvals. Should we close the conn if malloc fails?
 	// +1 for NULL
 	ctx->sslproxy_header = malloc(ctx->sslproxy_header_len + 1);
 	if (!ctx->sslproxy_header) {
@@ -1979,7 +1986,11 @@ pxy_conn_setup(evutil_socket_t fd,
 	}
 #endif /* DEBUG_PROXY */
 
-	if (check_fd_usage(fd) == -1) {
+	if (check_fd_usage(
+#ifdef DEBUG_PROXY
+			fd
+#endif /* DEBUG_PROXY */
+			) == -1) {
 		evutil_closesocket(fd);
 		return;
 	}

@@ -234,8 +234,7 @@ leave:
  * they run out of events.
  */
 static void
-pxy_thrmgr_timer_cb(UNUSED evutil_socket_t fd, UNUSED short what,
-                    UNUSED void *arg)
+pxy_thrmgr_timer_cb(UNUSED evutil_socket_t fd, UNUSED short what, UNUSED void *arg)
 {
 	pxy_thr_ctx_t *ctx = arg;
 
@@ -243,6 +242,7 @@ pxy_thrmgr_timer_cb(UNUSED evutil_socket_t fd, UNUSED short what,
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_timer_cb: thr=%d, load=%lu, to=%u\n", ctx->thridx, ctx->load, ctx->timeout_count);
 #endif /* DEBUG_PROXY */
+
 	pxy_conn_ctx_t *expired = NULL;
 	pxy_thrmgr_get_thr_expired_conns(ctx, &expired);
 

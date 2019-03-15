@@ -350,7 +350,7 @@ int pxy_log_content_inbuf(pxy_conn_ctx_t *, struct evbuffer *, int) NONNULL(1);
 void pxy_log_connect_nonhttp(pxy_conn_ctx_t *) NONNULL(1);
 void pxy_log_dbg_evbuf_info(pxy_conn_ctx_t *, pxy_conn_desc_t *, pxy_conn_desc_t *) NONNULL(1,2,3);
 
-unsigned char *pxy_malloc_packet(size_t, pxy_conn_ctx_t *) MALLOC NONNULL(2);
+unsigned char *pxy_malloc_packet(size_t, pxy_conn_ctx_t *) MALLOC NONNULL(2) WUNRES;
 
 int pxy_set_dstaddr(pxy_conn_ctx_t *) NONNULL(1);
 

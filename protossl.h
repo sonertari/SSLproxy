@@ -41,7 +41,7 @@ SSL *protossl_dstssl_create(pxy_conn_ctx_t *) NONNULL(1);
 
 void protossl_free(pxy_conn_ctx_t *) NONNULL(1);
 void protossl_fd_readcb(evutil_socket_t, short, void *);
-int protossl_conn_connect(pxy_conn_ctx_t *) NONNULL(1);
+int protossl_conn_connect(pxy_conn_ctx_t *) NONNULL(1) WUNRES;
 void protossl_connect_child(pxy_conn_child_ctx_t *) NONNULL(1);
 
 int protossl_setup_src_ssl(pxy_conn_ctx_t *) NONNULL(1);
