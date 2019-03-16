@@ -2004,7 +2004,6 @@ pxy_conn_setup(evutil_socket_t fd,
 	}
 
 	ctx->af = peeraddr->sa_family;
-	ctx->thr->max_fd = MAX(ctx->thr->max_fd, ctx->fd);
 
 	/* determine original destination of connection */
 	if (spec->natlookup) {

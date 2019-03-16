@@ -555,6 +555,7 @@ pxy_thrmgr_attach(pxy_conn_ctx_t *ctx)
 	pthread_mutex_lock(&ctx->thr->mutex);
 	ctx->thr->load++;
 	ctx->thr->max_load = MAX(ctx->thr->max_load, ctx->thr->load);
+	ctx->thr->max_fd = MAX(ctx->thr->max_fd, ctx->fd);
 	// Defer adding the conn to the conn list of its thread until after a successful conn setup while returning from pxy_conn_connect()
 	// otherwise pxy_thrmgr_timer_cb() may try to access the conn ctx while it is being freed on failure (signal 6 crash)
 	pthread_mutex_unlock(&ctx->thr->mutex);
