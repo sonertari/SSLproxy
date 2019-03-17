@@ -477,6 +477,9 @@ pxy_thrmgr_add_conn(pxy_conn_ctx_t *ctx)
 #endif /* DEBUG_PROXY */
 	
 	pthread_mutex_lock(&ctx->thr->mutex);
+	// Always keep thr load and conns list in sync
+	ctx->thr->load++;
+	ctx->thr->max_load = MAX(ctx->thr->max_load, ctx->thr->load);
 	ctx->next = ctx->thr->conns;
 	ctx->thr->conns = ctx;
 	ctx->in_thr_conns = 1;
@@ -553,8 +556,6 @@ pxy_thrmgr_attach(pxy_conn_ctx_t *ctx)
 	ctx->thr = tmctx->thr[thridx];
 
 	pthread_mutex_lock(&ctx->thr->mutex);
-	ctx->thr->load++;
-	ctx->thr->max_load = MAX(ctx->thr->max_load, ctx->thr->load);
 	ctx->thr->max_fd = MAX(ctx->thr->max_fd, ctx->fd);
 	// Defer adding the conn to the conn list of its thread until after a successful conn setup while returning from pxy_conn_connect()
 	// otherwise pxy_thrmgr_timer_cb() may try to access the conn ctx while it is being freed on failure (signal 6 crash)
@@ -594,10 +595,11 @@ pxy_thrmgr_detach(pxy_conn_ctx_t *ctx)
 
 	assert(ctx->children == NULL);
 
-	ctx->thr->load--;
 	if (ctx->in_thr_conns) {
+		// We increment thr load in pxy_thrmgr_add_conn() only (for parent conns)
+		ctx->thr->load--;
 		pxy_thrmgr_remove_conn(ctx, &ctx->thr->conns);
-		// Shouldn't need to reset the added_to_thr_conns flag, because the conn ctx will be freed next, but just in case
+		// Shouldn't need to reset the in_thr_conns flag, because the conn ctx will be freed next, but just in case
 		ctx->in_thr_conns = 0;
 	}
 }
