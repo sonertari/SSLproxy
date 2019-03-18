@@ -485,32 +485,51 @@ pxy_thrmgr_add_conn(pxy_conn_ctx_t *ctx)
 	pthread_mutex_unlock(&ctx->thr->mutex);
 }
 
-static void 
-pxy_thrmgr_remove_conn(pxy_conn_ctx_t *node, pxy_conn_ctx_t **head)
+static void NONNULL(1)
+pxy_thrmgr_remove_conn(pxy_conn_ctx_t *ctx)
 {
-	assert(node != NULL);
-	assert(*head != NULL);
+	assert(ctx != NULL);
+	assert(ctx->thr->conns != NULL);
+	assert(ctx->children == NULL);
 
+	if (ctx->in_thr_conns) {
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_remove_conn: Removing conn, id=%llu, fd=%d, child_fd=%d\n", node->id, node->fd, node->child_fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_remove_conn: Removing conn, id=%llu, fd=%d\n", ctx->id, ctx->fd);
 #endif /* DEBUG_PROXY */
-	
-	// @attention We may get multiple conns with the same fd combinations, so fds cannot uniquely define a conn; hence the need for unique ids.
-    if (node->id == (*head)->id) {
-        *head = (*head)->next;
-        return;
-    }
 
-    pxy_conn_ctx_t *current = (*head)->next;
-    pxy_conn_ctx_t *previous = *head;
-    while (current != NULL && previous != NULL) {
-        if (node->id == current->id) {
-            previous->next = current->next;
-            return;
-        }
-        previous = current;
-        current = current->next;
-    }
+		// We increment thr load in pxy_thrmgr_add_conn() only (for parent conns)
+		ctx->thr->load--;
+		// Shouldn't need to reset the in_thr_conns flag, because the conn ctx will be freed next, but just in case
+		ctx->in_thr_conns = 0;
+
+		// @attention We may get multiple conns with the same fd combinations, so fds cannot uniquely define a conn; hence the need for unique ids.
+		if (ctx->id == ctx->thr->conns->id) {
+			ctx->thr->conns = ctx->thr->conns->next;
+			return;
+		} else {
+			pxy_conn_ctx_t *current = ctx->thr->conns->next;
+			pxy_conn_ctx_t *previous = ctx->thr->conns;
+			while (current != NULL && previous != NULL) {
+				if (ctx->id == current->id) {
+					previous->next = current->next;
+					return;
+				}
+				previous = current;
+				current = current->next;
+			}
+			// This should never happen
+			log_err_level_printf(LOG_CRIT, "Cannot find conn in thr conns\n");
+#ifdef DEBUG_PROXY
+			log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_thrmgr_remove_conn: Cannot find conn in thr conns, id=%llu, fd=%d\n", ctx->id, ctx->fd);
+#endif /* DEBUG_PROXY */
+			assert(0);
+		}
+	} else {
+		// This can happen if we are closing the conn after a fatal error before setting its event callback
+#ifdef DEBUG_PROXY
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_remove_conn: Conn not in thr conns, id=%llu, fd=%d\n", ctx->id, ctx->fd);
+#endif /* DEBUG_PROXY */
+	}
 }
 
 /*
@@ -592,15 +611,7 @@ pxy_thrmgr_detach(pxy_conn_ctx_t *ctx)
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_detach: ENTER\n");
 #endif /* DEBUG_PROXY */
 
-	assert(ctx->children == NULL);
-
-	if (ctx->in_thr_conns) {
-		// We increment thr load in pxy_thrmgr_add_conn() only (for parent conns)
-		ctx->thr->load--;
-		pxy_thrmgr_remove_conn(ctx, &ctx->thr->conns);
-		// Shouldn't need to reset the in_thr_conns flag, because the conn ctx will be freed next, but just in case
-		ctx->in_thr_conns = 0;
-	}
+	pxy_thrmgr_remove_conn(ctx);
 }
 
 void

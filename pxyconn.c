@@ -284,29 +284,34 @@ pxy_conn_ctx_free_child(pxy_conn_child_ctx_t *ctx)
 	free(ctx);
 }
 
-static void NONNULL(1,2)
-pxy_conn_remove_child(pxy_conn_child_ctx_t *child, pxy_conn_child_ctx_t **head)
+static void NONNULL(1)
+pxy_conn_remove_child(pxy_conn_child_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_remove_child: ENTER, child fd=%d, fd=%d\n", child->fd, child->conn->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_remove_child: ENTER, child fd=%d, fd=%d\n", ctx->fd, ctx->conn->fd);
 #endif /* DEBUG_PROXY */
 
-    if (child->fd == (*head)->fd) {
-        *head = (*head)->next;
-        return;
-    }
+	if (ctx->fd == ctx->conn->children->fd) {
+		ctx->conn->children = ctx->conn->children->next;
+		return;
+	}
 
-    pxy_conn_child_ctx_t *current = (*head)->next;
-    pxy_conn_child_ctx_t *previous = *head;
-    while (current != NULL && previous != NULL) {
-        if (child->fd == current->fd) {
-            previous->next = current->next;
-            return;
-        }
-        previous = current;
-        current = current->next;
-    }
-    return;
+	pxy_conn_child_ctx_t *current = ctx->conn->children->next;
+	pxy_conn_child_ctx_t *previous = ctx->conn->children;
+	while (current != NULL && previous != NULL) {
+		if (ctx->fd == current->fd) {
+			previous->next = current->next;
+			return;
+		}
+		previous = current;
+		current = current->next;
+	}
+	// This should never happen
+	log_err_level_printf(LOG_CRIT, "Cannot find child in conn children\n");
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_conn_remove_child: Cannot find child in conn children, child fd=%d, fd=%d\n", ctx->fd, ctx->conn->fd);
+#endif /* DEBUG_PROXY */
+	assert(0);
 }
 
 static void
@@ -328,7 +333,7 @@ pxy_conn_free_child(pxy_conn_child_ctx_t *ctx)
 		ctx->src.bev = NULL;
 	}
 
-	pxy_conn_remove_child(ctx, &ctx->conn->children);
+	pxy_conn_remove_child(ctx);
 	pxy_conn_ctx_free_child(ctx);
 }
 
@@ -1060,7 +1065,7 @@ out:
  */
 static void
 pxy_listener_acceptcb_child(UNUSED struct evconnlistener *listener, evutil_socket_t fd,
-                        UNUSED struct sockaddr *peeraddr, UNUSED int peeraddrlen, void *arg)
+							UNUSED struct sockaddr *peeraddr, UNUSED int peeraddrlen, void *arg)
 {
 	pxy_conn_ctx_t *conn = arg;
 
@@ -1815,7 +1820,7 @@ ether_str(struct sockaddr_dl *sdl)
 	if (sdl->sdl_alen) {
 		cp = (u_char *)LLADDR(sdl);
 		snprintf(hbuf, sizeof(hbuf), "%02x:%02x:%02x:%02x:%02x:%02x",
-		    cp[0], cp[1], cp[2], cp[3], cp[4], cp[5]);
+			cp[0], cp[1], cp[2], cp[3], cp[4], cp[5]);
 		return strdup(hbuf);
 	} else {
 		return NULL;
@@ -2031,12 +2036,12 @@ pxy_conn_setup(evutil_socket_t fd,
 	/* prepare logging part 1 and user auth */
 	if (opts->pcaplog || opts->user_auth
 #ifndef WITHOUT_MIRROR
-	    || opts->mirrorif
+		|| opts->mirrorif
 #endif /* !WITHOUT_MIRROR */
 #ifdef HAVE_LOCAL_PROCINFO
-	    || opts->lprocinfo
+		|| opts->lprocinfo
 #endif /* HAVE_LOCAL_PROCINFO */
-	    ) {
+		) {
 		ctx->srcaddrlen = peeraddrlen;
 		memcpy(&ctx->srcaddr, peeraddr, ctx->srcaddrlen);
 	}
