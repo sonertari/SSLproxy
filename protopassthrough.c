@@ -117,6 +117,9 @@ protopassthrough_conn_connect(pxy_conn_ctx_t *ctx)
 		return -1;
 	}
 
+	// Conn setup is successful, so add the conn to the conn list of its thread now
+	pxy_thrmgr_add_conn(ctx);
+
 	// @attention Sometimes dst write cb fires but not event cb, especially if this listener cb is not finished yet, so the conn stalls.
 	bufferevent_setcb(ctx->srvdst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
 	
@@ -127,7 +130,7 @@ protopassthrough_conn_connect(pxy_conn_ctx_t *ctx)
 		log_dbg_level_printf(LOG_DBG_MODE_FINE, "protopassthrough_conn_connect: bufferevent_socket_connect for srvdst failed, fd=%d\n", fd);
 #endif /* DEBUG_PROXY */
 
-		// @attention Do not try to term/close conns on the thrmgr thread after setting event callbacks and/or socket connect. Just return 0.
+		// @attention Do not try to term/close conns or do anything else with conn ctx on the thrmgr thread after setting event callbacks and/or socket connect. Just return 0.
 	}
 	return 0;
 }

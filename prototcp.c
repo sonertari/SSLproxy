@@ -166,6 +166,9 @@ prototcp_conn_connect(pxy_conn_ctx_t *ctx)
 		return -1;
 	}
 
+	// Conn setup is successful, so add the conn to the conn list of its thread now
+	pxy_thrmgr_add_conn(ctx);
+
 	// @attention Sometimes dst write cb fires but not event cb, especially if this listener cb is not finished yet, so the conn stalls.
 	// @todo Why does event cb not fire sometimes?
 	// @attention BEV_OPT_DEFER_CALLBACKS seems responsible for the issue with srvdst, libevent acts as if we call event connect() ourselves.
@@ -180,8 +183,10 @@ prototcp_conn_connect(pxy_conn_ctx_t *ctx)
 		log_dbg_level_printf(LOG_DBG_MODE_FINE, "prototcp_conn_connect: bufferevent_socket_connect for srvdst failed, fd=%d\n", fd);
 #endif /* DEBUG_PROXY */
 
-		// @attention Do not try to close the conn here on the thrmgr thread, otherwise both pxy_conn_connect() and eventcb try to free the conn using pxy_conn_free(),
-		// they are running on different threads, causing multithreading issues, e.g. signal 10. Just return 0.
+		// @attention Do not try to term/close conns or do anything else with conn ctx on the thrmgr thread after setting event callbacks and/or socket connect.
+		// Otherwise both pxy_conn_connect() and eventcb may try to free the conn using pxy_conn_free(), which are running on different threads.
+		// Also, pxy_thrmgr_timer_cb() may try to access conn ctx while printing thr conns.
+		// These all may cause multithreading issues, e.g. signal 10 crash. Just return 0.
 	}
 	return 0;
 }

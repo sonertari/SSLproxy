@@ -463,26 +463,25 @@ pxy_thrmgr_free(pxy_thrmgr_ctx_t *ctx)
 void 
 pxy_thrmgr_add_conn(pxy_conn_ctx_t *ctx)
 {
-	if (ctx->in_thr_conns) {
+	pthread_mutex_lock(&ctx->thr->mutex);
+	if (!ctx->in_thr_conns) {
+#ifdef DEBUG_PROXY
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_add_conn: Adding conn, id=%llu, fd=%d\n", ctx->id, ctx->fd);
+#endif /* DEBUG_PROXY */
+
+		// Always keep thr load and conns list in sync
+		ctx->thr->load++;
+		ctx->thr->max_load = MAX(ctx->thr->max_load, ctx->thr->load);
+		ctx->next = ctx->thr->conns;
+		ctx->thr->conns = ctx;
+		ctx->in_thr_conns = 1;
+	} else {
 		// Do not add conns twice
 		// While switching to passthrough mode, the conn must have already been added to its thread's conn list by the previous proto
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_add_conn: Will not add conn twice, id=%llu, fd=%d\n", ctx->id, ctx->fd);
 #endif /* DEBUG_PROXY */
-		return;
 	}
-
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_add_conn: Adding conn, id=%llu, fd=%d\n", ctx->id, ctx->fd);
-#endif /* DEBUG_PROXY */
-	
-	pthread_mutex_lock(&ctx->thr->mutex);
-	// Always keep thr load and conns list in sync
-	ctx->thr->load++;
-	ctx->thr->max_load = MAX(ctx->thr->max_load, ctx->thr->load);
-	ctx->next = ctx->thr->conns;
-	ctx->thr->conns = ctx;
-	ctx->in_thr_conns = 1;
 	pthread_mutex_unlock(&ctx->thr->mutex);
 }
 

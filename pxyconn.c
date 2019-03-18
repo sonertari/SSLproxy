@@ -1623,17 +1623,14 @@ pxy_conn_connect(pxy_conn_ctx_t *ctx)
 	}
 
 	if (ctx->protoctx->connectcb(ctx) == -1) {
-		// @attention Do not try to close conns on the thrmgr thread after setting event callbacks and/or socket connect.
+		// @attention Do not try to close conns or do anything else with conn ctx on the thrmgr thread after setting event callbacks and/or socket connect.
 		// The return value of -1 from connectcb indicates that there was a fatal error before event callbacks were set, so we can terminate the connection.
 		// Otherwise, it is up to the event callbacks to terminate the connection. This is necessary to avoid multithreading issues.
 		if (ctx->term || ctx->enomem) {
 			pxy_conn_free(ctx, ctx->term ? ctx->term_requestor : 1);
-			return;
 		}
 	}
-
-	// Conn setup is successful, so add the conn to the conn list of its thread now
-	pxy_thrmgr_add_conn(ctx);
+	// @attention Do not do anything with the conn ctx after this point on the thrmgr thread
 }
 
 /*
