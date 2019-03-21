@@ -189,8 +189,6 @@ pxy_conn_ctx_new(evutil_socket_t fd,
 
 	pxy_conn_ctx_t *ctx = malloc(sizeof(pxy_conn_ctx_t));
 	if (!ctx) {
-		log_err_level_printf(LOG_CRIT, "Error allocating memory\n");
-		evutil_closesocket(fd);
 		return NULL;
 	}
 	memset(ctx, 0, sizeof(pxy_conn_ctx_t));
@@ -209,8 +207,6 @@ pxy_conn_ctx_new(evutil_socket_t fd,
 
 	ctx->proto = pxy_setup_proto(ctx);
 	if (ctx->proto == PROTO_ERROR) {
-		log_err_level_printf(LOG_CRIT, "Error allocating memory\n");
-		evutil_closesocket(fd);
 		free(ctx);
 		return NULL;
 	}
@@ -252,8 +248,6 @@ pxy_conn_ctx_new_child(evutil_socket_t fd, pxy_conn_ctx_t *conn)
 
 	ctx->proto = pxy_setup_proto_child(ctx);
 	if (ctx->proto == PROTO_ERROR) {
-		log_err_level_printf(LOG_CRIT, "Error allocating memory\n");
-		evutil_closesocket(fd);
 		free(ctx);
 		return NULL;
 	}
@@ -323,14 +317,22 @@ pxy_conn_free_child(pxy_conn_child_ctx_t *ctx)
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_free_child: ENTER, child fd=%d, fd=%d\n", ctx->fd, ctx->conn->fd);
 #endif /* DEBUG_PROXY */
 
-	if (ctx->dst.bev) {
-		ctx->dst.free(ctx->dst.bev, ctx->conn);
-		ctx->dst.bev = NULL;
-	}
-
+	// We always assign NULL to bevs after freeing them
 	if (ctx->src.bev) {
 		ctx->src.free(ctx->src.bev, ctx->conn);
 		ctx->src.bev = NULL;
+	} else if (!ctx->src.closed) {
+#ifdef DEBUG_PROXY
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_conn_free_child: evutil_closesocket on NULL src->bev, fd=%d\n", ctx->fd);
+#endif /* DEBUG_PROXY */
+
+		// @attention early in the conn setup, src fd may be open, although src.bev is NULL
+		evutil_closesocket(ctx->fd);
+	}
+
+	if (ctx->dst.bev) {
+		ctx->dst.free(ctx->dst.bev, ctx->conn);
+		ctx->dst.bev = NULL;
 	}
 
 	pxy_conn_remove_child(ctx);
@@ -473,18 +475,17 @@ pxy_conn_free(pxy_conn_ctx_t *ctx, int by_requestor)
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_free: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
-	if (!ctx->src.closed) {
-		if (ctx->src.bev) {
-			ctx->src.free(ctx->src.bev, ctx);
-			ctx->src.bev = NULL;
-		} else {
+	// We always assign NULL to bevs after freeing them
+	if (ctx->src.bev) {
+		ctx->src.free(ctx->src.bev, ctx);
+		ctx->src.bev = NULL;
+	} else if (!ctx->src.closed) {
 #ifdef DEBUG_PROXY
-			log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_conn_free: evutil_closesocket on NULL src->bev, fd=%d\n", ctx->fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_conn_free: evutil_closesocket on NULL src->bev, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
-			// @todo src fd may be open, although src.bev is NULL, where do we close the src fd?
-			evutil_closesocket(ctx->fd);
-		}
+		// @attention early in the conn setup, src fd may be open, although src.bev is NULL
+		evutil_closesocket(ctx->fd);
 	}
 
 	if (ctx->srvdst.bev) {
@@ -1757,8 +1758,7 @@ redirect:
 
 memout:
 	log_err_level_printf(LOG_CRIT, "Aborting connection user identification!\n");
-	evutil_closesocket(ctx->fd);
-	pxy_conn_ctx_free(ctx, 1);
+	pxy_conn_term(ctx, 1);
 }
 #endif /* __OpenBSD__ || __linux__ */
 
