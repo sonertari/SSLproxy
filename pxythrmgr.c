@@ -542,7 +542,6 @@ pxy_thrmgr_add_conn(pxy_conn_ctx_t *ctx)
 
 		// Always keep thr load and conns list in sync
 		ctx->thr->load++;
-		ctx->thr->max_load = MAX(ctx->thr->max_load, ctx->thr->load);
 		ctx->next = ctx->thr->conns;
 		ctx->thr->conns = ctx;
 		ctx->in_thr_conns = 1;
@@ -642,14 +641,9 @@ pxy_thrmgr_attach(pxy_conn_ctx_t *ctx)
 		pthread_mutex_unlock(&tmctx->thr[idx]->mutex);
 	}
 
-	ctx->thr = tmctx->thr[thridx];
-
-	pthread_mutex_lock(&ctx->thr->mutex);
-	ctx->thr->max_fd = MAX(ctx->thr->max_fd, ctx->fd);
 	// Defer adding the conn to the conn list of its thread until after a successful conn setup while returning from pxy_conn_connect()
 	// otherwise pxy_thrmgr_timer_cb() may try to access the conn ctx while it is being freed on failure (signal 6 crash)
-	pthread_mutex_unlock(&ctx->thr->mutex);
-
+	ctx->thr = tmctx->thr[thridx];
 	ctx->evbase = ctx->thr->evbase;
 	ctx->dnsbase = ctx->thr->dnsbase;
 
@@ -667,7 +661,6 @@ pxy_thrmgr_attach_child(pxy_conn_ctx_t *ctx)
 
 	pthread_mutex_lock(&ctx->thr->mutex);
 	ctx->thr->load++;
-	ctx->thr->max_load = MAX(ctx->thr->max_load, ctx->thr->load);
 	pthread_mutex_unlock(&ctx->thr->mutex);
 }
 

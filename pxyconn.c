@@ -1107,6 +1107,7 @@ pxy_listener_acceptcb_child(UNUSED struct evconnlistener *listener, evutil_socke
 		pxy_conn_term(conn, 1);
 		goto out;
 	}
+	conn->thr->max_load = MAX(conn->thr->max_load, conn->thr->load);
 
 	// Prepend child ctx to conn ctx child list
 	// @attention If the last child is deleted, the children list may become null again
@@ -1522,6 +1523,9 @@ pxy_bev_eventcb_postexec_logging_and_stats(struct bufferevent *bev, short events
 		}
 
 		if (bev == ctx->srvdst.bev) {
+			ctx->thr->max_load = MAX(ctx->thr->max_load, ctx->thr->load);
+			ctx->thr->max_fd = MAX(ctx->thr->max_fd, ctx->fd);
+
 			// src and other fd stats are collected in acceptcb functions
 			ctx->srvdst_fd = bufferevent_getfd(ctx->srvdst.bev);
 			ctx->thr->max_fd = MAX(ctx->thr->max_fd, ctx->srvdst_fd);
