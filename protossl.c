@@ -953,8 +953,11 @@ protossl_fd_readcb(MAYBE_UNUSED evutil_socket_t fd, UNUSED short what, void *arg
 			goto out;
 		if (event_add(ctx->ev, NULL) == -1)
 			goto out;
+		pxy_thrmgr_add_pending_ssl_conn(ctx);
 		return;
 	}
+
+	pxy_thrmgr_remove_pending_ssl_conn(ctx);
 
 	// Child connections will use the sni info obtained by the parent conn
 	/* for SSL, peek ClientHello and parse SNI from it */

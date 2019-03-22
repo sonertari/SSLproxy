@@ -68,6 +68,8 @@ typedef struct pxy_thr_ctx {
 	pxy_conn_ctx_t *conns;
 	struct sqlite3_stmt *get_user;
 	pthread_mutex_t mutex;
+	pxy_conn_ctx_t *pending_ssl_conns;
+	long long unsigned int pending_ssl_conn_count;
 } pxy_thr_ctx_t;
 
 struct pxy_thrmgr_ctx {
@@ -81,14 +83,17 @@ pxy_thrmgr_ctx_t * pxy_thrmgr_new(opts_t *) MALLOC;
 int pxy_thrmgr_run(pxy_thrmgr_ctx_t *) NONNULL(1) WUNRES;
 void pxy_thrmgr_free(pxy_thrmgr_ctx_t *) NONNULL(1);
 
+void pxy_thrmgr_add_pending_ssl_conn(pxy_conn_ctx_t *) NONNULL(1);
+void pxy_thrmgr_remove_pending_ssl_conn(pxy_conn_ctx_t *) NONNULL(1);
+
 void pxy_thrmgr_add_conn(pxy_conn_ctx_t *) NONNULL(1);
 
 void pxy_thrmgr_attach(pxy_conn_ctx_t *) NONNULL(1);
 void pxy_thrmgr_attach_child(pxy_conn_ctx_t *) NONNULL(1);
+void pxy_thrmgr_detach_unlocked(pxy_conn_ctx_t *) NONNULL(1);
 void pxy_thrmgr_detach(pxy_conn_ctx_t *) NONNULL(1);
-void pxy_thrmgr_detach_locked(pxy_conn_ctx_t *) NONNULL(1);
+void pxy_thrmgr_detach_child_unlocked(pxy_conn_ctx_t *) NONNULL(1);
 void pxy_thrmgr_detach_child(pxy_conn_ctx_t *) NONNULL(1);
-void pxy_thrmgr_detach_child_locked(pxy_conn_ctx_t *) NONNULL(1);
 
 #endif /* !PXYTHRMGR_H */
 

@@ -66,6 +66,16 @@ pxy_thrmgr_get_thr_expired_conns(pxy_thr_ctx_t *tctx, pxy_conn_ctx_t **expired_c
 			ctx = ctx->next;
 		}
 
+		ctx = tctx->pending_ssl_conns;
+		while (ctx) {
+			time_t elapsed_time = now - ctx->atime;
+			if (elapsed_time > (time_t)tctx->thrmgr->opts->conn_idle_timeout) {
+				ctx->next_expired = *expired_conns;
+				*expired_conns = ctx;
+			}
+			ctx = ctx->sslctx->next_pending;
+		}
+
 		if (tctx->thrmgr->opts->statslog) {
 			ctx = *expired_conns;
 			while (ctx) {
@@ -186,9 +196,9 @@ pxy_thrmgr_print_thr_info(pxy_thr_ctx_t *tctx)
 		}
 	}
 
-	if (asprintf(&smsg, "STATS: thr=%d, mld=%zu, mfd=%d, mat=%lld, mct=%lld, iib=%llu, iob=%llu, eib=%llu, eob=%llu, swm=%zu, uwm=%zu, to=%zu, err=%zu, si=%u\n",
+	if (asprintf(&smsg, "STATS: thr=%d, mld=%zu, mfd=%d, mat=%lld, mct=%lld, iib=%llu, iob=%llu, eib=%llu, eob=%llu, swm=%zu, uwm=%zu, to=%zu, err=%zu, pc=%llu, si=%u\n",
 			tctx->thridx, tctx->max_load, tctx->max_fd, (long long)max_atime, (long long)max_ctime, tctx->intif_in_bytes, tctx->intif_out_bytes, tctx->extif_in_bytes, tctx->extif_out_bytes,
-			tctx->set_watermarks, tctx->unset_watermarks, tctx->timedout_conns, tctx->errors, tctx->stats_idx) < 0) {
+			tctx->set_watermarks, tctx->unset_watermarks, tctx->timedout_conns, tctx->errors, tctx->pending_ssl_conn_count, tctx->stats_idx) < 0) {
 		goto leave;
 	}
 
@@ -461,6 +471,67 @@ pxy_thrmgr_free(pxy_thrmgr_ctx_t *ctx)
 }
 
 void 
+pxy_thrmgr_add_pending_ssl_conn(pxy_conn_ctx_t *ctx)
+{
+	pthread_mutex_lock(&ctx->thr->mutex);
+	if (!ctx->sslctx->pending) {
+#ifdef DEBUG_PROXY
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_add_pending_ssl_conn: Adding conn, id=%llu, fd=%d\n", ctx->id, ctx->fd);
+#endif /* DEBUG_PROXY */
+
+		ctx->sslctx->pending = 1;
+		ctx->thr->pending_ssl_conn_count++;
+		ctx->sslctx->next_pending = ctx->thr->pending_ssl_conns;
+		ctx->thr->pending_ssl_conns = ctx;
+	}
+	pthread_mutex_unlock(&ctx->thr->mutex);
+}
+
+static void NONNULL(1)
+pxy_thrmgr_remove_pending_ssl_conn_unlocked(pxy_conn_ctx_t *ctx)
+{
+	if (ctx->sslctx && ctx->sslctx->pending) {
+#ifdef DEBUG_PROXY
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_remove_pending_ssl_conn_unlocked: Removing conn, id=%llu, fd=%d\n", ctx->id, ctx->fd);
+#endif /* DEBUG_PROXY */
+
+		ctx->sslctx->pending = 0;
+		ctx->thr->pending_ssl_conn_count--;
+
+		// @attention We may get multiple conns with the same fd combinations, so fds cannot uniquely define a conn; hence the need for unique ids.
+		if (ctx->id == ctx->thr->pending_ssl_conns->id) {
+			ctx->thr->pending_ssl_conns = ctx->thr->pending_ssl_conns->sslctx->next_pending;
+			return;
+		} else {
+			pxy_conn_ctx_t *current = ctx->thr->pending_ssl_conns->sslctx->next_pending;
+			pxy_conn_ctx_t *previous = ctx->thr->pending_ssl_conns;
+			while (current != NULL && previous != NULL) {
+				if (ctx->id == current->id) {
+					previous->sslctx->next_pending = current->sslctx->next_pending;
+					return;
+				}
+				previous = current;
+				current = current->sslctx->next_pending;
+			}
+			// This should never happen
+			log_err_level_printf(LOG_CRIT, "Cannot find conn in thrmgr pending_conns\n");
+#ifdef DEBUG_PROXY
+			log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_thrmgr_remove_pending_ssl_conn_unlocked: Cannot find conn in thrmgr pending_conns, id=%llu, fd=%d\n", ctx->id, ctx->fd);
+#endif /* DEBUG_PROXY */
+			assert(0);
+		}
+	}
+}
+
+void
+pxy_thrmgr_remove_pending_ssl_conn(pxy_conn_ctx_t *ctx)
+{
+	pthread_mutex_lock(&ctx->thr->mutex);
+	pxy_thrmgr_remove_pending_ssl_conn_unlocked(ctx);
+	pthread_mutex_unlock(&ctx->thr->mutex);
+}
+
+void 
 pxy_thrmgr_add_conn(pxy_conn_ctx_t *ctx)
 {
 	pthread_mutex_lock(&ctx->thr->mutex);
@@ -486,7 +557,7 @@ pxy_thrmgr_add_conn(pxy_conn_ctx_t *ctx)
 }
 
 static void NONNULL(1)
-pxy_thrmgr_remove_conn(pxy_conn_ctx_t *ctx)
+pxy_thrmgr_remove_conn_unlocked(pxy_conn_ctx_t *ctx)
 {
 	assert(ctx != NULL);
 	assert(ctx->thr->conns != NULL);
@@ -494,7 +565,7 @@ pxy_thrmgr_remove_conn(pxy_conn_ctx_t *ctx)
 
 	if (ctx->in_thr_conns) {
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_remove_conn: Removing conn, id=%llu, fd=%d\n", ctx->id, ctx->fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_remove_conn_unlocked: Removing conn, id=%llu, fd=%d\n", ctx->id, ctx->fd);
 #endif /* DEBUG_PROXY */
 
 		// We increment thr load in pxy_thrmgr_add_conn() only (for parent conns)
@@ -520,14 +591,14 @@ pxy_thrmgr_remove_conn(pxy_conn_ctx_t *ctx)
 			// This should never happen
 			log_err_level_printf(LOG_CRIT, "Cannot find conn in thr conns\n");
 #ifdef DEBUG_PROXY
-			log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_thrmgr_remove_conn: Cannot find conn in thr conns, id=%llu, fd=%d\n", ctx->id, ctx->fd);
+			log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_thrmgr_remove_conn_unlocked: Cannot find conn in thr conns, id=%llu, fd=%d\n", ctx->id, ctx->fd);
 #endif /* DEBUG_PROXY */
 			assert(0);
 		}
 	} else {
 		// This can happen if we are closing the conn after a fatal error before setting its event callback
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_remove_conn: Conn not in thr conns, id=%llu, fd=%d\n", ctx->id, ctx->fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_remove_conn_unlocked: Conn not in thr conns, id=%llu, fd=%d\n", ctx->id, ctx->fd);
 #endif /* DEBUG_PROXY */
 	}
 }
@@ -605,38 +676,39 @@ pxy_thrmgr_attach_child(pxy_conn_ctx_t *ctx)
  * This function cannot fail.
  */
 void
-pxy_thrmgr_detach(pxy_conn_ctx_t *ctx)
+pxy_thrmgr_detach_unlocked(pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_detach: ENTER\n");
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_detach_unlocked: ENTER\n");
 #endif /* DEBUG_PROXY */
 
-	pxy_thrmgr_remove_conn(ctx);
+	pxy_thrmgr_remove_pending_ssl_conn_unlocked(ctx);
+	pxy_thrmgr_remove_conn_unlocked(ctx);
 }
 
 void
-pxy_thrmgr_detach_locked(pxy_conn_ctx_t *ctx)
+pxy_thrmgr_detach(pxy_conn_ctx_t *ctx)
 {
 	pthread_mutex_lock(&ctx->thr->mutex);
-	pxy_thrmgr_detach(ctx);
+	pxy_thrmgr_detach_unlocked(ctx);
 	pthread_mutex_unlock(&ctx->thr->mutex);
 }
 
 void
-pxy_thrmgr_detach_child(pxy_conn_ctx_t *ctx)
+pxy_thrmgr_detach_child_unlocked(pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_detach_child: ENTER\n");
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_detach_child_unlocked: ENTER\n");
 #endif /* DEBUG_PROXY */
 
 	ctx->thr->load--;
 }
 
 void
-pxy_thrmgr_detach_child_locked(pxy_conn_ctx_t *ctx)
+pxy_thrmgr_detach_child(pxy_conn_ctx_t *ctx)
 {
 	pthread_mutex_lock(&ctx->thr->mutex);
-	pxy_thrmgr_detach_child(ctx);
+	pxy_thrmgr_detach_child_unlocked(ctx);
 	pthread_mutex_unlock(&ctx->thr->mutex);
 }
 

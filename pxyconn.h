@@ -132,6 +132,11 @@ struct ssl_ctx {
 
 	char *srvdst_ssl_version;
 	char *srvdst_ssl_cipher;
+
+	// Per-thread list of ssl conns waiting for the first read event
+	// Note that accepting a connection does not mean that a packet will be received 
+	pxy_conn_ctx_t *next_pending;
+	unsigned int pending : 1;                    /* 1 until first readcb */
 };
 
 struct proto_ctx {
