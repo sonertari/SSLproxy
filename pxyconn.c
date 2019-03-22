@@ -1682,6 +1682,7 @@ identify_user(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 	} else {
 		int rc;
 
+		// @todo Do we really need to reset the stmt, as we always reset while returning?
 		sqlite3_reset(ctx->thr->get_user);
 		sqlite3_bind_text(ctx->thr->get_user, 1, ctx->srchost_str, -1, NULL);
 		rc = sqlite3_step(ctx->thr->get_user);
@@ -1940,7 +1941,7 @@ pxy_userauth(pxy_conn_ctx_t *ctx)
 		ec = get_client_ether(ctx);
 #endif /* __linux__ */
 		if (ec == 1) {
-			identify_user(0, 0, ctx);
+			identify_user(-1, 0, ctx);
 			return 0;
 		} else if (ec == 0) {
 			log_err_level_printf(LOG_CRIT, "Cannot find ethernet address of client IP address\n");

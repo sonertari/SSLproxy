@@ -381,6 +381,7 @@ static int WUNRES
 privsep_server_update_atime(opts_t *opts, const userdbkeys_t *keys)
 {
 	time_t atime = time(NULL);
+	// @todo Do we really need to reset the stmt, as we always reset while returning?
 	sqlite3_reset(opts->update_user_atime);
 	sqlite3_bind_int(opts->update_user_atime, 1, atime);
 	sqlite3_bind_text(opts->update_user_atime, 2, keys->ip, -1, NULL);
@@ -589,13 +590,13 @@ privsep_server_handle_req(opts_t *opts, int srvsock)
 			if (sys_sendmsgfd(srvsock, ans, 1, -1) == -1) {
 				log_err_level_printf(LOG_CRIT, "Sending message failed: %s (%i"
 				               ")\n", strerror(errno), errno);
-				log_dbg_printf("Sending message failed: %s (%i"
-				               ")\n", strerror(errno), errno);
 				return -1;
 			}
 			return 0;
 		}
 
+		// @attention Do not typecast, but malloc and memcpy
+		//arg = *(userdbkeys_t**)(&req[1]);
 		if (!(arg = malloc(n))) {
 			ans[0] = PRIVSEP_ANS_SYS_ERR;
 			*((int*)&ans[1]) = errno;
@@ -623,7 +624,8 @@ privsep_server_handle_req(opts_t *opts, int srvsock)
 		} else {
 			free(arg);
 			ans[0] = PRIVSEP_ANS_SUCCESS;
-			if (sys_sendmsgfd(srvsock, ans, 1, 0) == -1) {
+			// @attention Pass -1 as arg 4, otherwise passing 0 opens an stdin (fd 0), causing fd leak
+			if (sys_sendmsgfd(srvsock, ans, 1, -1) == -1) {
 				log_err_level_printf(LOG_CRIT, "Sending message failed child 2: %s (%i"
 				               ")\n", strerror(errno), errno);
 				return -1;
@@ -1080,17 +1082,19 @@ privsep_client_update_atime(int clisock, const userdbkeys_t *keys)
 {
 	char ans[PRIVSEP_MAX_ANS_SIZE];
 	char req[1 + sizeof(userdbkeys_t)];
-	int rv = -1;
 	ssize_t n;
 
 	req[0] = PRIVSEP_REQ_UPDATE_ATIME;
+	// @attention Do not typecast, but memcpy
+	//*((const userdbkeys_t **)&req[1]) = keys;
 	memcpy(req + 1, keys, sizeof(req) - 1);
 
 	if (sys_sendmsgfd(clisock, req, sizeof(req), -1) == -1) {
 		return -1;
 	}
 
-	if ((n = sys_recvmsgfd(clisock, ans, sizeof(ans), &rv)) == -1) {
+	// @attention Pass NULL as arg 4, otherwise other privsep calls cannot get the fds they request
+	if ((n = sys_recvmsgfd(clisock, ans, sizeof(ans), NULL)) == -1) {
 		return -1;
 	}
 
@@ -1118,8 +1122,8 @@ privsep_client_update_atime(int clisock, const userdbkeys_t *keys)
 		errno = EINVAL;
 		return -1;
 	}
-
-	return rv;
+	// Does not return an fd
+	return 0;
 }
 
 /*
