@@ -133,8 +133,9 @@ struct ssl_ctx {
 	char *srvdst_ssl_version;
 	char *srvdst_ssl_cipher;
 
-	// Per-thread list of ssl conns waiting for the first read event
-	// Note that accepting a connection does not mean that a packet will be received 
+	// Per-thread list of ssl conns waiting for the first read event to complete ssl setup
+	// Note that accepting a connection does not mean that a packet will be received,
+	// so we should keep track of such conns, otherwise they may get lost causing memory and fd leak
 	pxy_conn_ctx_t *next_pending;
 	unsigned int pending : 1;                    /* 1 until first readcb */
 };
@@ -207,8 +208,9 @@ struct pxy_conn_ctx {
 	evutil_socket_t fd;
 	// End of common properties
 
+	// For protocol specific fields, never NULL
 	proto_ctx_t *protoctx;
-
+	// For ssl specific fields, NULL for non-ssl conns
 	ssl_ctx_t *sslctx;
 
 	/* log strings from socket */
@@ -226,7 +228,7 @@ struct pxy_conn_ctx {
 	unsigned int srvdst_connected : 1;    /* 0 until server is connected */
 	unsigned int dst_connected : 1;          /* 0 until dst is connected */
 	unsigned int term : 1;                     /* 0 until term requested */
-	unsigned int term_requestor : 1;
+	unsigned int term_requestor : 1;          /* 1 client, 0 server side */
 
 	struct pxy_conn_desc srvdst;
 
@@ -260,42 +262,45 @@ struct pxy_conn_ctx {
 	// Priv sep socket to obtain a socket for children
 	evutil_socket_t clisock;
 
-	// Fd of the listener event for the children
+	// fd of event listener for children, explicitly closed on error (not for stats only)
 	evutil_socket_t child_fd;
 	struct evconnlistener *child_evcl;
 
-	// SSL proxy specific info: ip:port address the children are listening on, orig client addr, and orig target addr
+	// SSLproxy specific info: ip:port addr child is listening on, orig client addr, and orig server addr
+	// SSLproxy header is never sent to the Internet, always removed by child conns
 	char *sslproxy_header;
 	size_t sslproxy_header_len;
-	int sent_sslproxy_header;
+	unsigned int sent_sslproxy_header : 1; /* 1 to prevent inserting SSLproxy header twice */
 
-	// Child list of the conn
+	// Number of child conns, active or closed, always goes up never down
+	unsigned int child_count;
+	// List of child conns
 	pxy_conn_child_ctx_t *children;
 
-	// Number of children, active or closed
-	unsigned int child_count;
-
+	// For statistics only
 	evutil_socket_t child_src_fd;
 	evutil_socket_t child_dst_fd;
 
 	// Conn create time
 	time_t ctime;
 
-	// Conn last access time, to determine expired conns
+	// Conn last access time, used to determine expired conns
 	// Updated on entry to callback functions, parent or child
 	time_t atime;
 	
-	// Per-thread conn list
+	// Per-thread conn list, used to determine idle and expired conns, and to close them
 	pxy_conn_ctx_t *next;
 
-	// Expired conns are link-listed using this pointer
+	// Expired conns are link-listed using this pointer, a temporary list used in conn thr timercb only
 	pxy_conn_ctx_t *next_expired;
 
 	// Number of times we try to acquire user db before giving up
 	unsigned int identify_user_count;
+	// User owner of conn
 	char *user;
+	// Ethernet address of client
 	char *ether;
-	// Idle time of user, each user conn resets this time to 0
+	// Idle time of user, reset to 0 by a new conn from user if idle time > timeout/2
 	unsigned int idletime;
 	// We send redirect/error msg to client if user auth or proto validation fails
 	unsigned int sent_userauth_msg : 1;     /* 1 until error msg is sent */
@@ -314,7 +319,8 @@ struct pxy_conn_child_ctx {
 	// @attention The order of these common vars should match with their order in parent
 	enum conn_type type;
 
-	pxy_conn_ctx_t *conn;                              /* parent context */
+	// Parent conn
+	pxy_conn_ctx_t *conn;
 	protocol_t proto;
 
 	/* per-connection state */
@@ -331,16 +337,14 @@ struct pxy_conn_child_ctx {
 	unsigned int connected : 1;       /* 0 until both ends are connected */
 	unsigned int term : 1;                     /* 0 until term requested */
 
-	// For max fd stats
-	evutil_socket_t src_fd;
+	// For statistics only
 	evutil_socket_t dst_fd;
 
-	int removed_sslproxy_header;
-
-	// Child index
-	unsigned int idx;
+	// Child conns remove the SSLproxy header inserted by parent
+	int removed_sslproxy_header;   /* 1 after SSLproxy header is removed */
 
 	// Children of the conn are link-listed using this pointer
+	// We identify child conns with their src fds, so the src fd of child is used as its id while removing it from this list
 	pxy_conn_child_ctx_t *next;
 };
 

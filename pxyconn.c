@@ -1109,23 +1109,20 @@ pxy_listener_acceptcb_child(UNUSED struct evconnlistener *listener, evutil_socke
 	}
 	conn->thr->max_load = MAX(conn->thr->max_load, conn->thr->load);
 
+	conn->child_count++;
 	// Prepend child ctx to conn ctx child list
 	// @attention If the last child is deleted, the children list may become null again
 	ctx->next = conn->children;
 	conn->children = ctx;
-
-	conn->child_count++;
-	ctx->idx = conn->child_count;
 
 	// @attention Do not enable src events here yet, they will be enabled after dst connects
 	if (prototcp_setup_src_child(ctx) == -1) {
 		goto out;
 	}
 
-	// src_fd is different from fd
-	ctx->src_fd = bufferevent_getfd(ctx->src.bev);
-	ctx->conn->child_src_fd = ctx->src_fd;
-	ctx->conn->thr->max_fd = MAX(ctx->conn->thr->max_fd, ctx->src_fd);
+	// @attention fd (ctx->fd) is different from child event listener fd (ctx->conn->child_fd)
+	ctx->conn->thr->max_fd = MAX(ctx->conn->thr->max_fd, ctx->fd);
+	ctx->conn->child_src_fd = ctx->fd;
 	
 	/* create server-side socket and eventbuffer */
 	// Children rely on the findings of parent

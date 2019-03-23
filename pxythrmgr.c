@@ -106,26 +106,26 @@ pxy_thrmgr_get_thr_expired_conns(pxy_thr_ctx_t *tctx, pxy_conn_ctx_t **expired_c
 }
 
 static evutil_socket_t
-pxy_thrmgr_print_child(pxy_conn_child_ctx_t *child_ctx, unsigned int parent_idx, evutil_socket_t max_fd)
+pxy_thrmgr_print_child(pxy_conn_child_ctx_t *ctx, unsigned int parent_idx, evutil_socket_t max_fd)
 {
-	assert(child_ctx != NULL);
+	assert(ctx != NULL);
 
 	// @attention No need to log child stats
 #ifdef DEBUG_PROXY
 	char *msg;
 	if (asprintf(&msg, "CHILD CONN: thr=%d, id=%d, pid=%u, src=%d, dst=%d, c=%d-%d\n", 
-			child_ctx->conn->thr->thridx, child_ctx->idx, parent_idx, child_ctx->src_fd, child_ctx->dst_fd, child_ctx->src.closed, child_ctx->dst.closed) < 0) {
+			ctx->conn->thr->thridx, ctx->conn->child_count, parent_idx, ctx->fd, ctx->dst_fd, ctx->src.closed, ctx->dst.closed) < 0) {
 		return max_fd;
 	}
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_print_child: %s", msg);
 	free(msg);
 #endif /* DEBUG_PROXY */
 
-	if (child_ctx->next) {
-		max_fd = pxy_thrmgr_print_child(child_ctx->next, parent_idx, max_fd);
+	if (ctx->next) {
+		max_fd = pxy_thrmgr_print_child(ctx->next, parent_idx, max_fd);
 	}
 
-	return MAX(max_fd, MAX(child_ctx->src_fd, child_ctx->dst_fd));
+	return MAX(max_fd, MAX(ctx->fd, ctx->dst_fd));
 }
 
 static void
@@ -540,11 +540,11 @@ pxy_thrmgr_add_conn(pxy_conn_ctx_t *ctx)
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_add_conn: Adding conn, id=%llu, fd=%d\n", ctx->id, ctx->fd);
 #endif /* DEBUG_PROXY */
 
+		ctx->in_thr_conns = 1;
 		// Always keep thr load and conns list in sync
 		ctx->thr->load++;
 		ctx->next = ctx->thr->conns;
 		ctx->thr->conns = ctx;
-		ctx->in_thr_conns = 1;
 	} else {
 		// Do not add conns twice
 		// While switching to passthrough mode, the conn must have already been added to its thread's conn list by the previous proto
@@ -567,10 +567,10 @@ pxy_thrmgr_remove_conn_unlocked(pxy_conn_ctx_t *ctx)
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_remove_conn_unlocked: Removing conn, id=%llu, fd=%d\n", ctx->id, ctx->fd);
 #endif /* DEBUG_PROXY */
 
-		// We increment thr load in pxy_thrmgr_add_conn() only (for parent conns)
-		ctx->thr->load--;
 		// Shouldn't need to reset the in_thr_conns flag, because the conn ctx will be freed next, but just in case
 		ctx->in_thr_conns = 0;
+		// We increment thr load in pxy_thrmgr_add_conn() only (for parent conns)
+		ctx->thr->load--;
 
 		// @attention We may get multiple conns with the same fd combinations, so fds cannot uniquely define a conn; hence the need for unique ids.
 		if (ctx->id == ctx->thr->conns->id) {
