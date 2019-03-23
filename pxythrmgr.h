@@ -53,7 +53,12 @@ typedef struct pxy_thr_ctx {
 	struct event_base *evbase;
 	struct evdns_base *dnsbase;
 	int running;
-	unsigned int timeout_count;
+
+	// Per-thread locking is necessary during connection setup and termination
+	// to prevent multithreading issues between thrmgr thread and conn handling threads
+	pthread_mutex_t mutex;
+
+	// Statistics
 	evutil_socket_t max_fd;
 	size_t max_load;
 	size_t timedout_conns;
@@ -64,10 +69,19 @@ typedef struct pxy_thr_ctx {
 	long long unsigned int intif_out_bytes;
 	long long unsigned int extif_in_bytes;
 	long long unsigned int extif_out_bytes;
+	// Each stats has an id, incremented on each stats print
 	unsigned short stats_id;
+	// Used to print statistics, compared against stats_period
+	unsigned int timeout_count;
+
+	// List of active connections on the thread
 	pxy_conn_ctx_t *conns;
+
+	// Per-thread sqlite stmt is necessary to prevent multithreading issues between threads
 	struct sqlite3_stmt *get_user;
-	pthread_mutex_t mutex;
+
+	// SSL conns wait for the first readcb to complete connection setup
+	// We keep track of conns at that stage using this list, to close them if they time out
 	pxy_conn_ctx_t *pending_ssl_conns;
 	long long unsigned int pending_ssl_conn_count;
 } pxy_thr_ctx_t;
@@ -76,6 +90,8 @@ struct pxy_thrmgr_ctx {
 	int num_thr;
 	opts_t *opts;
 	pxy_thr_ctx_t **thr;
+	// Provides unique conn id, always goes up, never down
+	// There is no risk of collision if/when it rolls back to 0
 	long long unsigned int conn_count;
 };
 

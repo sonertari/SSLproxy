@@ -275,7 +275,7 @@ pxy_thrmgr_timer_cb(UNUSED evutil_socket_t fd, UNUSED short what, UNUSED void *a
 	// @attention Print thread info only if stats logging is enabled, if disabled debug logs are not printed either
 	if (ctx->thrmgr->opts->statslog) {
 		ctx->timeout_count++;
-		if (ctx->timeout_count * ctx->thrmgr->opts->expired_conn_check_period >= ctx->thrmgr->opts->stats_period * ctx->thrmgr->opts->expired_conn_check_period) {
+		if (ctx->timeout_count >= ctx->thrmgr->opts->stats_period) {
 			ctx->timeout_count = 0;
 			pxy_thrmgr_print_thr_info(ctx);
 		}
