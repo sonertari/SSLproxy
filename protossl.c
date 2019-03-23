@@ -951,11 +951,26 @@ protossl_fd_readcb(MAYBE_UNUSED evutil_socket_t fd, UNUSED short what, void *arg
 		ctx->ev = event_new(ctx->evbase, ctx->fd, EV_READ, ctx->protoctx->fd_readcb, ctx);
 		if (!ctx->ev)
 			goto out;
-		if (event_add(ctx->ev, NULL) == -1)
-			goto out;
+
+		// @attention Add the conn to pending ssl conns list before adding (activating) the event
+		// Because the event may (and does) fire before this thrmgr thread adds the conn to pending ssl conns list,
+		// and since the pending flag is not set yet, the conn remains in the pending list
 		pxy_thrmgr_add_pending_ssl_conn(ctx);
+
+		if (event_add(ctx->ev, NULL) == -1) {
+#ifdef DEBUG_PROXY
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protossl_fd_readcb: event_add failed, fd=%d\n", ctx->fd);
+#endif /* DEBUG_PROXY */
+
+			// @attention Ignore event_add() failure and do not try to close the conn after adding it to pending ssl conns list,
+			// because thr timercb may try to access the ctx causing multithreading issues (signal 6 crash)
+			// It is ok if event_add() fails, hence readcb never fires, because we can expire and close the conn as it is in the pending list now
+			//goto out;
+		}
+		// @attention This is the thrmgr thread, do not do anything else with the conn after adding the event, just return
 		return;
 	}
+	// From this point on is the connection handling thread (not the thrmgr thread)
 
 	pxy_thrmgr_remove_pending_ssl_conn(ctx);
 

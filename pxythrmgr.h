@@ -64,7 +64,7 @@ typedef struct pxy_thr_ctx {
 	long long unsigned int intif_out_bytes;
 	long long unsigned int extif_in_bytes;
 	long long unsigned int extif_out_bytes;
-	unsigned short stats_idx;
+	unsigned short stats_id;
 	pxy_conn_ctx_t *conns;
 	struct sqlite3_stmt *get_user;
 	pthread_mutex_t mutex;
