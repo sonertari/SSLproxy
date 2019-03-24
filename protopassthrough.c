@@ -67,6 +67,11 @@ protopassthrough_log_connect_src(pxy_conn_ctx_t *ctx)
 	protopassthrough_log_dbg_connect_type(ctx);
 }
 
+/*
+ * We cannot redirect failed ssl connections to login page while switching 
+ * to passthrough mode, because redirect message should be sent over ssl,
+ * but it has failed (that's why we are engaging the passthrough mode).
+ */
 void
 protopassthrough_engage(pxy_conn_ctx_t *ctx)
 {
@@ -101,7 +106,7 @@ protopassthrough_engage(pxy_conn_ctx_t *ctx)
 	}
 
 	ctx->proto = protopassthrough_setup(ctx);
-	pxy_fd_readcb(ctx->fd, 0, ctx);
+	ctx->protoctx->fd_readcb(ctx->fd, 0, ctx);
 }
 
 static int NONNULL(1) WUNRES

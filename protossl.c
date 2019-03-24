@@ -902,6 +902,8 @@ protossl_free(pxy_conn_ctx_t *ctx)
 		free(ctx->sslctx->srvdst_ssl_cipher);
 	}
 	free(ctx->sslctx);
+	// It is necessary to NULL the sslctx to prevent passthrough mode trying to access it (signal 11 crash)
+	ctx->sslctx = NULL;
 }
 
 #ifndef OPENSSL_NO_TLSEXT
@@ -931,6 +933,12 @@ protossl_sni_resolve_cb(int errcode, struct evutil_addrinfo *ai, void *arg)
 }
 #endif /* !OPENSSL_NO_TLSEXT */
 
+/*
+ * The src fd is readable.  This is used to sneak-preview the SNI on SSL
+ * connections.  If ctx->ev is NULL, it was called manually for a non-SSL
+ * connection.  If ctx->passthrough is set, it was called a second time
+ * after the first ssl callout failed because of client cert auth.
+ */
 #ifndef OPENSSL_NO_TLSEXT
 #define MAYBE_UNUSED 
 #else /* OPENSSL_NO_TLSEXT */

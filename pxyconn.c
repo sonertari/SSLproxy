@@ -1640,25 +1640,6 @@ pxy_conn_connect(pxy_conn_ctx_t *ctx)
 	// @attention Do not do anything with the conn ctx after this point on the thrmgr thread
 }
 
-/*
- * The src fd is readable.  This is used to sneak-preview the SNI on SSL
- * connections.  If ctx->ev is NULL, it was called manually for a non-SSL
- * connection.  If ctx->passthrough is set, it was called a second time
- * after the first ssl callout failed because of client cert auth.
- */
-void
-pxy_fd_readcb(evutil_socket_t fd, UNUSED short what, void *arg)
-{
-	pxy_conn_ctx_t *ctx = arg;
-
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_fd_readcb: ENTER, fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
-
-	ctx->atime = time(NULL);
-	ctx->protoctx->fd_readcb(fd, what, arg);
-}
-
 #if defined(__OpenBSD__) || defined(__linux__)
 static void
 identify_user(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
