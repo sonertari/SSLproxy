@@ -67,13 +67,13 @@ protoautossl_peek_and_upgrade(pxy_conn_ctx_t *ctx)
 	struct evbuffer_iovec vec_out[1];
 	const unsigned char *chello;
 
-	if (OPTS_DEBUG(ctx->opts)) {
-		log_dbg_printf("Checking for a client hello\n");
-	}
-
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protoautossl_peek_and_upgrade: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
+
+	if (OPTS_DEBUG(ctx->opts)) {
+		log_dbg_printf("Checking for a client hello\n");
+	}
 
 	/* peek the buffer */
 	inbuf = bufferevent_get_input(ctx->src.bev);
@@ -265,9 +265,15 @@ protoautossl_bev_readcb_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 
 	protoautossl_ctx_t *autossl_ctx = ctx->protoctx->arg;
 
-	if (autossl_ctx->clienthello_search) {
-		if (protoautossl_peek_and_upgrade(ctx)) {
+	// Make sure src.bev exists
+	if (ctx->src.bev) {
+		if (prototcp_try_send_userauth_msg(ctx->src.bev, ctx)) {
 			return;
+		}
+		if (autossl_ctx->clienthello_search) {
+			if (protoautossl_peek_and_upgrade(ctx)) {
+				return;
+			}
 		}
 	}
 
