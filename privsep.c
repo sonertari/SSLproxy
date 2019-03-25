@@ -390,11 +390,12 @@ privsep_server_update_atime(opts_t *opts, const userdbkeys_t *keys)
 
 	int rc = sqlite3_step(opts->update_user_atime);
 
-	// @todo Should we retry in case we cannot acquire db file or database: SQLITE_BUSY or SQLITE_LOCKED respectively?
+	// Do not retry in case we cannot acquire db file or database: SQLITE_BUSY or SQLITE_LOCKED respectively
+	// No need to waste resources, atime update is not so critical
 	if (rc == SQLITE_DONE) {
 		log_dbg_printf("privsep_server_update_atime: Updated atime of user %s=%lld\n", keys->user, (long long)atime);
 	} else {
-		log_err_printf("privsep_server_update_atime: Error updating user atime: %s\n", sqlite3_errmsg(opts->userdb));
+		log_err_printf("Error updating user atime: %s\n", sqlite3_errmsg(opts->userdb));
 	}
 	sqlite3_reset(opts->update_user_atime);
 	return 0;
@@ -563,7 +564,7 @@ privsep_server_handle_req(opts_t *opts, int srvsock)
 			*((int*)&ans[1]) = errno;
 			if (sys_sendmsgfd(srvsock, ans, 1 + sizeof(int),
 			                  -1) == -1) {
-				log_err_level_printf(LOG_CRIT, "Sending message failed child: %s (%i"
+				log_err_level_printf(LOG_CRIT, "Sending message failed: %s (%i"
 				               ")\n", strerror(errno), errno);
 				return -1;
 			}
@@ -572,7 +573,7 @@ privsep_server_handle_req(opts_t *opts, int srvsock)
 			ans[0] = PRIVSEP_ANS_SUCCESS;
 			if (sys_sendmsgfd(srvsock, ans, 1, s) == -1) {
 				evutil_closesocket(s);
-				log_err_level_printf(LOG_CRIT, "Sending message failed child: %s (%i"
+				log_err_level_printf(LOG_CRIT, "Sending message failed: %s (%i"
 				               ")\n", strerror(errno), errno);
 				return -1;
 			}
@@ -600,16 +601,16 @@ privsep_server_handle_req(opts_t *opts, int srvsock)
 			*((int*)&ans[1]) = errno;
 			if (sys_sendmsgfd(srvsock, ans, 1 + sizeof(int),
 			                  -1) == -1) {
-				log_err_level_printf(LOG_CRIT, "Sending message failed child 1: %s (%i"
+				log_err_level_printf(LOG_CRIT, "Sending message failed: %s (%i"
 				               ")\n", strerror(errno), errno);
 				return -1;
 			}
 			return 0;
 		} else {
 			ans[0] = PRIVSEP_ANS_SUCCESS;
-			// @attention Pass -1 as arg 4, otherwise passing 0 opens an stdin (fd 0), causing fd leak
+			// @attention Pass -1 as the 4th param, otherwise passing 0 opens an stdin (fd 0), causing fd leak
 			if (sys_sendmsgfd(srvsock, ans, 1, -1) == -1) {
-				log_err_level_printf(LOG_CRIT, "Sending message failed child 2: %s (%i"
+				log_err_level_printf(LOG_CRIT, "Sending message failed: %s (%i"
 				               ")\n", strerror(errno), errno);
 				return -1;
 			}
@@ -1076,7 +1077,7 @@ privsep_client_update_atime(int clisock, const userdbkeys_t *keys)
 		return -1;
 	}
 
-	// @attention Pass NULL as arg 4, otherwise other privsep calls cannot get the fds they request
+	// @attention Pass NULL as the 4th param, otherwise other privsep calls cannot get the fds they request
 	if ((n = sys_recvmsgfd(clisock, ans, sizeof(ans), NULL)) == -1) {
 		return -1;
 	}

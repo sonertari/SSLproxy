@@ -1020,9 +1020,9 @@ getdtablecount()
  * @attention We cannot guess the number of children in a connection at conn setup time. So, FD_RESERVE is just a ball park figure.
  * But what if a connection passes the check below, but eventually tries to create more children than FD_RESERVE allows for? This will crash us the same.
  * Beware, this applies to all current conns, not just the last connection setup.
- * For example, 20x conns pass the check below before creating any children, at which point we reach at the last FD_RESERVE fds,
+ * For example, 20x conns pass the check below before creating any children, at which point we reach the last FD_RESERVE fds,
  * then they all start creating children, which crashes us again.
- * So, no matter how large an FD_RESERVE we choose, there will always be a risk of running out of fds, if we check the number of fds here only.
+ * So, no matter how large an FD_RESERVE we choose, there will always be a risk of running out of fds, if we check the number of fds during parent conn setup only.
  * If we are left with less than FD_RESERVE fds, we should not create more children than FD_RESERVE allows for either.
  * Therefore, we check if we are out of fds in proxy_listener_acceptcb_child() and close the conn there too.
  * @attention These checks are expected to slow us further down, but it is critical to avoid a crash in case we run out of fds.
