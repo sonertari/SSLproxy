@@ -391,25 +391,22 @@ pxy_conn_ctx_free(pxy_conn_ctx_t *ctx, int by_requestor)
 		// Update userdb atime if idle time is more than 50% of user timeout, which is expected to reduce update frequency
 		unsigned int idletime = ctx->idletime + (time(NULL) - ctx->ctime);
 		if (idletime > (ctx->opts->user_timeout / 2)) {
-			struct userdbkeys *keys = malloc(sizeof(userdbkeys_t));
-			if (keys) {
-				// Zero out for NULL termination
-				memset(keys, 0, sizeof(userdbkeys_t));
-				// Leave room for NULL to make sure the strings are always NULL terminated
-				strncpy(keys->ip, ctx->srchost_str, sizeof(keys->ip) - 1);
-				strncpy(keys->user, ctx->user, sizeof(keys->user) - 1);
-				strncpy(keys->ether, ctx->ether, sizeof(keys->ether) - 1);
+			userdbkeys_t keys;
+			// Zero out for NULL termination
+			memset(&keys, 0, sizeof(userdbkeys_t));
+			// Leave room for NULL to make sure the strings are always NULL terminated
+			strncpy(keys.ip, ctx->srchost_str, sizeof(keys.ip) - 1);
+			strncpy(keys.user, ctx->user, sizeof(keys.user) - 1);
+			strncpy(keys.ether, ctx->ether, sizeof(keys.ether) - 1);
 
-				if (privsep_client_update_atime(ctx->clisock, keys) == -1) {
+			if (privsep_client_update_atime(ctx->clisock, &keys) == -1) {
 #ifdef DEBUG_PROXY
-					log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_free: Error updating user atime: %s, ctx->fd=%d\n", sqlite3_errmsg(ctx->opts->userdb), ctx->fd);
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_free: Error updating user atime: %s, ctx->fd=%d\n", sqlite3_errmsg(ctx->opts->userdb), ctx->fd);
 #endif /* DEBUG_PROXY */
-				} else {
+			} else {
 #ifdef DEBUG_PROXY
-					log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_free: Successfully updated user atime, ctx->fd=%d\n", ctx->fd);
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_free: Successfully updated user atime, ctx->fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
-				}
-				free(keys);
 			}
 		} else {
 #ifdef DEBUG_PROXY

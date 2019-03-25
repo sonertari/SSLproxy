@@ -583,7 +583,7 @@ privsep_server_handle_req(opts_t *opts, int srvsock)
 		break;
 	}
 	case PRIVSEP_REQ_UPDATE_ATIME: {
-		userdbkeys_t *arg;
+		userdbkeys_t arg;
 
 		if (n != sizeof(char) + sizeof(userdbkeys_t)) {
 			ans[0] = PRIVSEP_ANS_INVALID;
@@ -594,24 +594,8 @@ privsep_server_handle_req(opts_t *opts, int srvsock)
 			}
 			return 0;
 		}
-
-		// @attention Do not typecast, but malloc and memcpy
-		//arg = *(userdbkeys_t**)(&req[1]);
-		if (!(arg = malloc(n))) {
-			ans[0] = PRIVSEP_ANS_SYS_ERR;
-			*((int*)&ans[1]) = errno;
-			if (sys_sendmsgfd(srvsock, ans, 1 + sizeof(int),
-			                  -1) == -1) {
-				log_err_level_printf(LOG_CRIT, "Sending message failed: %s (%i"
-				               ")\n", strerror(errno), errno);
-				return -1;
-			}
-			return 0;
-		}
-		memcpy(arg, req + 1, n - 1);
-
-		if (privsep_server_update_atime(opts, arg) == -1) {
-			free(arg);
+		arg = *(userdbkeys_t*)(&req[1]);
+		if (privsep_server_update_atime(opts, &arg) == -1) {
 			ans[0] = PRIVSEP_ANS_SYS_ERR;
 			*((int*)&ans[1]) = errno;
 			if (sys_sendmsgfd(srvsock, ans, 1 + sizeof(int),
@@ -622,7 +606,6 @@ privsep_server_handle_req(opts_t *opts, int srvsock)
 			}
 			return 0;
 		} else {
-			free(arg);
 			ans[0] = PRIVSEP_ANS_SUCCESS;
 			// @attention Pass -1 as arg 4, otherwise passing 0 opens an stdin (fd 0), causing fd leak
 			if (sys_sendmsgfd(srvsock, ans, 1, -1) == -1) {
