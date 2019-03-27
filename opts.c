@@ -35,6 +35,7 @@
 #include <string.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/resource.h>
 
 #ifndef OPENSSL_NO_DH
 #include <openssl/dh.h>
@@ -1506,6 +1507,32 @@ opts_unset_validate_proto(opts_t *opts)
 	opts->validate_proto = 0;
 }
 
+static void
+opts_set_open_files_limit(const char *value, int line_num)
+{
+	unsigned int i = atoi(value);
+	if (i >= 50 && i <= 10000) {
+		struct rlimit rl;
+		rl.rlim_cur = i;
+		rl.rlim_max = i;
+		if (setrlimit(RLIMIT_NOFILE, &rl) == -1) {
+			fprintf(stderr, "Failed setting OpenFilesLimit\n");
+			if (errno) {
+				fprintf(stderr, "%s\n", strerror(errno));
+			} else {
+				ERR_print_errors_fp(stderr);
+			}
+			exit(EXIT_FAILURE);
+		}
+	} else {
+		fprintf(stderr, "Invalid OpenFilesLimit %s at line %d, use 50-10000\n", value, line_num);
+		exit(EXIT_FAILURE);
+	}
+#ifdef DEBUG_OPTS
+	log_dbg_printf("OpenFilesLimit: %u\n", i);
+#endif /* DEBUG_OPTS */
+}
+
 static int
 check_value_yesno(const char *value, const char *name, int line_num)
 {
@@ -1831,6 +1858,8 @@ set_option(opts_t *opts, const char *argv0,
 #ifdef DEBUG_OPTS
 		log_dbg_printf("RemoveHTTPReferer: %u\n", opts->remove_http_referer);
 #endif /* DEBUG_OPTS */
+	} else if (!strncasecmp(name, "OpenFilesLimit", 15)) {
+		opts_set_open_files_limit(value, line_num);
 	} else {
 		fprintf(stderr, "Error in conf: Unknown option "
 		                "'%s' at line %d\n", name, line_num);
