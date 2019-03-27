@@ -364,13 +364,16 @@ protohttp_filter_request_header_line(const char *line, pxy_conn_ctx_t *ctx, prot
 		           !strncasecmp(line, "Keep-Alive:", 11)) {
 			http_ctx->seen_keyword_count++;
 			return NULL;
-		} else if ((ctx->type == CONN_TYPE_CHILD) && (!strncasecmp(line, SSLPROXY_KEY, SSLPROXY_KEY_LEN) ||
+		} else if ((ctx->type == CONN_TYPE_CHILD) && (
 				   // @attention flickr keeps redirecting to https with 301 unless we remove the Via line of squid
 				   // Apparently flickr assumes the existence of Via header field or squid keyword a sign of plain http, even if we are using https
 		           !strncasecmp(line, "Via:", 4) ||
 				   // Also do not send the loopback address to the Internet
 		           !strncasecmp(line, "X-Forwarded-For:", 16))) {
 			http_ctx->seen_keyword_count++;
+			return NULL;
+		} else if (!strncasecmp(line, SSLPROXY_KEY, SSLPROXY_KEY_LEN)) {
+			// Remove any SSLproxy line, parent or child
 			return NULL;
 		} else if (line[0] == '\0') {
 			http_ctx->seen_req_header = 1;
