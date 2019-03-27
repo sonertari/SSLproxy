@@ -721,7 +721,7 @@ main(int argc, char *argv[])
 
 	/* generate leaf key */
 	if (opts_has_ssl_spec(opts) && opts->cakey && !opts->key) {
-		opts->key = ssl_key_genrsa(DFLT_LEAFKEY_RSABITS);
+		opts->key = ssl_key_genrsa(opts->leafkey_rsabits);
 		if (!opts->key) {
 			fprintf(stderr, "%s: error generating RSA key:\n",
 			                argv0);

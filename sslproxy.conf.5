@@ -120,6 +120,11 @@ Default: none
 Use the given OpenSSL cipher suite spec. Equivalent to -s command line option.
 .br 
 Default: ALL:-aNULL
+.TP
+\fBLeafKeyRSABits NUMBER\fR
+Leaf key RSA keysize in bits, use 1024|2048|3072|4096.
+.br 
+Default: 1024
 .TP 
 \fBOpenSSLEngine STRING\fR
 The OpenSSL engine to activate, either the ID or the full path to the shared

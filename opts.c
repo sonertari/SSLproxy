@@ -30,6 +30,7 @@
 
 #include "sys.h"
 #include "log.h"
+#include "defaults.h"
 
 #include <string.h>
 #include <sys/types.h>
@@ -63,6 +64,7 @@ opts_new(void)
 	opts->sslcomp = 1;
 	opts->chain = sk_X509_new_null();
 	opts->sslmethod = SSLv23_method;
+	opts->leafkey_rsabits = DFLT_LEAFKEY_RSABITS;
 	opts->conn_idle_timeout = 120;
 	opts->expired_conn_check_period = 10;
 	opts->ssl_shutdown_retry_delay = 100;
@@ -1584,6 +1586,17 @@ set_option(opts_t *opts, const char *argv0,
 		log_dbg_printf("SSLCompression: %u\n", opts->sslcomp);
 #endif /* DEBUG_OPTS */
 #endif /* SSL_OP_NO_COMPRESSION */
+	} else if (!strncasecmp(name, "LeafKeyRSABits", 15)) {
+		unsigned int i = atoi(value);
+		if (i == 1024 || i == 2048 || i == 3072 || i == 4096) {
+			opts->leafkey_rsabits = i;
+		} else {
+			fprintf(stderr, "Invalid LeafKeyRSABits %s at line %d, use 1024|2048|3072|4096\n", value, line_num);
+			goto leave;
+		}
+#ifdef DEBUG_OPTS
+		log_dbg_printf("LeafKeyRSABits: %u\n", opts->leafkey_rsabits);
+#endif /* DEBUG_OPTS */
 	} else if (!strncmp(name, "ForceSSLProto", 14)) {
 		opts_force_proto(opts, argv0, value);
 	} else if (!strncmp(name, "DisableSSLProto", 16)) {

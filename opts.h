@@ -131,6 +131,7 @@ typedef struct opts {
 #ifndef OPENSSL_NO_ECDH
 	char *ecdhcurve;
 #endif /* !OPENSSL_NO_ECDH */
+	int leafkey_rsabits;
 	proxyspec_t *spec;
 	char *crlurl;
 	unsigned int conn_idle_timeout;
