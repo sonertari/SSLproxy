@@ -151,6 +151,12 @@ terminated. Since this atime update is run using a privsep command, it is
 expensive. So, to reduce the frequency of such updates, it is deferred until 
 the user idle time is more than half of the timeout period.
 
+If the UserAuth option is enabled, the user owner of the connection is 
+appended at the end of the SSLproxy line, so that the listening program can 
+parse and use this information in its logic and/or logging:
+
+	SSLproxy: [127.0.0.1]:34649,[192.168.3.24]:47286,[192.168.111.130]:443,s,soner
+
 If enabled, the ValidateProto option validates protocols in proxy 
 specifications. If a connection cannot pass protocol validation, then it is 
 terminated. This feature currently supports HTTP, POP3, and SMTP protocols.
