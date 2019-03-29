@@ -281,6 +281,9 @@ pxy_conn_ctx_free_child(pxy_conn_child_ctx_t *ctx)
 static void NONNULL(1)
 pxy_conn_remove_child(pxy_conn_child_ctx_t *ctx)
 {
+	assert(ctx->conn != NULL);
+	assert(ctx->conn->children != NULL);
+
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_remove_child: ENTER, child fd=%d, fd=%d\n", ctx->fd, ctx->conn->fd);
 #endif /* DEBUG_PROXY */

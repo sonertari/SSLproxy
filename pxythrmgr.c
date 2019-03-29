@@ -487,6 +487,9 @@ pxy_thrmgr_remove_pending_ssl_conn_unlocked(pxy_conn_ctx_t *ctx)
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_remove_pending_ssl_conn_unlocked: Removing conn, id=%llu, fd=%d\n", ctx->id, ctx->fd);
 #endif /* DEBUG_PROXY */
 
+		// Thr pending_ssl_conns list cannot be empty, if the sslctx->pending flag of a conn is set
+		assert(ctx->thr->pending_ssl_conns != NULL);
+
 		ctx->sslctx->pending = 0;
 		ctx->thr->pending_ssl_conn_count--;
 
@@ -551,13 +554,15 @@ static void NONNULL(1)
 pxy_thrmgr_remove_conn_unlocked(pxy_conn_ctx_t *ctx)
 {
 	assert(ctx != NULL);
-	assert(ctx->thr->conns != NULL);
 	assert(ctx->children == NULL);
 
 	if (ctx->in_thr_conns) {
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_remove_conn_unlocked: Removing conn, id=%llu, fd=%d\n", ctx->id, ctx->fd);
 #endif /* DEBUG_PROXY */
+
+		// Thr conns list cannot be empty, if the in_thr_conns flag of a conn is set
+		assert(ctx->thr->conns != NULL);
 
 		// Shouldn't need to reset the in_thr_conns flag, because the conn ctx will be freed next, but just in case
 		ctx->in_thr_conns = 0;
