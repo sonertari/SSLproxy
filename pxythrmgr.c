@@ -106,21 +106,23 @@ pxy_thrmgr_get_thr_expired_conns(pxy_thr_ctx_t *tctx, pxy_conn_ctx_t **expired_c
 }
 
 static evutil_socket_t
-pxy_thrmgr_print_child(pxy_conn_child_ctx_t *ctx, unsigned int parent_idx, evutil_socket_t max_fd)
-{
-	assert(ctx != NULL);
-
-	// @attention No need to log child stats
+pxy_thrmgr_print_children(pxy_conn_child_ctx_t *ctx,
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_print_child: CHILD CONN: thr=%d, id=%d, pid=%u, src=%d, dst=%d, c=%d-%d\n", 
-		ctx->conn->thr->thridx, ctx->conn->child_count, parent_idx, ctx->fd, ctx->dst_fd, ctx->src.closed, ctx->dst.closed);
+	unsigned int parent_idx,
+#endif /* DEBUG_PROXY */
+	evutil_socket_t max_fd)
+{
+	while (ctx) {
+		// @attention No need to log child stats
+#ifdef DEBUG_PROXY
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_print_children: CHILD CONN: thr=%d, id=%d, pid=%u, src=%d, dst=%d, c=%d-%d\n", 
+			ctx->conn->thr->thridx, ctx->conn->child_count, parent_idx, ctx->fd, ctx->dst_fd, ctx->src.closed, ctx->dst.closed);
 #endif /* DEBUG_PROXY */
 
-	if (ctx->next) {
-		max_fd = pxy_thrmgr_print_child(ctx->next, parent_idx, max_fd);
+		max_fd = MAX(max_fd, MAX(ctx->fd, ctx->dst_fd));
+		ctx = ctx->next;
 	}
-
-	return MAX(max_fd, MAX(ctx->fd, ctx->dst_fd));
+	return max_fd;
 }
 
 static void
@@ -175,12 +177,19 @@ pxy_thrmgr_print_thr_info(pxy_thr_ctx_t *tctx)
 				smsg = NULL;
 			}
 
-			max_fd = MAX(max_fd, MAX(ctx->fd, MAX(ctx->child_fd, MAX(ctx->dst_fd, MAX(ctx->srvdst_fd, MAX(ctx->child_src_fd, ctx->child_dst_fd))))));
+			// child_src_fd and child_dst_fd fields are mostly for debugging purposes, used in debug printing parent conns.
+			// However, while an ssl child is closing, the children list may be empty, but child's ssl fd may be still open,
+			// hence we include those fields in this max comparisons too
+			max_fd = MAX(max_fd, MAX(ctx->fd, MAX(ctx->dst_fd, MAX(ctx->srvdst_fd, MAX(ctx->child_fd, MAX(ctx->child_src_fd, ctx->child_dst_fd))))));
 			max_atime = MAX(max_atime, atime);
 			max_ctime = MAX(max_ctime, ctime);
 
 			if (ctx->children) {
-				max_fd = pxy_thrmgr_print_child(ctx->children, idx, max_fd);
+				max_fd = pxy_thrmgr_print_children(ctx->children,
+#ifdef DEBUG_PROXY
+					idx,
+#endif /* DEBUG_PROXY */
+					max_fd);
 			}
 
 			idx++;
