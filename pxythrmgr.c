@@ -620,7 +620,7 @@ void
 pxy_thrmgr_attach(pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_attach: ENTER\n");
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_attach: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
 	int thridx = 0;
@@ -662,7 +662,7 @@ void
 pxy_thrmgr_attach_child(pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_attach_child: ENTER\n");
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_attach_child: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
 	pthread_mutex_lock(&ctx->thr->mutex);
@@ -678,7 +678,7 @@ void
 pxy_thrmgr_detach_unlocked(pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_detach_unlocked: ENTER\n");
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_detach_unlocked: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
 	pxy_thrmgr_remove_pending_ssl_conn_unlocked(ctx);
@@ -697,7 +697,7 @@ void
 pxy_thrmgr_detach_child_unlocked(pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_detach_child_unlocked: ENTER\n");
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_thrmgr_detach_child_unlocked: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
 	ctx->thr->load--;

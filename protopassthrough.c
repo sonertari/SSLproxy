@@ -76,7 +76,7 @@ void
 protopassthrough_engage(pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINE, "protopassthrough_engage: fd=%d\n", ctx->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINE, "protopassthrough_engage: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
 	// @todo When we call bufferevent_free_and_close_fd(), connection stalls due to ssl shutdown?

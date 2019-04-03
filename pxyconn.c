@@ -367,7 +367,7 @@ pxy_conn_free_children(pxy_conn_ctx_t *ctx)
 	// @attention Parent may be closing before there was any child at all nor was child_evcl ever created
 	if (ctx->child_evcl) {
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_conn_free_children: Freeing child_evcl, child fd=%d, children->fd=%d, fd=%d\n",
+		log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_conn_free_children: Freeing child_evcl, child fd=%d, children fd=%d, fd=%d\n",
 				ctx->child_fd, ctx->children ? ctx->children->fd : -1, ctx->fd);
 #endif /* DEBUG_PROXY */
 
@@ -404,16 +404,16 @@ pxy_conn_ctx_free(pxy_conn_ctx_t *ctx, int by_requestor)
 
 			if (privsep_client_update_atime(ctx->clisock, &keys) == -1) {
 #ifdef DEBUG_PROXY
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_free: Error updating user atime: %s, ctx->fd=%d\n", sqlite3_errmsg(ctx->opts->userdb), ctx->fd);
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_free: Error updating user atime: %s, fd=%d\n", sqlite3_errmsg(ctx->opts->userdb), ctx->fd);
 #endif /* DEBUG_PROXY */
 			} else {
 #ifdef DEBUG_PROXY
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_free: Successfully updated user atime, ctx->fd=%d\n", ctx->fd);
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_free: Successfully updated user atime, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 			}
 		} else {
 #ifdef DEBUG_PROXY
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_free: Will not update user atime, idletime=%u, ctx->fd=%d\n", idletime, ctx->fd);
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_free: Will not update user atime, idletime=%u, fd=%d\n", idletime, ctx->fd);
 #endif /* DEBUG_PROXY */
 		}
 	}
@@ -908,7 +908,7 @@ void
 pxy_insert_sslproxy_header(pxy_conn_ctx_t *ctx, unsigned char *packet, size_t *packet_size)
 {
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_insert_sslproxy_header: INSERT, fd=%d\n", ctx->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_insert_sslproxy_header: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
 	// @attention Cannot use string manipulation functions; we are dealing with binary arrays here, not NULL-terminated strings
@@ -1073,7 +1073,7 @@ pxy_listener_acceptcb_child(UNUSED struct evconnlistener *listener, evutil_socke
 	conn->atime = time(NULL);
 
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_listener_acceptcb_child: ENTER, child fd=%d, conn->child_fd=%d, fd=%d\n", fd, conn->child_fd, conn->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_listener_acceptcb_child: ENTER, child fd=%d, child_fd=%d, fd=%d\n", fd, conn->child_fd, conn->fd);
 
 	char *host, *port;
 	if (sys_sockaddr_str(peeraddr, peeraddrlen, &host, &port) == 0) {
@@ -1182,7 +1182,7 @@ pxy_setup_child_listener(pxy_conn_ctx_t *ctx)
 	if (!child_evcl) {
 		log_err_level_printf(LOG_CRIT, "Error creating child evconnlistener: %s\n", strerror(errno));
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_setup_child_listener: Error creating child evconnlistener: %s, fd=%d, child_fd=%d\n", strerror(errno), ctx->fd, ctx->child_fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_setup_child_listener: Error creating child evconnlistener: %s, child_fd=%d, fd=%d\n", strerror(errno), ctx->child_fd, ctx->fd);
 #endif /* DEBUG_PROXY */
 
 		// @attention Cannot call proxy_listener_ctx_free() on child_evcl, child_evcl does not have any ctx with next listener
@@ -1652,7 +1652,7 @@ identify_user(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 	pxy_conn_ctx_t *ctx = arg;
 
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: ENTER, ctx->fd=%d\n", ctx->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
 	if (ctx->ev) {
@@ -1662,7 +1662,7 @@ identify_user(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 
 	if (ctx->identify_user_count++ >= 50) {
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: Cannot get conn user, ctx->fd=%d\n", ctx->fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: Cannot get conn user, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
 		goto redirect;
@@ -1677,7 +1677,7 @@ identify_user(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 		// Retry in case we cannot acquire db file or database: SQLITE_BUSY or SQLITE_LOCKED respectively
 		if (rc == SQLITE_BUSY || rc == SQLITE_LOCKED) {
 #ifdef DEBUG_PROXY
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: User db busy or locked, retrying, count=%d, ctx->fd=%d\n", ctx->identify_user_count, ctx->fd);
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: User db busy or locked, retrying, count=%d, fd=%d\n", ctx->identify_user_count, ctx->fd);
 #endif /* DEBUG_PROXY */
 
 			// Do not forget to reset sqlite stmt, or else the userdb may remain busy/locked
@@ -1692,7 +1692,7 @@ identify_user(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 			return;
 		} else if (rc == SQLITE_DONE) {
 #ifdef DEBUG_PROXY
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: Conn has no user, ctx->fd=%d\n", ctx->fd);
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: Conn has no user, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
 			goto redirect;
@@ -1700,39 +1700,39 @@ identify_user(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 			char *ether = (char *)sqlite3_column_text(ctx->thr->get_user, 1);
 			if (strncasecmp(ether, ctx->ether, 17)) {
 #ifdef DEBUG_PROXY
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: Ethernet addresses do not match, db=%s, arp cache=%s, ctx->fd=%d\n", ether, ctx->ether, ctx->fd);
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: Ethernet addresses do not match, db=%s, arp cache=%s, fd=%d\n", ether, ctx->ether, ctx->fd);
 #endif /* DEBUG_PROXY */
 
 				goto redirect;
 			}
 
 #ifdef DEBUG_PROXY
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: Passed ethernet address test, %s, ctx->fd=%d\n", ether, ctx->fd);
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: Passed ethernet address test, %s, fd=%d\n", ether, ctx->fd);
 #endif /* DEBUG_PROXY */
 
 			ctx->idletime = time(NULL) - sqlite3_column_int(ctx->thr->get_user, 2);
 			if (ctx->idletime > ctx->opts->user_timeout) {
 #ifdef DEBUG_PROXY
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: User entry timed out, idletime=%u, ctx->fd=%d\n", ctx->idletime, ctx->fd);
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: User entry timed out, idletime=%u, fd=%d\n", ctx->idletime, ctx->fd);
 #endif /* DEBUG_PROXY */
 
 				goto redirect;
 			}
 
 #ifdef DEBUG_PROXY
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: Passed timeout test, idletime=%u, ctx->fd=%d\n", ctx->idletime, ctx->fd);
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: Passed timeout test, idletime=%u, fd=%d\n", ctx->idletime, ctx->fd);
 #endif /* DEBUG_PROXY */
 
 			ctx->user = strdup((char *)sqlite3_column_text(ctx->thr->get_user, 0));
 
 #ifdef DEBUG_PROXY
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: Conn user=%s, ctx->fd=%d\n", ctx->user, ctx->fd);
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: Conn user=%s, fd=%d\n", ctx->user, ctx->fd);
 #endif /* DEBUG_PROXY */
 		}
 	}
 
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: Passed user identification, ctx->fd=%d\n", ctx->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: Passed user identification, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
 redirect:

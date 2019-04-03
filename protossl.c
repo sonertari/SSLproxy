@@ -1286,7 +1286,7 @@ static void NONNULL(1)
 protossl_close_srvdst(pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINER, "protossl_close_srvdst: Closing srvdst, fd=%d, srvdst fd=%d\n", ctx->fd, bufferevent_getfd(ctx->srvdst.bev));
+	log_dbg_level_printf(LOG_DBG_MODE_FINER, "protossl_close_srvdst: Closing srvdst, srvdst fd=%d, fd=%d\n", bufferevent_getfd(ctx->srvdst.bev), ctx->fd);
 #endif /* DEBUG_PROXY */
 
 	// @attention Free the srvdst of the conn asap, we don't need it anymore, but we need its fd
@@ -1318,7 +1318,7 @@ protossl_enable_src(pxy_conn_ctx_t *ctx)
 	}
 
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINER, "protossl_enable_src: Enabling src, %s, fd=%d, child_fd=%d\n", ctx->sslproxy_header, ctx->fd, ctx->child_fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINER, "protossl_enable_src: Enabling src, %s, child_fd=%d, fd=%d\n", ctx->sslproxy_header, ctx->child_fd, ctx->fd);
 #endif /* DEBUG_PROXY */
 
 	// Now open the gates
