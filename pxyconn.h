@@ -48,7 +48,7 @@
 #define STRORDASH(x)	(((x)&&*(x))?(x):"-")
 #define STRORNONE(x)	(((x)&&*(x))?(x):"")
 
-#define WANT_CONNECT_LOG(ctx)	((ctx)->opts->connectlog||!(ctx)->opts->detach)
+#define WANT_CONNECT_LOG(ctx)	((ctx)->opts->connectlog||!(ctx)->opts->detach||(ctx)->opts->statslog)
 #define WANT_CONTENT_LOG(ctx)	((ctx)->opts->contentlog&&((ctx)->proto!=PROTO_PASSTHROUGH))
 
 #define SSLPROXY_KEY		"SSLproxy:"

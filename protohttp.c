@@ -940,7 +940,7 @@ protohttp_bev_readcb(struct bufferevent *bev, void *arg)
 
 	if (!seen_resp_header_on_entry && http_ctx->seen_resp_header) {
 		/* response header complete: log connection */
-		if (WANT_CONNECT_LOG(ctx->conn) || ctx->opts->statslog) {
+		if (WANT_CONNECT_LOG(ctx->conn)) {
 			protohttp_log_connect(ctx);
 		}
 	}

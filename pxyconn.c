@@ -745,7 +745,7 @@ void
 pxy_log_connect_src(pxy_conn_ctx_t *ctx)
 {
 	/* log connection if we don't analyze any headers */
-	if (!ctx->spec->http && (WANT_CONNECT_LOG(ctx) || ctx->opts->statslog)) {
+	if (!ctx->spec->http && WANT_CONNECT_LOG(ctx)) {
 		pxy_log_connect_nonhttp(ctx);
 	}
 
@@ -767,7 +767,7 @@ pxy_log_connect_srvdst(pxy_conn_ctx_t *ctx)
 	// @attention srvdst.bev may be NULL, if its writecb fires first
 	if (ctx->srvdst.bev) {
 		/* log connection if we don't analyze any headers */
-		if (!ctx->srvdst.ssl && !ctx->spec->http && (WANT_CONNECT_LOG(ctx) || ctx->opts->statslog)) {
+		if (!ctx->srvdst.ssl && !ctx->spec->http && WANT_CONNECT_LOG(ctx)) {
 			pxy_log_connect_nonhttp(ctx);
 		}
 

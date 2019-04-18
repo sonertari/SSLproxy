@@ -61,7 +61,7 @@ protopassthrough_log_dbg_connect_type(pxy_conn_ctx_t *ctx)
 static void NONNULL(1)
 protopassthrough_log_connect_src(pxy_conn_ctx_t *ctx)
 {
-	if (WANT_CONNECT_LOG(ctx) || ctx->opts->statslog) {
+	if (WANT_CONNECT_LOG(ctx)) {
 		pxy_log_connect_nonhttp(ctx);
 	}
 	protopassthrough_log_dbg_connect_type(ctx);
