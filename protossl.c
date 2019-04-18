@@ -546,6 +546,72 @@ protossl_srccert_create(pxy_conn_ctx_t *ctx)
 	return cert;
 }
 
+static int NONNULL(1,2)
+protossl_pass_site(pxy_conn_ctx_t *ctx, char *site)
+{
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protossl_pass_site: ENTER, %s, %s, %s, fd=%d\n", site, ctx->sslctx->sni, ctx->sslctx->ssl_names, ctx->fd);
+#endif /* DEBUG_PROXY */
+
+	if (!strcmp(ctx->sslctx->sni, site)) {
+#ifdef DEBUG_PROXY
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protossl_pass_site: Match with sni: %s, fd=%d\n", ctx->sslctx->sni, ctx->fd);
+#endif /* DEBUG_PROXY */
+
+		return 1;
+	}
+
+	// Single common name
+	if (!strcmp(ctx->sslctx->ssl_names, site)) {
+#ifdef DEBUG_PROXY
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protossl_pass_site: Match with single common name: %s, fd=%d\n", ctx->sslctx->ssl_names, ctx->fd);
+#endif /* DEBUG_PROXY */
+
+		return 1;
+	}
+
+	size_t len = strlen(site);
+	
+	// Common names are separated by slashes
+	char s[len + 3];
+	strncpy(s + 1, site, len);
+	s[0] = '/';
+	s[len + 1] = '/';
+	s[len + 2] = '\0';
+
+	char *s1 = s + 1;
+
+	// First common name
+	if (strstr(ctx->sslctx->ssl_names, s1) == ctx->sslctx->ssl_names) {
+#ifdef DEBUG_PROXY
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protossl_pass_site: Match with the first common name: %s, %s, fd=%d\n", ctx->sslctx->ssl_names, s1, ctx->fd);
+#endif /* DEBUG_PROXY */
+
+		return 1;
+	}
+
+	// A middle common name
+	if (strstr(ctx->sslctx->ssl_names, s)) {
+#ifdef DEBUG_PROXY
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protossl_pass_site: Match with a middle common name: %s, %s, fd=%d\n", ctx->sslctx->ssl_names, s, ctx->fd);
+#endif /* DEBUG_PROXY */
+
+		return 1;
+	}
+
+	s[len + 1] = '\0';
+
+	// Last common name
+	if (strstr(ctx->sslctx->ssl_names, s) == ctx->sslctx->ssl_names + strlen(ctx->sslctx->ssl_names) - strlen(s)) {
+#ifdef DEBUG_PROXY
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protossl_pass_site: Match with the last common name: %s, %s, fd=%d\n", ctx->sslctx->ssl_names, s, ctx->fd);
+#endif /* DEBUG_PROXY */
+
+		return 1;
+	}
+	return 0;
+}
+
 /*
  * Create new SSL context for the incoming connection, based on the original
  * destination SSL certificate.
@@ -586,6 +652,18 @@ protossl_srcssl_create(pxy_conn_ctx_t *ctx, SSL *origssl)
 		                                       cert->crt);
 		if (!ctx->sslctx->ssl_names)
 			ctx->enomem = 1;
+	}
+
+	if (ctx->opts->passthrough) {
+		passsite_t *passsite = ctx->opts->passsites;
+		while (passsite) {
+			if (protossl_pass_site(ctx, passsite->site)) {
+				log_err_level_printf(LOG_WARNING, "Found pass site; switching to passthrough\n");
+				cert_free(cert);
+				return NULL;
+			}
+			passsite = passsite->next;
+		}
 	}
 
 	SSL_CTX *sslctx = protossl_srcsslctx_create(ctx, cert->crt, cert->chain,

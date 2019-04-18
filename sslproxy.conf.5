@@ -93,6 +93,11 @@ Passthrough SSL connections if they cannot be split because of client cert auth 
 .br 
 Default: drop
 .TP
+\fBPassSite STRING\fR
+Passthrough site, requires Passthrough option. If the site matches SNI or 
+common names in the SSL certificate, the connection is passed through the 
+proxy. Multiple sites are allowed, one on each line.
+.TP
 \fBDHGroupParams STRING\fR
 Use DH group params from pemfile. Equivalent to -g command line option.
 .br 

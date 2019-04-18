@@ -175,6 +175,12 @@ opts_free(opts_t *opts)
 		sqlite3_finalize(opts->update_user_atime);
 		sqlite3_close(opts->userdb);
 	}
+	passsite_t *passsite = opts->passsites;
+	while (passsite) {
+		passsite_t *next = passsite->next;
+		free(passsite->site);
+		passsite = next;
+	}
 	memset(opts, 0, sizeof(opts_t));
 	free(opts);
 }
@@ -1533,6 +1539,22 @@ opts_set_open_files_limit(const char *value, int line_num)
 #endif /* DEBUG_OPTS */
 }
 
+static void
+opts_set_pass_site(opts_t *opts, const char *value)
+{
+	if (!opts->passthrough) {
+		fprintf(stderr, "PassSite requires Passthrough option\n");
+		exit(EXIT_FAILURE);
+	}
+	passsite_t *ps = malloc(sizeof(passsite_t));
+	ps->site = strdup(value);
+	ps->next = opts->passsites;
+	opts->passsites = ps;
+#ifdef DEBUG_OPTS
+	log_dbg_printf("PassSite: %s\n", value);
+#endif /* DEBUG_OPTS */
+}
+
 static int
 check_value_yesno(const char *value, const char *name, int line_num)
 {
@@ -1860,6 +1882,8 @@ set_option(opts_t *opts, const char *argv0,
 #endif /* DEBUG_OPTS */
 	} else if (!strncasecmp(name, "OpenFilesLimit", 15)) {
 		opts_set_open_files_limit(value, line_num);
+	} else if (!strncmp(name, "PassSite", 9)) {
+		opts_set_pass_site(opts, value);
 	} else {
 		fprintf(stderr, "Error in conf: Unknown option "
 		                "'%s' at line %d\n", name, line_num);

@@ -65,6 +65,11 @@ typedef struct proxyspec {
 	socklen_t child_src_addrlen;
 } proxyspec_t;
 
+typedef struct passsite {
+	char *site;
+	struct passsite *next;
+} passsite_t;
+
 typedef struct opts {
 	unsigned int debug : 1;
 	unsigned int detach : 1;
@@ -152,6 +157,7 @@ typedef struct opts {
 	unsigned int user_timeout;
 	unsigned int validate_proto : 1;
 	unsigned int max_http_header_size;
+	struct passsite *passsites;
 } opts_t;
 
 typedef struct userdbkeys {
