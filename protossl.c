@@ -658,7 +658,7 @@ protossl_srcssl_create(pxy_conn_ctx_t *ctx, SSL *origssl)
 		protossl_debug_crt(cert->crt);
 	}
 
-	if (WANT_CONNECT_LOG(ctx)) {
+	if (WANT_CONNECT_LOG(ctx) || ctx->opts->passsites) {
 		ctx->sslctx->ssl_names = ssl_x509_names_to_str(ctx->sslctx->origcrt ?
 		                                       ctx->sslctx->origcrt :
 		                                       cert->crt);
@@ -772,7 +772,7 @@ protossl_ossl_servername_cb(SSL *ssl, UNUSED int *al, void *arg)
 			               "certificate:\n");
 			protossl_debug_crt(newcrt);
 		}
-		if (WANT_CONNECT_LOG(ctx)) {
+		if (WANT_CONNECT_LOG(ctx) || ctx->opts->passsites) {
 			if (ctx->sslctx->ssl_names) {
 				free(ctx->sslctx->ssl_names);
 			}
