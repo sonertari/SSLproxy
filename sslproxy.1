@@ -156,6 +156,12 @@ If enabled, the ValidateProto option validates protocols in proxy
 specifications. If a connection cannot pass protocol validation, then it is 
 terminated. This feature currently supports HTTP, POP3, and SMTP protocols.
 .LP
+PassSite option allows certain SSL sites to be excluded from SSL inspection. 
+If a PassSite matches SNI or common names in the SSL certificate, the 
+connection is passed through the proxy without being diverted to the listening 
+program. For example, sites requiring client authentication can be added as 
+PassSite. Multiple sites can be defined, one on each line.
+.LP
 Logging options include traditional SSLproxy connect and content log files as
 well as PCAP files and mirroring decrypted traffic to a network interface.
 Additionally, certificates, master secrets and local process information can be
