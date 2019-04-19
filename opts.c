@@ -1546,8 +1546,17 @@ opts_set_pass_site(opts_t *opts, const char *value)
 		fprintf(stderr, "PassSite requires Passthrough option\n");
 		exit(EXIT_FAILURE);
 	}
+
+	size_t len = strlen(value);
+	// Common names are separated by slashes
+	char s[len + 3];
+	strncpy(s + 1, value, len);
+	s[0] = '/';
+	s[len + 1] = '/';
+	s[len + 2] = '\0';
+
 	passsite_t *ps = malloc(sizeof(passsite_t));
-	ps->site = strdup(value);
+	ps->site = strdup(s);
 	ps->next = opts->passsites;
 	opts->passsites = ps;
 #ifdef DEBUG_OPTS
