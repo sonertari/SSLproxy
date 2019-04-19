@@ -89,7 +89,9 @@ Write leaf key and all certificates to gendir. Equivalent to -W command line opt
 Deny all OCSP requests on all proxyspecs. Equivalent to -O command line option.
 .TP
 \fBPassthrough BOOL\fR
-Passthrough SSL connections if they cannot be split because of client cert auth or no matching cert and no CA. Equivalent to -P command line option.
+Passthrough SSL connections if they cannot be split because of client cert 
+auth or no matching cert and no CA, or if SNI or common names in SSL 
+cert match a PassSite option. Equivalent to -P command line option.
 .br 
 Default: drop
 .TP

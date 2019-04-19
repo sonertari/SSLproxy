@@ -596,7 +596,7 @@ protossl_pass_site(pxy_conn_ctx_t *ctx, char *site)
 		goto out;
 	}
 
-	// A middle common name: "/example.com/"
+	// Middle common name: "/example.com/"
 	if (strstr(ctx->sslctx->ssl_names, site)) {
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protossl_pass_site: Match with a middle common name: %s, %s, fd=%d\n", ctx->sslctx->ssl_names, site, ctx->fd);
@@ -618,6 +618,7 @@ protossl_pass_site(pxy_conn_ctx_t *ctx, char *site)
 		rv = 1;
 	}
 out2:
+	// Restore the last modification
 	site[len - 1] = '/';
 out:
 	return rv;
@@ -669,7 +670,8 @@ protossl_srcssl_create(pxy_conn_ctx_t *ctx, SSL *origssl)
 		passsite_t *passsite = ctx->opts->passsites;
 		while (passsite) {
 			if (protossl_pass_site(ctx, passsite->site)) {
-				log_err_level_printf(LOG_WARNING, "Found pass site; switching to passthrough\n");
+				// Do not print the surrounding slashes
+				log_err_level_printf(LOG_WARNING, "Found pass site: %.*s\n", (int)strlen(passsite->site) - 2, passsite->site + 1);
 				cert_free(cert);
 				return NULL;
 			}
@@ -1308,7 +1310,7 @@ protossl_setup_src_ssl(pxy_conn_ctx_t *ctx)
 	ctx->src.ssl = protossl_srcssl_create(ctx, ctx->srvdst.ssl);
 	if (!ctx->src.ssl) {
 		if (ctx->opts->passthrough && !ctx->enomem) {
-			log_err_level_printf(LOG_WARNING, "No cert found; falling back to passthrough\n");
+			log_err_level_printf(LOG_WARNING, "Falling back to passthrough\n");
 			protopassthrough_engage(ctx);
 			// report protocol change by returning 1
 			return 1;
