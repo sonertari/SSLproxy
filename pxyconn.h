@@ -42,12 +42,6 @@
 #include <event2/buffer.h>
 #include <event2/bufferevent.h>
 
-/*
- * Print helper for logging code.
- */
-#define STRORDASH(x)	(((x)&&*(x))?(x):"-")
-#define STRORNONE(x)	(((x)&&*(x))?(x):"")
-
 #define WANT_CONNECT_LOG(ctx)	((ctx)->opts->connectlog||!(ctx)->opts->detach||(ctx)->opts->statslog)
 #define WANT_CONTENT_LOG(ctx)	((ctx)->opts->contentlog&&((ctx)->proto!=PROTO_PASSTHROUGH))
 
@@ -302,6 +296,8 @@ struct pxy_conn_ctx {
 	char *ether;
 	// Idle time of user, reset to 0 by a new conn from user if idle time > timeout/2
 	unsigned int idletime;
+	// Description of client
+	char *desc;
 	// We send redirect/error msg to client if user auth or proto validation fails
 	unsigned int sent_userauth_msg : 1;     /* 1 until error msg is sent */
 	unsigned int sent_protoerror_msg : 1;   /* 1 until error msg is sent */

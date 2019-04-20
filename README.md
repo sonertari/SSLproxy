@@ -165,7 +165,8 @@ PassSite option allows certain SSL sites to be excluded from SSL inspection.
 If a PassSite matches SNI or common names in the SSL certificate, the 
 connection is passed through the proxy without being diverted to the listening 
 program. For example, sites requiring client authentication can be added as 
-PassSite. Multiple sites can be defined, one on each line.
+PassSite. Per site filters can be defined using client IP addresses, users, 
+and description keywords. Multiple sites can be defined, one on each line.
 
 Logging options include traditional SSLproxy connect and content log files as
 well as PCAP files and mirroring decrypted traffic to a network interface.

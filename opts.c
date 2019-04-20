@@ -1540,27 +1540,71 @@ opts_set_open_files_limit(const char *value, int line_num)
 }
 
 static void
-opts_set_pass_site(opts_t *opts, const char *value)
+opts_set_pass_site(opts_t *opts, char *value, int line_num)
 {
 	if (!opts->passthrough) {
 		fprintf(stderr, "PassSite requires Passthrough option\n");
 		exit(EXIT_FAILURE);
 	}
 
-	size_t len = strlen(value);
+	// site [(clientaddr|(user|*) [description keyword])]
+	char *argv[sizeof(char *) * 3];
+	int argc = 0;
+	char *p, *last = NULL;
+
+	for ((p = strtok_r(value, " ", &last));
+		 p;
+		 (p = strtok_r(NULL, " ", &last))) {
+		if (argc < 3) {
+			argv[argc++] = p;
+		} else {
+			break;
+		}
+	}
+
+	if (!argc) {
+		fprintf(stderr, "PassSite requires at least one parameter at line %d\n", line_num);
+		exit(EXIT_FAILURE);
+	}
+
+	passsite_t *ps = malloc(sizeof(passsite_t));
+	memset(ps, 0, sizeof(passsite_t));
+
+	size_t len = strlen(argv[0]);
 	// Common names are separated by slashes
 	char s[len + 3];
-	strncpy(s + 1, value, len);
+	strncpy(s + 1, argv[0], len);
 	s[0] = '/';
 	s[len + 1] = '/';
 	s[len + 2] = '\0';
-
-	passsite_t *ps = malloc(sizeof(passsite_t));
 	ps->site = strdup(s);
+
+	if (argc > 1) {
+		if (!strcmp(argv[1], "*")) {
+			ps->all = 1;
+		} else if (sys_isuser(argv[1])) {
+			if (!opts->user_auth) {
+				fprintf(stderr, "PassSite user requires user auth option at line %d\n", line_num);
+				exit(EXIT_FAILURE);
+			}
+			ps->user = strdup(argv[1]);
+		} else {
+			ps->ip = strdup(argv[1]);
+		}
+	}
+
+	if (argc > 2) {
+		if (ps->ip) {
+			fprintf(stderr, "PassSite client ip should not have a description keyword parameter at line %d\n", line_num);
+			exit(EXIT_FAILURE);
+		}
+		ps->keyword = strdup(argv[2]);
+	}
+
 	ps->next = opts->passsites;
 	opts->passsites = ps;
 #ifdef DEBUG_OPTS
-	log_dbg_printf("PassSite: %s\n", value);
+	log_dbg_printf("PassSite: %s, %s, %s, %s\n", ps->site, STRORDASH(ps->ip), ps->all ? "*" : STRORDASH(ps->user), STRORDASH(ps->keyword));
 #endif /* DEBUG_OPTS */
 }
 
@@ -1892,7 +1936,7 @@ set_option(opts_t *opts, const char *argv0,
 	} else if (!strncasecmp(name, "OpenFilesLimit", 15)) {
 		opts_set_open_files_limit(value, line_num);
 	} else if (!strncmp(name, "PassSite", 9)) {
-		opts_set_pass_site(opts, value);
+		opts_set_pass_site(opts, value, line_num);
 	} else {
 		fprintf(stderr, "Error in conf: Unknown option "
 		                "'%s' at line %d\n", name, line_num);

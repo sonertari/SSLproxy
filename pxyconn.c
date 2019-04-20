@@ -465,6 +465,9 @@ pxy_conn_ctx_free(pxy_conn_ctx_t *ctx, int by_requestor)
 	if (ctx->ether) {
 		free(ctx->ether);
 	}
+	if (ctx->desc) {
+		free(ctx->desc);
+	}
 	free(ctx);
 }
 
@@ -1724,9 +1727,11 @@ identify_user(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 #endif /* DEBUG_PROXY */
 
 			ctx->user = strdup((char *)sqlite3_column_text(ctx->thr->get_user, 0));
+			// Desc is needed for PassSite filtering
+			ctx->desc = strdup((char *)sqlite3_column_text(ctx->thr->get_user, 3));
 
 #ifdef DEBUG_PROXY
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: Conn user=%s, fd=%d\n", ctx->user, ctx->fd);
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: Conn user=%s, desc=%s, fd=%d\n", ctx->user, ctx->desc, ctx->fd);
 #endif /* DEBUG_PROXY */
 		}
 	}

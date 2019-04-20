@@ -96,9 +96,13 @@ cert match a PassSite option. Equivalent to -P command line option.
 Default: drop
 .TP
 \fBPassSite STRING\fR
-Passthrough site, requires Passthrough option. If the site matches SNI or 
-common names in the SSL certificate, the connection is passed through the 
-proxy. Multiple sites are allowed, one on each line.
+Passthrough site: site [(clientaddr|(user|*) [description keyword])]. If the 
+site matches SNI or common names in the SSL certificate, the connection is 
+passed through the proxy. Per site filters can be defined using client IP 
+addresses, users, and description keywords. '*' matches all users. User auth 
+should be enabled for user and description keyword filtering to work. 
+Case is ignored while matching description keywords. Multiple sites are 
+allowed, one on each line. PassSite requires Passthrough option.
 .TP
 \fBDHGroupParams STRING\fR
 Use DH group params from pemfile. Equivalent to -g command line option.

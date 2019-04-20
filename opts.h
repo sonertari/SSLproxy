@@ -38,6 +38,12 @@
 #include <sys/socket.h>
 #include <sqlite3.h>
 
+/*
+ * Print helper for logging code.
+ */
+#define STRORDASH(x)	(((x)&&*(x))?(x):"-")
+#define STRORNONE(x)	(((x)&&*(x))?(x):"")
+
 typedef struct proxyspec {
 	unsigned int ssl : 1;
 	unsigned int http : 1;
@@ -67,6 +73,11 @@ typedef struct proxyspec {
 
 typedef struct passsite {
 	char *site;
+	// Filter definition fields
+	char *ip;
+	char *user;
+	unsigned int all : 1; /* 1 for all users */
+	char *keyword;
 	struct passsite *next;
 } passsite_t;
 

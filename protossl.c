@@ -547,6 +547,40 @@ protossl_srccert_create(pxy_conn_ctx_t *ctx)
 }
 
 static int NONNULL(1,2)
+protossl_pass_user(pxy_conn_ctx_t *ctx, passsite_t *passsite)
+{
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protossl_pass_user: ENTER, %s, %s, %s, %s, fd=%d\n", passsite->site, STRORDASH(passsite->ip), passsite->all ? "*" : STRORDASH(passsite->user), STRORDASH(passsite->keyword), ctx->fd);
+#endif /* DEBUG_PROXY */
+
+	// No filter or * (all) without desc keyword defined
+	if (!passsite->ip && !passsite->user && !passsite->keyword) {
+		return 1;
+	}
+
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protossl_pass_user: Filter ip: %s, fd=%d\n", STRORDASH(ctx->srchost_str), ctx->fd);
+#endif /* DEBUG_PROXY */
+
+	// Client ip filter defined
+	if (passsite->ip && ctx->srchost_str && !strcmp(ctx->srchost_str, passsite->ip)) {
+		return 1;
+	}
+
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protossl_pass_user: Filter user: %s, %s, fd=%d\n", STRORDASH(ctx->user), STRORDASH(ctx->desc), ctx->fd);
+#endif /* DEBUG_PROXY */
+
+	// Make sure ctx->user and ctx->desc are set, otherwise if the user did not log in yet, they may be NULL
+	// User and/or description keyword filters defined
+	if (ctx->opts->user_auth && (passsite->all || (passsite->user && ctx->user && !strcmp(ctx->user, passsite->user))) &&
+			(!passsite->keyword || (ctx->desc && strcasestr(ctx->desc, passsite->keyword)))) {
+		return 1;
+	}
+	return 0;
+}
+
+static int NONNULL(1,2)
 protossl_pass_site(pxy_conn_ctx_t *ctx, char *site)
 {
 #ifdef DEBUG_PROXY
@@ -669,9 +703,10 @@ protossl_srcssl_create(pxy_conn_ctx_t *ctx, SSL *origssl)
 	if (ctx->opts->passthrough) {
 		passsite_t *passsite = ctx->opts->passsites;
 		while (passsite) {
-			if (protossl_pass_site(ctx, passsite->site)) {
+			if (protossl_pass_user(ctx, passsite) && protossl_pass_site(ctx, passsite->site)) {
 				// Do not print the surrounding slashes
-				log_err_level_printf(LOG_WARNING, "Found pass site: %.*s\n", (int)strlen(passsite->site) - 2, passsite->site + 1);
+				log_err_level_printf(LOG_WARNING, "Found pass site: %.*s for user %s and keyword %s\n", (int)strlen(passsite->site) - 2, passsite->site + 1,
+						passsite->ip ? passsite->ip : (passsite->all ? "*" : STRORDASH(passsite->user)), STRORDASH(passsite->keyword));
 				cert_free(cert);
 				return NULL;
 			}
