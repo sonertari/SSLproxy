@@ -179,6 +179,13 @@ opts_free(opts_t *opts)
 	while (passsite) {
 		passsite_t *next = passsite->next;
 		free(passsite->site);
+		if (passsite->ip)
+			free(passsite->ip);
+		if (passsite->user)
+			free(passsite->user);
+		if (passsite->keyword)
+			free(passsite->keyword);
+		free(passsite);
 		passsite = next;
 	}
 	memset(opts, 0, sizeof(opts_t));
