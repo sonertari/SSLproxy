@@ -59,7 +59,7 @@ protopassthrough_log_dbg_connect_type(pxy_conn_ctx_t *ctx)
 }
 
 static void NONNULL(1)
-protopassthrough_log_connect_src(pxy_conn_ctx_t *ctx)
+protopassthrough_log_connect(pxy_conn_ctx_t *ctx)
 {
 	if (WANT_CONNECT_LOG(ctx)) {
 		pxy_log_connect_nonhttp(ctx);
@@ -449,9 +449,7 @@ protopassthrough_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 	}
 
 	if (events & BEV_EVENT_CONNECTED) {
-		if (bev == ctx->src.bev) {
-			protopassthrough_log_connect_src(ctx);
-		} else if (ctx->connected) {
+		if (ctx->connected) {
 			// @attention dstaddr may not have been set by the original proto.
 			if (pxy_set_dstaddr(ctx) == -1) {
 				return;
@@ -461,7 +459,7 @@ protopassthrough_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 				return;
 			}
 #endif /* HAVE_LOCAL_PROCINFO */
-			protopassthrough_log_dbg_connect_type(ctx);
+			protopassthrough_log_connect(ctx);
 		}
 	}
 }
