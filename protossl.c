@@ -584,7 +584,7 @@ static int NONNULL(1,2)
 protossl_pass_site(pxy_conn_ctx_t *ctx, char *site)
 {
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protossl_pass_site: ENTER, %s, %s, %s, fd=%d\n", site, ctx->sslctx->sni, ctx->sslctx->ssl_names, ctx->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protossl_pass_site: ENTER, %s, %s, %s, fd=%d\n", site, STRORDASH(ctx->sslctx->sni), STRORDASH(ctx->sslctx->ssl_names), ctx->fd);
 #endif /* DEBUG_PROXY */
 
 	int rv = 0;
@@ -597,13 +597,19 @@ protossl_pass_site(pxy_conn_ctx_t *ctx, char *site)
 	// Skip the first slash
 	char *s = site + 1;
 
+	// @attention Make sure sni is not null
 	// SNI: "example.com"
-	if (!strcmp(ctx->sslctx->sni, s)) {
+	if (ctx->sslctx->sni && !strcmp(ctx->sslctx->sni, s)) {
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protossl_pass_site: Match with sni: %s, fd=%d\n", ctx->sslctx->sni, ctx->fd);
 #endif /* DEBUG_PROXY */
 
 		rv = 1;
+		goto out2;
+	}
+
+	// @attention Make sure ssl_names is not null
+	if (!ctx->sslctx->ssl_names) {
 		goto out2;
 	}
 
