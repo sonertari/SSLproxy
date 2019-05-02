@@ -1383,10 +1383,8 @@ pxy_bev_readcb_preexec_logging_and_stats(struct bufferevent *bev, pxy_conn_ctx_t
 		}
 
 		if (WANT_CONTENT_LOG(ctx->conn)) {
-			if (ctx->proto != PROTO_PASSTHROUGH) {
-				// HTTP content logging at this point may record certain header lines twice, if we have not seen all headers yet
-				return pxy_log_content_inbuf(ctx, inbuf, (bev == ctx->src.bev));
-			}
+			// HTTP content logging at this point may record certain header lines twice, if we have not seen all headers yet
+			return pxy_log_content_inbuf(ctx, inbuf, (bev == ctx->src.bev));
 		}
 	}
 	return 0;
@@ -1433,9 +1431,7 @@ pxy_bev_readcb_preexec_logging_and_stats_child(struct bufferevent *bev, pxy_conn
 	}
 
 	if (WANT_CONTENT_LOG(ctx->conn)) {
-		if (ctx->proto != PROTO_PASSTHROUGH) {
-			return pxy_log_content_inbuf((pxy_conn_ctx_t *)ctx, inbuf, (bev == ctx->src.bev));
-		}
+		return pxy_log_content_inbuf((pxy_conn_ctx_t *)ctx, inbuf, (bev == ctx->src.bev));
 	}
 	return 0;
 }

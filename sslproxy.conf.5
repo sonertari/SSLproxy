@@ -90,8 +90,7 @@ Deny all OCSP requests on all proxyspecs. Equivalent to -O command line option.
 .TP
 \fBPassthrough BOOL\fR
 Passthrough SSL connections if they cannot be split because of client cert 
-auth or no matching cert and no CA, or if SNI or common names in SSL 
-cert match a PassSite option. Equivalent to -P command line option.
+auth or no matching cert and no CA. Equivalent to -P command line option.
 .br 
 Default: drop
 .TP
@@ -102,7 +101,7 @@ passed through the proxy. Per site filters can be defined using client IP
 addresses, users, and description keywords. '*' matches all users. User auth 
 should be enabled for user and description keyword filtering to work. 
 Case is ignored while matching description keywords. Multiple sites are 
-allowed, one on each line. PassSite requires Passthrough option.
+allowed, one on each line.
 .TP
 \fBDHGroupParams STRING\fR
 Use DH group params from pemfile. Equivalent to -g command line option.

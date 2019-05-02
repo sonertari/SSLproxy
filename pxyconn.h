@@ -302,6 +302,10 @@ struct pxy_conn_ctx {
 	unsigned int sent_userauth_msg : 1;     /* 1 until error msg is sent */
 	unsigned int sent_protoerror_msg : 1;   /* 1 until error msg is sent */
 
+	// We should not switch to passthrough mode in error conditions unless Passthrough option is set,
+	// that is why PassSite option requires a flag of its own to differentiate it from Passthrough option
+	unsigned int passsite : 1;         /* 1 to pass the SSL site through */
+
 #ifdef HAVE_LOCAL_PROCINFO
 	/* local process information */
 	pxy_conn_lproc_desc_t lproc;

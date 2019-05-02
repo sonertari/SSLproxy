@@ -667,7 +667,8 @@ out:
 /*
  * Create new SSL context for the incoming connection, based on the original
  * destination SSL certificate.
- * Returns NULL if no suitable certificate could be found.
+ * Returns NULL if no suitable certificate could be found or the site should 
+ * be passed through.
  */
 static SSL *
 protossl_srcssl_create(pxy_conn_ctx_t *ctx, SSL *origssl)
@@ -706,18 +707,18 @@ protossl_srcssl_create(pxy_conn_ctx_t *ctx, SSL *origssl)
 			ctx->enomem = 1;
 	}
 
-	if (ctx->opts->passthrough) {
-		passsite_t *passsite = ctx->opts->passsites;
-		while (passsite) {
-			if (protossl_pass_user(ctx, passsite) && protossl_pass_site(ctx, passsite->site)) {
-				// Do not print the surrounding slashes
-				log_err_level_printf(LOG_WARNING, "Found pass site: %.*s for user %s and keyword %s\n", (int)strlen(passsite->site) - 2, passsite->site + 1,
-						passsite->ip ? passsite->ip : (passsite->all ? "*" : STRORDASH(passsite->user)), STRORDASH(passsite->keyword));
-				cert_free(cert);
-				return NULL;
-			}
-			passsite = passsite->next;
+	passsite_t *passsite = ctx->opts->passsites;
+	while (passsite) {
+		if (protossl_pass_user(ctx, passsite) && protossl_pass_site(ctx, passsite->site)) {
+			// Do not print the surrounding slashes
+			log_err_level_printf(LOG_WARNING, "Found pass site: %.*s for user %s and keyword %s\n", (int)strlen(passsite->site) - 2, passsite->site + 1,
+					passsite->ip ? passsite->ip : (passsite->all ? "*" : STRORDASH(passsite->user)), STRORDASH(passsite->keyword));
+			cert_free(cert);
+			// Differentiate passsite from passthrough option by raising the passsite flag
+			ctx->passsite = 1;
+			return NULL;
 		}
+		passsite = passsite->next;
 	}
 
 	SSL_CTX *sslctx = protossl_srcsslctx_create(ctx, cert->crt, cert->chain,
@@ -1084,7 +1085,7 @@ protossl_sni_resolve_cb(int errcode, struct evutil_addrinfo *ai, void *arg)
 /*
  * The src fd is readable.  This is used to sneak-preview the SNI on SSL
  * connections.  If ctx->ev is NULL, it was called manually for a non-SSL
- * connection.  If ctx->passthrough is set, it was called a second time
+ * connection.  If ctx->opts->passthrough is set, it was called a second time
  * after the first ssl callout failed because of client cert auth.
  */
 #ifndef OPENSSL_NO_TLSEXT
@@ -1350,7 +1351,7 @@ protossl_setup_src_ssl(pxy_conn_ctx_t *ctx)
 	// @todo Make srvdst.ssl the origssl param
 	ctx->src.ssl = protossl_srcssl_create(ctx, ctx->srvdst.ssl);
 	if (!ctx->src.ssl) {
-		if (ctx->opts->passthrough && !ctx->enomem) {
+		if ((ctx->opts->passthrough || ctx->passsite) && !ctx->enomem) {
 			log_err_level_printf(LOG_WARNING, "Falling back to passthrough\n");
 			protopassthrough_engage(ctx);
 			// report protocol change by returning 1

@@ -1549,11 +1549,6 @@ opts_set_open_files_limit(const char *value, int line_num)
 static void
 opts_set_pass_site(opts_t *opts, char *value, int line_num)
 {
-	if (!opts->passthrough) {
-		fprintf(stderr, "PassSite requires Passthrough option\n");
-		exit(EXIT_FAILURE);
-	}
-
 	// site [(clientaddr|(user|*) [description keyword])]
 	char *argv[sizeof(char *) * 3];
 	int argc = 0;
@@ -1591,7 +1586,7 @@ opts_set_pass_site(opts_t *opts, char *value, int line_num)
 			ps->all = 1;
 		} else if (sys_isuser(argv[1])) {
 			if (!opts->user_auth) {
-				fprintf(stderr, "PassSite user requires user auth option at line %d\n", line_num);
+				fprintf(stderr, "PassSite user filter requires user auth at line %d\n", line_num);
 				exit(EXIT_FAILURE);
 			}
 			ps->user = strdup(argv[1]);
@@ -1602,7 +1597,7 @@ opts_set_pass_site(opts_t *opts, char *value, int line_num)
 
 	if (argc > 2) {
 		if (ps->ip) {
-			fprintf(stderr, "PassSite client ip should not have a description keyword parameter at line %d\n", line_num);
+			fprintf(stderr, "PassSite client ip cannot define keyword filter at line %d\n", line_num);
 			exit(EXIT_FAILURE);
 		}
 		ps->keyword = strdup(argv[2]);
