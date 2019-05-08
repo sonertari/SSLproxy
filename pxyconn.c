@@ -938,7 +938,7 @@ pxy_try_remove_sslproxy_header(pxy_conn_child_ctx_t *ctx, unsigned char *packet,
 	}
 }
 
-#if defined(__FreeBSD__) || defined(__APPLE__)
+#if defined(__APPLE__) || defined(__FreeBSD__)
 #define getdtablecount() 0
 
 /*
@@ -982,7 +982,7 @@ available_fds(unsigned int n)
 
 	return ret;
 }
-#endif /* __APPLE__ */
+#endif /* __APPLE__ || __FreeBSD__ */
 
 #ifdef __linux__
 /*
@@ -1051,11 +1051,11 @@ check_fd_usage(
 		goto out;
 	}
 
-#ifdef __APPLE__
+#if defined(__APPLE__) || defined(__FreeBSD__)
 	if (available_fds(FD_RESERVE) == -1) {
 		goto out;
 	}
-#endif /* __APPLE__ */
+#endif /* __APPLE__ || __FreeBSD__ */
 
 	return 0;
 out:
