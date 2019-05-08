@@ -1,6 +1,6 @@
 # SSLproxy - transparent SSL/TLS proxy for decrypting and diverting network traffic to other programs for deep SSL inspection [![Build Status](https://travis-ci.org/sonertari/SSLproxy.svg?branch=master)](https://travis-ci.org/sonertari/SSLproxy)
 
-Copyright (C) 2017-2018, [Soner Tari](http://comixwall.org).  
+Copyright (C) 2017-2019, [Soner Tari](http://comixwall.org).  
 https://github.com/sonertari/SSLproxy
 
 Copyright (C) 2009-2018, [Daniel Roethlisberger](//daniel.roe.ch/).  
@@ -122,6 +122,51 @@ because in order to maximize the chances that a connection can be successfully
 split, SSLsplit accepts all certificates by default, including self-signed
 ones. See [The Risks of SSL Inspection](https://insights.sei.cmu.edu/cert/2015/03/the-risks-of-ssl-inspection.html)
 for the reasons of this difference.
+
+If enabled, the UserAuth option requires network users to log in to the system 
+to use SSLproxy (this feature is currently available on OpenBSD and Linux 
+only). When users are logged in, they should be recorded on the users table in 
+an SQLite3 database. SSLproxy does not create this users table by itself, so 
+it should already exist in the SQLite3 database file configured by the 
+UserDBPath option. The users table should be created using the following SQL 
+statement:
+
+	CREATE TABLE USERS(
+	   IP             CHAR(45)     PRIMARY KEY     NOT NULL,
+	   USER           CHAR(31)     NOT NULL,
+	   ETHER          CHAR(17)     NOT NULL,
+	   ATIME          INT          NOT NULL,
+	   DESC           CHAR(50)
+	);
+
+When SSLproxy accepts a connection, it obtains the ethernet address of the
+client IP address from the arp cache of the system, then compares it with
+the value in the users table. If the ethernet addresses do not match, the 
+connection is redirected to the login page. SSLproxy also compares the atime 
+value in the users table with the current system time. If the difference is 
+larger than the configured value of the user timeout option, then the 
+connection is redirected to the login page. The atime of the IP address in the 
+users table is updated with the system time while the connection is being 
+terminated. Since this atime update is run using a privsep command, it is 
+expensive. So, to reduce the frequency of such updates, it is deferred until 
+the user idle time is more than half of the timeout period.
+
+If the UserAuth option is enabled, the user owner of the connection is 
+appended at the end of the SSLproxy line, so that the listening program can 
+parse and use this information in its logic and/or logging:
+
+	SSLproxy: [127.0.0.1]:34649,[192.168.3.24]:47286,[192.168.111.130]:443,s,soner
+
+If enabled, the ValidateProto option validates protocols in proxy 
+specifications. If a connection cannot pass protocol validation, then it is 
+terminated. This feature currently supports HTTP, POP3, and SMTP protocols.
+
+PassSite option allows certain SSL sites to be excluded from SSL inspection. 
+If a PassSite matches SNI or common names in the SSL certificate, the 
+connection is passed through the proxy without being diverted to the listening 
+program. For example, sites requiring client authentication can be added as 
+PassSite. Per site filters can be defined using client IP addresses, users, 
+and description keywords. Multiple sites can be defined, one on each line.
 
 Logging options include traditional SSLproxy connect and content log files as
 well as PCAP files and mirroring decrypted traffic to a network interface.

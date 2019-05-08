@@ -30,10 +30,12 @@
 
 #include "sys.h"
 #include "log.h"
+#include "defaults.h"
 
 #include <string.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/resource.h>
 
 #ifndef OPENSSL_NO_DH
 #include <openssl/dh.h>
@@ -63,6 +65,7 @@ opts_new(void)
 	opts->sslcomp = 1;
 	opts->chain = sk_X509_new_null();
 	opts->sslmethod = SSLv23_method;
+	opts->leafkey_rsabits = DFLT_LEAFKEY_RSABITS;
 	opts->conn_idle_timeout = 120;
 	opts->expired_conn_check_period = 10;
 	opts->ssl_shutdown_retry_delay = 100;
@@ -70,7 +73,8 @@ opts_new(void)
 	opts->remove_http_accept_encoding = 1;
 	opts->remove_http_referer = 1;
 	opts->verify_peer = 1;
-
+	opts->user_timeout = 300;
+	opts->max_http_header_size = 8192;
 	return opts;
 }
 
@@ -161,6 +165,29 @@ opts_free(opts_t *opts)
 		free(opts->mirrortarget);
 	}
 #endif /* !WITHOUT_MIRROR */
+	if (opts->userdb_path) {
+		free(opts->userdb_path);
+	}
+	if (opts->user_auth_url) {
+		free(opts->user_auth_url);
+	}
+	if (opts->user_auth) {
+		sqlite3_finalize(opts->update_user_atime);
+		sqlite3_close(opts->userdb);
+	}
+	passsite_t *passsite = opts->passsites;
+	while (passsite) {
+		passsite_t *next = passsite->next;
+		free(passsite->site);
+		if (passsite->ip)
+			free(passsite->ip);
+		if (passsite->user)
+			free(passsite->user);
+		if (passsite->keyword)
+			free(passsite->keyword);
+		free(passsite);
+		passsite = next;
+	}
 	memset(opts, 0, sizeof(opts_t));
 	free(opts);
 }
@@ -1444,6 +1471,145 @@ opts_unset_allow_wrong_host(opts_t *opts)
 	opts->allow_wrong_host = 0;
 }
 
+static void
+opts_set_user_auth(UNUSED opts_t *opts)
+{
+#if defined(__OpenBSD__) || defined(__linux__)
+	// Enable user auth on OpenBSD and Linux only
+	opts->user_auth = 1;
+#endif /* __OpenBSD__ || __linux__ */
+}
+
+static void
+opts_unset_user_auth(opts_t *opts)
+{
+	opts->user_auth = 0;
+}
+
+static void
+opts_set_userdb_path(opts_t *opts, const char *optarg)
+{
+	if (opts->userdb_path)
+		free(opts->userdb_path);
+	opts->userdb_path = strdup(optarg);
+#ifdef DEBUG_OPTS
+	log_dbg_printf("UserDBPath: %s\n", opts->userdb_path);
+#endif /* DEBUG_OPTS */
+}
+
+static void
+opts_set_user_auth_url(opts_t *opts, const char *optarg)
+{
+	if (opts->user_auth_url)
+		free(opts->user_auth_url);
+	opts->user_auth_url = strdup(optarg);
+#ifdef DEBUG_OPTS
+	log_dbg_printf("UserAuthURL: %s\n", opts->user_auth_url);
+#endif /* DEBUG_OPTS */
+}
+
+static void
+opts_set_validate_proto(opts_t *opts)
+{
+	opts->validate_proto = 1;
+}
+
+static void
+opts_unset_validate_proto(opts_t *opts)
+{
+	opts->validate_proto = 0;
+}
+
+static void
+opts_set_open_files_limit(const char *value, int line_num)
+{
+	unsigned int i = atoi(value);
+	if (i >= 50 && i <= 10000) {
+		struct rlimit rl;
+		rl.rlim_cur = i;
+		rl.rlim_max = i;
+		if (setrlimit(RLIMIT_NOFILE, &rl) == -1) {
+			fprintf(stderr, "Failed setting OpenFilesLimit\n");
+			if (errno) {
+				fprintf(stderr, "%s\n", strerror(errno));
+			} else {
+				ERR_print_errors_fp(stderr);
+			}
+			exit(EXIT_FAILURE);
+		}
+	} else {
+		fprintf(stderr, "Invalid OpenFilesLimit %s at line %d, use 50-10000\n", value, line_num);
+		exit(EXIT_FAILURE);
+	}
+#ifdef DEBUG_OPTS
+	log_dbg_printf("OpenFilesLimit: %u\n", i);
+#endif /* DEBUG_OPTS */
+}
+
+static void
+opts_set_pass_site(opts_t *opts, char *value, int line_num)
+{
+	// site [(clientaddr|(user|*) [description keyword])]
+	char *argv[sizeof(char *) * 3];
+	int argc = 0;
+	char *p, *last = NULL;
+
+	for ((p = strtok_r(value, " ", &last));
+		 p;
+		 (p = strtok_r(NULL, " ", &last))) {
+		if (argc < 3) {
+			argv[argc++] = p;
+		} else {
+			break;
+		}
+	}
+
+	if (!argc) {
+		fprintf(stderr, "PassSite requires at least one parameter at line %d\n", line_num);
+		exit(EXIT_FAILURE);
+	}
+
+	passsite_t *ps = malloc(sizeof(passsite_t));
+	memset(ps, 0, sizeof(passsite_t));
+
+	size_t len = strlen(argv[0]);
+	// Common names are separated by slashes
+	char s[len + 3];
+	strncpy(s + 1, argv[0], len);
+	s[0] = '/';
+	s[len + 1] = '/';
+	s[len + 2] = '\0';
+	ps->site = strdup(s);
+
+	if (argc > 1) {
+		if (!strcmp(argv[1], "*")) {
+			ps->all = 1;
+		} else if (sys_isuser(argv[1])) {
+			if (!opts->user_auth) {
+				fprintf(stderr, "PassSite user filter requires user auth at line %d\n", line_num);
+				exit(EXIT_FAILURE);
+			}
+			ps->user = strdup(argv[1]);
+		} else {
+			ps->ip = strdup(argv[1]);
+		}
+	}
+
+	if (argc > 2) {
+		if (ps->ip) {
+			fprintf(stderr, "PassSite client ip cannot define keyword filter at line %d\n", line_num);
+			exit(EXIT_FAILURE);
+		}
+		ps->keyword = strdup(argv[2]);
+	}
+
+	ps->next = opts->passsites;
+	opts->passsites = ps;
+#ifdef DEBUG_OPTS
+	log_dbg_printf("PassSite: %s, %s, %s, %s\n", ps->site, STRORDASH(ps->ip), ps->all ? "*" : STRORDASH(ps->user), STRORDASH(ps->keyword));
+#endif /* DEBUG_OPTS */
+}
+
 static int
 check_value_yesno(const char *value, const char *name, int line_num)
 {
@@ -1524,6 +1690,17 @@ set_option(opts_t *opts, const char *argv0,
 		log_dbg_printf("SSLCompression: %u\n", opts->sslcomp);
 #endif /* DEBUG_OPTS */
 #endif /* SSL_OP_NO_COMPRESSION */
+	} else if (!strncasecmp(name, "LeafKeyRSABits", 15)) {
+		unsigned int i = atoi(value);
+		if (i == 1024 || i == 2048 || i == 3072 || i == 4096) {
+			opts->leafkey_rsabits = i;
+		} else {
+			fprintf(stderr, "Invalid LeafKeyRSABits %s at line %d, use 1024|2048|3072|4096\n", value, line_num);
+			goto leave;
+		}
+#ifdef DEBUG_OPTS
+		log_dbg_printf("LeafKeyRSABits: %u\n", opts->leafkey_rsabits);
+#endif /* DEBUG_OPTS */
 	} else if (!strncmp(name, "ForceSSLProto", 14)) {
 		opts_force_proto(opts, argv0, value);
 	} else if (!strncmp(name, "DisableSSLProto", 16)) {
@@ -1604,6 +1781,50 @@ set_option(opts_t *opts, const char *argv0,
 #endif /* DEBUG_OPTS */
 	} else if (!strncmp(name, "DebugLevel", 11)) {
 		opts_set_debug_level(value);
+	} else if (!strncmp(name, "UserAuth", 9)) {
+		yes = check_value_yesno(value, "UserAuth", line_num);
+		if (yes == -1) {
+			goto leave;
+		}
+		yes ? opts_set_user_auth(opts) : opts_unset_user_auth(opts);
+#ifdef DEBUG_OPTS
+		log_dbg_printf("UserAuth: %u\n", opts->user_auth);
+#endif /* DEBUG_OPTS */
+	} else if (!strncmp(name, "UserDBPath", 11)) {
+		opts_set_userdb_path(opts, value);
+	} else if (!strncmp(name, "UserAuthURL", 12)) {
+		opts_set_user_auth_url(opts, value);
+	} else if (!strncasecmp(name, "UserTimeout", 12)) {
+		unsigned int i = atoi(value);
+		if (i <= 86400) {
+			opts->user_timeout = i;
+		} else {
+			fprintf(stderr, "Invalid UserTimeout %s at line %d, use 0-86400\n", value, line_num);
+			goto leave;
+		}
+#ifdef DEBUG_OPTS
+		log_dbg_printf("UserTimeout: %u\n", opts->user_timeout);
+#endif /* DEBUG_OPTS */
+	} else if (!strncmp(name, "ValidateProto", 14)) {
+		yes = check_value_yesno(value, "ValidateProto", line_num);
+		if (yes == -1) {
+			goto leave;
+		}
+		yes ? opts_set_validate_proto(opts) : opts_unset_validate_proto(opts);
+#ifdef DEBUG_OPTS
+		log_dbg_printf("ValidateProto: %u\n", opts->validate_proto);
+#endif /* DEBUG_OPTS */
+	} else if (!strncasecmp(name, "MaxHTTPHeaderSize", 18)) {
+		unsigned int i = atoi(value);
+		if (i >= 1024 && i <= 65536) {
+			opts->max_http_header_size = i;
+		} else {
+			fprintf(stderr, "Invalid MaxHTTPHeaderSize %s at line %d, use 1024-65536\n", value, line_num);
+			goto leave;
+		}
+#ifdef DEBUG_OPTS
+		log_dbg_printf("MaxHTTPHeaderSize: %u\n", opts->max_http_header_size);
+#endif /* DEBUG_OPTS */
 	} else if (!strncmp(name, "ProxySpec", 10)) {
 		/* Use MAX_TOKEN instead of computing the actual number of tokens in value */
 		char **argv = malloc(sizeof(char *) * MAX_TOKEN);
@@ -1714,6 +1935,10 @@ set_option(opts_t *opts, const char *argv0,
 #ifdef DEBUG_OPTS
 		log_dbg_printf("RemoveHTTPReferer: %u\n", opts->remove_http_referer);
 #endif /* DEBUG_OPTS */
+	} else if (!strncasecmp(name, "OpenFilesLimit", 15)) {
+		opts_set_open_files_limit(value, line_num);
+	} else if (!strncmp(name, "PassSite", 9)) {
+		opts_set_pass_site(opts, value, line_num);
 	} else {
 		fprintf(stderr, "Error in conf: Unknown option "
 		                "'%s' at line %d\n", name, line_num);

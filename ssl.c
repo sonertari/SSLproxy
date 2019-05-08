@@ -1749,6 +1749,7 @@ ssl_x509_names_to_str(X509 *crt)
 		sz += strlen(*p) + 1;
 	}
 	if (!sz) {
+		buf = strdup("-");
 		goto out1;
 	}
 

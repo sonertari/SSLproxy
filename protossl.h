@@ -3,7 +3,7 @@
  * https://www.roe.ch/SSLsplit
  *
  * Copyright (c) 2009-2018, Daniel Roethlisberger <daniel@roe.ch>.
- * Copyright (c) 2018, Soner Tari <sonertari@gmail.com>.
+ * Copyright (c) 2017-2019, Soner Tari <sonertari@gmail.com>.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -41,7 +41,7 @@ SSL *protossl_dstssl_create(pxy_conn_ctx_t *) NONNULL(1);
 
 void protossl_free(pxy_conn_ctx_t *) NONNULL(1);
 void protossl_fd_readcb(evutil_socket_t, short, void *);
-void protossl_conn_connect(pxy_conn_ctx_t *) NONNULL(1);
+int protossl_conn_connect(pxy_conn_ctx_t *) NONNULL(1) WUNRES;
 void protossl_connect_child(pxy_conn_child_ctx_t *) NONNULL(1);
 
 int protossl_setup_src_ssl(pxy_conn_ctx_t *) NONNULL(1);

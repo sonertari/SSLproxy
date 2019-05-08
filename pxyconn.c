@@ -3,7 +3,7 @@
  * https://www.roe.ch/SSLsplit
  *
  * Copyright (c) 2009-2018, Daniel Roethlisberger <daniel@roe.ch>.
- * Copyright (c) 2018, Soner Tari <sonertari@gmail.com>.
+ * Copyright (c) 2017-2019, Soner Tari <sonertari@gmail.com>.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -32,6 +32,8 @@
 #include "prototcp.h"
 #include "protossl.h"
 #include "protohttp.h"
+#include "protopop3.h"
+#include "protosmtp.h"
 #include "protoautossl.h"
 #include "protopassthrough.h"
 
@@ -48,15 +50,27 @@
 
 #include <event2/listener.h>
 
-#ifdef HAVE_NETFILTER
+#ifdef __linux__
 #include <glob.h>
-#endif /* HAVE_NETFILTER */
+#endif /* __linux__ */
+
+#include <net/if_arp.h>
+#include <sys/ioctl.h>
+#include <sys/socket.h>
+#include <sys/sysctl.h>
+#include <net/route.h>
+#include <netinet/if_ether.h>
+#ifdef __OpenBSD__
+#include <net/if_dl.h>
+#endif /* __OpenBSD__ */
 
 /*
  * Maximum size of data to buffer per connection direction before
  * temporarily stopping to read data from the other end.
  */
 #define OUTBUF_LIMIT	(128*1024)
+
+int descriptor_table_size = 0;
 
 // @attention The order of names should match the order in protocol enum
 char *protocol_names[] = {
@@ -96,15 +110,15 @@ pxy_setup_proto(pxy_conn_ctx_t *ctx)
 		}
 	} else if (ctx->spec->pop3) {
 		if (ctx->spec->ssl) {
-			proto = (protossl_setup(ctx) != PROTO_ERROR) ? PROTO_POP3S : PROTO_ERROR;
+			proto = protopop3s_setup(ctx);
 		} else {
-			proto = PROTO_POP3;
+			proto = protopop3_setup(ctx);
 		}
 	} else if (ctx->spec->smtp) {
 		if (ctx->spec->ssl) {
-			proto = (protossl_setup(ctx) != PROTO_ERROR) ? PROTO_SMTPS : PROTO_ERROR;
+			proto = protosmtps_setup(ctx);
 		} else {
-			proto = PROTO_SMTP;
+			proto = protosmtp_setup(ctx);
 		}
 	} else if (ctx->spec->ssl) {
 		proto = protossl_setup(ctx);
@@ -175,8 +189,6 @@ pxy_conn_ctx_new(evutil_socket_t fd,
 
 	pxy_conn_ctx_t *ctx = malloc(sizeof(pxy_conn_ctx_t));
 	if (!ctx) {
-		log_err_level_printf(LOG_CRIT, "Error allocating memory\n");
-		evutil_closesocket(fd);
 		return NULL;
 	}
 	memset(ctx, 0, sizeof(pxy_conn_ctx_t));
@@ -195,8 +207,6 @@ pxy_conn_ctx_new(evutil_socket_t fd,
 
 	ctx->proto = pxy_setup_proto(ctx);
 	if (ctx->proto == PROTO_ERROR) {
-		log_err_level_printf(LOG_CRIT, "Error allocating memory\n");
-		evutil_closesocket(fd);
 		free(ctx);
 		return NULL;
 	}
@@ -238,8 +248,6 @@ pxy_conn_ctx_new_child(evutil_socket_t fd, pxy_conn_ctx_t *conn)
 
 	ctx->proto = pxy_setup_proto_child(ctx);
 	if (ctx->proto == PROTO_ERROR) {
-		log_err_level_printf(LOG_CRIT, "Error allocating memory\n");
-		evutil_closesocket(fd);
 		free(ctx);
 		return NULL;
 	}
@@ -256,7 +264,11 @@ pxy_conn_ctx_free_child(pxy_conn_child_ctx_t *ctx)
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_free_child: ENTER, child fd=%d, fd=%d\n", ctx->fd, ctx->conn->fd);
 #endif /* DEBUG_PROXY */
 
-	pxy_thrmgr_detach_child(ctx->conn);
+	if (ctx->conn->thr_locked) {
+		pxy_thrmgr_detach_child_unlocked(ctx->conn);
+	} else {
+		pxy_thrmgr_detach_child(ctx->conn);
+	}
 
 	// If the proto doesn't have special args, proto_free() callback is NULL
 	if (ctx->protoctx->proto_free) {
@@ -266,29 +278,37 @@ pxy_conn_ctx_free_child(pxy_conn_child_ctx_t *ctx)
 	free(ctx);
 }
 
-static void NONNULL(1,2)
-pxy_conn_remove_child(pxy_conn_child_ctx_t *child, pxy_conn_child_ctx_t **head)
+static void NONNULL(1)
+pxy_conn_remove_child(pxy_conn_child_ctx_t *ctx)
 {
+	assert(ctx->conn != NULL);
+	assert(ctx->conn->children != NULL);
+
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_remove_child: ENTER, child fd=%d, fd=%d\n", child->fd, child->conn->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_remove_child: ENTER, child fd=%d, fd=%d\n", ctx->fd, ctx->conn->fd);
 #endif /* DEBUG_PROXY */
 
-    if (child->fd == (*head)->fd) {
-        *head = (*head)->next;
-        return;
-    }
+	if (ctx->fd == ctx->conn->children->fd) {
+		ctx->conn->children = ctx->conn->children->next;
+		return;
+	}
 
-    pxy_conn_child_ctx_t *current = (*head)->next;
-    pxy_conn_child_ctx_t *previous = *head;
-    while (current != NULL && previous != NULL) {
-        if (child->fd == current->fd) {
-            previous->next = current->next;
-            return;
-        }
-        previous = current;
-        current = current->next;
-    }
-    return;
+	pxy_conn_child_ctx_t *current = ctx->conn->children->next;
+	pxy_conn_child_ctx_t *previous = ctx->conn->children;
+	while (current != NULL && previous != NULL) {
+		if (ctx->fd == current->fd) {
+			previous->next = current->next;
+			return;
+		}
+		previous = current;
+		current = current->next;
+	}
+	// This should never happen
+	log_err_level_printf(LOG_CRIT, "Cannot find child in conn children\n");
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_conn_remove_child: Cannot find child in conn children, child fd=%d, fd=%d\n", ctx->fd, ctx->conn->fd);
+#endif /* DEBUG_PROXY */
+	assert(0);
 }
 
 static void
@@ -300,17 +320,25 @@ pxy_conn_free_child(pxy_conn_child_ctx_t *ctx)
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_free_child: ENTER, child fd=%d, fd=%d\n", ctx->fd, ctx->conn->fd);
 #endif /* DEBUG_PROXY */
 
+	// We always assign NULL to bevs after freeing them
+	if (ctx->src.bev) {
+		ctx->src.free(ctx->src.bev, ctx->conn);
+		ctx->src.bev = NULL;
+	} else if (!ctx->src.closed) {
+#ifdef DEBUG_PROXY
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_conn_free_child: evutil_closesocket on NULL src->bev, fd=%d\n", ctx->fd);
+#endif /* DEBUG_PROXY */
+
+		// @attention early in the conn setup, src fd may be open, although src.bev is NULL
+		evutil_closesocket(ctx->fd);
+	}
+
 	if (ctx->dst.bev) {
 		ctx->dst.free(ctx->dst.bev, ctx->conn);
 		ctx->dst.bev = NULL;
 	}
 
-	if (ctx->src.bev) {
-		ctx->src.free(ctx->src.bev, ctx->conn);
-		ctx->src.bev = NULL;
-	}
-
-	pxy_conn_remove_child(ctx, &ctx->conn->children);
+	pxy_conn_remove_child(ctx);
 	pxy_conn_ctx_free_child(ctx);
 }
 
@@ -339,7 +367,7 @@ pxy_conn_free_children(pxy_conn_ctx_t *ctx)
 	// @attention Parent may be closing before there was any child at all nor was child_evcl ever created
 	if (ctx->child_evcl) {
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_conn_free_children: Freeing child_evcl, child fd=%d, children->fd=%d, fd=%d\n",
+		log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_conn_free_children: Freeing child_evcl, child fd=%d, children fd=%d, fd=%d\n",
 				ctx->child_fd, ctx->children ? ctx->children->fd : -1, ctx->fd);
 #endif /* DEBUG_PROXY */
 
@@ -361,7 +389,41 @@ pxy_conn_ctx_free(pxy_conn_ctx_t *ctx, int by_requestor)
 			log_err_level_printf(LOG_WARNING, "Content log close failed\n");
 		}
 	}
-	pxy_thrmgr_detach(ctx);
+
+	if (ctx->opts->user_auth && ctx->srchost_str && ctx->user && ctx->ether) {
+		// Update userdb atime if idle time is more than 50% of user timeout, which is expected to reduce update frequency
+		unsigned int idletime = ctx->idletime + (time(NULL) - ctx->ctime);
+		if (idletime > (ctx->opts->user_timeout / 2)) {
+			userdbkeys_t keys;
+			// Zero out for NULL termination
+			memset(&keys, 0, sizeof(userdbkeys_t));
+			// Leave room for NULL to make sure the strings are always NULL terminated
+			strncpy(keys.ip, ctx->srchost_str, sizeof(keys.ip) - 1);
+			strncpy(keys.user, ctx->user, sizeof(keys.user) - 1);
+			strncpy(keys.ether, ctx->ether, sizeof(keys.ether) - 1);
+
+			if (privsep_client_update_atime(ctx->clisock, &keys) == -1) {
+#ifdef DEBUG_PROXY
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_free: Error updating user atime: %s, fd=%d\n", sqlite3_errmsg(ctx->opts->userdb), ctx->fd);
+#endif /* DEBUG_PROXY */
+			} else {
+#ifdef DEBUG_PROXY
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_free: Successfully updated user atime, fd=%d\n", ctx->fd);
+#endif /* DEBUG_PROXY */
+			}
+		} else {
+#ifdef DEBUG_PROXY
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_free: Will not update user atime, idletime=%u, fd=%d\n", idletime, ctx->fd);
+#endif /* DEBUG_PROXY */
+		}
+	}
+
+	if (ctx->conn->thr_locked) {
+		pxy_thrmgr_detach_unlocked(ctx);
+	} else {
+		pxy_thrmgr_detach(ctx);
+	}
+
 	if (ctx->srchost_str) {
 		free(ctx->srchost_str);
 	}
@@ -396,6 +458,16 @@ pxy_conn_ctx_free(pxy_conn_ctx_t *ctx, int by_requestor)
 		ctx->protoctx->proto_free(ctx);
 	}
 	free(ctx->protoctx);
+
+	if (ctx->user) {
+		free(ctx->user);
+	}
+	if (ctx->ether) {
+		free(ctx->ether);
+	}
+	if (ctx->desc) {
+		free(ctx->desc);
+	}
 	free(ctx);
 }
 
@@ -406,18 +478,17 @@ pxy_conn_free(pxy_conn_ctx_t *ctx, int by_requestor)
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_free: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
-	if (!ctx->src.closed) {
-		if (ctx->src.bev) {
-			ctx->src.free(ctx->src.bev, ctx);
-			ctx->src.bev = NULL;
-		} else {
+	// We always assign NULL to bevs after freeing them
+	if (ctx->src.bev) {
+		ctx->src.free(ctx->src.bev, ctx);
+		ctx->src.bev = NULL;
+	} else if (!ctx->src.closed) {
 #ifdef DEBUG_PROXY
-			log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_conn_free: evutil_closesocket on NULL src->bev, fd=%d\n", ctx->fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_conn_free: evutil_closesocket on NULL src->bev, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
-			// @todo src fd may be open, although src.bev is NULL, where do we close the src fd?
-			evutil_closesocket(ctx->fd);
-		}
+		// @attention early in the conn setup, src fd may be open, although src.bev is NULL
+		evutil_closesocket(ctx->fd);
 	}
 
 	if (ctx->srvdst.bev) {
@@ -481,16 +552,16 @@ pxy_log_connect_nonhttp(pxy_conn_ctx_t *ctx)
 #ifdef HAVE_LOCAL_PROCINFO
 		              " %s"
 #endif /* HAVE_LOCAL_PROCINFO */
-		              "\n",
+		              " user:%s\n",
 		              ctx->proto == PROTO_PASSTHROUGH ? "passthrough" : (ctx->proto == PROTO_POP3 ? "pop3" : (ctx->proto == PROTO_SMTP ? "smtp" : "tcp")),
 		              STRORDASH(ctx->srchost_str),
 		              STRORDASH(ctx->srcport_str),
 		              STRORDASH(ctx->dsthost_str),
-		              STRORDASH(ctx->dstport_str)
+		              STRORDASH(ctx->dstport_str),
 #ifdef HAVE_LOCAL_PROCINFO
-		              , lpi
+		              lpi,
 #endif /* HAVE_LOCAL_PROCINFO */
-		             );
+		              STRORDASH(ctx->user));
 	} else {
 		rv = asprintf(&msg, "CONN: %s %s %s %s %s "
 		              "sni:%s names:%s "
@@ -499,7 +570,7 @@ pxy_log_connect_nonhttp(pxy_conn_ctx_t *ctx)
 #ifdef HAVE_LOCAL_PROCINFO
 		              " %s"
 #endif /* HAVE_LOCAL_PROCINFO */
-		              "\n",
+		              " user:%s\n",
 		              ctx->proto == PROTO_AUTOSSL ? "autossl" : (ctx->proto == PROTO_POP3S ? "pop3s" : (ctx->proto == PROTO_SMTPS ? "smtps" : "ssl")),
 		              STRORDASH(ctx->srchost_str),
 		              STRORDASH(ctx->srcport_str),
@@ -512,11 +583,11 @@ pxy_log_connect_nonhttp(pxy_conn_ctx_t *ctx)
 		              !ctx->srvdst.closed && ctx->srvdst.ssl ? SSL_get_version(ctx->srvdst.ssl):ctx->sslctx->srvdst_ssl_version,
 		              !ctx->srvdst.closed && ctx->srvdst.ssl ? SSL_get_cipher(ctx->srvdst.ssl):ctx->sslctx->srvdst_ssl_cipher,
 		              STRORDASH(ctx->sslctx->origcrtfpr),
-		              STRORDASH(ctx->sslctx->usedcrtfpr)
+		              STRORDASH(ctx->sslctx->usedcrtfpr),
 #ifdef HAVE_LOCAL_PROCINFO
-		              , lpi
+		              lpi,
 #endif /* HAVE_LOCAL_PROCINFO */
-		              );
+		              STRORDASH(ctx->user));
 	}
 	if ((rv < 0) || !msg) {
 		ctx->enomem = 1;
@@ -677,7 +748,7 @@ void
 pxy_log_connect_src(pxy_conn_ctx_t *ctx)
 {
 	/* log connection if we don't analyze any headers */
-	if (!ctx->spec->http && (WANT_CONNECT_LOG(ctx) || ctx->opts->statslog)) {
+	if (!ctx->spec->http && WANT_CONNECT_LOG(ctx)) {
 		pxy_log_connect_nonhttp(ctx);
 	}
 
@@ -699,7 +770,7 @@ pxy_log_connect_srvdst(pxy_conn_ctx_t *ctx)
 	// @attention srvdst.bev may be NULL, if its writecb fires first
 	if (ctx->srvdst.bev) {
 		/* log connection if we don't analyze any headers */
-		if (!ctx->srvdst.ssl && !ctx->spec->http && (WANT_CONNECT_LOG(ctx) || ctx->opts->statslog)) {
+		if (!ctx->srvdst.ssl && !ctx->spec->http && WANT_CONNECT_LOG(ctx)) {
 			pxy_log_connect_nonhttp(ctx);
 		}
 
@@ -840,7 +911,7 @@ void
 pxy_insert_sslproxy_header(pxy_conn_ctx_t *ctx, unsigned char *packet, size_t *packet_size)
 {
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_insert_sslproxy_header: INSERT, fd=%d\n", ctx->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_insert_sslproxy_header: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
 	// @attention Cannot use string manipulation functions; we are dealing with binary arrays here, not NULL-terminated strings
@@ -867,19 +938,145 @@ pxy_try_remove_sslproxy_header(pxy_conn_child_ctx_t *ctx, unsigned char *packet,
 	}
 }
 
+#ifdef __APPLE__
+#define getdtablecount() 0
+
+/*
+ * Copied from:
+ * opensmtpd-201801101641p1/openbsd-compat/imsg.c
+ * 
+ * Copyright (c) 2003, 2004 Henning Brauer <henning@openbsd.org>
+ *
+ * Permission to use, copy, modify, and distribute this software for any
+ * purpose with or without fee is hereby granted, provided that the above
+ * copyright notice and this permission notice appear in all copies.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+ * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ */
+static int
+available_fds(unsigned int n)
+{
+	unsigned int i;
+	int ret, fds[256];
+
+	if (n > (sizeof(fds)/sizeof(fds[0])))
+		return -1;
+
+	ret = 0;
+	for (i = 0; i < n; i++) {
+		fds[i] = -1;
+		if ((fds[i] = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+			ret = -1;
+			break;
+		}
+	}
+
+	for (i = 0; i < n && fds[i] >= 0; i++)
+		close(fds[i]);
+
+	return ret;
+}
+#endif /* __APPLE__ */
+
+#ifdef __linux__
+/*
+ * Copied from:
+ * https://github.com/tmux/tmux/blob/master/compat/getdtablecount.c
+ * 
+ * Copyright (c) 2017 Nicholas Marriott <nicholas.marriott@gmail.com>
+ *
+ * Permission to use, copy, modify, and distribute this software for any
+ * purpose with or without fee is hereby granted, provided that the above
+ * copyright notice and this permission notice appear in all copies.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+ * WHATSOEVER RESULTING FROM LOSS OF MIND, USE, DATA OR PROFITS, WHETHER
+ * IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
+ * OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ */
+int
+getdtablecount()
+{
+	char path[PATH_MAX];
+	glob_t g;
+	int n = 0;
+
+	if (snprintf(path, sizeof path, "/proc/%ld/fd/*", (long)getpid()) < 0) {
+		log_err_level_printf(LOG_CRIT, "snprintf overflow\n");
+		return 0;
+	}
+	if (glob(path, 0, NULL, &g) == 0)
+		n = g.gl_pathc;
+	globfree(&g);
+	return n;
+}
+#endif /* __linux__ */
+
+/*
+ * Check if we are out of file descriptors to close the conn, or else libevent will crash us
+ * @attention We cannot guess the number of children in a connection at conn setup time. So, FD_RESERVE is just a ball park figure.
+ * But what if a connection passes the check below, but eventually tries to create more children than FD_RESERVE allows for? This will crash us the same.
+ * Beware, this applies to all current conns, not just the last connection setup.
+ * For example, 20x conns pass the check below before creating any children, at which point we reach the last FD_RESERVE fds,
+ * then they all start creating children, which crashes us again.
+ * So, no matter how large an FD_RESERVE we choose, there will always be a risk of running out of fds, if we check the number of fds during parent conn setup only.
+ * If we are left with less than FD_RESERVE fds, we should not create more children than FD_RESERVE allows for either.
+ * Therefore, we check if we are out of fds in proxy_listener_acceptcb_child() and close the conn there too.
+ * @attention These checks are expected to slow us further down, but it is critical to avoid a crash in case we run out of fds.
+ */
+static int
+check_fd_usage(
+#ifdef DEBUG_PROXY
+	evutil_socket_t fd
+#endif /* DEBUG_PROXY */
+	)
+{
+	int dtable_count = getdtablecount();
+
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINER, "check_fd_usage: descriptor_table_size=%d, dtablecount=%d, reserve=%d, fd=%d\n",
+			descriptor_table_size, dtable_count, FD_RESERVE, fd);
+#endif /* DEBUG_PROXY */
+
+	if (dtable_count + FD_RESERVE >= descriptor_table_size) {
+		goto out;
+	}
+
+#ifdef __APPLE__
+	if (available_fds(FD_RESERVE) == -1) {
+		goto out;
+	}
+#endif /* __APPLE__ */
+
+	return 0;
+out:
+	errno = EMFILE;
+	log_err_level_printf(LOG_CRIT, "Out of file descriptors\n");
+	return -1;
+}
+
 /*
  * Callback for accept events on the socket listener bufferevent.
  */
 static void
 pxy_listener_acceptcb_child(UNUSED struct evconnlistener *listener, evutil_socket_t fd,
-                        UNUSED struct sockaddr *peeraddr, UNUSED int peeraddrlen, void *arg)
+							UNUSED struct sockaddr *peeraddr, UNUSED int peeraddrlen, void *arg)
 {
 	pxy_conn_ctx_t *conn = arg;
 
 	conn->atime = time(NULL);
 
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_listener_acceptcb_child: ENTER, child fd=%d, conn->child_fd=%d, fd=%d\n", fd, conn->child_fd, conn->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_listener_acceptcb_child: ENTER, child fd=%d, child_fd=%d, fd=%d\n", fd, conn->child_fd, conn->fd);
 
 	char *host, *port;
 	if (sys_sockaddr_str(peeraddr, peeraddrlen, &host, &port) == 0) {
@@ -896,6 +1093,16 @@ pxy_listener_acceptcb_child(UNUSED struct evconnlistener *listener, evutil_socke
 		goto out;
 	}
 
+	if (check_fd_usage(
+#ifdef DEBUG_PROXY
+			conn->fd
+#endif /* DEBUG_PROXY */
+			) == -1) {
+		evutil_closesocket(fd);
+		pxy_conn_term(conn, 1);
+		goto out;
+	}
+
 	pxy_conn_child_ctx_t *ctx = pxy_conn_ctx_new_child(fd, conn);
 	if (!ctx) {
 		log_err_level_printf(LOG_CRIT, "Error allocating memory\n");
@@ -903,24 +1110,22 @@ pxy_listener_acceptcb_child(UNUSED struct evconnlistener *listener, evutil_socke
 		pxy_conn_term(conn, 1);
 		goto out;
 	}
+	conn->thr->max_load = MAX(conn->thr->max_load, conn->thr->load);
 
+	conn->child_count++;
 	// Prepend child ctx to conn ctx child list
 	// @attention If the last child is deleted, the children list may become null again
 	ctx->next = conn->children;
 	conn->children = ctx;
-
-	conn->child_count++;
-	ctx->idx = conn->child_count;
 
 	// @attention Do not enable src events here yet, they will be enabled after dst connects
 	if (prototcp_setup_src_child(ctx) == -1) {
 		goto out;
 	}
 
-	// src_fd is different from fd
-	ctx->src_fd = bufferevent_getfd(ctx->src.bev);
-	ctx->conn->child_src_fd = ctx->src_fd;
-	ctx->conn->thr->max_fd = MAX(ctx->conn->thr->max_fd, ctx->src_fd);
+	// @attention fd (ctx->fd) is different from child event listener fd (ctx->conn->child_fd)
+	ctx->conn->thr->max_fd = MAX(ctx->conn->thr->max_fd, ctx->fd);
+	ctx->conn->child_src_fd = ctx->fd;
 	
 	/* create server-side socket and eventbuffer */
 	// Children rely on the findings of parent
@@ -952,10 +1157,10 @@ pxy_listener_acceptcb_child(UNUSED struct evconnlistener *listener, evutil_socke
 	ctx->dst_fd = bufferevent_getfd(ctx->dst.bev);
 	ctx->conn->child_dst_fd = ctx->dst_fd;
 	ctx->conn->thr->max_fd = MAX(ctx->conn->thr->max_fd, ctx->dst_fd);
-
+	// Do not return here, but continue and check term/enomem flags below
 out:
 	// @attention Do not use ctx->conn here, ctx may be uninitialized
-	// @attention Call pxy_conn_free() directly, not term functions here
+	// @attention Call pxy_conn_free() directly, not pxy_conn_term() here
 	// This is our last chance to close and free the conn
 	if (conn->term || conn->enomem) {
 		pxy_conn_free(conn, conn->term ? conn->term_requestor : 1);
@@ -980,7 +1185,7 @@ pxy_setup_child_listener(pxy_conn_ctx_t *ctx)
 	if (!child_evcl) {
 		log_err_level_printf(LOG_CRIT, "Error creating child evconnlistener: %s\n", strerror(errno));
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_setup_child_listener: Error creating child evconnlistener: %s, fd=%d, child_fd=%d\n", strerror(errno), ctx->fd, ctx->child_fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_setup_child_listener: Error creating child evconnlistener: %s, child_fd=%d, fd=%d\n", strerror(errno), ctx->child_fd, ctx->fd);
 #endif /* DEBUG_PROXY */
 
 		// @attention Cannot call proxy_listener_ctx_free() on child_evcl, child_evcl does not have any ctx with next listener
@@ -1020,13 +1225,17 @@ pxy_setup_child_listener(pxy_conn_ctx_t *ctx)
 		return -1;
 	}
 
-	// SSLproxy: [127.0.0.1]:34649,[192.168.3.24]:47286,[74.125.206.108]:465,s
+	int user_len = 0;
+	if (ctx->opts->user_auth && ctx->user) {
+		// +1 for comma
+		user_len = strlen(ctx->user) + 1;
+	}
+	// SSLproxy: [127.0.0.1]:34649,[192.168.3.24]:47286,[74.125.206.108]:465,s,soner
 	// @todo Port may be less than 5 chars
-	// SSLproxy:        +   + [ + addr         + ] + : + p + , + [ + srchost_str              + ] + : + srcport_str              + , + [ + dsthost_str              + ] + : + dstport_str              + , + s
-	// SSLPROXY_KEY_LEN + 1 + 1 + strlen(addr) + 1 + 1 + 5 + 1 + 1 + strlen(ctx->srchost_str) + 1 + 1 + strlen(ctx->srcport_str) + 1 + 1 + strlen(ctx->dsthost_str) + 1 + 1 + strlen(ctx->dstport_str) + 1 + 1
-	ctx->sslproxy_header_len = SSLPROXY_KEY_LEN + strlen(addr) + strlen(ctx->srchost_str) + strlen(ctx->srcport_str) + strlen(ctx->dsthost_str) + strlen(ctx->dstport_str) + 19;
+	// SSLproxy:        +   + [ + addr         + ] + : + p + , + [ + srchost_str              + ] + : + srcport_str              + , + [ + dsthost_str              + ] + : + dstport_str              + , + s + , + user
+	// SSLPROXY_KEY_LEN + 1 + 1 + strlen(addr) + 1 + 1 + 5 + 1 + 1 + strlen(ctx->srchost_str) + 1 + 1 + strlen(ctx->srcport_str) + 1 + 1 + strlen(ctx->dsthost_str) + 1 + 1 + strlen(ctx->dstport_str) + 1 + 1 + 1 + strlen(ctx->user)
+	ctx->sslproxy_header_len = SSLPROXY_KEY_LEN + strlen(addr) + strlen(ctx->srchost_str) + strlen(ctx->srcport_str) + strlen(ctx->dsthost_str) + strlen(ctx->dstport_str) + 19 + user_len;
 
-	// @todo Always check malloc retvals. Should we close the conn if malloc fails?
 	// +1 for NULL
 	ctx->sslproxy_header = malloc(ctx->sslproxy_header_len + 1);
 	if (!ctx->sslproxy_header) {
@@ -1036,9 +1245,9 @@ pxy_setup_child_listener(pxy_conn_ctx_t *ctx)
 
 	// printf(3): "snprintf() will write at most size-1 of the characters (the size'th character then gets the terminating NULL)"
 	// So, +1 for NULL
-	snprintf(ctx->sslproxy_header, ctx->sslproxy_header_len + 1, "%s [%s]:%u,[%s]:%s,[%s]:%s,%s",
+	snprintf(ctx->sslproxy_header, ctx->sslproxy_header_len + 1, "%s [%s]:%u,[%s]:%s,[%s]:%s,%s%s%s",
 			SSLPROXY_KEY, addr, ntohs(child_listener_addr.sin_port), STRORNONE(ctx->srchost_str), STRORNONE(ctx->srcport_str),
-			STRORNONE(ctx->dsthost_str), STRORNONE(ctx->dstport_str), ctx->spec->ssl ? "s":"p");
+			STRORNONE(ctx->dsthost_str), STRORNONE(ctx->dstport_str), ctx->spec->ssl ? "s":"p", user_len ? "," : "", user_len ? ctx->user : "");
 	return 0;
 }
 
@@ -1174,10 +1383,8 @@ pxy_bev_readcb_preexec_logging_and_stats(struct bufferevent *bev, pxy_conn_ctx_t
 		}
 
 		if (WANT_CONTENT_LOG(ctx->conn)) {
-			if (ctx->proto != PROTO_PASSTHROUGH) {
-				// HTTP content logging at this point may record certain header lines twice, if we have not seen all headers yet
-				return pxy_log_content_inbuf(ctx, inbuf, (bev == ctx->src.bev));
-			}
+			// HTTP content logging at this point may record certain header lines twice, if we have not seen all headers yet
+			return pxy_log_content_inbuf(ctx, inbuf, (bev == ctx->src.bev));
 		}
 	}
 	return 0;
@@ -1224,9 +1431,7 @@ pxy_bev_readcb_preexec_logging_and_stats_child(struct bufferevent *bev, pxy_conn
 	}
 
 	if (WANT_CONTENT_LOG(ctx->conn)) {
-		if (ctx->proto != PROTO_PASSTHROUGH) {
-			return pxy_log_content_inbuf((pxy_conn_ctx_t *)ctx, inbuf, (bev == ctx->src.bev));
-		}
+		return pxy_log_content_inbuf((pxy_conn_ctx_t *)ctx, inbuf, (bev == ctx->src.bev));
 	}
 	return 0;
 }
@@ -1319,6 +1524,9 @@ pxy_bev_eventcb_postexec_logging_and_stats(struct bufferevent *bev, short events
 		}
 
 		if (bev == ctx->srvdst.bev) {
+			ctx->thr->max_load = MAX(ctx->thr->max_load, ctx->thr->load);
+			ctx->thr->max_fd = MAX(ctx->thr->max_fd, ctx->fd);
+
 			// src and other fd stats are collected in acceptcb functions
 			ctx->srvdst_fd = bufferevent_getfd(ctx->srvdst.bev);
 			ctx->thr->max_fd = MAX(ctx->thr->max_fd, ctx->srvdst_fd);
@@ -1425,32 +1633,319 @@ pxy_conn_connect(pxy_conn_ctx_t *ctx)
 		}
 	}
 
-	ctx->protoctx->connectcb(ctx);
-
-	if (ctx->term || ctx->enomem) {
-		pxy_conn_free(ctx, ctx->term ? ctx->term_requestor : 1);
+	if (ctx->protoctx->connectcb(ctx) == -1) {
+		// @attention Do not try to close conns or do anything else with conn ctx on the thrmgr thread after setting event callbacks and/or socket connect.
+		// The return value of -1 from connectcb indicates that there was a fatal error before event callbacks were set, so we can terminate the connection.
+		// Otherwise, it is up to the event callbacks to terminate the connection. This is necessary to avoid multithreading issues.
+		if (ctx->term || ctx->enomem) {
+			pxy_conn_free(ctx, ctx->term ? ctx->term_requestor : 1);
+		}
 	}
-	// @attention Do not do anything else with the ctx after connecting socket, otherwise if pxy_bev_eventcb fires on error, such as due to "No route to host",
-	// the conn is closed and freed up, and we get multithreading issues, e.g. signal 11. We are on the thrmgr thread. So, just return.
+	// @attention Do not do anything with the conn ctx after this point on the thrmgr thread
 }
 
-/*
- * The src fd is readable.  This is used to sneak-preview the SNI on SSL
- * connections.  If ctx->ev is NULL, it was called manually for a non-SSL
- * connection.  If ctx->passthrough is set, it was called a second time
- * after the first ssl callout failed because of client cert auth.
- */
-void
-pxy_fd_readcb(evutil_socket_t fd, UNUSED short what, void *arg)
+#if defined(__OpenBSD__) || defined(__linux__)
+static void
+identify_user(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
 
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_fd_readcb: ENTER, fd=%d\n", ctx->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
-	ctx->atime = time(NULL);
-	ctx->protoctx->fd_readcb(fd, what, arg);
+	if (ctx->ev) {
+		event_free(ctx->ev);
+		ctx->ev = NULL;
+	}
+
+	if (ctx->identify_user_count++ >= 50) {
+#ifdef DEBUG_PROXY
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: Cannot get conn user, fd=%d\n", ctx->fd);
+#endif /* DEBUG_PROXY */
+
+		goto redirect;
+	} else {
+		int rc;
+
+		// @todo Do we really need to reset the stmt, as we always reset while returning?
+		sqlite3_reset(ctx->thr->get_user);
+		sqlite3_bind_text(ctx->thr->get_user, 1, ctx->srchost_str, -1, NULL);
+		rc = sqlite3_step(ctx->thr->get_user);
+
+		// Retry in case we cannot acquire db file or database: SQLITE_BUSY or SQLITE_LOCKED respectively
+		if (rc == SQLITE_BUSY || rc == SQLITE_LOCKED) {
+#ifdef DEBUG_PROXY
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: User db busy or locked, retrying, count=%d, fd=%d\n", ctx->identify_user_count, ctx->fd);
+#endif /* DEBUG_PROXY */
+
+			// Do not forget to reset sqlite stmt, or else the userdb may remain busy/locked
+			sqlite3_reset(ctx->thr->get_user);
+
+			ctx->ev = event_new(ctx->evbase, -1, 0, identify_user, ctx);
+			if (!ctx->ev)
+				goto memout;
+			struct timeval retry_delay = {0, 100};
+			if (event_add(ctx->ev, &retry_delay) == -1)
+				goto memout;
+			return;
+		} else if (rc == SQLITE_DONE) {
+#ifdef DEBUG_PROXY
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: Conn has no user, fd=%d\n", ctx->fd);
+#endif /* DEBUG_PROXY */
+
+			goto redirect;
+		} else if (rc == SQLITE_ROW) {
+			char *ether = (char *)sqlite3_column_text(ctx->thr->get_user, 1);
+			if (strncasecmp(ether, ctx->ether, 17)) {
+#ifdef DEBUG_PROXY
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: Ethernet addresses do not match, db=%s, arp cache=%s, fd=%d\n", ether, ctx->ether, ctx->fd);
+#endif /* DEBUG_PROXY */
+
+				goto redirect;
+			}
+
+#ifdef DEBUG_PROXY
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: Passed ethernet address test, %s, fd=%d\n", ether, ctx->fd);
+#endif /* DEBUG_PROXY */
+
+			ctx->idletime = time(NULL) - sqlite3_column_int(ctx->thr->get_user, 2);
+			if (ctx->idletime > ctx->opts->user_timeout) {
+#ifdef DEBUG_PROXY
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: User entry timed out, idletime=%u, fd=%d\n", ctx->idletime, ctx->fd);
+#endif /* DEBUG_PROXY */
+
+				goto redirect;
+			}
+
+#ifdef DEBUG_PROXY
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: Passed timeout test, idletime=%u, fd=%d\n", ctx->idletime, ctx->fd);
+#endif /* DEBUG_PROXY */
+
+			ctx->user = strdup((char *)sqlite3_column_text(ctx->thr->get_user, 0));
+			// Desc is needed for PassSite filtering
+			ctx->desc = strdup((char *)sqlite3_column_text(ctx->thr->get_user, 3));
+
+#ifdef DEBUG_PROXY
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: Conn user=%s, desc=%s, fd=%d\n", ctx->user, ctx->desc, ctx->fd);
+#endif /* DEBUG_PROXY */
+		}
+	}
+
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: Passed user identification, fd=%d\n", ctx->fd);
+#endif /* DEBUG_PROXY */
+
+redirect:
+	sqlite3_reset(ctx->thr->get_user);
+
+	if (ctx->ev) {
+		event_free(ctx->ev);
+		ctx->ev = NULL;
+	}
+	return;
+
+memout:
+	log_err_level_printf(LOG_CRIT, "Aborting connection user identification!\n");
+	pxy_conn_term(ctx, 1);
+}
+#endif /* __OpenBSD__ || __linux__ */
+
+#ifdef __linux__
+// Assume proc filesystem support
+#define ARP_CACHE "/proc/net/arp"
+
+/*
+ * We do not care about multiple matches or expiration status of arp cache entries on Linux.
+ */
+static int NONNULL(1)
+get_client_ether(pxy_conn_ctx_t *ctx)
+{
+	int rv = 0;
+
+	FILE *arp_cache = fopen(ARP_CACHE, "r");
+	if (!arp_cache) {
+		log_err_level_printf(LOG_CRIT, "Failed to open arp cache: \"" ARP_CACHE "\"\n");
+		return -1;
+	}
+
+	// Skip the first line, which contains the header
+	char header[1024];
+	if (!fgets(header, sizeof(header), arp_cache)) {
+		log_err_level_printf(LOG_CRIT, "Failed to skip arp cache header\n");
+		rv = -1;
+		goto out;
+	}
+
+	char ip[46], ether[18];
+	//192.168.0.1     0x1         0x2         00:50:56:2c:bf:e0     *        enp3s0f1
+	while (fscanf(arp_cache, "%45s %*s %*s %17s %*s %*s", ip, ether) == 2) {
+		if (!strncasecmp(ip, ctx->srchost_str, 45)) {
+			ctx->ether = strdup(ether);
+			rv = 1;
+#ifdef DEBUG_PROXY
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "Arp entry for %s: %s\n", ip, ether);
+#endif /* DEBUG_PROXY */
+			goto out;
+		}
+	}
+out:
+	fclose(arp_cache);
+	return rv;
+}
+#endif /* __linux__ */
+
+#ifdef __OpenBSD__
+/*
+ * This is a modified version of the same function from OpenBSD sources,
+ * which has a 3-clause BSD license.
+ */
+static char *
+ether_str(struct sockaddr_dl *sdl)
+{
+	char hbuf[NI_MAXHOST];
+	u_char *cp;
+
+	if (sdl->sdl_alen) {
+		cp = (u_char *)LLADDR(sdl);
+		snprintf(hbuf, sizeof(hbuf), "%02x:%02x:%02x:%02x:%02x:%02x",
+			cp[0], cp[1], cp[2], cp[3], cp[4], cp[5]);
+		return strdup(hbuf);
+	} else {
+		return NULL;
+	}
+}
+
+/*
+ * This is a modified version of a similar function from OpenBSD sources,
+ * which has a 3-clause BSD license.
+ */
+static int NONNULL(2)
+get_client_ether(in_addr_t addr, pxy_conn_ctx_t *ctx)
+{
+	int mib[7];
+	size_t needed;
+	char *lim, *buf = NULL, *next;
+	struct rt_msghdr *rtm;
+	struct sockaddr_inarp *sin;
+	struct sockaddr_dl *sdl;
+	int found_entry = 0;
+	int rdomain = getrtable();
+
+	mib[0] = CTL_NET;
+	mib[1] = PF_ROUTE;
+	mib[2] = 0;
+	mib[3] = AF_INET;
+	mib[4] = NET_RT_FLAGS;
+	mib[5] = RTF_LLINFO;
+	mib[6] = rdomain;
+	while (1) {
+		if (sysctl(mib, 7, NULL, &needed, NULL, 0) == -1) {
+			log_err_level_printf(LOG_WARNING, "route-sysctl-estimate\n");
+		}
+		if (needed == 0) {
+			return found_entry;
+		}
+		if ((buf = realloc(buf, needed)) == NULL) {
+			return -1;
+		}
+		if (sysctl(mib, 7, buf, &needed, NULL, 0) == -1) {
+			if (errno == ENOMEM)
+				continue;
+#ifdef DEBUG_PROXY
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "actual retrieval of routing table\n");
+#endif /* DEBUG_PROXY */
+		}
+		lim = buf + needed;
+		break;
+	}
+
+	int expired = 0;
+	int incomplete = 0;
+	for (next = buf; next < lim; next += rtm->rtm_msglen) {
+		rtm = (struct rt_msghdr *)next;
+		if (rtm->rtm_version != RTM_VERSION)
+			continue;
+		sin = (struct sockaddr_inarp *)(next + rtm->rtm_hdrlen);
+		sdl = (struct sockaddr_dl *)(sin + 1);
+		if (addr) {
+			if (addr != sin->sin_addr.s_addr)
+				continue;
+			found_entry++;
+		}
+
+		char *expire = NULL;
+		if (rtm->rtm_flags & (RTF_PERMANENT_ARP | RTF_LOCAL)) {
+			expire = "permanent";
+		} else if (rtm->rtm_rmx.rmx_expire == 0) {
+			expire = "static";
+		} else if (rtm->rtm_rmx.rmx_expire > time(NULL)) {
+			expire = "active";
+		} else {
+			expire = "expired";
+			expired++;
+		}
+
+		char *ether = ether_str(sdl);
+		if (ether) {
+			// Record the first unexpired complete entry
+			if (!ctx->ether && (found_entry - expired) == 1) {
+				// Dup before assignment because we free local var ether below
+				ctx->ether = strdup(ether);
+#ifdef DEBUG_PROXY
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "Arp entry for %s: %s\n", inet_ntoa(sin->sin_addr), ether);
+#endif /* DEBUG_PROXY */
+				// Do not care about multiple matches, return immediately
+				free(ether);
+				goto out;
+			}
+		} else {
+			incomplete++;
+		}
+
+#ifdef DEBUG_PROXY
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "Arp entry %u for %s: %s (%s)\n", found_entry, inet_ntoa(sin->sin_addr), ether ? ether : "incomplete", expire);
+#endif /* DEBUG_PROXY */
+
+		if (ether) {
+			free(ether);
+		}
+	}
+out:
+	free(buf);
+	return found_entry - expired - incomplete;
+}
+#endif /* __OpenBSD__ */
+
+int
+pxy_userauth(pxy_conn_ctx_t *ctx)
+{
+	if (ctx->opts->user_auth && !ctx->user) {
+#if defined(__OpenBSD__) || defined(__linux__)
+		int ec;
+#if defined(__OpenBSD__)
+		ec = get_client_ether(((struct sockaddr_in *)&ctx->srcaddr)->sin_addr.s_addr, ctx);
+#else /* __linux__ */
+		ec = get_client_ether(ctx);
+#endif /* __linux__ */
+		if (ec == 1) {
+			identify_user(-1, 0, ctx);
+			return 0;
+		} else if (ec == 0) {
+			log_err_level_printf(LOG_CRIT, "Cannot find ethernet address of client IP address\n");
+		} else if (ec > 1) {
+			// get_client_ether() does not return multiple matches, but keep this in case a future version does
+			log_err_level_printf(LOG_CRIT, "Multiple ethernet addresses for the same client IP address\n");
+		} else {
+			// ec == -1
+			log_err_level_printf(LOG_CRIT, "Aborting connection setup (out of memory)!\n");
+		}
+#endif /* __OpenBSD__ || __linux__ */
+		log_err_level_printf(LOG_CRIT, "Aborting connection setup (user auth)!\n");
+		pxy_conn_term(ctx, 1);
+		return -1;
+	}
+	return 0;
 }
 
 /*
@@ -1482,6 +1977,15 @@ pxy_conn_setup(evutil_socket_t fd,
 	}
 #endif /* DEBUG_PROXY */
 
+	if (check_fd_usage(
+#ifdef DEBUG_PROXY
+			fd
+#endif /* DEBUG_PROXY */
+			) == -1) {
+		evutil_closesocket(fd);
+		return;
+	}
+
 	/* create per connection state and attach to thread */
 	pxy_conn_ctx_t *ctx = pxy_conn_ctx_new(fd, thrmgr, spec, opts, clisock);
 	if (!ctx) {
@@ -1491,7 +1995,6 @@ pxy_conn_setup(evutil_socket_t fd,
 	}
 
 	ctx->af = peeraddr->sa_family;
-	ctx->thr->max_fd = MAX(ctx->thr->max_fd, ctx->fd);
 
 	/* determine original destination of connection */
 	if (spec->natlookup) {
@@ -1499,9 +2002,7 @@ pxy_conn_setup(evutil_socket_t fd,
 		ctx->dstaddrlen = sizeof(struct sockaddr_storage);
 		if (spec->natlookup((struct sockaddr *)&ctx->dstaddr, &ctx->dstaddrlen, fd, peeraddr, peeraddrlen) == -1) {
 			log_err_printf("Connection not found in NAT state table, aborting connection\n");
-			evutil_closesocket(fd);
-			pxy_conn_ctx_free(ctx, 1);
-			return;
+			goto out;
 		}
 	} else if (spec->connect_addrlen > 0) {
 		/* static forwarding */
@@ -1512,42 +2013,32 @@ pxy_conn_setup(evutil_socket_t fd,
 		if (!ctx->spec->ssl) {
 			/* if this happens, the proxyspec parser is broken */
 			log_err_printf("SNI mode used for non-SSL connection; aborting connection\n");
-			evutil_closesocket(fd);
-			pxy_conn_ctx_free(ctx, 1);
-			return;
+			goto out;
 		}
 	}
 
 	if (sys_sockaddr_str(peeraddr, peeraddrlen, &ctx->srchost_str, &ctx->srcport_str) != 0) {
-		goto memout;
+		log_err_level_printf(LOG_CRIT, "Aborting connection setup (out of memory)!\n");
+		goto out;
 	}
 
-	/* prepare logging, part 1 */
-	if (opts->pcaplog
+	/* prepare logging part 1 and user auth */
+	if (opts->pcaplog || opts->user_auth
 #ifndef WITHOUT_MIRROR
-	    || opts->mirrorif
+		|| opts->mirrorif
 #endif /* !WITHOUT_MIRROR */
 #ifdef HAVE_LOCAL_PROCINFO
-	    || opts->lprocinfo
+		|| opts->lprocinfo
 #endif /* HAVE_LOCAL_PROCINFO */
-	    ) {
+		) {
 		ctx->srcaddrlen = peeraddrlen;
 		memcpy(&ctx->srcaddr, peeraddr, ctx->srcaddrlen);
 	}
 
-	/* for SSL, defer dst connection setup to initial_readcb */
-	if (ctx->spec->ssl) {
-		ctx->ev = event_new(ctx->evbase, fd, EV_READ, ctx->protoctx->fd_readcb, ctx);
-		if (!ctx->ev)
-			goto memout;
-		event_add(ctx->ev, NULL);
-	} else {
-		ctx->protoctx->fd_readcb(fd, 0, ctx);
-	}
+	ctx->protoctx->fd_readcb(ctx->fd, 0, ctx);
 	return;
 
-memout:
-	log_err_level_printf(LOG_CRIT, "Aborting connection setup (out of memory)!\n");
+out:
 	evutil_closesocket(fd);
 	pxy_conn_ctx_free(ctx, 1);
 }

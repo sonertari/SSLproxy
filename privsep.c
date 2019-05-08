@@ -66,6 +66,7 @@
 #define PRIVSEP_REQ_OPENSOCK	3	/* open socket and pass fd */
 #define PRIVSEP_REQ_CERTFILE	4	/* open cert file in certgendir */
 #define PRIVSEP_REQ_OPENSOCK_CHILD	5	/* open child socket and pass fd */
+#define PRIVSEP_REQ_UPDATE_ATIME	6	/* update ip,user atime */
 /* response byte */
 #define PRIVSEP_ANS_SUCCESS	0	/* success */
 #define PRIVSEP_ANS_UNK_CMD	1	/* unknown command */
@@ -376,6 +377,30 @@ privsep_server_certfile(const char *fn)
 	return fd;
 }
 
+static int WUNRES
+privsep_server_update_atime(opts_t *opts, const userdbkeys_t *keys)
+{
+	time_t atime = time(NULL);
+	// @todo Do we really need to reset the stmt, as we always reset while returning?
+	sqlite3_reset(opts->update_user_atime);
+	sqlite3_bind_int(opts->update_user_atime, 1, atime);
+	sqlite3_bind_text(opts->update_user_atime, 2, keys->ip, -1, NULL);
+	sqlite3_bind_text(opts->update_user_atime, 3, keys->user, -1, NULL);
+	sqlite3_bind_text(opts->update_user_atime, 4, keys->ether, -1, NULL);
+
+	int rc = sqlite3_step(opts->update_user_atime);
+
+	// Do not retry in case we cannot acquire db file or database: SQLITE_BUSY or SQLITE_LOCKED respectively
+	// No need to waste resources, atime update is not so critical
+	if (rc == SQLITE_DONE) {
+		log_dbg_printf("privsep_server_update_atime: Updated atime of user %s=%lld\n", keys->user, (long long)atime);
+	} else {
+		log_err_printf("Error updating user atime: %s\n", sqlite3_errmsg(opts->userdb));
+	}
+	sqlite3_reset(opts->update_user_atime);
+	return 0;
+}
+
 /*
  * Handle a single request on a readable server socket.
  * Returns 0 on success, 1 on EOF and -1 on error.
@@ -539,7 +564,7 @@ privsep_server_handle_req(opts_t *opts, int srvsock)
 			*((int*)&ans[1]) = errno;
 			if (sys_sendmsgfd(srvsock, ans, 1 + sizeof(int),
 			                  -1) == -1) {
-				log_err_level_printf(LOG_CRIT, "Sending message failed child: %s (%i"
+				log_err_level_printf(LOG_CRIT, "Sending message failed: %s (%i"
 				               ")\n", strerror(errno), errno);
 				return -1;
 			}
@@ -548,11 +573,47 @@ privsep_server_handle_req(opts_t *opts, int srvsock)
 			ans[0] = PRIVSEP_ANS_SUCCESS;
 			if (sys_sendmsgfd(srvsock, ans, 1, s) == -1) {
 				evutil_closesocket(s);
-				log_err_level_printf(LOG_CRIT, "Sending message failed child: %s (%i"
+				log_err_level_printf(LOG_CRIT, "Sending message failed: %s (%i"
 				               ")\n", strerror(errno), errno);
 				return -1;
 			}
 			evutil_closesocket(s);
+			return 0;
+		}
+		/* not reached */
+		break;
+	}
+	case PRIVSEP_REQ_UPDATE_ATIME: {
+		userdbkeys_t arg;
+
+		if (n != sizeof(char) + sizeof(userdbkeys_t)) {
+			ans[0] = PRIVSEP_ANS_INVALID;
+			if (sys_sendmsgfd(srvsock, ans, 1, -1) == -1) {
+				log_err_level_printf(LOG_CRIT, "Sending message failed: %s (%i"
+				               ")\n", strerror(errno), errno);
+				return -1;
+			}
+			return 0;
+		}
+		arg = *(userdbkeys_t*)(&req[1]);
+		if (privsep_server_update_atime(opts, &arg) == -1) {
+			ans[0] = PRIVSEP_ANS_SYS_ERR;
+			*((int*)&ans[1]) = errno;
+			if (sys_sendmsgfd(srvsock, ans, 1 + sizeof(int),
+			                  -1) == -1) {
+				log_err_level_printf(LOG_CRIT, "Sending message failed: %s (%i"
+				               ")\n", strerror(errno), errno);
+				return -1;
+			}
+			return 0;
+		} else {
+			ans[0] = PRIVSEP_ANS_SUCCESS;
+			// @attention Pass -1 as the 4th param, otherwise passing 0 opens an stdin (fd 0), causing fd leak
+			if (sys_sendmsgfd(srvsock, ans, 1, -1) == -1) {
+				log_err_level_printf(LOG_CRIT, "Sending message failed: %s (%i"
+				               ")\n", strerror(errno), errno);
+				return -1;
+			}
 			return 0;
 		}
 		/* not reached */
@@ -997,6 +1058,55 @@ privsep_client_close(int clisock)
 	}
 
 	close(clisock);
+	return 0;
+}
+
+int
+privsep_client_update_atime(int clisock, const userdbkeys_t *keys)
+{
+	char ans[PRIVSEP_MAX_ANS_SIZE];
+	char req[1 + sizeof(userdbkeys_t)];
+	ssize_t n;
+
+	req[0] = PRIVSEP_REQ_UPDATE_ATIME;
+	// @attention Do not typecast, but memcpy
+	//*((const userdbkeys_t **)&req[1]) = keys;
+	memcpy(req + 1, keys, sizeof(req) - 1);
+
+	if (sys_sendmsgfd(clisock, req, sizeof(req), -1) == -1) {
+		return -1;
+	}
+
+	// @attention Pass NULL as the 4th param, otherwise other privsep calls cannot get the fds they request
+	if ((n = sys_recvmsgfd(clisock, ans, sizeof(ans), NULL)) == -1) {
+		return -1;
+	}
+
+	if (n < 1) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	switch (ans[0]) {
+	case PRIVSEP_ANS_SUCCESS:
+		break;
+	case PRIVSEP_ANS_DENIED:
+		errno = EACCES;
+		return -1;
+	case PRIVSEP_ANS_SYS_ERR:
+		if (n < (ssize_t)(1 + sizeof(int))) {
+			errno = EINVAL;
+			return -1;
+		}
+		errno = *((int*)&ans[1]);
+		return -1;
+	case PRIVSEP_ANS_UNK_CMD:
+	case PRIVSEP_ANS_INVALID:
+	default:
+		errno = EINVAL;
+		return -1;
+	}
+	// Does not return an fd
 	return 0;
 }
 

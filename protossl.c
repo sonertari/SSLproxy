@@ -3,7 +3,7 @@
  * https://www.roe.ch/SSLsplit
  *
  * Copyright (c) 2009-2018, Daniel Roethlisberger <daniel@roe.ch>.
- * Copyright (c) 2018, Soner Tari <sonertari@gmail.com>.
+ * Copyright (c) 2017-2019, Soner Tari <sonertari@gmail.com>.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -309,6 +309,12 @@ protossl_sslctx_setoptions(SSL_CTX *sslctx, pxy_conn_ctx_t *ctx)
 #endif /* SSL_OP_NO_COMPRESSION */
 
 	SSL_CTX_set_cipher_list(sslctx, ctx->opts->ciphers);
+
+#if (OPENSSL_VERSION_NUMBER >= 0x10100000L) && !defined(LIBRESSL_VERSION_NUMBER)
+	/* If the security level of OpenSSL is set to 2+ in system configuration, 
+	 * our forged certificates with 1024-bit RSA key size will be rejected */
+	SSL_CTX_set_security_level(sslctx, 1);
+#endif /* OPENSSL_VERSION_NUMBER >= 0x10100000L */
 }
 
 /*
@@ -320,8 +326,10 @@ protossl_srcsslctx_create(pxy_conn_ctx_t *ctx, X509 *crt, STACK_OF(X509) *chain,
                      EVP_PKEY *key)
 {
 	SSL_CTX *sslctx = SSL_CTX_new(ctx->opts->sslmethod());
-	if (!sslctx)
+	if (!sslctx) {
+		ctx->enomem = 1;
 		return NULL;
+	}
 
 	protossl_sslctx_setoptions(sslctx, ctx);
 
@@ -366,8 +374,16 @@ protossl_srcsslctx_create(pxy_conn_ctx_t *ctx, X509 *crt, STACK_OF(X509) *chain,
 		EC_KEY_free(ecdh);
 	}
 #endif /* !OPENSSL_NO_ECDH */
-	SSL_CTX_use_certificate(sslctx, crt);
-	SSL_CTX_use_PrivateKey(sslctx, key);
+	if (SSL_CTX_use_certificate(sslctx, crt) != 1) {
+		log_dbg_printf("loading src server certificate failed\n");
+		SSL_CTX_free(sslctx);
+		return NULL;
+	}
+	if (SSL_CTX_use_PrivateKey(sslctx, key) != 1) {
+		log_dbg_printf("loading src server key failed\n");
+		SSL_CTX_free(sslctx);
+		return NULL;
+	}
 	for (int i = 0; i < sk_X509_num(chain); i++) {
 		X509 *c = sk_X509_value(chain, i);
 		ssl_x509_refcount_inc(c); /* next call consumes a reference */
@@ -530,10 +546,129 @@ protossl_srccert_create(pxy_conn_ctx_t *ctx)
 	return cert;
 }
 
+static int NONNULL(1,2)
+protossl_pass_user(pxy_conn_ctx_t *ctx, passsite_t *passsite)
+{
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protossl_pass_user: ENTER, %s, %s, %s, %s, fd=%d\n", passsite->site, STRORDASH(passsite->ip), passsite->all ? "*" : STRORDASH(passsite->user), STRORDASH(passsite->keyword), ctx->fd);
+#endif /* DEBUG_PROXY */
+
+	// No filter or * (all) without desc keyword defined
+	if (!passsite->ip && !passsite->user && !passsite->keyword) {
+		return 1;
+	}
+
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protossl_pass_user: Filter ip: %s, fd=%d\n", STRORDASH(ctx->srchost_str), ctx->fd);
+#endif /* DEBUG_PROXY */
+
+	// Client ip filter defined
+	if (passsite->ip && ctx->srchost_str && !strcmp(ctx->srchost_str, passsite->ip)) {
+		return 1;
+	}
+
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protossl_pass_user: Filter user: %s, %s, fd=%d\n", STRORDASH(ctx->user), STRORDASH(ctx->desc), ctx->fd);
+#endif /* DEBUG_PROXY */
+
+	// Make sure ctx->user and ctx->desc are set, otherwise if the user did not log in yet, they may be NULL
+	// User and/or description keyword filters defined
+	if (ctx->opts->user_auth && (passsite->all || (passsite->user && ctx->user && !strcmp(ctx->user, passsite->user))) &&
+			(!passsite->keyword || (ctx->desc && strcasestr(ctx->desc, passsite->keyword)))) {
+		return 1;
+	}
+	return 0;
+}
+
+static int NONNULL(1,2)
+protossl_pass_site(pxy_conn_ctx_t *ctx, char *site)
+{
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protossl_pass_site: ENTER, %s, %s, %s, fd=%d\n", site, STRORDASH(ctx->sslctx->sni), STRORDASH(ctx->sslctx->ssl_names), ctx->fd);
+#endif /* DEBUG_PROXY */
+
+	int rv = 0;
+
+	// site has surrounding slashes: "/example.com/"
+	size_t len = strlen(site);
+
+	// Replace slash with null
+	site[len - 1] = '\0';
+	// Skip the first slash
+	char *s = site + 1;
+
+	// @attention Make sure sni is not null
+	// SNI: "example.com"
+	if (ctx->sslctx->sni && !strcmp(ctx->sslctx->sni, s)) {
+#ifdef DEBUG_PROXY
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protossl_pass_site: Match with sni: %s, fd=%d\n", ctx->sslctx->sni, ctx->fd);
+#endif /* DEBUG_PROXY */
+
+		rv = 1;
+		goto out2;
+	}
+
+	// @attention Make sure ssl_names is not null
+	if (!ctx->sslctx->ssl_names) {
+		goto out2;
+	}
+
+	// Single common name: "example.com"
+	if (!strcmp(ctx->sslctx->ssl_names, s)) {
+#ifdef DEBUG_PROXY
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protossl_pass_site: Match with single common name: %s, fd=%d\n", ctx->sslctx->ssl_names, ctx->fd);
+#endif /* DEBUG_PROXY */
+
+		rv = 1;
+		goto out2;
+	}
+
+	// Insert slash at the end
+	site[len - 1] = '/';
+
+	// First common name: "example.com/"
+	if (strstr(ctx->sslctx->ssl_names, s) == ctx->sslctx->ssl_names) {
+#ifdef DEBUG_PROXY
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protossl_pass_site: Match with the first common name: %s, %s, fd=%d\n", ctx->sslctx->ssl_names, s, ctx->fd);
+#endif /* DEBUG_PROXY */
+
+		rv = 1;
+		goto out;
+	}
+
+	// Middle common name: "/example.com/"
+	if (strstr(ctx->sslctx->ssl_names, site)) {
+#ifdef DEBUG_PROXY
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protossl_pass_site: Match with a middle common name: %s, %s, fd=%d\n", ctx->sslctx->ssl_names, site, ctx->fd);
+#endif /* DEBUG_PROXY */
+
+		rv = 1;
+		goto out;
+	}
+
+	// Replace slash with null
+	site[len - 1] = '\0';
+
+	// Last common name: "/example.com"
+	if (strstr(ctx->sslctx->ssl_names, site) == ctx->sslctx->ssl_names + strlen(ctx->sslctx->ssl_names) - strlen(site)) {
+#ifdef DEBUG_PROXY
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protossl_pass_site: Match with the last common name: %s, %s, fd=%d\n", ctx->sslctx->ssl_names, site, ctx->fd);
+#endif /* DEBUG_PROXY */
+
+		rv = 1;
+	}
+out2:
+	// Restore the last modification
+	site[len - 1] = '/';
+out:
+	return rv;
+}
+
 /*
  * Create new SSL context for the incoming connection, based on the original
  * destination SSL certificate.
- * Returns NULL if no suitable certificate could be found.
+ * Returns NULL if no suitable certificate could be found or the site should 
+ * be passed through.
  */
 static SSL *
 protossl_srcssl_create(pxy_conn_ctx_t *ctx, SSL *origssl)
@@ -564,7 +699,7 @@ protossl_srcssl_create(pxy_conn_ctx_t *ctx, SSL *origssl)
 		protossl_debug_crt(cert->crt);
 	}
 
-	if (WANT_CONNECT_LOG(ctx)) {
+	if (WANT_CONNECT_LOG(ctx) || ctx->opts->passsites) {
 		ctx->sslctx->ssl_names = ssl_x509_names_to_str(ctx->sslctx->origcrt ?
 		                                       ctx->sslctx->origcrt :
 		                                       cert->crt);
@@ -572,13 +707,25 @@ protossl_srcssl_create(pxy_conn_ctx_t *ctx, SSL *origssl)
 			ctx->enomem = 1;
 	}
 
+	passsite_t *passsite = ctx->opts->passsites;
+	while (passsite) {
+		if (protossl_pass_user(ctx, passsite) && protossl_pass_site(ctx, passsite->site)) {
+			// Do not print the surrounding slashes
+			log_err_level_printf(LOG_WARNING, "Found pass site: %.*s for user %s and keyword %s\n", (int)strlen(passsite->site) - 2, passsite->site + 1,
+					passsite->ip ? passsite->ip : (passsite->all ? "*" : STRORDASH(passsite->user)), STRORDASH(passsite->keyword));
+			cert_free(cert);
+			// Differentiate passsite from passthrough option by raising the passsite flag
+			ctx->passsite = 1;
+			return NULL;
+		}
+		passsite = passsite->next;
+	}
+
 	SSL_CTX *sslctx = protossl_srcsslctx_create(ctx, cert->crt, cert->chain,
 	                                       cert->key);
 	cert_free(cert);
-	if (!sslctx) {
-		ctx->enomem = 1;
+	if (!sslctx)
 		return NULL;
-	}
 	SSL *ssl = SSL_new(sslctx);
 	SSL_CTX_free(sslctx); /* SSL_new() increments refcount */
 	if (!ssl) {
@@ -667,7 +814,7 @@ protossl_ossl_servername_cb(SSL *ssl, UNUSED int *al, void *arg)
 			               "certificate:\n");
 			protossl_debug_crt(newcrt);
 		}
-		if (WANT_CONNECT_LOG(ctx)) {
+		if (WANT_CONNECT_LOG(ctx) || ctx->opts->passsites) {
 			if (ctx->sslctx->ssl_names) {
 				free(ctx->sslctx->ssl_names);
 			}
@@ -690,7 +837,6 @@ protossl_ossl_servername_cb(SSL *ssl, UNUSED int *al, void *arg)
 		                                 ctx->opts->key);
 		if (!newsslctx) {
 			X509_free(newcrt);
-			ctx->enomem = 1;
 			return SSL_TLSEXT_ERR_NOACK;
 		}
 		SSL_set_SSL_CTX(ssl, newsslctx); /* decr's old incr new refc */
@@ -729,7 +875,6 @@ protossl_dstssl_create(pxy_conn_ctx_t *ctx)
 		if (SSL_CTX_set_min_proto_version(sslctx, ctx->opts->sslversion) == 0 ||
 			SSL_CTX_set_max_proto_version(sslctx, ctx->opts->sslversion) == 0) {
 			SSL_CTX_free(sslctx);
-			ctx->enomem = 1;
 			return NULL;
 		}
 	}
@@ -742,13 +887,17 @@ protossl_dstssl_create(pxy_conn_ctx_t *ctx)
 		SSL_CTX_set_verify(sslctx, SSL_VERIFY_NONE, NULL);
 	}
 
-	if (ctx->opts->clientcrt) {
-		if (!SSL_CTX_use_certificate(sslctx, ctx->opts->clientcrt))
-			log_dbg_printf("loading client certificate failed");
+	if (ctx->opts->clientcrt &&
+	    (SSL_CTX_use_certificate(sslctx, ctx->opts->clientcrt) != 1)) {
+		log_dbg_printf("loading dst client certificate failed\n");
+		SSL_CTX_free(sslctx);
+		return NULL;
 	}
-	if (ctx->opts->clientkey) {
-		if (!SSL_CTX_use_PrivateKey(sslctx, ctx->opts->clientkey))
-			log_dbg_printf("loading client key failed");
+	if (ctx->opts->clientkey &&
+	    (SSL_CTX_use_PrivateKey(sslctx, ctx->opts->clientkey) != 1)) {
+		log_dbg_printf("loading dst client key failed\n");
+		SSL_CTX_free(sslctx);
+		return NULL;
 	}
 
 	ssl = SSL_new(sslctx);
@@ -801,7 +950,7 @@ protossl_bufferevent_setup(pxy_conn_ctx_t *ctx, evutil_socket_t fd, SSL *ssl)
 #endif /* DEBUG_PROXY */
 
 	struct bufferevent *bev = bufferevent_openssl_socket_new(ctx->evbase, fd, ssl,
-			((fd == -1) ? BUFFEREVENT_SSL_CONNECTING : BUFFEREVENT_SSL_ACCEPTING), BEV_OPT_DEFER_CALLBACKS);
+			((fd == -1) ? BUFFEREVENT_SSL_CONNECTING : BUFFEREVENT_SSL_ACCEPTING), BEV_OPT_DEFER_CALLBACKS|BEV_OPT_THREADSAFE);
 	if (!bev) {
 		log_err_level_printf(LOG_CRIT, "Error creating bufferevent socket\n");
 		return NULL;
@@ -831,7 +980,7 @@ protossl_bufferevent_setup_child(pxy_conn_child_ctx_t *ctx, evutil_socket_t fd, 
 #endif /* DEBUG_PROXY */
 
 	struct bufferevent *bev = bufferevent_openssl_socket_new(ctx->conn->evbase, fd, ssl,
-			((fd == -1) ? BUFFEREVENT_SSL_CONNECTING : BUFFEREVENT_SSL_ACCEPTING), BEV_OPT_DEFER_CALLBACKS);
+			((fd == -1) ? BUFFEREVENT_SSL_CONNECTING : BUFFEREVENT_SSL_ACCEPTING), BEV_OPT_DEFER_CALLBACKS|BEV_OPT_THREADSAFE);
 	if (!bev) {
 		log_err_level_printf(LOG_CRIT, "Error creating bufferevent socket\n");
 		return NULL;
@@ -902,6 +1051,8 @@ protossl_free(pxy_conn_ctx_t *ctx)
 		free(ctx->sslctx->srvdst_ssl_cipher);
 	}
 	free(ctx->sslctx);
+	// It is necessary to NULL the sslctx to prevent passthrough mode trying to access it (signal 11 crash)
+	ctx->sslctx = NULL;
 }
 
 #ifndef OPENSSL_NO_TLSEXT
@@ -931,6 +1082,12 @@ protossl_sni_resolve_cb(int errcode, struct evutil_addrinfo *ai, void *arg)
 }
 #endif /* !OPENSSL_NO_TLSEXT */
 
+/*
+ * The src fd is readable.  This is used to sneak-preview the SNI on SSL
+ * connections.  If ctx->ev is NULL, it was called manually for a non-SSL
+ * connection.  If ctx->opts->passthrough is set, it was called a second time
+ * after the first ssl callout failed because of client cert auth.
+ */
 #ifndef OPENSSL_NO_TLSEXT
 #define MAYBE_UNUSED 
 #else /* OPENSSL_NO_TLSEXT */
@@ -945,6 +1102,35 @@ protossl_fd_readcb(MAYBE_UNUSED evutil_socket_t fd, UNUSED short what, void *arg
 #endif /* DEBUG_PROXY */
 
 #ifndef OPENSSL_NO_TLSEXT
+	// ctx->ev is NULL during initial conn setup
+	if (!ctx->ev) {
+		/* for SSL, defer dst connection setup to initial_readcb */
+		ctx->ev = event_new(ctx->evbase, ctx->fd, EV_READ, ctx->protoctx->fd_readcb, ctx);
+		if (!ctx->ev)
+			goto out;
+
+		// @attention Add the conn to pending ssl conns list before adding (activating) the event
+		// Because the event may (and does) fire before this thrmgr thread adds the conn to pending ssl conns list,
+		// and since the pending flag is not set yet, the conn remains in the pending list
+		pxy_thrmgr_add_pending_ssl_conn(ctx);
+
+		if (event_add(ctx->ev, NULL) == -1) {
+#ifdef DEBUG_PROXY
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protossl_fd_readcb: event_add failed, fd=%d\n", ctx->fd);
+#endif /* DEBUG_PROXY */
+
+			// @attention Ignore event_add() failure and do not try to close the conn after adding it to pending ssl conns list,
+			// because thr timercb may try to access the ctx causing multithreading issues (signal 6 crash)
+			// It is ok if event_add() fails, hence readcb never fires, because we can expire and close the conn as it is in the pending list now
+			//goto out;
+		}
+		// @attention This is the thrmgr thread, do not do anything else with the conn after adding the event, just return
+		return;
+	}
+	// From this point on is the connection handling thread (not the thrmgr thread)
+
+	pxy_thrmgr_remove_pending_ssl_conn(ctx);
+
 	// Child connections will use the sni info obtained by the parent conn
 	/* for SSL, peek ClientHello and parse SNI from it */
 
@@ -959,9 +1145,7 @@ protossl_fd_readcb(MAYBE_UNUSED evutil_socket_t fd, UNUSED short what, void *arg
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINE, "ERROR: Error peeking on fd, aborting connection, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
-		evutil_closesocket(fd);
-		pxy_conn_ctx_free(ctx, 1);
-		return;
+		goto out;
 	}
 	if (n == 0) {
 		/* socket got closed while we were waiting */
@@ -969,9 +1153,7 @@ protossl_fd_readcb(MAYBE_UNUSED evutil_socket_t fd, UNUSED short what, void *arg
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINE, "ERROR: Socket got closed while waiting, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
-		evutil_closesocket(fd);
-		pxy_conn_ctx_free(ctx, 1);
-		return;
+		goto out;
 	}
 
 	rv = ssl_tls_clienthello_parse(buf, n, 0, &chello, &ctx->sslctx->sni);
@@ -980,9 +1162,7 @@ protossl_fd_readcb(MAYBE_UNUSED evutil_socket_t fd, UNUSED short what, void *arg
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINE, "ERROR: Peeking did not yield a (truncated) ClientHello message, aborting connection, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
-		evutil_closesocket(fd);
-		pxy_conn_ctx_free(ctx, 1);
-		return;
+		goto out;
 	}
 	if (OPTS_DEBUG(ctx->opts)) {
 		log_dbg_printf("SNI peek: [%s] [%s], fd=%d\n", ctx->sslctx->sni ? ctx->sslctx->sni : "n/a",
@@ -1006,11 +1186,10 @@ protossl_fd_readcb(MAYBE_UNUSED evutil_socket_t fd, UNUSED short what, void *arg
 #ifdef DEBUG_PROXY
 			log_dbg_level_printf(LOG_DBG_MODE_FINE, "ERROR: Error creating retry event, aborting connection, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
-			evutil_closesocket(fd);
-			pxy_conn_ctx_free(ctx, 1);
-			return;
+			goto out;
 		}
-		event_add(ctx->ev, &retry_delay);
+		if (event_add(ctx->ev, &retry_delay) == -1)
+			goto out;
 		return;
 	}
 	event_free(ctx->ev);
@@ -1033,6 +1212,10 @@ protossl_fd_readcb(MAYBE_UNUSED evutil_socket_t fd, UNUSED short what, void *arg
 #endif /* !OPENSSL_NO_TLSEXT */
 
 	pxy_conn_connect(ctx);
+	return;
+out:
+	evutil_closesocket(fd);
+	pxy_conn_ctx_free(ctx, 1);
 }
 
 int
@@ -1070,7 +1253,7 @@ int
 protossl_setup_srvdst_new_bev_ssl_connecting(pxy_conn_ctx_t *ctx)
 {
 	ctx->srvdst.bev = bufferevent_openssl_filter_new(ctx->evbase, ctx->srvdst.bev, ctx->srvdst.ssl,
-			BUFFEREVENT_SSL_CONNECTING, BEV_OPT_DEFER_CALLBACKS);
+			BUFFEREVENT_SSL_CONNECTING, BEV_OPT_DEFER_CALLBACKS|BEV_OPT_THREADSAFE);
 	if (!ctx->srvdst.bev) {
 		log_err_level_printf(LOG_CRIT, "Error creating srvdst bufferevent\n");
 		SSL_free(ctx->srvdst.ssl);
@@ -1082,24 +1265,22 @@ protossl_setup_srvdst_new_bev_ssl_connecting(pxy_conn_ctx_t *ctx)
 	return 0;
 }
 
-void
+int
 protossl_conn_connect(pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protossl_conn_connect: ENTER, fd=%d\n", ctx->fd);
+	// Make a copy of fd, to prevent multithreading issues in case the conn is terminated
+	int fd = ctx->fd;
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protossl_conn_connect: ENTER, fd=%d\n", fd);
 #endif /* DEBUG_PROXY */
-
-	if (prototcp_setup_dst(ctx) == -1) {
-		return;
-	}
-
-	bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
-	bufferevent_enable(ctx->dst.bev, EV_READ|EV_WRITE);
 
 	/* create server-side socket and eventbuffer */
 	if (protossl_setup_srvdst(ctx) == -1) {
-		return;
+		return -1;
 	}
+
+	// Conn setup is successful, so add the conn to the conn list of its thread now
+	pxy_thrmgr_add_conn(ctx);
 
 	// @attention Sometimes dst write cb fires but not event cb, especially if this listener cb is not finished yet, so the conn stalls.
 	// @todo Why does event cb not fire sometimes?
@@ -1107,20 +1288,17 @@ protossl_conn_connect(pxy_conn_ctx_t *ctx)
 	// @see Launching connections on socket-based bufferevents at http://www.wangafu.net/~nickm/libevent-book/Ref6_bufferevent.html
 	// Disable and NULL r cb, we do nothing for srvdst in r cb
 	bufferevent_setcb(ctx->srvdst.bev, NULL, pxy_bev_writecb, pxy_bev_eventcb, ctx);
-	bufferevent_enable(ctx->srvdst.bev, EV_WRITE);
 	
 	/* initiate connection */
 	if (bufferevent_socket_connect(ctx->srvdst.bev, (struct sockaddr *)&ctx->dstaddr, ctx->dstaddrlen) == -1) {
 		log_err_level_printf(LOG_CRIT, "protossl_conn_connect: bufferevent_socket_connect for srvdst failed\n");
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINE, "protossl_conn_connect: bufferevent_socket_connect for srvdst failed, fd=%d\n", ctx->fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, "protossl_conn_connect: bufferevent_socket_connect for srvdst failed, fd=%d\n", fd);
 #endif /* DEBUG_PROXY */
 
-		// @attention Do not try to close the conn here, otherwise both pxy_conn_connect() and eventcb try to free the conn using pxy_conn_free(),
-		// they are running on different threads, causing multithreading issues, e.g. signal 10.
-		// @todo Should we use thrmgr->mutex? Can we?
-		pxy_conn_term(ctx, 1);
+		// @attention Do not try to term/close conns or do anything else with conn ctx on the thrmgr thread after setting event callbacks and/or socket connect. Just return 0.
 	}
+	return 0;
 }
 
 int
@@ -1173,8 +1351,8 @@ protossl_setup_src_ssl(pxy_conn_ctx_t *ctx)
 	// @todo Make srvdst.ssl the origssl param
 	ctx->src.ssl = protossl_srcssl_create(ctx, ctx->srvdst.ssl);
 	if (!ctx->src.ssl) {
-		if (ctx->opts->passthrough && !ctx->enomem) {
-			log_err_level_printf(LOG_WARNING, "No cert found; falling back to passthrough\n");
+		if ((ctx->opts->passthrough || ctx->passsite) && !ctx->enomem) {
+			log_err_level_printf(LOG_WARNING, "Falling back to passthrough\n");
 			protopassthrough_engage(ctx);
 			// report protocol change by returning 1
 			return 1;
@@ -1209,7 +1387,7 @@ int
 protossl_setup_src_new_bev_ssl_accepting(pxy_conn_ctx_t *ctx)
 {
 	ctx->src.bev = bufferevent_openssl_filter_new(ctx->evbase, ctx->src.bev, ctx->src.ssl,
-			BUFFEREVENT_SSL_ACCEPTING, BEV_OPT_DEFER_CALLBACKS);
+			BUFFEREVENT_SSL_ACCEPTING, BEV_OPT_DEFER_CALLBACKS|BEV_OPT_THREADSAFE);
 	if (!ctx->src.bev) {
 		log_err_level_printf(LOG_CRIT, "Error creating src bufferevent\n");
 		SSL_free(ctx->src.ssl);
@@ -1225,7 +1403,7 @@ int
 protossl_setup_dst_new_bev_ssl_connecting_child(pxy_conn_child_ctx_t *ctx)
 {
 	ctx->dst.bev = bufferevent_openssl_filter_new(ctx->conn->evbase, ctx->dst.bev, ctx->dst.ssl,
-			BUFFEREVENT_SSL_CONNECTING, BEV_OPT_DEFER_CALLBACKS);
+			BUFFEREVENT_SSL_CONNECTING, BEV_OPT_DEFER_CALLBACKS|BEV_OPT_THREADSAFE);
 	if (!ctx->dst.bev) {
 		log_err_level_printf(LOG_CRIT, "Error creating dst bufferevent\n");
 		SSL_free(ctx->dst.ssl);
@@ -1241,7 +1419,7 @@ static void NONNULL(1)
 protossl_close_srvdst(pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINER, "protossl_close_srvdst: Closing srvdst, fd=%d, srvdst fd=%d\n", ctx->fd, bufferevent_getfd(ctx->srvdst.bev));
+	log_dbg_level_printf(LOG_DBG_MODE_FINER, "protossl_close_srvdst: Closing srvdst, srvdst fd=%d, fd=%d\n", bufferevent_getfd(ctx->srvdst.bev), ctx->fd);
 #endif /* DEBUG_PROXY */
 
 	// @attention Free the srvdst of the conn asap, we don't need it anymore, but we need its fd
@@ -1273,7 +1451,7 @@ protossl_enable_src(pxy_conn_ctx_t *ctx)
 	}
 
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINER, "protossl_enable_src: Enabling src, %s, fd=%d, child_fd=%d\n", ctx->sslproxy_header, ctx->fd, ctx->child_fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINER, "protossl_enable_src: Enabling src, %s, child_fd=%d, fd=%d\n", ctx->sslproxy_header, ctx->child_fd, ctx->fd);
 #endif /* DEBUG_PROXY */
 
 	// Now open the gates
@@ -1307,8 +1485,13 @@ protossl_bev_eventcb_connected_srvdst(UNUSED struct bufferevent *bev, pxy_conn_c
 #endif /* DEBUG_PROXY */
 
 	ctx->srvdst_connected = 1;
-
-	// @attention Create and enable dst.bev before, but connect here, because we check if dst.bev is NULL elsewhere
+	bufferevent_enable(ctx->srvdst.bev, EV_WRITE);
+	
+	if (prototcp_setup_dst(ctx) == -1) {
+		return;
+	}
+	bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
+	bufferevent_enable(ctx->dst.bev, EV_READ|EV_WRITE);
 	if (bufferevent_socket_connect(ctx->dst.bev, (struct sockaddr *)&ctx->spec->conn_dst_addr, ctx->spec->conn_dst_addrlen) == -1) {
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINE, "protossl_bev_eventcb_connected_srvdst: FAILED bufferevent_socket_connect for dst, fd=%d\n", ctx->fd);
@@ -1324,6 +1507,10 @@ protossl_bev_eventcb_connected_srvdst(UNUSED struct bufferevent *bev, pxy_conn_c
 		if (protossl_enable_src(ctx) == -1) {
 			return;
 		}
+	}
+
+	if (!ctx->term && !ctx->enomem) {
+		pxy_userauth(ctx);
 	}
 }
 

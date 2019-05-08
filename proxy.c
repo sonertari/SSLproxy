@@ -352,7 +352,7 @@ proxy_new(opts_t *opts, int clisock)
 		goto leave4;
 	evtimer_add(ctx->gcev, &gc_delay);
 
-	// @attention Do not close privsep sock, we bind to new sockets on the egress path 
+	// @attention Do not close privsep sock, we open new sockets for child conns
 	//privsep_client_close(clisock);
 	return ctx;
 

@@ -36,6 +36,13 @@
 
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sqlite3.h>
+
+/*
+ * Print helper for logging code.
+ */
+#define STRORDASH(x)	(((x)&&*(x))?(x):"-")
+#define STRORNONE(x)	(((x)&&*(x))?(x):"")
 
 typedef struct proxyspec {
 	unsigned int ssl : 1;
@@ -63,6 +70,16 @@ typedef struct proxyspec {
 	struct sockaddr_storage child_src_addr;
 	socklen_t child_src_addrlen;
 } proxyspec_t;
+
+typedef struct passsite {
+	char *site;
+	// Filter definition fields
+	char *ip;
+	char *user;
+	unsigned int all : 1; /* 1 for all users */
+	char *keyword;
+	struct passsite *next;
+} passsite_t;
 
 typedef struct opts {
 	unsigned int debug : 1;
@@ -130,6 +147,7 @@ typedef struct opts {
 #ifndef OPENSSL_NO_ECDH
 	char *ecdhcurve;
 #endif /* !OPENSSL_NO_ECDH */
+	int leafkey_rsabits;
 	proxyspec_t *spec;
 	char *crlurl;
 	unsigned int conn_idle_timeout;
@@ -142,7 +160,22 @@ typedef struct opts {
 	unsigned int remove_http_referer: 1;
 	unsigned int verify_peer: 1;
 	unsigned int allow_wrong_host: 1;
+	unsigned int user_auth: 1;
+	char *userdb_path;
+	sqlite3 *userdb;
+	char *user_auth_url;
+	struct sqlite3_stmt *update_user_atime;
+	unsigned int user_timeout;
+	unsigned int validate_proto : 1;
+	unsigned int max_http_header_size;
+	struct passsite *passsites;
 } opts_t;
+
+typedef struct userdbkeys {
+	char ip[46];
+	char user[32];
+	char ether[18];
+} userdbkeys_t;
 
 void NORET oom_die(const char *) NONNULL(1);
 

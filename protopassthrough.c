@@ -3,7 +3,7 @@
  * https://www.roe.ch/SSLsplit
  *
  * Copyright (c) 2009-2018, Daniel Roethlisberger <daniel@roe.ch>.
- * Copyright (c) 2018, Soner Tari <sonertari@gmail.com>.
+ * Copyright (c) 2017-2019, Soner Tari <sonertari@gmail.com>.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -59,24 +59,28 @@ protopassthrough_log_dbg_connect_type(pxy_conn_ctx_t *ctx)
 }
 
 static void NONNULL(1)
-protopassthrough_log_connect_src(pxy_conn_ctx_t *ctx)
+protopassthrough_log_connect(pxy_conn_ctx_t *ctx)
 {
-	if (WANT_CONNECT_LOG(ctx) || ctx->opts->statslog) {
+	if (WANT_CONNECT_LOG(ctx)) {
 		pxy_log_connect_nonhttp(ctx);
 	}
 	protopassthrough_log_dbg_connect_type(ctx);
 }
 
+/*
+ * We cannot redirect failed ssl connections to login page while switching 
+ * to passthrough mode, because redirect message should be sent over ssl,
+ * but it has failed (that's why we are engaging the passthrough mode).
+ */
 void
 protopassthrough_engage(pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINE, "protopassthrough_engage: fd=%d\n", ctx->fd);
+	log_dbg_level_printf(LOG_DBG_MODE_FINE, "protopassthrough_engage: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
 	// @todo When we call bufferevent_free_and_close_fd(), connection stalls due to ssl shutdown?
 	// We get srvdst writecb while ssl shutdown is still in progress, and srvdst readcb never fires
-	SSL_free(ctx->srvdst.ssl);
 	ctx->srvdst.free(ctx->srvdst.bev, ctx);
 	ctx->srvdst.bev = NULL;
 	ctx->srvdst.ssl = NULL;
@@ -102,33 +106,38 @@ protopassthrough_engage(pxy_conn_ctx_t *ctx)
 	}
 
 	ctx->proto = protopassthrough_setup(ctx);
-	pxy_fd_readcb(ctx->fd, 0, ctx);
+	ctx->protoctx->fd_readcb(ctx->fd, 0, ctx);
 }
 
-static void NONNULL(1)
+static int NONNULL(1) WUNRES
 protopassthrough_conn_connect(pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protopassthrough_conn_connect: ENTER, fd=%d\n", ctx->fd);
+	// Make a copy of fd, to prevent multithreading issues in case the conn is terminated
+	int fd = ctx->fd;
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protopassthrough_conn_connect: ENTER, fd=%d\n", fd);
 #endif /* DEBUG_PROXY */
 
 	if (prototcp_setup_srvdst(ctx) == -1) {
-		return;
+		return -1;
 	}
+
+	// Conn setup is successful, so add the conn to the conn list of its thread now
+	pxy_thrmgr_add_conn(ctx);
 
 	// @attention Sometimes dst write cb fires but not event cb, especially if this listener cb is not finished yet, so the conn stalls.
 	bufferevent_setcb(ctx->srvdst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
-	bufferevent_enable(ctx->srvdst.bev, EV_READ|EV_WRITE);
 	
 	/* initiate connection */
 	if (bufferevent_socket_connect(ctx->srvdst.bev, (struct sockaddr *)&ctx->dstaddr, ctx->dstaddrlen) == -1) {
 		log_err_level_printf(LOG_CRIT, "protopassthrough_conn_connect: bufferevent_socket_connect for srvdst failed\n");
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINE, "protopassthrough_conn_connect: bufferevent_socket_connect for srvdst failed, fd=%d\n", ctx->fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, "protopassthrough_conn_connect: bufferevent_socket_connect for srvdst failed, fd=%d\n", fd);
 #endif /* DEBUG_PROXY */
 
-		pxy_conn_term(ctx, 1);
+		// @attention Do not try to term/close conns or do anything else with conn ctx on the thrmgr thread after setting event callbacks and/or socket connect. Just return 0.
 	}
+	return 0;
 }
 
 static void NONNULL(1)
@@ -142,6 +151,10 @@ protopassthrough_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	// Passthrough packets are transfered between src and srvdst
 	if (ctx->srvdst.closed) {
 		pxy_discard_inbuf(bev);
+		return;
+	}
+
+	if (prototcp_try_send_userauth_msg(bev, ctx)) {
 		return;
 	}
 
@@ -173,6 +186,10 @@ protopassthrough_bev_writecb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protopassthrough_bev_writecb_src: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
+
+	if (prototcp_try_close_unauth_conn(bev, ctx)) {
+		return;
+	}
 
 	// @attention srvdst.bev may be NULL
 	if (ctx->srvdst.closed) {
@@ -252,6 +269,7 @@ protopassthrough_bev_eventcb_connected_srvdst(UNUSED struct bufferevent *bev, px
 
 	if (!ctx->srvdst_connected) {
 		ctx->srvdst_connected = 1;
+		bufferevent_enable(ctx->srvdst.bev, EV_READ|EV_WRITE);
 	}
 
 	if (ctx->srvdst_connected && !ctx->connected) {
@@ -260,6 +278,10 @@ protopassthrough_bev_eventcb_connected_srvdst(UNUSED struct bufferevent *bev, px
 		if (protopassthrough_enable_src(ctx) == -1) {
 			return;
 		}
+	}
+
+	if (!ctx->term && !ctx->enomem) {
+		pxy_userauth(ctx);
 	}
 }
 
@@ -427,9 +449,7 @@ protopassthrough_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 	}
 
 	if (events & BEV_EVENT_CONNECTED) {
-		if (bev == ctx->src.bev) {
-			protopassthrough_log_connect_src(ctx);
-		} else if (ctx->connected) {
+		if (ctx->connected) {
 			// @attention dstaddr may not have been set by the original proto.
 			if (pxy_set_dstaddr(ctx) == -1) {
 				return;
@@ -439,7 +459,7 @@ protopassthrough_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 				return;
 			}
 #endif /* HAVE_LOCAL_PROCINFO */
-			protopassthrough_log_dbg_connect_type(ctx);
+			protopassthrough_log_connect(ctx);
 		}
 	}
 }

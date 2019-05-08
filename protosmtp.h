@@ -1,8 +1,6 @@
 /*-
- * SSLsplit - transparent SSL/TLS interception
- * https://www.roe.ch/SSLsplit
+ * SSLproxy - transparent SSL/TLS proxy
  *
- * Copyright (c) 2009-2018, Daniel Roethlisberger <daniel@roe.ch>.
  * Copyright (c) 2017-2019, Soner Tari <sonertari@gmail.com>.
  * All rights reserved.
  *
@@ -27,13 +25,13 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef PROTOPASSTHROUGH_H
-#define PROTOPASSTHROUGH_H
+#ifndef PROTOSMTP_H
+#define PROTOSMTP_H
 
 #include "pxyconn.h"
 
-void protopassthrough_engage(pxy_conn_ctx_t *) NONNULL(1);
-protocol_t protopassthrough_setup(pxy_conn_ctx_t *) NONNULL(1);
+protocol_t protosmtp_setup(pxy_conn_ctx_t *) NONNULL(1);
+protocol_t protosmtps_setup(pxy_conn_ctx_t *) NONNULL(1);
 
-#endif /* PROTOPASSTHROUGH_H */
+#endif /* PROTOSMTP_H */
 

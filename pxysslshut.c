@@ -143,9 +143,8 @@ pxy_ssl_shutdown_cb(evutil_socket_t fd, UNUSED short what, void *arg)
 	rv = SSL_shutdown(ctx->ssl);
 	if (rv == 1)
 		goto complete;
-	if (rv != -1) {
+	if (rv != -1)
 		goto retry;
-	}
 	
 	sslerr = SSL_get_error(ctx->ssl, rv);
 
@@ -186,11 +185,15 @@ retry:
 	}
 
 	ctx->ev = event_new(ctx->evbase, fd, want, pxy_ssl_shutdown_cb, ctx);
-	if (ctx->ev) {
-		event_add(ctx->ev, &retry_delay);
-		return;
+	if (!ctx->ev)
+		goto memout;
+	if (event_add(ctx->ev, &retry_delay) == -1) {
+		event_free(ctx->ev);
+		goto memout;
 	}
+	return;
 
+memout:
 	log_err_printf("Failed to shutdown SSL connection cleanly: Cannot create event. Closing fd\n");
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_ssl_shutdown_cb: Failed to shutdown SSL connection cleanly: Cannot create event. Closing fd, fd=%d\n", fd);

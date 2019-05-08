@@ -3,7 +3,7 @@
 .\" https://github.com/sonertari/SSLproxy
 .\"
 .\" Copyright (c) 2009-2018, Daniel Roethlisberger <daniel@roe.ch>.
-.\" Copyright (c) 2017-2018, Soner Tari <sonertari@gmail.com>.
+.\" Copyright (c) 2017-2019, Soner Tari <sonertari@gmail.com>.
 .\" All rights reserved.
 .\"
 .\" Redistribution and use in source and binary forms, with or without
@@ -26,7 +26,7 @@
 .\" ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 .\" POSSIBILITY OF SUCH DAMAGE.
 .\"
-.TH "sslproxy.conf" "5" "09 Dec 2018" "v0.5.9" "SSLproxy"
+.TH "sslproxy.conf" "5" "27 Mar 2019" "v0.6.0" "SSLproxy"
 .SH "NAME"
 .LP 
 \fBsslproxy.conf\fR \- Configuration file for SSLproxy
@@ -89,9 +89,19 @@ Write leaf key and all certificates to gendir. Equivalent to -W command line opt
 Deny all OCSP requests on all proxyspecs. Equivalent to -O command line option.
 .TP
 \fBPassthrough BOOL\fR
-Passthrough SSL connections if they cannot be split because of client cert auth or no matching cert and no CA. Equivalent to -P command line option.
+Passthrough SSL connections if they cannot be split because of client cert 
+auth or no matching cert and no CA. Equivalent to -P command line option.
 .br 
 Default: drop
+.TP
+\fBPassSite STRING\fR
+Passthrough site: site [(clientaddr|(user|*) [description keyword])]. If the 
+site matches SNI or common names in the SSL certificate, the connection is 
+passed through the proxy. Per site filters can be defined using client IP 
+addresses, users, and description keywords. '*' matches all users. User auth 
+should be enabled for user and description keyword filtering to work. 
+Case is ignored while matching description keywords. Multiple sites are 
+allowed, one on each line.
 .TP
 \fBDHGroupParams STRING\fR
 Use DH group params from pemfile. Equivalent to -g command line option.
@@ -120,6 +130,11 @@ Default: none
 Use the given OpenSSL cipher suite spec. Equivalent to -s command line option.
 .br 
 Default: ALL:-aNULL
+.TP
+\fBLeafKeyRSABits NUMBER\fR
+Leaf key RSA keysize in bits, use 1024|2048|3072|4096.
+.br 
+Default: 1024
 .TP 
 \fBOpenSSLEngine STRING\fR
 The OpenSSL engine to activate, either the ID or the full path to the shared
@@ -237,7 +252,38 @@ provided by the client does not match the server certificate's CN/SAN. Helps
 pass the wrong.host test at https://badssl.com.
 .br
 Default: no
-.TP 
+.TP
+\fBUserAuth BOOL\fR
+Require authentication for users to use SSLproxy.
+.br
+Default: no
+.TP
+\fBUserDBPath STRING\fR
+Path to user db file.
+.TP
+\fBUserTimeout NUMBER\fR
+Time users out after this many seconds of idle time.
+.br 
+Default: 300.
+.TP
+\fBUserAuthURL STRING\fR
+Redirect URL for users to log in to the system.
+.TP
+\fBValidateProto BOOL\fR
+Validate proxy spec protocols.
+.br
+Default: no
+.TP
+\fBMaxHTTPHeaderSize NUMBER\fR
+Max HTTP header size in bytes for protocol validation.
+.br 
+Default: 8192.
+.TP
+\fBOpenFilesLimit NUMBER\fR
+Set open files limit, use 50-10000.
+.br 
+Default: System-wide limit.
+.TP
 \fBProxySpec STRING\fR
 Proxy specification: type listenaddr+port up:port ua:addr ra:addr. Multiple specs are allowed, one on each line.
 .SH "FILES"

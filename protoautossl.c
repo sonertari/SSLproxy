@@ -3,7 +3,7 @@
  * https://www.roe.ch/SSLsplit
  *
  * Copyright (c) 2009-2018, Daniel Roethlisberger <daniel@roe.ch>.
- * Copyright (c) 2018, Soner Tari <sonertari@gmail.com>.
+ * Copyright (c) 2017-2019, Soner Tari <sonertari@gmail.com>.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -67,13 +67,13 @@ protoautossl_peek_and_upgrade(pxy_conn_ctx_t *ctx)
 	struct evbuffer_iovec vec_out[1];
 	const unsigned char *chello;
 
-	if (OPTS_DEBUG(ctx->opts)) {
-		log_dbg_printf("Checking for a client hello\n");
-	}
-
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protoautossl_peek_and_upgrade: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
+
+	if (OPTS_DEBUG(ctx->opts)) {
+		log_dbg_printf("Checking for a client hello\n");
+	}
 
 	/* peek the buffer */
 	inbuf = bufferevent_get_input(ctx->src.bev);
@@ -111,38 +111,36 @@ protoautossl_peek_and_upgrade(pxy_conn_ctx_t *ctx)
 	return 0;
 }
 
-static void NONNULL(1)
+static int NONNULL(1) WUNRES
 protoautossl_conn_connect(pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protoautossl_conn_connect: ENTER, fd=%d\n", ctx->fd);
+	// Make a copy of fd, to prevent multithreading issues in case the conn is terminated
+	int fd = ctx->fd;
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protoautossl_conn_connect: ENTER, fd=%d\n", fd);
 #endif /* DEBUG_PROXY */
-
-	if (prototcp_setup_dst(ctx) == -1) {
-		return;
-	}
-
-	bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
-	bufferevent_enable(ctx->dst.bev, EV_READ|EV_WRITE);
 
 	/* create server-side socket and eventbuffer */
 	if (prototcp_setup_srvdst(ctx) == -1) {
-		return;
+		return -1;
 	}
 	
+	// Conn setup is successful, so add the conn to the conn list of its thread now
+	pxy_thrmgr_add_conn(ctx);
+
 	// Enable srvdst r cb for autossl mode
 	bufferevent_setcb(ctx->srvdst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
-	bufferevent_enable(ctx->srvdst.bev, EV_READ|EV_WRITE);
-	
+
 	/* initiate connection */
 	if (bufferevent_socket_connect(ctx->srvdst.bev, (struct sockaddr *)&ctx->dstaddr, ctx->dstaddrlen) == -1) {
 		log_err_level_printf(LOG_CRIT, "protoautossl_conn_connect: bufferevent_socket_connect for srvdst failed\n");
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINE, "protoautossl_conn_connect: bufferevent_socket_connect for srvdst failed, fd=%d\n", ctx->fd);
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, "protoautossl_conn_connect: bufferevent_socket_connect for srvdst failed, fd=%d\n", fd);
 #endif /* DEBUG_PROXY */
 
-		pxy_conn_term(ctx, 1);
+		// @attention Do not try to term/close conns or do anything else with conn ctx on the thrmgr thread after setting event callbacks and/or socket connect. Just return 0.
 	}
+	return 0;
 }
 
 static void NONNULL(1)
@@ -172,6 +170,10 @@ protoautossl_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 #endif /* DEBUG_PROXY */
 
 	protoautossl_ctx_t *autossl_ctx = ctx->protoctx->arg;
+
+	if (prototcp_try_send_userauth_msg(bev, ctx)) {
+		return;
+	}
 
 	if (autossl_ctx->clienthello_search) {
 		if (protoautossl_peek_and_upgrade(ctx)) {
@@ -263,9 +265,15 @@ protoautossl_bev_readcb_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 
 	protoautossl_ctx_t *autossl_ctx = ctx->protoctx->arg;
 
-	if (autossl_ctx->clienthello_search) {
-		if (protoautossl_peek_and_upgrade(ctx)) {
+	// Make sure src.bev exists
+	if (ctx->src.bev) {
+		if (prototcp_try_send_userauth_msg(ctx->src.bev, ctx)) {
 			return;
+		}
+		if (autossl_ctx->clienthello_search) {
+			if (protoautossl_peek_and_upgrade(ctx)) {
+				return;
+			}
 		}
 	}
 
@@ -398,8 +406,12 @@ protoautossl_bev_eventcb_connected_srvdst(UNUSED struct bufferevent *bev, pxy_co
 	// srvdst may be already connected while upgrading to ssl
 	if (!ctx->srvdst_connected) {
 		ctx->srvdst_connected = 1;
+		bufferevent_enable(ctx->srvdst.bev, EV_READ|EV_WRITE);
 
-		// @attention Create and enable dst.bev before, but connect here, because we check if dst.bev is NULL elsewhere
+		if (prototcp_setup_dst(ctx) == -1) {
+			return;
+		}
+		bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
 		if (bufferevent_socket_connect(ctx->dst.bev, (struct sockaddr *)&ctx->spec->conn_dst_addr,
 				ctx->spec->conn_dst_addrlen) == -1) {
 #ifdef DEBUG_PROXY
@@ -417,6 +429,10 @@ protoautossl_bev_eventcb_connected_srvdst(UNUSED struct bufferevent *bev, pxy_co
 		if (protoautossl_enable_src(ctx) == -1) {
 			return;
 		}
+	}
+
+	if (!ctx->term && !ctx->enomem) {
+		pxy_userauth(ctx);
 	}
 }
 

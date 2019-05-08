@@ -3,7 +3,7 @@
 .\" https://github.com/sonertari/SSLproxy
 .\"
 .\" Copyright (c) 2009-2018, Daniel Roethlisberger <daniel@roe.ch>.
-.\" Copyright (c) 2017-2018, Soner Tari <sonertari@gmail.com>.
+.\" Copyright (c) 2017-2019, Soner Tari <sonertari@gmail.com>.
 .\" All rights reserved.
 .\"
 .\" The modifications for SSLproxy are licensed under the same terms as
@@ -29,7 +29,7 @@
 .\" ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 .\" POSSIBILITY OF SUCH DAMAGE.
 .\"
-.TH "sslproxy" "1" "09 Dec 2018" "v0.5.9" "SSLproxy"
+.TH "sslproxy" "1" "27 Mar 2019" "v0.6.0" "SSLproxy"
 .SH NAME
 sslproxy \-\- transparent SSL/TLS proxy for decrypting and diverting network 
 traffic to other programs for deep SSL inspection
@@ -123,6 +123,45 @@ the connection is terminated immediately. This is in contrast to SSLsplit,
 because in order to maximize the chances that a connection can be successfully 
 split, SSLsplit accepts all certificates by default, including self-signed 
 ones.
+.LP
+If enabled, the UserAuth option requires network users to log in to the system 
+to use SSLproxy (this feature is currently available on OpenBSD and Linux 
+only). When users are logged in, they should be recorded on the users table in 
+an SQLite3 database. SSLproxy does not create this users table by itself, so 
+it should already exist in the SQLite3 database file configured by the 
+UserDBPath option. The users table should be created using the following SQL 
+statement:
+.LP
+CREATE TABLE USERS(
+   IP             CHAR(45)     PRIMARY KEY     NOT NULL,
+   USER           CHAR(31)     NOT NULL,
+   ETHER          CHAR(17)     NOT NULL,
+   ATIME          INT          NOT NULL,
+   DESC           CHAR(50)
+);
+.LP
+When SSLproxy accepts a connection, it obtains the ethernet address of the
+client IP address from the arp cache of the system, then compares it with
+the value in the users table. If the ethernet addresses do not match, the 
+connection is redirected to the login page. SSLproxy also compares the atime 
+value in the users table with the current system time. If the difference is 
+larger than the configured value of the user timeout option, then the 
+connection is redirected to the login page. The atime of the IP address in the 
+users table is updated with the system time while the connection is being 
+terminated. Since this atime update is run using a privsep command, it is 
+expensive. So, to reduce the frequency of such updates, it is deferred until 
+the user idle time is more than half of the timeout period.
+.LP
+If enabled, the ValidateProto option validates protocols in proxy 
+specifications. If a connection cannot pass protocol validation, then it is 
+terminated. This feature currently supports HTTP, POP3, and SMTP protocols.
+.LP
+PassSite option allows certain SSL sites to be excluded from SSL inspection. 
+If a PassSite matches SNI or common names in the SSL certificate, the 
+connection is passed through the proxy without being diverted to the listening 
+program. For example, sites requiring client authentication can be added as 
+PassSite. Per site filters can be defined using client IP addresses, users, 
+and description keywords. Multiple sites can be defined, one on each line.
 .LP
 Logging options include traditional SSLproxy connect and content log files as
 well as PCAP files and mirroring decrypted traffic to a network interface.

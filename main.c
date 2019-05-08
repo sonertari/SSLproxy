@@ -97,7 +97,7 @@ main_version(void)
 		fprintf(stderr, "---------------------------------------"
 		                "---------------------------------------\n");
 	}
-	fprintf(stderr, "Copyright (c) 2017-2018, Soner Tari <sonertari@gmail.com>\n");
+	fprintf(stderr, "Copyright (c) 2017-2019, Soner Tari <sonertari@gmail.com>\n");
 	fprintf(stderr, "https://github.com/sonertari/SSLproxy\n");
 	fprintf(stderr, "Copyright (c) 2009-2018, "
 	                "Daniel Roethlisberger <daniel@roe.ch>\n");
@@ -365,7 +365,7 @@ main(int argc, char *argv[])
 					exit(EXIT_FAILURE);
 				}
 #ifdef DEBUG_OPTS
-				fprintf(stderr, "Conf file: %s\n", opts->conffile);
+				log_dbg_printf("Conf file: %s\n", opts->conffile);
 #endif /* DEBUG_OPTS */
 				break;
 			case 'o':
@@ -618,6 +618,26 @@ main(int argc, char *argv[])
 		}
 	}
 
+	if (opts->user_auth) {
+		if (!opts->userdb_path) {
+			fprintf(stderr, "User auth requires a userdb path\n");
+			exit(EXIT_FAILURE);
+		}
+		// @todo Check if we can really pass the db var into the child process for privsep
+		// https://www.sqlite.org/faq.html:
+		// "Under Unix, you should not carry an open SQLite database across a fork() system call into the child process."
+		if (sqlite3_open(opts->userdb_path, &opts->userdb)) {
+			fprintf(stderr, "Error opening user db file: %s\n", sqlite3_errmsg(opts->userdb));
+			sqlite3_close(opts->userdb);
+			exit(EXIT_FAILURE);
+		}
+		if (sqlite3_prepare_v2(opts->userdb, "UPDATE users SET atime = ?1 WHERE ip = ?2 AND user = ?3 AND ether = ?4", 200, &opts->update_user_atime, NULL)) {
+			fprintf(stderr, "Error preparing update_user_atime sql stmt: %s\n", sqlite3_errmsg(opts->userdb));
+			sqlite3_close(opts->userdb);
+			exit(EXIT_FAILURE);
+		}
+	}
+
 	/* dynamic defaults */
 	if (!opts->ciphers) {
 		opts->ciphers = strdup(DFLT_CIPHERS);
@@ -701,7 +721,7 @@ main(int argc, char *argv[])
 
 	/* generate leaf key */
 	if (opts_has_ssl_spec(opts) && opts->cakey && !opts->key) {
-		opts->key = ssl_key_genrsa(DFLT_LEAFKEY_RSABITS);
+		opts->key = ssl_key_genrsa(opts->leafkey_rsabits);
 		if (!opts->key) {
 			fprintf(stderr, "%s: error generating RSA key:\n",
 			                argv0);
@@ -825,6 +845,8 @@ main(int argc, char *argv[])
 		               "\n", opts->pidfile, strerror(errno), errno);
 		return -1;
 	}
+
+	descriptor_table_size = getdtablesize();
 
 	/* Fork into parent monitor process and (potentially unprivileged)
 	 * child process doing the actual work.  We request 6 privsep client

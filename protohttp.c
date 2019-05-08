@@ -3,7 +3,7 @@
  * https://www.roe.ch/SSLsplit
  *
  * Copyright (c) 2009-2018, Daniel Roethlisberger <daniel@roe.ch>.
- * Copyright (c) 2018, Soner Tari <sonertari@gmail.com>.
+ * Copyright (c) 2017-2019, Soner Tari <sonertari@gmail.com>.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -55,6 +55,10 @@ struct protohttp_ctx {
 	char *http_status_code;
 	char *http_status_text;
 	char *http_content_length;
+
+	unsigned int not_valid : 1;    /* 1 if cannot find HTTP on first line */
+	unsigned int seen_keyword_count;
+	long long unsigned int seen_bytes;
 };
 
 static void NONNULL(1)
@@ -93,7 +97,7 @@ protohttp_log_connect(pxy_conn_ctx_t *ctx)
 #ifdef HAVE_LOCAL_PROCINFO
 		              " %s"
 #endif /* HAVE_LOCAL_PROCINFO */
-		              "%s\n",
+		              "%s user:%s\n",
 		              STRORDASH(ctx->srchost_str),
 		              STRORDASH(ctx->srcport_str),
 		              STRORDASH(ctx->dsthost_str),
@@ -106,7 +110,8 @@ protohttp_log_connect(pxy_conn_ctx_t *ctx)
 #ifdef HAVE_LOCAL_PROCINFO
 		              lpi,
 #endif /* HAVE_LOCAL_PROCINFO */
-		              http_ctx->ocsp_denied ? " ocsp:denied" : "");
+		              http_ctx->ocsp_denied ? " ocsp:denied" : "",
+		              STRORDASH(ctx->user));
 	} else {
 		rv = asprintf(&msg, "CONN: https %s %s %s %s %s %s %s %s %s "
 		              "sni:%s names:%s "
@@ -115,7 +120,7 @@ protohttp_log_connect(pxy_conn_ctx_t *ctx)
 #ifdef HAVE_LOCAL_PROCINFO
 		              " %s"
 #endif /* HAVE_LOCAL_PROCINFO */
-		              "%s\n",
+		              "%s user:%s\n",
 		              STRORDASH(ctx->srchost_str),
 		              STRORDASH(ctx->srcport_str),
 		              STRORDASH(ctx->dsthost_str),
@@ -136,7 +141,8 @@ protohttp_log_connect(pxy_conn_ctx_t *ctx)
 #ifdef HAVE_LOCAL_PROCINFO
 		              lpi,
 #endif /* HAVE_LOCAL_PROCINFO */
-		              http_ctx->ocsp_denied ? " ocsp:denied" : "");
+		              http_ctx->ocsp_denied ? " ocsp:denied" : "",
+		              STRORDASH(ctx->user));
 	}
 	if ((rv < 0 ) || !msg) {
 		ctx->enomem = 1;
@@ -277,7 +283,7 @@ deny:
  *
  * Returns NULL if the current line should be deleted from the request.
  * Returns a newly allocated string if the current line should be replaced.
- * Returns `line' if the line should be kept.
+ * Returns 'line' if the line should be kept.
  */
 static char * NONNULL(1,2,3)
 protohttp_filter_request_header_line(const char *line, pxy_conn_ctx_t *ctx, protohttp_ctx_t *http_ctx)
@@ -292,6 +298,7 @@ protohttp_filter_request_header_line(const char *line, pxy_conn_ctx_t *ctx, prot
 		if (!space1) {
 			/* not HTTP */
 			http_ctx->seen_req_header = 1;
+			http_ctx->not_valid = 1;
 		} else {
 			http_ctx->http_method = malloc(space1 - line + 1);
 			if (http_ctx->http_method) {
@@ -326,12 +333,14 @@ protohttp_filter_request_header_line(const char *line, pxy_conn_ctx_t *ctx, prot
 				ctx->conn->enomem = 1;
 				return NULL;
 			}
+			http_ctx->seen_keyword_count++;
 		} else if (!strncasecmp(line, "Content-Type:", 13)) {
 			http_ctx->http_content_type = strdup(util_skipws(line + 13));
 			if (!http_ctx->http_content_type) {
 				ctx->conn->enomem = 1;
 				return NULL;
 			}
+			http_ctx->seen_keyword_count++;
 		/* Override Connection: keepalive and Connection: upgrade */
 		} else if (!strncasecmp(line, "Connection:", 11)) {
 			http_ctx->sent_http_conn_close = 1;
@@ -339,24 +348,32 @@ protohttp_filter_request_header_line(const char *line, pxy_conn_ctx_t *ctx, prot
 				ctx->conn->enomem = 1;
 				return NULL;
 			}
+			http_ctx->seen_keyword_count++;
 			return newhdr;
 		// @attention Always use conn ctx for opts, child ctx does not have opts, see the comments in pxy_conn_child_ctx
 		} else if (ctx->conn->opts->remove_http_accept_encoding && !strncasecmp(line, "Accept-Encoding:", 16)) {
+			http_ctx->seen_keyword_count++;
 			return NULL;
 		} else if (ctx->conn->opts->remove_http_referer && !strncasecmp(line, "Referer:", 8)) {
+			http_ctx->seen_keyword_count++;
 			return NULL;
 		/* Suppress upgrading to SSL/TLS, WebSockets or HTTP/2,
 		 * unsupported encodings, and keep-alive */
 		} else if (!strncasecmp(line, "Upgrade:", 8) ||
 		           !strncasecmp(line, "Accept-Encoding:", 16) ||
 		           !strncasecmp(line, "Keep-Alive:", 11)) {
+			http_ctx->seen_keyword_count++;
 			return NULL;
-		} else if ((ctx->type == CONN_TYPE_CHILD) && (!strncasecmp(line, SSLPROXY_KEY, SSLPROXY_KEY_LEN) ||
+		} else if ((ctx->type == CONN_TYPE_CHILD) && (
 				   // @attention flickr keeps redirecting to https with 301 unless we remove the Via line of squid
 				   // Apparently flickr assumes the existence of Via header field or squid keyword a sign of plain http, even if we are using https
 		           !strncasecmp(line, "Via:", 4) ||
 				   // Also do not send the loopback address to the Internet
 		           !strncasecmp(line, "X-Forwarded-For:", 16))) {
+			http_ctx->seen_keyword_count++;
+			return NULL;
+		} else if (!strncasecmp(line, SSLPROXY_KEY, SSLPROXY_KEY_LEN)) {
+			// Remove any SSLproxy line, parent or child
 			return NULL;
 		} else if (line[0] == '\0') {
 			http_ctx->seen_req_header = 1;
@@ -374,7 +391,7 @@ protohttp_filter_request_header_line(const char *line, pxy_conn_ctx_t *ctx, prot
 	return (char*)line;
 }
 
-static void  NONNULL(1,2,3,4)
+static void NONNULL(1,2,3,4)
 protohttp_filter_request_header(struct evbuffer *inbuf, struct evbuffer *outbuf, pxy_conn_ctx_t *ctx, protohttp_ctx_t *http_ctx)
 {
 	char *line;
@@ -434,9 +451,148 @@ protohttp_filter_request_header(struct evbuffer *inbuf, struct evbuffer *outbuf,
 	}
 }
 
-static void NONNULL(1)
+static char * NONNULL(1,2)
+protohttp_get_url(struct evbuffer *inbuf, pxy_conn_ctx_t *ctx)
+{
+	char *line;
+	char *path = NULL;
+	char *host = NULL;
+	char *url = NULL;
+
+	while ((!host || !path) && (line = evbuffer_readln(inbuf, NULL, EVBUFFER_EOL_CRLF))) {
+#ifdef DEBUG_PROXY
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_get_url: %s, fd=%d\n", line, ctx->fd);
+#endif /* DEBUG_PROXY */
+
+		//GET / HTTP/1.1
+		if (!path && !strncasecmp(line, "GET ", 4)) {
+			path = strdup(util_skipws(line + 4));
+			if (!path) {
+				ctx->enomem = 1;
+				free(line);
+				goto memout;
+			}
+			path = strsep(&path, " \t");
+#ifdef DEBUG_PROXY
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_get_url: path=%s, fd=%d\n", path, ctx->fd);
+#endif /* DEBUG_PROXY */
+		//Host: example.com
+		} else if (!host && !strncasecmp(line, "Host:", 5)) {
+			host = strdup(util_skipws(line + 5));
+			if (!host) {
+				ctx->enomem = 1;
+				free(line);
+				goto memout;
+			}
+#ifdef DEBUG_PROXY
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_get_url: host=%s, fd=%d\n", host, ctx->fd);
+#endif /* DEBUG_PROXY */
+		}
+		free(line);
+	}
+
+	if (host && path) {
+		// Assume that path will always have a leading /, so do not insert an extra / in between host and path
+		// Don't care about computing the exact url size for plain or secure http (http or https)
+		// http  s   ://  example.com  + /            + NULL
+		// 4  +  1 + 3  + strlen(host) + strlen(path) + 1
+		size_t url_size = strlen(host) + strlen(path) + 9;
+		url = malloc(url_size);
+		if (!url) {
+			ctx->enomem = 1;
+			goto memout;
+		}
+		snprintf(url, url_size, "http%s://%s%s", ctx->spec->ssl ? "s": "", host, path);
+#ifdef DEBUG_PROXY
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_get_url: url=%s, fd=%d\n", url, ctx->fd);
+#endif /* DEBUG_PROXY */
+	}
+memout:
+	if (host)
+		free(host);
+	if (path)
+		free(path);
+	return url;
+}
+
+// Size = 39
+static char *http_methods[] = { "GET", "PUT", "ICY", "COPY", "HEAD", "LOCK", "MOVE", "POLL", "POST", "BCOPY", "BMOVE", "MKCOL", "TRACE", "LABEL", "MERGE", "DELETE",
+	"SEARCH", "UNLOCK", "REPORT", "UPDATE", "NOTIFY", "BDELETE", "CONNECT", "OPTIONS", "CHECKIN", "PROPFIND", "CHECKOUT", "CCM_POST", "SUBSCRIBE",
+	"PROPPATCH", "BPROPFIND", "BPROPPATCH", "UNCHECKOUT", "MKACTIVITY", "MKWORKSPACE", "UNSUBSCRIBE", "RPC_CONNECT", "VERSION-CONTROL", "BASELINE-CONTROL" };
+
+static int NONNULL(1)
+protohttp_validate_method(char *method)
+{
+	char *m;
+	unsigned int i;
+	for (i = 0; i < sizeof(http_methods)/sizeof(char *); i++) {
+		m = http_methods[i];
+		if (!strncasecmp(method, m, strlen(m))) {
+#ifdef DEBUG_PROXY
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_validate_method: Passed method validation: %s\n", method);
+#endif /* DEBUG_PROXY */
+			return 0;
+		}
+	}
+	return -1;
+}
+
+static int NONNULL(1,2)
+protohttp_validate(protohttp_ctx_t *http_ctx, pxy_conn_ctx_t *ctx)
+{
+	if (http_ctx->not_valid) {
+#ifdef DEBUG_PROXY
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_validate: Not http, fd=%d\n", ctx->fd);
+#endif /* DEBUG_PROXY */
+		return -1;
+	}
+	if (http_ctx->http_method) {
+		if (protohttp_validate_method(http_ctx->http_method) == -1) {
+			http_ctx->not_valid = 1;
+#ifdef DEBUG_PROXY
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_validate: Failed method validation: %s, fd=%d\n", http_ctx->http_method, ctx->fd);
+#endif /* DEBUG_PROXY */
+			return -1;
+		}
+	}
+	if (http_ctx->seen_keyword_count) {
+		// The first line has been processed successfully
+		// Pass validation if we have seen at least one http keyword
+		ctx->protoctx->is_valid = 1;
+#ifdef DEBUG_PROXY
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_validate: Passed validation, fd=%d\n", ctx->fd);
+#endif /* DEBUG_PROXY */
+		return 0;
+	}
+	if (http_ctx->seen_bytes > ctx->opts->max_http_header_size) {
+		// Fail validation if still cannot pass as http after reaching max header size
+		http_ctx->not_valid = 1;
+#ifdef DEBUG_PROXY
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_validate: Reached max header size, size=%llu, fd=%d\n", http_ctx->seen_bytes, ctx->fd);
+#endif /* DEBUG_PROXY */
+		return -1;
+	}
+	return 0;
+}
+
+static void NONNULL(1,2)
 protohttp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
+	static const char redirect[] =
+		"HTTP/1.1 302 Found\r\n"
+		"Location: %s\r\n"
+		"\r\n";
+	static const char redirect_url[] =
+		"HTTP/1.1 302 Found\r\n"
+		"Location: %s?SSLproxy=%s\r\n"
+		"\r\n";
+	static const char proto_error[] =
+		"HTTP/1.1 400 Bad request\r\n"
+		"Cache-Control: no-cache\r\n"
+		"Connection: close\r\n"
+		"Content-Type: text/html\r\n"
+		"\r\n";
+
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_bev_readcb_src: ENTER, size=%zu, fd=%d\n",
 			evbuffer_get_length(bufferevent_get_input(bev)), ctx->fd);
@@ -451,13 +607,34 @@ protohttp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	struct evbuffer *inbuf = bufferevent_get_input(bev);
 	struct evbuffer *outbuf = bufferevent_get_output(ctx->dst.bev);
 
+	if (ctx->opts->user_auth && !ctx->user) {
+#ifdef DEBUG_PROXY
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_bev_readcb_src: Redirecting conn, fd=%d\n", ctx->fd);
+#endif /* DEBUG_PROXY */
+
+		char *url = protohttp_get_url(inbuf, ctx);
+		pxy_discard_inbuf(bev);
+		if (url) {
+			evbuffer_add_printf(bufferevent_get_output(bev), redirect_url, ctx->opts->user_auth_url, url);
+			free(url);
+		} else {
+			evbuffer_add_printf(bufferevent_get_output(bev), redirect, ctx->opts->user_auth_url);
+		}
+		ctx->sent_userauth_msg = 1;
+		return;
+	}
+
+	if (ctx->opts->validate_proto && !ctx->protoctx->is_valid) {
+		http_ctx->seen_bytes += evbuffer_get_length(inbuf);
+	}
+
 	// We insert our special header line to the first packet we get, e.g. right after the first \r\n in the case of http
 	// @todo Should we look for GET/POST or Host header lines to detect the first packet?
 	// But there is no guarantee that they will exist, due to fragmentation.
 	// @attention We cannot append the ssl proxy address at the end of the packet or in between the header and the content,
 	// because (1) the packet may be just the first fragment split somewhere not appropriate for appending a header,
 	// and (2) there may not be any content.
-	// And we are dealing pop3 and smtp also, not just http.
+	// And we are dealing with pop3 and smtp also, not just http.
 
 	/* request header munging */
 	if (!http_ctx->seen_req_header) {
@@ -476,6 +653,17 @@ protohttp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 
 		evbuffer_add_buffer(outbuf, inbuf);
 	}
+
+	if (ctx->opts->validate_proto && !ctx->protoctx->is_valid) {
+		if (protohttp_validate(http_ctx, ctx) == -1) {
+			evbuffer_add(bufferevent_get_output(bev), proto_error, strlen(proto_error));
+			ctx->sent_protoerror_msg = 1;
+			pxy_discard_inbuf(bev);
+			evbuffer_drain(outbuf, evbuffer_get_length(outbuf));
+			return;
+		}
+	}
+
 	pxy_try_set_watermark(bev, ctx, ctx->dst.bev);
 }
 
@@ -752,7 +940,7 @@ protohttp_bev_readcb(struct bufferevent *bev, void *arg)
 
 	if (!seen_resp_header_on_entry && http_ctx->seen_resp_header) {
 		/* response header complete: log connection */
-		if (WANT_CONNECT_LOG(ctx->conn) || ctx->opts->statslog) {
+		if (WANT_CONNECT_LOG(ctx->conn)) {
 			protohttp_log_connect(ctx);
 		}
 	}

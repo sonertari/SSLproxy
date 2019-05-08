@@ -3,7 +3,7 @@
  * https://www.roe.ch/SSLsplit
  *
  * Copyright (c) 2009-2018, Daniel Roethlisberger <daniel@roe.ch>.
- * Copyright (c) 2018, Soner Tari <sonertari@gmail.com>.
+ * Copyright (c) 2017-2019, Soner Tari <sonertari@gmail.com>.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -46,22 +46,21 @@
 #include <event2/buffer.h>
 #include <event2/bufferevent.h>
 
-/*
- * Print helper for logging code.
- */
-#define STRORDASH(x)	(((x)&&*(x))?(x):"-")
-#define STRORNONE(x)	(((x)&&*(x))?(x):"")
-
-#define WANT_CONNECT_LOG(ctx)	((ctx)->opts->connectlog||!(ctx)->opts->detach)
+#define WANT_CONNECT_LOG(ctx)	((ctx)->opts->connectlog||!(ctx)->opts->detach||(ctx)->opts->statslog)
 #define WANT_CONTENT_LOG(ctx)	((ctx)->opts->contentlog&&((ctx)->proto!=PROTO_PASSTHROUGH))
 
 #define SSLPROXY_KEY		"SSLproxy:"
 #define SSLPROXY_KEY_LEN	strlen(SSLPROXY_KEY)
 
+#define USERAUTH_MSG		"You must authenticate to access the Internet at %s\r\n"
+
+#define PROTOERROR_MSG		"Connection is terminated due to protocol error\r\n"
+#define PROTOERROR_MSG_LEN	strlen(PROTOERROR_MSG)
+
 typedef struct pxy_conn_child_ctx pxy_conn_child_ctx_t;
 
 typedef void (*fd_readcb_func_t)(evutil_socket_t,  short, void *);
-typedef void (*connect_func_t)(pxy_conn_ctx_t *);
+typedef int (*connect_func_t)(pxy_conn_ctx_t *);
 
 typedef void (*callback_func_t)(struct bufferevent *, void *);
 typedef void (*eventcb_func_t)(struct bufferevent *, short, void *);
@@ -69,6 +68,7 @@ typedef void (*eventcb_func_t)(struct bufferevent *, short, void *);
 typedef void (*bev_free_func_t)(struct bufferevent *, pxy_conn_ctx_t *);
 
 typedef void (*proto_free_func_t)(pxy_conn_ctx_t *);
+typedef int (*proto_validate_func_t)(pxy_conn_ctx_t *, char *, size_t);
 
 typedef void (*child_connect_func_t)(pxy_conn_child_ctx_t *);
 typedef void (*child_proto_free_func_t)(pxy_conn_child_ctx_t *);
@@ -130,6 +130,12 @@ struct ssl_ctx {
 
 	char *srvdst_ssl_version;
 	char *srvdst_ssl_cipher;
+
+	// Per-thread list of ssl conns waiting for the first read event to complete ssl setup
+	// Note that accepting a connection does not mean that a packet will be received,
+	// so we should keep track of such conns, otherwise they may get lost causing memory and fd leak
+	pxy_conn_ctx_t *next_pending;
+	unsigned int pending : 1;                    /* 1 until first readcb */
 };
 
 struct proto_ctx {
@@ -143,6 +149,8 @@ struct proto_ctx {
 	eventcb_func_t bev_eventcb;
 
 	proto_free_func_t proto_free;
+	proto_validate_func_t validatecb;
+	unsigned int is_valid : 1;        /* 0 until passed proto validation */
 
 	// For protocol specific fields, if any
 	void *arg;
@@ -198,8 +206,9 @@ struct pxy_conn_ctx {
 	evutil_socket_t fd;
 	// End of common properties
 
+	// For protocol specific fields, never NULL
 	proto_ctx_t *protoctx;
-
+	// For ssl specific fields, NULL for non-ssl conns
 	ssl_ctx_t *sslctx;
 
 	/* log strings from socket */
@@ -217,7 +226,7 @@ struct pxy_conn_ctx {
 	unsigned int srvdst_connected : 1;    /* 0 until server is connected */
 	unsigned int dst_connected : 1;          /* 0 until dst is connected */
 	unsigned int term : 1;                     /* 0 until term requested */
-	unsigned int term_requestor : 1;
+	unsigned int term_requestor : 1;          /* 1 client, 0 server side */
 
 	struct pxy_conn_desc srvdst;
 
@@ -232,6 +241,8 @@ struct pxy_conn_ctx {
 
 	// Thread that the conn is attached to
 	pxy_thr_ctx_t *thr;
+	unsigned int thr_locked : 1;          /* 1 to prevent double locking */
+	unsigned int in_thr_conns : 1;          /* 1 to prevent adding twice */
 
 	// Unique id of the conn
 	long long unsigned int id;
@@ -249,36 +260,55 @@ struct pxy_conn_ctx {
 	// Priv sep socket to obtain a socket for children
 	evutil_socket_t clisock;
 
-	// Fd of the listener event for the children
+	// fd of event listener for children, explicitly closed on error (not for stats only)
 	evutil_socket_t child_fd;
 	struct evconnlistener *child_evcl;
 
-	// SSL proxy specific info: ip:port address the children are listening on, orig client addr, and orig target addr
+	// SSLproxy specific info: ip:port addr child is listening on, orig client addr, and orig server addr
+	// SSLproxy header is never sent to the Internet, always removed by child conns
 	char *sslproxy_header;
 	size_t sslproxy_header_len;
-	int sent_sslproxy_header;
+	unsigned int sent_sslproxy_header : 1; /* 1 to prevent inserting SSLproxy header twice */
 
-	// Child list of the conn
+	// Number of child conns, active or closed, always goes up never down
+	unsigned int child_count;
+	// List of child conns
 	pxy_conn_child_ctx_t *children;
 
-	// Number of children, active or closed
-	unsigned int child_count;
-
+	// For statistics only
 	evutil_socket_t child_src_fd;
 	evutil_socket_t child_dst_fd;
 
 	// Conn create time
 	time_t ctime;
 
-	// Conn last access time, to determine expired conns
+	// Conn last access time, used to determine expired conns
 	// Updated on entry to callback functions, parent or child
 	time_t atime;
 	
-	// Per-thread conn list
+	// Per-thread conn list, used to determine idle and expired conns, and to close them
 	pxy_conn_ctx_t *next;
 
-	// Expired conns are link-listed using this pointer
+	// Expired conns are link-listed using this pointer, a temporary list used in conn thr timercb only
 	pxy_conn_ctx_t *next_expired;
+
+	// Number of times we try to acquire user db before giving up
+	unsigned int identify_user_count;
+	// User owner of conn
+	char *user;
+	// Ethernet address of client
+	char *ether;
+	// Idle time of user, reset to 0 by a new conn from user if idle time > timeout/2
+	unsigned int idletime;
+	// Description of client
+	char *desc;
+	// We send redirect/error msg to client if user auth or proto validation fails
+	unsigned int sent_userauth_msg : 1;     /* 1 until error msg is sent */
+	unsigned int sent_protoerror_msg : 1;   /* 1 until error msg is sent */
+
+	// We should not switch to passthrough mode in error conditions unless Passthrough option is set,
+	// that is why PassSite option requires a flag of its own to differentiate it from Passthrough option
+	unsigned int passsite : 1;         /* 1 to pass the SSL site through */
 
 #ifdef HAVE_LOCAL_PROCINFO
 	/* local process information */
@@ -293,7 +323,8 @@ struct pxy_conn_child_ctx {
 	// @attention The order of these common vars should match with their order in parent
 	enum conn_type type;
 
-	pxy_conn_ctx_t *conn;                              /* parent context */
+	// Parent conn
+	pxy_conn_ctx_t *conn;
 	protocol_t proto;
 
 	/* per-connection state */
@@ -310,16 +341,14 @@ struct pxy_conn_child_ctx {
 	unsigned int connected : 1;       /* 0 until both ends are connected */
 	unsigned int term : 1;                     /* 0 until term requested */
 
-	// For max fd stats
-	evutil_socket_t src_fd;
+	// For statistics only
 	evutil_socket_t dst_fd;
 
-	int removed_sslproxy_header;
-
-	// Child index
-	unsigned int idx;
+	// Child conns remove the SSLproxy header inserted by parent
+	int removed_sslproxy_header;   /* 1 after SSLproxy header is removed */
 
 	// Children of the conn are link-listed using this pointer
+	// We identify child conns with their src fds, so the src fd of child is used as its id while removing it from this list
 	pxy_conn_child_ctx_t *next;
 };
 
@@ -334,7 +363,7 @@ int pxy_log_content_inbuf(pxy_conn_ctx_t *, struct evbuffer *, int) NONNULL(1);
 void pxy_log_connect_nonhttp(pxy_conn_ctx_t *) NONNULL(1);
 void pxy_log_dbg_evbuf_info(pxy_conn_ctx_t *, pxy_conn_desc_t *, pxy_conn_desc_t *) NONNULL(1,2,3);
 
-unsigned char *pxy_malloc_packet(size_t, pxy_conn_ctx_t *) MALLOC NONNULL(2);
+unsigned char *pxy_malloc_packet(size_t, pxy_conn_ctx_t *) MALLOC NONNULL(2) WUNRES;
 
 int pxy_set_dstaddr(pxy_conn_ctx_t *) NONNULL(1);
 
@@ -378,7 +407,7 @@ void pxy_bev_writecb_child(struct bufferevent *, void *);
 void pxy_bev_eventcb_child(struct bufferevent *, short, void *);
 
 void pxy_conn_connect(pxy_conn_ctx_t *) NONNULL(1);
-void pxy_fd_readcb(evutil_socket_t, short, void *);
+int pxy_userauth(pxy_conn_ctx_t *) NONNULL(1);
 void pxy_conn_setup(evutil_socket_t, struct sockaddr *, int,
                     pxy_thrmgr_ctx_t *, proxyspec_t *, opts_t *,
 					evutil_socket_t)
