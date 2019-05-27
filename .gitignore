@@ -22,11 +22,7 @@
 /extra/pki/server.key
 /extra/pki/targets/*
 
-/docs/
-/iso/
 /nbproject/
-/src/files.txt
-/tmp/
 
 # CVS default ignores begin
 tags

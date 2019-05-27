@@ -432,8 +432,7 @@ endif
 
 # _FORTIFY_SOURCE requires -O on Linux
 ifeq (,$(findstring -O,$(CFLAGS)))
-#CFLAGS+=	-O2
-CFLAGS+=	-g
+CFLAGS+=	-O2
 endif
 
 export VERSION

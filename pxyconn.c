@@ -1030,7 +1030,7 @@ getdtablecount()
  * then they all start creating children, which crashes us again.
  * So, no matter how large an FD_RESERVE we choose, there will always be a risk of running out of fds, if we check the number of fds during parent conn setup only.
  * If we are left with less than FD_RESERVE fds, we should not create more children than FD_RESERVE allows for either.
- * Therefore, we check if we are out of fds in proxy_listener_acceptcb_child() and close the conn there too.
+ * Therefore, we check if we are out of fds in pxy_listener_acceptcb_child() and close the conn there too.
  * @attention These checks are expected to slow us further down, but it is critical to avoid a crash in case we run out of fds.
  */
 static int
