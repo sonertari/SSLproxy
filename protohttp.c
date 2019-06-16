@@ -1057,7 +1057,7 @@ protohttps_setup(pxy_conn_ctx_t *ctx)
 protocol_t
 protohttp_setup_child(pxy_conn_child_ctx_t *ctx)
 {
-	ctx->protoctx->proto = PROTO_HTTPS;
+	ctx->protoctx->proto = PROTO_HTTP;
 
 	// @todo Should HTTP child conns do any http related processing, so use tcp defaults instead?
 	ctx->protoctx->bev_readcb = protohttp_bev_readcb_child;
@@ -1069,7 +1069,7 @@ protohttp_setup_child(pxy_conn_child_ctx_t *ctx)
 	}
 	memset(ctx->protoctx->arg, 0, sizeof(protohttp_ctx_t));
 
-	return PROTO_HTTPS;
+	return PROTO_HTTP;
 }
 
 protocol_t
