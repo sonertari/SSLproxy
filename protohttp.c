@@ -357,11 +357,8 @@ protohttp_filter_request_header_line(const char *line, pxy_conn_ctx_t *ctx, prot
 		} else if (ctx->conn->opts->remove_http_referer && !strncasecmp(line, "Referer:", 8)) {
 			http_ctx->seen_keyword_count++;
 			return NULL;
-		/* Suppress upgrading to SSL/TLS, WebSockets or HTTP/2,
-		 * unsupported encodings, and keep-alive */
-		} else if (!strncasecmp(line, "Upgrade:", 8) ||
-		           !strncasecmp(line, "Accept-Encoding:", 16) ||
-		           !strncasecmp(line, "Keep-Alive:", 11)) {
+		/* Suppress upgrading to SSL/TLS, WebSockets or HTTP/2 and keep-alive */
+		} else if (!strncasecmp(line, "Upgrade:", 8) || !strncasecmp(line, "Keep-Alive:", 11)) {
 			http_ctx->seen_keyword_count++;
 			return NULL;
 		} else if ((ctx->type == CONN_TYPE_CHILD) && (

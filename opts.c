@@ -70,7 +70,6 @@ opts_new(void)
 	opts->expired_conn_check_period = 10;
 	opts->ssl_shutdown_retry_delay = 100;
 	opts->stats_period = 1;
-	opts->remove_http_accept_encoding = 1;
 	opts->remove_http_referer = 1;
 	opts->verify_peer = 1;
 	opts->user_timeout = 300;
