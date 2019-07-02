@@ -524,7 +524,8 @@ protohttp_validate_method(char *method)
 	unsigned int i;
 	for (i = 0; i < sizeof(http_methods)/sizeof(char *); i++) {
 		m = http_methods[i];
-		if (!strncasecmp(method, m, strlen(m))) {
+		// Compare 1 byte longer than m's len, so that GET1 is not validated as GET
+		if (!strncasecmp(method, m, strlen(m) + 1)) {
 #ifdef DEBUG_PROXY
 			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_validate_method: Passed method validation: %s\n", method);
 #endif /* DEBUG_PROXY */
