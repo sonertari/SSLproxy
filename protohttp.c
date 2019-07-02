@@ -199,7 +199,7 @@ protohttp_ocsp_is_valid_uri(const char *uri, pxy_conn_ctx_t *ctx)
 	 * -   There should be no query string in OCSP GET requests.
 	 * -   Encoded OCSP request ASN.1 blobs are longer than 32 bytes.
 	 */
-	if (buf_url[0] != 'M' && buf_url[0] != '%')
+	if (buf_url[0] != 'M' || buf_url[0] != '%')
 		return 0;
 	if (strchr(uri, '?'))
 		return 0;
@@ -265,13 +265,19 @@ deny:
 		evbuffer_drain(inbuf, evbuffer_get_length(inbuf));
 	}
 
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINER, "protohttp_ocsp_deny: Closing dst, dst fd=%d, fd=%d\n", bufferevent_getfd(ctx->dst.bev), ctx->fd);
-#endif /* DEBUG_PROXY */
+	// Do not send anything to the child conns
+	struct evbuffer *dst_outbuf = bufferevent_get_output(ctx->dst.bev);
+	if (evbuffer_get_length(dst_outbuf) > 0) {
+		evbuffer_drain(dst_outbuf, evbuffer_get_length(dst_outbuf));
+	}
 
-	ctx->dst.free(ctx->dst.bev, ctx);
-	ctx->dst.bev = NULL;
-	ctx->dst.closed = 1;
+	// Do not send duplicate OCSP denied responses (child conns may call this functions too)
+	if (http_ctx->ocsp_denied)
+		return;
+
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINER, "protohttp_ocsp_deny: Sending OCSP denied response, fd=%d\n", ctx->fd);
+#endif /* DEBUG_PROXY */
 
 	evbuffer_add_printf(outbuf, ocspresp);
 	http_ctx->ocsp_denied = 1;
@@ -432,7 +438,7 @@ protohttp_filter_request_header(struct evbuffer *inbuf, struct evbuffer *outbuf,
 
 	if (http_ctx->seen_req_header) {
 		/* request header complete */
-		if (ctx->conn->opts->deny_ocsp) {
+		if ((ctx->type == CONN_TYPE_PARENT) && ctx->conn->opts->deny_ocsp) {
 			protohttp_ocsp_deny(ctx, http_ctx);
 		}
 
