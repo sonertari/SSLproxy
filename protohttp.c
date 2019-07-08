@@ -271,7 +271,7 @@ deny:
 		evbuffer_drain(dst_outbuf, evbuffer_get_length(dst_outbuf));
 	}
 
-	// Do not send duplicate OCSP denied responses (child conns may call this functions too)
+	// Do not send duplicate OCSP denied responses (child conns may call this function too)
 	if (http_ctx->ocsp_denied)
 		return;
 
@@ -279,6 +279,7 @@ deny:
 	log_dbg_level_printf(LOG_DBG_MODE_FINER, "protohttp_ocsp_deny: Sending OCSP denied response, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
+	// @todo Wait until ocsp denied msg is sent and then close the conn (in a new http src w cb perhaps)
 	evbuffer_add_printf(outbuf, ocspresp);
 	http_ctx->ocsp_denied = 1;
 }
