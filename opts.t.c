@@ -114,7 +114,7 @@ START_TEST(proxyspec_parse_01)
 	fail_unless(!spec->natlookup, "natlookup() is set");
 	fail_unless(!spec->natsocket, "natsocket() is set");
 	fail_unless(!spec->next, "next is set");
-	proxyspec_free(spec);
+	proxyspec_free_all(spec);
 }
 END_TEST
 
@@ -139,7 +139,7 @@ START_TEST(proxyspec_parse_02)
 	fail_unless(!spec->natlookup, "natlookup() is set");
 	fail_unless(!spec->natsocket, "natsocket() is set");
 	fail_unless(!spec->next, "next is set");
-	proxyspec_free(spec);
+	proxyspec_free_all(spec);
 }
 END_TEST
 #endif /* !TRAVIS */
@@ -154,7 +154,7 @@ START_TEST(proxyspec_parse_03)
 	close(2);
 	proxyspec_parse(&argc, &argv, NATENGINE, &spec);
 	if (spec)
-		proxyspec_free(spec);
+		proxyspec_free_all(spec);
 }
 END_TEST
 #endif /* !DOCKER */
@@ -169,7 +169,7 @@ START_TEST(proxyspec_parse_04)
 	close(2);
 	proxyspec_parse(&argc, &argv, NATENGINE, &spec);
 	if (spec)
-		proxyspec_free(spec);
+		proxyspec_free_all(spec);
 }
 END_TEST
 #endif /* !DOCKER */
@@ -194,7 +194,7 @@ START_TEST(proxyspec_parse_05)
 	fail_unless(!spec->natlookup, "natlookup() is set");
 	fail_unless(!spec->natsocket, "natsocket() is set");
 	fail_unless(!spec->next, "next is set");
-	proxyspec_free(spec);
+	proxyspec_free_all(spec);
 }
 END_TEST
 
@@ -218,7 +218,7 @@ START_TEST(proxyspec_parse_06)
 	fail_unless(!spec->natlookup, "natlookup() is set");
 	fail_unless(!spec->natsocket, "natsocket() is set");
 	fail_unless(!spec->next, "next is set");
-	proxyspec_free(spec);
+	proxyspec_free_all(spec);
 }
 END_TEST
 
@@ -242,7 +242,7 @@ START_TEST(proxyspec_parse_07)
 	fail_unless(!spec->natlookup, "natlookup() is set");
 	fail_unless(!spec->natsocket, "natsocket() is set");
 	fail_unless(!spec->next, "next is set");
-	proxyspec_free(spec);
+	proxyspec_free_all(spec);
 }
 END_TEST
 
@@ -265,7 +265,7 @@ START_TEST(proxyspec_parse_08)
 	fail_unless(!spec->natlookup, "natlookup() is set");
 	fail_unless(!spec->natsocket, "natsocket() is set");
 	fail_unless(!spec->next, "next is set");
-	proxyspec_free(spec);
+	proxyspec_free_all(spec);
 }
 END_TEST
 
@@ -279,7 +279,7 @@ START_TEST(proxyspec_parse_09)
 	close(2);
 	proxyspec_parse(&argc, &argv, NATENGINE, &spec);
 	if (spec)
-		proxyspec_free(spec);
+		proxyspec_free_all(spec);
 }
 END_TEST
 
@@ -292,7 +292,7 @@ START_TEST(proxyspec_parse_10)
 	close(2);
 	proxyspec_parse(&argc, &argv, NATENGINE, &spec);
 	if (spec)
-		proxyspec_free(spec);
+		proxyspec_free_all(spec);
 }
 END_TEST
 #endif /* !DOCKER */
@@ -317,7 +317,7 @@ START_TEST(proxyspec_parse_11)
 	fail_unless(!spec->natlookup, "natlookup() is set");
 	fail_unless(!spec->natsocket, "natsocket() is set");
 	fail_unless(!spec->next, "next is set");
-	proxyspec_free(spec);
+	proxyspec_free_all(spec);
 }
 END_TEST
 
@@ -331,7 +331,7 @@ START_TEST(proxyspec_parse_12)
 	close(2);
 	proxyspec_parse(&argc, &argv, NATENGINE, &spec);
 	if (spec)
-		proxyspec_free(spec);
+		proxyspec_free_all(spec);
 }
 END_TEST
 #endif /* !DOCKER */
@@ -368,7 +368,7 @@ START_TEST(proxyspec_parse_13)
 	fail_unless(!spec->next->natengine, "natengine is set");
 	fail_unless(!spec->next->natlookup, "natlookup() is set");
 	fail_unless(!spec->next->natsocket, "natsocket() is set");
-	proxyspec_free(spec);
+	proxyspec_free_all(spec);
 }
 END_TEST
 
@@ -404,7 +404,7 @@ START_TEST(proxyspec_parse_14)
 	            "natengine mismatch");
 	fail_unless(!spec->next->natlookup, "natlookup() is set");
 	fail_unless(!spec->next->natsocket, "natsocket() is set");
-	proxyspec_free(spec);
+	proxyspec_free_all(spec);
 }
 END_TEST
 #endif /* !TRAVIS */
@@ -428,7 +428,7 @@ START_TEST(proxyspec_parse_15)
 	fail_unless(!spec->natlookup, "natlookup() is set");
 	fail_unless(!spec->natsocket, "natsocket() is set");
 	fail_unless(!spec->next, "next is set");
-	proxyspec_free(spec);
+	proxyspec_free_all(spec);
 }
 END_TEST
 
@@ -463,7 +463,7 @@ START_TEST(proxyspec_parse_16)
 	fail_unless(!spec->next->natengine, "natengine is set");
 	fail_unless(!spec->next->natlookup, "natlookup() is set");
 	fail_unless(!spec->next->natsocket, "natsocket() is set");
-	proxyspec_free(spec);
+	proxyspec_free_all(spec);
 }
 END_TEST
 
@@ -477,7 +477,7 @@ START_TEST(proxyspec_parse_17)
 	close(2);
 	proxyspec_parse(&argc, &argv, NATENGINE, &spec);
 	if (spec)
-		proxyspec_free(spec);
+		proxyspec_free_all(spec);
 }
 END_TEST
 #endif /* !DOCKER */
@@ -512,7 +512,7 @@ START_TEST(proxyspec_parse_18)
 	fail_unless(!!spec->next->natengine, "natengine is not set");
 	fail_unless(!spec->next->natlookup, "natlookup() is set");
 	fail_unless(!spec->next->natsocket, "natsocket() is set");
-	proxyspec_free(spec);
+	proxyspec_free_all(spec);
 }
 END_TEST
 

@@ -69,6 +69,63 @@ typedef struct proxyspec {
 
 	struct sockaddr_storage child_src_addr;
 	socklen_t child_src_addrlen;
+
+	int af; // XXX?
+	char *addr; // XXX?
+	char *divert_addr; // XXX?
+	char *target_addr; // XXX?
+	
+	// ProxySpec specific options, defaults to the values in opt
+	unsigned int sslcomp : 1;
+#ifdef HAVE_SSLV2
+	unsigned int no_ssl2 : 1;
+#endif /* HAVE_SSLV2 */
+#ifdef HAVE_SSLV3
+	unsigned int no_ssl3 : 1;
+#endif /* HAVE_SSLV3 */
+#ifdef HAVE_TLSV10
+	unsigned int no_tls10 : 1;
+#endif /* HAVE_TLSV10 */
+#ifdef HAVE_TLSV11
+	unsigned int no_tls11 : 1;
+#endif /* HAVE_TLSV11 */
+#ifdef HAVE_TLSV12
+	unsigned int no_tls12 : 1;
+#endif /* HAVE_TLSV12 */
+	unsigned int passthrough : 1;
+	unsigned int deny_ocsp : 1;
+#ifndef OPENSSL_NO_ENGINE
+	char *openssl_engine;
+#endif /* !OPENSSL_NO_ENGINE */
+	char *ciphers;
+	CONST_SSL_METHOD *(*sslmethod)(void);
+#if (OPENSSL_VERSION_NUMBER >= 0x10100000L) && !defined(LIBRESSL_VERSION_NUMBER)
+	int sslversion;
+#endif /* OPENSSL_VERSION_NUMBER >= 0x10100000L */
+	X509 *cacrt;
+	EVP_PKEY *cakey;
+	EVP_PKEY *key;
+	STACK_OF(X509) *chain;
+	X509 *clientcrt;
+	EVP_PKEY *clientkey;
+#ifndef OPENSSL_NO_DH
+	DH *dh;
+#endif /* !OPENSSL_NO_DH */
+#ifndef OPENSSL_NO_ECDH
+	char *ecdhcurve;
+#endif /* !OPENSSL_NO_ECDH */
+	int leafkey_rsabits;
+	char *crlurl;
+	unsigned int remove_http_accept_encoding: 1;
+	unsigned int remove_http_referer: 1;
+	unsigned int verify_peer: 1;
+	unsigned int allow_wrong_host: 1;
+	unsigned int user_auth: 1;
+	char *user_auth_url;
+	unsigned int user_timeout;
+	unsigned int validate_proto : 1;
+	unsigned int max_http_header_size;
+	struct passsite *passsites;
 } proxyspec_t;
 
 typedef struct passsite {
@@ -186,8 +243,8 @@ int opts_has_dns_spec(opts_t *) NONNULL(1) WUNRES;
 void opts_proto_dbg_dump(opts_t *) NONNULL(1);
 #define OPTS_DEBUG(opts) unlikely((opts)->debug)
 
-void proxyspec_parse(int *, char **[], const char *, proxyspec_t **);
-void proxyspec_free(proxyspec_t *) NONNULL(1);
+void proxyspec_parse(int *, char **[], const char *, opts_t *);
+void proxyspec_free_all(proxyspec_t *) NONNULL(1);
 char *proxyspec_str(proxyspec_t *) NONNULL(1) MALLOC;
 
 void opts_set_cacrt(opts_t *, const char *, const char *) NONNULL(1,2,3);

@@ -525,7 +525,7 @@ main(int argc, char *argv[])
 	}
 	argc -= optind;
 	argv += optind;
-	proxyspec_parse(&argc, &argv, natengine, &opts->spec);
+	proxyspec_parse(&argc, &argv, natengine, opts);
 
 	/* usage checks before defaults */
 	if (opts->detach && OPTS_DEBUG(opts)) {

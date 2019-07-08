@@ -107,7 +107,7 @@ opts_free(opts_t *opts)
 	}
 #endif /* !OPENSSL_NO_ECDH */
 	if (opts->spec) {
-		proxyspec_free(opts->spec);
+		proxyspec_free_all(opts->spec);
 	}
 	if (opts->ciphers) {
 		free(opts->ciphers);
@@ -287,16 +287,274 @@ opts_proto_dbg_dump(opts_t *opts)
 	               "");
 }
 
+proxyspec_t *
+proxyspec_new(opts_t *opts)
+{
+	proxyspec_t *spec = malloc(sizeof(proxyspec_t));
+	memset(spec, 0, sizeof(proxyspec_t));
+
+	spec->sslcomp = opts->sslcomp;
+#ifdef HAVE_SSLV2
+	spec->no_ssl2 = opts->no_ssl2;
+#endif /* HAVE_SSLV2 */
+#ifdef HAVE_SSLV3
+	spec->no_ssl3 = opts->no_ssl3;
+#endif /* HAVE_SSLV3 */
+#ifdef HAVE_TLSV10
+	spec->no_tls10 = opts->no_tls10;
+#endif /* HAVE_TLSV10 */
+#ifdef HAVE_TLSV11
+	spec->no_tls11 = opts->no_tls11;
+#endif /* HAVE_TLSV11 */
+#ifdef HAVE_TLSV12
+	spec->no_tls12 = opts->no_tls12;
+#endif /* HAVE_TLSV12 */
+	spec->passthrough = opts->passthrough;
+	spec->deny_ocsp = opts->deny_ocsp;
+#ifndef OPENSSL_NO_ENGINE
+	spec->openssl_engine = opts->openssl_engine;
+#endif /* !OPENSSL_NO_ENGINE */
+	spec->ciphers = opts->ciphers;
+	spec->sslmethod = opts->sslmethod;
+#if (OPENSSL_VERSION_NUMBER >= 0x10100000L) && !defined(LIBRESSL_VERSION_NUMBER)
+	spec->sslversion = opts->sslversion;
+#endif /* OPENSSL_VERSION_NUMBER >= 0x10100000L */
+	spec->cacrt = opts->cacrt;
+	spec->cakey = opts->cakey;
+	spec->key = opts->key;
+	spec->chain = opts->chain;
+	spec->clientcrt = opts->clientcrt;
+	spec->clientkey = opts->clientkey;
+#ifndef OPENSSL_NO_DH
+	spec->dh = opts->dh;
+#endif /* !OPENSSL_NO_DH */
+#ifndef OPENSSL_NO_ECDH
+	spec->ecdhcurve = opts->ecdhcurve;
+#endif /* !OPENSSL_NO_ECDH */
+	spec->leafkey_rsabits = opts->leafkey_rsabits;
+	spec->crlurl = opts->crlurl;
+	spec->remove_http_accept_encoding = opts->remove_http_accept_encoding;
+	spec->remove_http_referer = opts->remove_http_referer;
+	spec->verify_peer = opts->verify_peer;
+	spec->allow_wrong_host = opts->allow_wrong_host;
+	spec->user_auth = opts->user_auth;
+	spec->user_auth_url = opts->user_auth_url;
+	spec->user_timeout = opts->user_timeout;
+	spec->validate_proto = opts->validate_proto;
+	spec->max_http_header_size = opts->max_http_header_size;
+	spec->passsites = opts->passsites;
+	return spec;
+}
+
+void
+proxyspec_free(proxyspec_t *spec)
+{
+	sk_X509_pop_free(spec->chain, X509_free);
+	if (spec->clientcrt) {
+		X509_free(spec->clientcrt);
+	}
+	if (spec->clientkey) {
+		EVP_PKEY_free(spec->clientkey);
+	}
+	if (spec->cacrt) {
+		X509_free(spec->cacrt);
+	}
+	if (spec->cakey) {
+		EVP_PKEY_free(spec->cakey);
+	}
+	if (spec->key) {
+		EVP_PKEY_free(spec->key);
+	}
+#ifndef OPENSSL_NO_DH
+	if (spec->dh) {
+		DH_free(spec->dh);
+	}
+#endif /* !OPENSSL_NO_DH */
+#ifndef OPENSSL_NO_ECDH
+	if (spec->ecdhcurve) {
+		free(spec->ecdhcurve);
+	}
+#endif /* !OPENSSL_NO_ECDH */
+	if (spec->ciphers) {
+		free(spec->ciphers);
+	}
+#ifndef OPENSSL_NO_ENGINE
+	if (spec->openssl_engine) {
+		free(spec->openssl_engine);
+	}
+#endif /* !OPENSSL_NO_ENGINE */
+	if (spec->crlurl) {
+		free(spec->crlurl);
+	}
+	if (spec->user_auth_url) {
+		free(spec->user_auth_url);
+	}
+	passsite_t *passsite = spec->passsites;
+	while (passsite) {
+		passsite_t *next = passsite->next;
+		free(passsite->site);
+		if (passsite->ip)
+			free(passsite->ip);
+		if (passsite->user)
+			free(passsite->user);
+		if (passsite->keyword)
+			free(passsite->keyword);
+		free(passsite);
+		passsite = next;
+	}
+	memset(spec, 0, sizeof(opts_t));
+	free(spec);
+}
+
+void
+proxyspec_set_proto(proxyspec_t *spec, const char *value)
+{
+	/* Defaults */
+	spec->ssl = 0;
+	spec->http = 0;
+	spec->upgrade = 0;
+	spec->pop3 = 0;
+	spec->smtp = 0;
+	if (!strcmp(value, "tcp")) {
+		/* use defaults */
+	} else
+	if (!strcmp(value, "ssl")) {
+		spec->ssl = 1;
+	} else
+	if (!strcmp(value, "http")) {
+		spec->http = 1;
+	} else
+	if (!strcmp(value, "https")) {
+		spec->ssl = 1;
+		spec->http = 1;
+	} else
+	if (!strcmp(value, "autossl")) {
+		spec->upgrade = 1;
+	} else
+	if (!strcmp(value, "pop3")) {
+		spec->pop3 = 1;
+	} else
+	if (!strcmp(value, "pop3s")) {
+		spec->ssl = 1;
+		spec->pop3 = 1;
+	} else
+	if (!strcmp(value, "smtp")) {
+		spec->smtp = 1;
+	} else
+	if (!strcmp(value, "smtps")) {
+		spec->ssl = 1;
+		spec->smtp = 1;
+	} else {
+		fprintf(stderr, "Unknown connection "
+						"type '%s'\n", value);
+		exit(EXIT_FAILURE);
+	}
+}
+
+void
+proxyspec_set_listen_addr(proxyspec_t *spec, char *addr, char *port, const char *natengine)
+{
+	spec->af = sys_sockaddr_parse(&spec->listen_addr,
+							&spec->listen_addrlen,
+							addr, port,
+							sys_get_af(addr),
+							EVUTIL_AI_PASSIVE);
+	if (spec->af == -1) {
+		exit(EXIT_FAILURE);
+	}
+	if (natengine) {
+		spec->natengine = strdup(natengine);
+		if (!spec->natengine) {
+			fprintf(stderr, "Out of memory\n");
+			exit(EXIT_FAILURE);
+		}
+	} else {
+		spec->natengine = NULL;
+	}
+}
+
+void
+proxyspec_set_divert_addr(proxyspec_t *spec, char *addr, char *port)
+{
+	if (sys_sockaddr_parse(&spec->conn_dst_addr,
+						&spec->conn_dst_addrlen,
+						addr, port, AF_INET, EVUTIL_AI_PASSIVE) == -1) {
+		exit(EXIT_FAILURE);
+	}
+}
+					
+void
+proxyspec_set_return_addr(proxyspec_t *spec, char *addr)
+{
+	if (sys_sockaddr_parse(&spec->child_src_addr,
+						&spec->child_src_addrlen,
+						addr, "0", AF_INET, EVUTIL_AI_PASSIVE) == -1) {
+		exit(EXIT_FAILURE);
+	}
+}
+					
+void
+proxyspec_set_target_addr(proxyspec_t *spec, char *addr, char *port)
+{
+	if (sys_sockaddr_parse(&spec->connect_addr,
+							&spec->connect_addrlen,
+							addr, port, spec->af, 0) == -1) {
+		exit(EXIT_FAILURE);
+	}
+	/* explicit target address */
+	free(spec->natengine);
+	spec->natengine = NULL;
+}
+
+void
+proxyspec_set_sni_port(proxyspec_t *spec, char *port)
+{
+	if (!spec->ssl) {
+		fprintf(stderr,
+				"SNI hostname lookup "
+				"only works for ssl "
+				"and https proxyspecs"
+				"\n");
+		exit(EXIT_FAILURE);
+	}
+	/* SNI dstport */
+	spec->sni_port = atoi(port);
+	if (!spec->sni_port) {
+		fprintf(stderr, "Invalid port '%s'\n", port);
+		exit(EXIT_FAILURE);
+	}
+	spec->dns = 1;
+	free(spec->natengine);
+	spec->natengine = NULL;
+}
+
+void
+proxyspec_set_natengine(proxyspec_t *spec, const char *natengine)
+{
+	// Double checks if called by proxyspec_parse()
+	if (nat_exist(natengine)) {
+		/* natengine */
+		free(spec->natengine);
+		spec->natengine = strdup(natengine);
+		if (!spec->natengine) {
+			fprintf(stderr, "Out of memory\n");
+			exit(EXIT_FAILURE);
+		}
+	} else {
+		fprintf(stderr, "No such nat engine '%s'\n", natengine);
+		exit(EXIT_FAILURE);
+	}
+}
+
 /*
  * Parse proxyspecs using a simple state machine.
  */
 void
 proxyspec_parse(int *argc, char **argv[], const char *natengine,
-                proxyspec_t **opts_spec)
+                opts_t *opts)
 {
 	proxyspec_t *spec = NULL;
 	char *addr = NULL;
-	int af = AF_UNSPEC;
 	int state = 0;
 
 	while ((*argc)--) {
@@ -304,51 +562,11 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine,
 			default:
 			case 0:
 				/* tcp | ssl | http | https | autossl | pop3 | pop3s | smtp | smtps */
-				spec = malloc(sizeof(proxyspec_t));
-				memset(spec, 0, sizeof(proxyspec_t));
-				spec->next = *opts_spec;
-				*opts_spec = spec;
+				spec = proxyspec_new(opts);
+				spec->next = opts->spec;
+				opts->spec = spec;
 
-				/* Defaults */
-				spec->ssl = 0;
-				spec->http = 0;
-				spec->upgrade = 0;
-				spec->pop3 = 0;
-				spec->smtp = 0;
-				if (!strcmp(**argv, "tcp")) {
-					/* use defaults */
-				} else
-				if (!strcmp(**argv, "ssl")) {
-					spec->ssl = 1;
-				} else
-				if (!strcmp(**argv, "http")) {
-					spec->http = 1;
-				} else
-				if (!strcmp(**argv, "https")) {
-					spec->ssl = 1;
-					spec->http = 1;
-				} else
-				if (!strcmp(**argv, "autossl")) {
-					spec->upgrade = 1;
-				} else
-				if (!strcmp(**argv, "pop3")) {
-					spec->pop3 = 1;
-				} else
-				if (!strcmp(**argv, "pop3s")) {
-					spec->ssl = 1;
-					spec->pop3 = 1;
-				} else
-				if (!strcmp(**argv, "smtp")) {
-					spec->smtp = 1;
-				} else
-				if (!strcmp(**argv, "smtps")) {
-					spec->ssl = 1;
-					spec->smtp = 1;
-				} else {
-					fprintf(stderr, "Unknown connection "
-					                "type '%s'\n", **argv);
-					exit(EXIT_FAILURE);
-				}
+				proxyspec_set_proto(spec, **argv);
 				state++;
 				break;
 			case 1:
@@ -358,60 +576,32 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine,
 				break;
 			case 2:
 				/* listenport */
-				af = sys_sockaddr_parse(&spec->listen_addr,
-				                        &spec->listen_addrlen,
-				                        addr, **argv,
-				                        sys_get_af(addr),
-				                        EVUTIL_AI_PASSIVE);
-				if (af == -1) {
-					exit(EXIT_FAILURE);
-				}
-				if (natengine) {
-					spec->natengine = strdup(natengine);
-					if (!spec->natengine) {
-						fprintf(stderr,
-						        "Out of memory"
-						        "\n");
-						exit(EXIT_FAILURE);
-					}
-				} else {
-					spec->natengine = NULL;
-				}
+				proxyspec_set_listen_addr(spec, addr, **argv, natengine);
 				state++;
 				break;
 			case 3:
-				// UTM port is mandatory
-				// The UTM port is set/used in pf and UTM service config.
+				// Divert port is mandatory
+				// The divert port is set/used in pf and UTM service config.
 				// @todo IPv6?
 				if (strstr(**argv, "up:")) {
-					char *up = **argv + 3;
-					char *ua = "127.0.0.1";
+					char *dp = **argv + 3;
+					char *da = "127.0.0.1";
 					char *ra = "127.0.0.1";
 
-					// ua and ra are optional, if both specified, ua should come before ra
-					// UTM address
+					// da and ra are optional, if both specified, da should come before ra
+					// Divert address
 					if (*argc && strstr(*((*argv) + 1), "ua:")) {
 						(*argv)++; (*argc)--;
-						ua = **argv + 3;
+						da = **argv + 3;
 					}
-					// UTM return address
+					// Return address
 					if (*argc && strstr(*((*argv) + 1), "ra:")) {
 						(*argv)++; (*argc)--;
 						ra = **argv + 3;
 					}
 
-					int utm_af = sys_sockaddr_parse(&spec->conn_dst_addr,
-										&spec->conn_dst_addrlen,
-										ua, up, AF_INET, EVUTIL_AI_PASSIVE);
-					if (utm_af == -1) {
-						exit(EXIT_FAILURE);
-					}
-					utm_af = sys_sockaddr_parse(&spec->child_src_addr,
-										&spec->child_src_addrlen,
-										ra, "0", AF_INET, EVUTIL_AI_PASSIVE);
-					if (utm_af == -1) {
-						exit(EXIT_FAILURE);
-					}
+					proxyspec_set_divert_addr(spec, da, dp);
+					proxyspec_set_return_addr(spec, ra);
 					state++;
 				}
 				break;
@@ -431,56 +621,26 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine,
 					state = 0;
 				} else
 				if (!strcmp(**argv, "sni")) {
-					free(spec->natengine);
-					spec->natengine = NULL;
-					if (!spec->ssl) {
-						fprintf(stderr,
-						        "SNI hostname lookup "
-						        "only works for ssl "
-						        "and https proxyspecs"
-						        "\n");
-						exit(EXIT_FAILURE);
-					}
 					state = 6;
 				} else
 				if (nat_exist(**argv)) {
 					/* natengine */
-					free(spec->natengine);
-					spec->natengine = strdup(**argv);
-					if (!spec->natengine) {
-						fprintf(stderr,
-						        "Out of memory"
-						        "\n");
-						exit(EXIT_FAILURE);
-					}
+					proxyspec_set_natengine(spec, natengine);
 					state = 0;
 				} else {
 					/* explicit target address */
-					free(spec->natengine);
-					spec->natengine = NULL;
 					addr = **argv;
 					state++;
 				}
 				break;
 			case 5:
-				/* dstport */
-				af = sys_sockaddr_parse(&spec->connect_addr,
-				                        &spec->connect_addrlen,
-				                        addr, **argv, af, 0);
-				if (af == -1) {
-					exit(EXIT_FAILURE);
-				}
+				/* explicit target port */
+				proxyspec_set_target_addr(spec, addr, **argv);
 				state = 0;
 				break;
 			case 6:
 				/* SNI dstport */
-				spec->sni_port = atoi(**argv);
-				if (!spec->sni_port) {
-					fprintf(stderr, "Invalid port '%s'\n",
-					                **argv);
-					exit(EXIT_FAILURE);
-				}
-				spec->dns = 1;
+				proxyspec_set_sni_port(spec, **argv);
 				state = 0;
 				break;
 		}
@@ -496,10 +656,11 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine,
  * Clear and free a proxy spec.
  */
 void
-proxyspec_free(proxyspec_t *spec)
+proxyspec_free_all(proxyspec_t *spec)
 {
 	do {
 		proxyspec_t *next = spec->next;
+		proxyspec_free(spec);
 		if (spec->natengine)
 			free(spec->natengine);
 		memset(spec, 0, sizeof(proxyspec_t));
@@ -1622,14 +1783,426 @@ check_value_yesno(const char *value, const char *name, int line_num)
 	return -1;
 }
 
-#define MAX_TOKEN 10
+void
+proxyspec_set_cacrt(proxyspec_t *spec, const char *cacrt)
+{
+	if (spec->cacrt)
+		X509_free(spec->cacrt);
+	spec->cacrt = ssl_x509_load(cacrt);
+	if (!spec->cacrt) {
+		fprintf(stderr, "Error loading ProxySpec CA cert from '%s':\n", cacrt);
+		if (errno) {
+			fprintf(stderr, "%s\n", strerror(errno));
+		} else {
+			ERR_print_errors_fp(stderr);
+		}
+		exit(EXIT_FAILURE);
+	}
+	ssl_x509_refcount_inc(spec->cacrt);
+	sk_X509_insert(spec->chain, spec->cacrt, 0);
+	if (!spec->cakey) {
+		spec->cakey = ssl_key_load(cacrt);
+	}
+#ifndef OPENSSL_NO_DH
+	if (!spec->dh) {
+		spec->dh = ssl_dh_load(cacrt);
+	}
+#endif /* !OPENSSL_NO_DH */
+#ifdef DEBUG_OPTS
+	log_dbg_printf("ProxySpec CACert: %s\n", cacrt);
+#endif /* DEBUG_OPTS */
+}
+
+void
+proxyspec_set_cakey(proxyspec_t *spec, const char *cakey)
+{
+	if (spec->cakey)
+		EVP_PKEY_free(spec->cakey);
+	spec->cakey = ssl_key_load(cakey);
+	if (!spec->cakey) {
+		fprintf(stderr, "Error loading ProxySpec CA key from '%s':\n", cakey);
+		if (errno) {
+			fprintf(stderr, "%s\n", strerror(errno));
+		} else {
+			ERR_print_errors_fp(stderr);
+		}
+		exit(EXIT_FAILURE);
+	}
+	if (!spec->cacrt) {
+		spec->cacrt = ssl_x509_load(cakey);
+		if (spec->cacrt) {
+			ssl_x509_refcount_inc(spec->cacrt);
+			sk_X509_insert(spec->chain, spec->cacrt, 0);
+		}
+	}
+#ifndef OPENSSL_NO_DH
+	if (!spec->dh) {
+		spec->dh = ssl_dh_load(cakey);
+	}
+#endif /* !OPENSSL_NO_DH */
+#ifdef DEBUG_OPTS
+	log_dbg_printf("ProxySpec CAKey: %s\n", cakey);
+#endif /* DEBUG_OPTS */
+}
+
+void
+proxyspec_set_clientcrt(proxyspec_t *spec, const char *clientcrt)
+{
+	if (spec->clientcrt)
+		X509_free(spec->clientcrt);
+	spec->clientcrt = ssl_x509_load(clientcrt);
+	if (!spec->clientcrt) {
+		fprintf(stderr, "Error loading client cert from '%s':\n", clientcrt);
+		if (errno) {
+			fprintf(stderr, "%s\n", strerror(errno));
+		} else {
+			ERR_print_errors_fp(stderr);
+		}
+		exit(EXIT_FAILURE);
+	}
+#ifdef DEBUG_OPTS
+	log_dbg_printf("ProxySpec ClientCert: %s\n", clientcrt);
+#endif /* DEBUG_OPTS */
+}
+
+void
+proxyspec_set_clientkey(proxyspec_t *spec, const char *clientkey)
+{
+	if (spec->clientkey)
+		EVP_PKEY_free(spec->clientkey);
+	spec->clientkey = ssl_key_load(clientkey);
+	if (!spec->clientkey) {
+		fprintf(stderr, "Error loading client key from '%s':\n", clientkey);
+		if (errno) {
+			fprintf(stderr, "%s\n", strerror(errno));
+		} else {
+			ERR_print_errors_fp(stderr);
+		}
+		exit(EXIT_FAILURE);
+	}
+#ifdef DEBUG_OPTS
+	log_dbg_printf("ProxySpec ClientKey: %s\n", clientkey);
+#endif /* DEBUG_OPTS */
+}
+
+#ifndef OPENSSL_NO_DH
+void
+proxyspec_set_dh(proxyspec_t *spec, const char *dh)
+{
+	if (spec->dh)
+		DH_free(spec->dh);
+	spec->dh = ssl_dh_load(dh);
+	if (!spec->dh) {
+		fprintf(stderr, "Error loading DH params from '%s':\n", dh);
+		if (errno) {
+			fprintf(stderr, "%s\n", strerror(errno));
+		} else {
+			ERR_print_errors_fp(stderr);
+		}
+		exit(EXIT_FAILURE);
+	}
+#ifdef DEBUG_OPTS
+	log_dbg_printf("ProxySpec DHGroupParams: %s\n", dh);
+#endif /* DEBUG_OPTS */
+}
+#endif /* !OPENSSL_NO_DH */
+
+#ifndef OPENSSL_NO_ECDH
+void
+proxyspec_set_ecdhcurve(proxyspec_t *spec, const char *ecdhcurve)
+{
+	EC_KEY *ec;
+	if (spec->ecdhcurve)
+		free(spec->ecdhcurve);
+	if (!(ec = ssl_ec_by_name(ecdhcurve))) {
+		fprintf(stderr, "Unknown curve '%s'\n", ecdhcurve);
+		exit(EXIT_FAILURE);
+	}
+	EC_KEY_free(ec);
+	spec->ecdhcurve = strdup(ecdhcurve);
+	if (!spec->ecdhcurve)
+		oom_die("sslproxy"); // XXX?
+#ifdef DEBUG_OPTS
+	log_dbg_printf("ProxySpec ECDHCurve: %s\n", spec->ecdhcurve);
+#endif /* DEBUG_OPTS */
+}
+#endif /* !OPENSSL_NO_ECDH */
+
+void
+proxyspec_set_sslcomp(proxyspec_t *spec)
+{
+	spec->sslcomp = 1;
+}
+
+void
+proxyspec_unset_sslcomp(proxyspec_t *spec)
+{
+	spec->sslcomp = 0;
+}
 
 static int
-set_option(opts_t *opts, const char *argv0,
-           const char *name, char *value, char **natengine, int line_num)
+set_proxyspec_option(proxyspec_t *spec, const char *name, char *value, const char *natengine, int line_num)
 {
 	int yes;
 	int retval = -1;
+
+	fprintf(stderr, "ProxySpec %s = %s at line %d\n", name, value, line_num);
+
+	/* Compare strlen(s2)+1 chars to match exactly */
+	if (!strncmp(name, "Proto", 6)) {
+		proxyspec_set_proto(spec, value);
+	}
+	else if (!strncmp(name, "Addr", 5)) {
+		spec->addr = strdup(value);
+	}
+	else if (!strncmp(name, "Port", 5)) {
+		if (spec->addr) {
+			proxyspec_set_listen_addr(spec, spec->addr, value, natengine);
+			free(spec->addr);
+		} else {
+			fprintf(stderr, "ProxySpec Port without Addr at line %d\n", line_num);
+			exit(EXIT_FAILURE);
+		}
+	}
+	else if (!strncmp(name, "DivertAddr", 11)) {
+		spec->divert_addr = strdup(value);
+	}
+	else if (!strncmp(name, "DivertPort", 11)) {
+		if (spec->divert_addr) {
+			proxyspec_set_divert_addr(spec, spec->divert_addr, value);
+			free(spec->divert_addr);
+		} else {
+			proxyspec_set_divert_addr(spec, "127.0.0.1", value);
+		}
+	}
+	else if (!strncmp(name, "ReturnAddr", 11)) {
+		proxyspec_set_return_addr(spec, value);
+	}
+	else if (!strncmp(name, "TargetAddr", 11)) {
+		spec->target_addr = strdup(value);
+	}
+	else if (!strncmp(name, "TargetPort", 11)) {
+		if (spec->target_addr) {
+			proxyspec_set_target_addr(spec, spec->target_addr, value);
+			free(spec->target_addr);
+		} else {
+			fprintf(stderr, "ProxySpec TargetPort without TargetAddr at line %d\n", line_num);
+			exit(EXIT_FAILURE);
+		}
+	}
+	else if (!strncmp(name, "SNIPort", 8)) {
+		proxyspec_set_sni_port(spec, value);
+	}
+	else if (!strncmp(name, "NatEngine", 10)) {
+		proxyspec_set_natengine(spec, value);
+	}
+	else if (!strncmp(name, "CACert", 7)) {
+		proxyspec_set_cacrt(spec, value);
+	}
+	else if (!strncmp(name, "CAKey", 6)) {
+		proxyspec_set_cakey(spec, value);
+	}
+	else if (!strncmp(name, "ClientCert", 11)) {
+		proxyspec_set_clientcrt(spec, value);
+	}
+	else if (!strncmp(name, "ClientKey", 10)) {
+		proxyspec_set_clientkey(spec, value);
+	}
+#ifndef OPENSSL_NO_DH
+	else if (!strncmp(name, "DHGroupParams", 14)) {
+		proxyspec_set_dh(spec, value);
+	}
+#endif /* !OPENSSL_NO_DH */
+#ifndef OPENSSL_NO_ECDH
+	else if (!strncmp(name, "ECDHCurve", 10)) {
+		proxyspec_set_ecdhcurve(spec, value);
+	}
+#endif /* !OPENSSL_NO_ECDH */
+#ifdef SSL_OP_NO_COMPRESSION
+	else if (!strncmp(name, "SSLCompression", 15)) {
+		yes = check_value_yesno(value, "SSLCompression", line_num);
+		if (yes == -1) {
+			goto leave;
+		}
+		yes ? proxyspec_set_sslcomp(spec) : proxyspec_unset_sslcomp(spec);
+#ifdef DEBUG_OPTS
+		log_dbg_printf("SSLCompression: %u\n", spec->sslcomp);
+#endif /* DEBUG_OPTS */
+#endif /* SSL_OP_NO_COMPRESSION */
+	}
+	else if (!strncmp(name, "}", 2)) {
+		return -1;
+	}
+	retval = 0;
+leave:
+	return retval;
+}
+
+/*
+ * Separator param is needed for command line options only.
+ * Conf file option separator is ' '.
+ */
+static int
+get_name_value(char **name, char **value, const char sep, int line_num)
+{
+//	fprintf(stderr, "Line %s at line %d\n", *name, line_num);
+	char *n, *v, *value_end;
+	int retval = -1;
+
+	/* Skip to the end of option name and terminate it with '\0' */
+	for (n = *name;; n++) {
+		/* White spaces possible around separator,
+		 * if the command line option is passed between the quotes */
+		if (*n == ' ' || *n == '\t' || *n == sep) {
+			*n = '\0';
+			n++;
+			break;
+		}
+		if (*n == '\r' || *n == '\n') {
+			// No value, just name, e.g. "}"
+			*n = '\0';
+			*value = NULL;
+			goto leave2;
+		}
+		if (*n == '\0') {
+			n = NULL;
+			break;
+		}
+	}
+
+	/* No option name */
+	if (n == NULL) {
+		fprintf(stderr, "Error in option: No option name at line %d\n", line_num);
+		goto leave;
+	}
+
+	/* White spaces possible before value and around separator,
+	 * if the command line option is passed between the quotes */
+	while (*n == ' ' || *n == '\t' || *n == sep) {
+		n++;
+	}
+
+	*value = n;
+
+	/* Find end of value and terminate it with '\0'
+	 * Find first occurrence of trailing white space */
+	value_end = NULL;
+	for (v = *value;; v++) {
+		if (*v == '\0') {
+			break;
+		}
+		if (*v == '\r' || *v == '\n') {
+			*v = '\0';
+			break;
+		}
+		if (*v == ' ' || *v == '\t') {
+			if (!value_end) {
+				value_end = v;
+			}
+		} else {
+			value_end = NULL;
+		}
+	}
+
+	if (value_end) {
+		*value_end = '\0';
+	}
+
+leave2:
+	retval = 0;
+leave:
+	return retval;
+}
+
+static void
+load_proxyspec_struct(opts_t *opts, char **natengine, int line_num, FILE *f)
+{
+	fprintf(stderr, "ProxySpec { at line %d\n", line_num);
+
+	int retval;
+	char *line, *name, *value;
+	size_t line_len;
+	
+	line = NULL;
+	retval = -1;
+
+	proxyspec_t *spec = NULL;
+	spec = malloc(sizeof(proxyspec_t));
+	memset(spec, 0, sizeof(proxyspec_t));
+	spec->next = opts->spec;
+	opts->spec = spec;
+
+	proxyspec_set_return_addr(spec, "127.0.0.1");
+
+	while (!feof(f)) {
+		if (getline(&line, &line_len, f) == -1) {
+			break;
+		}
+		if (line == NULL) {
+			fprintf(stderr, "Error in conf file: getline() returns NULL line after line %d\n", line_num);
+			goto leave;
+		}
+		line_num++;
+
+		/* Skip white space */
+		for (name = line; *name == ' ' || *name == '\t'; name++); 
+
+		/* Skip comments and empty lines */
+		if ((name[0] == '\0') || (name[0] == '#') || (name[0] == ';') ||
+			(name[0] == '\r') || (name[0] == '\n')) {
+			continue;
+		}
+
+		retval = get_name_value(&name, &value, ' ', line_num);
+		if (retval == 0) {
+			retval = set_proxyspec_option(spec, name, value, *natengine, line_num);
+		}
+
+		if (retval == -1) {
+			goto leave;
+		}
+	}
+leave:
+	return;
+}
+
+#define MAX_TOKEN 10
+
+static void
+proxyspec_parse_line(opts_t *opts, char *value, char **natengine)
+{
+	/* Use MAX_TOKEN instead of computing the actual number of tokens in value */
+	char **argv = malloc(sizeof(char *) * MAX_TOKEN);
+	char **save_argv = argv;
+	int argc = 0;
+	char *p, *last = NULL;
+
+	for ((p = strtok_r(value, " ", &last));
+		 p;
+		 (p = strtok_r(NULL, " ", &last))) {
+		/* Limit max # token */
+		if (argc < MAX_TOKEN) {
+			argv[argc++] = p;
+		} else {
+			break;
+		}
+	}
+
+	proxyspec_parse(&argc, &argv, *natengine, opts);
+	free(save_argv);
+}
+
+static int
+set_option(opts_t *opts, const char *argv0,
+           const char *name, char *value, char **natengine, int line_num, FILE *f)
+{
+	int yes;
+	int retval = -1;
+
+	if (!value) {
+		fprintf(stderr, "Error in conf: No value assigned for %s at line %d\n", name, line_num);
+		goto leave;
+	}
 
 	/* Compare strlen(s2)+1 chars to match exactly */
 	if (!strncmp(name, "CACert", 7)) {
@@ -1825,25 +2398,11 @@ set_option(opts_t *opts, const char *argv0,
 		log_dbg_printf("MaxHTTPHeaderSize: %u\n", opts->max_http_header_size);
 #endif /* DEBUG_OPTS */
 	} else if (!strncmp(name, "ProxySpec", 10)) {
-		/* Use MAX_TOKEN instead of computing the actual number of tokens in value */
-		char **argv = malloc(sizeof(char *) * MAX_TOKEN);
-		char **save_argv = argv;
-		int argc = 0;
-		char *p, *last = NULL;
-
-		for ((p = strtok_r(value, " ", &last));
-		     p;
-		     (p = strtok_r(NULL, " ", &last))) {
-			/* Limit max # token */
-			if (argc < MAX_TOKEN) {
-				argv[argc++] = p;
-			} else {
-				break;
-			}
+		if (!strncmp(value, "{", 2)) {
+			load_proxyspec_struct(opts, natengine, line_num, f);
+		} else {
+			proxyspec_parse_line(opts, value, natengine);
 		}
-
-		proxyspec_parse(&argc, &argv, *natengine, &opts->spec);
-		free(save_argv);
 	} else if (!strncasecmp(name, "VerifyPeer", 11)) {
 		yes = check_value_yesno(value, "VerifyPeer", line_num);
 		if (yes == -1) {
@@ -1949,74 +2508,6 @@ leave:
 	return retval;
 }
 
-/*
- * Separator param is needed for command line options only.
- * Conf file option separator is ' '.
- */
-static int
-get_name_value(char **name, char **value, const char sep)
-{
-	char *n, *v, *value_end;
-	int retval = -1;
-
-	/* Skip to the end of option name and terminate it with '\0' */
-	for (n = *name;; n++) {
-		/* White spaces possible around separator,
-		 * if the command line option is passed between the quotes */
-		if (*n == ' ' || *n == '\t' || *n == sep) {
-			*n = '\0';
-			n++;
-			break;
-		}
-		if (*n == '\0') {
-			n = NULL;
-			break;
-		}
-	}
-
-	/* No option name */
-	if (n == NULL) {
-		fprintf(stderr, "Error in option: No option name\n");
-		goto leave;
-	}
-
-	/* White spaces possible before value and around separator,
-	 * if the command line option is passed between the quotes */
-	while (*n == ' ' || *n == '\t' || *n == sep) {
-		n++;
-	}
-
-	*value = n;
-
-	/* Find end of value and terminate it with '\0'
-	 * Find first occurrence of trailing white space */
-	value_end = NULL;
-	for (v = *value;; v++) {
-		if (*v == '\0') {
-			break;
-		}
-		if (*v == '\r' || *v == '\n') {
-			*v = '\0';
-			break;
-		}
-		if (*v == ' ' || *v == '\t') {
-			if (!value_end) {
-				value_end = v;
-			}
-		} else {
-			value_end = NULL;
-		}
-	}
-
-	if (value_end) {
-		*value_end = '\0';
-	}
-
-	retval = 0;
-leave:
-	return retval;
-}
-
 int
 opts_set_option(opts_t *opts, const char *argv0, const char *optarg,
                 char **natengine)
@@ -2030,10 +2521,10 @@ opts_set_option(opts_t *opts, const char *argv0, const char *optarg,
 	for (name = line; *name == ' ' || *name == '\t'; name++); 
 
 	/* Command line option separator is '=' */
-	retval = get_name_value(&name, &value, '=');
+	retval = get_name_value(&name, &value, '=', 0);
 	if (retval == 0) {
 		/* Line number param is for conf file, pass 0 for command line options */
-		retval = set_option(opts, argv0, name, value, natengine, 0);
+		retval = set_option(opts, argv0, name, value, natengine, 0, NULL);
 	}
 
 	if (line) {
@@ -2078,9 +2569,9 @@ opts_load_conffile(opts_t *opts, const char *argv0, char **natengine)
 			continue;
 		}
 
-		retval = get_name_value(&name, &value, ' ');
+		retval = get_name_value(&name, &value, ' ', line_num);
 		if (retval == 0) {
-			retval = set_option(opts, argv0, name, value, natengine, line_num);
+			retval = set_option(opts, argv0, name, value, natengine, line_num, f);
 		}
 
 		if (retval == -1) {
