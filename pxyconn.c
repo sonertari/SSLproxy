@@ -650,7 +650,7 @@ pxy_log_content_inbuf(pxy_conn_ctx_t *ctx, struct evbuffer *inbuf, int req)
 int
 pxy_prepare_logging_local_procinfo(pxy_conn_ctx_t *ctx)
 {
-	if (ctx->opts->lprocinfo) {
+	if (ctx->global->lprocinfo) {
 		/* fetch process info */
 		if (proc_pid_for_addr(&ctx->lproc.pid,
 				(struct sockaddr*)&ctx->lproc.srcaddr,
