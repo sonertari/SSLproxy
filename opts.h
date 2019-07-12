@@ -245,7 +245,6 @@ int global_has_ssl_spec(global_t *) NONNULL(1) WUNRES;
 int global_has_dns_spec(global_t *) NONNULL(1) WUNRES;
 int global_has_userauth_spec(global_t *) NONNULL(1) WUNRES;
 int global_has_cakey_spec(global_t *) NONNULL(1) WUNRES;
-void global_proxyspec_free(proxyspec_t *) NONNULL(1);
 void global_set_user(global_t *, const char *, const char *) NONNULL(1,2,3);
 void global_set_group(global_t *, const char *, const char *) NONNULL(1,2,3);
 void global_set_jaildir(global_t *, const char *, const char *) NONNULL(1,2,3);

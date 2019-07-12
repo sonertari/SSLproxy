@@ -96,11 +96,13 @@ static char *argv14[] = {
 
 START_TEST(proxyspec_parse_01)
 {
+	global_t *global = global_new();
 	proxyspec_t *spec = NULL;
 	int argc = 6;
 	char **argv = argv01;
 
-	proxyspec_parse(&argc, &argv, NATENGINE, &spec);
+	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy");
+	spec = global->spec;
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(spec->ssl, "not SSL");
 	fail_unless(spec->http, "not HTTP");
@@ -114,18 +116,20 @@ START_TEST(proxyspec_parse_01)
 	fail_unless(!spec->natlookup, "natlookup() is set");
 	fail_unless(!spec->natsocket, "natsocket() is set");
 	fail_unless(!spec->next, "next is set");
-	global_proxyspec_free(spec);
+	global_free(global);
 }
 END_TEST
 
 #ifndef TRAVIS
 START_TEST(proxyspec_parse_02)
 {
+	global_t *global = global_new();
 	proxyspec_t *spec = NULL;
 	int argc = 6;
 	char **argv = argv02;
 
-	proxyspec_parse(&argc, &argv, NATENGINE, &spec);
+	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy");
+	spec = global->spec;
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(spec->ssl, "not SSL");
 	fail_unless(spec->http, "not HTTP");
@@ -139,7 +143,7 @@ START_TEST(proxyspec_parse_02)
 	fail_unless(!spec->natlookup, "natlookup() is set");
 	fail_unless(!spec->natsocket, "natsocket() is set");
 	fail_unless(!spec->next, "next is set");
-	global_proxyspec_free(spec);
+	global_free(global);
 }
 END_TEST
 #endif /* !TRAVIS */
@@ -147,14 +151,13 @@ END_TEST
 #ifndef DOCKER
 START_TEST(proxyspec_parse_03)
 {
-	proxyspec_t *spec = NULL;
+	global_t *global = global_new();
 	int argc = 2;
 	char **argv = argv01;
 
 	close(2);
-	proxyspec_parse(&argc, &argv, NATENGINE, &spec);
-	if (spec)
-		global_proxyspec_free(spec);
+	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy");
+	global_free(global);
 }
 END_TEST
 #endif /* !DOCKER */
@@ -162,25 +165,26 @@ END_TEST
 #ifndef DOCKER
 START_TEST(proxyspec_parse_04)
 {
-	proxyspec_t *spec = NULL;
+	global_t *global = global_new();
 	int argc = 5;
 	char **argv = argv01;
 
 	close(2);
-	proxyspec_parse(&argc, &argv, NATENGINE, &spec);
-	if (spec)
-		global_proxyspec_free(spec);
+	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy");
+	global_free(global);
 }
 END_TEST
 #endif /* !DOCKER */
 
 START_TEST(proxyspec_parse_05)
 {
+	global_t *global = global_new();
 	proxyspec_t *spec = NULL;
 	int argc = 6;
 	char **argv = argv03;
 
-	proxyspec_parse(&argc, &argv, NATENGINE, &spec);
+	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy");
+	spec = global->spec;
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(!spec->ssl, "SSL");
 	fail_unless(spec->http, "not HTTP");
@@ -194,17 +198,19 @@ START_TEST(proxyspec_parse_05)
 	fail_unless(!spec->natlookup, "natlookup() is set");
 	fail_unless(!spec->natsocket, "natsocket() is set");
 	fail_unless(!spec->next, "next is set");
-	global_proxyspec_free(spec);
+	global_free(global);
 }
 END_TEST
 
 START_TEST(proxyspec_parse_06)
 {
+	global_t *global = global_new();
 	proxyspec_t *spec = NULL;
 	int argc = 6;
 	char **argv = argv04;
 
-	proxyspec_parse(&argc, &argv, NATENGINE, &spec);
+	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy");
+	spec = global->spec;
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(spec->ssl, "not SSL");
 	fail_unless(!spec->http, "HTTP");
@@ -218,17 +224,19 @@ START_TEST(proxyspec_parse_06)
 	fail_unless(!spec->natlookup, "natlookup() is set");
 	fail_unless(!spec->natsocket, "natsocket() is set");
 	fail_unless(!spec->next, "next is set");
-	global_proxyspec_free(spec);
+	global_free(global);
 }
 END_TEST
 
 START_TEST(proxyspec_parse_07)
 {
+	global_t *global = global_new();
 	proxyspec_t *spec = NULL;
 	int argc = 6;
 	char **argv = argv05;
 
-	proxyspec_parse(&argc, &argv, NATENGINE, &spec);
+	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy");
+	spec = global->spec;
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(!spec->ssl, "SSL");
 	fail_unless(!spec->http, "HTTP");
@@ -242,17 +250,19 @@ START_TEST(proxyspec_parse_07)
 	fail_unless(!spec->natlookup, "natlookup() is set");
 	fail_unless(!spec->natsocket, "natsocket() is set");
 	fail_unless(!spec->next, "next is set");
-	global_proxyspec_free(spec);
+	global_free(global);
 }
 END_TEST
 
 START_TEST(proxyspec_parse_08)
 {
+	global_t *global = global_new();
 	proxyspec_t *spec = NULL;
 	int argc = 6;
 	char **argv = argv06;
 
-	proxyspec_parse(&argc, &argv, NATENGINE, &spec);
+	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy");
+	spec = global->spec;
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(spec->ssl, "not SSL");
 	fail_unless(spec->http, "not HTTP");
@@ -265,45 +275,45 @@ START_TEST(proxyspec_parse_08)
 	fail_unless(!spec->natlookup, "natlookup() is set");
 	fail_unless(!spec->natsocket, "natsocket() is set");
 	fail_unless(!spec->next, "next is set");
-	global_proxyspec_free(spec);
+	global_free(global);
 }
 END_TEST
 
 #ifndef DOCKER
 START_TEST(proxyspec_parse_09)
 {
-	proxyspec_t *spec = NULL;
+	global_t *global = global_new();
 	int argc = 5;
 	char **argv = argv07;
 
 	close(2);
-	proxyspec_parse(&argc, &argv, NATENGINE, &spec);
-	if (spec)
-		global_proxyspec_free(spec);
+	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy");
+	global_free(global);
 }
 END_TEST
 
 START_TEST(proxyspec_parse_10)
 {
-	proxyspec_t *spec = NULL;
+	global_t *global = global_new();
 	int argc = 5;
 	char **argv = argv06;
 
 	close(2);
-	proxyspec_parse(&argc, &argv, NATENGINE, &spec);
-	if (spec)
-		global_proxyspec_free(spec);
+	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy");
+	global_free(global);
 }
 END_TEST
 #endif /* !DOCKER */
 
 START_TEST(proxyspec_parse_11)
 {
+	global_t *global = global_new();
 	proxyspec_t *spec = NULL;
 	int argc = 4;
 	char **argv = argv08;
 
-	proxyspec_parse(&argc, &argv, NATENGINE, &spec);
+	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy");
+	spec = global->spec;
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(spec->ssl, "not SSL");
 	fail_unless(spec->http, "not HTTP");
@@ -317,21 +327,20 @@ START_TEST(proxyspec_parse_11)
 	fail_unless(!spec->natlookup, "natlookup() is set");
 	fail_unless(!spec->natsocket, "natsocket() is set");
 	fail_unless(!spec->next, "next is set");
-	global_proxyspec_free(spec);
+	global_free(global);
 }
 END_TEST
 
 #ifndef DOCKER
 START_TEST(proxyspec_parse_12)
 {
-	proxyspec_t *spec = NULL;
+	global_t *global = global_new();
 	int argc = 5;
 	char **argv = argv08;
 
 	close(2);
-	proxyspec_parse(&argc, &argv, NATENGINE, &spec);
-	if (spec)
-		global_proxyspec_free(spec);
+	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy");
+	global_free(global);
 }
 END_TEST
 #endif /* !DOCKER */
@@ -339,11 +348,13 @@ END_TEST
 #ifndef TRAVIS
 START_TEST(proxyspec_parse_13)
 {
+	global_t *global = global_new();
 	proxyspec_t *spec = NULL;
 	int argc = 12;
 	char **argv = argv09;
 
-	proxyspec_parse(&argc, &argv, NATENGINE, &spec);
+	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy");
+	spec = global->spec;
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(spec->ssl, "not SSL");
 	fail_unless(spec->http, "not HTTP");
@@ -368,17 +379,19 @@ START_TEST(proxyspec_parse_13)
 	fail_unless(!spec->next->natengine, "natengine is set");
 	fail_unless(!spec->next->natlookup, "natlookup() is set");
 	fail_unless(!spec->next->natsocket, "natsocket() is set");
-	global_proxyspec_free(spec);
+	global_free(global);
 }
 END_TEST
 
 START_TEST(proxyspec_parse_14)
 {
+	global_t *global = global_new();
 	proxyspec_t *spec = NULL;
 	int argc = 8;
 	char **argv = argv10;
 
-	proxyspec_parse(&argc, &argv, NATENGINE, &spec);
+	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy");
+	spec = global->spec;
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(spec->ssl, "not SSL");
 	fail_unless(spec->http, "not HTTP");
@@ -404,18 +417,20 @@ START_TEST(proxyspec_parse_14)
 	            "natengine mismatch");
 	fail_unless(!spec->next->natlookup, "natlookup() is set");
 	fail_unless(!spec->next->natsocket, "natsocket() is set");
-	global_proxyspec_free(spec);
+	global_free(global);
 }
 END_TEST
 #endif /* !TRAVIS */
 
 START_TEST(proxyspec_parse_15)
 {
+	global_t *global = global_new();
 	proxyspec_t *spec = NULL;
 	int argc = 4;
 	char **argv = argv11;
 
-	proxyspec_parse(&argc, &argv, NATENGINE, &spec);
+	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy");
+	spec = global->spec;
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(!spec->ssl, "SSL");
 	fail_unless(!spec->http, "HTTP");
@@ -428,17 +443,19 @@ START_TEST(proxyspec_parse_15)
 	fail_unless(!spec->natlookup, "natlookup() is set");
 	fail_unless(!spec->natsocket, "natsocket() is set");
 	fail_unless(!spec->next, "next is set");
-	global_proxyspec_free(spec);
+	global_free(global);
 }
 END_TEST
 
 START_TEST(proxyspec_parse_16)
 {
+	global_t *global = global_new();
 	proxyspec_t *spec = NULL;
 	int argc = 12;
 	char **argv = argv12;
 
-	proxyspec_parse(&argc, &argv, NATENGINE, &spec);
+	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy");
+	spec = global->spec;
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(spec->ssl, "not SSL");
 	fail_unless(spec->http, "not HTTP");
@@ -463,32 +480,33 @@ START_TEST(proxyspec_parse_16)
 	fail_unless(!spec->next->natengine, "natengine is set");
 	fail_unless(!spec->next->natlookup, "natlookup() is set");
 	fail_unless(!spec->next->natsocket, "natsocket() is set");
-	global_proxyspec_free(spec);
+	global_free(global);
 }
 END_TEST
 
 #ifndef DOCKER
 START_TEST(proxyspec_parse_17)
 {
-	proxyspec_t *spec = NULL;
+	global_t *global = global_new();
 	int argc = 6;
 	char **argv = argv13;
 
 	close(2);
-	proxyspec_parse(&argc, &argv, NATENGINE, &spec);
-	if (spec)
-		global_proxyspec_free(spec);
+	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy");
+	global_free(global);
 }
 END_TEST
 #endif /* !DOCKER */
 
 START_TEST(proxyspec_parse_18)
 {
+	global_t *global = global_new();
 	proxyspec_t *spec = NULL;
 	int argc = 10;
 	char **argv = argv14;
 
-	proxyspec_parse(&argc, &argv, NATENGINE, &spec);
+	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy");
+	spec = global->spec;
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(!spec->ssl, "SSL");
 	fail_unless(!spec->http, "HTTP");
@@ -512,22 +530,21 @@ START_TEST(proxyspec_parse_18)
 	fail_unless(!!spec->next->natengine, "natengine is not set");
 	fail_unless(!spec->next->natlookup, "natlookup() is set");
 	fail_unless(!spec->next->natsocket, "natsocket() is set");
-	global_proxyspec_free(spec);
+	global_free(global);
 }
 END_TEST
 
 START_TEST(opts_debug_01)
 {
-	opts_t *opts;
+	global_t *global = global_new();
 
-	opts = opts_new();
-	opts->debug = 0;
-	fail_unless(!opts->debug, "plain 0");
-	fail_unless(!OPTS_DEBUG(opts), "macro 0");
-	opts->debug = 1;
-	fail_unless(!!opts->debug, "plain 1");
-	fail_unless(!!OPTS_DEBUG(opts), "macro 1");
-	opts_free(opts);
+	global->debug = 0;
+	fail_unless(!global->debug, "plain 0");
+	fail_unless(!OPTS_DEBUG(global), "macro 0");
+	global->debug = 1;
+	fail_unless(!!global->debug, "plain 1");
+	fail_unless(!!OPTS_DEBUG(global), "macro 1");
+	global_free(global);
 }
 END_TEST
 

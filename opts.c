@@ -142,6 +142,33 @@ opts_free(opts_t *opts)
 	free(opts);
 }
 
+/*
+ * Clear and free a proxy spec.
+ */
+static void
+proxyspec_free(proxyspec_t *spec)
+{
+	if (spec->opts)
+		opts_free(spec->opts);
+	if (spec->natengine)
+		free(spec->natengine);
+	memset(spec, 0, sizeof(proxyspec_t));
+	free(spec);
+}
+
+/*
+ * Clear and free all proxy specs.
+ */
+void
+global_proxyspec_free(proxyspec_t *spec)
+{
+	do {
+		proxyspec_t *next = spec->next;
+		proxyspec_free(spec);
+		spec = next;
+	} while (spec);
+}
+
 void
 global_free(global_t *global)
 {
@@ -469,20 +496,6 @@ proxyspec_new(global_t *global, const char *argv0)
 	return spec;
 }
 
-/*
- * Clear and free a proxy spec.
- */
-static void
-proxyspec_free(proxyspec_t *spec)
-{
-	if (spec->opts)
-		opts_free(spec->opts);
-	if (spec->natengine)
-		free(spec->natengine);
-	memset(spec, 0, sizeof(proxyspec_t));
-	free(spec);
-}
-
 static void
 proxyspec_set_proto(proxyspec_t *spec, const char *value)
 {
@@ -726,19 +739,6 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine, global_t *globa
 		fprintf(stderr, "Incomplete proxyspec!\n");
 		exit(EXIT_FAILURE);
 	}
-}
-
-/*
- * Clear and free all proxy specs.
- */
-void
-global_proxyspec_free(proxyspec_t *spec)
-{
-	do {
-		proxyspec_t *next = spec->next;
-		proxyspec_free(spec);
-		spec = next;
-	} while (spec);
 }
 
 static char *
