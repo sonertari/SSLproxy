@@ -2166,6 +2166,7 @@ set_proxyspec_option(proxyspec_t *spec, const char *argv0, const char *name, cha
 		proxyspec_set_natengine(spec, value);
 	}
 	else if (!strncmp(name, "}", 2)) {
+		retval = 1;
 		goto leave;
 	}
 	else {
@@ -2278,17 +2279,16 @@ load_proxyspec_line(global_t *global, const char *argv0, char *value, char **nat
 	free(save_argv);
 }
 
-static void
+static int WUNRES
 load_proxyspec_struct(global_t *global, const char *argv0, char **natengine, int line_num, FILE *f)
 {
 	fprintf(stderr, "ProxySpec { at line %d\n", line_num);
 
-	int retval;
+	int retval = -1;
 	char *line, *name, *value;
 	size_t line_len;
 	
 	line = NULL;
-	retval = -1;
 
 	proxyspec_t *spec = NULL;
 	spec = proxyspec_new(global, argv0);
@@ -2320,13 +2320,15 @@ load_proxyspec_struct(global_t *global, const char *argv0, char **natengine, int
 		if (retval == 0) {
 			retval = set_proxyspec_option(spec, argv0, name, value, natengine, line_num);
 		}
-
 		if (retval == -1) {
 			goto leave;
+		} else if (retval == 1) {
+			break;
 		}
 	}
+	retval = 0;
 leave:
-	return;
+	return retval;
 }
 
 static void
@@ -2439,7 +2441,9 @@ set_global_option(global_t *global, const char *argv0,
 		global_set_userdb_path(global, value);
 	} else if (!strncmp(name, "ProxySpec", 10)) {
 		if (!strncmp(value, "{", 2)) {
-			load_proxyspec_struct(global, argv0, natengine, line_num, f);
+			if (load_proxyspec_struct(global, argv0, natengine, line_num, f) == -1) {
+				goto leave;
+			}
 		} else {
 			load_proxyspec_line(global, argv0, value, natengine);
 		}
