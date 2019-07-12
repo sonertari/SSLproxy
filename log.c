@@ -677,7 +677,7 @@ log_content_format_pathspec(const char *logspec,
  * log_content_ctx_t is preallocated by the caller (part of connection ctx).
  */
 int
-log_content_open(log_content_ctx_t *ctx, opts_t *opts,
+log_content_open(log_content_ctx_t *ctx, global_t *global,
                  const struct sockaddr *srcaddr, socklen_t srcaddrlen,
                  const struct sockaddr *dstaddr, socklen_t dstaddrlen,
                  char *srchost, char *srcport,
@@ -697,9 +697,9 @@ log_content_open(log_content_ctx_t *ctx, opts_t *opts,
 	    )
 		return 0; /* does this actually happen? */
 
-	if (opts->contentlog_isdir || opts->contentlog_isspec ||
-	    opts->pcaplog_isdir    || opts->pcaplog_isspec) {
-		if (opts->contentlog_isdir || opts->pcaplog_isdir) {
+	if (global->contentlog_isdir || global->contentlog_isspec ||
+	    global->pcaplog_isdir    || global->pcaplog_isspec) {
+		if (global->contentlog_isdir || global->pcaplog_isdir) {
 			if (time(&epoch) == -1) {
 				log_err_level_printf(LOG_CRIT, "Failed to get time\n");
 				goto errout;
@@ -732,17 +732,17 @@ log_content_open(log_content_ctx_t *ctx, opts_t *opts,
 		}
 	}
 
-	if (opts->contentlog) {
+	if (global->contentlog) {
 		ctx->file = malloc(sizeof(log_content_file_ctx_t));
 		if (!ctx->file)
 			goto errout;
 		memset(ctx->file, 0, sizeof(log_content_file_ctx_t));
 
-		if (opts->contentlog_isdir) {
+		if (global->contentlog_isdir) {
 			/* per-connection-file content log (-S) */
 			if (asprintf(&ctx->file->u.dir.filename,
 			             "%s/%s-%s,%s-%s,%s.log",
-			             opts->contentlog, timebuf,
+			             global->contentlog, timebuf,
 			             srchost_clean, srcport,
 			             dsthost_clean, dstport) < 0) {
 				log_err_level_printf(LOG_CRIT, "Failed to format filename:"
@@ -750,10 +750,10 @@ log_content_open(log_content_ctx_t *ctx, opts_t *opts,
 				               strerror(errno), errno);
 				goto errout;
 			}
-		} else if (opts->contentlog_isspec) {
+		} else if (global->contentlog_isspec) {
 			/* per-connection-file content log with logspec (-F) */
 			ctx->file->u.spec.filename =
-				log_content_format_pathspec(opts->contentlog,
+				log_content_format_pathspec(global->contentlog,
 				                            srchost_clean,
 				                            srcport,
 				                            dsthost_clean,
@@ -779,7 +779,7 @@ log_content_open(log_content_ctx_t *ctx, opts_t *opts,
 		}
 	}
 
-	if (opts->pcaplog) {
+	if (global->pcaplog) {
 		ctx->pcap = malloc(sizeof(log_content_pcap_ctx_t));
 		if (!ctx->pcap)
 			goto errout;
@@ -789,11 +789,11 @@ log_content_open(log_content_ctx_t *ctx, opts_t *opts,
 		                content_pcap_src_ether, content_pcap_dst_ether,
 		                srcaddr, srcaddrlen, dstaddr, dstaddrlen);
 
-		if (opts->pcaplog_isdir) {
+		if (global->pcaplog_isdir) {
 			/* per-connection-file pcap log (-Y) */
 			if (asprintf(&ctx->pcap->u.dir.filename,
 			             "%s/%s-%s,%s-%s,%s.pcap",
-			             opts->pcaplog, timebuf,
+			             global->pcaplog, timebuf,
 			             srchost_clean, srcport,
 			             dsthost_clean, dstport) < 0) {
 				log_err_level_printf(LOG_CRIT, "Failed to format filename:"
@@ -801,10 +801,10 @@ log_content_open(log_content_ctx_t *ctx, opts_t *opts,
 				               strerror(errno), errno);
 				goto errout;
 			}
-		} else if (opts->pcaplog_isspec) {
+		} else if (global->pcaplog_isspec) {
 			/* per-connection-file pcap log with logspec (-y) */
 			ctx->pcap->u.spec.filename =
-				log_content_format_pathspec(opts->pcaplog,
+				log_content_format_pathspec(global->pcaplog,
 				                            srchost_clean,
 				                            srcport,
 				                            dsthost_clean,
@@ -818,7 +818,7 @@ log_content_open(log_content_ctx_t *ctx, opts_t *opts,
 	}
 
 #ifndef WITHOUT_MIRROR
-	if (opts->mirrorif) {
+	if (global->mirrorif) {
 		ctx->mirror = malloc(sizeof(log_content_mirror_ctx_t));
 		if (!ctx->mirror)
 			goto errout;
@@ -1558,7 +1558,7 @@ log_cert_writecb(UNUSED int level, void *fh, UNUSED unsigned long ctl,
  * Return -1 on errors, 0 otherwise.
  */
 int
-log_preinit(opts_t *opts)
+log_preinit(global_t *global)
 {
 	logger_reopen_func_t reopencb;
 	logger_open_func_t opencb;
@@ -1566,21 +1566,21 @@ log_preinit(opts_t *opts)
 	logger_write_func_t writecb;
 	logger_prep_func_t prepcb;
 
-	if (opts->contentlog) {
-		if (opts->contentlog_isdir) {
+	if (global->contentlog) {
+		if (global->contentlog_isdir) {
 			reopencb = NULL;
 			opencb = log_content_file_dir_opencb;
 			closecb = log_content_file_dir_closecb;
 			writecb = log_content_file_dir_writecb;
 			prepcb = NULL;
-		} else if (opts->contentlog_isspec) {
+		} else if (global->contentlog_isspec) {
 			reopencb = NULL;
 			opencb = log_content_file_spec_opencb;
 			closecb = log_content_file_spec_closecb;
 			writecb = log_content_file_spec_writecb;
 			prepcb = NULL;
 		} else {
-			if (log_content_file_single_preinit(opts->contentlog) == -1)
+			if (log_content_file_single_preinit(global->contentlog) == -1)
 				goto out;
 			reopencb = log_content_file_single_reopencb;
 			opencb = NULL;
@@ -1595,19 +1595,19 @@ log_preinit(opts_t *opts)
 			goto out;
 		}
 	}
-	if (opts->pcaplog) {
-		if (log_content_pcap_preinit((opts->pcaplog_isdir ||
-		                              opts->pcaplog_isspec) ?
+	if (global->pcaplog) {
+		if (log_content_pcap_preinit((global->pcaplog_isdir ||
+		                              global->pcaplog_isspec) ?
 		                              NULL :
-		                              opts->pcaplog) == -1)
+		                              global->pcaplog) == -1)
 			goto out;
-		if (opts->pcaplog_isdir) {
+		if (global->pcaplog_isdir) {
 			reopencb = NULL;
 			opencb = log_content_pcap_dir_opencb;
 			closecb = log_content_pcap_dir_closecb;
 			writecb = log_content_pcap_dir_writecb;
 			prepcb = log_content_pcap_prepcb;
-		} else if (opts->pcaplog_isspec) {
+		} else if (global->pcaplog_isspec) {
 			reopencb = NULL;
 			opencb = log_content_pcap_spec_opencb;
 			closecb = log_content_pcap_spec_closecb;
@@ -1628,9 +1628,9 @@ log_preinit(opts_t *opts)
 		}
 	}
 #ifndef WITHOUT_MIRROR
-	if (opts->mirrorif) {
-		if (log_content_mirror_preinit(opts->mirrorif,
-		                               opts->mirrortarget) == -1)
+	if (global->mirrorif) {
+		if (log_content_mirror_preinit(global->mirrorif,
+		                               global->mirrortarget) == -1)
 			goto out;
 		reopencb = NULL;
 		opencb = NULL;
@@ -1645,8 +1645,8 @@ log_preinit(opts_t *opts)
 		}
 	}
 #endif /* !WITHOUT_MIRROR */
-	if (opts->connectlog) {
-		if (log_connect_preinit(opts->connectlog) == -1)
+	if (global->connectlog) {
+		if (log_connect_preinit(global->connectlog) == -1)
 			goto out;
 		if (!(connect_log = logger_new(log_connect_reopencb,
 		                               NULL, NULL,
@@ -1656,8 +1656,8 @@ log_preinit(opts_t *opts)
 			goto out;
 		}
 	}
-	if (opts->masterkeylog) {
-		if (log_masterkey_preinit(opts->masterkeylog) == -1)
+	if (global->masterkeylog) {
+		if (log_masterkey_preinit(global->masterkeylog) == -1)
 			goto out;
 		if (!(masterkey_log = logger_new(log_masterkey_reopencb,
 		                                 NULL, NULL,
@@ -1667,7 +1667,7 @@ log_preinit(opts_t *opts)
 			goto out;
 		}
 	}
-	if (opts->certgendir) {
+	if (global->certgendir) {
 		if (!(cert_log = logger_new(NULL, NULL, NULL, log_cert_writecb,
 		                            NULL, log_exceptcb)))
 			goto out;
@@ -1743,13 +1743,13 @@ log_preinit_undo(void)
  * Return -1 on errors, 0 otherwise.
  */
 int
-log_init(opts_t *opts, proxy_ctx_t *ctx, int clisock[5])
+log_init(global_t *global, proxy_ctx_t *ctx, int clisock[5])
 {
 	proxy_ctx = ctx;
 	if (err_log)
 		if (logger_start(err_log) == -1)
 			return -1;
-	if (!opts->debug) {
+	if (!global->debug) {
 		err_shortcut_logger = 1;
 	}
 

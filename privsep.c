@@ -147,28 +147,28 @@ privsep_server_signal_handler(int sig)
 }
 
 static int WUNRES
-privsep_server_openfile_verify(opts_t *opts, const char *fn, UNUSED int mkpath)
+privsep_server_openfile_verify(global_t *global, const char *fn, UNUSED int mkpath)
 {
 	/* Prefix must match one of the active log files that use privsep. */
 	do {
-		if (opts->contentlog) {
-			if (strstr(fn, opts->contentlog_isspec
-			               ? opts->contentlog_basedir
-			               : opts->contentlog) == fn)
+		if (global->contentlog) {
+			if (strstr(fn, global->contentlog_isspec
+			               ? global->contentlog_basedir
+			               : global->contentlog) == fn)
 				break;
 		}
-		if (opts->pcaplog) {
-			if (strstr(fn, opts->pcaplog_isspec
-			               ? opts->pcaplog_basedir
-			               : opts->pcaplog) == fn)
+		if (global->pcaplog) {
+			if (strstr(fn, global->pcaplog_isspec
+			               ? global->pcaplog_basedir
+			               : global->pcaplog) == fn)
 				break;
 		}
-		if (opts->connectlog) {
-			if (strstr(fn, opts->connectlog) == fn)
+		if (global->connectlog) {
+			if (strstr(fn, global->connectlog) == fn)
 				break;
 		}
-		if (opts->masterkeylog) {
-			if (strstr(fn, opts->masterkeylog) == fn)
+		if (global->masterkeylog) {
+			if (strstr(fn, global->masterkeylog) == fn)
 				break;
 		}
 		return -1;
@@ -236,11 +236,11 @@ privsep_server_openfile(const char *fn, int mkpath)
 }
 
 static int WUNRES
-privsep_server_opensock_verify(opts_t *opts, void *arg)
+privsep_server_opensock_verify(global_t *global, void *arg)
 {
 	/* This check is safe, because modifications of the spec in the child
 	 * process do not affect the copy of the spec here in the parent. */
-	for (proxyspec_t *spec = opts->spec; spec; spec = spec->next) {
+	for (proxyspec_t *spec = global->spec; spec; spec = spec->next) {
 		if (spec == arg)
 			return 0;
 	}
@@ -354,11 +354,11 @@ privsep_server_opensock_child(const proxyspec_t *spec)
 }
 
 static int WUNRES
-privsep_server_certfile_verify(opts_t *opts, const char *fn)
+privsep_server_certfile_verify(global_t *global, const char *fn)
 {
-	if (!opts->certgendir)
+	if (!global->certgendir)
 		return -1;
-	if (strstr(fn, opts->certgendir) != fn || strstr(fn, "/../"))
+	if (strstr(fn, global->certgendir) != fn || strstr(fn, "/../"))
 		return -1;
 	return 0;
 }
@@ -378,26 +378,26 @@ privsep_server_certfile(const char *fn)
 }
 
 static int WUNRES
-privsep_server_update_atime(opts_t *opts, const userdbkeys_t *keys)
+privsep_server_update_atime(global_t *global, const userdbkeys_t *keys)
 {
 	time_t atime = time(NULL);
 	// @todo Do we really need to reset the stmt, as we always reset while returning?
-	sqlite3_reset(opts->update_user_atime);
-	sqlite3_bind_int(opts->update_user_atime, 1, atime);
-	sqlite3_bind_text(opts->update_user_atime, 2, keys->ip, -1, NULL);
-	sqlite3_bind_text(opts->update_user_atime, 3, keys->user, -1, NULL);
-	sqlite3_bind_text(opts->update_user_atime, 4, keys->ether, -1, NULL);
+	sqlite3_reset(global->update_user_atime);
+	sqlite3_bind_int(global->update_user_atime, 1, atime);
+	sqlite3_bind_text(global->update_user_atime, 2, keys->ip, -1, NULL);
+	sqlite3_bind_text(global->update_user_atime, 3, keys->user, -1, NULL);
+	sqlite3_bind_text(global->update_user_atime, 4, keys->ether, -1, NULL);
 
-	int rc = sqlite3_step(opts->update_user_atime);
+	int rc = sqlite3_step(global->update_user_atime);
 
 	// Do not retry in case we cannot acquire db file or database: SQLITE_BUSY or SQLITE_LOCKED respectively
 	// No need to waste resources, atime update is not so critical
 	if (rc == SQLITE_DONE) {
 		log_dbg_printf("privsep_server_update_atime: Updated atime of user %s=%lld\n", keys->user, (long long)atime);
 	} else {
-		log_err_printf("Error updating user atime: %s\n", sqlite3_errmsg(opts->userdb));
+		log_err_printf("Error updating user atime: %s\n", sqlite3_errmsg(global->userdb));
 	}
-	sqlite3_reset(opts->update_user_atime);
+	sqlite3_reset(global->update_user_atime);
 	return 0;
 }
 
@@ -406,7 +406,7 @@ privsep_server_update_atime(opts_t *opts, const userdbkeys_t *keys)
  * Returns 0 on success, 1 on EOF and -1 on error.
  */
 static int WUNRES
-privsep_server_handle_req(opts_t *opts, int srvsock)
+privsep_server_handle_req(global_t *global, int srvsock)
 {
 	char req[PRIVSEP_MAX_REQ_SIZE];
 	char ans[PRIVSEP_MAX_ANS_SIZE];
@@ -462,7 +462,7 @@ privsep_server_handle_req(opts_t *opts, int srvsock)
 		}
 		memcpy(fn, req + 1, n - 1);
 		fn[n - 1] = '\0';
-		if (privsep_server_openfile_verify(opts, fn, mkpath) == -1) {
+		if (privsep_server_openfile_verify(global, fn, mkpath) == -1) {
 			free(fn);
 			ans[0] = PRIVSEP_ANS_DENIED;
 			if (sys_sendmsgfd(srvsock, ans, 1, -1) == -1) {
@@ -512,7 +512,7 @@ privsep_server_handle_req(opts_t *opts, int srvsock)
 			return 0;
 		}
 		arg = *(proxyspec_t**)(&req[1]);
-		if (privsep_server_opensock_verify(opts, arg) == -1) {
+		if (privsep_server_opensock_verify(global, arg) == -1) {
 			ans[0] = PRIVSEP_ANS_DENIED;
 			if (sys_sendmsgfd(srvsock, ans, 1, -1) == -1) {
 				log_err_level_printf(LOG_CRIT, "Sending message failed: %s (%i"
@@ -596,7 +596,7 @@ privsep_server_handle_req(opts_t *opts, int srvsock)
 			return 0;
 		}
 		arg = *(userdbkeys_t*)(&req[1]);
-		if (privsep_server_update_atime(opts, &arg) == -1) {
+		if (privsep_server_update_atime(global, &arg) == -1) {
 			ans[0] = PRIVSEP_ANS_SYS_ERR;
 			*((int*)&ans[1]) = errno;
 			if (sys_sendmsgfd(srvsock, ans, 1 + sizeof(int),
@@ -644,7 +644,7 @@ privsep_server_handle_req(opts_t *opts, int srvsock)
 		}
 		memcpy(fn, req + 1, n - 1);
 		fn[n - 1] = '\0';
-		if (privsep_server_certfile_verify(opts, fn) == -1) {
+		if (privsep_server_certfile_verify(global, fn) == -1) {
 			free(fn);
 			ans[0] = PRIVSEP_ANS_DENIED;
 			if (sys_sendmsgfd(srvsock, ans, 1, -1) == -1) {
@@ -703,7 +703,7 @@ privsep_server_handle_req(opts_t *opts, int srvsock)
  * Returns 0 on a successful clean exit and -1 on errors.
  */
 static int
-privsep_server(opts_t *opts, int sigpipe, int srvsock[], size_t nsrvsock,
+privsep_server(global_t *global, int sigpipe, int srvsock[], size_t nsrvsock,
                pid_t childpid)
 {
 	int srveof[nsrvsock];
@@ -795,7 +795,7 @@ privsep_server(opts_t *opts, int sigpipe, int srvsock[], size_t nsrvsock,
 			if (received_sigint) {
 				/* if we don't detach from the TTY, the
 				 * child process receives SIGINT directly */
-				if (opts->detach) {
+				if (global->detach) {
 					if (kill(childpid, SIGINT) == -1) {
 						log_err_level_printf(LOG_CRIT, "kill(%i,SIGINT"
 						               ") failed: "
@@ -820,7 +820,7 @@ privsep_server(opts_t *opts, int sigpipe, int srvsock[], size_t nsrvsock,
 
 		for (i = 0; i < nsrvsock; i++) {
 			if (FD_ISSET(srvsock[i], &readfds)) {
-				int rv = privsep_server_handle_req(opts,
+				int rv = privsep_server_handle_req(global,
 				                                   srvsock[i]);
 				if (rv == -1) {
 					log_err_level_printf(LOG_CRIT, "Failed to handle "
@@ -1118,14 +1118,14 @@ privsep_client_update_atime(int clisock, const userdbkeys_t *keys)
  * will not be touched.
  */
 int
-privsep_fork(opts_t *opts, int clisock[], size_t nclisock)
+privsep_fork(global_t *global, int clisock[], size_t nclisock)
 {
 	int selfpipev[2]; /* self-pipe trick: signal handler -> select */
 	int chldpipev[2]; /* el cheapo interprocess sync early after fork */
 	int sockcliv[nclisock][2];
 	pid_t pid;
 
-	if (!opts->dropuser) {
+	if (!global->dropuser) {
 		log_dbg_printf("Privsep fastpath enabled\n");
 		privsep_fastpath = 1;
 	} else {
@@ -1252,7 +1252,7 @@ privsep_fork(opts_t *opts, int clisock[], size_t nclisock)
 	int socksrv[nclisock];
 	for (size_t i = 0; i < nclisock; i++)
 		socksrv[i] = sockcliv[i][0];
-	if (privsep_server(opts, selfpipev[0], socksrv, nclisock, pid) == -1) {
+	if (privsep_server(global, selfpipev[0], socksrv, nclisock, pid) == -1) {
 		log_err_level_printf(LOG_CRIT, "Privsep server failed: %s (%i)\n",
 		               strerror(errno), errno);
 		/* fall through */

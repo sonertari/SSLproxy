@@ -245,13 +245,13 @@ prototcp_fd_readcb(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 int
 prototcp_try_send_userauth_msg(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
-	if (ctx->opts->user_auth && !ctx->user) {
+	if (ctx->spec->opts->user_auth && !ctx->user) {
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "prototcp_try_send_userauth_msg: Sending userauth message, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
 		pxy_discard_inbuf(bev);
-		evbuffer_add_printf(bufferevent_get_output(bev), USERAUTH_MSG, ctx->opts->user_auth_url);
+		evbuffer_add_printf(bufferevent_get_output(bev), USERAUTH_MSG, ctx->spec->opts->user_auth_url);
 		ctx->sent_userauth_msg = 1;
 		return 1;
 	}
@@ -261,7 +261,7 @@ prototcp_try_send_userauth_msg(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 static int NONNULL(1,2,3,4)
 prototcp_try_validate_proto(struct bufferevent *bev, pxy_conn_ctx_t *ctx, struct evbuffer *inbuf, struct evbuffer *outbuf)
 {
-	if (ctx->opts->validate_proto && ctx->protoctx->validatecb && !ctx->protoctx->is_valid) {
+	if (ctx->spec->opts->validate_proto && ctx->protoctx->validatecb && !ctx->protoctx->is_valid) {
 		size_t packet_size = evbuffer_get_length(inbuf);
 		char *packet = (char *)pxy_malloc_packet(packet_size, ctx);
 		if (!packet) {
@@ -429,7 +429,7 @@ prototcp_bev_readcb_dst_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ctx
 int
 prototcp_try_close_unauth_conn(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
-	if (ctx->opts->user_auth && !ctx->user) {
+	if (ctx->spec->opts->user_auth && !ctx->user) {
 		size_t outbuflen = evbuffer_get_length(bufferevent_get_output(bev));
 		if (outbuflen > 0) {
 #ifdef DEBUG_PROXY
@@ -453,7 +453,7 @@ prototcp_try_close_unauth_conn(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 static int NONNULL(1,2)
 prototcp_try_close_protoerror_conn(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
-	if (ctx->opts->validate_proto && ctx->sent_protoerror_msg) {
+	if (ctx->spec->opts->validate_proto && ctx->sent_protoerror_msg) {
 		size_t outbuflen = evbuffer_get_length(bufferevent_get_output(bev));
 		if (outbuflen > 0) {
 #ifdef DEBUG_PROXY

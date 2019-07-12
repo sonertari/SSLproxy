@@ -46,8 +46,8 @@
 #include <event2/buffer.h>
 #include <event2/bufferevent.h>
 
-#define WANT_CONNECT_LOG(ctx)	((ctx)->opts->connectlog||!(ctx)->opts->detach||(ctx)->opts->statslog)
-#define WANT_CONTENT_LOG(ctx)	((ctx)->opts->contentlog&&((ctx)->proto!=PROTO_PASSTHROUGH))
+#define WANT_CONNECT_LOG(ctx)	((ctx)->global->connectlog||!(ctx)->global->detach||(ctx)->global->statslog)
+#define WANT_CONTENT_LOG(ctx)	((ctx)->global->contentlog&&((ctx)->proto!=PROTO_PASSTHROUGH))
 
 #define SSLPROXY_KEY		"SSLproxy:"
 #define SSLPROXY_KEY_LEN	strlen(SSLPROXY_KEY)
@@ -249,7 +249,7 @@ struct pxy_conn_ctx {
 
 	pxy_thrmgr_ctx_t *thrmgr;
 	proxyspec_t *spec;
-	opts_t *opts;
+	global_t *global;
 
 	struct event_base *evbase;
 	struct evdns_base *dnsbase;
@@ -409,7 +409,7 @@ void pxy_bev_eventcb_child(struct bufferevent *, short, void *);
 void pxy_conn_connect(pxy_conn_ctx_t *) NONNULL(1);
 int pxy_userauth(pxy_conn_ctx_t *) NONNULL(1);
 void pxy_conn_setup(evutil_socket_t, struct sockaddr *, int,
-                    pxy_thrmgr_ctx_t *, proxyspec_t *, opts_t *,
+                    pxy_thrmgr_ctx_t *, proxyspec_t *, global_t *,
 					evutil_socket_t)
                     NONNULL(2,4,5,6);
 

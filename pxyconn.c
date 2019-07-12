@@ -180,7 +180,7 @@ pxy_setup_proto_child(pxy_conn_child_ctx_t *ctx)
 static pxy_conn_ctx_t * MALLOC NONNULL(2,3,4)
 pxy_conn_ctx_new(evutil_socket_t fd,
                  pxy_thrmgr_ctx_t *thrmgr,
-                 proxyspec_t *spec, opts_t *opts,
+                 proxyspec_t *spec, global_t *global,
 			     evutil_socket_t clisock)
 {
 #ifdef DEBUG_PROXY
@@ -211,7 +211,7 @@ pxy_conn_ctx_new(evutil_socket_t fd,
 		return NULL;
 	}
 
-	ctx->opts = opts;
+	ctx->global = global;
 	ctx->clisock = clisock;
 
 	ctx->ctime = time(NULL);
@@ -390,10 +390,10 @@ pxy_conn_ctx_free(pxy_conn_ctx_t *ctx, int by_requestor)
 		}
 	}
 
-	if (ctx->opts->user_auth && ctx->srchost_str && ctx->user && ctx->ether) {
+	if (ctx->spec->opts->user_auth && ctx->srchost_str && ctx->user && ctx->ether) {
 		// Update userdb atime if idle time is more than 50% of user timeout, which is expected to reduce update frequency
 		unsigned int idletime = ctx->idletime + (time(NULL) - ctx->ctime);
-		if (idletime > (ctx->opts->user_timeout / 2)) {
+		if (idletime > (ctx->spec->opts->user_timeout / 2)) {
 			userdbkeys_t keys;
 			// Zero out for NULL termination
 			memset(&keys, 0, sizeof(userdbkeys_t));
@@ -404,7 +404,7 @@ pxy_conn_ctx_free(pxy_conn_ctx_t *ctx, int by_requestor)
 
 			if (privsep_client_update_atime(ctx->clisock, &keys) == -1) {
 #ifdef DEBUG_PROXY
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_free: Error updating user atime: %s, fd=%d\n", sqlite3_errmsg(ctx->opts->userdb), ctx->fd);
+				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_free: Error updating user atime: %s, fd=%d\n", sqlite3_errmsg(ctx->global->userdb), ctx->fd);
 #endif /* DEBUG_PROXY */
 			} else {
 #ifdef DEBUG_PROXY
@@ -526,7 +526,7 @@ pxy_log_connect_nonhttp(pxy_conn_ctx_t *ctx)
 	int rv;
 
 #ifdef HAVE_LOCAL_PROCINFO
-	if (ctx->opts->lprocinfo) {
+	if (ctx->global->lprocinfo) {
 		rv = asprintf(&lpi, "lproc:%i:%s:%s:%s",
 		              ctx->lproc.pid,
 		              STRORDASH(ctx->lproc.user),
@@ -593,14 +593,14 @@ pxy_log_connect_nonhttp(pxy_conn_ctx_t *ctx)
 		ctx->enomem = 1;
 		goto out;
 	}
-	if (!ctx->opts->detach) {
+	if (!ctx->global->detach) {
 		log_err_printf("%s", msg);
-	} else if (ctx->opts->statslog) {
+	} else if (ctx->global->statslog) {
 		if (log_conn(msg) == -1) {
 			log_err_level_printf(LOG_WARNING, "Conn logging failed\n");
 		}
 	}
-	if (ctx->opts->connectlog) {
+	if (ctx->global->connectlog) {
 		if (log_connect_print_free(msg) == -1) {
 			free(msg);
 			log_err_level_printf(LOG_WARNING, "Connection logging failed\n");
@@ -610,7 +610,7 @@ pxy_log_connect_nonhttp(pxy_conn_ctx_t *ctx)
 	}
 out:
 #ifdef HAVE_LOCAL_PROCINFO
-	if (lpi && ctx->opts->lprocinfo) {
+	if (lpi && ctx->global->lprocinfo) {
 		free(lpi);
 	}
 #endif /* HAVE_LOCAL_PROCINFO */
@@ -689,7 +689,7 @@ pxy_prepare_logging(pxy_conn_ctx_t *ctx)
 	}
 #endif /* HAVE_LOCAL_PROCINFO */
 	if (WANT_CONTENT_LOG(ctx)) {
-		if (log_content_open(&ctx->logctx, ctx->opts,
+		if (log_content_open(&ctx->logctx, ctx->global,
 							(struct sockaddr *)&ctx->srcaddr,
 							ctx->srcaddrlen,
 							(struct sockaddr *)&ctx->dstaddr,
@@ -716,7 +716,7 @@ pxy_prepare_logging(pxy_conn_ctx_t *ctx)
 static void NONNULL(1,2)
 pxy_log_dbg_connect_type(pxy_conn_ctx_t *ctx, pxy_conn_desc_t *this)
 {
-	if (OPTS_DEBUG(ctx->opts)) {
+	if (OPTS_DEBUG(ctx->global)) {
 		if (this->ssl) {
 			char *keystr;
 			/* for SSL, we get two connect events */
@@ -752,7 +752,7 @@ pxy_log_connect_src(pxy_conn_ctx_t *ctx)
 		pxy_log_connect_nonhttp(ctx);
 	}
 
-	if (ctx->src.ssl && ctx->opts->certgendir) {
+	if (ctx->src.ssl && ctx->global->certgendir) {
 		/* write SSL certificates to gendir */
 		protossl_srccert_write(ctx);
 	}
@@ -786,7 +786,7 @@ static void
 pxy_log_dbg_disconnect(pxy_conn_ctx_t *ctx)
 {
 	/* we only get a single disconnect event here for both connections */
-	if (OPTS_DEBUG(ctx->opts)) {
+	if (OPTS_DEBUG(ctx->global)) {
 		log_dbg_printf("%s disconnected to [%s]:%s, fd=%d\n",
 					   protocol_names[ctx->proto],
 					   STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str), ctx->fd);
@@ -800,7 +800,7 @@ static void
 pxy_log_dbg_disconnect_child(pxy_conn_child_ctx_t *ctx)
 {
 	/* we only get a single disconnect event here for both connections */
-	if (OPTS_DEBUG(ctx->conn->opts)) {
+	if (OPTS_DEBUG(ctx->conn->global)) {
 		log_dbg_printf("Child %s disconnected to [%s]:%s, child fd=%d, fd=%d\n",
 					   protocol_names[ctx->proto],
 					   STRORDASH(ctx->conn->dsthost_str), STRORDASH(ctx->conn->dstport_str), ctx->fd, ctx->conn->fd);
@@ -815,7 +815,7 @@ void
 pxy_log_dbg_evbuf_info(pxy_conn_ctx_t *ctx, pxy_conn_desc_t *this, pxy_conn_desc_t *other)
 {
 	// Use ctx->conn, because this function is used by child conns too
-	if (OPTS_DEBUG(ctx->conn->opts)) {
+	if (OPTS_DEBUG(ctx->conn->global)) {
 		log_dbg_printf("evbuffer size at EOF: i:%zu o:%zu i:%zu o:%zu\n",
 						evbuffer_get_length(bufferevent_get_input(this->bev)),
 						evbuffer_get_length(bufferevent_get_output(this->bev)),
@@ -1137,7 +1137,7 @@ pxy_listener_acceptcb_child(UNUSED struct evconnlistener *listener, evutil_socke
 
 	bufferevent_enable(ctx->dst.bev, EV_READ|EV_WRITE);
 
-	if (OPTS_DEBUG(ctx->conn->opts)) {
+	if (OPTS_DEBUG(ctx->conn->global)) {
 		char *host, *port;
 		if (sys_sockaddr_str((struct sockaddr *)&ctx->conn->dstaddr, ctx->conn->dstaddrlen, &host, &port) == 0) {
 			log_dbg_printf("Child connecting to [%s]:%s\n", host, port);
@@ -1226,7 +1226,7 @@ pxy_setup_child_listener(pxy_conn_ctx_t *ctx)
 	}
 
 	int user_len = 0;
-	if (ctx->opts->user_auth && ctx->user) {
+	if (ctx->spec->opts->user_auth && ctx->user) {
 		// +1 for comma
 		user_len = strlen(ctx->user) + 1;
 	}
@@ -1622,7 +1622,7 @@ pxy_conn_connect(pxy_conn_ctx_t *ctx)
 		return;
 	}
 
-	if (OPTS_DEBUG(ctx->opts)) {
+	if (OPTS_DEBUG(ctx->global)) {
 		char *host, *port;
 		if (sys_sockaddr_str((struct sockaddr *)&ctx->dstaddr, ctx->dstaddrlen, &host, &port) == 0) {
 			log_dbg_printf("Connecting to [%s]:%s\n", host, port);
@@ -1710,7 +1710,7 @@ identify_user(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 #endif /* DEBUG_PROXY */
 
 			ctx->idletime = time(NULL) - sqlite3_column_int(ctx->thr->get_user, 2);
-			if (ctx->idletime > ctx->opts->user_timeout) {
+			if (ctx->idletime > ctx->spec->opts->user_timeout) {
 #ifdef DEBUG_PROXY
 				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: User entry timed out, idletime=%u, fd=%d\n", ctx->idletime, ctx->fd);
 #endif /* DEBUG_PROXY */
@@ -1920,7 +1920,7 @@ out:
 int
 pxy_userauth(pxy_conn_ctx_t *ctx)
 {
-	if (ctx->opts->user_auth && !ctx->user) {
+	if (ctx->spec->opts->user_auth && !ctx->user) {
 #if defined(__OpenBSD__) || defined(__linux__)
 		int ec;
 #if defined(__OpenBSD__)
@@ -1963,7 +1963,7 @@ void
 pxy_conn_setup(evutil_socket_t fd,
                struct sockaddr *peeraddr, int peeraddrlen,
                pxy_thrmgr_ctx_t *thrmgr,
-               proxyspec_t *spec, opts_t *opts,
+               proxyspec_t *spec, global_t *global,
 			   evutil_socket_t clisock)
 {
 #ifdef DEBUG_PROXY
@@ -1987,7 +1987,7 @@ pxy_conn_setup(evutil_socket_t fd,
 	}
 
 	/* create per connection state and attach to thread */
-	pxy_conn_ctx_t *ctx = pxy_conn_ctx_new(fd, thrmgr, spec, opts, clisock);
+	pxy_conn_ctx_t *ctx = pxy_conn_ctx_new(fd, thrmgr, spec, global, clisock);
 	if (!ctx) {
 		log_err_level_printf(LOG_CRIT, "Error allocating memory\n");
 		evutil_closesocket(fd);
@@ -2023,12 +2023,12 @@ pxy_conn_setup(evutil_socket_t fd,
 	}
 
 	/* prepare logging part 1 and user auth */
-	if (opts->pcaplog || opts->user_auth
+	if (global->pcaplog || spec->opts->user_auth
 #ifndef WITHOUT_MIRROR
-		|| opts->mirrorif
+		|| global->mirrorif
 #endif /* !WITHOUT_MIRROR */
 #ifdef HAVE_LOCAL_PROCINFO
-		|| opts->lprocinfo
+		|| global->lprocinfo
 #endif /* HAVE_LOCAL_PROCINFO */
 		) {
 		ctx->srcaddrlen = peeraddrlen;

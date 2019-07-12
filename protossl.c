@@ -60,7 +60,7 @@ protossl_log_ssl_error(struct bufferevent *bev, UNUSED pxy_conn_ctx_t *ctx)
 		log_err_level_printf(LOG_WARNING, "Spurious error from bufferevent (errno=0,sslerr=0)\n");
 #else /* LIBEVENT_VERSION_NUMBER < 0x02010000 */
 		/* Older versions of libevent will report these. */
-		if (OPTS_DEBUG(ctx->opts)) {
+		if (OPTS_DEBUG(ctx->global)) {
 			log_dbg_printf("Unclean SSL shutdown, fd=%d\n", ctx->fd);
 		}
 #endif /* LIBEVENT_VERSION_NUMBER < 0x02010000 */
@@ -103,7 +103,7 @@ protossl_log_masterkey(pxy_conn_ctx_t *ctx, pxy_conn_desc_t *this)
 	// XXX: Remove ssl check? But the caller function is called by non-ssl protos.
 	if (this->ssl) {
 		/* log master key */
-		if (ctx->opts->masterkeylog) {
+		if (ctx->global->masterkeylog) {
 			char *keystr;
 			keystr = ssl_ssl_masterkey_to_str(this->ssl);
 			if ((keystr == NULL) ||
@@ -274,7 +274,7 @@ protossl_sslctx_setoptions(SSL_CTX *sslctx, pxy_conn_ctx_t *ctx)
 
 #ifdef SSL_OP_NO_SSLv2
 #ifdef HAVE_SSLV2
-	if (ctx->opts->no_ssl2) {
+	if (ctx->spec->opts->no_ssl2) {
 #endif /* HAVE_SSLV2 */
 		SSL_CTX_set_options(sslctx, SSL_OP_NO_SSLv2);
 #ifdef HAVE_SSLV2
@@ -282,33 +282,33 @@ protossl_sslctx_setoptions(SSL_CTX *sslctx, pxy_conn_ctx_t *ctx)
 #endif /* HAVE_SSLV2 */
 #endif /* !SSL_OP_NO_SSLv2 */
 #ifdef HAVE_SSLV3
-	if (ctx->opts->no_ssl3) {
+	if (ctx->spec->opts->no_ssl3) {
 		SSL_CTX_set_options(sslctx, SSL_OP_NO_SSLv3);
 	}
 #endif /* HAVE_SSLV3 */
 #ifdef HAVE_TLSV10
-	if (ctx->opts->no_tls10) {
+	if (ctx->spec->opts->no_tls10) {
 		SSL_CTX_set_options(sslctx, SSL_OP_NO_TLSv1);
 	}
 #endif /* HAVE_TLSV10 */
 #ifdef HAVE_TLSV11
-	if (ctx->opts->no_tls11) {
+	if (ctx->spec->opts->no_tls11) {
 		SSL_CTX_set_options(sslctx, SSL_OP_NO_TLSv1_1);
 	}
 #endif /* HAVE_TLSV11 */
 #ifdef HAVE_TLSV12
-	if (ctx->opts->no_tls12) {
+	if (ctx->spec->opts->no_tls12) {
 		SSL_CTX_set_options(sslctx, SSL_OP_NO_TLSv1_2);
 	}
 #endif /* HAVE_TLSV12 */
 
 #ifdef SSL_OP_NO_COMPRESSION
-	if (!ctx->opts->sslcomp) {
+	if (!ctx->spec->opts->sslcomp) {
 		SSL_CTX_set_options(sslctx, SSL_OP_NO_COMPRESSION);
 	}
 #endif /* SSL_OP_NO_COMPRESSION */
 
-	SSL_CTX_set_cipher_list(sslctx, ctx->opts->ciphers);
+	SSL_CTX_set_cipher_list(sslctx, ctx->spec->opts->ciphers);
 
 #if (OPENSSL_VERSION_NUMBER >= 0x10100000L) && !defined(LIBRESSL_VERSION_NUMBER)
 	/* If the security level of OpenSSL is set to 2+ in system configuration, 
@@ -325,7 +325,7 @@ static SSL_CTX *
 protossl_srcsslctx_create(pxy_conn_ctx_t *ctx, X509 *crt, STACK_OF(X509) *chain,
                      EVP_PKEY *key)
 {
-	SSL_CTX *sslctx = SSL_CTX_new(ctx->opts->sslmethod());
+	SSL_CTX *sslctx = SSL_CTX_new(ctx->spec->opts->sslmethod());
 	if (!sslctx) {
 		ctx->enomem = 1;
 		return NULL;
@@ -334,9 +334,9 @@ protossl_srcsslctx_create(pxy_conn_ctx_t *ctx, X509 *crt, STACK_OF(X509) *chain,
 	protossl_sslctx_setoptions(sslctx, ctx);
 
 #if (OPENSSL_VERSION_NUMBER >= 0x10100000L) && !defined(LIBRESSL_VERSION_NUMBER)
-	if (ctx->opts->sslversion) {
-		if (SSL_CTX_set_min_proto_version(sslctx, ctx->opts->sslversion) == 0 ||
-			SSL_CTX_set_max_proto_version(sslctx, ctx->opts->sslversion) == 0) {
+	if (ctx->spec->opts->sslversion) {
+		if (SSL_CTX_set_min_proto_version(sslctx, ctx->spec->opts->sslversion) == 0 ||
+			SSL_CTX_set_max_proto_version(sslctx, ctx->spec->opts->sslversion) == 0) {
 			SSL_CTX_free(sslctx);
 			return NULL;
 		}
@@ -357,15 +357,15 @@ protossl_srcsslctx_create(pxy_conn_ctx_t *ctx, X509 *crt, STACK_OF(X509) *chain,
 	SSL_CTX_set_tlsext_servername_arg(sslctx, ctx);
 #endif /* !OPENSSL_NO_TLSEXT */
 #ifndef OPENSSL_NO_DH
-	if (ctx->opts->dh) {
-		SSL_CTX_set_tmp_dh(sslctx, ctx->opts->dh);
+	if (ctx->spec->opts->dh) {
+		SSL_CTX_set_tmp_dh(sslctx, ctx->spec->opts->dh);
 	} else {
 		SSL_CTX_set_tmp_dh_callback(sslctx, ssl_tmp_dh_callback);
 	}
 #endif /* !OPENSSL_NO_DH */
 #ifndef OPENSSL_NO_ECDH
-	if (ctx->opts->ecdhcurve) {
-		EC_KEY *ecdh = ssl_ec_by_name(ctx->opts->ecdhcurve);
+	if (ctx->spec->opts->ecdhcurve) {
+		EC_KEY *ecdh = ssl_ec_by_name(ctx->spec->opts->ecdhcurve);
 		SSL_CTX_set_tmp_ecdh(sslctx, ecdh);
 		EC_KEY_free(ecdh);
 	} else {
@@ -391,7 +391,7 @@ protossl_srcsslctx_create(pxy_conn_ctx_t *ctx, X509 *crt, STACK_OF(X509) *chain,
 	}
 
 #ifdef DEBUG_SESSION_CACHE
-	if (OPTS_DEBUG(ctx->opts)) {
+	if (OPTS_DEBUG(ctx->global)) {
 		int mode = SSL_CTX_get_session_cache_mode(sslctx);
 		log_dbg_printf("SSL session cache mode: %08x\n", mode);
 		if (mode == SSL_SESS_CACHE_OFF)
@@ -421,12 +421,12 @@ protossl_srccert_write_to_gendir(pxy_conn_ctx_t *ctx, X509 *crt, int is_orig)
 	if (!ctx->sslctx->origcrtfpr)
 		return -1;
 	if (is_orig) {
-		rv = asprintf(&fn, "%s/%s.crt", ctx->opts->certgendir,
+		rv = asprintf(&fn, "%s/%s.crt", ctx->global->certgendir,
 		              ctx->sslctx->origcrtfpr);
 	} else {
 		if (!ctx->sslctx->usedcrtfpr)
 			return -1;
-		rv = asprintf(&fn, "%s/%s-%s.crt", ctx->opts->certgendir,
+		rv = asprintf(&fn, "%s/%s-%s.crt", ctx->global->certgendir,
 		              ctx->sslctx->origcrtfpr, ctx->sslctx->usedcrtfpr);
 	}
 	if (rv == -1) {
@@ -441,13 +441,13 @@ protossl_srccert_write_to_gendir(pxy_conn_ctx_t *ctx, X509 *crt, int is_orig)
 void
 protossl_srccert_write(pxy_conn_ctx_t *ctx)
 {
-	if (ctx->opts->certgen_writeall || ctx->sslctx->generated_cert) {
+	if (ctx->global->certgen_writeall || ctx->sslctx->generated_cert) {
 		if (protossl_srccert_write_to_gendir(ctx,
 		                SSL_get_certificate(ctx->src.ssl), 0) == -1) {
 			log_err_level_printf(LOG_CRIT, "Failed to write used certificate\n");
 		}
 	}
-	if (ctx->opts->certgen_writeall) {
+	if (ctx->global->certgen_writeall) {
 		if (protossl_srccert_write_to_gendir(ctx, ctx->sslctx->origcrt, 1) == -1) {
 			log_err_level_printf(LOG_CRIT, "Failed to write orig certificate\n");
 		}
@@ -459,7 +459,7 @@ protossl_srccert_create(pxy_conn_ctx_t *ctx)
 {
 	cert_t *cert = NULL;
 
-	if (ctx->opts->tgcrtdir) {
+	if (ctx->global->tgcrtdir) {
 		if (ctx->sslctx->sni) {
 			cert = cachemgr_tgcrt_get(ctx->sslctx->sni);
 			if (!cert) {
@@ -472,7 +472,7 @@ protossl_srccert_create(pxy_conn_ctx_t *ctx)
 				cert = cachemgr_tgcrt_get(wildcarded);
 				free(wildcarded);
 			}
-			if (cert && OPTS_DEBUG(ctx->opts)) {
+			if (cert && OPTS_DEBUG(ctx->global)) {
 				log_dbg_printf("Target cert by SNI\n");
 			}
 		} else if (ctx->sslctx->origcrt) {
@@ -498,7 +498,7 @@ protossl_srccert_create(pxy_conn_ctx_t *ctx)
 			if (ctx->enomem) {
 				return NULL;
 			}
-			if (cert && OPTS_DEBUG(ctx->opts)) {
+			if (cert && OPTS_DEBUG(ctx->global)) {
 				log_dbg_printf("Target cert by origcrt\n");
 			}
 		}
@@ -508,35 +508,35 @@ protossl_srccert_create(pxy_conn_ctx_t *ctx)
 		}
 	}
 
-	if (!cert && ctx->sslctx->origcrt && ctx->opts->key) {
+	if (!cert && ctx->sslctx->origcrt && ctx->global->key) {
 		cert = cert_new();
 
 		cert->crt = cachemgr_fkcrt_get(ctx->sslctx->origcrt);
 		if (cert->crt) {
-			if (OPTS_DEBUG(ctx->opts))
+			if (OPTS_DEBUG(ctx->global))
 				log_dbg_printf("Certificate cache: HIT\n");
 		} else {
-			if (OPTS_DEBUG(ctx->opts))
+			if (OPTS_DEBUG(ctx->global))
 				log_dbg_printf("Certificate cache: MISS\n");
-			cert->crt = ssl_x509_forge(ctx->opts->cacrt,
-			                           ctx->opts->cakey,
+			cert->crt = ssl_x509_forge(ctx->spec->opts->cacrt,
+			                           ctx->spec->opts->cakey,
 			                           ctx->sslctx->origcrt,
-			                           ctx->opts->key,
+			                           ctx->global->key,
 			                           NULL,
-			                           ctx->opts->crlurl);
+			                           ctx->spec->opts->crlurl);
 			cachemgr_fkcrt_set(ctx->sslctx->origcrt, cert->crt);
 		}
-		cert_set_key(cert, ctx->opts->key);
-		cert_set_chain(cert, ctx->opts->chain);
+		cert_set_key(cert, ctx->global->key);
+		cert_set_chain(cert, ctx->spec->opts->chain);
 		ctx->sslctx->generated_cert = 1;
 	}
 
-	if ((WANT_CONNECT_LOG(ctx) || ctx->opts->certgendir) && ctx->sslctx->origcrt) {
+	if ((WANT_CONNECT_LOG(ctx) || ctx->global->certgendir) && ctx->sslctx->origcrt) {
 		ctx->sslctx->origcrtfpr = ssl_x509_fingerprint(ctx->sslctx->origcrt, 0);
 		if (!ctx->sslctx->origcrtfpr)
 			ctx->enomem = 1;
 	}
-	if ((WANT_CONNECT_LOG(ctx) || ctx->opts->certgen_writeall) &&
+	if ((WANT_CONNECT_LOG(ctx) || ctx->global->certgen_writeall) &&
 	    cert && cert->crt) {
 		ctx->sslctx->usedcrtfpr = ssl_x509_fingerprint(cert->crt, 0);
 		if (!ctx->sslctx->usedcrtfpr)
@@ -573,7 +573,7 @@ protossl_pass_user(pxy_conn_ctx_t *ctx, passsite_t *passsite)
 
 	// Make sure ctx->user and ctx->desc are set, otherwise if the user did not log in yet, they may be NULL
 	// User and/or description keyword filters defined
-	if (ctx->opts->user_auth && (passsite->all || (passsite->user && ctx->user && !strcmp(ctx->user, passsite->user))) &&
+	if (ctx->spec->opts->user_auth && (passsite->all || (passsite->user && ctx->user && !strcmp(ctx->user, passsite->user))) &&
 			(!passsite->keyword || (ctx->desc && strcasestr(ctx->desc, passsite->keyword)))) {
 		return 1;
 	}
@@ -681,7 +681,7 @@ protossl_srcssl_create(pxy_conn_ctx_t *ctx, SSL *origssl)
 
 	ctx->sslctx->origcrt = SSL_get_peer_certificate(origssl);
 
-	if (OPTS_DEBUG(ctx->opts)) {
+	if (OPTS_DEBUG(ctx->global)) {
 		if (ctx->sslctx->origcrt) {
 			log_dbg_printf("===> Original server certificate:\n");
 			protossl_debug_crt(ctx->sslctx->origcrt);
@@ -694,12 +694,12 @@ protossl_srcssl_create(pxy_conn_ctx_t *ctx, SSL *origssl)
 	if (!cert)
 		return NULL;
 
-	if (OPTS_DEBUG(ctx->opts)) {
+	if (OPTS_DEBUG(ctx->global)) {
 		log_dbg_printf("===> Forged server certificate:\n");
 		protossl_debug_crt(cert->crt);
 	}
 
-	if (WANT_CONNECT_LOG(ctx) || ctx->opts->passsites) {
+	if (WANT_CONNECT_LOG(ctx) || ctx->spec->opts->passsites) {
 		ctx->sslctx->ssl_names = ssl_x509_names_to_str(ctx->sslctx->origcrt ?
 		                                       ctx->sslctx->origcrt :
 		                                       cert->crt);
@@ -707,7 +707,7 @@ protossl_srcssl_create(pxy_conn_ctx_t *ctx, SSL *origssl)
 			ctx->enomem = 1;
 	}
 
-	passsite_t *passsite = ctx->opts->passsites;
+	passsite_t *passsite = ctx->spec->opts->passsites;
 	while (passsite) {
 		if (protossl_pass_user(ctx, passsite) && protossl_pass_site(ctx, passsite->site)) {
 			// Do not print the surrounding slashes
@@ -760,7 +760,7 @@ protossl_ossl_servername_cb(SSL *ssl, UNUSED int *al, void *arg)
 		return SSL_TLSEXT_ERR_NOACK;
 
 	if (!ctx->sslctx->sni) {
-		if (OPTS_DEBUG(ctx->opts)) {
+		if (OPTS_DEBUG(ctx->global)) {
 			log_dbg_printf("Warning: SNI parser yielded no "
 			               "hostname, copying OpenSSL one: "
 			               "[NULL] != [%s]\n", sn);
@@ -771,7 +771,7 @@ protossl_ossl_servername_cb(SSL *ssl, UNUSED int *al, void *arg)
 			return SSL_TLSEXT_ERR_NOACK;
 		}
 	}
-	if (OPTS_DEBUG(ctx->opts)) {
+	if (OPTS_DEBUG(ctx->global)) {
 		if (!!strcmp(sn, ctx->sslctx->sni)) {
 			/*
 			 * This may happen if the client resumes a session, but
@@ -791,30 +791,30 @@ protossl_ossl_servername_cb(SSL *ssl, UNUSED int *al, void *arg)
 
 	/* generate a new certificate with sn as additional altSubjectName
 	 * and replace it both in the current SSL ctx and in the cert cache */
-	if (ctx->opts->allow_wrong_host && !ctx->sslctx->immutable_cert &&
+	if (ctx->spec->opts->allow_wrong_host && !ctx->sslctx->immutable_cert &&
 	    !ssl_x509_names_match((sslcrt = SSL_get_certificate(ssl)), sn)) {
 		X509 *newcrt;
 		SSL_CTX *newsslctx;
 
-		if (OPTS_DEBUG(ctx->opts)) {
+		if (OPTS_DEBUG(ctx->global)) {
 			log_dbg_printf("Certificate cache: UPDATE "
 			               "(SNI mismatch)\n");
 		}
-		newcrt = ssl_x509_forge(ctx->opts->cacrt, ctx->opts->cakey,
-		                        sslcrt, ctx->opts->key,
-		                        sn, ctx->opts->crlurl);
+		newcrt = ssl_x509_forge(ctx->spec->opts->cacrt, ctx->spec->opts->cakey,
+		                        sslcrt, ctx->global->key,
+		                        sn, ctx->spec->opts->crlurl);
 		if (!newcrt) {
 			ctx->enomem = 1;
 			return SSL_TLSEXT_ERR_NOACK;
 		}
 		cachemgr_fkcrt_set(ctx->sslctx->origcrt, newcrt);
 		ctx->sslctx->generated_cert = 1;
-		if (OPTS_DEBUG(ctx->opts)) {
+		if (OPTS_DEBUG(ctx->global)) {
 			log_dbg_printf("===> Updated forged server "
 			               "certificate:\n");
 			protossl_debug_crt(newcrt);
 		}
-		if (WANT_CONNECT_LOG(ctx) || ctx->opts->passsites) {
+		if (WANT_CONNECT_LOG(ctx) || ctx->spec->opts->passsites) {
 			if (ctx->sslctx->ssl_names) {
 				free(ctx->sslctx->ssl_names);
 			}
@@ -823,7 +823,7 @@ protossl_ossl_servername_cb(SSL *ssl, UNUSED int *al, void *arg)
 				ctx->enomem = 1;
 			}
 		}
-		if (WANT_CONNECT_LOG(ctx) || ctx->opts->certgendir) {
+		if (WANT_CONNECT_LOG(ctx) || ctx->global->certgendir) {
 			if (ctx->sslctx->usedcrtfpr) {
 				free(ctx->sslctx->usedcrtfpr);
 			}
@@ -833,8 +833,8 @@ protossl_ossl_servername_cb(SSL *ssl, UNUSED int *al, void *arg)
 			}
 		}
 
-		newsslctx = protossl_srcsslctx_create(ctx, newcrt, ctx->opts->chain,
-		                                 ctx->opts->key);
+		newsslctx = protossl_srcsslctx_create(ctx, newcrt, ctx->spec->opts->chain,
+		                                 ctx->global->key);
 		if (!newsslctx) {
 			X509_free(newcrt);
 			return SSL_TLSEXT_ERR_NOACK;
@@ -842,7 +842,7 @@ protossl_ossl_servername_cb(SSL *ssl, UNUSED int *al, void *arg)
 		SSL_set_SSL_CTX(ssl, newsslctx); /* decr's old incr new refc */
 		SSL_CTX_free(newsslctx);
 		X509_free(newcrt);
-	} else if (OPTS_DEBUG(ctx->opts)) {
+	} else if (OPTS_DEBUG(ctx->global)) {
 		log_dbg_printf("Certificate cache: KEEP (SNI match or "
 		               "target mode)\n");
 	}
@@ -862,7 +862,7 @@ protossl_dstssl_create(pxy_conn_ctx_t *ctx)
 	SSL *ssl;
 	SSL_SESSION *sess;
 
-	sslctx = SSL_CTX_new(ctx->opts->sslmethod());
+	sslctx = SSL_CTX_new(ctx->spec->opts->sslmethod());
 	if (!sslctx) {
 		ctx->enomem = 1;
 		return NULL;
@@ -871,30 +871,30 @@ protossl_dstssl_create(pxy_conn_ctx_t *ctx)
 	protossl_sslctx_setoptions(sslctx, ctx);
 
 #if (OPENSSL_VERSION_NUMBER >= 0x10100000L) && !defined(LIBRESSL_VERSION_NUMBER)
-	if (ctx->opts->sslversion) {
-		if (SSL_CTX_set_min_proto_version(sslctx, ctx->opts->sslversion) == 0 ||
-			SSL_CTX_set_max_proto_version(sslctx, ctx->opts->sslversion) == 0) {
+	if (ctx->spec->opts->sslversion) {
+		if (SSL_CTX_set_min_proto_version(sslctx, ctx->spec->opts->sslversion) == 0 ||
+			SSL_CTX_set_max_proto_version(sslctx, ctx->spec->opts->sslversion) == 0) {
 			SSL_CTX_free(sslctx);
 			return NULL;
 		}
 	}
 #endif /* OPENSSL_VERSION_NUMBER >= 0x10100000L */
 
-	if (ctx->opts->verify_peer) {
+	if (ctx->spec->opts->verify_peer) {
 		SSL_CTX_set_verify(sslctx, SSL_VERIFY_PEER, NULL);
 		SSL_CTX_set_default_verify_paths(sslctx);
 	} else {
 		SSL_CTX_set_verify(sslctx, SSL_VERIFY_NONE, NULL);
 	}
 
-	if (ctx->opts->clientcrt &&
-	    (SSL_CTX_use_certificate(sslctx, ctx->opts->clientcrt) != 1)) {
+	if (ctx->spec->opts->clientcrt &&
+	    (SSL_CTX_use_certificate(sslctx, ctx->spec->opts->clientcrt) != 1)) {
 		log_dbg_printf("loading dst client certificate failed\n");
 		SSL_CTX_free(sslctx);
 		return NULL;
 	}
-	if (ctx->opts->clientkey &&
-	    (SSL_CTX_use_PrivateKey(sslctx, ctx->opts->clientkey) != 1)) {
+	if (ctx->spec->opts->clientkey &&
+	    (SSL_CTX_use_PrivateKey(sslctx, ctx->spec->opts->clientkey) != 1)) {
 		log_dbg_printf("loading dst client key failed\n");
 		SSL_CTX_free(sslctx);
 		return NULL;
@@ -921,7 +921,7 @@ protossl_dstssl_create(pxy_conn_ctx_t *ctx)
 	sess = cachemgr_dsess_get((struct sockaddr *)&ctx->dstaddr,
 	                          ctx->dstaddrlen, ctx->sslctx->sni); /* new sess inst */
 	if (sess) {
-		if (OPTS_DEBUG(ctx->opts)) {
+		if (OPTS_DEBUG(ctx->global)) {
 			log_dbg_printf("Attempt reuse dst SSL session\n");
 		}
 		SSL_set_session(ssl, sess); /* increments sess refcount */
@@ -1023,7 +1023,7 @@ protossl_bufferevent_free_and_close_fd(struct bufferevent *bev, pxy_conn_ctx_t *
 	// @see https://stackoverflow.com/questions/31688709/knowing-all-callbacks-have-run-with-libevent-and-bufferevent-free
 	//bufferevent_setcb(bev, NULL, NULL, NULL, NULL);
 	bufferevent_free(bev); /* does not free SSL unless the option BEV_OPT_CLOSE_ON_FREE was set */
-	pxy_ssl_shutdown(ctx->opts, ctx->evbase, ssl, fd);
+	pxy_ssl_shutdown(ctx->global, ctx->evbase, ssl, fd);
 }
 
 void
@@ -1164,7 +1164,7 @@ protossl_fd_readcb(MAYBE_UNUSED evutil_socket_t fd, UNUSED short what, void *arg
 #endif /* DEBUG_PROXY */
 		goto out;
 	}
-	if (OPTS_DEBUG(ctx->opts)) {
+	if (OPTS_DEBUG(ctx->global)) {
 		log_dbg_printf("SNI peek: [%s] [%s], fd=%d\n", ctx->sslctx->sni ? ctx->sslctx->sni : "n/a",
 					   ((rv == 1) && chello) ? "incomplete" : "complete", ctx->fd);
 	}
@@ -1351,7 +1351,7 @@ protossl_setup_src_ssl(pxy_conn_ctx_t *ctx)
 	// @todo Make srvdst.ssl the origssl param
 	ctx->src.ssl = protossl_srcssl_create(ctx, ctx->srvdst.ssl);
 	if (!ctx->src.ssl) {
-		if ((ctx->opts->passthrough || ctx->passsite) && !ctx->enomem) {
+		if ((ctx->spec->opts->passthrough || ctx->passsite) && !ctx->enomem) {
 			log_err_level_printf(LOG_WARNING, "Falling back to passthrough\n");
 			protopassthrough_engage(ctx);
 			// report protocol change by returning 1
@@ -1529,7 +1529,7 @@ protossl_bev_eventcb_error_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		/* the callout to the original destination failed,
 		 * e.g. because it asked for client cert auth, so
 		 * close the accepted socket and clean up */
-		if (ctx->opts->passthrough && bufferevent_get_openssl_error(bev)) {
+		if (ctx->spec->opts->passthrough && bufferevent_get_openssl_error(bev)) {
 			/* ssl callout failed, fall back to plain TCP passthrough of SSL connection */
 			log_err_level_printf(LOG_WARNING, "SSL srvdst connection failed; falling back to passthrough\n");
 			protopassthrough_engage(ctx);

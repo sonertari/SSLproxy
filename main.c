@@ -280,7 +280,7 @@ main_usage(void)
 static int
 main_loadtgcrt(const char *filename, void *arg)
 {
-	opts_t *opts = arg;
+	global_t *global = arg;
 	cert_t *cert;
 	char **names;
 
@@ -303,7 +303,7 @@ main_loadtgcrt(const char *filename, void *arg)
 	log_dbg_print_free(ssl_x509_to_pem(cert->crt));
 #endif /* DEBUG_CERTIFICATE */
 
-	if (OPTS_DEBUG(opts)) {
+	if (OPTS_DEBUG(global)) {
 		log_dbg_printf("Targets for '%s':", filename);
 	}
 	names = ssl_x509_names(cert->crt);
@@ -313,18 +313,35 @@ main_loadtgcrt(const char *filename, void *arg)
 		if ((sep = strchr(*p, '!'))) {
 			*sep = '\0';
 		}
-		if (OPTS_DEBUG(opts)) {
+		if (OPTS_DEBUG(global)) {
 			log_dbg_printf(" '%s'", *p);
 		}
 		cachemgr_tgcrt_set(*p, cert);
 		free(*p);
 	}
-	if (OPTS_DEBUG(opts)) {
+	if (OPTS_DEBUG(global)) {
 		log_dbg_printf("\n");
 	}
 	free(names);
 	cert_free(cert);
 	return 0;
+}
+
+static void
+main_check_opts(opts_t *opts, const char *argv0)
+{
+	if (opts->cakey && !opts->cacrt) {
+		fprintf(stderr, "%s: no CA cert specified (-c).\n",
+						argv0);
+		exit(EXIT_FAILURE);
+	}
+	if (opts->cakey && opts->cacrt &&
+		(X509_check_private_key(opts->cacrt, opts->cakey) != 1)) {
+		fprintf(stderr, "%s: CA cert does not match key.\n",
+						argv0);
+		ERR_print_errors_fp(stderr);
+		exit(EXIT_FAILURE);
+	}
 }
 
 /*
@@ -335,13 +352,13 @@ main(int argc, char *argv[])
 {
 	const char *argv0;
 	int ch;
-	opts_t *opts;
+	global_t *global;
 	char *natengine;
 	int pidfd = -1;
 	int rv = EXIT_FAILURE;
 
 	argv0 = argv[0];
-	opts = opts_new();
+	global = global_new();
 	if (nat_getdefaultname()) {
 		natengine = strdup(nat_getdefaultname());
 		if (!natengine)
@@ -356,80 +373,80 @@ main(int argc, char *argv[])
 	                    "dD::VhW:w:q:f:o:X:Y:y:J")) != -1) {
 		switch (ch) {
 			case 'f':
-				if (opts->conffile)
-					free(opts->conffile);
-				opts->conffile = strdup(optarg);
-				if (!opts->conffile)
+				if (global->conffile)
+					free(global->conffile);
+				global->conffile = strdup(optarg);
+				if (!global->conffile)
 					oom_die(argv0);
-				if (opts_load_conffile(opts, argv0, &natengine) == -1) {
+#ifdef DEBUG_OPTS
+				log_dbg_printf("Conf file: %s\n", global->conffile);
+#endif /* DEBUG_OPTS */
+				if (global_load_conffile(global, argv0, &natengine) == -1) {
 					exit(EXIT_FAILURE);
 				}
-#ifdef DEBUG_OPTS
-				log_dbg_printf("Conf file: %s\n", opts->conffile);
-#endif /* DEBUG_OPTS */
 				break;
 			case 'o':
-				if (opts_set_option(opts, argv0, optarg, &natengine) == -1) {
+				if (global_set_option(global, argv0, optarg, &natengine) == -1) {
 					exit(EXIT_FAILURE);
 				}
 				break;
 			case 'c':
-				opts_set_cacrt(opts, argv0, optarg);
+				opts_set_cacrt(global->opts, argv0, optarg);
 				break;
 			case 'k':
-				opts_set_cakey(opts, argv0, optarg);
+				opts_set_cakey(global->opts, argv0, optarg);
 				break;
 			case 'C':
-				opts_set_chain(opts, argv0, optarg);
+				opts_set_chain(global->opts, argv0, optarg);
 				break;
 			case 'K':
-				opts_set_key(opts, argv0, optarg);
+				global_set_key(global, argv0, optarg);
 				break;
 			case 't':
-				opts_set_tgcrtdir(opts, argv0, optarg);
+				global_set_tgcrtdir(global, argv0, optarg);
 				break;
 			case 'q':
-				opts_set_crl(opts, optarg);
+				opts_set_crl(global->opts, optarg);
 				break;
 			case 'O':
-				opts_set_deny_ocsp(opts);
+				opts_set_deny_ocsp(global->opts);
 				break;
 			case 'P':
-				opts_set_passthrough(opts);
+				opts_set_passthrough(global->opts);
 				break;
 			case 'a':
-				opts_set_clientcrt(opts, argv0, optarg);
+				opts_set_clientcrt(global->opts, argv0, optarg);
 				break;
 			case 'b':
-				opts_set_clientkey(opts, argv0, optarg);
+				opts_set_clientkey(global->opts, argv0, optarg);
 				break;
 #ifndef OPENSSL_NO_DH
 			case 'g':
-				opts_set_dh(opts, argv0, optarg);
+				opts_set_dh(global->opts, argv0, optarg);
 				break;
 #endif /* !OPENSSL_NO_DH */
 #ifndef OPENSSL_NO_ECDH
 			case 'G':
-				opts_set_ecdhcurve(opts, argv0, optarg);
+				opts_set_ecdhcurve(global->opts, argv0, optarg);
 				break;
 #endif /* !OPENSSL_NO_ECDH */
 #ifdef SSL_OP_NO_COMPRESSION
 			case 'Z':
-				opts_unset_sslcomp(opts);
+				opts_unset_sslcomp(global->opts);
 				break;
 #endif /* SSL_OP_NO_COMPRESSION */
 			case 's':
-				opts_set_ciphers(opts, argv0, optarg);
+				opts_set_ciphers(global->opts, argv0, optarg);
 				break;
 			case 'r':
-				opts_force_proto(opts, argv0, optarg);
+				opts_force_proto(global->opts, argv0, optarg);
 				break;
 			case 'R':
-				opts_disable_proto(opts, argv0, optarg);
+				opts_disable_proto(global->opts, argv0, optarg);
 				break;
 #ifndef OPENSSL_NO_ENGINE
 			case 'x':
-				opts_set_openssl_engine(opts, argv0, optarg);
+				global_set_openssl_engine(global, argv0, optarg);
 				break;
 #endif /* !OPENSSL_NO_ENGINE */
 			case 'e':
@@ -444,70 +461,70 @@ main(int argc, char *argv[])
 				exit(EXIT_SUCCESS);
 				break;
 			case 'u':
-				opts_set_user(opts, argv0, optarg);
+				global_set_user(global, argv0, optarg);
 				break;
 			case 'm':
-				opts_set_group(opts, argv0, optarg);
+				global_set_group(global, argv0, optarg);
 				break;
 			case 'p':
-				opts_set_pidfile(opts, argv0, optarg);
+				global_set_pidfile(global, argv0, optarg);
 				break;
 			case 'j':
-				opts_set_jaildir(opts, argv0, optarg);
+				global_set_jaildir(global, argv0, optarg);
 				break;
 			case 'l':
-				opts_set_connectlog(opts, argv0, optarg);
+				global_set_connectlog(global, argv0, optarg);
 				break;
 			case 'J':
-				opts_set_statslog(opts);
+				global_set_statslog(global);
 				break;
 			case 'L':
-				opts_set_contentlog(opts, argv0, optarg);
+				global_set_contentlog(global, argv0, optarg);
 				break;
 			case 'S':
-				opts_set_contentlogdir(opts, argv0, optarg);
+				global_set_contentlogdir(global, argv0, optarg);
 				break;
 			case 'F':
-				opts_set_contentlogpathspec(opts, argv0, optarg);
+				global_set_contentlogpathspec(global, argv0, optarg);
 				break;
 			case 'X':
-				opts_set_pcaplog(opts, argv0, optarg);
+				global_set_pcaplog(global, argv0, optarg);
 				break;
 			case 'Y':
-				opts_set_pcaplogdir(opts, argv0, optarg);
+				global_set_pcaplogdir(global, argv0, optarg);
 				break;
 			case 'y':
-				opts_set_pcaplogpathspec(opts, argv0, optarg);
+				global_set_pcaplogpathspec(global, argv0, optarg);
 				break;
 #ifndef WITHOUT_MIRROR
 			case 'I':
-				opts_set_mirrorif(opts, argv0, optarg);
+				global_set_mirrorif(global, argv0, optarg);
 				break;
 			case 'T':
-				opts_set_mirrortarget(opts, argv0, optarg);
+				global_set_mirrortarget(global, argv0, optarg);
 				break;
 #endif /* !WITHOUT_MIRROR */
 			case 'W':
-				opts_set_certgendir_writeall(opts, argv0, optarg);
+				global_set_certgendir_writeall(global, argv0, optarg);
 				break;
 			case 'w':
-				opts_set_certgendir_writegencerts(opts, argv0, optarg);
+				global_set_certgendir_writegencerts(global, argv0, optarg);
 				break;
 #ifdef HAVE_LOCAL_PROCINFO
 			case 'i':
-				opts_set_lprocinfo(opts);
+				global_set_lprocinfo(global);
 				break;
 #endif /* HAVE_LOCAL_PROCINFO */
 			case 'M':
-				opts_set_masterkeylog(opts, argv0, optarg);
+				global_set_masterkeylog(global, argv0, optarg);
 				break;
 			case 'd':
-				opts_set_daemon(opts);
+				global_set_daemon(global);
 				break;
 			case 'D':
-				opts_set_debug(opts);
+				global_set_debug(global);
 				if (optarg) {
-					opts_set_debug_level(optarg);
+					global_set_debug_level(optarg);
 				}
 				break;
 			case 'V':
@@ -525,29 +542,29 @@ main(int argc, char *argv[])
 	}
 	argc -= optind;
 	argv += optind;
-	proxyspec_parse(&argc, &argv, natengine, opts);
+	proxyspec_parse(&argc, &argv, natengine, global, argv0);
 
 	/* usage checks before defaults */
-	if (opts->detach && OPTS_DEBUG(opts)) {
+	if (global->detach && OPTS_DEBUG(global)) {
 		fprintf(stderr, "%s: -d and -D are mutually exclusive.\n",
 		                argv0);
 		exit(EXIT_FAILURE);
 	}
 #ifndef WITHOUT_MIRROR
-	if (opts->mirrortarget && !opts->mirrorif) {
+	if (global->mirrortarget && !global->mirrorif) {
 		fprintf(stderr, "%s: -T depends on -I.\n", argv0);
 		exit(EXIT_FAILURE);
 	}
-	if (opts->mirrorif && !opts->mirrortarget) {
+	if (global->mirrorif && !global->mirrortarget) {
 		fprintf(stderr, "%s: -I depends on -T.\n", argv0);
 		exit(EXIT_FAILURE);
 	}
 #endif /* !WITHOUT_MIRROR */
-	if (!opts->spec) {
+	if (!global->spec) {
 		fprintf(stderr, "%s: no proxyspec specified.\n", argv0);
 		exit(EXIT_FAILURE);
 	}
-	for (proxyspec_t *spec = opts->spec; spec; spec = spec->next) {
+	for (proxyspec_t *spec = global->spec; spec; spec = spec->next) {
 		if (spec->connect_addrlen || spec->sni_port)
 			continue;
 		if (!spec->natengine) {
@@ -566,40 +583,33 @@ main(int argc, char *argv[])
 		spec->natlookup = nat_getlookupcb(spec->natengine);
 		spec->natsocket = nat_getsocketcb(spec->natengine);
 	}
-	if (opts_has_ssl_spec(opts)) {
+	if (global_has_ssl_spec(global)) {
 		if (ssl_init() == -1) {
 			fprintf(stderr, "%s: failed to initialize OpenSSL.\n",
 			                argv0);
 			exit(EXIT_FAILURE);
 		}
 #ifndef OPENSSL_NO_ENGINE
-		if (opts->openssl_engine &&
-		    ssl_engine(opts->openssl_engine) == -1) {
+		if (global->openssl_engine &&
+		    ssl_engine(global->openssl_engine) == -1) {
 			fprintf(stderr, "%s: failed to enable OpenSSL engine"
-			                " %s.\n", argv0, opts->openssl_engine);
+			                " %s.\n", argv0, global->openssl_engine);
 			exit(EXIT_FAILURE);
 		}
 #endif /* !OPENSSL_NO_ENGINE */
-		if ((opts->cacrt || !opts->tgcrtdir) && !opts->cakey) {
+		if ((global->opts->cakey || !global->tgcrtdir) && !global->opts->cakey) {
 			fprintf(stderr, "%s: no CA key specified (-k).\n",
-			                argv0);
+							argv0);
 			exit(EXIT_FAILURE);
 		}
-		if (opts->cakey && !opts->cacrt) {
-			fprintf(stderr, "%s: no CA cert specified (-c).\n",
-			                argv0);
-			exit(EXIT_FAILURE);
-		}
-		if (opts->cakey && opts->cacrt &&
-		    (X509_check_private_key(opts->cacrt, opts->cakey) != 1)) {
-			fprintf(stderr, "%s: CA cert does not match key.\n",
-			                argv0);
-			ERR_print_errors_fp(stderr);
-			exit(EXIT_FAILURE);
+		main_check_opts(global->opts, argv0);
+		for (proxyspec_t *spec = global->spec; spec; spec = spec->next) {
+			if (spec->ssl || spec->upgrade)
+				main_check_opts(spec->opts, argv0);
 		}
 	}
 #ifdef __APPLE__
-	if (opts->dropuser && !!strcmp(opts->dropuser, "root") &&
+	if (global->dropuser && !!strcmp(global->dropuser, "root") &&
 	    nat_used("pf")) {
 		fprintf(stderr, "%s: cannot use 'pf' proxyspec with -u due "
 		                "to Apple bug\n", argv0);
@@ -608,43 +618,50 @@ main(int argc, char *argv[])
 #endif /* __APPLE__ */
 
 	/* prevent multiple instances running */
-	if (opts->pidfile) {
-		pidfd = sys_pidf_open(opts->pidfile);
+	if (global->pidfile) {
+		pidfd = sys_pidf_open(global->pidfile);
 		if (pidfd == -1) {
 			fprintf(stderr, "%s: cannot open PID file '%s' "
 			                "- process already running?\n",
-			                argv0, opts->pidfile);
+			                argv0, global->pidfile);
 			exit(EXIT_FAILURE);
 		}
 	}
 
-	if (opts->user_auth) {
-		if (!opts->userdb_path) {
+	if (global->opts->user_auth || global_has_userauth_spec(global)) {
+		if (!global->userdb_path) {
 			fprintf(stderr, "User auth requires a userdb path\n");
 			exit(EXIT_FAILURE);
 		}
 		// @todo Check if we can really pass the db var into the child process for privsep
 		// https://www.sqlite.org/faq.html:
 		// "Under Unix, you should not carry an open SQLite database across a fork() system call into the child process."
-		if (sqlite3_open(opts->userdb_path, &opts->userdb)) {
-			fprintf(stderr, "Error opening user db file: %s\n", sqlite3_errmsg(opts->userdb));
-			sqlite3_close(opts->userdb);
+		if (sqlite3_open(global->userdb_path, &global->userdb)) {
+			fprintf(stderr, "Error opening user db file: %s\n", sqlite3_errmsg(global->userdb));
+			sqlite3_close(global->userdb);
 			exit(EXIT_FAILURE);
 		}
-		if (sqlite3_prepare_v2(opts->userdb, "UPDATE users SET atime = ?1 WHERE ip = ?2 AND user = ?3 AND ether = ?4", 200, &opts->update_user_atime, NULL)) {
-			fprintf(stderr, "Error preparing update_user_atime sql stmt: %s\n", sqlite3_errmsg(opts->userdb));
-			sqlite3_close(opts->userdb);
+		if (sqlite3_prepare_v2(global->userdb, "UPDATE users SET atime = ?1 WHERE ip = ?2 AND user = ?3 AND ether = ?4", 200, &global->update_user_atime, NULL)) {
+			fprintf(stderr, "Error preparing update_user_atime sql stmt: %s\n", sqlite3_errmsg(global->userdb));
+			sqlite3_close(global->userdb);
 			exit(EXIT_FAILURE);
 		}
 	}
 
 	/* dynamic defaults */
-	if (!opts->ciphers) {
-		opts->ciphers = strdup(DFLT_CIPHERS);
-		if (!opts->ciphers)
+	if (!global->opts->ciphers) {
+		global->opts->ciphers = strdup(DFLT_CIPHERS);
+		if (!global->opts->ciphers)
 			oom_die(argv0);
 	}
-	if (!opts->dropuser && !geteuid() && !getuid() &&
+	for (proxyspec_t *spec = global->spec; spec; spec = spec->next) {
+		if (!spec->opts->ciphers) {
+			spec->opts->ciphers = strdup(DFLT_CIPHERS);
+			if (!spec->opts->ciphers)
+				oom_die(argv0);
+		}
+	}
+	if (!global->dropuser && !geteuid() && !getuid() &&
 	    sys_isuser(DFLT_DROPUSER)) {
 #ifdef __APPLE__
 		/* Apple broke ioctl(/dev/pf) for EUID != 0 so we do not
@@ -652,25 +669,25 @@ main(int argc, char *argv[])
 		 * if pf has been used in any proxyspec */
 		if (!nat_used("pf")) {
 #endif /* __APPLE__ */
-		opts->dropuser = strdup(DFLT_DROPUSER);
-		if (!opts->dropuser)
+		global->dropuser = strdup(DFLT_DROPUSER);
+		if (!global->dropuser)
 			oom_die(argv0);
 #ifdef __APPLE__
 		}
 #endif /* __APPLE__ */
 	}
-	if (opts->dropuser && sys_isgeteuid(opts->dropuser)) {
-		if (opts->dropgroup) {
+	if (global->dropuser && sys_isgeteuid(global->dropuser)) {
+		if (global->dropgroup) {
 			fprintf(stderr, "%s: cannot use -m when -u is "
 			        "current user\n", argv0);
 			exit(EXIT_FAILURE);
 		}
-		free(opts->dropuser);
-		opts->dropuser = NULL;
+		free(global->dropuser);
+		global->dropuser = NULL;
 	}
 
 	/* usage checks after defaults */
-	if (opts->dropgroup && !opts->dropuser) {
+	if (global->dropgroup && !global->dropuser) {
 		fprintf(stderr, "%s: -m depends on -u\n", argv0);
 		exit(EXIT_FAILURE);
 	}
@@ -680,28 +697,28 @@ main(int argc, char *argv[])
 	 * not root, because privsep will fastpath in that situation, skipping
 	 * the latency-incurring overhead. */
 	int privsep_warn = 0;
-	if (opts->dropuser) {
-		if (opts->contentlog_isdir) {
+	if (global->dropuser) {
+		if (global->contentlog_isdir) {
 			log_dbg_printf("| Warning: -F requires a privileged "
 			               "operation for each connection!\n");
 			privsep_warn = 1;
 		}
-		if (opts->contentlog_isspec) {
+		if (global->contentlog_isspec) {
 			log_dbg_printf("| Warning: -S requires a privileged "
 			               "operation for each connection!\n");
 			privsep_warn = 1;
 		}
-		if (opts->pcaplog_isdir) {
+		if (global->pcaplog_isdir) {
 			log_dbg_printf("| Warning: -Y requires a privileged "
 			               "operation for each connection!\n");
 			privsep_warn = 1;
 		}
-		if (opts->pcaplog_isspec) {
+		if (global->pcaplog_isspec) {
 			log_dbg_printf("| Warning: -y requires a privileged "
 			               "operation for each connection!\n");
 			privsep_warn = 1;
 		}
-		if (opts->certgendir) {
+		if (global->certgendir) {
 			log_dbg_printf("| Warning: -w/-W require a privileged "
 			               "op for each connection!\n");
 			privsep_warn = 1;
@@ -715,35 +732,35 @@ main(int argc, char *argv[])
 	}
 
 	/* debug log, part 1 */
-	if (OPTS_DEBUG(opts)) {
+	if (OPTS_DEBUG(global)) {
 		main_version();
 	}
 
 	/* generate leaf key */
-	if (opts_has_ssl_spec(opts) && opts->cakey && !opts->key) {
-		opts->key = ssl_key_genrsa(opts->leafkey_rsabits);
-		if (!opts->key) {
+	if (global_has_ssl_spec(global) && global_has_cakey_spec(global) && !global->key) {
+		global->key = ssl_key_genrsa(global->leafkey_rsabits);
+		if (!global->key) {
 			fprintf(stderr, "%s: error generating RSA key:\n",
 			                argv0);
 			ERR_print_errors_fp(stderr);
 			exit(EXIT_FAILURE);
 		}
-		if (OPTS_DEBUG(opts)) {
+		if (OPTS_DEBUG(global)) {
 			log_dbg_printf("Generated RSA key for leaf certs.\n");
 		}
 	}
-	if (opts->certgendir) {
+	if (global->certgendir) {
 		char *keyid, *keyfn;
 		int prv;
 		FILE *keyf;
 
-		keyid = ssl_key_identifier(opts->key, 0);
+		keyid = ssl_key_identifier(global->key, 0);
 		if (!keyid) {
 			fprintf(stderr, "%s: error generating key id\n", argv0);
 			exit(EXIT_FAILURE);
 		}
 
-		prv = asprintf(&keyfn, "%s/%s.key", opts->certgendir, keyid);
+		prv = asprintf(&keyfn, "%s/%s.key", global->certgendir, keyid);
 		if (prv == -1) {
 			fprintf(stderr, "%s: %s (%i)\n", argv0,
 			                strerror(errno), errno);
@@ -756,7 +773,7 @@ main(int argc, char *argv[])
 			                strerror(errno), errno);
 			exit(EXIT_FAILURE);
 		}
-		if (!PEM_write_PrivateKey(keyf, opts->key, NULL, 0, 0,
+		if (!PEM_write_PrivateKey(keyf, global->key, NULL, 0, 0,
 		                                           NULL, NULL)) {
 			fprintf(stderr, "%s: Failed to write key to '%s': "
 			                "%s (%i)\n", argv0, keyfn,
@@ -767,10 +784,10 @@ main(int argc, char *argv[])
 	}
 
 	/* debug log, part 2 */
-	if (OPTS_DEBUG(opts)) {
-		opts_proto_dbg_dump(opts);
+	if (OPTS_DEBUG(global)) {
+		opts_proto_dbg_dump(global->opts);
 		log_dbg_printf("proxyspecs:\n");
-		for (proxyspec_t *spec = opts->spec; spec; spec = spec->next) {
+		for (proxyspec_t *spec = global->spec; spec; spec = spec->next) {
 			char *specstr = proxyspec_str(spec);
 			if (!specstr) {
 				fprintf(stderr, "%s: out of memory\n", argv0);
@@ -780,21 +797,34 @@ main(int argc, char *argv[])
 			free(specstr);
 		}
 #ifndef OPENSSL_NO_ENGINE
-		if (opts->openssl_engine) {
+		if (global->openssl_engine) {
 			log_dbg_printf("Loaded OpenSSL engine %s\n",
-			               opts->openssl_engine);
+			               global->openssl_engine);
 		}
 #endif /* !OPENSSL_NO_ENGINE */
-		if (opts->cacrt) {
-			char *subj = ssl_x509_subject(opts->cacrt);
+		if (global->opts->cacrt) {
+			char *subj = ssl_x509_subject(global->opts->cacrt);
 			log_dbg_printf("Loaded CA: '%s'\n", subj);
 			free(subj);
 #ifdef DEBUG_CERTIFICATE
-			log_dbg_print_free(ssl_x509_to_str(opts->cacrt));
-			log_dbg_print_free(ssl_x509_to_pem(opts->cacrt));
+			log_dbg_print_free(ssl_x509_to_str(global->opts->cacrt));
+			log_dbg_print_free(ssl_x509_to_pem(global->opts->cacrt));
 #endif /* DEBUG_CERTIFICATE */
 		} else {
 			log_dbg_printf("No CA loaded.\n");
+		}
+		for (proxyspec_t *spec = global->spec; spec; spec = spec->next) {
+			if (spec->opts->cacrt) {
+				char *subj = ssl_x509_subject(spec->opts->cacrt);
+				log_dbg_printf("Loaded ProxySpec CA: '%s'\n", subj);
+				free(subj);
+#ifdef DEBUG_CERTIFICATE
+				log_dbg_print_free(ssl_x509_to_str(spec->opts->cacrt));
+				log_dbg_print_free(ssl_x509_to_pem(spec->opts->cacrt));
+#endif /* DEBUG_CERTIFICATE */
+			} else {
+				log_dbg_printf("No ProxySpec CA loaded.\n");
+			}
 		}
 	}
 
@@ -806,7 +836,7 @@ main(int argc, char *argv[])
 		fprintf(stderr, "%s: failed to preinit cachemgr.\n", argv0);
 		exit(EXIT_FAILURE);
 	}
-	if (log_preinit(opts) == -1) {
+	if (log_preinit(global) == -1) {
 		fprintf(stderr, "%s: failed to preinit logging.\n", argv0);
 		exit(EXIT_FAILURE);
 	}
@@ -816,19 +846,19 @@ main(int argc, char *argv[])
 	}
 
 	/* Load certs before dropping privs but after cachemgr_preinit() */
-	if (opts->tgcrtdir) {
-		if (sys_dir_eachfile(opts->tgcrtdir,
-		                     main_loadtgcrt, opts) == -1) {
+	if (global->tgcrtdir) {
+		if (sys_dir_eachfile(global->tgcrtdir,
+		                     main_loadtgcrt, global) == -1) {
 			fprintf(stderr, "%s: failed to load certs from %s\n",
-			                argv0, opts->tgcrtdir);
+			                argv0, global->tgcrtdir);
 			exit(EXIT_FAILURE);
 		}
 	}
 
 	/* Detach from tty; from this point on, only canonicalized absolute
 	 * paths should be used (-j, -F, -S). */
-	if (opts->detach) {
-		if (OPTS_DEBUG(opts)) {
+	if (global->detach) {
+		if (OPTS_DEBUG(global)) {
 			log_dbg_printf("Detaching from TTY, see syslog for "
 			               "errors after this point\n");
 		}
@@ -840,9 +870,9 @@ main(int argc, char *argv[])
 		log_err_mode(LOG_ERR_MODE_SYSLOG);
 	}
 
-	if (opts->pidfile && (sys_pidf_write(pidfd) == -1)) {
+	if (global->pidfile && (sys_pidf_write(pidfd) == -1)) {
 		log_err_level_printf(LOG_CRIT, "Failed to write PID to PID file '%s': %s (%i)"
-		               "\n", opts->pidfile, strerror(errno), errno);
+		               "\n", global->pidfile, strerror(errno), errno);
 		return -1;
 	}
 
@@ -854,46 +884,46 @@ main(int argc, char *argv[])
 	 * which will become the main proxy thread.  First slot is main thread,
 	 * remaining slots are passed down to log subsystem. */
 	int clisock[6];
-	if (privsep_fork(opts, clisock,
+	if (privsep_fork(global, clisock,
 	                 sizeof(clisock)/sizeof(clisock[0])) != 0) {
 		/* parent has exited the monitor loop after waiting for child,
 		 * or an error occurred */
-		if (opts->pidfile) {
-			sys_pidf_close(pidfd, opts->pidfile);
+		if (global->pidfile) {
+			sys_pidf_close(pidfd, global->pidfile);
 		}
 		goto out_parent;
 	}
 	/* child */
 
 	/* close pidfile in child */
-	if (opts->pidfile)
+	if (global->pidfile)
 		close(pidfd);
 
 	/* Initialize proxy before dropping privs */
-	proxy_ctx_t *proxy = proxy_new(opts, clisock[0]);
+	proxy_ctx_t *proxy = proxy_new(global, clisock[0]);
 	if (!proxy) {
 		log_err_level_printf(LOG_CRIT, "Failed to initialize proxy.\n");
 		exit(EXIT_FAILURE);
 	}
 
 	/* Drop privs, chroot */
-	if (sys_privdrop(opts->dropuser, opts->dropgroup,
-	                 opts->jaildir) == -1) {
+	if (sys_privdrop(global->dropuser, global->dropgroup,
+	                 global->jaildir) == -1) {
 		log_err_level_printf(LOG_CRIT, "Failed to drop privileges: %s (%i)\n",
 		               strerror(errno), errno);
 		exit(EXIT_FAILURE);
 	}
 	log_dbg_printf("Dropped privs to user %s group %s chroot %s\n",
-	               opts->dropuser  ? opts->dropuser  : "-",
-	               opts->dropgroup ? opts->dropgroup : "-",
-	               opts->jaildir   ? opts->jaildir   : "-");
+	               global->dropuser  ? global->dropuser  : "-",
+	               global->dropgroup ? global->dropgroup : "-",
+	               global->jaildir   ? global->jaildir   : "-");
 	if (ssl_reinit() == -1) {
 		fprintf(stderr, "%s: failed to reinit SSL\n", argv0);
 		goto out_sslreinit_failed;
 	}
 
 	/* Post-privdrop/chroot/detach initialization, thread spawning */
-	if (log_init(opts, proxy, &clisock[1]) == -1) {
+	if (log_init(global, proxy, &clisock[1]) == -1) {
 		fprintf(stderr, "%s: failed to init log facility: %s\n",
 		                argv0, strerror(errno));
 		goto out_log_failed;
@@ -924,7 +954,7 @@ out_cachemgr_failed:
 out_sslreinit_failed:
 out_log_failed:
 out_parent:
-	opts_free(opts);
+	global_free(global);
 	ssl_fini();
 	return rv;
 }

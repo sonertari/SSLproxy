@@ -59,7 +59,7 @@ pxy_thrmgr_get_thr_expired_conns(pxy_thr_ctx_t *tctx, pxy_conn_ctx_t **expired_c
 		pxy_conn_ctx_t *ctx = tctx->conns;
 		while (ctx) {
 			time_t elapsed_time = now - ctx->atime;
-			if (elapsed_time > (time_t)tctx->thrmgr->opts->conn_idle_timeout) {
+			if (elapsed_time > (time_t)tctx->thrmgr->global->conn_idle_timeout) {
 				ctx->next_expired = *expired_conns;
 				*expired_conns = ctx;
 			}
@@ -69,14 +69,14 @@ pxy_thrmgr_get_thr_expired_conns(pxy_thr_ctx_t *tctx, pxy_conn_ctx_t **expired_c
 		ctx = tctx->pending_ssl_conns;
 		while (ctx) {
 			time_t elapsed_time = now - ctx->atime;
-			if (elapsed_time > (time_t)tctx->thrmgr->opts->conn_idle_timeout) {
+			if (elapsed_time > (time_t)tctx->thrmgr->global->conn_idle_timeout) {
 				ctx->next_expired = *expired_conns;
 				*expired_conns = ctx;
 			}
 			ctx = ctx->sslctx->next_pending;
 		}
 
-		if (tctx->thrmgr->opts->statslog) {
+		if (tctx->thrmgr->global->statslog) {
 			ctx = *expired_conns;
 			while (ctx) {
 #ifdef DEBUG_PROXY
@@ -163,7 +163,7 @@ pxy_thrmgr_print_thr_info(pxy_thr_ctx_t *tctx)
 #endif /* DEBUG_PROXY */
 
 			// @attention Report idle connections only, i.e. the conns which have been idle since the last time we checked for expired conns
-			if (atime >= (time_t)tctx->thrmgr->opts->expired_conn_check_period) {
+			if (atime >= (time_t)tctx->thrmgr->global->expired_conn_check_period) {
 				if (asprintf(&smsg, "IDLE: thr=%d, id=%u, ce=%d cc=%d, at=%lld ct=%lld, src_addr=%s:%s, dst_addr=%s:%s, user=%s, valid=%d, pc=%d\n",
 						tctx->thridx, idx, ctx->children ? 1:0, ctx->child_count, (long long)atime, (long long)ctime,
 						STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
@@ -282,9 +282,9 @@ pxy_thrmgr_timer_cb(UNUSED evutil_socket_t fd, UNUSED short what, UNUSED void *a
 	}
 	
 	// @attention Print thread info only if stats logging is enabled, if disabled debug logs are not printed either
-	if (ctx->thrmgr->opts->statslog) {
+	if (ctx->thrmgr->global->statslog) {
 		ctx->timeout_count++;
-		if (ctx->timeout_count >= ctx->thrmgr->opts->stats_period) {
+		if (ctx->timeout_count >= ctx->thrmgr->global->stats_period) {
 			ctx->timeout_count = 0;
 			pxy_thrmgr_print_thr_info(ctx);
 		}
@@ -300,7 +300,7 @@ static void *
 pxy_thrmgr_thr(void *arg)
 {
 	pxy_thr_ctx_t *ctx = arg;
-	struct timeval timer_delay = {ctx->thrmgr->opts->expired_conn_check_period, 0};
+	struct timeval timer_delay = {ctx->thrmgr->global->expired_conn_check_period, 0};
 	struct event *ev;
 
 	ev = event_new(ctx->evbase, -1, EV_PERSIST, pxy_thrmgr_timer_cb, ctx);
@@ -319,7 +319,7 @@ pxy_thrmgr_thr(void *arg)
  * This gets called before forking to background.
  */
 pxy_thrmgr_ctx_t *
-pxy_thrmgr_new(opts_t *opts)
+pxy_thrmgr_new(global_t *global)
 {
 	pxy_thrmgr_ctx_t *ctx;
 
@@ -327,7 +327,7 @@ pxy_thrmgr_new(opts_t *opts)
 		return NULL;
 	memset(ctx, 0, sizeof(pxy_thrmgr_ctx_t));
 
-	ctx->opts = opts;
+	ctx->global = global;
 	ctx->num_thr = 2 * sys_get_cpu_cores();
 	return ctx;
 }
@@ -343,7 +343,7 @@ pxy_thrmgr_run(pxy_thrmgr_ctx_t *ctx)
 {
 	int idx = -1, dns = 0;
 
-	dns = opts_has_dns_spec(ctx->opts);
+	dns = global_has_dns_spec(ctx->global);
 
 	if (!(ctx->thr = malloc(ctx->num_thr * sizeof(pxy_thr_ctx_t*)))) {
 		log_dbg_printf("Failed to allocate memory\n");
@@ -379,8 +379,8 @@ pxy_thrmgr_run(pxy_thrmgr_ctx_t *ctx)
 		ctx->thr[idx]->timeout_count = 0;
 		ctx->thr[idx]->thrmgr = ctx;
 
-		if (ctx->opts->user_auth && sqlite3_prepare_v2(ctx->opts->userdb, "SELECT user,ether,atime,desc FROM users WHERE ip = ?1", 100, &ctx->thr[idx]->get_user, NULL)) {
-			log_err_level_printf(LOG_CRIT, "Error preparing get_user sql stmt: %s\n", sqlite3_errmsg(ctx->opts->userdb));
+		if ((ctx->global->opts->user_auth || global_has_userauth_spec(ctx->global)) && sqlite3_prepare_v2(ctx->global->userdb, "SELECT user,ether,atime,desc FROM users WHERE ip = ?1", 100, &ctx->thr[idx]->get_user, NULL)) {
+			log_err_level_printf(LOG_CRIT, "Error preparing get_user sql stmt: %s\n", sqlite3_errmsg(ctx->global->userdb));
 			goto leave;
 		}
 		if (pthread_mutex_init(&ctx->thr[idx]->mutex, NULL)) {
@@ -424,7 +424,7 @@ leave:
 			if (ctx->thr[idx]->evbase) {
 				event_base_free(ctx->thr[idx]->evbase);
 			}
-			if (ctx->opts->user_auth) {
+			if (ctx->global->opts->user_auth || global_has_userauth_spec(ctx->global)) {
 				sqlite3_finalize(ctx->thr[idx]->get_user);
 			}
 			pthread_mutex_destroy(&ctx->thr[idx]->mutex);
@@ -460,7 +460,7 @@ pxy_thrmgr_free(pxy_thrmgr_ctx_t *ctx)
 			if (ctx->thr[idx]->evbase) {
 				event_base_free(ctx->thr[idx]->evbase);
 			}
-			if (ctx->opts->user_auth) {
+			if (ctx->global->opts->user_auth || global_has_userauth_spec(ctx->global)) {
 				sqlite3_finalize(ctx->thr[idx]->get_user);
 			}
 			pthread_mutex_destroy(&ctx->thr[idx]->mutex);

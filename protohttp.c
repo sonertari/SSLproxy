@@ -73,7 +73,7 @@ protohttp_log_connect(pxy_conn_ctx_t *ctx)
 	int rv;
 
 #ifdef HAVE_LOCAL_PROCINFO
-	if (ctx->opts->lprocinfo) {
+	if (ctx->global->lprocinfo) {
 		rv = asprintf(&lpi, "lproc:%i:%s:%s:%s",
 		              ctx->lproc.pid,
 		              STRORDASH(ctx->lproc.user),
@@ -148,14 +148,14 @@ protohttp_log_connect(pxy_conn_ctx_t *ctx)
 		ctx->enomem = 1;
 		goto out;
 	}
-	if (!ctx->opts->detach) {
+	if (!ctx->global->detach) {
 		log_err_printf("%s", msg);
-	} else if (ctx->opts->statslog) {
+	} else if (ctx->global->statslog) {
 		if (log_conn(msg) == -1) {
 			log_err_level_printf(LOG_WARNING, "Conn logging failed\n");
 		}
 	}
-	if (ctx->opts->connectlog) {
+	if (ctx->global->connectlog) {
 		if (log_connect_print_free(msg) == -1) {
 			free(msg);
 			log_err_level_printf(LOG_WARNING, "Connection logging failed\n");
@@ -358,10 +358,10 @@ protohttp_filter_request_header_line(const char *line, pxy_conn_ctx_t *ctx, prot
 			http_ctx->seen_keyword_count++;
 			return newhdr;
 		// @attention Always use conn ctx for opts, child ctx does not have opts, see the comments in pxy_conn_child_ctx
-		} else if (ctx->conn->opts->remove_http_accept_encoding && !strncasecmp(line, "Accept-Encoding:", 16)) {
+		} else if (ctx->conn->spec->opts->remove_http_accept_encoding && !strncasecmp(line, "Accept-Encoding:", 16)) {
 			http_ctx->seen_keyword_count++;
 			return NULL;
-		} else if (ctx->conn->opts->remove_http_referer && !strncasecmp(line, "Referer:", 8)) {
+		} else if (ctx->conn->spec->opts->remove_http_referer && !strncasecmp(line, "Referer:", 8)) {
 			http_ctx->seen_keyword_count++;
 			return NULL;
 		/* Suppress upgrading to SSL/TLS, WebSockets or HTTP/2 and keep-alive */
@@ -439,7 +439,7 @@ protohttp_filter_request_header(struct evbuffer *inbuf, struct evbuffer *outbuf,
 
 	if (http_ctx->seen_req_header) {
 		/* request header complete */
-		if ((ctx->type == CONN_TYPE_PARENT) && ctx->conn->opts->deny_ocsp) {
+		if ((ctx->type == CONN_TYPE_PARENT) && ctx->conn->spec->opts->deny_ocsp) {
 			protohttp_ocsp_deny(ctx, http_ctx);
 		}
 
@@ -569,7 +569,7 @@ protohttp_validate(protohttp_ctx_t *http_ctx, pxy_conn_ctx_t *ctx)
 #endif /* DEBUG_PROXY */
 		return 0;
 	}
-	if (http_ctx->seen_bytes > ctx->opts->max_http_header_size) {
+	if (http_ctx->seen_bytes > ctx->spec->opts->max_http_header_size) {
 		// Fail validation if still cannot pass as http after reaching max header size
 		http_ctx->not_valid = 1;
 #ifdef DEBUG_PROXY
@@ -612,7 +612,7 @@ protohttp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	struct evbuffer *inbuf = bufferevent_get_input(bev);
 	struct evbuffer *outbuf = bufferevent_get_output(ctx->dst.bev);
 
-	if (ctx->opts->user_auth && !ctx->user) {
+	if (ctx->spec->opts->user_auth && !ctx->user) {
 #ifdef DEBUG_PROXY
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_bev_readcb_src: Redirecting conn, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
@@ -620,16 +620,16 @@ protohttp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		char *url = protohttp_get_url(inbuf, ctx);
 		pxy_discard_inbuf(bev);
 		if (url) {
-			evbuffer_add_printf(bufferevent_get_output(bev), redirect_url, ctx->opts->user_auth_url, url);
+			evbuffer_add_printf(bufferevent_get_output(bev), redirect_url, ctx->spec->opts->user_auth_url, url);
 			free(url);
 		} else {
-			evbuffer_add_printf(bufferevent_get_output(bev), redirect, ctx->opts->user_auth_url);
+			evbuffer_add_printf(bufferevent_get_output(bev), redirect, ctx->spec->opts->user_auth_url);
 		}
 		ctx->sent_userauth_msg = 1;
 		return;
 	}
 
-	if (ctx->opts->validate_proto && !ctx->protoctx->is_valid) {
+	if (ctx->spec->opts->validate_proto && !ctx->protoctx->is_valid) {
 		http_ctx->seen_bytes += evbuffer_get_length(inbuf);
 	}
 
@@ -659,7 +659,7 @@ protohttp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		evbuffer_add_buffer(outbuf, inbuf);
 	}
 
-	if (ctx->opts->validate_proto && !ctx->protoctx->is_valid) {
+	if (ctx->spec->opts->validate_proto && !ctx->protoctx->is_valid) {
 		if (protohttp_validate(http_ctx, ctx) == -1) {
 			evbuffer_add(bufferevent_get_output(bev), proto_error, strlen(proto_error));
 			ctx->sent_protoerror_msg = 1;

@@ -44,6 +44,57 @@
 #define STRORDASH(x)	(((x)&&*(x))?(x):"-")
 #define STRORNONE(x)	(((x)&&*(x))?(x):"")
 
+typedef struct global global_t;
+
+typedef struct opts {
+	unsigned int sslcomp : 1;
+#ifdef HAVE_SSLV2
+	unsigned int no_ssl2 : 1;
+#endif /* HAVE_SSLV2 */
+#ifdef HAVE_SSLV3
+	unsigned int no_ssl3 : 1;
+#endif /* HAVE_SSLV3 */
+#ifdef HAVE_TLSV10
+	unsigned int no_tls10 : 1;
+#endif /* HAVE_TLSV10 */
+#ifdef HAVE_TLSV11
+	unsigned int no_tls11 : 1;
+#endif /* HAVE_TLSV11 */
+#ifdef HAVE_TLSV12
+	unsigned int no_tls12 : 1;
+#endif /* HAVE_TLSV12 */
+	unsigned int passthrough : 1;
+	unsigned int deny_ocsp : 1;
+	char *ciphers;
+	CONST_SSL_METHOD *(*sslmethod)(void);
+#if (OPENSSL_VERSION_NUMBER >= 0x10100000L) && !defined(LIBRESSL_VERSION_NUMBER)
+	int sslversion;
+#endif /* OPENSSL_VERSION_NUMBER >= 0x10100000L */
+	X509 *cacrt;
+	EVP_PKEY *cakey;
+	STACK_OF(X509) *chain;
+	X509 *clientcrt;
+	EVP_PKEY *clientkey;
+#ifndef OPENSSL_NO_DH
+	DH *dh;
+#endif /* !OPENSSL_NO_DH */
+#ifndef OPENSSL_NO_ECDH
+	char *ecdhcurve;
+#endif /* !OPENSSL_NO_ECDH */
+	char *crlurl;
+	unsigned int remove_http_accept_encoding: 1;
+	unsigned int remove_http_referer: 1;
+	unsigned int verify_peer: 1;
+	unsigned int allow_wrong_host: 1;
+	unsigned int user_auth: 1;
+	char *user_auth_url;
+	unsigned int user_timeout;
+	unsigned int validate_proto : 1;
+	unsigned int max_http_header_size;
+	struct passsite *passsites;
+	global_t *global;
+} opts_t;
+
 typedef struct proxyspec {
 	unsigned int ssl : 1;
 	unsigned int http : 1;
@@ -70,62 +121,14 @@ typedef struct proxyspec {
 	struct sockaddr_storage child_src_addr;
 	socklen_t child_src_addrlen;
 
-	int af; // XXX?
-	char *addr; // XXX?
-	char *divert_addr; // XXX?
-	char *target_addr; // XXX?
-	
-	// ProxySpec specific options, defaults to the values in opt
-	unsigned int sslcomp : 1;
-#ifdef HAVE_SSLV2
-	unsigned int no_ssl2 : 1;
-#endif /* HAVE_SSLV2 */
-#ifdef HAVE_SSLV3
-	unsigned int no_ssl3 : 1;
-#endif /* HAVE_SSLV3 */
-#ifdef HAVE_TLSV10
-	unsigned int no_tls10 : 1;
-#endif /* HAVE_TLSV10 */
-#ifdef HAVE_TLSV11
-	unsigned int no_tls11 : 1;
-#endif /* HAVE_TLSV11 */
-#ifdef HAVE_TLSV12
-	unsigned int no_tls12 : 1;
-#endif /* HAVE_TLSV12 */
-	unsigned int passthrough : 1;
-	unsigned int deny_ocsp : 1;
-#ifndef OPENSSL_NO_ENGINE
-	char *openssl_engine;
-#endif /* !OPENSSL_NO_ENGINE */
-	char *ciphers;
-	CONST_SSL_METHOD *(*sslmethod)(void);
-#if (OPENSSL_VERSION_NUMBER >= 0x10100000L) && !defined(LIBRESSL_VERSION_NUMBER)
-	int sslversion;
-#endif /* OPENSSL_VERSION_NUMBER >= 0x10100000L */
-	X509 *cacrt;
-	EVP_PKEY *cakey;
-	EVP_PKEY *key;
-	STACK_OF(X509) *chain;
-	X509 *clientcrt;
-	EVP_PKEY *clientkey;
-#ifndef OPENSSL_NO_DH
-	DH *dh;
-#endif /* !OPENSSL_NO_DH */
-#ifndef OPENSSL_NO_ECDH
-	char *ecdhcurve;
-#endif /* !OPENSSL_NO_ECDH */
-	int leafkey_rsabits;
-	char *crlurl;
-	unsigned int remove_http_accept_encoding: 1;
-	unsigned int remove_http_referer: 1;
-	unsigned int verify_peer: 1;
-	unsigned int allow_wrong_host: 1;
-	unsigned int user_auth: 1;
-	char *user_auth_url;
-	unsigned int user_timeout;
-	unsigned int validate_proto : 1;
-	unsigned int max_http_header_size;
-	struct passsite *passsites;
+	// @todo Is there a better way?
+	// These vars are used while configuring proxyspecs
+	int af;
+	char *addr;
+	char *divert_addr;
+	char *target_addr;
+
+	opts_t *opts;
 } proxyspec_t;
 
 typedef struct passsite {
@@ -138,27 +141,9 @@ typedef struct passsite {
 	struct passsite *next;
 } passsite_t;
 
-typedef struct opts {
+struct global {
 	unsigned int debug : 1;
 	unsigned int detach : 1;
-	unsigned int sslcomp : 1;
-#ifdef HAVE_SSLV2
-	unsigned int no_ssl2 : 1;
-#endif /* HAVE_SSLV2 */
-#ifdef HAVE_SSLV3
-	unsigned int no_ssl3 : 1;
-#endif /* HAVE_SSLV3 */
-#ifdef HAVE_TLSV10
-	unsigned int no_tls10 : 1;
-#endif /* HAVE_TLSV10 */
-#ifdef HAVE_TLSV11
-	unsigned int no_tls11 : 1;
-#endif /* HAVE_TLSV11 */
-#ifdef HAVE_TLSV12
-	unsigned int no_tls12 : 1;
-#endif /* HAVE_TLSV12 */
-	unsigned int passthrough : 1;
-	unsigned int deny_ocsp : 1;
 	unsigned int contentlog_isdir : 1;
 	unsigned int contentlog_isspec : 1;
 	unsigned int pcaplog_isdir : 1;
@@ -167,10 +152,6 @@ typedef struct opts {
 	unsigned int lprocinfo : 1;
 #endif /* HAVE_LOCAL_PROCINFO */
 	unsigned int certgen_writeall : 1;
-#ifndef OPENSSL_NO_ENGINE
-	char *openssl_engine;
-#endif /* !OPENSSL_NO_ENGINE */
-	char *ciphers;
 	char *certgendir;
 	char *tgcrtdir;
 	char *dropuser;
@@ -188,45 +169,40 @@ typedef struct opts {
 	char *mirrorif;
 	char *mirrortarget;
 #endif /* !WITHOUT_MIRROR */
-	CONST_SSL_METHOD *(*sslmethod)(void);
-#if (OPENSSL_VERSION_NUMBER >= 0x10100000L) && !defined(LIBRESSL_VERSION_NUMBER)
-	int sslversion;
-#endif /* OPENSSL_VERSION_NUMBER >= 0x10100000L */
-	X509 *cacrt;
-	EVP_PKEY *cakey;
-	EVP_PKEY *key;
-	STACK_OF(X509) *chain;
-	X509 *clientcrt;
-	EVP_PKEY *clientkey;
-#ifndef OPENSSL_NO_DH
-	DH *dh;
-#endif /* !OPENSSL_NO_DH */
-#ifndef OPENSSL_NO_ECDH
-	char *ecdhcurve;
-#endif /* !OPENSSL_NO_ECDH */
-	int leafkey_rsabits;
-	proxyspec_t *spec;
-	char *crlurl;
 	unsigned int conn_idle_timeout;
 	unsigned int expired_conn_check_period;
 	unsigned int ssl_shutdown_retry_delay;
 	unsigned int stats_period;
 	unsigned int statslog: 1;
 	unsigned int log_stats: 1;
-	unsigned int remove_http_accept_encoding: 1;
-	unsigned int remove_http_referer: 1;
-	unsigned int verify_peer: 1;
-	unsigned int allow_wrong_host: 1;
-	unsigned int user_auth: 1;
 	char *userdb_path;
 	sqlite3 *userdb;
-	char *user_auth_url;
 	struct sqlite3_stmt *update_user_atime;
-	unsigned int user_timeout;
-	unsigned int validate_proto : 1;
-	unsigned int max_http_header_size;
-	struct passsite *passsites;
-} opts_t;
+	proxyspec_t *spec;
+	opts_t *opts;
+
+	// @todo Modify cert cache to move the key field to opts struct
+	// Otherwise, cache HIT fetches certs forged using different leaf cert keys,
+	// which fails loading src server keys
+	// We should use the same key while forging and reusing certs
+	EVP_PKEY *key;
+	int leafkey_rsabits;
+
+#ifndef OPENSSL_NO_ENGINE
+	// @todo Use different openssl engines for each proxyspec, so move to opts?
+	char *openssl_engine;
+#endif /* !OPENSSL_NO_ENGINE */
+
+	// @todo Is there a better way?
+	// global opts defaults used while cloning into proxyspec opts
+	char *cacrt_str;
+	char *cakey_str;
+	char *chain_str;
+	char *clientcrt_str;
+	char *clientkey_str;
+	char *crl_str;
+	char *dh_str;
+};
 
 typedef struct userdbkeys {
 	char ip[46];
@@ -236,27 +212,16 @@ typedef struct userdbkeys {
 
 void NORET oom_die(const char *) NONNULL(1);
 
-opts_t *opts_new(void) MALLOC;
-void opts_free(opts_t *) NONNULL(1);
-int opts_has_ssl_spec(opts_t *) NONNULL(1) WUNRES;
-int opts_has_dns_spec(opts_t *) NONNULL(1) WUNRES;
-void opts_proto_dbg_dump(opts_t *) NONNULL(1);
-#define OPTS_DEBUG(opts) unlikely((opts)->debug)
-
-void proxyspec_parse(int *, char **[], const char *, opts_t *);
-void proxyspec_free_all(proxyspec_t *) NONNULL(1);
+void proxyspec_parse(int *, char **[], const char *, global_t *, const char *);
 char *proxyspec_str(proxyspec_t *) NONNULL(1) MALLOC;
 
+opts_t *opts_new(void) MALLOC;
+void opts_free(opts_t *) NONNULL(1);
+void opts_proto_dbg_dump(opts_t *) NONNULL(1);
 void opts_set_cacrt(opts_t *, const char *, const char *) NONNULL(1,2,3);
 void opts_set_cakey(opts_t *, const char *, const char *) NONNULL(1,2,3);
 void opts_set_chain(opts_t *, const char *, const char *) NONNULL(1,2,3);
-void opts_set_key(opts_t *, const char *, const char *) NONNULL(1,2,3);
 void opts_set_crl(opts_t *, const char *) NONNULL(1,2);
-void opts_set_tgcrtdir(opts_t *, const char *, const char *) NONNULL(1,2,3);
-void opts_set_certgendir_writeall(opts_t *, const char *, const char *)
-     NONNULL(1,2,3);
-void opts_set_certgendir_writegencerts(opts_t *, const char *, const char *)
-     NONNULL(1,2,3);
 void opts_set_deny_ocsp(opts_t *) NONNULL(1);
 void opts_set_passthrough(opts_t *) NONNULL(1);
 void opts_set_clientcrt(opts_t *, const char *, const char *) NONNULL(1,2,3);
@@ -271,39 +236,54 @@ void opts_unset_sslcomp(opts_t *) NONNULL(1);
 void opts_force_proto(opts_t *, const char *, const char *) NONNULL(1,2,3);
 void opts_disable_proto(opts_t *, const char *, const char *) NONNULL(1,2,3);
 void opts_set_ciphers(opts_t *, const char *, const char *) NONNULL(1,2,3);
-void opts_set_openssl_engine(opts_t *, const char *, const char *)
+
+#define OPTS_DEBUG(global) unlikely((global)->debug)
+
+global_t * global_new(void) MALLOC;
+void global_free(global_t *) NONNULL(1);
+int global_has_ssl_spec(global_t *) NONNULL(1) WUNRES;
+int global_has_dns_spec(global_t *) NONNULL(1) WUNRES;
+int global_has_userauth_spec(global_t *) NONNULL(1) WUNRES;
+int global_has_cakey_spec(global_t *) NONNULL(1) WUNRES;
+void global_proxyspec_free(proxyspec_t *) NONNULL(1);
+void global_set_user(global_t *, const char *, const char *) NONNULL(1,2,3);
+void global_set_group(global_t *, const char *, const char *) NONNULL(1,2,3);
+void global_set_jaildir(global_t *, const char *, const char *) NONNULL(1,2,3);
+void global_set_pidfile(global_t *, const char *, const char *) NONNULL(1,2,3);
+void global_set_connectlog(global_t *, const char *, const char *) NONNULL(1,2,3);
+void global_set_contentlog(global_t *, const char *, const char *) NONNULL(1,2,3);
+void global_set_contentlogdir(global_t *, const char *, const char *)
      NONNULL(1,2,3);
-void opts_set_user(opts_t *, const char *, const char *) NONNULL(1,2,3);
-void opts_set_group(opts_t *, const char *, const char *) NONNULL(1,2,3);
-void opts_set_jaildir(opts_t *, const char *, const char *) NONNULL(1,2,3);
-void opts_set_pidfile(opts_t *, const char *, const char *) NONNULL(1,2,3);
-void opts_set_connectlog(opts_t *, const char *, const char *) NONNULL(1,2,3);
-void opts_set_contentlog(opts_t *, const char *, const char *) NONNULL(1,2,3);
-void opts_set_contentlogdir(opts_t *, const char *, const char *)
-     NONNULL(1,2,3);
-void opts_set_contentlogpathspec(opts_t *, const char *, const char *)
+void global_set_contentlogpathspec(global_t *, const char *, const char *)
      NONNULL(1,2,3);
 #ifdef HAVE_LOCAL_PROCINFO
-void opts_set_lprocinfo(opts_t *) NONNULL(1);
+void global_set_lprocinfo(global_t *) NONNULL(1);
 #endif /* HAVE_LOCAL_PROCINFO */
-void opts_set_masterkeylog(opts_t *, const char *, const char *) NONNULL(1,2,3);
-void opts_set_pcaplog(opts_t *, const char *, const char *) NONNULL(1,2,3);
-void opts_set_pcaplogdir(opts_t *, const char *, const char *)
+void global_set_masterkeylog(global_t *, const char *, const char *) NONNULL(1,2,3);
+void global_set_pcaplog(global_t *, const char *, const char *) NONNULL(1,2,3);
+void global_set_pcaplogdir(global_t *, const char *, const char *)
      NONNULL(1,2,3);
-void opts_set_pcaplogpathspec(opts_t *, const char *, const char *)
+void global_set_pcaplogpathspec(global_t *, const char *, const char *)
      NONNULL(1,2,3);
 #ifndef WITHOUT_MIRROR
-void opts_set_mirrorif(opts_t *, const char *, const char *) NONNULL(1,2,3);
-void opts_set_mirrortarget(opts_t *, const char *, const char *) NONNULL(1,2,3);
+void global_set_mirrorif(global_t *, const char *, const char *) NONNULL(1,2,3);
+void global_set_mirrortarget(global_t *, const char *, const char *) NONNULL(1,2,3);
 #endif /* !WITHOUT_MIRROR */
-void opts_set_daemon(opts_t *) NONNULL(1);
-void opts_set_debug(opts_t *) NONNULL(1);
-void opts_set_debug_level(const char *) NONNULL(1);
-void opts_set_statslog(opts_t *) NONNULL(1);
-int opts_set_option(opts_t *, const char *, const char *, char **)
+void global_set_daemon(global_t *) NONNULL(1);
+void global_set_debug(global_t *) NONNULL(1);
+void global_set_debug_level(const char *) NONNULL(1);
+void global_set_statslog(global_t *) NONNULL(1);
+int global_set_option(global_t *, const char *, const char *, char **)
     NONNULL(1,2,3);
-
-int opts_load_conffile(opts_t *, const char *, char **) NONNULL(1,2);
+void global_set_key(global_t *, const char *, const char *) NONNULL(1,2,3);
+void global_set_openssl_engine(global_t *, const char *, const char *)
+     NONNULL(1,2,3);
+void global_set_tgcrtdir(global_t *, const char *, const char *) NONNULL(1,2,3);
+void global_set_certgendir_writeall(global_t *, const char *, const char *)
+     NONNULL(1,2,3);
+void global_set_certgendir_writegencerts(global_t *, const char *, const char *)
+     NONNULL(1,2,3);
+int global_load_conffile(global_t *, const char *, char **) NONNULL(1,2);
 #endif /* !OPTS_H */
 
 /* vim: set noet ft=c: */

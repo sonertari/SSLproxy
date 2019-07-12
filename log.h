@@ -87,7 +87,7 @@ struct log_content_ctx {
 	struct log_content_pcap_ctx *pcap;
 	struct log_content_mirror_ctx *mirror;
 };
-int log_content_open(log_content_ctx_t *, opts_t *,
+int log_content_open(log_content_ctx_t *, global_t *,
                      const struct sockaddr *, socklen_t,
                      const struct sockaddr *, socklen_t,
                      char *, char *, char *, char *,
@@ -100,9 +100,9 @@ int log_content_split_pathspec(const char *, char **,
 
 int log_cert_submit(const char *, X509 *) NONNULL(1,2) WUNRES;
 
-int log_preinit(opts_t *) NONNULL(1) WUNRES;
+int log_preinit(global_t *) NONNULL(1) WUNRES;
 void log_preinit_undo(void);
-int log_init(opts_t *, proxy_ctx_t *, int[3]) NONNULL(1,2) WUNRES;
+int log_init(global_t *, proxy_ctx_t *, int[3]) NONNULL(1,2) WUNRES;
 void log_fini(void);
 int log_reopen(void) WUNRES;
 void log_exceptcb(void);

@@ -88,14 +88,14 @@ typedef struct pxy_thr_ctx {
 
 struct pxy_thrmgr_ctx {
 	int num_thr;
-	opts_t *opts;
+	global_t *global;
 	pxy_thr_ctx_t **thr;
 	// Provides unique conn id, always goes up, never down
 	// There is no risk of collision if/when it rolls back to 0
 	long long unsigned int conn_count;
 };
 
-pxy_thrmgr_ctx_t * pxy_thrmgr_new(opts_t *) MALLOC;
+pxy_thrmgr_ctx_t * pxy_thrmgr_new(global_t *) MALLOC;
 int pxy_thrmgr_run(pxy_thrmgr_ctx_t *) NONNULL(1) WUNRES;
 void pxy_thrmgr_free(pxy_thrmgr_ctx_t *) NONNULL(1);
 

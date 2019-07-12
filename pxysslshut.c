@@ -51,7 +51,7 @@
  */
 
 typedef struct pxy_ssl_shutdown_ctx {
-	opts_t *opts;
+	global_t *global;
 	struct event_base *evbase;
 	struct event *ev;
 	SSL *ssl;
@@ -59,14 +59,14 @@ typedef struct pxy_ssl_shutdown_ctx {
 } pxy_ssl_shutdown_ctx_t;
 
 static pxy_ssl_shutdown_ctx_t *
-pxy_ssl_shutdown_ctx_new(opts_t *opts, struct event_base *evbase, SSL *ssl)
+pxy_ssl_shutdown_ctx_new(global_t *global, struct event_base *evbase, SSL *ssl)
 {
 	pxy_ssl_shutdown_ctx_t *ctx;
 
 	ctx = malloc(sizeof(pxy_ssl_shutdown_ctx_t));
 	if (!ctx)
 		return NULL;
-	ctx->opts = opts;
+	ctx->global = global;
 	ctx->evbase = evbase;
 	ctx->ssl = ssl;
 	ctx->ev = NULL;
@@ -200,7 +200,7 @@ memout:
 #endif /* DEBUG_PROXY */
 
 complete:
-	if (OPTS_DEBUG(ctx->opts)) {
+	if (OPTS_DEBUG(ctx->global)) {
 		log_dbg_print_free(ssl_ssl_state_to_str(ctx->ssl, "SSL_free() in state "));
 	}
 #ifdef DEBUG_PROXY
@@ -219,7 +219,7 @@ complete:
  * socket is closed, eventually, or in the case of fatal errors, immediately.
  */
 void
-pxy_ssl_shutdown(opts_t *opts, struct event_base *evbase, SSL *ssl,
+pxy_ssl_shutdown(global_t *global, struct event_base *evbase, SSL *ssl,
                  evutil_socket_t fd)
 {
 #ifdef DEBUG_PROXY
@@ -228,9 +228,9 @@ pxy_ssl_shutdown(opts_t *opts, struct event_base *evbase, SSL *ssl,
 
 	pxy_ssl_shutdown_ctx_t *sslshutctx;
 
-	sslshutctx = pxy_ssl_shutdown_ctx_new(opts, evbase, ssl);
+	sslshutctx = pxy_ssl_shutdown_ctx_new(global, evbase, ssl);
 	if (!sslshutctx) {
-		if (OPTS_DEBUG(opts)) {
+		if (OPTS_DEBUG(global)) {
 			log_dbg_print_free(ssl_ssl_state_to_str(ssl, "SSL_free() in state "));
 		}
 #ifdef DEBUG_PROXY

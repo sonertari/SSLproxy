@@ -71,7 +71,7 @@ protoautossl_peek_and_upgrade(pxy_conn_ctx_t *ctx)
 	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protoautossl_peek_and_upgrade: ENTER, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
-	if (OPTS_DEBUG(ctx->opts)) {
+	if (OPTS_DEBUG(ctx->global)) {
 		log_dbg_printf("Checking for a client hello\n");
 	}
 
@@ -79,7 +79,7 @@ protoautossl_peek_and_upgrade(pxy_conn_ctx_t *ctx)
 	inbuf = bufferevent_get_input(ctx->src.bev);
 	if (evbuffer_peek(inbuf, 1024, 0, vec_out, 1)) {
 		if (ssl_tls_clienthello_parse(vec_out[0].iov_base, vec_out[0].iov_len, 0, &chello, &ctx->sslctx->sni) == 0) {
-			if (OPTS_DEBUG(ctx->opts)) {
+			if (OPTS_DEBUG(ctx->global)) {
 				log_dbg_printf("Peek found ClientHello\n");
 			}
 
@@ -102,7 +102,7 @@ protoautossl_peek_and_upgrade(pxy_conn_ctx_t *ctx)
 			autossl_ctx->clienthello_found = 1;
 			return 1;
 		} else {
-			if (OPTS_DEBUG(ctx->opts)) {
+			if (OPTS_DEBUG(ctx->global)) {
 				log_dbg_printf("Peek found no ClientHello\n");
 			}
 			return 0;
@@ -336,7 +336,7 @@ protoautossl_enable_src(pxy_conn_ctx_t *ctx)
 			return -1;
 		}
 	} else {
-		if (OPTS_DEBUG(ctx->opts)) {
+		if (OPTS_DEBUG(ctx->global)) {
 			log_dbg_printf("Completing autossl upgrade\n");
 		}
 
@@ -439,7 +439,7 @@ protoautossl_bev_eventcb_connected_srvdst(UNUSED struct bufferevent *bev, pxy_co
 static void NONNULL(1)
 protoautossl_bev_readcb_complete_upgrade_child(pxy_conn_child_ctx_t *ctx)
 {
-	if (OPTS_DEBUG(ctx->conn->opts)) {
+	if (OPTS_DEBUG(ctx->conn->global)) {
 		log_dbg_printf("Completing autossl upgrade on child conn\n");
 	}
 

@@ -47,7 +47,7 @@ protopassthrough_prepare_logging(pxy_conn_ctx_t *ctx)
 static void NONNULL(1)
 protopassthrough_log_dbg_connect_type(pxy_conn_ctx_t *ctx)
 {
-	if (OPTS_DEBUG(ctx->opts)) {
+	if (OPTS_DEBUG(ctx->global)) {
 		/* for TCP, we get only a dst connect event,
 		 * since src was already connected from the
 		 * beginning */
