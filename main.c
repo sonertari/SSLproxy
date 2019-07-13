@@ -330,6 +330,11 @@ main_loadtgcrt(const char *filename, void *arg)
 static void
 main_check_opts(opts_t *opts, const char *argv0)
 {
+	if ((opts->cacrt || !opts->global->tgcrtdir) && !opts->cakey) {
+		fprintf(stderr, "%s: no CA key specified (-k).\n",
+						argv0);
+		exit(EXIT_FAILURE);
+	}
 	if (opts->cakey && !opts->cacrt) {
 		fprintf(stderr, "%s: no CA cert specified (-c).\n",
 						argv0);
@@ -597,11 +602,6 @@ main(int argc, char *argv[])
 			exit(EXIT_FAILURE);
 		}
 #endif /* !OPENSSL_NO_ENGINE */
-		if ((global->opts->cakey || !global->tgcrtdir) && !global->opts->cakey) {
-			fprintf(stderr, "%s: no CA key specified (-k).\n",
-							argv0);
-			exit(EXIT_FAILURE);
-		}
 		main_check_opts(global->opts, argv0);
 		for (proxyspec_t *spec = global->spec; spec; spec = spec->next) {
 			if (spec->ssl || spec->upgrade)
