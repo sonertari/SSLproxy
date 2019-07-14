@@ -122,6 +122,7 @@ struct ssl_ctx {
 	unsigned int sni_peek_retries : 6;       /* max 64 SNI parse retries */
 	unsigned int immutable_cert : 1;  /* 1 if the cert cannot be changed */
 	unsigned int generated_cert : 1;     /* 1 if we generated a new cert */
+	unsigned int have_sslerr : 1;           /* 1 if we have an ssl error */
 
 	/* server name indicated by client in SNI TLS extension */
 	char *sni;

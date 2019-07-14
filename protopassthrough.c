@@ -88,7 +88,8 @@ protopassthrough_engage(pxy_conn_ctx_t *ctx)
 	ctx->srvdst_connected = 0;
 
 	// Close and free dst if open
-	if (!ctx->dst.closed) {
+	// Make sure bev is not NULL, as dst may not have been initialized yet
+	if (!ctx->dst.closed && ctx->dst.bev) {
 		ctx->dst.closed = 1;
 		ctx->dst.free(ctx->dst.bev, ctx);
 		ctx->dst.bev = NULL;

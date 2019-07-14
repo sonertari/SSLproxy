@@ -46,13 +46,15 @@ static unsigned long ssl_session_context = 0x31415926;
 #endif /* USE_SSL_SESSION_ID_CONTEXT */
 
 void
-protossl_log_ssl_error(struct bufferevent *bev, UNUSED pxy_conn_ctx_t *ctx)
+protossl_log_ssl_error(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 	unsigned long sslerr;
 
 	/* Can happen for socket errs, ssl errs;
 	 * may happen for unclean ssl socket shutdowns. */
 	sslerr = bufferevent_get_openssl_error(bev);
+	if (sslerr)
+		ctx->sslctx->have_sslerr = 1;
 	if (!errno && !sslerr) {
 #if LIBEVENT_VERSION_NUMBER >= 0x02010000
 		/* We have disabled notification for unclean shutdowns
@@ -1515,7 +1517,7 @@ protossl_bev_eventcb_connected_srvdst(UNUSED struct bufferevent *bev, pxy_conn_c
 }
 
 static void NONNULL(1,2)
-protossl_bev_eventcb_error_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
+protossl_bev_eventcb_error_srvdst(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
 	log_dbg_level_printf(LOG_DBG_MODE_FINE, "protossl_bev_eventcb_error_srvdst: BEV_EVENT_ERROR, fd=%d\n", ctx->fd);
@@ -1529,9 +1531,10 @@ protossl_bev_eventcb_error_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		/* the callout to the original destination failed,
 		 * e.g. because it asked for client cert auth, so
 		 * close the accepted socket and clean up */
-		if (ctx->spec->opts->passthrough && bufferevent_get_openssl_error(bev)) {
+		if (ctx->spec->opts->passthrough && ctx->sslctx->have_sslerr) {
 			/* ssl callout failed, fall back to plain TCP passthrough of SSL connection */
 			log_err_level_printf(LOG_WARNING, "SSL srvdst connection failed; falling back to passthrough\n");
+			ctx->sslctx->have_sslerr = 0;
 			protopassthrough_engage(ctx);
 			return;
 		}
