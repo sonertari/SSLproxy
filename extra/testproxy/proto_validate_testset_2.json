@@ -1,0 +1,116 @@
+{
+  "comment": "Tests for HTTP POST method validation",
+  "configs": {
+    "1": {
+      "proto": {
+        "proto": "tcp"
+      },
+      "client": {
+        "ip": "127.0.0.1",
+        "port": "8185"
+      },
+      "server": {
+        "ip": "127.0.0.1",
+        "port": "9185"
+      }
+    },
+    "2": {
+      "proto": {
+        "proto": "ssl"
+      },
+      "client": {
+        "ip": "127.0.0.1",
+        "port": "8445"
+      },
+      "server": {
+        "ip": "127.0.0.1",
+        "port": "9445",
+        "crt": "server.crt",
+        "key": "server.key"
+      }
+    }
+  },
+  "tests": {
+    "1": {
+      "comment": "Validates POST",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "POST / HTTP/1.1\r\nHost: comixwall.org\r\n\r\n"
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": ""
+        },
+        "3": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": "POST / HTTP/1.1\r\nHost: comixwall.org\r\nConnection: close\r\n\r\n"
+        }
+      }
+    },
+    "2": {
+      "comment": "Does not validate POS as a method",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "POS / HTTP/1.1\r\nHost: comixwall.org\r\n\r\n"
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": ""
+        },
+        "3": {
+          "testend": "server",
+          "cmd": "timeout",
+          "payload": "",
+          "comment": "SSLproxy should not validate method POS, so not connect to server"
+        }
+      }
+    },
+    "3": {
+      "comment": "Does not validate POS1 as a method",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "POS1 / HTTP/1.1\r\nHost: comixwall.org\r\n\r\n"
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": ""
+        },
+        "3": {
+          "testend": "server",
+          "cmd": "timeout",
+          "payload": ""
+        }
+      }
+    },
+    "4": {
+      "comment": "Does not validate POST1 as a method",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "POST1 / HTTP/1.1\r\nHost: comixwall.org\r\n\r\n"
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": ""
+        },
+        "3": {
+          "testend": "server",
+          "cmd": "timeout",
+          "payload": ""
+        }
+      }
+    }
+  }
+}

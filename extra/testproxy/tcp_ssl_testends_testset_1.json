@@ -1,0 +1,57 @@
+{
+  "comment": "Tests for tcp connection over ssl proxyspec",
+  "configs": {
+    "1": {
+      "comment": "Test should pass without proto validation enabled",
+      "proto": {
+        "comment": "Test config should always have the proto key"
+      },
+      "client": {
+        "proto": "tcp",
+        "ip": "127.0.0.1",
+        "port": "8441"
+      },
+      "server": {
+        "proto": "ssl",
+        "ip": "127.0.0.1",
+        "port": "9441",
+        "crt": "server.crt",
+        "key": "server.key"
+      }
+    },
+    "2": {
+      "comment": "Test should pass with proto validation enabled",
+      "proto": {
+      },
+      "client": {
+        "proto": "tcp",
+        "ip": "127.0.0.1",
+        "port": "8442"
+      },
+      "server": {
+        "proto": "ssl",
+        "ip": "127.0.0.1",
+        "port": "9442",
+        "crt": "server.crt",
+        "key": "server.key"
+      }
+    }
+  },
+  "tests": {
+    "1": {
+      "comment": "Does not pass tcp connection over ssl proxyspec",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\n\r\n"
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "timeout",
+          "payload": ""
+        }
+      }
+    }
+  }
+}

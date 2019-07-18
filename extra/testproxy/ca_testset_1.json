@@ -1,0 +1,49 @@
+{
+  "comment": "Tests for CACert/CAKey",
+  "configs": {
+    "1": {
+      "proto": {
+        "proto": "ssl"
+      },
+      "client": {
+        "ip": "127.0.0.1",
+        "port": "8457"
+      },
+      "server": {
+        "ip": "127.0.0.1",
+        "port": "9457",
+        "crt": "server.crt",
+        "key": "server.key"
+      }
+    }
+  },
+  "tests": {
+    "1": {
+      "comment": "Forges certs using the global CA cert/key pair",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\n\r\n",
+          "assert": {
+            "peer_certificate": {
+              "==": [
+                "TR, Antalya, Serik, ComixWall, SSLproxy, comixwall.org, sonertari@gmail.com"
+              ]
+            }
+          }
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": ""
+        },
+        "3": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\nConnection: close\r\n\r\n"
+        }
+      }
+    }
+  }
+}

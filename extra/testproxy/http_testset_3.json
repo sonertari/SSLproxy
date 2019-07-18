@@ -1,0 +1,101 @@
+{
+  "comment": "Tests for HTTP response headers: Deny OCSP request, Remove Accept-Encoding, and Do not remove Referer",
+  "configs": {
+    "1": {
+      "proto": {
+        "proto": "tcp"
+      },
+      "client": {
+        "ip": "127.0.0.1",
+        "port": "8186"
+      },
+      "server": {
+        "ip": "127.0.0.1",
+        "port": "9186"
+      }
+    },
+    "2": {
+      "proto": {
+        "proto": "ssl",
+        "crt": "server.crt",
+        "key": "server.key"
+      },
+      "client": {
+        "ip": "127.0.0.1",
+        "port": "8448"
+      },
+      "server": {
+        "ip": "127.0.0.1",
+        "port": "9448"
+      }
+    }
+  },
+  "tests": {
+    "1": {
+      "comment": "Denies OCSP request",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "POST / HTTP/1.1\r\nHost: comixwall.org\r\nContent-Type: application/ocsp-request\r\n\r\n",
+          "comment": "It is easier to send a dummy POST ocsp request than a valid GET one"
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": ""
+        },
+        "3": {
+          "testend": "client",
+          "cmd": "recv",
+          "payload_file": "payload_ocsp_denied_response.bin"
+        },
+        "4": {
+          "testend": "server",
+          "cmd": "timeout",
+          "payload": ""
+        }
+      }
+    },
+    "2": {
+      "comment": "Remove Accept-Encoding",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\nAccept-Encoding: encoding\r\n\r\n"
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": ""
+        },
+        "3": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\nConnection: close\r\n\r\n"
+        }
+      }
+    },
+    "3": {
+      "comment": "Does not remove Referer",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\nReferer: referer\r\n\r\n"
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": ""
+        },
+        "3": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\nReferer: referer\r\nConnection: close\r\n\r\n"
+        }
+      }
+    }
+  }
+}

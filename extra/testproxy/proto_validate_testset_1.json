@@ -1,0 +1,117 @@
+{
+  "comment": "Tests for HTTP GET method validation",
+  "configs": {
+    "1": {
+      "proto": {
+        "proto": "tcp"
+      },
+      "client": {
+        "ip": "127.0.0.1",
+        "port": "8184"
+      },
+      "server": {
+        "ip": "127.0.0.1",
+        "port": "9184"
+      }
+    },
+    "2": {
+      "proto": {
+        "proto": "ssl"
+      },
+      "client": {
+        "ip": "127.0.0.1",
+        "port": "8444"
+      },
+      "server": {
+        "ip": "127.0.0.1",
+        "port": "9444",
+        "crt": "server.crt",
+        "key": "server.key"
+      }
+    }
+  },
+  "tests": {
+    "1": {
+      "comment": "Validates GET",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\n\r\n"
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": "",
+          "comment": "To obtain server crt, SSLproxy srvdst connects/disconnects to the server without sending any data, so we should have this as the second state in all tests"
+        },
+        "3": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\nConnection: close\r\n\r\n"
+        }
+      }
+    },
+    "2": {
+      "comment": "Does not validate GE as a method",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "GE / HTTP/1.1\r\nHost: comixwall.org\r\n\r\n"
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": ""
+        },
+        "3": {
+          "testend": "server",
+          "cmd": "timeout",
+          "payload": "",
+          "comment": "SSLproxy should not validate method GE, so not connect to server"
+        }
+      }
+    },
+    "3": {
+      "comment": "Does not validate GE1 as a method",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "GE1 / HTTP/1.1\r\nHost: comixwall.org\r\n\r\n"
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": ""
+        },
+        "3": {
+          "testend": "server",
+          "cmd": "timeout",
+          "payload": ""
+        }
+      }
+    },
+    "4": {
+      "comment": "Does not validate GET1 as a method",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "GET1 / HTTP/1.1\r\nHost: comixwall.org\r\n\r\n"
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": ""
+        },
+        "3": {
+          "testend": "server",
+          "cmd": "timeout",
+          "payload": ""
+        }
+      }
+    }
+  }
+}

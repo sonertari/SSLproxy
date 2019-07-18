@@ -1531,7 +1531,9 @@ protossl_bev_eventcb_error_srvdst(UNUSED struct bufferevent *bev, pxy_conn_ctx_t
 		/* the callout to the original destination failed,
 		 * e.g. because it asked for client cert auth, so
 		 * close the accepted socket and clean up */
-		if (ctx->spec->opts->passthrough && ctx->sslctx->have_sslerr) {
+		// Passite is and can only be set in protossl_srcssl_create() after srvdst obtains the orig cert
+		// So the passsite condition here will most probably never used
+		if ((ctx->spec->opts->passthrough || ctx->passsite) && ctx->sslctx->have_sslerr) {
 			/* ssl callout failed, fall back to plain TCP passthrough of SSL connection */
 			log_err_level_printf(LOG_WARNING, "SSL srvdst connection failed; falling back to passthrough\n");
 			ctx->sslctx->have_sslerr = 0;

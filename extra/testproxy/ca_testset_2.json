@@ -1,0 +1,50 @@
+{
+  "comment": "Tests for CACert/CAKey",
+  "configs": {
+    "1": {
+      "proto": {
+        "proto": "ssl"
+      },
+      "client": {
+        "ip": "127.0.0.1",
+        "port": "8458"
+      },
+      "server": {
+        "ip": "127.0.0.1",
+        "port": "9458",
+        "crt": "server2.crt",
+        "key": "server2.key",
+        "comment": "We need a crt/key pair different from the other tests to avoid cache HIT"
+      }
+    }
+  },
+  "tests": {
+    "1": {
+      "comment": "Forges certs using the proxyspec CA cert/key pair",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\n\r\n",
+          "assert": {
+            "peer_certificate": {
+              "==": [
+                "NZ, Wellington, Lower Hutt, ComixWallNZ, UTMFW, comixwallnz.org, sonertari@gmail.com"
+              ]
+            }
+          }
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": ""
+        },
+        "3": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\nConnection: close\r\n\r\n"
+        }
+      }
+    }
+  }
+}

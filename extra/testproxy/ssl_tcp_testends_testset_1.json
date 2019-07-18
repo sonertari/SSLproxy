@@ -1,0 +1,41 @@
+{
+  "comment": "Tests for ssl connection on tcp proxyspec",
+  "configs": {
+    "1": {
+      "proto": {
+      },
+      "client": {
+        "proto": "ssl",
+        "ip": "127.0.0.1",
+        "port": "8183"
+      },
+      "server": {
+        "proto": "tcp",
+        "ip": "127.0.0.1",
+        "port": "9183"
+      }
+    }
+  },
+  "tests": {
+    "1": {
+      "comment": "Does not accept ssl connection on tcp proxyspec if validating HTTP only",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "sslconnectfail",
+          "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\n\r\n"
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": ""
+        },
+        "3": {
+          "testend": "server",
+          "cmd": "timeout",
+          "payload": ""
+        }
+      }
+    }
+  }
+}

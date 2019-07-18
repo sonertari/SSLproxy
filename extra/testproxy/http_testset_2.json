@@ -1,0 +1,236 @@
+{
+  "comment": "Tests for HTTP response headers: Public-Key-Pins, Public-Key-Pins-Report-Only, Strict-Transport-Security, Expect-CT, Alternate-Protocol, Upgrade, OCSP request",
+  "configs": {
+    "1": {
+      "proto": {
+        "proto": "tcp"
+      },
+      "client": {
+        "ip": "127.0.0.1",
+        "port": "8181"
+      },
+      "server": {
+        "ip": "127.0.0.1",
+        "port": "9181"
+      }
+    },
+    "2": {
+      "proto": {
+        "proto": "ssl",
+        "crt": "server.crt",
+        "key": "server.key"
+      },
+      "client": {
+        "ip": "127.0.0.1",
+        "port": "8447"
+      },
+      "server": {
+        "ip": "127.0.0.1",
+        "port": "9447"
+      }
+    }
+  },
+  "tests": {
+    "1": {
+      "comment": "Removes Public-Key-Pins",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\n\r\n"
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": ""
+        },
+        "3": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\nConnection: close\r\n\r\n"
+        },
+        "4": {
+          "testend": "server",
+          "cmd": "send",
+          "payload": "HTTP/1.1 302 Found\r\nPublic-Key-Pins: public-key-pins\r\nLocation: sslproxy\r\n\r\n"
+        },
+        "5": {
+          "testend": "client",
+          "cmd": "recv",
+          "payload": "HTTP/1.1 302 Found\r\nLocation: sslproxy\r\n\r\n"
+        }
+      }
+    },
+    "2": {
+      "comment": "Removes Public-Key-Pins-Report-Only",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\n\r\n"
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": ""
+        },
+        "3": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\nConnection: close\r\n\r\n"
+        },
+        "4": {
+          "testend": "server",
+          "cmd": "send",
+          "payload": "HTTP/1.1 302 Found\r\nPublic-Key-Pins-Report-Only: public-key-pins-report-only\r\nLocation: sslproxy\r\n\r\n"
+        },
+        "5": {
+          "testend": "client",
+          "cmd": "recv",
+          "payload": "HTTP/1.1 302 Found\r\nLocation: sslproxy\r\n\r\n"
+        }
+      }
+    },
+    "3": {
+      "comment": "Removes Strict-Transport-Security",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\n\r\n"
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": ""
+        },
+        "3": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\nConnection: close\r\n\r\n"
+        },
+        "4": {
+          "testend": "server",
+          "cmd": "send",
+          "payload": "HTTP/1.1 302 Found\r\nStrict-Transport-Security: strict-transport-security\r\nLocation: sslproxy\r\n\r\n"
+        },
+        "5": {
+          "testend": "client",
+          "cmd": "recv",
+          "payload": "HTTP/1.1 302 Found\r\nLocation: sslproxy\r\n\r\n"
+        }
+      }
+    },
+    "4": {
+      "comment": "Removes Expect-CT",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\n\r\n"
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": ""
+        },
+        "3": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\nConnection: close\r\n\r\n"
+        },
+        "4": {
+          "testend": "server",
+          "cmd": "send",
+          "payload": "HTTP/1.1 302 Found\r\nExpect-CT: expect-ct\r\nLocation: sslproxy\r\n\r\n"
+        },
+        "5": {
+          "testend": "client",
+          "cmd": "recv",
+          "payload": "HTTP/1.1 302 Found\r\nLocation: sslproxy\r\n\r\n"
+        }
+      }
+    },
+    "5": {
+      "comment": "Removes Alternate-Protocol",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\n\r\n"
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": ""
+        },
+        "3": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\nConnection: close\r\n\r\n"
+        },
+        "4": {
+          "testend": "server",
+          "cmd": "send",
+          "payload": "HTTP/1.1 302 Found\r\nAlternate-Protocol: alternate-protocol\r\nLocation: sslproxy\r\n\r\n"
+        },
+        "5": {
+          "testend": "client",
+          "cmd": "recv",
+          "payload": "HTTP/1.1 302 Found\r\nLocation: sslproxy\r\n\r\n"
+        }
+      }
+    },
+    "6": {
+      "comment": "Removes Upgrade",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\n\r\n"
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": ""
+        },
+        "3": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\nConnection: close\r\n\r\n"
+        },
+        "4": {
+          "testend": "server",
+          "cmd": "send",
+          "payload": "HTTP/1.1 302 Found\r\nUpgrade: upgrade\r\nLocation: sslproxy\r\n\r\n"
+        },
+        "5": {
+          "testend": "client",
+          "cmd": "recv",
+          "payload": "HTTP/1.1 302 Found\r\nLocation: sslproxy\r\n\r\n"
+        }
+      }
+    },
+    "7": {
+      "comment": "Does not deny OCSP request",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "POST / HTTP/1.1\r\nHost: comixwall.org\r\nContent-Type: application/ocsp-request\r\n\r\n",
+          "comment": "It is easier to send a dummy POST ocsp request than a valid GET one"
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": ""
+        },
+        "3": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": "POST / HTTP/1.1\r\nHost: comixwall.org\r\nContent-Type: application/ocsp-request\r\nConnection: close\r\n\r\n"
+        }
+      }
+    }
+  }
+}

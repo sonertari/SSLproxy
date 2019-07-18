@@ -1,0 +1,64 @@
+{
+  "comment": "Tests for SSL configuration: Rejects unsupported SSL/TLS proto",
+  "configs": {
+    "1": {
+      "proto": {
+        "proto": "ssl",
+        "no_ssl2": "yes",
+        "no_ssl3": "yes",
+        "no_tls10": "yes",
+        "no_tls11": "yes",
+        "no_tls12": "no",
+        "no_tls13": "yes"
+      },
+      "client": {
+        "ip": "127.0.0.1",
+        "port": "8452"
+      },
+      "server": {
+        "ip": "127.0.0.1",
+        "port": "9452",
+        "crt": "server.crt",
+        "key": "server.key"
+      }
+    },
+    "2": {
+      "proto": {
+        "proto": "ssl",
+        "no_ssl2": "yes",
+        "no_ssl3": "yes",
+        "no_tls10": "no",
+        "no_tls11": "yes",
+        "no_tls12": "yes",
+        "no_tls13": "yes"
+      },
+      "client": {
+        "ip": "127.0.0.1",
+        "port": "8453"
+      },
+      "server": {
+        "ip": "127.0.0.1",
+        "port": "9453",
+        "crt": "server.crt",
+        "key": "server.key"
+      }
+    }
+  },
+  "tests": {
+    "1": {
+      "comment": "Rejects tls10 over tls12 and tls12 over tls10 proxyspecs",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "sslconnectfail",
+          "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\n\r\n"
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "timeout",
+          "payload": ""
+        }
+      }
+    }
+  }
+}

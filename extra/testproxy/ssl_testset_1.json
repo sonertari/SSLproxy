@@ -1,0 +1,213 @@
+{
+  "comment": "Tests for SSL configuration",
+  "configs": {
+    "1": {
+      "proto": {
+        "proto": "ssl",
+        "tcp_nodelay": "yes",
+        "ip_ttl": "15",
+        "connect_timeout": "1000",
+        "read_timeout": "50",
+        "write_timeout": "50",
+        "verify_peer": "no",
+        "ciphers": "MEDIUM:HIGH",
+        "no_ssl2": "yes",
+        "no_ssl3": "yes",
+        "no_tls10": "yes",
+        "no_tls11": "yes",
+        "no_tls12": "yes",
+        "no_tls13": "yes",
+        "min_proto_version": "ssl3",
+        "max_proto_version": "tls13",
+        "ecdhcurve": "prime256v1",
+        "use_sni": "no",
+        "verify_hostname": "no",
+        "compression": "no"
+      },
+      "client": {
+        "ip": "127.0.0.1",
+        "port": "8443",
+        "crt": "server.crt",
+        "key": "server.key",
+        "ciphers": "MEDIUM",
+        "use_sni": "yes",
+        "sni_servername": "comixwall.org",
+        "verify_hostname": "yes",
+        "no_tls10": "no",
+        "max_proto_version": "tls11"
+      },
+      "server": {
+        "ip": "127.0.0.1",
+        "port": "9443",
+        "crt": "server.crt",
+        "key": "server.key",
+        "ciphers": "HIGH",
+        "no_tls12": "no",
+        "min_proto_version": "tls12",
+        "compression": "yes"
+      }
+    }
+  },
+  "tests": {
+    "1": {
+      "comment": "Configures ssl cert, proto, ciphers correctly",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\n\r\n",
+          "assert": {
+            "current_cipher_name": {
+              "match": [
+                "^DHE-\\w+-\\w+-\\w+",
+                "\\w+-\\w+-SEED-\\w+",
+                "\\w+-\\w+-\\w+-SHA$"
+              ],
+              "!match": [
+                "ECDHE-[A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+",
+                "[A-Z0-9]+-[A-Z0-9]+-AES256-[A-Z0-9]+-[A-Z0-9]+",
+                "[A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+-SHA384"
+              ]
+            },
+            "current_cipher_version": {
+              "==": [
+                "SSLv3",
+                "TLSv1"
+              ],
+              "!match": [
+                "^TLSv1\\.[1-3]?$"
+              ]
+            },
+            "ssl_proto_version": {
+              "==": [
+                "TLSv1"
+              ],
+              "!=": [
+                "SSLv3"
+              ],
+              "!match": [
+                "^TLSv1\\.[1-3]?$"
+              ]
+            },
+            "ssl_state": {
+              "==": [
+                "SSLOK "
+              ]
+            },
+            "peer_certificate": {
+              "==": [
+                "TR, Antalya, Serik, ComixWall, SSLproxy, comixwall.org, sonertari@gmail.com"
+              ]
+            },
+            "peer_certificate_not_before": {
+              ">=": [
+                "-2"
+              ],
+              "<=": [
+                "0"
+              ]
+            },
+            "peer_certificate_not_after": {
+              ">=": [
+                "363"
+              ],
+              "<=": [
+                "365"
+              ]
+            }
+          }
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": "",
+          "assert": {
+            "current_cipher_name": {
+              "match": [
+                "ECDHE-[A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+",
+                "[A-Z0-9]+-[A-Z0-9]+-AES256-[A-Z0-9]+-[A-Z0-9]+",
+                "[A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+-SHA384"
+              ],
+              "!match": [
+                "^DHE-\\w+-\\w+-\\w+",
+                "\\w+-\\w+-SEED-\\w+",
+                "\\w+-\\w+-\\w+-SHA$"
+              ]
+            },
+            "current_cipher_version": {
+              "==": [
+                "TLSv1.2"
+              ],
+              "!match": [
+                "^(SSLv3|TLSv1|TLSv1\\.[13]?)$"
+              ]
+            },
+            "ssl_proto_version": {
+              "==": [
+                "TLSv1.2"
+              ],
+              "!match": [
+                "^(SSLv3|TLSv1|TLSv1\\.[13]?)$"
+              ]
+            },
+            "ssl_state": {
+              "==": [
+                "SSLOK "
+              ]
+            },
+            "sni_servername": {
+              "==": [
+                "comixwall.org"
+              ]
+            }
+          }
+        },
+        "3": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\nConnection: close\r\n\r\n",
+          "assert": {
+            "current_cipher_name": {
+              "match": [
+                "ECDHE-[A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+",
+                "[A-Z0-9]+-[A-Z0-9]+-AES256-[A-Z0-9]+-[A-Z0-9]+",
+                "[A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+-SHA384"
+              ],
+              "!match": [
+                "^DHE-\\w+-\\w+-\\w+",
+                "\\w+-\\w+-SEED-\\w+",
+                "\\w+-\\w+-\\w+-SHA$"
+              ]
+            },
+            "current_cipher_version": {
+              "==": [
+                "TLSv1.2"
+              ],
+              "!match": [
+                "^(SSLv3|TLSv1|TLSv1\\.[13]?)$"
+              ]
+            },
+            "ssl_proto_version": {
+              "==": [
+                "TLSv1.2"
+              ],
+              "!match": [
+                "^(SSLv3|TLSv1|TLSv1\\.[13]?)$"
+              ]
+            },
+            "ssl_state": {
+              "==": [
+                "SSLOK "
+              ]
+            },
+            "sni_servername": {
+              "==": [
+                "comixwall.org"
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

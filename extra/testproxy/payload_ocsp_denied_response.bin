@@ -1,0 +1,7 @@
+HTTP/1.0 200 OK
+Content-Type: application/ocsp-response
+Content-Length: 5
+Connection: close
+
+0
+

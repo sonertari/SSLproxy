@@ -1,0 +1,37 @@
+{
+  "comment": "Tests for VerifyPeer",
+  "configs": {
+    "1": {
+      "proto": {
+        "proto": "ssl"
+      },
+      "client": {
+        "ip": "127.0.0.1",
+        "port": "8456"
+      },
+      "server": {
+        "ip": "127.0.0.1",
+        "port": "9456",
+        "crt": "server.crt",
+        "key": "server.key"
+      }
+    }
+  },
+  "tests": {
+    "1": {
+      "comment": "Rejects peer with verification",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "sslconnectfail",
+          "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\n\r\n"
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "timeout",
+          "payload": ""
+        }
+      }
+    }
+  }
+}

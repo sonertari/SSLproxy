@@ -1,0 +1,150 @@
+{
+  "comment": "Tests for SSL configuration: tls12 only",
+  "configs": {
+    "1": {
+      "proto": {
+        "proto": "ssl",
+        "no_ssl2": "yes",
+        "no_ssl3": "yes",
+        "no_tls10": "yes",
+        "no_tls11": "yes",
+        "no_tls12": "no",
+        "no_tls13": "yes"
+      },
+      "client": {
+        "ip": "127.0.0.1",
+        "port": "8451"
+      },
+      "server": {
+        "ip": "127.0.0.1",
+        "port": "9451",
+        "crt": "server.crt",
+        "key": "server.key"
+      }
+    },
+    "2": {
+      "proto": {
+        "proto": "ssl",
+        "no_ssl2": "no",
+        "no_ssl3": "no",
+        "no_tls10": "no",
+        "no_tls11": "no",
+        "no_tls12": "no",
+        "no_tls13": "no"
+      },
+      "client": {
+        "ip": "127.0.0.1",
+        "port": "8451"
+      },
+      "server": {
+        "ip": "127.0.0.1",
+        "port": "9451",
+        "crt": "server.crt",
+        "key": "server.key"
+      }
+    }
+  },
+  "tests": {
+    "1": {
+      "comment": "Configures tls12 only",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\n\r\n",
+          "assert": {
+            "current_cipher_version": {
+              "==": [
+                "TLSv1.2"
+              ],
+              "!match": [
+                "SSLv3",
+                "^TLSv1\\.[013]?$"
+              ]
+            },
+            "ssl_proto_version": {
+              "==": [
+                "TLSv1.2"
+              ],
+              "!=": [
+                "SSLv3"
+              ],
+              "!match": [
+                "^TLSv1\\.[013]?$"
+              ]
+            },
+            "ssl_state": {
+              "==": [
+                "SSLOK "
+              ]
+            }
+          }
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": "",
+          "assert": {
+            "current_cipher_version": {
+              "==": [
+                "TLSv1.2"
+              ],
+              "!match": [
+                "SSLv3",
+                "^TLSv1\\.[013]?$"
+              ]
+            },
+            "ssl_proto_version": {
+              "==": [
+                "TLSv1.2"
+              ],
+              "!=": [
+                "SSLv3"
+              ],
+              "!match": [
+                "^TLSv1\\.[013]?$"
+              ]
+            },
+            "ssl_state": {
+              "==": [
+                "SSLOK "
+              ]
+            }
+          }
+        },
+        "3": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\nConnection: close\r\n\r\n",
+          "assert": {
+            "current_cipher_version": {
+              "==": [
+                "TLSv1.2"
+              ],
+              "!match": [
+                "SSLv3",
+                "^TLSv1\\.[013]?$"
+              ]
+            },
+            "ssl_proto_version": {
+              "==": [
+                "TLSv1.2"
+              ],
+              "!=": [
+                "SSLv3"
+              ],
+              "!match": [
+                "^TLSv1\\.[013]?$"
+              ]
+            },
+            "ssl_state": {
+              "==": [
+                "SSLOK "
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

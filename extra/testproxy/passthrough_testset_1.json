@@ -1,0 +1,55 @@
+{
+  "comment": "Tests for Passthrough",
+  "configs": {
+    "1": {
+      "comment": "Passthrough should behave similar to direct connection, so test direct connection first",
+      "proto": {
+        "proto": "ssl",
+        "verify_peer": "no"
+      },
+      "client": {
+        "ip": "127.0.0.1",
+        "port": "9454"
+      },
+      "server": {
+        "ip": "127.0.0.1",
+        "port": "9454",
+        "crt": "server.crt",
+        "key": "server.key"
+      }
+    },
+    "2": {
+      "proto": {
+        "proto": "ssl",
+        "verify_peer": "no"
+      },
+      "client": {
+        "ip": "127.0.0.1",
+        "port": "8454"
+      },
+      "server": {
+        "ip": "127.0.0.1",
+        "port": "9454",
+        "crt": "server.crt",
+        "key": "server.key"
+      }
+    }
+  },
+  "tests": {
+    "1": {
+      "comment": "Passes conn through if ssl handshake fails",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\n\r\n"
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\n\r\n"
+        }
+      }
+    }
+  }
+}
