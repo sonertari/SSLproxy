@@ -21,6 +21,7 @@
 /extra/pki/server.crt
 /extra/pki/server.key
 /extra/pki/targets/*
+/extra/lp/lp
 
 /nbproject/
 

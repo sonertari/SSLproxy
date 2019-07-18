@@ -157,7 +157,9 @@ prototcp_parse_sslproxy_line(char *line, pxy_conn_ctx_t *ctx)
 
 	// SSLproxy: [127.0.0.1]:34649,[192.168.3.24]:47286,[74.125.206.108]:465,s,soner
 	if (!strncasecmp(line, "SSLproxy:", 9)) {
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "%s\n", line);
+		if (OPTS_DEBUG(ctx->opts)) {
+			log_dbg_printf("%s\n", line);
+		}
 
 		char *ip_start = strchr(line, '[') + 1;
 		char *ip_end = strchr(ip_start, ']');
