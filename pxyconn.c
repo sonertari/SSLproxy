@@ -491,7 +491,8 @@ pxy_conn_free(pxy_conn_ctx_t *ctx, int by_requestor)
 		evutil_closesocket(ctx->fd);
 	}
 
-	if (ctx->srvdst.bev) {
+	// If srvdst has been xferred to the first child conn, the child should free it, not the parent
+	if (!ctx->srvdst_xferred && ctx->srvdst.bev) {
 		ctx->srvdst.free(ctx->srvdst.bev, ctx);
 		ctx->srvdst.bev = NULL;
 	}
@@ -580,8 +581,8 @@ pxy_log_connect_nonhttp(pxy_conn_ctx_t *ctx)
 		              STRORDASH(ctx->sslctx->ssl_names),
 		              SSL_get_version(ctx->src.ssl),
 		              SSL_get_cipher(ctx->src.ssl),
-		              !ctx->srvdst.closed && ctx->srvdst.ssl ? SSL_get_version(ctx->srvdst.ssl):ctx->sslctx->srvdst_ssl_version,
-		              !ctx->srvdst.closed && ctx->srvdst.ssl ? SSL_get_cipher(ctx->srvdst.ssl):ctx->sslctx->srvdst_ssl_cipher,
+		              STRORDASH(ctx->sslctx->srvdst_ssl_version),
+		              STRORDASH(ctx->sslctx->srvdst_ssl_cipher),
 		              STRORDASH(ctx->sslctx->origcrtfpr),
 		              STRORDASH(ctx->sslctx->usedcrtfpr),
 #ifdef HAVE_LOCAL_PROCINFO
@@ -1148,10 +1149,12 @@ pxy_listener_acceptcb_child(UNUSED struct evconnlistener *listener, evutil_socke
 		}
 	}
 
-	/* initiate connection */
-	if (bufferevent_socket_connect(ctx->dst.bev, (struct sockaddr *)&ctx->conn->dstaddr, ctx->conn->dstaddrlen) == -1) {
-		pxy_conn_term(conn, 1);
-		goto out;
+	/* initiate connection, except for the first child conn which uses the parent's srvdst as dst */
+	if (ctx->dst.bev != ctx->conn->srvdst.bev) {
+		if (bufferevent_socket_connect(ctx->dst.bev, (struct sockaddr *)&ctx->conn->dstaddr, ctx->conn->dstaddrlen) == -1) {
+			pxy_conn_term(conn, 1);
+			goto out;
+		}
 	}
 	
 	ctx->dst_fd = bufferevent_getfd(ctx->dst.bev);

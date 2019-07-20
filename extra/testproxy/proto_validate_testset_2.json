@@ -42,11 +42,6 @@
         "2": {
           "testend": "server",
           "cmd": "recv",
-          "payload": ""
-        },
-        "3": {
-          "testend": "server",
-          "cmd": "recv",
           "payload": "POST / HTTP/1.1\r\nHost: comixwall.org\r\nConnection: close\r\n\r\n"
         }
       }
@@ -62,13 +57,8 @@
         "2": {
           "testend": "server",
           "cmd": "recv",
-          "payload": ""
-        },
-        "3": {
-          "testend": "server",
-          "cmd": "timeout",
           "payload": "",
-          "comment": "SSLproxy should not validate method POS, so not connect to server"
+          "comment": "SSLproxy should not validate method POS, so should not send any data"
         }
       }
     },
@@ -84,11 +74,6 @@
           "testend": "server",
           "cmd": "recv",
           "payload": ""
-        },
-        "3": {
-          "testend": "server",
-          "cmd": "timeout",
-          "payload": ""
         }
       }
     },
@@ -103,11 +88,6 @@
         "2": {
           "testend": "server",
           "cmd": "recv",
-          "payload": ""
-        },
-        "3": {
-          "testend": "server",
-          "cmd": "timeout",
           "payload": ""
         }
       }

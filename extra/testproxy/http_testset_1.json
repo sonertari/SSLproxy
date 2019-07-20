@@ -70,25 +70,19 @@
         "2": {
           "testend": "server",
           "cmd": "recv",
-          "payload": "",
-          "comment": "To obtain server crt, SSLproxy srvdst connects/disconnects to the server without sending any data, so we should have this as the second state in all tests"
-        },
-        "3": {
-          "testend": "server",
-          "cmd": "recv",
           "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\nConnection: close\r\n\r\n"
         },
-        "4": {
+        "3": {
           "testend": "server",
           "cmd": "send",
           "payload": "HTTP/1.1 302 Found\r\nLocation: sslproxy\r\n\r\n"
         },
-        "5": {
+        "4": {
           "testend": "client",
           "cmd": "recv",
           "payload": "HTTP/1.1 302 Found\r\nLocation: sslproxy\r\n\r\n"
         },
-        "6": {
+        "5": {
           "testend": "server",
           "cmd": "timeout",
           "payload": "",
@@ -107,19 +101,14 @@
         "2": {
           "testend": "server",
           "cmd": "recv",
-          "payload": ""
-        },
-        "3": {
-          "testend": "server",
-          "cmd": "recv",
           "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\nConnection: close\r\n\r\n"
         },
-        "4": {
+        "3": {
           "testend": "server",
           "cmd": "send",
           "payload": "HTTP/1.1 302 Found\r\nLocation: sslproxy\r\n\r\n"
         },
-        "5": {
+        "4": {
           "testend": "client",
           "cmd": "recv",
           "payload": "HTTP/1.1 302 Found\r\nLocation: sslproxy\r\n\r\n"
@@ -137,19 +126,14 @@
         "2": {
           "testend": "server",
           "cmd": "recv",
-          "payload": ""
-        },
-        "3": {
-          "testend": "server",
-          "cmd": "recv",
           "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\nConnection: close\r\n\r\n"
         },
-        "4": {
+        "3": {
           "testend": "server",
           "cmd": "send",
           "payload": "HTTP/1.1 302 Found\r\nLocation: sslproxy\r\n\r\n"
         },
-        "5": {
+        "4": {
           "testend": "client",
           "cmd": "recv",
           "payload": "HTTP/1.1 302 Found\r\nLocation: sslproxy\r\n\r\n"
@@ -167,19 +151,14 @@
         "2": {
           "testend": "server",
           "cmd": "recv",
-          "payload": ""
-        },
-        "3": {
-          "testend": "server",
-          "cmd": "recv",
           "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\nConnection: close\r\n\r\n"
         },
-        "4": {
+        "3": {
           "testend": "server",
           "cmd": "send",
           "payload": "HTTP/1.1 302 Found\r\nLocation: sslproxy\r\n\r\n"
         },
-        "5": {
+        "4": {
           "testend": "client",
           "cmd": "recv",
           "payload": "HTTP/1.1 302 Found\r\nLocation: sslproxy\r\n\r\n"
@@ -197,19 +176,14 @@
         "2": {
           "testend": "server",
           "cmd": "recv",
-          "payload": ""
-        },
-        "3": {
-          "testend": "server",
-          "cmd": "recv",
           "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\nConnection: close\r\n\r\n"
         },
-        "4": {
+        "3": {
           "testend": "server",
           "cmd": "send",
           "payload": "HTTP/1.1 302 Found\r\nLocation: sslproxy\r\n\r\n"
         },
-        "5": {
+        "4": {
           "testend": "client",
           "cmd": "recv",
           "payload": "HTTP/1.1 302 Found\r\nLocation: sslproxy\r\n\r\n"
@@ -227,19 +201,14 @@
         "2": {
           "testend": "server",
           "cmd": "recv",
-          "payload": ""
-        },
-        "3": {
-          "testend": "server",
-          "cmd": "recv",
           "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\nAccept-Encoding: encoding\r\nConnection: close\r\n\r\n"
         },
-        "4": {
+        "3": {
           "testend": "server",
           "cmd": "send",
           "payload": "HTTP/1.1 302 Found\r\nLocation: sslproxy\r\n\r\n"
         },
-        "5": {
+        "4": {
           "testend": "client",
           "cmd": "recv",
           "payload": "HTTP/1.1 302 Found\r\nLocation: sslproxy\r\n\r\n"
@@ -257,19 +226,14 @@
         "2": {
           "testend": "server",
           "cmd": "recv",
-          "payload": ""
-        },
-        "3": {
-          "testend": "server",
-          "cmd": "recv",
           "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\nConnection: close\r\n\r\n"
         },
-        "4": {
+        "3": {
           "testend": "server",
           "cmd": "send",
           "payload": "HTTP/1.1 302 Found\r\nLocation: sslproxy\r\n\r\n"
         },
-        "5": {
+        "4": {
           "testend": "client",
           "cmd": "recv",
           "payload": "HTTP/1.1 302 Found\r\nLocation: sslproxy\r\n\r\n"
@@ -287,19 +251,14 @@
         "2": {
           "testend": "server",
           "cmd": "recv",
-          "payload": ""
-        },
-        "3": {
-          "testend": "server",
-          "cmd": "recv",
           "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\nConnection: close\r\n\r\n"
         },
-        "4": {
+        "3": {
           "testend": "server",
           "cmd": "send",
           "payload": "HTTP/1.1 302 Found\r\nLocation: sslproxy\r\n\r\n"
         },
-        "5": {
+        "4": {
           "testend": "client",
           "cmd": "recv",
           "payload": "HTTP/1.1 302 Found\r\nLocation: sslproxy\r\n\r\n"
@@ -317,19 +276,14 @@
         "2": {
           "testend": "server",
           "cmd": "recv",
-          "payload": ""
-        },
-        "3": {
-          "testend": "server",
-          "cmd": "recv",
           "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\nConnection: close\r\n\r\n"
         },
-        "4": {
+        "3": {
           "testend": "server",
           "cmd": "send",
           "payload": "HTTP/1.1 302 Found\r\nLocation: sslproxy\r\n\r\n"
         },
-        "5": {
+        "4": {
           "testend": "client",
           "cmd": "recv",
           "payload": "HTTP/1.1 302 Found\r\nLocation: sslproxy\r\n\r\n"

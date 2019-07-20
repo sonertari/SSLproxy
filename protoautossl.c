@@ -298,28 +298,6 @@ protoautossl_bev_eventcb_connected_src(UNUSED struct bufferevent *bev, UNUSED px
 #endif /* DEBUG_PROXY */
 }
 
-static void NONNULL(1)
-protoautossl_close_srvdst(pxy_conn_ctx_t *ctx)
-{
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINER, "protoautossl_close_srvdst: Closing srvdst, srvdst fd=%d, fd=%d\n", bufferevent_getfd(ctx->srvdst.bev), ctx->fd);
-#endif /* DEBUG_PROXY */
-
-	// @attention Free the srvdst of the conn asap, we don't need it anymore, but we need its fd
-	// So save its ssl info for logging
-	// @todo Do we always have srvdst.ssl or not? Can we use ssl or tcp versions of this function?
-	if (ctx->srvdst.ssl) {
-		ctx->sslctx->srvdst_ssl_version = strdup(SSL_get_version(ctx->srvdst.ssl));
-		ctx->sslctx->srvdst_ssl_cipher = strdup(SSL_get_cipher(ctx->srvdst.ssl));
-	}
-
-	// @attention When both eventcb and writecb for srvdst are enabled, either eventcb or writecb may get a NULL srvdst bev, causing a crash with signal 10.
-	// So, from this point on, we should check if srvdst is NULL or not.
-	ctx->srvdst.free(ctx->srvdst.bev, ctx);
-	ctx->srvdst.bev = NULL;
-	ctx->srvdst.closed = 1;
-}
-
 static int NONNULL(1)
 protoautossl_enable_src(pxy_conn_ctx_t *ctx)
 {
@@ -352,9 +330,10 @@ protoautossl_enable_src(pxy_conn_ctx_t *ctx)
 	}
 	bufferevent_setcb(ctx->src.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
 
-	// srvdst is not needed after clienthello search is over
-	if (ctx->srvdst.bev && !autossl_ctx->clienthello_search) {
-		protoautossl_close_srvdst(ctx);
+	// srvdst is xferred to the first child conn, so save the srvdst ssl info for logging
+	if (ctx->srvdst.bev && !autossl_ctx->clienthello_search && ctx->srvdst.ssl) {
+		ctx->sslctx->srvdst_ssl_version = strdup(SSL_get_version(ctx->srvdst.ssl));
+		ctx->sslctx->srvdst_ssl_cipher = strdup(SSL_get_cipher(ctx->srvdst.ssl));
 	}
 
 	// Skip child listener setup if completing autossl upgrade, after finding clienthello

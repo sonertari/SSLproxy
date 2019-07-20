@@ -134,8 +134,8 @@ protohttp_log_connect(pxy_conn_ctx_t *ctx)
 		              STRORDASH(ctx->sslctx->ssl_names),
 		              SSL_get_version(ctx->src.ssl),
 		              SSL_get_cipher(ctx->src.ssl),
-		              !ctx->srvdst.closed ? SSL_get_version(ctx->srvdst.ssl):ctx->sslctx->srvdst_ssl_version,
-		              !ctx->srvdst.closed ? SSL_get_cipher(ctx->srvdst.ssl):ctx->sslctx->srvdst_ssl_cipher,
+		              STRORDASH(ctx->sslctx->srvdst_ssl_version),
+		              STRORDASH(ctx->sslctx->srvdst_ssl_cipher),
 		              STRORDASH(ctx->sslctx->origcrtfpr),
 		              STRORDASH(ctx->sslctx->usedcrtfpr),
 #ifdef HAVE_LOCAL_PROCINFO

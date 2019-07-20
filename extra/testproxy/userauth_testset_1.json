@@ -1,19 +1,17 @@
 {
-  "comment": "Tests for UserAuth with SSL",
+  "comment": "Tests for UserAuth with TCP",
   "configs": {
     "1": {
       "proto": {
-        "proto": "ssl"
+        "proto": "tcp"
       },
       "client": {
         "ip": "127.0.0.1",
-        "port": "8459"
+        "port": "8187"
       },
       "server": {
         "ip": "127.0.0.1",
-        "port": "9459",
-        "crt": "server.crt",
-        "key": "server.key"
+        "port": "9187"
       }
     }
   },
@@ -23,13 +21,13 @@
       "states": {
         "1": {
           "testend": "client",
-          "cmd": "sslconnectfail",
+          "cmd": "send",
           "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\n\r\n",
           "comment": "SSLproxy rejects conn because it cannot find the ethernet address of the client"
         },
         "2": {
           "testend": "server",
-          "cmd": "timeout",
+          "cmd": "recv",
           "payload": ""
         }
       }

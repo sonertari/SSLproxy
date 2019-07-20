@@ -1320,19 +1320,27 @@ protossl_setup_dst_ssl_child(pxy_conn_child_ctx_t *ctx)
 int
 protossl_setup_dst_child(pxy_conn_child_ctx_t *ctx)
 {
-	if (protossl_setup_dst_ssl_child(ctx) == -1) {
-		return -1;
-	}
+	if (!ctx->conn->srvdst_xferred) {
+		// Reuse srvdst of parent in the first child conn
+		ctx->conn->srvdst_xferred = 1;
+		ctx->dst = ctx->conn->srvdst;
+		bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb_child, pxy_bev_writecb_child, pxy_bev_eventcb_child, ctx);
+		ctx->protoctx->bev_eventcb(ctx->dst.bev, BEV_EVENT_CONNECTED, ctx);
+	} else {
+		if (protossl_setup_dst_ssl_child(ctx) == -1) {
+			return -1;
+		}
 
-	ctx->dst.bev = protossl_bufferevent_setup_child(ctx, -1, ctx->dst.ssl);
-	if (!ctx->dst.bev) {
-		log_err_level_printf(LOG_CRIT, "Error creating dst bufferevent\n");
-		SSL_free(ctx->dst.ssl);
-		ctx->dst.ssl = NULL;
-		pxy_conn_term(ctx->conn, 1);
-		return -1;
+		ctx->dst.bev = protossl_bufferevent_setup_child(ctx, -1, ctx->dst.ssl);
+		if (!ctx->dst.bev) {
+			log_err_level_printf(LOG_CRIT, "Error creating dst bufferevent\n");
+			SSL_free(ctx->dst.ssl);
+			ctx->dst.ssl = NULL;
+			pxy_conn_term(ctx->conn, 1);
+			return -1;
+		}
+		ctx->dst.free = protossl_bufferevent_free_and_close_fd;
 	}
-	ctx->dst.free = protossl_bufferevent_free_and_close_fd;
 	return 0;
 }
 
@@ -1417,25 +1425,6 @@ protossl_setup_dst_new_bev_ssl_connecting_child(pxy_conn_child_ctx_t *ctx)
 	return 0;
 }
 
-static void NONNULL(1)
-protossl_close_srvdst(pxy_conn_ctx_t *ctx)
-{
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINER, "protossl_close_srvdst: Closing srvdst, srvdst fd=%d, fd=%d\n", bufferevent_getfd(ctx->srvdst.bev), ctx->fd);
-#endif /* DEBUG_PROXY */
-
-	// @attention Free the srvdst of the conn asap, we don't need it anymore, but we need its fd
-	// So save its ssl info for logging
-	ctx->sslctx->srvdst_ssl_version = strdup(SSL_get_version(ctx->srvdst.ssl));
-	ctx->sslctx->srvdst_ssl_cipher = strdup(SSL_get_cipher(ctx->srvdst.ssl));
-
-	// @attention When both eventcb and writecb for srvdst are enabled, either eventcb or writecb may get a NULL srvdst bev, causing a crash with signal 10.
-	// So, from this point on, we should check if srvdst is NULL or not.
-	ctx->srvdst.free(ctx->srvdst.bev, ctx);
-	ctx->srvdst.bev = NULL;
-	ctx->srvdst.closed = 1;
-}
-
 static int NONNULL(1)
 protossl_enable_src(pxy_conn_ctx_t *ctx)
 {
@@ -1446,7 +1435,9 @@ protossl_enable_src(pxy_conn_ctx_t *ctx)
 	}
 	bufferevent_setcb(ctx->src.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
 
-	protossl_close_srvdst(ctx);
+	// Save the srvdst ssl info for logging
+	ctx->sslctx->srvdst_ssl_version = strdup(SSL_get_version(ctx->srvdst.ssl));
+	ctx->sslctx->srvdst_ssl_cipher = strdup(SSL_get_cipher(ctx->srvdst.ssl));
 
 	if (pxy_setup_child_listener(ctx) == -1) {
 		return -1;

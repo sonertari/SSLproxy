@@ -37,11 +37,6 @@
         "2": {
           "testend": "server",
           "cmd": "recv",
-          "payload": ""
-        },
-        "3": {
-          "testend": "server",
-          "cmd": "recv",
           "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\nConnection: close\r\n\r\n"
         }
       }

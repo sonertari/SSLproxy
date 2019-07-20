@@ -41,16 +41,11 @@
           "comment": "It is easier to send a dummy POST ocsp request than a valid GET one"
         },
         "2": {
-          "testend": "server",
-          "cmd": "recv",
-          "payload": ""
-        },
-        "3": {
           "testend": "client",
           "cmd": "recv",
           "payload_file": "payload_ocsp_denied_response.bin"
         },
-        "4": {
+        "3": {
           "testend": "server",
           "cmd": "timeout",
           "payload": ""
@@ -68,11 +63,6 @@
         "2": {
           "testend": "server",
           "cmd": "recv",
-          "payload": ""
-        },
-        "3": {
-          "testend": "server",
-          "cmd": "recv",
           "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\nConnection: close\r\n\r\n"
         }
       }
@@ -86,11 +76,6 @@
           "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\nReferer: referer\r\n\r\n"
         },
         "2": {
-          "testend": "server",
-          "cmd": "recv",
-          "payload": ""
-        },
-        "3": {
           "testend": "server",
           "cmd": "recv",
           "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\nReferer: referer\r\nConnection: close\r\n\r\n"

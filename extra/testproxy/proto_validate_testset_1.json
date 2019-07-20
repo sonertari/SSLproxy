@@ -42,12 +42,6 @@
         "2": {
           "testend": "server",
           "cmd": "recv",
-          "payload": "",
-          "comment": "To obtain server crt, SSLproxy srvdst connects/disconnects to the server without sending any data, so we should have this as the second state in all tests"
-        },
-        "3": {
-          "testend": "server",
-          "cmd": "recv",
           "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\nConnection: close\r\n\r\n"
         }
       }
@@ -63,13 +57,8 @@
         "2": {
           "testend": "server",
           "cmd": "recv",
-          "payload": ""
-        },
-        "3": {
-          "testend": "server",
-          "cmd": "timeout",
           "payload": "",
-          "comment": "SSLproxy should not validate method GE, so not connect to server"
+          "comment": "SSLproxy should not validate method GE, so should not send any data"
         }
       }
     },
@@ -85,11 +74,6 @@
           "testend": "server",
           "cmd": "recv",
           "payload": ""
-        },
-        "3": {
-          "testend": "server",
-          "cmd": "timeout",
-          "payload": ""
         }
       }
     },
@@ -104,11 +88,6 @@
         "2": {
           "testend": "server",
           "cmd": "recv",
-          "payload": ""
-        },
-        "3": {
-          "testend": "server",
-          "cmd": "timeout",
           "payload": ""
         }
       }

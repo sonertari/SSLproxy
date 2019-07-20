@@ -35,7 +35,9 @@
         "2": "verifypeer_testset_1.json",
         "3": "verifypeer_testset_2.json",
         "4": "ca_testset_1.json",
-        "5": "ca_testset_2.json"
+        "5": "ca_testset_2.json",
+        "6": "userauth_testset_1.json",
+        "7": "userauth_testset_2.json"
       }
     }
   }

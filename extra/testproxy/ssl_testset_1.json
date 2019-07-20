@@ -120,51 +120,6 @@
         "2": {
           "testend": "server",
           "cmd": "recv",
-          "payload": "",
-          "assert": {
-            "current_cipher_name": {
-              "match": [
-                "ECDHE-[A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+",
-                "[A-Z0-9]+-[A-Z0-9]+-AES256-[A-Z0-9]+-[A-Z0-9]+",
-                "[A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+-SHA384"
-              ],
-              "!match": [
-                "^DHE-\\w+-\\w+-\\w+",
-                "\\w+-\\w+-SEED-\\w+",
-                "\\w+-\\w+-\\w+-SHA$"
-              ]
-            },
-            "current_cipher_version": {
-              "==": [
-                "TLSv1.2"
-              ],
-              "!match": [
-                "^(SSLv3|TLSv1|TLSv1\\.[13]?)$"
-              ]
-            },
-            "ssl_proto_version": {
-              "==": [
-                "TLSv1.2"
-              ],
-              "!match": [
-                "^(SSLv3|TLSv1|TLSv1\\.[13]?)$"
-              ]
-            },
-            "ssl_state": {
-              "==": [
-                "SSLOK "
-              ]
-            },
-            "sni_servername": {
-              "==": [
-                "comixwall.org"
-              ]
-            }
-          }
-        },
-        "3": {
-          "testend": "server",
-          "cmd": "recv",
           "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\nConnection: close\r\n\r\n",
           "assert": {
             "current_cipher_name": {

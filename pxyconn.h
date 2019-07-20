@@ -229,6 +229,7 @@ struct pxy_conn_ctx {
 	unsigned int term : 1;                     /* 0 until term requested */
 	unsigned int term_requestor : 1;          /* 1 client, 0 server side */
 
+	unsigned int srvdst_xferred : 1;     /* 1 if srvdst xferred to child */
 	struct pxy_conn_desc srvdst;
 
 	struct event *ev;

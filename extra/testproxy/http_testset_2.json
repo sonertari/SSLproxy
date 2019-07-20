@@ -42,19 +42,14 @@
         "2": {
           "testend": "server",
           "cmd": "recv",
-          "payload": ""
-        },
-        "3": {
-          "testend": "server",
-          "cmd": "recv",
           "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\nConnection: close\r\n\r\n"
         },
-        "4": {
+        "3": {
           "testend": "server",
           "cmd": "send",
           "payload": "HTTP/1.1 302 Found\r\nPublic-Key-Pins: public-key-pins\r\nLocation: sslproxy\r\n\r\n"
         },
-        "5": {
+        "4": {
           "testend": "client",
           "cmd": "recv",
           "payload": "HTTP/1.1 302 Found\r\nLocation: sslproxy\r\n\r\n"
@@ -72,19 +67,14 @@
         "2": {
           "testend": "server",
           "cmd": "recv",
-          "payload": ""
-        },
-        "3": {
-          "testend": "server",
-          "cmd": "recv",
           "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\nConnection: close\r\n\r\n"
         },
-        "4": {
+        "3": {
           "testend": "server",
           "cmd": "send",
           "payload": "HTTP/1.1 302 Found\r\nPublic-Key-Pins-Report-Only: public-key-pins-report-only\r\nLocation: sslproxy\r\n\r\n"
         },
-        "5": {
+        "4": {
           "testend": "client",
           "cmd": "recv",
           "payload": "HTTP/1.1 302 Found\r\nLocation: sslproxy\r\n\r\n"
@@ -102,19 +92,14 @@
         "2": {
           "testend": "server",
           "cmd": "recv",
-          "payload": ""
-        },
-        "3": {
-          "testend": "server",
-          "cmd": "recv",
           "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\nConnection: close\r\n\r\n"
         },
-        "4": {
+        "3": {
           "testend": "server",
           "cmd": "send",
           "payload": "HTTP/1.1 302 Found\r\nStrict-Transport-Security: strict-transport-security\r\nLocation: sslproxy\r\n\r\n"
         },
-        "5": {
+        "4": {
           "testend": "client",
           "cmd": "recv",
           "payload": "HTTP/1.1 302 Found\r\nLocation: sslproxy\r\n\r\n"
@@ -132,19 +117,14 @@
         "2": {
           "testend": "server",
           "cmd": "recv",
-          "payload": ""
-        },
-        "3": {
-          "testend": "server",
-          "cmd": "recv",
           "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\nConnection: close\r\n\r\n"
         },
-        "4": {
+        "3": {
           "testend": "server",
           "cmd": "send",
           "payload": "HTTP/1.1 302 Found\r\nExpect-CT: expect-ct\r\nLocation: sslproxy\r\n\r\n"
         },
-        "5": {
+        "4": {
           "testend": "client",
           "cmd": "recv",
           "payload": "HTTP/1.1 302 Found\r\nLocation: sslproxy\r\n\r\n"
@@ -162,19 +142,14 @@
         "2": {
           "testend": "server",
           "cmd": "recv",
-          "payload": ""
-        },
-        "3": {
-          "testend": "server",
-          "cmd": "recv",
           "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\nConnection: close\r\n\r\n"
         },
-        "4": {
+        "3": {
           "testend": "server",
           "cmd": "send",
           "payload": "HTTP/1.1 302 Found\r\nAlternate-Protocol: alternate-protocol\r\nLocation: sslproxy\r\n\r\n"
         },
-        "5": {
+        "4": {
           "testend": "client",
           "cmd": "recv",
           "payload": "HTTP/1.1 302 Found\r\nLocation: sslproxy\r\n\r\n"
@@ -192,19 +167,14 @@
         "2": {
           "testend": "server",
           "cmd": "recv",
-          "payload": ""
-        },
-        "3": {
-          "testend": "server",
-          "cmd": "recv",
           "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\nConnection: close\r\n\r\n"
         },
-        "4": {
+        "3": {
           "testend": "server",
           "cmd": "send",
           "payload": "HTTP/1.1 302 Found\r\nUpgrade: upgrade\r\nLocation: sslproxy\r\n\r\n"
         },
-        "5": {
+        "4": {
           "testend": "client",
           "cmd": "recv",
           "payload": "HTTP/1.1 302 Found\r\nLocation: sslproxy\r\n\r\n"
@@ -221,11 +191,6 @@
           "comment": "It is easier to send a dummy POST ocsp request than a valid GET one"
         },
         "2": {
-          "testend": "server",
-          "cmd": "recv",
-          "payload": ""
-        },
-        "3": {
           "testend": "server",
           "cmd": "recv",
           "payload": "POST / HTTP/1.1\r\nHost: comixwall.org\r\nContent-Type: application/ocsp-request\r\nConnection: close\r\n\r\n"

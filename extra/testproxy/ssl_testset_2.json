@@ -81,36 +81,6 @@
         "2": {
           "testend": "server",
           "cmd": "recv",
-          "payload": "",
-          "assert": {
-            "current_cipher_version": {
-              "==": [
-                "TLSv1.0"
-              ],
-              "!match": [
-                "SSLv3",
-                "^TLSv1\\.[1-3]?$"
-              ]
-            },
-            "ssl_proto_version": {
-              "==": [
-                "TLSv1"
-              ],
-              "!match": [
-                "SSLv3",
-                "^TLSv1\\.[1-3]?$"
-              ]
-            },
-            "ssl_state": {
-              "==": [
-                "SSLOK "
-              ]
-            }
-          }
-        },
-        "3": {
-          "testend": "server",
-          "cmd": "recv",
           "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\nConnection: close\r\n\r\n",
           "assert": {
             "current_cipher_version": {
