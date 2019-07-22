@@ -174,17 +174,18 @@ Additionally, certificates, master secrets and local process information can be
 logged.
 
 As SSLproxy is based on SSLsplit, this is a modified SSLsplit README file.
-See the manual page sslproxy(1) for details on using SSLproxy and setting up
-the various NAT engines.
+See the manual pages sslproxy(1) and sslproxy.conf(5) for details on using 
+SSLproxy and setting up the various NAT engines.
 
 
 ## Requirements
 
-SSLproxy depends on the OpenSSL, libevent 2.x, libpcap and libnet 1.1.x
-libraries by default; libpcap and libnet are not needed if the mirroring
-feature is omitted.  The build depends on GNU make and a POSIX.2 environment in
-`PATH`.  If available, pkg-config is used to locate and configure the
-dependencies.  The optional unit tests depend on the check library.
+SSLproxy depends on the OpenSSL, libevent 2.x, libpcap, libnet 1.1.x, and 
+sqlite3 libraries by default; libpcap and libnet are not needed if the 
+mirroring feature is omitted.  The build depends on GNU make and a POSIX.2 
+environment in `PATH`.  If available, pkg-config is used to locate and 
+configure the dependencies.  The optional unit tests depend on the check 
+library.
 
 SSLproxy currently supports the following operating systems and NAT mechanisms:
 
@@ -235,6 +236,7 @@ SSLsplit contains components licensed under the MIT and APSL licenses.
 See [`LICENSE`](LICENSE), [`LICENSE.contrib`](LICENSE.contrib) and
 [`LICENSE.third`](LICENSE.third) as well as the respective source file headers
 for details.
+
 The modifications for SSLproxy are licensed under the same terms as SSLsplit.
 
 

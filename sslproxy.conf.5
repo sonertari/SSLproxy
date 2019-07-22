@@ -26,7 +26,7 @@
 .\" ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 .\" POSSIBILITY OF SUCH DAMAGE.
 .\"
-.TH "sslproxy.conf" "5" "27 Mar 2019" "v0.6.0" "SSLproxy"
+.TH "sslproxy.conf" "5" "22 Jul 2019" "v0.7.0" "SSLproxy"
 .SH "NAME"
 .LP 
 \fBsslproxy.conf\fR \- Configuration file for SSLproxy
@@ -36,8 +36,13 @@ The file sslproxy.conf configures SSLproxy, sslproxy(1).
 .SH "FILE FORMAT"
 The file consists of comments and options with arguments. Each line which 
 starts with a hash (\fB#\fR) symbol is ignored by the parser. Options and 
-arguments are of the form \fBOption Argument\fR. The arguments are of the 
-following types:
+arguments are of the form \fBOption Argument\fR.
+.LP 
+Structured proxyspecs are defined between curly braces. The opening curly 
+brace should be on the same line as the ProxySpec keyword. The closing curly 
+brace and option-argument pairs should be on a line of their own.
+.LP 
+The arguments are of the following types:
 .TP
 \fBBOOL\fR 
 Boolean value (yes/no).
@@ -50,8 +55,10 @@ Unsigned integer.
 .SH "DIRECTIVES"
 .LP 
 When an option is not used (hashed or doesn't exist in the configuration file) 
-sslproxy takes a default action. If an option does not have a command line 
-equivalent, -o opt=val option can be used to override it on the command line.
+sslproxy takes a default action. If an option is defined outside any 
+structured proxyspec, then it is used as a global default. If an option does 
+not have a command line equivalent, -o opt=val option can be used to override 
+it on the command line.
 .TP 
 \fBCACert STRING\fR
 Use CA cert (and key) to sign forged certs. Equivalent to -c command line option.
@@ -137,11 +144,7 @@ Leaf key RSA keysize in bits, use 1024|2048|3072|4096.
 Default: 1024
 .TP 
 \fBOpenSSLEngine STRING\fR
-The OpenSSL engine to activate, either the ID or the full path to the shared
-library implementing the engine.  If an ID is given, the engine needs to be
-known to the system-wide OpenSSL configuration.  Only available if built
-against a version of OpenSSL with engine support.  Equivalent to -x command
-line option.
+The OpenSSL engine to activate.  Equivalent to -x command line option.
 .TP 
 \fBNATEngine STRING\fR
 Specify default NAT engine to use. Equivalent to -e command line option.
@@ -285,7 +288,80 @@ Set open files limit, use 50-10000.
 Default: System-wide limit.
 .TP
 \fBProxySpec STRING\fR
-Proxy specification: type listenaddr+port up:port ua:addr ra:addr. Multiple specs are allowed, one on each line.
+One line proxy specification: type listenaddr+port up:port ua:addr ra:addr. 
+The other options of one line proxyspecs are set to the global defaults. 
+Multiple specs are allowed, one on each line.
+.TP
+\fBProxySpec {\fR
+.br
+Proto
+.br
+Addr
+.br
+Port
+.br
+DivertAddr
+.br
+DivertPort
+.br
+ReturnAddr
+.br
+NatEngine
+.br
+SNIPort
+.br
+TargetAddr
+.br
+TargetPort
+.br
+DenyOCSP
+.br
+Passthrough
+.br
+CACert
+.br
+CAKey
+.br
+ClientCert
+.br
+ClientKey
+.br
+CAChain
+.br
+DHGroupParams
+.br
+ECDHCurve
+.br
+SSLCompression
+.br
+ForceSSLProto
+.br
+DisableSSLProto
+.br
+Ciphers
+.br
+RemoveHTTPAcceptEncoding
+.br
+RemoveHTTPReferer
+.br
+VerifyPeer
+.br
+UserAuth
+.br
+UserTimeout
+.br
+UserAuthURL
+.br
+ValidateProto
+.br
+PassSite
+.br
+\fB}\fR
+.br
+Structured proxy specifications may consist of the options listed above. The 
+Proto, Addr, Port, and DivertPort options are mandatory, and equivalent to 
+type, listenaddr, port, and up options in one line proxyspecs, respectively. 
+If an option is not specified, the global default value is used.
 .SH "FILES"
 .LP 
 /etc/sslproxy/sslproxy.conf

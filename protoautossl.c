@@ -346,7 +346,7 @@ protoautossl_enable_conn_src_child(pxy_conn_child_ctx_t *ctx)
 		log_dbg_printf("Completing autossl upgrade\n");
 	}
 
-	// tcp src.bev is already created above
+	// tcp src.bev was already created before
 	int rv;
 	if ((rv = protossl_setup_src_ssl_from_child_dst(ctx)) != 0) {
 		return rv;

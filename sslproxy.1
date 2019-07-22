@@ -29,7 +29,7 @@
 .\" ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 .\" POSSIBILITY OF SUCH DAMAGE.
 .\"
-.TH "sslproxy" "1" "27 Mar 2019" "v0.6.0" "SSLproxy"
+.TH "sslproxy" "1" "22 Jul 2019" "v0.7.0" "SSLproxy"
 .SH NAME
 sslproxy \-\- transparent SSL/TLS proxy for decrypting and diverting network 
 traffic to other programs for deep SSL inspection
@@ -83,7 +83,8 @@ The program that packets are diverted to should support this mode of operation.
 Specifically, it should be able to recognize the SSLproxy address in the first 
 packet, and give the first and subsequent packets back to SSLproxy listening on 
 that address, instead of sending them to the original destination as it 
-normally would.
+normally would. For an example, see the lp program under the extra folder in 
+the sources.
 .LP
 SSLproxy supports plain TCP, plain SSL, HTTP, HTTPS, POP3, POP3S, SMTP, and 
 SMTPS connections over both IPv4 and IPv6.  It also has the ability to 
@@ -115,7 +116,7 @@ readable.
 .LP
 Another reason to disable persistent connections is to reduce file descriptor 
 usage. Accordingly, connections are closed if they remain idle for a certain 
-period of time. The default timeout is 120 seconds, which can be changed in a 
+period of time. The default timeout is 120 seconds, which can be changed in 
 configuration file.
 .LP
 SSLproxy verifies upstream certificates by default. If the verification fails, 
@@ -479,11 +480,16 @@ limiting factor is CPU, not network bandwidth.
 The \fB-Z\fP option is only available if SSLproxy was built against a version
 of OpenSSL which supports disabling compression.
 .SH "PROXY SPECIFICATIONS"
-Proxy specifications (\fIproxyspecs\fP) consist of the connection type, listen
-address and program port. You can also specify program and return address,
-otherwise they default to the loopback address 127.0.0.1. The program and
-remote address options help you divert packets to remote locations. However,
-beware that the diverted traffic is always unencrypted:
+SSLproxy supports two types of proxy specifications: one line and structured. 
+The structured proxy specifications provide more configuration options, but 
+can only be defined in configuration files. See sslproxy.conf(5) and the 
+sample configuration file in the sources for details.
+.LP
+One line proxy specifications (\fIproxyspecs\fP) consist of the connection 
+type, listen address and program port. You can also specify program and return 
+addresses, otherwise they default to the loopback address 127.0.0.1. The 
+program and return address options help you divert packets to remote 
+locations. However, beware that the diverted traffic is always unencrypted:
 .LP
 .na
 \fBhttps\fP \fIlistenaddr port\fP \fIup:port\fP
