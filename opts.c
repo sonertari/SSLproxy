@@ -3,6 +3,7 @@
  * https://www.roe.ch/SSLsplit
  *
  * Copyright (c) 2009-2018, Daniel Roethlisberger <daniel@roe.ch>.
+ * Copyright (c) 2017-2019, Soner Tari <sonertari@gmail.com>.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -311,6 +312,9 @@ global_has_userauth_spec(global_t *global)
 	return 0;
 }
 
+/*
+ * Return 1 if global_t contains a proxyspec with cakey defined, 0 otherwise.
+ */
 int
 global_has_cakey_spec(global_t *global)
 {
@@ -399,6 +403,10 @@ opts_set_user_auth_url(opts_t *opts, const char *optarg)
 static opts_t *
 clone_global_opts(global_t *global, const char *argv0)
 {
+#ifdef DEBUG_OPTS
+	log_dbg_printf("Clone global opts\n");
+#endif /* DEBUG_OPTS */
+
 	opts_t *opts = opts_new();
 
 	opts->sslcomp = global->opts->sslcomp;
@@ -539,6 +547,9 @@ proxyspec_set_proto(proxyspec_t *spec, const char *value)
 						"type '%s'\n", value);
 		exit(EXIT_FAILURE);
 	}
+#ifdef DEBUG_OPTS
+	log_dbg_printf("Proto: %s\n", value);
+#endif /* DEBUG_OPTS */
 }
 
 static void
@@ -561,6 +572,9 @@ proxyspec_set_listen_addr(proxyspec_t *spec, char *addr, char *port, const char 
 	} else {
 		spec->natengine = NULL;
 	}
+#ifdef DEBUG_OPTS
+	log_dbg_printf("Addr: [%s]:%s, %s\n", addr, port, natengine);
+#endif /* DEBUG_OPTS */
 }
 
 static void
@@ -571,6 +585,9 @@ proxyspec_set_divert_addr(proxyspec_t *spec, char *addr, char *port)
 						addr, port, AF_INET, EVUTIL_AI_PASSIVE) == -1) {
 		exit(EXIT_FAILURE);
 	}
+#ifdef DEBUG_OPTS
+	log_dbg_printf("DivertAddr: [%s]:%s\n", addr, port);
+#endif /* DEBUG_OPTS */
 }
 					
 static void
@@ -581,6 +598,9 @@ proxyspec_set_return_addr(proxyspec_t *spec, char *addr)
 						addr, "0", AF_INET, EVUTIL_AI_PASSIVE) == -1) {
 		exit(EXIT_FAILURE);
 	}
+#ifdef DEBUG_OPTS
+	log_dbg_printf("ReturnAddr: [%s]\n", addr);
+#endif /* DEBUG_OPTS */
 }
 					
 static void
@@ -594,6 +614,9 @@ proxyspec_set_target_addr(proxyspec_t *spec, char *addr, char *port)
 	/* explicit target address */
 	free(spec->natengine);
 	spec->natengine = NULL;
+#ifdef DEBUG_OPTS
+	log_dbg_printf("TargetAddr: [%s]:%s\n", addr, port);
+#endif /* DEBUG_OPTS */
 }
 
 static void
@@ -616,6 +639,9 @@ proxyspec_set_sni_port(proxyspec_t *spec, char *port)
 	spec->dns = 1;
 	free(spec->natengine);
 	spec->natengine = NULL;
+#ifdef DEBUG_OPTS
+	log_dbg_printf("SNIPort: %u\n", spec->sni_port);
+#endif /* DEBUG_OPTS */
 }
 
 static void
@@ -634,6 +660,9 @@ proxyspec_set_natengine(proxyspec_t *spec, const char *natengine)
 		fprintf(stderr, "No such nat engine '%s'\n", natengine);
 		exit(EXIT_FAILURE);
 	}
+#ifdef DEBUG_OPTS
+	log_dbg_printf("NatEngine: %s\n", spec->natengine);
+#endif /* DEBUG_OPTS */
 }
 
 /*
@@ -777,7 +806,6 @@ static char *
 opts_str(opts_t *opts)
 {
 	char *s;
-
 	char *ps = passsite_str(opts->passsites);
 
 	if (asprintf(&s, "opts=%s"
@@ -837,6 +865,8 @@ opts_str(opts_t *opts)
 				 ps ? "\n" : "", STRORNONE(ps)) < 0) {
 		s = NULL;
 	}
+	if (ps)
+		free(ps);
 	return s;
 }
 
@@ -2115,8 +2145,6 @@ set_proxyspec_option(proxyspec_t *spec, const char *argv0, const char *name, cha
 {
 	int retval = -1;
 
-	fprintf(stderr, "ProxySpec %s = %s at line %d\n", name, value, line_num);
-
 	/* Compare strlen(s2)+1 chars to match exactly */
 	if (!strncmp(name, "Proto", 6)) {
 		proxyspec_set_proto(spec, value);
@@ -2166,6 +2194,9 @@ set_proxyspec_option(proxyspec_t *spec, const char *argv0, const char *name, cha
 		proxyspec_set_natengine(spec, value);
 	}
 	else if (!strncmp(name, "}", 2)) {
+#ifdef DEBUG_OPTS
+		log_dbg_printf("ProxySpec } at line %d\n", line_num);
+#endif /* DEBUG_OPTS */
 		retval = 1;
 		goto leave;
 	}
@@ -2258,7 +2289,7 @@ leave:
 static void
 load_proxyspec_line(global_t *global, const char *argv0, char *value, char **natengine)
 {
-	/* Use MAX_TOKEN instead of computing the actual number of tokens in value */
+	/* Use MAX_TOKENS instead of computing the actual number of tokens in value */
 	char **argv = malloc(sizeof(char *) * MAX_TOKENS);
 	char **save_argv = argv;
 	int argc = 0;
@@ -2282,8 +2313,6 @@ load_proxyspec_line(global_t *global, const char *argv0, char *value, char **nat
 static int WUNRES
 load_proxyspec_struct(global_t *global, const char *argv0, char **natengine, int line_num, FILE *f)
 {
-	fprintf(stderr, "ProxySpec { at line %d\n", line_num);
-
 	int retval = -1;
 	char *line, *name, *value;
 	size_t line_len;
@@ -2295,6 +2324,7 @@ load_proxyspec_struct(global_t *global, const char *argv0, char **natengine, int
 	spec->next = global->spec;
 	global->spec = spec;
 
+	// Set the default return addr
 	proxyspec_set_return_addr(spec, "127.0.0.1");
 
 	while (!feof(f)) {
@@ -2441,6 +2471,9 @@ set_global_option(global_t *global, const char *argv0,
 		global_set_userdb_path(global, value);
 	} else if (!strncmp(name, "ProxySpec", 10)) {
 		if (!strncmp(value, "{", 2)) {
+#ifdef DEBUG_OPTS
+			log_dbg_printf("ProxySpec { at line %d\n", line_num);
+#endif /* DEBUG_OPTS */
 			if (load_proxyspec_struct(global, argv0, natengine, line_num, f) == -1) {
 				goto leave;
 			}
