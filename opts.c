@@ -779,26 +779,28 @@ passsite_str(passsite_t *passsite)
 		char *p;
 		if (asprintf(&p, "site=%s,ip=%s,user=%s,keyword=%s,all=%d", 
 					passsite->site, STRORNONE(passsite->ip), STRORNONE(passsite->user), STRORNONE(passsite->keyword), passsite->all) < 0) {
-			if (ps) {
-				free(ps);
-			}
-			ps = NULL;
-			goto leave;
+			goto out2;
 		}
-		char *nps = NULL;
+		char *nps;
 		if (asprintf(&nps, "%s%spasssite %d: %s", 
 					STRORNONE(ps), ps ? "\n" : "", count, p) < 0) {
 			free(p);
-			ps = NULL;
-			goto leave;
+			goto out2;
 		}
 		free(p);
-		free(ps);
+		if (ps)
+			free(ps);
 		ps = nps;
 		passsite = passsite->next;
 		count++;
 	}
-leave:
+	goto out;
+out2:
+	if (ps) {
+		free(ps);
+		ps = NULL;
+	}
+out:
 	return ps;
 }
 
