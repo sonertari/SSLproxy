@@ -335,7 +335,7 @@ protossl_srcsslctx_create(pxy_conn_ctx_t *ctx, X509 *crt, STACK_OF(X509) *chain,
 
 	protossl_sslctx_setoptions(sslctx, ctx);
 
-#if (OPENSSL_VERSION_NUMBER >= 0x10100000L) && !defined(LIBRESSL_VERSION_NUMBER)
+#if (OPENSSL_VERSION_NUMBER >= 0x10100000L) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER >= 0x20702000L)
 	if (ctx->spec->opts->minsslversion) {
 		if (SSL_CTX_set_min_proto_version(sslctx, ctx->spec->opts->minsslversion) == 0) {
 			SSL_CTX_free(sslctx);
@@ -885,7 +885,7 @@ protossl_dstssl_create(pxy_conn_ctx_t *ctx)
 
 	protossl_sslctx_setoptions(sslctx, ctx);
 
-#if (OPENSSL_VERSION_NUMBER >= 0x10100000L) && !defined(LIBRESSL_VERSION_NUMBER)
+#if (OPENSSL_VERSION_NUMBER >= 0x10100000L) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER >= 0x20702000L)
 	if (ctx->spec->opts->minsslversion) {
 		if (SSL_CTX_set_min_proto_version(sslctx, ctx->spec->opts->minsslversion) == 0) {
 			SSL_CTX_free(sslctx);

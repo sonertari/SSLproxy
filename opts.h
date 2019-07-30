@@ -68,7 +68,7 @@ typedef struct opts {
 	unsigned int deny_ocsp : 1;
 	char *ciphers;
 	CONST_SSL_METHOD *(*sslmethod)(void);
-#if (OPENSSL_VERSION_NUMBER >= 0x10100000L) && !defined(LIBRESSL_VERSION_NUMBER)
+#if (OPENSSL_VERSION_NUMBER >= 0x10100000L) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER >= 0x20702000L)
 	int sslversion;
 	int minsslversion;
 	int maxsslversion;
