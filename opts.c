@@ -66,7 +66,7 @@ opts_new(void)
 	opts->sslcomp = 1;
 	opts->chain = sk_X509_new_null();
 	opts->sslmethod = SSLv23_method;
-#if (OPENSSL_VERSION_NUMBER >= 0x10100000L) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER >= 0x20702000L)
+#if (OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER >= 0x20702000L)
 	opts->minsslversion = TLS1_VERSION;
 	opts->maxsslversion = TLS1_2_VERSION;
 #endif /* OPENSSL_VERSION_NUMBER >= 0x10100000L */
@@ -392,7 +392,7 @@ opts_proto_dbg_dump(opts_t *opts)
 	               opts->no_tls12 ? " -tls12" :
 #endif /* HAVE_TLSV12 */
 	               "",
-#if (OPENSSL_VERSION_NUMBER >= 0x10100000L) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER >= 0x20702000L)
+#if (OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER >= 0x20702000L)
 #ifdef HAVE_SSLV3
 	               (opts->minsslversion == SSL3_VERSION) ? ">=ssl3" :
 #endif /* HAVE_SSLV3 */
@@ -467,7 +467,7 @@ clone_global_opts(global_t *global, const char *argv0)
 	opts->passthrough = global->opts->passthrough;
 	opts->deny_ocsp = global->opts->deny_ocsp;
 	opts->sslmethod = global->opts->sslmethod;
-#if (OPENSSL_VERSION_NUMBER >= 0x10100000L) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER >= 0x20702000L)
+#if (OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER >= 0x20702000L)
 	opts->sslversion = global->opts->sslversion;
 	opts->minsslversion = global->opts->minsslversion;
 	opts->maxsslversion = global->opts->maxsslversion;
@@ -1385,7 +1385,7 @@ opts_disable_proto(opts_t *opts, const char *argv0, const char *optarg)
 void
 opts_set_min_proto(UNUSED opts_t *opts, const char *argv0, const char *optarg)
 {
-#if (OPENSSL_VERSION_NUMBER >= 0x10100000L) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER >= 0x20702000L)
+#if (OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER >= 0x20702000L)
 #ifdef HAVE_SSLV3
 	if (!strcmp(optarg, "ssl3")) {
 		opts->minsslversion = SSL3_VERSION;
@@ -1420,7 +1420,7 @@ opts_set_min_proto(UNUSED opts_t *opts, const char *argv0, const char *optarg)
 void
 opts_set_max_proto(UNUSED opts_t *opts, const char *argv0, const char *optarg)
 {
-#if (OPENSSL_VERSION_NUMBER >= 0x10100000L) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER >= 0x20702000L)
+#if (OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER >= 0x20702000L)
 #ifdef HAVE_SSLV3
 	if (!strcmp(optarg, "ssl3")) {
 		opts->maxsslversion = SSL3_VERSION;
