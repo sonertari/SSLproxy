@@ -66,8 +66,10 @@ opts_new(void)
 	opts->sslcomp = 1;
 	opts->chain = sk_X509_new_null();
 	opts->sslmethod = SSLv23_method;
+#if (OPENSSL_VERSION_NUMBER >= 0x10100000L) && !defined(LIBRESSL_VERSION_NUMBER)
 	opts->minsslversion = TLS1_VERSION;
 	opts->maxsslversion = TLS1_2_VERSION;
+#endif /* OPENSSL_VERSION_NUMBER >= 0x10100000L */
 	opts->remove_http_referer = 1;
 	opts->verify_peer = 1;
 	opts->user_timeout = 300;
@@ -1381,7 +1383,7 @@ opts_disable_proto(opts_t *opts, const char *argv0, const char *optarg)
 }
 
 void
-opts_set_min_proto(opts_t *opts, const char *argv0, const char *optarg)
+opts_set_min_proto(UNUSED opts_t *opts, const char *argv0, const char *optarg)
 {
 #if (OPENSSL_VERSION_NUMBER >= 0x10100000L) && !defined(LIBRESSL_VERSION_NUMBER)
 #ifdef HAVE_SSLV3
@@ -1416,7 +1418,7 @@ opts_set_min_proto(opts_t *opts, const char *argv0, const char *optarg)
 }
 
 void
-opts_set_max_proto(opts_t *opts, const char *argv0, const char *optarg)
+opts_set_max_proto(UNUSED opts_t *opts, const char *argv0, const char *optarg)
 {
 #if (OPENSSL_VERSION_NUMBER >= 0x10100000L) && !defined(LIBRESSL_VERSION_NUMBER)
 #ifdef HAVE_SSLV3
