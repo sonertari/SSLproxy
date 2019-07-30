@@ -336,6 +336,19 @@ protossl_srcsslctx_create(pxy_conn_ctx_t *ctx, X509 *crt, STACK_OF(X509) *chain,
 	protossl_sslctx_setoptions(sslctx, ctx);
 
 #if (OPENSSL_VERSION_NUMBER >= 0x10100000L) && !defined(LIBRESSL_VERSION_NUMBER)
+	if (ctx->spec->opts->minsslversion) {
+		if (SSL_CTX_set_min_proto_version(sslctx, ctx->spec->opts->minsslversion) == 0) {
+			SSL_CTX_free(sslctx);
+			return NULL;
+		}
+	}
+	if (ctx->spec->opts->maxsslversion) {
+		if (SSL_CTX_set_max_proto_version(sslctx, ctx->spec->opts->maxsslversion) == 0) {
+			SSL_CTX_free(sslctx);
+			return NULL;
+		}
+	}
+	// ForceSSLproto has precedence
 	if (ctx->spec->opts->sslversion) {
 		if (SSL_CTX_set_min_proto_version(sslctx, ctx->spec->opts->sslversion) == 0 ||
 			SSL_CTX_set_max_proto_version(sslctx, ctx->spec->opts->sslversion) == 0) {
@@ -873,6 +886,19 @@ protossl_dstssl_create(pxy_conn_ctx_t *ctx)
 	protossl_sslctx_setoptions(sslctx, ctx);
 
 #if (OPENSSL_VERSION_NUMBER >= 0x10100000L) && !defined(LIBRESSL_VERSION_NUMBER)
+	if (ctx->spec->opts->minsslversion) {
+		if (SSL_CTX_set_min_proto_version(sslctx, ctx->spec->opts->minsslversion) == 0) {
+			SSL_CTX_free(sslctx);
+			return NULL;
+		}
+	}
+	if (ctx->spec->opts->maxsslversion) {
+		if (SSL_CTX_set_max_proto_version(sslctx, ctx->spec->opts->maxsslversion) == 0) {
+			SSL_CTX_free(sslctx);
+			return NULL;
+		}
+	}
+	// ForceSSLproto has precedence
 	if (ctx->spec->opts->sslversion) {
 		if (SSL_CTX_set_min_proto_version(sslctx, ctx->spec->opts->sslversion) == 0 ||
 			SSL_CTX_set_max_proto_version(sslctx, ctx->spec->opts->sslversion) == 0) {

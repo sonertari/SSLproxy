@@ -786,7 +786,14 @@ main(int argc, char *argv[])
 
 	/* debug log, part 2 */
 	if (OPTS_DEBUG(global)) {
-		opts_proto_dbg_dump(global->opts);
+		char *s = opts_proto_dbg_dump(global->opts);
+		if (!s) {
+			fprintf(stderr, "%s: out of memory\n", argv0);
+			exit(EXIT_FAILURE);
+		}
+		log_dbg_printf("Global %s\n", s);
+		free(s);
+
 		log_dbg_printf("proxyspecs:\n");
 		for (proxyspec_t *spec = global->spec; spec; spec = spec->next) {
 			char *specstr = proxyspec_str(spec);

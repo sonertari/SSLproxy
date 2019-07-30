@@ -70,6 +70,8 @@ typedef struct opts {
 	CONST_SSL_METHOD *(*sslmethod)(void);
 #if (OPENSSL_VERSION_NUMBER >= 0x10100000L) && !defined(LIBRESSL_VERSION_NUMBER)
 	int sslversion;
+	int minsslversion;
+	int maxsslversion;
 #endif /* OPENSSL_VERSION_NUMBER >= 0x10100000L */
 	X509 *cacrt;
 	EVP_PKEY *cakey;
@@ -123,12 +125,14 @@ typedef struct proxyspec {
 	socklen_t child_src_addrlen;
 
 	// @todo Is there a better way?
-	// These vars are used while configuring proxyspecs
+	// These vars are used while configuring proxyspecs,
+	// and freed right after they are used, not in proxyspec_free()
 	int af;
 	char *addr;
 	char *divert_addr;
 	char *target_addr;
 
+	// Each proxyspec has its own opts
 	opts_t *opts;
 } proxyspec_t;
 
@@ -185,7 +189,7 @@ struct global {
 	// @todo Modify cert cache to move the key field to opts struct
 	// Otherwise, cache HIT fetches certs forged using different leaf cert keys,
 	// which fails loading src server keys
-	// We should use the same key while forging and reusing certs
+	// We must use the same key while forging and reusing certs
 	EVP_PKEY *key;
 	int leafkey_rsabits;
 
@@ -218,7 +222,7 @@ char *proxyspec_str(proxyspec_t *) NONNULL(1) MALLOC;
 
 opts_t *opts_new(void) MALLOC;
 void opts_free(opts_t *) NONNULL(1);
-void opts_proto_dbg_dump(opts_t *) NONNULL(1);
+char *opts_proto_dbg_dump(opts_t *) NONNULL(1);
 void opts_set_cacrt(opts_t *, const char *, const char *) NONNULL(1,2,3);
 void opts_set_cakey(opts_t *, const char *, const char *) NONNULL(1,2,3);
 void opts_set_chain(opts_t *, const char *, const char *) NONNULL(1,2,3);
