@@ -550,6 +550,9 @@ main(int argc, char *argv[])
 	argv += optind;
 	proxyspec_parse(&argc, &argv, natengine, global, argv0);
 
+	// We don't need the tmp strs used to clone global opts into proxyspecs anymore
+	global_free_opts_clone_strs(global);
+
 	/* usage checks before defaults */
 	if (global->detach && OPTS_DEBUG(global)) {
 		fprintf(stderr, "%s: -d and -D are mutually exclusive.\n",

@@ -474,7 +474,7 @@ opts_set_open_files_limit(const char *value, int line_num)
 			exit(EXIT_FAILURE);
 		}
 	} else {
-		fprintf(stderr, "Invalid OpenFilesLimit %s at line %d, use 50-10000\n", value, line_num);
+		fprintf(stderr, "Invalid OpenFilesLimit %s on line %d, use 50-10000\n", value, line_num);
 		exit(EXIT_FAILURE);
 	}
 #ifdef DEBUG_OPTS
@@ -491,7 +491,7 @@ check_value_yesno(const char *value, const char *name, int line_num)
 	} else if (!strncmp(value, "no", 3)) {
 		return 0;
 	}
-	fprintf(stderr, "Error in conf: Invalid '%s' value '%s' at line %d, use yes|no\n", name, value, line_num);
+	fprintf(stderr, "Error in conf: Invalid '%s' value '%s' on line %d, use yes|no\n", name, value, line_num);
 	return -1;
 }
 
@@ -575,7 +575,7 @@ set_option(opts_t *opts, const char *argv0,
 		if (i >= 1 && i <= 10) {
 			opts->stats_period = i;
 		} else {
-			fprintf(stderr, "Invalid StatsPeriod %s at line %d, use 1-10\n", value, line_num);
+			fprintf(stderr, "Invalid StatsPeriod %s on line %d, use 1-10\n", value, line_num);
 			goto leave;
 		}
 #ifdef DEBUG_OPTS
@@ -585,7 +585,7 @@ set_option(opts_t *opts, const char *argv0,
 		opts_set_open_files_limit(value, line_num);
 	} else {
 #ifdef DEBUG_OPTS
-		log_dbg_printf("Skipping option '%s' at line %d\n", name, line_num);
+		log_dbg_printf("Skipping option '%s' on line %d\n", name, line_num);
 #endif /* DEBUG_OPTS */
 	}
 

@@ -175,6 +175,39 @@ global_proxyspec_free(proxyspec_t *spec)
 }
 
 void
+global_free_opts_clone_strs(global_t *global)
+{
+	if (global->cacrt_str) {
+		free(global->cacrt_str);
+		global->cacrt_str = NULL;
+	}
+	if (global->cakey_str) {
+		free(global->cakey_str);
+		global->cakey_str = NULL;
+	}
+	if (global->chain_str) {
+		free(global->chain_str);
+		global->chain_str = NULL;
+	}
+	if (global->clientcrt_str) {
+		free(global->clientcrt_str);
+		global->clientcrt_str = NULL;
+	}
+	if (global->clientkey_str) {
+		free(global->clientkey_str);
+		global->clientkey_str = NULL;
+	}
+	if (global->crl_str) {
+		free(global->crl_str);
+		global->crl_str = NULL;
+	}
+	if (global->dh_str) {
+		free(global->dh_str);
+		global->dh_str = NULL;
+	}
+}
+
+void
 global_free(global_t *global)
 {
 	if (global->spec) {
@@ -238,27 +271,10 @@ global_free(global_t *global)
 		free(global->openssl_engine);
 	}
 #endif /* !OPENSSL_NO_ENGINE */
-	if (global->cacrt_str) {
-		free(global->cacrt_str);
-	}
-	if (global->cakey_str) {
-		free(global->cakey_str);
-	}
-	if (global->chain_str) {
-		free(global->chain_str);
-	}
-	if (global->clientcrt_str) {
-		free(global->clientcrt_str);
-	}
-	if (global->clientkey_str) {
-		free(global->clientkey_str);
-	}
-	if (global->crl_str) {
-		free(global->crl_str);
-	}
-	if (global->dh_str) {
-		free(global->dh_str);
-	}
+
+	// Try free tmp strs again, for config reload
+	global_free_opts_clone_strs(global);
+
 	memset(global, 0, sizeof(global_t));
 	free(global);
 }
@@ -1546,7 +1562,7 @@ opts_set_pass_site(opts_t *opts, char *value, int line_num)
 	}
 
 	if (!argc) {
-		fprintf(stderr, "PassSite requires at least one parameter at line %d\n", line_num);
+		fprintf(stderr, "PassSite requires at least one parameter on line %d\n", line_num);
 		exit(EXIT_FAILURE);
 	}
 
@@ -1567,7 +1583,7 @@ opts_set_pass_site(opts_t *opts, char *value, int line_num)
 			ps->all = 1;
 		} else if (sys_isuser(argv[1])) {
 			if (!opts->user_auth) {
-				fprintf(stderr, "PassSite user filter requires user auth at line %d\n", line_num);
+				fprintf(stderr, "PassSite user filter requires user auth on line %d\n", line_num);
 				exit(EXIT_FAILURE);
 			}
 			ps->user = strdup(argv[1]);
@@ -1578,7 +1594,7 @@ opts_set_pass_site(opts_t *opts, char *value, int line_num)
 
 	if (argc > 2) {
 		if (ps->ip) {
-			fprintf(stderr, "PassSite client ip cannot define keyword filter at line %d\n", line_num);
+			fprintf(stderr, "PassSite client ip cannot define keyword filter on line %d\n", line_num);
 			exit(EXIT_FAILURE);
 		}
 		ps->keyword = strdup(argv[2]);
@@ -2084,7 +2100,7 @@ check_value_yesno(const char *value, const char *name, int line_num)
 	} else if (!strncmp(value, "no", 3)) {
 		return 0;
 	}
-	fprintf(stderr, "Error in conf: Invalid '%s' value '%s' at line %d, use yes|no\n", name, value, line_num);
+	fprintf(stderr, "Error in conf: Invalid '%s' value '%s' on line %d, use yes|no\n", name, value, line_num);
 	return -1;
 }
 
@@ -2100,7 +2116,7 @@ set_option(opts_t *opts, const char *argv0,
 	int retval = -1;
 
 	if (!value) {
-		fprintf(stderr, "Error in conf: No value assigned for %s at line %d\n", name, line_num);
+		fprintf(stderr, "Error in conf: No value assigned for %s on line %d\n", name, line_num);
 		goto leave;
 	}
 
@@ -2203,7 +2219,7 @@ set_option(opts_t *opts, const char *argv0,
 		if (i <= 86400) {
 			opts->user_timeout = i;
 		} else {
-			fprintf(stderr, "Invalid UserTimeout %s at line %d, use 0-86400\n", value, line_num);
+			fprintf(stderr, "Invalid UserTimeout %s on line %d, use 0-86400\n", value, line_num);
 			goto leave;
 		}
 #ifdef DEBUG_OPTS
@@ -2223,7 +2239,7 @@ set_option(opts_t *opts, const char *argv0,
 		if (i >= 1024 && i <= 65536) {
 			opts->max_http_header_size = i;
 		} else {
-			fprintf(stderr, "Invalid MaxHTTPHeaderSize %s at line %d, use 1024-65536\n", value, line_num);
+			fprintf(stderr, "Invalid MaxHTTPHeaderSize %s on line %d, use 1024-65536\n", value, line_num);
 			goto leave;
 		}
 #ifdef DEBUG_OPTS
@@ -2270,7 +2286,7 @@ set_option(opts_t *opts, const char *argv0,
 		opts_set_pass_site(opts, value, line_num);
 	} else {
 		fprintf(stderr, "Error in conf: Unknown option "
-		                "'%s' at line %d\n", name, line_num);
+		                "'%s' on line %d\n", name, line_num);
 		goto leave;
 	}
 
@@ -2296,7 +2312,7 @@ set_proxyspec_option(proxyspec_t *spec, const char *argv0, const char *name, cha
 			proxyspec_set_listen_addr(spec, spec->addr, value, *natengine);
 			free(spec->addr);
 		} else {
-			fprintf(stderr, "ProxySpec Port without Addr at line %d\n", line_num);
+			fprintf(stderr, "ProxySpec Port without Addr on line %d\n", line_num);
 			exit(EXIT_FAILURE);
 		}
 	}
@@ -2322,7 +2338,7 @@ set_proxyspec_option(proxyspec_t *spec, const char *argv0, const char *name, cha
 			proxyspec_set_target_addr(spec, spec->target_addr, value);
 			free(spec->target_addr);
 		} else {
-			fprintf(stderr, "ProxySpec TargetPort without TargetAddr at line %d\n", line_num);
+			fprintf(stderr, "ProxySpec TargetPort without TargetAddr on line %d\n", line_num);
 			exit(EXIT_FAILURE);
 		}
 	}
@@ -2334,7 +2350,7 @@ set_proxyspec_option(proxyspec_t *spec, const char *argv0, const char *name, cha
 	}
 	else if (!strncmp(name, "}", 2)) {
 #ifdef DEBUG_OPTS
-		log_dbg_printf("ProxySpec } at line %d\n", line_num);
+		log_dbg_printf("ProxySpec } on line %d\n", line_num);
 #endif /* DEBUG_OPTS */
 		retval = 1;
 		goto leave;
@@ -2381,7 +2397,7 @@ get_name_value(char **name, char **value, const char sep, int line_num)
 
 	/* No option name */
 	if (n == NULL) {
-		fprintf(stderr, "Error in option: No option name at line %d\n", line_num);
+		fprintf(stderr, "Error in option: No option name on line %d\n", line_num);
 		goto leave;
 	}
 
@@ -2518,7 +2534,7 @@ global_set_open_files_limit(const char *value, int line_num)
 			exit(EXIT_FAILURE);
 		}
 	} else {
-		fprintf(stderr, "Invalid OpenFilesLimit %s at line %d, use 50-10000\n", value, line_num);
+		fprintf(stderr, "Invalid OpenFilesLimit %s on line %d, use 50-10000\n", value, line_num);
 		exit(EXIT_FAILURE);
 	}
 #ifdef DEBUG_OPTS
@@ -2534,7 +2550,7 @@ set_global_option(global_t *global, const char *argv0,
 	int retval = -1;
 
 	if (!value) {
-		fprintf(stderr, "Error in conf: No value assigned for %s at line %d\n", name, line_num);
+		fprintf(stderr, "Error in conf: No value assigned for %s on line %d\n", name, line_num);
 		goto leave;
 	}
 
@@ -2611,7 +2627,7 @@ set_global_option(global_t *global, const char *argv0,
 	} else if (!strncmp(name, "ProxySpec", 10)) {
 		if (!strncmp(value, "{", 2)) {
 #ifdef DEBUG_OPTS
-			log_dbg_printf("ProxySpec { at line %d\n", line_num);
+			log_dbg_printf("ProxySpec { on line %d\n", line_num);
 #endif /* DEBUG_OPTS */
 			if (load_proxyspec_struct(global, argv0, natengine, line_num, f) == -1) {
 				goto leave;
@@ -2624,7 +2640,7 @@ set_global_option(global_t *global, const char *argv0,
 		if (i >= 10 && i <= 3600) {
 			global->conn_idle_timeout = i;
 		} else {
-			fprintf(stderr, "Invalid ConnIdleTimeout %s at line %d, use 10-3600\n", value, line_num);
+			fprintf(stderr, "Invalid ConnIdleTimeout %s on line %d, use 10-3600\n", value, line_num);
 			goto leave;
 		}
 #ifdef DEBUG_OPTS
@@ -2635,7 +2651,7 @@ set_global_option(global_t *global, const char *argv0,
 		if (i >= 10 && i <= 60) {
 			global->expired_conn_check_period = i;
 		} else {
-			fprintf(stderr, "Invalid ExpiredConnCheckPeriod %s at line %d, use 10-60\n", value, line_num);
+			fprintf(stderr, "Invalid ExpiredConnCheckPeriod %s on line %d, use 10-60\n", value, line_num);
 			goto leave;
 		}
 #ifdef DEBUG_OPTS
@@ -2646,7 +2662,7 @@ set_global_option(global_t *global, const char *argv0,
 		if (i >= 100 && i <= 10000) {
 			global->ssl_shutdown_retry_delay = i;
 		} else {
-			fprintf(stderr, "Invalid SSLShutdownRetryDelay %s at line %d, use 100-10000\n", value, line_num);
+			fprintf(stderr, "Invalid SSLShutdownRetryDelay %s on line %d, use 100-10000\n", value, line_num);
 			goto leave;
 		}
 #ifdef DEBUG_OPTS
@@ -2666,7 +2682,7 @@ set_global_option(global_t *global, const char *argv0,
 		if (i >= 1 && i <= 10) {
 			global->stats_period = i;
 		} else {
-			fprintf(stderr, "Invalid StatsPeriod %s at line %d, use 1-10\n", value, line_num);
+			fprintf(stderr, "Invalid StatsPeriod %s on line %d, use 1-10\n", value, line_num);
 			goto leave;
 		}
 #ifdef DEBUG_OPTS
@@ -2681,7 +2697,7 @@ set_global_option(global_t *global, const char *argv0,
 		if (i == 1024 || i == 2048 || i == 3072 || i == 4096) {
 			global->leafkey_rsabits = i;
 		} else {
-			fprintf(stderr, "Invalid LeafKeyRSABits %s at line %d, use 1024|2048|3072|4096\n", value, line_num);
+			fprintf(stderr, "Invalid LeafKeyRSABits %s on line %d, use 1024|2048|3072|4096\n", value, line_num);
 			goto leave;
 		}
 #ifdef DEBUG_OPTS

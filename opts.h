@@ -245,6 +245,7 @@ void opts_set_ciphers(opts_t *, const char *, const char *) NONNULL(1,2,3);
 #define OPTS_DEBUG(global) unlikely((global)->debug)
 
 global_t * global_new(void) MALLOC;
+void global_free_opts_clone_strs(global_t *) NONNULL(1);
 void global_free(global_t *) NONNULL(1);
 int global_has_ssl_spec(global_t *) NONNULL(1) WUNRES;
 int global_has_dns_spec(global_t *) NONNULL(1) WUNRES;
