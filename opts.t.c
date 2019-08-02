@@ -858,7 +858,6 @@ START_TEST(opts_get_name_value_01)
 	name = strdup("Name");
 	retval = get_name_value(&name, &value, ' ', 0);
 	fail_unless(!strcmp(name, "Name"), "failed parsing name");
-	fail_unless(!strcmp(value, ""), "failed parsing value");
 	fail_unless(retval == -1, "failed rejecting just name");
 	free(name);
 
