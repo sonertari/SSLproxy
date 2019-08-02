@@ -217,11 +217,15 @@ typedef struct userdbkeys {
 
 void NORET oom_die(const char *) NONNULL(1);
 
+void proxyspec_free(proxyspec_t *);
+proxyspec_t *proxyspec_new(global_t *, const char *);
+void proxyspec_set_proto(proxyspec_t *, const char *);
 void proxyspec_parse(int *, char **[], const char *, global_t *, const char *);
 char *proxyspec_str(proxyspec_t *) NONNULL(1) MALLOC;
 
 opts_t *opts_new(void) MALLOC;
 void opts_free(opts_t *) NONNULL(1);
+char *passsite_str(passsite_t *);
 char *opts_proto_dbg_dump(opts_t *) NONNULL(1);
 void opts_set_cacrt(opts_t *, const char *, const char *) NONNULL(1,2,3);
 void opts_set_cakey(opts_t *, const char *, const char *) NONNULL(1,2,3);
@@ -241,7 +245,7 @@ void opts_unset_sslcomp(opts_t *) NONNULL(1);
 void opts_force_proto(opts_t *, const char *, const char *) NONNULL(1,2,3);
 void opts_disable_proto(opts_t *, const char *, const char *) NONNULL(1,2,3);
 void opts_set_ciphers(opts_t *, const char *, const char *) NONNULL(1,2,3);
-
+void opts_set_pass_site(opts_t *, char *, int);
 #define OPTS_DEBUG(global) unlikely((global)->debug)
 
 global_t * global_new(void) MALLOC;
@@ -278,6 +282,9 @@ void global_set_daemon(global_t *) NONNULL(1);
 void global_set_debug(global_t *) NONNULL(1);
 void global_set_debug_level(const char *) NONNULL(1);
 void global_set_statslog(global_t *) NONNULL(1);
+
+int check_value_yesno(const char *, const char *, int);
+int get_name_value(char **, char **, const char, int);
 int global_set_option(global_t *, const char *, const char *, char **)
     NONNULL(1,2,3);
 void global_set_key(global_t *, const char *, const char *) NONNULL(1,2,3);

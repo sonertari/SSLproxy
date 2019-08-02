@@ -150,7 +150,7 @@ opts_free(opts_t *opts)
 /*
  * Clear and free a proxy spec.
  */
-static void
+void
 proxyspec_free(proxyspec_t *spec)
 {
 	if (spec->opts)
@@ -552,7 +552,7 @@ clone_global_opts(global_t *global, const char *argv0)
 	return opts;
 }
 
-static proxyspec_t *
+proxyspec_t *
 proxyspec_new(global_t *global, const char *argv0)
 {
 	proxyspec_t *spec = malloc(sizeof(proxyspec_t));
@@ -561,7 +561,7 @@ proxyspec_new(global_t *global, const char *argv0)
 	return spec;
 }
 
-static void
+void
 proxyspec_set_proto(proxyspec_t *spec, const char *value)
 {
 	/* Defaults */
@@ -827,7 +827,7 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine, global_t *globa
 	}
 }
 
-static char *
+char *
 passsite_str(passsite_t *passsite)
 {
 	char *ps = NULL;
@@ -1543,7 +1543,7 @@ opts_unset_validate_proto(opts_t *opts)
 	opts->validate_proto = 0;
 }
 
-static void
+void
 opts_set_pass_site(opts_t *opts, char *value, int line_num)
 {
 	// site [(clientaddr|(user|*) [description keyword])]
@@ -2091,7 +2091,7 @@ global_set_userdb_path(global_t *global, const char *optarg)
 #endif /* DEBUG_OPTS */
 }
 
-static int
+int
 check_value_yesno(const char *value, const char *name, int line_num)
 {
 	/* Compare strlen(s2)+1 chars to match exactly */
@@ -2368,7 +2368,7 @@ leave:
  * Separator param is needed for command line options only.
  * Conf file option separator is ' '.
  */
-static int
+int
 get_name_value(char **name, char **value, const char sep, int line_num)
 {
 	char *n, *v, *value_end;
