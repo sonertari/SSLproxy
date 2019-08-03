@@ -50,8 +50,8 @@ typedef struct proxy_listener_ctx {
 } proxy_listener_ctx_t;
 
 proxy_ctx_t * proxy_new(global_t *, int) NONNULL(1) MALLOC;
-void proxy_run(proxy_ctx_t *) NONNULL(1);
-void proxy_loopbreak(proxy_ctx_t *) NONNULL(1);
+int proxy_run(proxy_ctx_t *) NONNULL(1);
+void proxy_loopbreak(proxy_ctx_t *, int) NONNULL(1);
 void proxy_free(proxy_ctx_t *) NONNULL(1);
 void proxy_listener_errorcb(struct evconnlistener *, UNUSED void *);
 

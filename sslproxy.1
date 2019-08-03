@@ -569,15 +569,6 @@ Address that the program should return packets to.  This is the address where
 SSLproxy is listening for returned packets from the program.  This address is 
 inserted into the SSLproxy header line along with the dynamically assigned port
 number.  If not specified, defaults to 127.0.0.1.
-.SH SIGNALS
-A running \fBsslproxy\fP accepts SIGINT and SIGQUIT for a clean shutdown, and
-SIGHUP and SIGUSR1 to re-open the single-file log files (such as \fB-l\fP,
-\fB-L\fP and \fB-X\fP).  The canonical way to rotate or post-process logs is to
-rename the active log file, send SIGHUP or SIGUSR1 to the PID in the PID file
-given by \fB-p\fP, give SSLproxy some time to flush buffers after closing the
-old file, and then post-process the renamed log file.
-Per-connection log files (such as \fB-S\fP and \fB-F\fP) are not re-opened
-because their filename is specific to the connection.
 .SH "LOG SPECIFICATIONS"
 Log specifications are composed of zero or more printf-style directives;
 ordinary characters are included directly in the output path.
@@ -774,6 +765,20 @@ Fully supported, including IPv6.
 Note that return path filtering (rp_filter) also needs to be disabled on
 interfaces which handle TPROXY redirected traffic.
 .RE
+.SH SIGNALS
+A running \fBsslproxy\fP accepts SIGINT and SIGTERM for a clean shutdown and
+SIGUSR1 to re-open the single-file log files (such as \fB-l\fP, \fB-L\fP and
+\fB-X\fP).  The canonical way to rotate or post-process logs is to rename the
+active log file, send SIGUSR1 to the PID in the PID file given by \fB-p\fP,
+give SSLproxy some time to flush buffers after closing the old file, and then
+post-process the renamed log file.
+Per-connection log files (such as \fB-S\fP and \fB-F\fP) are not re-opened
+because their filename is specific to the connection.
+.SH "EXIT STATUS"
+The \fBsslproxy\fP process will exit with 0 on regular shutdown
+(SIGINT, SIGTERM), and 128 + signal number on controlled shutdown based on
+receiving a different signal such as SIGHUP.  Exit status in the range 1..127
+indicates error conditions.
 .SH EXAMPLES
 With configuration similar to the above NAT engine samples, intercept HTTPS and 
 POP3S over IPv4 using forged certificates with CA private key \fBca.key\fP and 

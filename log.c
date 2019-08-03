@@ -69,7 +69,7 @@ log_exceptcb(void)
 		return;
 	}
 	if (proxy_ctx) {
-		proxy_loopbreak(proxy_ctx);
+		proxy_loopbreak(proxy_ctx, -1);
 		proxy_ctx = NULL;
 	}
 }
