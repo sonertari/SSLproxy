@@ -92,7 +92,7 @@ ssl_ssl_cert_get(SSL *s)
 }
 #endif /* OpenSSL 0.9.8y, 1.0.0k or 1.0.1e */
 
-#if (OPENSSL_VERSION_NUMBER < 0x10100000L) || defined(LIBRESSL_VERSION_NUMBER)
+#if (OPENSSL_VERSION_NUMBER < 0x10100000L) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER < 0x20701000L)
 int
 DH_set0_pqg(DH *dh, BIGNUM *p, BIGNUM *q, BIGNUM *g)
 {
@@ -269,7 +269,7 @@ ssl_openssl_version(void)
  */
 static int ssl_initialized = 0;
 
-#if defined(OPENSSL_THREADS) && ((OPENSSL_VERSION_NUMBER < 0x10100000L) || defined(LIBRESSL_VERSION_NUMBER))
+#if defined(OPENSSL_THREADS) && ((OPENSSL_VERSION_NUMBER < 0x10100000L) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER < 0x20701000L))
 struct CRYPTO_dynlock_value {
 	pthread_mutex_t mutex;
 };
@@ -368,7 +368,7 @@ ssl_init(void)
 		return 0;
 
 	/* general initialization */
-#if (OPENSSL_VERSION_NUMBER >= 0x10100000L) && !defined(LIBRESSL_VERSION_NUMBER)
+#if (OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER >= 0x20701000L)
 	OPENSSL_init_crypto(OPENSSL_INIT_LOAD_CONFIG
 #ifndef OPENSSL_NO_ENGINE
 	                    |OPENSSL_INIT_ENGINE_ALL_BUILTIN
@@ -385,12 +385,12 @@ ssl_init(void)
 #endif /* PURIFY */
 	SSL_load_error_strings();
 	OpenSSL_add_all_algorithms();
-#if (OPENSSL_VERSION_NUMBER < 0x10100000L) || defined(LIBRESSL_VERSION_NUMBER)
+#if (OPENSSL_VERSION_NUMBER < 0x10100000L) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER < 0x20701000L)
 	OPENSSL_config(NULL);
 #endif /* OPENSSL_VERSION_NUMBER < 0x10100000L */
 
 	/* thread-safety */
-#if defined(OPENSSL_THREADS) && ((OPENSSL_VERSION_NUMBER < 0x10100000L) || defined(LIBRESSL_VERSION_NUMBER))
+#if defined(OPENSSL_THREADS) && ((OPENSSL_VERSION_NUMBER < 0x10100000L) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER < 0x20701000L))
 	ssl_mutex_num = CRYPTO_num_locks();
 	ssl_mutex = malloc(ssl_mutex_num * sizeof(*ssl_mutex));
 	for (int i = 0; i < ssl_mutex_num; i++) {
@@ -459,7 +459,7 @@ ssl_reinit(void)
 	if (!ssl_initialized)
 		return 0;
 
-#if defined(OPENSSL_THREADS) && ((OPENSSL_VERSION_NUMBER < 0x10100000L) || defined(LIBRESSL_VERSION_NUMBER))
+#if defined(OPENSSL_THREADS) && ((OPENSSL_VERSION_NUMBER < 0x10100000L) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER < 0x20701000L))
 	for (int i = 0; i < ssl_mutex_num; i++) {
 		if (pthread_mutex_init(&ssl_mutex[i], NULL)) {
 			return -1;
@@ -480,12 +480,12 @@ ssl_fini(void)
 	if (!ssl_initialized)
 		return;
 
-#if (OPENSSL_VERSION_NUMBER < 0x10100000L) || defined(LIBRESSL_VERSION_NUMBER)
+#if (OPENSSL_VERSION_NUMBER < 0x10100000L) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER < 0x20701000L)
 	ERR_remove_state(0); /* current thread */
 #endif
 
 #if defined(OPENSSL_THREADS) && \
-    ((OPENSSL_VERSION_NUMBER < 0x10100000L) || defined(LIBRESSL_VERSION_NUMBER))
+    ((OPENSSL_VERSION_NUMBER < 0x10100000L) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER < 0x20701000L))
 	CRYPTO_set_locking_callback(NULL);
 	CRYPTO_set_dynlock_create_callback(NULL);
 	CRYPTO_set_dynlock_lock_callback(NULL);
@@ -600,7 +600,7 @@ ssl_ssl_masterkey_to_str(SSL *ssl)
 	char *str = NULL;
 	int rv;
 	unsigned char *k, *r;
-#if (OPENSSL_VERSION_NUMBER >= 0x10100000L) && !defined(LIBRESSL_VERSION_NUMBER)
+#if (OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER >= 0x20701000L)
 	unsigned char kbuf[48], rbuf[32];
 	k = &kbuf[0];
 	r = &rbuf[0];
@@ -876,7 +876,7 @@ ssl_rand(void *p, size_t sz)
 {
 	int rv;
 
-#if (OPENSSL_VERSION_NUMBER < 0x10100000L) || defined(LIBRESSL_VERSION_NUMBER)
+#if (OPENSSL_VERSION_NUMBER < 0x10100000L) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER < 0x20701000L)
 	rv = RAND_pseudo_bytes((unsigned char*)p, sz);
 	if (rv == 1)
 		return 0;
@@ -1366,7 +1366,7 @@ ssl_key_genrsa(const int keysize)
 	EVP_PKEY *pkey;
 	RSA *rsa;
 
-#if (OPENSSL_VERSION_NUMBER >= 0x10100000L) && !defined(LIBRESSL_VERSION_NUMBER)
+#if (OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER < 0x20701000L)
 	BIGNUM *bn;
 	int rv;
 	rsa = RSA_new();
@@ -1502,7 +1502,7 @@ ssl_x509_fingerprint(X509 *crt, int colons)
 void
 ssl_dh_refcount_inc(DH *dh)
 {
-#if defined(OPENSSL_THREADS) && ((OPENSSL_VERSION_NUMBER < 0x10100000L) || defined(LIBRESSL_VERSION_NUMBER))
+#if defined(OPENSSL_THREADS) && ((OPENSSL_VERSION_NUMBER < 0x10100000L) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER < 0x20701000L))
 	CRYPTO_add(&dh->references, 1, CRYPTO_LOCK_DH);
 #else /* !OPENSSL_THREADS */
 	DH_up_ref(dh);
@@ -1517,7 +1517,7 @@ ssl_dh_refcount_inc(DH *dh)
 void
 ssl_key_refcount_inc(EVP_PKEY *key)
 {
-#if defined(OPENSSL_THREADS) && ((OPENSSL_VERSION_NUMBER < 0x10100000L) || defined(LIBRESSL_VERSION_NUMBER))
+#if defined(OPENSSL_THREADS) && ((OPENSSL_VERSION_NUMBER < 0x10100000L) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER < 0x20701000L))
 	CRYPTO_add(&key->references, 1, CRYPTO_LOCK_EVP_PKEY);
 #else /* !OPENSSL_THREADS */
 	EVP_PKEY_up_ref(key);
@@ -1532,7 +1532,7 @@ ssl_key_refcount_inc(EVP_PKEY *key)
 void
 ssl_x509_refcount_inc(X509 *crt)
 {
-#if defined(OPENSSL_THREADS) && ((OPENSSL_VERSION_NUMBER < 0x10100000L) || defined(LIBRESSL_VERSION_NUMBER))
+#if defined(OPENSSL_THREADS) && ((OPENSSL_VERSION_NUMBER < 0x10100000L) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER < 0x20701000L))
 	CRYPTO_add(&crt->references, 1, CRYPTO_LOCK_X509);
 #else /* !OPENSSL_THREADS */
 	X509_up_ref(crt);

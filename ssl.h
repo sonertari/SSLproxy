@@ -74,8 +74,12 @@
 
 /*
  * SHA0 was removed in OpenSSL 1.1.0, including OPENSSL_NO_SHA0.
+ * @attention We have to use '&& !defined(LIBRESSL_VERSION_NUMBER)'
+ * in similar if conditions in compiler directives,
+ * because OPENSSL_VERSION_NUMBER in LibreSSL is always 0x20000000L,
+ * hence OPENSSL_VERSION_NUMBER >= 0x10100000L condition is always satisfied
  */
-#if (OPENSSL_VERSION_NUMBER >= 0x10100000L) && !defined(LIBRESSL_VERSION_NUMBER) && !defined(OPENSSL_NO_SHA0)
+#if ((OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER >= 0x20030001L)) && !defined(OPENSSL_NO_SHA0)
 #define OPENSSL_NO_SHA0
 #endif
 
