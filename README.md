@@ -3,7 +3,7 @@
 Copyright (C) 2017-2019, [Soner Tari](http://comixwall.org).  
 https://github.com/sonertari/SSLproxy
 
-Copyright (C) 2009-2018, [Daniel Roethlisberger](//daniel.roe.ch/).  
+Copyright (C) 2009-2019, [Daniel Roethlisberger](//daniel.roe.ch/).  
 https://www.roe.ch/SSLsplit
 
 ## Overview

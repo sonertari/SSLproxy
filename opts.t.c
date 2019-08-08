@@ -2,7 +2,7 @@
  * SSLsplit - transparent SSL/TLS interception
  * https://www.roe.ch/SSLsplit
  *
- * Copyright (c) 2009-2018, Daniel Roethlisberger <daniel@roe.ch>.
+ * Copyright (c) 2009-2019, Daniel Roethlisberger <daniel@roe.ch>.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -63,6 +63,7 @@ static char *argv07[] = {
 static char *argv08[] = {
 	"https", "127.0.0.1", "10443", "up:8080", "no_such_engine"
 };
+#ifndef TRAVIS
 static char *argv09[] = {
 	"https", "127.0.0.1", "10443", "up:8080", "127.0.0.2", "443",
 	"https", "::1", "10443", "up:8080", "::2", "443"
@@ -71,6 +72,7 @@ static char *argv10[] = {
 	"https", "127.0.0.1", "10443", "up:8080",
 	"https", "::1", "10443", "up:8080"
 };
+#endif /* !TRAVIS */
 static char *argv11[] = {
 	"autossl", "127.0.0.1", "10025", "up:8080"
 };

@@ -9,6 +9,7 @@
 # LIBEVENT_BASE	Prefix of libevent library and headers to build against
 # LIBPCAP_BASE	Prefix of libpcap library and headers to build against
 # LIBNET_BASE	Prefix of libnet library and headers to build against
+# SQLITE_BASE	Prefix of sqlite3 library and headers to build against
 # CHECK_BASE	Prefix of check library and headers to build against (optional)
 # PKGCONFIG	Name/path of pkg-config program to use for auto-detection
 # PCFLAGS	Additional pkg-config flags
@@ -45,6 +46,9 @@
 #
 # Create a statically linked binary:
 # % PCFLAGS='--static' CFLAGS='-static' LDFLAGS='-static' make
+#
+# Build against musl libc that needs an additional library for fts(3):
+# % LIBS='-lfts' make
 #
 # Build a macOS binary for El Capitan using the default SDK from Xcode 7.3.1:
 # % MACOSX_VERSION_MIN=10.11 DEVELOPER_DIR=/Applications/Xcode-7.3.1.app/Contents/Developer make

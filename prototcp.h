@@ -2,7 +2,7 @@
  * SSLsplit - transparent SSL/TLS interception
  * https://www.roe.ch/SSLsplit
  *
- * Copyright (c) 2009-2018, Daniel Roethlisberger <daniel@roe.ch>.
+ * Copyright (c) 2009-2019, Daniel Roethlisberger <daniel@roe.ch>.
  * Copyright (c) 2017-2019, Soner Tari <sonertari@gmail.com>.
  * All rights reserved.
  *
