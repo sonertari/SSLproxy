@@ -2,7 +2,7 @@
  * SSLsplit - transparent SSL/TLS interception
  * https://www.roe.ch/SSLsplit
  *
- * Copyright (c) 2009-2018, Daniel Roethlisberger <daniel@roe.ch>.
+ * Copyright (c) 2009-2019, Daniel Roethlisberger <daniel@roe.ch>.
  * Copyright (c) 2017-2019, Soner Tari <sonertari@gmail.com>.
  * All rights reserved.
  *
@@ -77,9 +77,9 @@ protossl_log_ssl_error(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		while ((sslerr = bufferevent_get_openssl_error(bev))) {
 			log_dbg_printf("Additional SSL error: %lu:%i:%s:%i:%s:%i:%s\n",
 						   sslerr,
-						   ERR_GET_REASON(sslerr), ERR_reason_error_string(sslerr),
-						   ERR_GET_LIB(sslerr), ERR_lib_error_string(sslerr),
-						   ERR_GET_FUNC(sslerr), ERR_func_error_string(sslerr));
+						   ERR_GET_REASON(sslerr), STRORDASH(ERR_reason_error_string(sslerr)),
+						   ERR_GET_LIB(sslerr), STRORDASH(ERR_lib_error_string(sslerr)),
+						   ERR_GET_FUNC(sslerr), STRORDASH(ERR_func_error_string(sslerr)));
 		}
 	} else {
 		/* real errors */
@@ -92,9 +92,9 @@ protossl_log_ssl_error(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		while ((sslerr = bufferevent_get_openssl_error(bev))) {
 			log_err_printf("Additional SSL error: %lu:%i:%s:%i:%s:%i:%s\n",
 						   sslerr,
-						   ERR_GET_REASON(sslerr), ERR_reason_error_string(sslerr),
-						   ERR_GET_LIB(sslerr), ERR_lib_error_string(sslerr),
-						   ERR_GET_FUNC(sslerr), ERR_func_error_string(sslerr));
+						   ERR_GET_REASON(sslerr), STRORDASH(ERR_reason_error_string(sslerr)),
+						   ERR_GET_LIB(sslerr), STRORDASH(ERR_lib_error_string(sslerr)),
+						   ERR_GET_FUNC(sslerr), STRORDASH(ERR_func_error_string(sslerr)));
 		}
 	}
 }
