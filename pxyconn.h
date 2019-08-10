@@ -192,11 +192,11 @@ typedef struct pxy_conn_lproc_desc {
 /* parent connection state consisting of three connection descriptors,
  * connection-wide state and the specs and options */
 struct pxy_conn_ctx {
-	// Common properties
-	// @attention The order of these common vars should match with their order in children
 	enum conn_type type;
 
 	pxy_conn_ctx_t *conn;                 /* parent's conn ctx is itself */
+
+	// Parent and child are of the same proto type
 	protocol_t proto;
 
 	/* per-connection state */
@@ -205,7 +205,6 @@ struct pxy_conn_ctx {
 
 	/* store fd and fd event while connected is 0 */
 	evutil_socket_t fd;
-	// End of common properties
 
 	// For protocol specific fields, never NULL
 	proto_ctx_t *protoctx;
@@ -321,13 +320,10 @@ struct pxy_conn_ctx {
 /* child connection state consisting of two connection descriptors,
  * connection-wide state */
 struct pxy_conn_child_ctx {
-	// Common properties
-	// @attention The order of these common vars should match with their order in parent
 	enum conn_type type;
 
 	// Parent conn
 	pxy_conn_ctx_t *conn;
-	protocol_t proto;
 
 	/* per-connection state */
 	struct pxy_conn_desc src;
@@ -335,7 +331,6 @@ struct pxy_conn_child_ctx {
 
 	/* store fd and fd event while connected is 0 */
 	evutil_socket_t fd;
-	// End of common properties
 
 	proto_child_ctx_t *protoctx;
 

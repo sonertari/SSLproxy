@@ -246,8 +246,7 @@ pxy_conn_ctx_new_child(evutil_socket_t fd, pxy_conn_ctx_t *conn)
 	ctx->fd = fd;
 	ctx->conn = conn;
 
-	ctx->proto = pxy_setup_proto_child(ctx);
-	if (ctx->proto == PROTO_ERROR) {
+	if (pxy_setup_proto_child(ctx) == PROTO_ERROR) {
 		free(ctx);
 		return NULL;
 	}
@@ -624,7 +623,7 @@ pxy_log_content_inbuf(pxy_conn_ctx_t *ctx, struct evbuffer *inbuf, int req)
 	size_t sz = evbuffer_get_length(inbuf);
 	unsigned char *buf = malloc(sz);
 	if (!buf) {
-		ctx->conn->enomem = 1;
+		ctx->enomem = 1;
 		return -1;
 	}
 	if (evbuffer_copyout(inbuf, buf, sz) == -1) {
@@ -634,12 +633,12 @@ pxy_log_content_inbuf(pxy_conn_ctx_t *ctx, struct evbuffer *inbuf, int req)
 	logbuf_t *lb = logbuf_new_alloc(sz, NULL);
 	if (!lb) {
 		free(buf);
-		ctx->conn->enomem = 1;
+		ctx->enomem = 1;
 		return -1;
 	}
 	memcpy(lb->buf, buf, lb->sz);
 	free(buf);
-	if (log_content_submit(&ctx->conn->logctx, lb, req) == -1) {
+	if (log_content_submit(&ctx->logctx, lb, req) == -1) {
 		logbuf_free(lb);
 		log_err_level_printf(LOG_WARNING, "Content log submission failed\n");
 		return -1;
@@ -803,10 +802,10 @@ pxy_log_dbg_disconnect_child(pxy_conn_child_ctx_t *ctx)
 	/* we only get a single disconnect event here for both connections */
 	if (OPTS_DEBUG(ctx->conn->global)) {
 		log_dbg_printf("Child %s disconnected to [%s]:%s, child fd=%d, fd=%d\n",
-					   protocol_names[ctx->proto],
+					   protocol_names[ctx->conn->proto],
 					   STRORDASH(ctx->conn->dsthost_str), STRORDASH(ctx->conn->dstport_str), ctx->fd, ctx->conn->fd);
 		log_dbg_printf("Child %s disconnected from [%s]:%s, child fd=%d, fd=%d\n",
-					   protocol_names[ctx->proto],
+					   protocol_names[ctx->conn->proto],
 					   STRORDASH(ctx->conn->srchost_str), STRORDASH(ctx->conn->srcport_str), ctx->fd, ctx->conn->fd);
 	}
 }
@@ -1124,23 +1123,23 @@ pxy_listener_acceptcb_child(UNUSED struct evconnlistener *listener, evutil_socke
 		goto out;
 	}
 
-	// @attention fd (ctx->fd) is different from child event listener fd (ctx->conn->child_fd)
-	ctx->conn->thr->max_fd = MAX(ctx->conn->thr->max_fd, ctx->fd);
-	ctx->conn->child_src_fd = ctx->fd;
+	// @attention fd (ctx->fd) is different from child event listener fd (conn->child_fd)
+	conn->thr->max_fd = MAX(conn->thr->max_fd, ctx->fd);
+	conn->child_src_fd = ctx->fd;
 	
 	/* create server-side socket and eventbuffer */
 	// Children rely on the findings of parent
 	ctx->protoctx->connectcb(ctx);
 
-	if (ctx->conn->term || ctx->conn->enomem) {
+	if (conn->term || conn->enomem) {
 		goto out;
 	}
 
 	bufferevent_enable(ctx->dst.bev, EV_READ|EV_WRITE);
 
-	if (OPTS_DEBUG(ctx->conn->global)) {
+	if (OPTS_DEBUG(conn->global)) {
 		char *host, *port;
-		if (sys_sockaddr_str((struct sockaddr *)&ctx->conn->dstaddr, ctx->conn->dstaddrlen, &host, &port) == 0) {
+		if (sys_sockaddr_str((struct sockaddr *)&conn->dstaddr, conn->dstaddrlen, &host, &port) == 0) {
 			log_dbg_printf("Child connecting to [%s]:%s\n", host, port);
 			free(host);
 			free(port);
@@ -1150,16 +1149,16 @@ pxy_listener_acceptcb_child(UNUSED struct evconnlistener *listener, evutil_socke
 	}
 
 	/* initiate connection, except for the first child conn which uses the parent's srvdst as dst */
-	if (ctx->dst.bev != ctx->conn->srvdst.bev) {
-		if (bufferevent_socket_connect(ctx->dst.bev, (struct sockaddr *)&ctx->conn->dstaddr, ctx->conn->dstaddrlen) == -1) {
+	if (ctx->dst.bev != conn->srvdst.bev) {
+		if (bufferevent_socket_connect(ctx->dst.bev, (struct sockaddr *)&conn->dstaddr, conn->dstaddrlen) == -1) {
 			pxy_conn_term(conn, 1);
 			goto out;
 		}
 	}
 	
 	ctx->dst_fd = bufferevent_getfd(ctx->dst.bev);
-	ctx->conn->child_dst_fd = ctx->dst_fd;
-	ctx->conn->thr->max_fd = MAX(ctx->conn->thr->max_fd, ctx->dst_fd);
+	conn->child_dst_fd = ctx->dst_fd;
+	conn->thr->max_fd = MAX(conn->thr->max_fd, ctx->dst_fd);
 	// Do not return here, but continue and check term/enomem flags below
 out:
 	// @attention Do not use ctx->conn here, ctx may be uninitialized
@@ -1434,7 +1433,7 @@ pxy_bev_readcb_preexec_logging_and_stats_child(struct bufferevent *bev, pxy_conn
 	}
 
 	if (WANT_CONTENT_LOG(ctx->conn)) {
-		return pxy_log_content_inbuf((pxy_conn_ctx_t *)ctx, inbuf, (bev == ctx->src.bev));
+		return pxy_log_content_inbuf(ctx->conn, inbuf, (bev == ctx->src.bev));
 	}
 	return 0;
 }
