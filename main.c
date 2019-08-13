@@ -135,6 +135,8 @@ main_version(void)
 		lpv += 16;
 	fprintf(stderr, "rtlinked against libpcap %s\n", lpv);
 #endif /* !WITHOUT_MIRROR */
+	fprintf(stderr, "compiled against sqlite %s\n", SQLITE_VERSION);
+	fprintf(stderr, "rtlinked against sqlite %s\n", sqlite3_libversion());
 	fprintf(stderr, "%d CPU cores detected\n", sys_get_cpu_cores());
 }
 
