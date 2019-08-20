@@ -47,7 +47,7 @@
         },
         "3": {
           "testend": "server",
-          "cmd": "timeout",
+          "cmd": "recv",
           "payload": ""
         }
       }
