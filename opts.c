@@ -463,6 +463,7 @@ clone_global_opts(global_t *global, const char *argv0)
 #endif /* DEBUG_OPTS */
 
 	opts_t *opts = opts_new();
+	opts->global = global;
 
 	opts->sslcomp = global->opts->sslcomp;
 #ifdef HAVE_SSLV2
@@ -498,23 +499,26 @@ clone_global_opts(global_t *global, const char *argv0)
 	opts->max_http_header_size = global->opts->max_http_header_size;
 	
 	if (global->chain_str) {
-		opts_set_chain(opts, argv0, global->chain_str);
+		opts_set_chain(opts, argv0, global->chain_str, 0);
+	}
+	if (global->crl_str) {
+		opts_set_crl(opts, global->crl_str, 0);
 	}
 	if (global->cacrt_str) {
-		opts_set_cacrt(opts, argv0, global->cacrt_str);
+		opts_set_cacrt(opts, argv0, global->cacrt_str, 0);
 	}
 	if (global->cakey_str) {
-		opts_set_cakey(opts, argv0, global->cakey_str);
+		opts_set_cakey(opts, argv0, global->cakey_str, 0);
 	}
 	if (global->clientcrt_str) {
-		opts_set_clientcrt(opts, argv0, global->clientcrt_str);
+		opts_set_clientcrt(opts, argv0, global->clientcrt_str, 0);
 	}
 	if (global->clientkey_str) {
-		opts_set_clientkey(opts, argv0, global->clientkey_str);
+		opts_set_clientkey(opts, argv0, global->clientkey_str, 0);
 	}
 #ifndef OPENSSL_NO_DH
 	if (global->dh_str) {
-		opts_set_dh(opts, argv0, global->dh_str);
+		opts_set_dh(opts, argv0, global->dh_str, 0);
 	}
 #endif /* !OPENSSL_NO_DH */
 #ifndef OPENSSL_NO_ECDH
@@ -1040,8 +1044,11 @@ proxyspec_str(proxyspec_t *spec)
 }
 
 void
-opts_set_cacrt(opts_t *opts, const char *argv0, const char *optarg)
+opts_set_cacrt(opts_t *opts, const char *argv0, const char *optarg, int global_opt)
 {
+	if (global_opt)
+		opts->global->cacrt_str = strdup(optarg);
+
 	if (opts->cacrt)
 		X509_free(opts->cacrt);
 	opts->cacrt = ssl_x509_load(optarg);
@@ -1071,8 +1078,11 @@ opts_set_cacrt(opts_t *opts, const char *argv0, const char *optarg)
 }
 
 void
-opts_set_cakey(opts_t *opts, const char *argv0, const char *optarg)
+opts_set_cakey(opts_t *opts, const char *argv0, const char *optarg, int global_opt)
 {
+	if (global_opt)
+		opts->global->cakey_str = strdup(optarg);
+
 	if (opts->cakey)
 		EVP_PKEY_free(opts->cakey);
 	opts->cakey = ssl_key_load(optarg);
@@ -1104,8 +1114,11 @@ opts_set_cakey(opts_t *opts, const char *argv0, const char *optarg)
 }
 
 void
-opts_set_chain(opts_t *opts, const char *argv0, const char *optarg)
+opts_set_chain(opts_t *opts, const char *argv0, const char *optarg, int global_opt)
 {
+	if (global_opt)
+		opts->global->chain_str = strdup(optarg);
+
 	if (ssl_x509chain_load(NULL, &opts->chain, optarg) == -1) {
 		fprintf(stderr, "%s: error loading chain from '%s':\n",
 		        argv0, optarg);
@@ -1122,8 +1135,11 @@ opts_set_chain(opts_t *opts, const char *argv0, const char *optarg)
 }
 
 void
-opts_set_crl(opts_t *opts, const char *optarg)
+opts_set_crl(opts_t *opts, const char *optarg, int global_opt)
 {
+	if (global_opt)
+		opts->global->crl_str = strdup(optarg);
+
 	if (opts->crlurl)
 		free(opts->crlurl);
 	opts->crlurl = strdup(optarg);
@@ -1167,8 +1183,11 @@ opts_unset_passthrough(opts_t *opts)
 }
 
 void
-opts_set_clientcrt(opts_t *opts, const char *argv0, const char *optarg)
+opts_set_clientcrt(opts_t *opts, const char *argv0, const char *optarg, int global_opt)
 {
+	if (global_opt)
+		opts->global->clientcrt_str = strdup(optarg);
+
 	if (opts->clientcrt)
 		X509_free(opts->clientcrt);
 	opts->clientcrt = ssl_x509_load(optarg);
@@ -1188,8 +1207,11 @@ opts_set_clientcrt(opts_t *opts, const char *argv0, const char *optarg)
 }
 
 void
-opts_set_clientkey(opts_t *opts, const char *argv0, const char *optarg)
+opts_set_clientkey(opts_t *opts, const char *argv0, const char *optarg, int global_opt)
 {
+	if (global_opt)
+		opts->global->clientkey_str = strdup(optarg);
+
 	if (opts->clientkey)
 		EVP_PKEY_free(opts->clientkey);
 	opts->clientkey = ssl_key_load(optarg);
@@ -1210,8 +1232,11 @@ opts_set_clientkey(opts_t *opts, const char *argv0, const char *optarg)
 
 #ifndef OPENSSL_NO_DH
 void
-opts_set_dh(opts_t *opts, const char *argv0, const char *optarg)
+opts_set_dh(opts_t *opts, const char *argv0, const char *optarg, int global_opt)
 {
+	if (global_opt)
+		opts->global->dh_str = strdup(optarg);
+
 	if (opts->dh)
 		DH_free(opts->dh);
 	opts->dh = ssl_dh_load(optarg);
@@ -2122,29 +2147,17 @@ set_option(opts_t *opts, const char *argv0,
 
 	/* Compare strlen(s2)+1 chars to match exactly */
 	if (!strncmp(name, "CACert", 7)) {
-		if (global_opt)
-			opts->global->cacrt_str = strdup(value);
-		opts_set_cacrt(opts, argv0, value);
+		opts_set_cacrt(opts, argv0, value, global_opt);
 	} else if (!strncmp(name, "CAKey", 6)) {
-		if (global_opt)
-			opts->global->cakey_str = strdup(value);
-		opts_set_cakey(opts, argv0, value);
+		opts_set_cakey(opts, argv0, value, global_opt);
 	} else if (!strncmp(name, "ClientCert", 11)) {
-		if (global_opt)
-			opts->global->clientcrt_str = strdup(value);
-		opts_set_clientcrt(opts, argv0, value);
+		opts_set_clientcrt(opts, argv0, value, global_opt);
 	} else if (!strncmp(name, "ClientKey", 10)) {
-		if (global_opt)
-			opts->global->clientkey_str = strdup(value);
-		opts_set_clientkey(opts, argv0, value);
+		opts_set_clientkey(opts, argv0, value, global_opt);
 	} else if (!strncmp(name, "CAChain", 8)) {
-		if (global_opt)
-			opts->global->chain_str = strdup(value);
-		opts_set_chain(opts, argv0, value);
+		opts_set_chain(opts, argv0, value, global_opt);
 	} else if (!strncmp(name, "CRL", 4)) {
-		if (global_opt)
-			opts->global->crl_str = strdup(value);
-		opts_set_crl(opts, value);
+		opts_set_crl(opts, value, global_opt);
 	} else if (!strncmp(name, "DenyOCSP", 9)) {
 		yes = check_value_yesno(value, "DenyOCSP", line_num);
 		if (yes == -1) {
@@ -2165,9 +2178,7 @@ set_option(opts_t *opts, const char *argv0,
 #endif /* DEBUG_OPTS */
 #ifndef OPENSSL_NO_DH
 	} else if (!strncmp(name, "DHGroupParams", 14)) {
-		if (global_opt)
-			opts->global->dh_str = strdup(value);
-		opts_set_dh(opts, argv0, value);
+		opts_set_dh(opts, argv0, value, global_opt);
 #endif /* !OPENSSL_NO_DH */
 #ifndef OPENSSL_NO_ECDH
 	} else if (!strncmp(name, "ECDHCurve", 10)) {

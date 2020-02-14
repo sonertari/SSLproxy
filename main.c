@@ -399,13 +399,13 @@ main(int argc, char *argv[])
 				}
 				break;
 			case 'c':
-				opts_set_cacrt(global->opts, argv0, optarg);
+				opts_set_cacrt(global->opts, argv0, optarg, 1);
 				break;
 			case 'k':
-				opts_set_cakey(global->opts, argv0, optarg);
+				opts_set_cakey(global->opts, argv0, optarg, 1);
 				break;
 			case 'C':
-				opts_set_chain(global->opts, argv0, optarg);
+				opts_set_chain(global->opts, argv0, optarg, 1);
 				break;
 			case 'K':
 				global_set_key(global, argv0, optarg);
@@ -414,7 +414,7 @@ main(int argc, char *argv[])
 				global_set_tgcrtdir(global, argv0, optarg);
 				break;
 			case 'q':
-				opts_set_crl(global->opts, optarg);
+				opts_set_crl(global->opts, optarg, 1);
 				break;
 			case 'O':
 				opts_set_deny_ocsp(global->opts);
@@ -423,14 +423,14 @@ main(int argc, char *argv[])
 				opts_set_passthrough(global->opts);
 				break;
 			case 'a':
-				opts_set_clientcrt(global->opts, argv0, optarg);
+				opts_set_clientcrt(global->opts, argv0, optarg, 1);
 				break;
 			case 'b':
-				opts_set_clientkey(global->opts, argv0, optarg);
+				opts_set_clientkey(global->opts, argv0, optarg, 1);
 				break;
 #ifndef OPENSSL_NO_DH
 			case 'g':
-				opts_set_dh(global->opts, argv0, optarg);
+				opts_set_dh(global->opts, argv0, optarg, 1);
 				break;
 #endif /* !OPENSSL_NO_DH */
 #ifndef OPENSSL_NO_ECDH

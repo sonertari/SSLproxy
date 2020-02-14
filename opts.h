@@ -227,16 +227,16 @@ opts_t *opts_new(void) MALLOC;
 void opts_free(opts_t *) NONNULL(1);
 char *passsite_str(passsite_t *);
 char *opts_proto_dbg_dump(opts_t *) NONNULL(1);
-void opts_set_cacrt(opts_t *, const char *, const char *) NONNULL(1,2,3);
-void opts_set_cakey(opts_t *, const char *, const char *) NONNULL(1,2,3);
-void opts_set_chain(opts_t *, const char *, const char *) NONNULL(1,2,3);
-void opts_set_crl(opts_t *, const char *) NONNULL(1,2);
+void opts_set_cacrt(opts_t *, const char *, const char *, int) NONNULL(1,2,3);
+void opts_set_cakey(opts_t *, const char *, const char *, int) NONNULL(1,2,3);
+void opts_set_chain(opts_t *, const char *, const char *, int) NONNULL(1,2,3);
+void opts_set_crl(opts_t *, const char *, int) NONNULL(1,2);
 void opts_set_deny_ocsp(opts_t *) NONNULL(1);
 void opts_set_passthrough(opts_t *) NONNULL(1);
-void opts_set_clientcrt(opts_t *, const char *, const char *) NONNULL(1,2,3);
-void opts_set_clientkey(opts_t *, const char *, const char *) NONNULL(1,2,3);
+void opts_set_clientcrt(opts_t *, const char *, const char *, int) NONNULL(1,2,3);
+void opts_set_clientkey(opts_t *, const char *, const char *, int) NONNULL(1,2,3);
 #ifndef OPENSSL_NO_DH
-void opts_set_dh(opts_t *, const char *, const char *) NONNULL(1,2,3);
+void opts_set_dh(opts_t *, const char *, const char *, int) NONNULL(1,2,3);
 #endif /* !OPENSSL_NO_DH */
 #ifndef OPENSSL_NO_ECDH
 void opts_set_ecdhcurve(opts_t *, const char *, const char *) NONNULL(1,2,3);
