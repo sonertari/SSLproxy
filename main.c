@@ -261,7 +261,7 @@ main_usage(void)
 "              autossl ::1 10025 up:9199              # autossl/6; STARTTLS\n"
 "                                                     # et al\n"
 "Example:\n"
-"  %s -k ca.key -c ca.pem -P  https 127.0.0.1 8443  up:8080  https ::1 8443\n"
+"  %s -k ca.key -c ca.pem -P  https 127.0.0.1 8443  up:8080\n"
 "%s";
 
 	if (!(dflt = nat_getdefaultname())) {
