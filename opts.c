@@ -1046,8 +1046,11 @@ proxyspec_str(proxyspec_t *spec)
 void
 opts_set_cacrt(opts_t *opts, const char *argv0, const char *optarg, int global_opt)
 {
-	if (global_opt)
+	if (global_opt) {
+		if (opts->global->cacrt_str)
+			free(opts->global->cacrt_str);
 		opts->global->cacrt_str = strdup(optarg);
+	}
 
 	if (opts->cacrt)
 		X509_free(opts->cacrt);
@@ -1080,8 +1083,11 @@ opts_set_cacrt(opts_t *opts, const char *argv0, const char *optarg, int global_o
 void
 opts_set_cakey(opts_t *opts, const char *argv0, const char *optarg, int global_opt)
 {
-	if (global_opt)
+	if (global_opt) {
+		if (opts->global->cakey_str)
+			free(opts->global->cakey_str);
 		opts->global->cakey_str = strdup(optarg);
+	}
 
 	if (opts->cakey)
 		EVP_PKEY_free(opts->cakey);
@@ -1116,8 +1122,11 @@ opts_set_cakey(opts_t *opts, const char *argv0, const char *optarg, int global_o
 void
 opts_set_chain(opts_t *opts, const char *argv0, const char *optarg, int global_opt)
 {
-	if (global_opt)
+	if (global_opt) {
+		if (opts->global->chain_str)
+			free(opts->global->chain_str);
 		opts->global->chain_str = strdup(optarg);
+	}
 
 	if (ssl_x509chain_load(NULL, &opts->chain, optarg) == -1) {
 		fprintf(stderr, "%s: error loading chain from '%s':\n",
@@ -1137,8 +1146,11 @@ opts_set_chain(opts_t *opts, const char *argv0, const char *optarg, int global_o
 void
 opts_set_crl(opts_t *opts, const char *optarg, int global_opt)
 {
-	if (global_opt)
+	if (global_opt) {
+		if (opts->global->crl_str)
+			free(opts->global->crl_str);
 		opts->global->crl_str = strdup(optarg);
+	}
 
 	if (opts->crlurl)
 		free(opts->crlurl);
@@ -1185,8 +1197,11 @@ opts_unset_passthrough(opts_t *opts)
 void
 opts_set_clientcrt(opts_t *opts, const char *argv0, const char *optarg, int global_opt)
 {
-	if (global_opt)
+	if (global_opt) {
+		if (opts->global->clientcrt_str)
+			free(opts->global->clientcrt_str);
 		opts->global->clientcrt_str = strdup(optarg);
+	}
 
 	if (opts->clientcrt)
 		X509_free(opts->clientcrt);
@@ -1209,8 +1224,11 @@ opts_set_clientcrt(opts_t *opts, const char *argv0, const char *optarg, int glob
 void
 opts_set_clientkey(opts_t *opts, const char *argv0, const char *optarg, int global_opt)
 {
-	if (global_opt)
+	if (global_opt) {
+		if (opts->global->clientkey_str)
+			free(opts->global->clientkey_str);
 		opts->global->clientkey_str = strdup(optarg);
+	}
 
 	if (opts->clientkey)
 		EVP_PKEY_free(opts->clientkey);
@@ -1234,8 +1252,11 @@ opts_set_clientkey(opts_t *opts, const char *argv0, const char *optarg, int glob
 void
 opts_set_dh(opts_t *opts, const char *argv0, const char *optarg, int global_opt)
 {
-	if (global_opt)
+	if (global_opt) {
+		if (opts->global->dh_str)
+			free(opts->global->dh_str);
 		opts->global->dh_str = strdup(optarg);
+	}
 
 	if (opts->dh)
 		DH_free(opts->dh);
