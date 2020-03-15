@@ -257,8 +257,8 @@ pxy_thrmgr_timer_cb(UNUSED evutil_socket_t fd, UNUSED short what, UNUSED void *a
 	pxy_conn_ctx_t *expired = NULL;
 	pxy_thrmgr_get_thr_expired_conns(ctx, &expired);
 
-	if (expired) {
 #ifdef DEBUG_PROXY
+	if (expired) {
 		time_t now = time(NULL);
 #endif /* DEBUG_PROXY */
 		while (expired) {
@@ -279,7 +279,9 @@ pxy_thrmgr_timer_cb(UNUSED evutil_socket_t fd, UNUSED short what, UNUSED void *a
 
 			expired = next;
 		}
+#ifdef DEBUG_PROXY
 	}
+#endif /* DEBUG_PROXY */
 	
 	// @attention Print thread info only if stats logging is enabled, if disabled debug logs are not printed either
 	if (ctx->thrmgr->global->statslog) {
