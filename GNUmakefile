@@ -232,7 +232,6 @@ CPPCHECK?=	cppcheck
 GPG?=		gpg
 GIT?=		git
 WGET?=		wget
-DOCKER?=	docker
 
 BZIP2?=		bzip2
 COL?=		col
@@ -243,18 +242,21 @@ TAR?=		tar
 
 ### You should not need to touch anything below this line
 
+SRCDIR:=	src
+CHECKTESTSDIR:=	tests/check
+
 PKGLABEL:=	SSLproxy
 PKGNAME:=	sslproxy
 TARGET:=	$(PKGNAME)
-SRCS:=		$(filter-out $(wildcard *.t.c),$(wildcard *.c))
+SRCS:=		$(filter-out $(wildcard $(CHECKTESTSDIR)/*.t.c),$(wildcard $(SRCDIR)/*.c))
 HDRS:=		$(wildcard *.h)
 OBJS:=		$(SRCS:.c=.o)
 MKFS=		$(wildcard GNUmakefile Mk/*.mk)
 FEATURES:=	$(sort $(FEATURES))
 
-TSRCS:=		$(wildcard *.t.c)
+TSRCS:=		$(wildcard $(CHECKTESTSDIR)/*.t.c)
 TOBJS:=		$(TSRCS:.t.c=.t.o)
-TOBJS+=		$(filter-out main.o,$(OBJS))
+TOBJS+=		$(filter-out $(SRCDIR)/main.o,$(OBJS))
 
 include Mk/buildinfo.mk
 VERSION:=	$(BUILD_VERSION)
@@ -484,18 +486,18 @@ $(info uname -a:       $(shell uname -a))
 $(info ------------------------------------------------------------------------------)
 endif
 
-all: $(TARGET)
+all: $(SRCDIR)/$(TARGET)
 
-$(TARGET).test: $(TOBJS)
+$(CHECKTESTSDIR)/$(TARGET).test: $(TOBJS)
 	$(CC) $(LDFLAGS) $(TPKG_LDFLAGS) -o $@ $^ $(LIBS) $(TPKG_LIBS)
 
-$(TARGET): $(OBJS)
+$(SRCDIR)/$(TARGET): $(OBJS)
 	$(CC) $(LDFLAGS) -o $@ $^ $(LIBS)
 
-build.o: CPPFLAGS+=$(BUILD_CPPFLAGS)
-build.o: build.c FORCE
+$(SRCDIR)/build.o: CPPFLAGS+=$(BUILD_CPPFLAGS)
+$(SRCDIR)/build.o: $(SRCDIR)/build.c FORCE
 
-%.t.o: %.t.c $(HDRS) $(MKFS)
+$(CHECKTESTSDIR)/%.t.o: $(CHECKTESTSDIR)/%.t.c $(SRCDIR)/$(HDRS) $(MKFS)
 ifdef CHECK_MISSING
 	$(error unit test dependency 'check' not found; \
 	install it or point CHECK_BASE to base path)
@@ -503,28 +505,33 @@ endif
 	$(CC) -c $(CPPFLAGS) $(TCPPFLAGS) $(CFLAGS) $(TPKG_CFLAGS) -o $@ \
 		-x c $<
 
-%.o: %.c $(HDRS) $(MKFS)
+$(SRCDIR)/%.o: $(SRCDIR)/%.c $(SRCDIR)/$(HDRS) $(MKFS)
 	$(CC) -c $(CPPFLAGS) $(CFLAGS) -o $@ $<
 
 buildtest: TCPPFLAGS+=-D"TEST_ZEROUSR=\"$(shell id -u -n root||echo 0)\""
 buildtest: TCPPFLAGS+=-D"TEST_ZEROGRP=\"$(shell id -g -n root||echo 0)\""
-buildtest: $(TARGET).test
+buildtest: TCPPFLAGS+=-I$(SRCDIR)
+buildtest: $(CHECKTESTSDIR)/$(TARGET).test
 	$(MAKE) -C extra/engine
 	$(MAKE) -C extra/pki testreqs
 
 test: buildtest
-	./$(TARGET).test
+	./$(CHECKTESTSDIR)/$(TARGET).test
 
 sudotest: buildtest
-	sudo ./$(TARGET).test
+	sudo ./$(CHECKTESTSDIR)/$(TARGET).test
 
 travis: TCPPFLAGS+=-DTRAVIS
 travis: test
 
 clean:
 	$(MAKE) -C extra/engine clean
-	$(RM) -f $(TARGET) $(TARGET).test *.o .*.o *.core *~
-	$(RM) -rf *.dSYM
+	$(RM) -f $(SRCDIR)/$(TARGET) $(CHECKTESTSDIR)/$(TARGET).test \
+		$(SRCDIR)/*.o $(CHECKTESTSDIR)/*.o \
+		$(SRCDIR)/.*.o $(CHECKTESTSDIR)/.*.o \
+		$(SRCDIR)/*.core $(CHECKTESTSDIR)/*.core \
+		$(SRCDIR)/*~ $(CHECKTESTSDIR)/*~
+	$(RM) -rf $(SRCDIR)/*.dSYM $(CHECKTESTSDIR)/*.dSYM
 
 install: $(TARGET)
 	test -d $(DESTDIR)$(PREFIX)/bin || $(MKDIR) -p $(DESTDIR)$(PREFIX)/bin
@@ -619,14 +626,9 @@ realclean: distclean manclean clean
 	$(MAKE) -C extra/pki clean
 endif
 
-docker:
-	$(DOCKER) build -f docker/sslproxy/Dockerfile --target builder -t sslproxy-builder:$(VERSION) .
-	$(DOCKER) build -f docker/sslproxy/Dockerfile --target production -t sslproxy:$(VERSION) .
-	$(DOCKER) run sslproxy:$(VERSION)
-
 FORCE:
 
 .PHONY: all config clean buildtest test sudotest travis lint \
         install deinstall copyright manlint mantest man manclean fetchdeps \
-        dist disttest distclean realclean docker
+        dist disttest distclean realclean
 

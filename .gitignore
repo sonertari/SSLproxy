@@ -1,7 +1,9 @@
-/*.o
-/*.dSYM
-/sslproxy
-/sslproxy.test
+/src/*.o
+/tests/check/*.o
+/src/*.dSYM
+/tests/check/*.dSYM
+/src/sslproxy
+/tests/check/sslproxy.test
 /extra/*.pyc
 /extra/engine/*.dylib
 /extra/engine/*.so
