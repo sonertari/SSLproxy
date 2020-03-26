@@ -70,6 +70,7 @@
  */
 #define OUTBUF_LIMIT	(128*1024)
 
+// getdtablecount() returns int, hence we don't use size_t here
 int descriptor_table_size = 0;
 
 // @attention The order of names should match the order in protocol enum
@@ -1644,6 +1645,8 @@ pxy_conn_connect(pxy_conn_ctx_t *ctx)
 		}
 	}
 	// @attention Do not do anything with the conn ctx after this point on the thrmgr thread
+	// All SSL conns start running on their conn handling threads for sni peek before they reach here, not on the thrmgr thread,
+	// so the comments above are true for non-SSL conns only, but we treat all conns the same way
 }
 
 #if defined(__OpenBSD__) || defined(__linux__)

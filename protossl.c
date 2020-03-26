@@ -1132,6 +1132,7 @@ protossl_fd_readcb(MAYBE_UNUSED evutil_socket_t fd, UNUSED short what, void *arg
 #ifndef OPENSSL_NO_TLSEXT
 	// ctx->ev is NULL during initial conn setup
 	if (!ctx->ev) {
+		// THRMGR THREAD
 		/* for SSL, defer dst connection setup to initial_readcb */
 		ctx->ev = event_new(ctx->evbase, ctx->fd, EV_READ, ctx->protoctx->fd_readcb, ctx);
 		if (!ctx->ev)
@@ -1155,6 +1156,7 @@ protossl_fd_readcb(MAYBE_UNUSED evutil_socket_t fd, UNUSED short what, void *arg
 		// @attention This is the thrmgr thread, do not do anything else with the conn after adding the event, just return
 		return;
 	}
+	// CONN HANDLING THREAD
 	// From this point on is the connection handling thread (not the thrmgr thread)
 
 	pxy_thrmgr_remove_pending_ssl_conn(ctx);
