@@ -34,7 +34,7 @@
 
 #include <check.h>
 
-#define TESTCERT "extra/pki/targets/daniel.roe.ch.pem"
+#define TESTCERT "pki/targets/daniel.roe.ch.pem"
 
 START_TEST(cert_new_load_01)
 {

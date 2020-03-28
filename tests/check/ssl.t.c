@@ -41,10 +41,10 @@
 #define DLSUFFIX "so"
 #endif
 
-#define TESTKEY "extra/pki/server.key"
-#define TESTCERT "extra/pki/server.crt"
-#define TESTCERT2 "extra/pki/rsa.crt"
-#define ENGINE "extra/engine/dummy-engine."DLSUFFIX
+#define TESTKEY "pki/server.key"
+#define TESTCERT "pki/server.crt"
+#define TESTCERT2 "pki/rsa.crt"
+#define ENGINE "engine/dummy-engine."DLSUFFIX
 
 static void
 ssl_setup(void)

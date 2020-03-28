@@ -69,7 +69,8 @@ BUILD_DATE:=	$(shell \
 else
 BUILD_DATE:=	$(shell date +%Y-%m-%d)
 endif
-BUILD_CPPFLAGS+=-D"BUILD_PKGNAME=\"$(PKGNAME)\"" \
+# TODO: Should we append or assign to BUILD_CPPFLAGS?
+BUILD_CPPFLAGS=-D"BUILD_PKGNAME=\"$(PKGNAME)\"" \
 		-D"BUILD_VERSION=\"$(BUILD_VERSION)\"" \
 		-D"BUILD_DATE=\"$(BUILD_DATE)\"" \
 		-D"BUILD_INFO=\"$(BUILD_INFO)\"" \

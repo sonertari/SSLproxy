@@ -38,9 +38,9 @@
 #include <check.h>
 
 #if defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER < 0x20501000L
-#define TMP_SESS_FILE "extra/pki/session-libressl-2.5.0.pem"
+#define TMP_SESS_FILE "pki/session-libressl-2.5.0.pem"
 #else
-#define TMP_SESS_FILE "extra/pki/session.pem"
+#define TMP_SESS_FILE "pki/session.pem"
 #endif
 
 

@@ -35,7 +35,7 @@
 
 #include <check.h>
 
-#define TESTCERT "extra/pki/targets/daniel.roe.ch.pem"
+#define TESTCERT "pki/targets/daniel.roe.ch.pem"
 
 static void
 cachemgr_setup(void)

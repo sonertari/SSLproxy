@@ -34,7 +34,7 @@
 
 #include <check.h>
 
-#define TESTCERT "extra/pki/rsa.crt"
+#define TESTCERT "pki/rsa.crt"
 
 static void
 cachemgr_setup(void)

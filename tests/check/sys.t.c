@@ -41,7 +41,7 @@
 
 #include <check.h>
 
-#define TARGETDIR "extra/pki/targets"
+#define TARGETDIR "pki/targets"
 static char template[] = "/tmp/sslsplit.test.XXXXXX";
 static char *basedir;
 static char *file, *lfile, *dir, *ldir, *notexist;
@@ -179,7 +179,7 @@ START_TEST(sys_realdir_01)
 {
 	char *rd;
 
-	rd = sys_realdir("./extra/../sys.t.c");
+	rd = sys_realdir("./../sys.t.c");
 	fail_unless(!!rd, "sys_realdir failed");
 	fail_unless(!!strstr(rd, "/sys.t.c"), "filename not found");
 	fail_unless(!strstr(rd, "/extra/"), "extra in path");

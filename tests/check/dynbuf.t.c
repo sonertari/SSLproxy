@@ -33,7 +33,7 @@
 
 #include <check.h>
 
-#define TESTCERT "extra/pki/targets/daniel.roe.ch.pem"
+#define TESTCERT "pki/targets/daniel.roe.ch.pem"
 static const unsigned char template[] = "Hello World!";
 static unsigned char *buf;
 static size_t sz;

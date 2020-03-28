@@ -233,11 +233,13 @@ GPG?=		gpg
 GIT?=		git
 WGET?=		wget
 
-BZIP2?=		bzip2
+ZIP?=		gzip
 COL?=		col
 LN?=		ln
 MAN?=		man
 TAR?=		tar
+# TODO: RM defaults to rm -f causing multiple -f options, should we override it?
+#RM=		rm
 
 
 ### You should not need to touch anything below this line
@@ -248,15 +250,7 @@ CHECKTESTSDIR:=	tests/check
 PKGLABEL:=	SSLproxy
 PKGNAME:=	sslproxy
 TARGET:=	$(PKGNAME)
-SRCS:=		$(filter-out $(wildcard $(CHECKTESTSDIR)/*.t.c),$(wildcard $(SRCDIR)/*.c))
-HDRS:=		$(wildcard *.h)
-OBJS:=		$(SRCS:.c=.o)
-MKFS=		$(wildcard GNUmakefile Mk/*.mk)
 FEATURES:=	$(sort $(FEATURES))
-
-TSRCS:=		$(wildcard $(CHECKTESTSDIR)/*.t.c)
-TOBJS:=		$(TSRCS:.t.c=.t.o)
-TOBJS+=		$(filter-out $(SRCDIR)/main.o,$(OBJS))
 
 include Mk/buildinfo.mk
 VERSION:=	$(BUILD_VERSION)
@@ -486,144 +480,81 @@ $(info uname -a:       $(shell uname -a))
 $(info ------------------------------------------------------------------------------)
 endif
 
-all: $(SRCDIR)/$(TARGET)
+all: $(TARGET)
 
-$(CHECKTESTSDIR)/$(TARGET).test: $(TOBJS)
-	$(CC) $(LDFLAGS) $(TPKG_LDFLAGS) -o $@ $^ $(LIBS) $(TPKG_LIBS)
+export GITDIR
+export SRCDIR TARGET LDFLAGS LIBS CPPFLAGS BUILD_CPPFLAGS CFLAGS
 
-$(SRCDIR)/$(TARGET): $(OBJS)
-	$(CC) $(LDFLAGS) -o $@ $^ $(LIBS)
+$(TARGET):
+	$(MAKE) -C $(SRCDIR)
 
-$(SRCDIR)/build.o: CPPFLAGS+=$(BUILD_CPPFLAGS)
-$(SRCDIR)/build.o: $(SRCDIR)/build.c FORCE
+export TPKG_LDFLAGS TPKG_LIBS TCPPFLAGS TPKG_CFLAGS
 
-$(CHECKTESTSDIR)/%.t.o: $(CHECKTESTSDIR)/%.t.c $(SRCDIR)/$(HDRS) $(MKFS)
-ifdef CHECK_MISSING
-	$(error unit test dependency 'check' not found; \
-	install it or point CHECK_BASE to base path)
-endif
-	$(CC) -c $(CPPFLAGS) $(TCPPFLAGS) $(CFLAGS) $(TPKG_CFLAGS) -o $@ \
-		-x c $<
+test: $(TARGET)
+	$(MAKE) -C $(CHECKTESTSDIR)
 
-$(SRCDIR)/%.o: $(SRCDIR)/%.c $(SRCDIR)/$(HDRS) $(MKFS)
-	$(CC) -c $(CPPFLAGS) $(CFLAGS) -o $@ $<
-
-buildtest: TCPPFLAGS+=-D"TEST_ZEROUSR=\"$(shell id -u -n root||echo 0)\""
-buildtest: TCPPFLAGS+=-D"TEST_ZEROGRP=\"$(shell id -g -n root||echo 0)\""
-buildtest: TCPPFLAGS+=-I$(SRCDIR)
-buildtest: $(CHECKTESTSDIR)/$(TARGET).test
-	$(MAKE) -C extra/engine
-	$(MAKE) -C extra/pki testreqs
-
-test: buildtest
-	./$(CHECKTESTSDIR)/$(TARGET).test
-
-sudotest: buildtest
-	sudo ./$(CHECKTESTSDIR)/$(TARGET).test
+clean:
+	$(MAKE) -C $(SRCDIR) clean
+	$(MAKE) -C $(CHECKTESTSDIR) clean
 
 travis: TCPPFLAGS+=-DTRAVIS
 travis: test
 
-clean:
-	$(MAKE) -C extra/engine clean
-	$(RM) -f $(SRCDIR)/$(TARGET) $(CHECKTESTSDIR)/$(TARGET).test \
-		$(SRCDIR)/*.o $(CHECKTESTSDIR)/*.o \
-		$(SRCDIR)/.*.o $(CHECKTESTSDIR)/.*.o \
-		$(SRCDIR)/*.core $(CHECKTESTSDIR)/*.core \
-		$(SRCDIR)/*~ $(CHECKTESTSDIR)/*~
-	$(RM) -rf $(SRCDIR)/*.dSYM $(CHECKTESTSDIR)/*.dSYM
+export DESTDIR PREFIX MANDIR EXAMPLESDIR EXAMPLESMODE
+export BINOWNERFLAGS BINMODE MANOWNERFLAGS MANMODE INSTALL
 
-install: $(TARGET)
-	test -d $(DESTDIR)$(PREFIX)/bin || $(MKDIR) -p $(DESTDIR)$(PREFIX)/bin
-	test -d $(DESTDIR)$(PREFIX)/$(MANDIR)/man1 || \
-		$(MKDIR) -p $(DESTDIR)$(PREFIX)/$(MANDIR)/man1
-	test -d $(DESTDIR)$(PREFIX)/$(MANDIR)/man5 || \
-		$(MKDIR) -p $(DESTDIR)$(PREFIX)/$(MANDIR)/man5
-	test -d $(DESTDIR)$(PREFIX)/$(EXAMPLESDIR)/$(TARGET) || \
-		$(MKDIR) -p $(DESTDIR)$(PREFIX)/$(EXAMPLESDIR)/$(TARGET)
-	$(INSTALL) $(BINOWNERFLAGS) -m $(BINMODE) \
-		$(TARGET) $(DESTDIR)$(PREFIX)/bin/
-	$(INSTALL) $(MANOWNERFLAGS) -m $(MANMODE) \
-		$(TARGET).1 $(DESTDIR)$(PREFIX)/$(MANDIR)/man1/
-	$(INSTALL) $(MANOWNERFLAGS) -m $(MANMODE) \
-		$(TARGET).conf.5 $(DESTDIR)$(PREFIX)/$(MANDIR)/man5/
-	$(INSTALL) $(MANOWNERFLAGS) -m $(EXAMPLESMODE) \
-		$(TARGET).conf $(DESTDIR)$(PREFIX)/$(EXAMPLESDIR)/$(TARGET)/
+install:
+	$(MAKE) -C $(SRCDIR) install
 
 deinstall:
-	$(RM) -f $(DESTDIR)$(PREFIX)/bin/$(TARGET) $(DESTDIR)$(PREFIX)/$(MANDIR)/man1/$(TARGET).1 \
-		$(DESTDIR)$(PREFIX)/$(MANDIR)/man5/$(TARGET).conf.5
-	$(RM) -rf $(DESTDIR)$(PREFIX)/$(EXAMPLESDIR)/$(TARGET)/
+	$(MAKE) -C $(SRCDIR) deinstall
 
 ifdef GITDIR
+export CPPCHECKFLAGS
+
 lint:
-	$(CPPCHECK) $(CPPCHECKFLAGS) --force --enable=all --error-exitcode=1 .
+	$(MAKE) -C $(SRCDIR) lint
 
-manlint: $(TARGET).1 $(TARGET).conf.5
-	$(CHECKNR) $(TARGET).1
+export CHECKNR
 
-mantest: $(TARGET).1 $(TARGET).conf.5
-	$(RM) -f man1 man5
-	$(LN) -sf . man1
-	$(LN) -sf . man5
-	$(MAN) -M . 1 $(TARGET)
-	$(MAN) -M . 5 $(TARGET).conf
-	$(RM) man1 man5
+manlint:
+	$(MAKE) -C $(SRCDIR) manlint
+
+export LN MAN
+
+mantest:
+	$(MAKE) -C $(SRCDIR) mantest
 
 copyright: *.c *.h *.1 *.5 extra/*/*.c
 	Mk/bin/copyright.py $^
 
-$(PKGNAME)-$(VERSION).1.txt: $(TARGET).1
-	$(RM) -f man1
-	$(LN) -sf . man1
-	$(MAN) -M . 1 $(TARGET) | $(COL) -b >$@
-	$(RM) man1
+export PKGNAME COL
 
-$(PKGNAME)-$(VERSION).conf.5.txt: $(TARGET).conf.5
-	$(RM) -f man5
-	$(LN) -sf . man5
-	$(MAN) -M . 5 $(TARGET).conf | $(COL) -b >$@
-	$(RM) man5
-
-man: $(PKGNAME)-$(VERSION).1.txt $(PKGNAME)-$(VERSION).conf.5.txt
+man:
+	$(MAKE) -C $(SRCDIR) man
 
 manclean:
-	$(RM) -f $(PKGNAME)-*.1.txt $(PKGNAME)-*.conf.5.txt
+	$(MAKE) -C $(SRCDIR) manclean
 
 fetchdeps:
-	$(WGET) -O- $(KHASH_URL) >khash.h
+	$(WGET) -O- $(KHASH_URL) >$(SRCDIR)/khash.h
 	#$(RM) -rf xnu/xnu-*
 	$(MAKE) -C xnu fetch
 
-dist: $(PKGNAME)-$(VERSION).tar.bz2 $(PKGNAME)-$(VERSION).tar.bz2.asc
+export SORT GIT TAR ZIP GPG GPGSIGNKEY
 
-%.asc: %
-	$(GPG) -u $(GPGSIGNKEY) --armor --output $@ --detach-sig $<
+dist:
+	$(MAKE) -C $(SRCDIR) dist
 
-$(PKGNAME)-$(VERSION).tar.bz2:
-	$(MKDIR) -p $(PKGNAME)-$(VERSION)
-	echo $(VERSION) >$(PKGNAME)-$(VERSION)/VERSION
-	$(OPENSSL) dgst -sha1 -r *.[hc] | $(SORT) -k 2 \
-		>$(PKGNAME)-$(VERSION)/HASHES
-	$(GIT) archive --prefix=$(PKGNAME)-$(VERSION)/ HEAD \
-		>$(PKGNAME)-$(VERSION).tar
-	$(TAR) -f $(PKGNAME)-$(VERSION).tar -r $(PKGNAME)-$(VERSION)/VERSION
-	$(TAR) -f $(PKGNAME)-$(VERSION).tar -r $(PKGNAME)-$(VERSION)/HASHES
-	$(BZIP2) <$(PKGNAME)-$(VERSION).tar >$(PKGNAME)-$(VERSION).tar.bz2
-	$(RM) $(PKGNAME)-$(VERSION).tar
-	$(RM) -r $(PKGNAME)-$(VERSION)
-
-disttest: $(PKGNAME)-$(VERSION).tar.bz2 $(PKGNAME)-$(VERSION).tar.bz2.asc
-	$(GPG) --verify $<.asc $<
-	$(BZIP2) -d < $< | $(TAR) -x -f -
-	cd $(PKGNAME)-$(VERSION) && $(MAKE) && $(MAKE) test && ./$(TARGET) -V
-	$(RM) -r $(PKGNAME)-$(VERSION)
+disttest:
+	$(MAKE) -C $(SRCDIR) disttest
 
 distclean:
-	$(RM) -f $(PKGNAME)-*.tar.bz2*
+	$(MAKE) -C $(SRCDIR) distclean
 
-realclean: distclean manclean clean
-	$(MAKE) -C extra/pki clean
+realclean:
+	$(MAKE) -C $(SRCDIR) realclean
+	$(MAKE) -C $(CHECKTESTSDIR) realclean
 endif
 
 FORCE:
