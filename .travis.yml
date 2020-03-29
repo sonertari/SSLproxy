@@ -1,5 +1,5 @@
 language: c
-script: make && make travis && ./sslproxy -V
+script: make && make travis && ./src/sslproxy -V
 matrix:
   include:
     - os: linux
