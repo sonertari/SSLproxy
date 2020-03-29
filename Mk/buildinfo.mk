@@ -34,13 +34,13 @@ VERSION_FILE:=	$(wildcard VERSION)
 HASHES_FILE:=	$(wildcard HASHES)
 NEWS_FILE:=	$(firstword $(wildcard NEWS*))
 
-ifdef GITDIR
-BUILD_VERSION:=	$(shell $(GIT) describe --tags --dirty --always)
-BUILD_INFO+=	V:GIT
-else
 ifdef VERSION_FILE
 BUILD_VERSION:=	$(shell $(CAT) VERSION)
 BUILD_INFO+=	V:FILE
+else
+ifdef GITDIR
+BUILD_VERSION:=	$(shell $(GIT) describe --tags --dirty --always)
+BUILD_INFO+=	V:GIT
 else
 BUILD_VERSION:=	$(shell $(BASENAME) $(PWD)|\
 			$(GREP) $(PKGNAME)-|\
