@@ -147,7 +147,7 @@ XNU_VERSION=	$(shell awk '/^XNU_RELS/ {print $$2}' xnu/GNUmakefile|tail -1)
 endif
 ifneq ($(wildcard xnu/xnu-$(XNU_VERSION)),)
 FEATURES+=	-DHAVE_PF
-PKG_CPPFLAGS+=	-I./xnu/xnu-$(XNU_VERSION)
+PKG_CPPFLAGS+=	-I../xnu/xnu-$(XNU_VERSION)
 BUILD_INFO+=	OSX:$(OSX_VERSION) XNU:$(XNU_VERSION):$(XNU_METHOD):$(XNU_HAVE)
 endif
 endif
