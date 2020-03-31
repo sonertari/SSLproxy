@@ -244,8 +244,9 @@ TAR?=		tar
 
 ### You should not need to touch anything below this line
 
-SRCDIR:=	src
-CHECKTESTSDIR:=	tests/check
+SRCDIR:=	    src
+CHECKTESTSDIR:=	    tests/check
+TESTPROXYTESTSDIR:= tests/testproxy
 
 PKGLABEL:=	SSLproxy
 PKGNAME:=	sslproxy
@@ -492,6 +493,7 @@ export TPKG_LDFLAGS TPKG_LIBS TCPPFLAGS TPKG_CFLAGS CHECK_MISSING
 
 test: $(TARGET)
 	$(MAKE) -C $(CHECKTESTSDIR)
+	$(MAKE) -C $(TESTPROXYTESTSDIR)
 
 clean:
 	$(MAKE) -C $(SRCDIR) clean
