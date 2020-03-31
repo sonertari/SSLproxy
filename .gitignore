@@ -23,7 +23,7 @@
 /tests/check/pki/server.key
 /tests/check/pki/targets/*
 /extra/*.pyc
-/extra/lp/lp
+/tests/testproxy/lp/lp
 
 /nbproject/
 
