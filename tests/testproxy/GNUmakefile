@@ -9,6 +9,7 @@ buildlp:
 	$(MAKE) -C lp
 
 test: buildsslproxy buildlp
+	export LD_LIBRARY_PATH="$HOME/opt/$SSL/lib":"$HOME/opt/$EVENT/lib"
 	sudo ./lp/lp -f ./lp/lp.conf -o Debug=no -o Daemon=yes -o User=nobody
 	sudo ../../src/sslproxy -f sslproxy.conf -o Debug=no -o Daemon=yes -o User=nobody
 	$(TESTPROXY) -f testharness.json -l 4
