@@ -7,8 +7,11 @@ matrix:
       env: SSL=ubuntu EVENT=ubuntu
       before_install:
         - sudo apt-get install -qq libssl-dev libevent-dev libnet1-dev libpcap-dev check
-#        - curl https://sh.rustup.rs -sSf | sh
+        # Do use the following line:
+        # - curl https://sh.rustup.rs -sSf | sh
+        # Download rustup.sh and run with -y, otherwise it stops and prompts for an answer
         - curl -f -L https://static.rust-lang.org/rustup.sh -O
         - sh rustup.sh -y
+        # Add .cargo/bin to $PATH
         - source $HOME/.cargo/env
         - cargo install testproxy

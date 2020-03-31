@@ -1,9 +1,14 @@
+# in: PROJECT_ROOT
 # in: PKGNAME
 # in: FEATURES (optional)
 # in: BUILD_INFO (optional)
 # in: OPENSSL (optional)
 # in: OPENSSL_FOUND (optional)
 # in: SOURCE_DATE_EPOCH (optional)
+
+ifndef PROJECT_ROOT
+$(error PROJECT_ROOT not defined)
+endif
 
 ifndef PKGNAME
 $(error PKGNAME not defined)
@@ -29,20 +34,24 @@ SORT?=		sort
 TR?=		tr
 WC?=		wc
 
-GITDIR:=	$(wildcard .git)
-VERSION_FILE:=	$(wildcard VERSION)
-HASHES_FILE:=	$(wildcard HASHES)
-NEWS_FILE:=	$(firstword $(wildcard NEWS*))
+GITDIR:=	$(wildcard $(PROJECT_ROOT).git)
+ifdef VERSION
+VERSION_FILE:=	$(wildcard $(PROJECT_ROOT)VERSION)
+endif
+ifdef HASHES
+HASHES_FILE:=	$(wildcard $(PROJECT_ROOT)HASHES)
+endif
+NEWS_FILE:=	$(firstword $(wildcard $(PROJECT_ROOT)NEWS*))
 
-ifdef VERSION_FILE
-BUILD_VERSION:=	$(shell $(CAT) VERSION)
-BUILD_INFO+=	V:FILE
-else
 ifdef GITDIR
-BUILD_VERSION:=	$(shell $(GIT) describe --tags --dirty --always)
+BUILD_VERSION:=	$(shell cd $(PROJECT_ROOT) && $(GIT) describe --tags --dirty --always)
 BUILD_INFO+=	V:GIT
 else
-BUILD_VERSION:=	$(shell $(BASENAME) $(PWD)|\
+ifdef VERSION_FILE
+BUILD_VERSION:=	$(shell $(CAT) $(VERSION_FILE))
+BUILD_INFO+=	V:FILE
+else
+BUILD_VERSION:=	$(shell cd $(PROJECT_ROOT) && $(BASENAME) $(PWD)|\
 			$(GREP) $(PKGNAME)-|\
 			$(SED) 's/.*$(PKGNAME)-\(.*\)/\1/g')
 BUILD_INFO+=	V:DIR
@@ -69,8 +78,7 @@ BUILD_DATE:=	$(shell \
 else
 BUILD_DATE:=	$(shell date +%Y-%m-%d)
 endif
-# TODO: Should we append or assign to BUILD_CPPFLAGS?
-BUILD_CPPFLAGS=-D"BUILD_PKGNAME=\"$(PKGNAME)\"" \
+BUILD_CPPFLAGS+=-D"BUILD_PKGNAME=\"$(PKGNAME)\"" \
 		-D"BUILD_VERSION=\"$(BUILD_VERSION)\"" \
 		-D"BUILD_DATE=\"$(BUILD_DATE)\"" \
 		-D"BUILD_INFO=\"$(BUILD_INFO)\"" \

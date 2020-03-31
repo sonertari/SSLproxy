@@ -1,11 +1,14 @@
+PROJECT_ROOT= ../../
+include $(PROJECT_ROOT)main.mk
+
 SRCS:=	    $(wildcard *.t.c)
 OBJS:=	    $(SRCS:.t.c=.t.o)
 
-SRCSRCS:=   $(wildcard ../../$(SRCDIR)/*.c)
-SRCHDRS:=   $(wildcard ../../$(SRCDIR)/*.h)
+SRCSRCS:=   $(wildcard $(PROJECT_ROOT)$(SRCDIR)/*.c)
+SRCHDRS:=   $(wildcard $(PROJECT_ROOT)$(SRCDIR)/*.h)
 SRCSOBJS:=  $(SRCSRCS:.c=.o)
-OBJS+=	    $(filter-out ../../$(SRCDIR)/main.o,$(SRCSOBJS))
-MKFS:=	    $(wildcard GNUmakefile ../../$(SRCDIR)/GNUmakefile ../../GNUmakefile ../../Mk/*.mk)
+OBJS+=	    $(filter-out $(PROJECT_ROOT)$(SRCDIR)/main.o,$(SRCSOBJS))
+MKFS:=	    $(wildcard GNUmakefile $(PROJECT_ROOT)$(SRCDIR)/GNUmakefile $(PROJECT_ROOT)GNUmakefile $(PROJECT_ROOT)Mk/*.mk)
 
 all: test
 
@@ -22,7 +25,7 @@ endif
 
 buildtest: TCPPFLAGS+=-D"TEST_ZEROUSR=\"$(shell id -u -n root||echo 0)\""
 buildtest: TCPPFLAGS+=-D"TEST_ZEROGRP=\"$(shell id -g -n root||echo 0)\""
-buildtest: TCPPFLAGS+=-I../../$(SRCDIR)
+buildtest: TCPPFLAGS+=-I$(PROJECT_ROOT)$(SRCDIR)
 buildtest: $(TARGET).test
 	$(MAKE) -C engine
 	$(MAKE) -C pki testreqs
@@ -33,6 +36,7 @@ test: buildtest
 sudotest: buildtest
 	sudo ./$(TARGET).test
 
+travis: TCPPFLAGS+=-DTRAVIS
 travis: test
 
 clean:

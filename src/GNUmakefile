@@ -1,7 +1,10 @@
+PROJECT_ROOT= ../
+include $(PROJECT_ROOT)main.mk
+
 SRCS:=	$(wildcard *.c)
 HDRS:=	$(wildcard *.h)
 OBJS:=	$(SRCS:.c=.o)
-MKFS:=	$(wildcard GNUmakefile ../GNUmakefile ../Mk/*.mk)
+MKFS:=	$(wildcard GNUmakefile $(PROJECT_ROOT)GNUmakefile $(PROJECT_ROOT)Mk/*.mk)
 
 all: $(TARGET)
 

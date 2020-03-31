@@ -8,11 +8,6 @@ OPENSSL_BASE=	$(shell pkg-config --variable=prefix openssl)
 endif
 endif
 
-# Clear the vars exported by the main make file
-CFLAGS=
-LDFLAGS=
-LIBS=
-
 ifeq ($(UNAME_S),Darwin)
 SUFFIX:=	dylib
 #CFLAGS+=	-arch i386
