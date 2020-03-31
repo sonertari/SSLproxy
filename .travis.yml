@@ -10,4 +10,5 @@ matrix:
 #        - curl https://sh.rustup.rs -sSf | sh
         - curl -f -L https://static.rust-lang.org/rustup.sh -O
         - sh rustup.sh -y
+        - source $HOME/.cargo/env
         - cargo install testproxy
