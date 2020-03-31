@@ -37,6 +37,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/resource.h>
+#include <errno.h>
 
 /*
  * Handle out of memory conditions in early stages of main().

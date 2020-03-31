@@ -44,6 +44,7 @@
 #include <unistd.h>
 #include <signal.h>
 #include <string.h>
+#include <errno.h>
 
 #ifndef __BSD__
 #include <getopt.h>
