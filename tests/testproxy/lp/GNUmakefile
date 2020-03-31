@@ -217,10 +217,10 @@ endif
 
 # Autodetect dependencies known to pkg-config
 PKGS:=		
-ifndef OPENSSL_BASE
-PKGS+=		$(shell $(PKGCONFIG) $(PCFLAGS) --exists openssl \
-		&& echo openssl)
-endif
+#ifndef OPENSSL_BASE
+#PKGS+=		$(shell $(PKGCONFIG) $(PCFLAGS) --exists openssl \
+#		&& echo openssl)
+#endif
 ifndef LIBEVENT_BASE
 PKGS+=		$(shell $(PKGCONFIG) $(PCFLAGS) --exists libevent \
 		&& echo libevent)
