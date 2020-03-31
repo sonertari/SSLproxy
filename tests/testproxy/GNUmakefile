@@ -18,8 +18,6 @@ test: buildsslproxy buildlp
 travis: test
 
 clean:
-#	sudo pkill sslproxy
-#	sudo pkill lp
 	$(MAKE) -C ../../ clean
 	$(MAKE) -C lp clean
 

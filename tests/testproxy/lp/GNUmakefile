@@ -45,6 +45,10 @@
 # Build a macOS binary for El Capitan using the default SDK from Xcode 7.3.1:
 # % MACOSX_VERSION_MIN=10.11 DEVELOPER_DIR=/Applications/Xcode-7.3.1.app/Contents/Developer make
 
+VERSION=
+OPENSSL=
+OPENSSL_BASE=
+OPENSSL_FOUND=
 
 ### Debugging
 
@@ -103,7 +107,7 @@ XNU_VERSION=	$(shell awk '/^XNU_RELS/ {print $$2}' xnu/GNUmakefile|tail -1)
 endif
 ifneq ($(wildcard xnu/xnu-$(XNU_VERSION)),)
 FEATURES+=	-DHAVE_PF
-PKG_CPPFLAGS+=	-I./xnu/xnu-$(XNU_VERSION)
+PKG_CPPFLAGS+=	-I../../../xnu/xnu-$(XNU_VERSION)
 BUILD_INFO+=	OSX:$(OSX_VERSION) XNU:$(XNU_VERSION):$(XNU_METHOD):$(XNU_HAVE)
 endif
 endif
@@ -213,6 +217,10 @@ endif
 
 # Autodetect dependencies known to pkg-config
 PKGS:=		
+ifndef OPENSSL_BASE
+PKGS+=		$(shell $(PKGCONFIG) $(PCFLAGS) --exists openssl \
+		&& echo openssl)
+endif
 ifndef LIBEVENT_BASE
 PKGS+=		$(shell $(PKGCONFIG) $(PCFLAGS) --exists libevent \
 		&& echo libevent)
@@ -233,6 +241,14 @@ locate=		$(subst /$(2),,$(word 1,$(wildcard \
 		$(addsuffix /$(2),$(if $(3),$(3),$(call bases,$(1)))))))
 
 # Autodetect dependencies not known to pkg-config
+ifeq (,$(filter openssl,$(PKGS)))
+OPENSSL_FOUND:=	$(call locate,openssl,include/openssl/ssl.h,$(OPENSSL_BASE))
+OPENSSL:=	$(OPENSSL_FOUND)/bin/openssl
+ifndef OPENSSL_FOUND
+$(error dependency 'OpenSSL' not found; \
+	install it or point OPENSSL_BASE to base path)
+endif
+endif
 ifeq (,$(filter libevent,$(PKGS)))
 LIBEVENT_FOUND:=$(call locate,libevent,include/event2/event.h,$(LIBEVENT_BASE))
 ifndef LIBEVENT_FOUND
@@ -241,6 +257,11 @@ $(error dependency 'libevent 2.x' not found; \
 endif
 endif
 
+ifdef OPENSSL_FOUND
+PKG_CPPFLAGS+=	-I$(OPENSSL_FOUND)/include
+PKG_LDFLAGS+=	-L$(OPENSSL_FOUND)/lib
+PKG_LIBS+=	-lssl -lcrypto -lz
+endif
 ifdef LIBEVENT_FOUND
 PKG_CPPFLAGS+=	-I$(LIBEVENT_FOUND)/include
 PKG_LDFLAGS+=	-L$(LIBEVENT_FOUND)/lib
@@ -351,17 +372,6 @@ ifdef GITDIR
 lint:
 	$(CPPCHECK) $(CPPCHECKFLAGS) --force --enable=all --error-exitcode=1 .
 
-manlint: $(TARGET).1 $(TARGET).conf.5
-	$(CHECKNR) $(TARGET).1
-
-mantest: $(TARGET).1 $(TARGET).conf.5
-	$(RM) -f man1 man5
-	$(LN) -sf . man1
-	$(LN) -sf . man5
-	$(MAN) -M . 1 $(TARGET)
-	$(MAN) -M . 5 $(TARGET).conf
-	$(RM) man1 man5
-
 copyright: *.c *.h *.1 *.5
 	Mk/bin/copyright.py $^
 
@@ -376,14 +386,6 @@ $(PKGNAME)-$(VERSION).conf.5.txt: $(TARGET).conf.5
 	$(LN) -sf . man5
 	$(MAN) -M . 5 $(TARGET).conf | $(COL) -b >$@
 	$(RM) man5
-
-man: $(PKGNAME)-$(VERSION).1.txt $(PKGNAME)-$(VERSION).conf.5.txt
-
-manclean:
-	$(RM) -f $(PKGNAME)-*.1.txt $(PKGNAME)-*.conf.5.txt
-
-fetchdeps:
-	$(MAKE) -C xnu fetch
 
 dist: $(PKGNAME)-$(VERSION).tar.bz2 $(PKGNAME)-$(VERSION).tar.bz2.asc
 
@@ -412,12 +414,12 @@ disttest: $(PKGNAME)-$(VERSION).tar.bz2 $(PKGNAME)-$(VERSION).tar.bz2.asc
 distclean:
 	$(RM) -f $(PKGNAME)-*.tar.bz2*
 
-realclean: distclean manclean clean
+realclean: distclean clean
 endif
 
 FORCE:
 
-.PHONY: all config clean buildtest travis lint \
-        install deinstall copyright manlint mantest man manclean fetchdeps \
+.PHONY: all config clean buildtest lint \
+        install deinstall copyright \
         dist disttest distclean realclean
 
