@@ -458,7 +458,7 @@ prototcp_try_close_unauth_conn(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	return 0;
 }
 
-static int NONNULL(1,2)
+int
 prototcp_try_close_protoerror_conn(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 	if (ctx->spec->opts->validate_proto && ctx->sent_protoerror_msg) {
@@ -500,7 +500,7 @@ prototcp_bev_writecb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 #endif /* DEBUG_PROXY */
 
 			pxy_conn_term(ctx, 1);
-		}			
+		}
 		return;
 	}
 	pxy_try_unset_watermark(bev, ctx, &ctx->dst);
@@ -522,7 +522,7 @@ prototcp_connect_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	return pxy_bev_eventcb_postexec_logging_and_stats(bev, BEV_EVENT_CONNECTED, ctx);
 }
 
-static void NONNULL(1)
+void
 prototcp_bev_writecb_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
@@ -548,7 +548,7 @@ prototcp_bev_writecb_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	pxy_try_unset_watermark(bev, ctx, &ctx->src);
 }
 
-static void NONNULL(1)
+void
 prototcp_bev_writecb_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY

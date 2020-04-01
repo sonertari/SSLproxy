@@ -28,6 +28,7 @@
  */
 
 #include "protohttp.h"
+#include "prototcp.h"
 #include "protossl.h"
 
 #include "util.h"
@@ -271,7 +272,7 @@ deny:
 		evbuffer_drain(dst_outbuf, evbuffer_get_length(dst_outbuf));
 	}
 
-	// Do not send duplicate OCSP denied responses (child conns may call this function too)
+	// Do not send duplicate OCSP denied responses
 	if (http_ctx->ocsp_denied)
 		return;
 
@@ -279,7 +280,6 @@ deny:
 	log_dbg_level_printf(LOG_DBG_MODE_FINER, "protohttp_ocsp_deny: Sending OCSP denied response, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
-	// @todo Wait until ocsp denied msg is sent and then close the conn (in a new http src w cb perhaps)
 	evbuffer_add_printf(outbuf, ocspresp);
 	http_ctx->ocsp_denied = 1;
 }
@@ -966,6 +966,51 @@ protohttp_bev_readcb_child(struct bufferevent *bev, void *arg)
 }
 
 static void NONNULL(1)
+protohttp_bev_writecb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
+{
+#ifdef DEBUG_PROXY
+	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_bev_writecb_src: ENTER, fd=%d\n", ctx->fd);
+#endif /* DEBUG_PROXY */
+
+	if (prototcp_try_close_unauth_conn(bev, ctx)) {
+		return;
+	}
+
+	if (prototcp_try_close_protoerror_conn(bev, ctx)) {
+		return;
+	}
+
+	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
+	if (ctx->dst.closed || http_ctx->ocsp_denied) {
+		if (pxy_try_close_conn_end(&ctx->src, ctx) == 1) {
+#ifdef DEBUG_PROXY
+			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protohttp_bev_writecb_src: other->closed or ocsp_denied, terminate conn, fd=%d\n", ctx->fd);
+#endif /* DEBUG_PROXY */
+
+			pxy_conn_term(ctx, 1);
+		}
+		return;
+	}
+	pxy_try_unset_watermark(bev, ctx, &ctx->dst);
+}
+
+static void NONNULL(1)
+protohttp_bev_writecb(struct bufferevent *bev, void *arg)
+{
+	pxy_conn_ctx_t *ctx = arg;
+
+	if (bev == ctx->src.bev) {
+		protohttp_bev_writecb_src(bev, ctx);
+	} else if (bev == ctx->dst.bev) {
+		prototcp_bev_writecb_dst(bev, ctx);
+	} else if (bev == ctx->srvdst.bev) {
+		prototcp_bev_writecb_srvdst(bev, ctx);
+	} else {
+		log_err_printf("protohttp_bev_writecb: UNKWN conn end\n");
+	}
+}
+
+static void NONNULL(1)
 protohttp_free_ctx(protohttp_ctx_t *http_ctx)
 {
 	if (http_ctx->http_method) {
@@ -1020,6 +1065,7 @@ protohttp_setup(pxy_conn_ctx_t *ctx)
 	ctx->protoctx->proto = PROTO_HTTP;
 	
 	ctx->protoctx->bev_readcb = protohttp_bev_readcb;
+	ctx->protoctx->bev_writecb = protohttp_bev_writecb;
 	ctx->protoctx->proto_free = protohttp_free;
 
 	ctx->protoctx->arg = malloc(sizeof(protohttp_ctx_t));
@@ -1039,6 +1085,7 @@ protohttps_setup(pxy_conn_ctx_t *ctx)
 	ctx->protoctx->fd_readcb = protossl_fd_readcb;
 
 	ctx->protoctx->bev_readcb = protohttp_bev_readcb;
+	ctx->protoctx->bev_writecb = protohttp_bev_writecb;
 	ctx->protoctx->bev_eventcb = protossl_bev_eventcb;
 
 	ctx->protoctx->proto_free = protohttps_free;
