@@ -43,12 +43,9 @@
         "2": {
           "testend": "client",
           "cmd": "recv",
-          "payload_file": "payload_ocsp_denied_response.bin"
-        },
-        "3": {
-          "testend": "server",
-          "cmd": "recv",
-          "payload": ""
+          "payload_file": "payload_ocsp_denied_response.bin",
+          "comment": "The client should certainly receive the ocsp denied response from SSLproxy",
+          "comment": "But it is not certain if the server should receive the ocsp request of the client or not, it depends on libevent and various conditions at that moment"
         }
       }
     },
