@@ -5,7 +5,6 @@
 #
 # Dependencies and features are auto-detected, but can be overridden:
 #
-# OPENSSL_BASE	Prefix of OpenSSL library and headers to build against
 # LIBEVENT_BASE	Prefix of libevent library and headers to build against
 # PKGCONFIG	Name/path of pkg-config program to use for auto-detection
 # PCFLAGS	Additional pkg-config flags
@@ -38,23 +37,12 @@
 # Examples:
 #
 # Build against custom installed libraries under /opt:
-# % OPENSSL_BASE=/opt/openssl LIBEVENT_BASE=/opt/libevent make
 #
 # Create a statically linked binary:
 # % PCFLAGS='--static' CFLAGS='-static' LDFLAGS='-static' make
 #
 # Build a macOS binary for El Capitan using the default SDK from Xcode 7.3.1:
 # % MACOSX_VERSION_MIN=10.11 DEVELOPER_DIR=/Applications/Xcode-7.3.1.app/Contents/Developer make
-
-
-### OpenSSL tweaking
-
-# Define to enable support for SSLv2.
-# Default since 0.4.9 is to disable SSLv2 entirely even if OpenSSL supports it,
-# since there are servers that are not compatible with SSLv2 Client Hello
-# messages.  If you build in SSLv2 support, you can disable it at runtime using
-# -R ssl2 to get the same result as not building in SSLv2 support at all.
-#FEATURES+=	-DWITH_SSLV2
 
 VERSION=
 
@@ -65,7 +53,6 @@ DEBUG_CFLAGS?=	-g
 #DEBUG_CFLAGS+=	-Werror
 
 # Define to remove false positives when debugging memory allocation.
-# Note that you probably want to build OpenSSL with -DPURIFY too.
 #FEATURES+=	-DPURIFY
 
 # Define to add proxy state machine debugging; dump state in debug mode.
@@ -79,11 +66,6 @@ DEBUG_CFLAGS?=	-g
 
 # Define to add diagnostic output for debugging option parsing.
 #FEATURES+=	-DDEBUG_OPTS
-
-# When debugging OpenSSL related issues, make sure you use a debug build of
-# OpenSSL and consider enabling its debugging options -DREF_PRINT -DREF_CHECK
-# for debugging reference counting of OpenSSL objects and/or
-# -DPURIFY for using valgrind and similar tools.
 
 
 ### Mac OS X header selection
@@ -232,15 +214,9 @@ endif
 
 # Autodetect dependencies known to pkg-config
 PKGS:=		
-ifndef OPENSSL_BASE
-PKGS+=		$(shell $(PKGCONFIG) $(PCFLAGS) --exists openssl \
-		&& echo openssl)
-endif
 ifndef LIBEVENT_BASE
 PKGS+=		$(shell $(PKGCONFIG) $(PCFLAGS) --exists libevent \
 		&& echo libevent)
-PKGS+=		$(shell $(PKGCONFIG) $(PCFLAGS) --exists libevent_openssl \
-		&& echo libevent_openssl)
 PKGS+=		$(shell $(PKGCONFIG) $(PCFLAGS) --exists libevent_pthreads \
 		&& echo libevent_pthreads)
 endif
@@ -258,14 +234,6 @@ locate=		$(subst /$(2),,$(word 1,$(wildcard \
 		$(addsuffix /$(2),$(if $(3),$(3),$(call bases,$(1)))))))
 
 # Autodetect dependencies not known to pkg-config
-ifeq (,$(filter openssl,$(PKGS)))
-OPENSSL_FOUND:=	$(call locate,openssl,include/openssl/ssl.h,$(OPENSSL_BASE))
-OPENSSL:=	$(OPENSSL_FOUND)/bin/openssl
-ifndef OPENSSL_FOUND
-$(error dependency 'OpenSSL' not found; \
-	install it or point OPENSSL_BASE to base path)
-endif
-endif
 ifeq (,$(filter libevent,$(PKGS)))
 LIBEVENT_FOUND:=$(call locate,libevent,include/event2/event.h,$(LIBEVENT_BASE))
 ifndef LIBEVENT_FOUND
@@ -274,18 +242,10 @@ $(error dependency 'libevent 2.x' not found; \
 endif
 endif
 
-ifdef OPENSSL_FOUND
-PKG_CPPFLAGS+=	-I$(OPENSSL_FOUND)/include
-PKG_LDFLAGS+=	-L$(OPENSSL_FOUND)/lib
-PKG_LIBS+=	-lssl -lcrypto -lz
-endif
 ifdef LIBEVENT_FOUND
 PKG_CPPFLAGS+=	-I$(LIBEVENT_FOUND)/include
 PKG_LDFLAGS+=	-L$(LIBEVENT_FOUND)/lib
 PKG_LIBS+=	-levent
-endif
-ifeq (,$(filter libevent_openssl,$(PKGS)))
-PKG_LIBS+=	-levent_openssl
 endif
 ifeq (,$(filter libevent_pthreads,$(PKGS)))
 PKG_LIBS+=	-levent_pthreads
@@ -325,9 +285,6 @@ CFLAGS+=	-O2
 endif
 
 export VERSION
-export OPENSSL
-export OPENSSL_BASE
-export OPENSSL_FOUND
 export MKDIR
 export WGET
 
@@ -341,9 +298,6 @@ $(info Before reporting bugs, make sure to try the latest develop branch first:)
 $(info % git clone -b develop https://github.com/sonertari/SSLproxy.git)
 $(info ------------------------------------------------------------------------------)
 $(info Via pkg-config: $(strip $(PKGS)))
-ifdef OPENSSL_FOUND
-$(info OPENSSL_BASE:   $(strip $(OPENSSL_FOUND)))
-endif
 ifdef LIBEVENT_FOUND
 $(info LIBEVENT_BASE:  $(strip $(LIBEVENT_FOUND)))
 endif

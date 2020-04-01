@@ -9,10 +9,9 @@ buildlp:
 	$(MAKE) -C lp
 
 test: buildsslproxy buildlp
-	export LD_LIBRARY_PATH=/home/travis/opt/openssl-1.1.1c/lib:/home/travis/opt/libevent-2.1.11/lib
 	sudo ./lp/lp -f ./lp/lp.conf -o Debug=no -o Daemon=yes -o User=nobody
 	sudo ../../src/sslproxy -f sslproxy.conf -o Debug=no -o Daemon=yes -o User=nobody
-	$(TESTPROXY) -f testharness.json -l 3
+	$(TESTPROXY) -f testharness.json
 	sudo pkill sslproxy
 	sudo pkill lp
 
