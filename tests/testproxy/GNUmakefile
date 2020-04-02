@@ -11,7 +11,7 @@ buildlp:
 test: buildsslproxy buildlp
 	sudo LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) ./lp/lp -f ./lp/lp.conf -o Debug=no -o Daemon=yes -o User=nobody
 	sudo LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) ../../src/sslproxy -f sslproxy.conf -o Debug=no -o Daemon=yes -o User=nobody
-	$(TESTPROXY) -f testharness.json
+	$(TESTPROXY) -f testharness.json -l 4
 	sudo pkill sslproxy
 	sudo pkill lp
 
