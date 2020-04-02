@@ -15,7 +15,6 @@
 #
 # PREFIX	Prefix to install under (default /usr/local)
 # DESTDIR	Destination root under which prefix is located (default /)
-# MANDIR	Subdir of PREFIX that contains man section dirs
 # INSTALLUID	UID to use for installed files if installing as root
 # INSTALLGID	GID to use for installed files if installing as root
 #
@@ -137,7 +136,6 @@ endif
 ### Variables you might need to override
 
 PREFIX?=	/usr/local
-MANDIR?=	share/man
 EXAMPLESDIR?=	share/examples
 
 INSTALLUID?=	0
@@ -191,7 +189,6 @@ WGET?=		wget
 BZIP2?=		bzip2
 COL?=		col
 LN?=		ln
-MAN?=		man
 TAR?=		tar
 
 
@@ -328,24 +325,15 @@ clean:
 
 install: $(TARGET)
 	test -d $(DESTDIR)$(PREFIX)/bin || $(MKDIR) -p $(DESTDIR)$(PREFIX)/bin
-	test -d $(DESTDIR)$(PREFIX)/$(MANDIR)/man1 || \
-		$(MKDIR) -p $(DESTDIR)$(PREFIX)/$(MANDIR)/man1
-	test -d $(DESTDIR)$(PREFIX)/$(MANDIR)/man5 || \
-		$(MKDIR) -p $(DESTDIR)$(PREFIX)/$(MANDIR)/man5
 	test -d $(DESTDIR)$(PREFIX)/$(EXAMPLESDIR)/$(TARGET) || \
 		$(MKDIR) -p $(DESTDIR)$(PREFIX)/$(EXAMPLESDIR)/$(TARGET)
 	$(INSTALL) $(BINOWNERFLAGS) -m $(BINMODE) \
 		$(TARGET) $(DESTDIR)$(PREFIX)/bin/
-	$(INSTALL) $(MANOWNERFLAGS) -m $(MANMODE) \
-		$(TARGET).1 $(DESTDIR)$(PREFIX)/$(MANDIR)/man1/
-	$(INSTALL) $(MANOWNERFLAGS) -m $(MANMODE) \
-		$(TARGET).conf.5 $(DESTDIR)$(PREFIX)/$(MANDIR)/man5/
 	$(INSTALL) $(MANOWNERFLAGS) -m $(EXAMPLESMODE) \
 		$(TARGET).conf $(DESTDIR)$(PREFIX)/$(EXAMPLESDIR)/$(TARGET)/
 
 deinstall:
-	$(RM) -f $(DESTDIR)$(PREFIX)/bin/$(TARGET) $(DESTDIR)$(PREFIX)/$(MANDIR)/man1/$(TARGET).1 \
-		$(DESTDIR)$(PREFIX)/$(MANDIR)/man5/$(TARGET).conf.5
+	$(RM) -f $(DESTDIR)$(PREFIX)/bin/$(TARGET)
 	$(RM) -rf $(DESTDIR)$(PREFIX)/$(EXAMPLESDIR)/$(TARGET)/
 
 ifdef GITDIR
@@ -354,18 +342,6 @@ lint:
 
 copyright: *.c *.h *.1 *.5
 	Mk/bin/copyright.py $^
-
-$(PKGNAME)-$(VERSION).1.txt: $(TARGET).1
-	$(RM) -f man1
-	$(LN) -sf . man1
-	$(MAN) -M . 1 $(TARGET) | $(COL) -b >$@
-	$(RM) man1
-
-$(PKGNAME)-$(VERSION).conf.5.txt: $(TARGET).conf.5
-	$(RM) -f man5
-	$(LN) -sf . man5
-	$(MAN) -M . 5 $(TARGET).conf | $(COL) -b >$@
-	$(RM) man5
 
 dist: $(PKGNAME)-$(VERSION).tar.bz2 $(PKGNAME)-$(VERSION).tar.bz2.asc
 
