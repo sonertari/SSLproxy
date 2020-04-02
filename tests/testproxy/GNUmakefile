@@ -9,8 +9,8 @@ buildlp:
 	$(MAKE) -C lp
 
 test: buildsslproxy buildlp
-	sudo ./lp/lp -f ./lp/lp.conf -o Debug=no -o Daemon=yes -o User=nobody
-	sudo ../../src/sslproxy -f sslproxy.conf -o Debug=no -o Daemon=yes -o User=nobody
+	sudo LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) ./lp/lp -f ./lp/lp.conf -o Debug=no -o Daemon=yes -o User=nobody
+	sudo LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) ../../src/sslproxy -f sslproxy.conf -o Debug=no -o Daemon=yes -o User=nobody
 	$(TESTPROXY) -f testharness.json
 	sudo pkill sslproxy
 	sudo pkill lp
