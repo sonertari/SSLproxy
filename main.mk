@@ -139,11 +139,11 @@ XNU_HAVE:=	$(XNU_VERSION)
 endif
 ifeq ($(wildcard xnu/xnu-$(XNU_VERSION)),)
 XNU_METHOD=	sw_vers
-XNU_VERSION=	$(shell awk '/^XNU_RELS.*\# $(OSX_VERSION)$$/ {print $$2}' xnu/GNUmakefile)
+XNU_VERSION=	$(shell awk '/^XNU_RELS.*\# $(OSX_VERSION)$$/ {print $$2}' $(PROJECT_ROOT)xnu/GNUmakefile)
 endif
 ifeq ($(wildcard xnu/xnu-$(XNU_VERSION)),)
 XNU_METHOD=	fallback
-XNU_VERSION=	$(shell awk '/^XNU_RELS/ {print $$2}' xnu/GNUmakefile|tail -1)
+XNU_VERSION=	$(shell awk '/^XNU_RELS/ {print $$2}' $(PROJECT_ROOT)xnu/GNUmakefile|tail -1)
 endif
 ifneq ($(wildcard xnu/xnu-$(XNU_VERSION)),)
 FEATURES+=	-DHAVE_PF

@@ -79,7 +79,7 @@ DEBUG_CFLAGS?=	-g
 # Note that you can override the XNU headers used by defining XNU_VERSION.
 
 ifeq ($(shell uname),Darwin)
-include Mk/xcode.mk
+include ../../../Mk/xcode.mk
 ifneq ($(wildcard /usr/include/libproc.h),)
 FEATURES+=	-DHAVE_DARWIN_LIBPROC
 endif
@@ -94,11 +94,11 @@ XNU_HAVE:=	$(XNU_VERSION)
 endif
 ifeq ($(wildcard xnu/xnu-$(XNU_VERSION)),)
 XNU_METHOD=	sw_vers
-XNU_VERSION=	$(shell awk '/^XNU_RELS.*\# $(OSX_VERSION)$$/ {print $$2}' xnu/GNUmakefile)
+XNU_VERSION=	$(shell awk '/^XNU_RELS.*\# $(OSX_VERSION)$$/ {print $$2}' ../../../xnu/GNUmakefile)
 endif
 ifeq ($(wildcard xnu/xnu-$(XNU_VERSION)),)
 XNU_METHOD=	fallback
-XNU_VERSION=	$(shell awk '/^XNU_RELS/ {print $$2}' xnu/GNUmakefile|tail -1)
+XNU_VERSION=	$(shell awk '/^XNU_RELS/ {print $$2}' ../../../xnu/GNUmakefile|tail -1)
 endif
 ifneq ($(wildcard xnu/xnu-$(XNU_VERSION)),)
 FEATURES+=	-DHAVE_PF
