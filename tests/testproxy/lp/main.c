@@ -247,14 +247,6 @@ main(int argc, char *argv[])
 		if (spec->connect_addrlen)
 			continue;
 	}
-#ifdef __APPLE__
-	if (opts->dropuser && !!strcmp(opts->dropuser, "root") &&
-	    nat_used("pf")) {
-		fprintf(stderr, "%s: cannot use 'pf' proxyspec with -u due "
-		                "to Apple bug\n", argv0);
-		exit(EXIT_FAILURE);
-	}
-#endif /* __APPLE__ */
 
 	/* prevent multiple instances running */
 	if (opts->pidfile) {
@@ -269,18 +261,9 @@ main(int argc, char *argv[])
 
 	if (!opts->dropuser && !geteuid() && !getuid() &&
 	    sys_isuser(DFLT_DROPUSER)) {
-#ifdef __APPLE__
-		/* Apple broke ioctl(/dev/pf) for EUID != 0 so we do not
-		 * want to automatically drop privileges to nobody there
-		 * if pf has been used in any proxyspec */
-		if (!nat_used("pf")) {
-#endif /* __APPLE__ */
 		opts->dropuser = strdup(DFLT_DROPUSER);
 		if (!opts->dropuser)
 			oom_die(argv0);
-#ifdef __APPLE__
-		}
-#endif /* __APPLE__ */
 	}
 	if (opts->dropuser && sys_isgeteuid(opts->dropuser)) {
 		if (opts->dropgroup) {
