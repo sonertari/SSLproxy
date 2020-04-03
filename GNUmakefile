@@ -19,7 +19,11 @@ clean:
 
 travis: $(TARGET)
 	$(MAKE) -C $(CHECKTESTSDIR) travis
+ifneq ($(shell uname),Darwin)
 	$(MAKE) -C $(TESTPROXYTESTSDIR) travis
+else
+	$(warning Not running travis $(TESTPROXYTESTSDIR) on $(shell uname))
+endif
 
 install:
 	$(MAKE) -C $(SRCDIR) install

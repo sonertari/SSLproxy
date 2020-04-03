@@ -2,12 +2,170 @@ language: c
 script: make && make travis && ./src/sslproxy -V
 matrix:
   include:
+    - os: linux
+      compiler: gcc
+      env: SSL=ubuntu EVENT=ubuntu
+      cache:
+        directories:
+          - $HOME/.cargo
+      before_install:
+        - sudo apt-get install -qq libssl-dev libevent-dev libnet1-dev libpcap-dev check
+        # Don't use the following line: curl https://sh.rustup.rs -sSf | sh
+        # Download rustup.sh and run with -y, otherwise it stops and prompts for an answer
+        # Don't forget to add .cargo/bin to $PATH
+        - curl -f -L https://static.rust-lang.org/rustup.sh -O && sh rustup.sh -y && source $HOME/.cargo/env && cargo install testproxy
+    - os: linux
+      compiler: clang
+      env: SSL=ubuntu EVENT=ubuntu
+      cache:
+        directories:
+          - $HOME/.cargo
+      before_install:
+        - sudo apt-get install -qq libssl-dev libevent-dev libnet1-dev libpcap-dev check
+        - curl -f -L https://static.rust-lang.org/rustup.sh -O && sh rustup.sh -y && source $HOME/.cargo/env && cargo install testproxy
+    - os: linux
+      compiler: clang
+      env: FEATURES=-DWITHOUT_MIRROR SSL=ubuntu EVENT=ubuntu
+      cache:
+        directories:
+          - $HOME/.cargo
+      before_install:
+        - sudo apt-get install -qq libssl-dev libevent-dev check
+        - curl -f -L https://static.rust-lang.org/rustup.sh -O && sh rustup.sh -y && source $HOME/.cargo/env && cargo install testproxy
+    - os: linux
+      compiler: clang
+      env: SSL=openssl-0.9.8zh EVENT=libevent-2.0.22
+      cache:
+        directories:
+          - $HOME/opt
+          - $HOME/.cargo
+      before_install:
+        - sudo apt-get install -qq libnet1-dev libpcap-dev check
+        - curl -f -L https://static.rust-lang.org/rustup.sh -O && sh rustup.sh -y && source $HOME/.cargo/env && cargo install testproxy
+      install:
+        - ./Mk/bin/install-opt.sh
+      before_script:
+        - export OPENSSL_BASE="$HOME/opt/$SSL"
+        - export LIBEVENT_BASE="$HOME/opt/$EVENT"
+        - export LD_LIBRARY_PATH="$HOME/opt/$SSL/lib":"$HOME/opt/$EVENT/lib"
+    - os: linux
+      compiler: clang
+      env: SSL=openssl-1.0.0s EVENT=libevent-2.0.22
+      cache:
+        directories:
+          - $HOME/opt
+          - $HOME/.cargo
+      before_install:
+        - sudo apt-get install -qq libnet1-dev libpcap-dev check
+        - curl -f -L https://static.rust-lang.org/rustup.sh -O && sh rustup.sh -y && source $HOME/.cargo/env && cargo install testproxy
+      install:
+        - ./Mk/bin/install-opt.sh
+      before_script:
+        - export OPENSSL_BASE="$HOME/opt/$SSL"
+        - export LIBEVENT_BASE="$HOME/opt/$EVENT"
+        - export LD_LIBRARY_PATH="$HOME/opt/$SSL/lib":"$HOME/opt/$EVENT/lib"
+    - os: linux
+      compiler: clang
+      env: SSL=openssl-1.0.1u EVENT=libevent-2.0.22
+      cache:
+        directories:
+          - $HOME/opt
+          - $HOME/.cargo
+      before_install:
+        - sudo apt-get install -qq libnet1-dev libpcap-dev check
+        - curl -f -L https://static.rust-lang.org/rustup.sh -O && sh rustup.sh -y && source $HOME/.cargo/env && cargo install testproxy
+      install:
+        - ./Mk/bin/install-opt.sh
+      before_script:
+        - export OPENSSL_BASE="$HOME/opt/$SSL"
+        - export LIBEVENT_BASE="$HOME/opt/$EVENT"
+        - export LD_LIBRARY_PATH="$HOME/opt/$SSL/lib":"$HOME/opt/$EVENT/lib"
+    - os: linux
+      compiler: clang
+      env: SSL=openssl-1.0.2r EVENT=libevent-2.0.22
+      cache:
+        directories:
+          - $HOME/opt
+          - $HOME/.cargo
+      before_install:
+        - sudo apt-get install -qq libnet1-dev libpcap-dev check
+        - curl -f -L https://static.rust-lang.org/rustup.sh -O && sh rustup.sh -y && source $HOME/.cargo/env && cargo install testproxy
+      install:
+        - ./Mk/bin/install-opt.sh
+      before_script:
+        - export OPENSSL_BASE="$HOME/opt/$SSL"
+        - export LIBEVENT_BASE="$HOME/opt/$EVENT"
+        - export LD_LIBRARY_PATH="$HOME/opt/$SSL/lib":"$HOME/opt/$EVENT/lib"
+    - os: linux
+      compiler: clang
+      env: SSL=openssl-1.1.0j EVENT=libevent-2.1.11
+      cache:
+        directories:
+          - $HOME/opt
+          - $HOME/.cargo
+      before_install:
+        - sudo apt-get install -qq libnet1-dev libpcap-dev check
+        - curl -f -L https://static.rust-lang.org/rustup.sh -O && sh rustup.sh -y && source $HOME/.cargo/env && cargo install testproxy
+      install:
+        - ./Mk/bin/install-opt.sh
+      before_script:
+        - export OPENSSL_BASE="$HOME/opt/$SSL"
+        - export LIBEVENT_BASE="$HOME/opt/$EVENT"
+        - export LD_LIBRARY_PATH="$HOME/opt/$SSL/lib":"$HOME/opt/$EVENT/lib"
+    - os: linux
+      compiler: clang
+      env: SSL=openssl-1.1.1c EVENT=libevent-2.1.11
+      cache:
+        directories:
+          - $HOME/opt
+          - $HOME/.cargo
+      before_install:
+        - sudo apt-get install -qq libnet1-dev libpcap-dev check
+        - curl -f -L https://static.rust-lang.org/rustup.sh -O && sh rustup.sh -y && source $HOME/.cargo/env && cargo install testproxy
+      install:
+        - ./Mk/bin/install-opt.sh
+      before_script:
+        - export OPENSSL_BASE="$HOME/opt/$SSL"
+        - export LIBEVENT_BASE="$HOME/opt/$EVENT"
+        - export LD_LIBRARY_PATH="$HOME/opt/$SSL/lib":"$HOME/opt/$EVENT/lib"
+    - os: linux
+      compiler: clang
+      env: SSL=libressl-2.2.7 EVENT=libevent-2.0.22
+      cache:
+        directories:
+          - $HOME/opt
+          - $HOME/.cargo
+      before_install:
+        - sudo apt-get install -qq libnet1-dev libpcap-dev check
+        - curl -f -L https://static.rust-lang.org/rustup.sh -O && sh rustup.sh -y && source $HOME/.cargo/env && cargo install testproxy
+      install:
+        - ./Mk/bin/install-opt.sh
+      before_script:
+        - export OPENSSL_BASE="$HOME/opt/$SSL"
+        - export LIBEVENT_BASE="$HOME/opt/$EVENT"
+        - export LD_LIBRARY_PATH="$HOME/opt/$SSL/lib":"$HOME/opt/$EVENT/lib"
+    - os: linux
+      compiler: clang
+      env: SSL=libressl-2.7.4 EVENT=libevent-2.1.11
+      cache:
+        directories:
+          - $HOME/opt
+          - $HOME/.cargo
+      before_install:
+        - sudo apt-get install -qq libnet1-dev libpcap-dev check
+        - curl -f -L https://static.rust-lang.org/rustup.sh -O && sh rustup.sh -y && source $HOME/.cargo/env && cargo install testproxy
+      install:
+        - ./Mk/bin/install-opt.sh
+      before_script:
+        - export OPENSSL_BASE="$HOME/opt/$SSL"
+        - export LIBEVENT_BASE="$HOME/opt/$EVENT"
+        - export LD_LIBRARY_PATH="$HOME/opt/$SSL/lib":"$HOME/opt/$EVENT/lib"
     - os: osx
       env: SSL=homebrew EVENT=homebrew
       cache:
         directories:
-#          - /usr/local/Cellar/openssl
-#          - /usr/local/opt/openssl
+          - /usr/local/Cellar/openssl
+          - /usr/local/opt/openssl
           - /usr/local/Cellar/libevent
           - /usr/local/opt/libevent
           - /usr/local/Cellar/libnet
@@ -16,11 +174,13 @@ matrix:
           - /usr/local/opt/libpcap
           - /usr/local/Cellar/check
           - /usr/local/opt/check
-#          - $HOME/.cargo
+          # Disable travis testproxy tests on osx
+          #- $HOME/.cargo
       before_install:
         - test -d /usr/local/opt/openssl/lib  || { rmdir /usr/local/opt/openssl; brew install openssl; }
         - test -d /usr/local/opt/libevent/lib || { rmdir /usr/local/opt/libevent; brew install libevent; }
         - test -d /usr/local/opt/libnet/lib   || { rmdir /usr/local/opt/libnet; brew install libnet; }
         - test -d /usr/local/opt/libpcap/lib  || { rmdir /usr/local/opt/libpcap; brew install libpcap; }
         - test -d /usr/local/opt/check/lib    || { rmdir /usr/local/opt/check; brew install check; }
-        - curl -f -L https://static.rust-lang.org/rustup.sh -O && sh rustup.sh -y && source $HOME/.cargo/env && cargo install testproxy
+        # Disable travis testproxy tests on osx
+        #- curl -f -L https://static.rust-lang.org/rustup.sh -O && sh rustup.sh -y && source $HOME/.cargo/env && cargo install testproxy
