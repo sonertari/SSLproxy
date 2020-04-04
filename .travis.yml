@@ -48,6 +48,7 @@ matrix:
         - export OPENSSL_BASE="$HOME/opt/$SSL"
         - export LIBEVENT_BASE="$HOME/opt/$EVENT"
         - export LD_LIBRARY_PATH="$HOME/opt/$SSL/lib":"$HOME/opt/$EVENT/lib"
+        - export NO_TLS11=yes
     - os: linux
       compiler: clang
       env: SSL=openssl-1.0.0s EVENT=libevent-2.0.22
@@ -64,6 +65,7 @@ matrix:
         - export OPENSSL_BASE="$HOME/opt/$SSL"
         - export LIBEVENT_BASE="$HOME/opt/$EVENT"
         - export LD_LIBRARY_PATH="$HOME/opt/$SSL/lib":"$HOME/opt/$EVENT/lib"
+        - export NO_TLS11=yes
     - os: linux
       compiler: clang
       env: SSL=openssl-1.0.1u EVENT=libevent-2.0.22
@@ -160,6 +162,7 @@ matrix:
         - export OPENSSL_BASE="$HOME/opt/$SSL"
         - export LIBEVENT_BASE="$HOME/opt/$EVENT"
         - export LD_LIBRARY_PATH="$HOME/opt/$SSL/lib":"$HOME/opt/$EVENT/lib"
+        - export NO_TLS10=yes
     - os: osx
       env: SSL=homebrew EVENT=homebrew
       cache:
