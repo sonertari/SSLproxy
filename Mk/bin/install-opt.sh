@@ -30,9 +30,6 @@ openssl-1.1.1*)
 openssl-*)
 	SSLURL=https://www.openssl.org/source/$SSL.tar.gz
 	;;
-libressl-2.7.4*)
-	SSLURL=http://ftp.fau.de/pub/OpenBSD/LibreSSL/$SSL.tar.gz
-	;;
 libressl-*)
 	#SSLURL=https://ftp.openbsd.org/pub/OpenBSD/LibreSSL/$SSL.tar.gz
 	SSLURL=http://ftp.fau.de/pub/OpenBSD/LibreSSL/$SSL.tar.gz
