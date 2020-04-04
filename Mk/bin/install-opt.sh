@@ -8,18 +8,12 @@ if [ -z "$EVENT" ]; then
 	exit 1
 fi
 
-# TLSv1 == TLSv10 == SSLv3
-NO_TLS10=no
-NO_TLS11=no
-
 case "$SSL" in
 openssl-0.9.*)
 	SSLURL=https://www.openssl.org/source/old/0.9.x/$SSL.tar.gz
-	NO_TLS11=yes
 	;;
 openssl-1.0.0*)
 	SSLURL=https://www.openssl.org/source/old/1.0.0/$SSL.tar.gz
-	NO_TLS11=yes
 	;;
 openssl-1.0.1*)
 	SSLURL=https://www.openssl.org/source/old/1.0.1/$SSL.tar.gz
@@ -38,7 +32,6 @@ openssl-*)
 	;;
 libressl-2.7.4*)
 	SSLURL=http://ftp.fau.de/pub/OpenBSD/LibreSSL/$SSL.tar.gz
-	NO_TLS10=yes
 	;;
 libressl-*)
 	#SSLURL=https://ftp.openbsd.org/pub/OpenBSD/LibreSSL/$SSL.tar.gz
@@ -48,9 +41,6 @@ libressl-*)
 	exit 1
 	;;
 esac
-
-export NO_TLS10
-export NO_TLS11
 
 case "$EVENT" in
 libevent-2.1.8)
