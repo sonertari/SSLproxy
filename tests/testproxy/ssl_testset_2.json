@@ -55,19 +55,19 @@
           "assert": {
             "current_cipher_version": {
               "==": [
+                "SSLv3",
                 "TLSv1.0"
               ],
               "!match": [
-                "SSLv3",
                 "^TLSv1\\.[1-3]?$"
               ]
             },
             "ssl_proto_version": {
               "==": [
+                "SSLv3",
                 "TLSv1"
               ],
               "!match": [
-                "SSLv3",
                 "^TLSv1\\.[1-3]?$"
               ]
             },
@@ -85,19 +85,19 @@
           "assert": {
             "current_cipher_version": {
               "==": [
+                "SSLv3",
                 "TLSv1.0"
               ],
               "!match": [
-                "SSLv3",
                 "^TLSv1\\.[1-3]?$"
               ]
             },
             "ssl_proto_version": {
               "==": [
+                "SSLv3",
                 "TLSv1"
               ],
               "!match": [
-                "SSLv3",
                 "^TLSv1\\.[1-3]?$"
               ]
             },
