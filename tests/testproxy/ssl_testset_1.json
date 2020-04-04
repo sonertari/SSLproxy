@@ -59,9 +59,9 @@
           "assert": {
             "current_cipher_name": {
               "match": [
-                "^DHE-\\w+-\\w+-\\w+",
-                "\\w+-\\w+-SEED-\\w+",
-                "\\w+-\\w+-\\w+-SHA$"
+                "^(DHE|IDEA)-\\w+-\\w+",
+                "\\w+-(SEED|CBC)-\\w+",
+                "\\w+-\\w+-SHA$"
               ],
               "!match": [
                 "ECDHE-[A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+",

@@ -1,0 +1,41 @@
+{
+  "comment": "SSLproxy tests",
+  "testharnesses": {
+    "1": {
+      "comment": "HTTP tests",
+      "testsets": {
+        "1": "http_testset_1.json",
+        "2": "http_testset_2.json",
+        "3": "http_testset_3.json"
+      }
+    },
+    "2": {
+      "comment": "SSL config tests",
+      "testsets": {
+        "1": "ssl_testset_3.json",
+        "2": "ssl_testset_4.json"
+      }
+    },
+    "3": {
+      "comment": "Protocol validation tests",
+      "testsets": {
+        "1": "tcp_ssl_testends_testset_1.json",
+        "2": "ssl_tcp_testends_testset_1.json",
+        "3": "proto_validate_testset_1.json",
+        "4": "proto_validate_testset_2.json"
+      }
+    },
+    "4": {
+      "comment": "Various option tests",
+      "testsets": {
+        "1": "passthrough_testset_1.json",
+        "2": "verifypeer_testset_1.json",
+        "3": "verifypeer_testset_2.json",
+        "4": "ca_testset_1.json",
+        "5": "ca_testset_2.json",
+        "6": "userauth_testset_1.json",
+        "7": "userauth_testset_2.json"
+      }
+    }
+  }
+}
