@@ -56,6 +56,7 @@
             "current_cipher_version": {
               "==": [
                 "SSLv3",
+                "TLSv1",
                 "TLSv1.0"
               ],
               "!match": [
@@ -86,6 +87,7 @@
             "current_cipher_version": {
               "==": [
                 "SSLv3",
+                "TLSv1",
                 "TLSv1.0"
               ],
               "!match": [

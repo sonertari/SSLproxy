@@ -29,7 +29,6 @@
         "port": "8443",
         "crt": "server.crt",
         "key": "server.key",
-        "ciphers": "MEDIUM",
         "use_sni": "yes",
         "sni_servername": "comixwall.org",
         "verify_hostname": "yes",
@@ -41,7 +40,6 @@
         "port": "9443",
         "crt": "server.crt",
         "key": "server.key",
-        "ciphers": "HIGH",
         "no_tls12": "no",
         "min_proto_version": "tls12",
         "compression": "yes"
@@ -59,20 +57,20 @@
           "assert": {
             "current_cipher_name": {
               "match": [
-                "^(DHE|IDEA)-\\w+-\\w+",
-                "\\w+-(SEED|CBC)-\\w+",
-                "\\w+-\\w+-SHA$"
+                "^ECDHE-[A-Z0-9]+-[A-Z0-9]+",
+                "[A-Z0-9]+-AES256-[A-Z0-9]",
+                "[A-Z0-9]+-[A-Z0-9]+-SHA\\d*$"
               ],
               "!match": [
-                "ECDHE-[A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+",
-                "[A-Z0-9]+-[A-Z0-9]+-AES256-[A-Z0-9]+-[A-Z0-9]+",
-                "[A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+-SHA384"
+                "^(DHE|IDEA)-\\w+-\\w+",
+                "\\w+-(SEED|CBC)-\\w+"
               ]
             },
             "current_cipher_version": {
               "==": [
                 "SSLv3",
-                "TLSv1"
+                "TLSv1",
+                "TLSv1.0"
               ],
               "!match": [
                 "^TLSv1\\.[1-3]?$"
