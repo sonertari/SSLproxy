@@ -10,7 +10,7 @@
         "read_timeout": "50",
         "write_timeout": "50",
         "verify_peer": "no",
-        "ciphers": "MEDIUM:HIGH",
+        "ciphers": "HIGH",
         "no_ssl2": "yes",
         "no_ssl3": "yes",
         "no_tls10": "yes",
