@@ -41,16 +41,18 @@ struct protopop3_ctx {
 static char *protopop3_commands[] = { "CAPA", "USER", "PASS", "AUTH", "APOP", "STLS", "LIST", "STAT", "UIDL", "RETR", "DELE", "RSET", "TOP", "QUIT", "NOOP" };
 
 static int NONNULL(1)
-protopop3_validate_command(char *packet, UNUSED size_t packet_size)
+protopop3_validate_command(char *packet
+#ifdef DEBUG_PROXY
+	, size_t packet_size, pxy_conn_ctx_t *ctx
+#endif /* DEBUG_PROXY */
+	)
 {
 	char *c;
 	unsigned int i;
 	for (i = 0; i < sizeof(protopop3_commands)/sizeof(char *); i++) {
 		c = protopop3_commands[i];
 		if (!strncasecmp(packet, c, strlen(c))) {
-#ifdef DEBUG_PROXY
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protopop3_validate_command: Passed command validation: %.*s\n", (int)packet_size, packet);
-#endif /* DEBUG_PROXY */
+			log_finest_va("Passed command validation: %.*s", (int)packet_size, packet);
 			return 0;
 		}
 	}
@@ -58,30 +60,32 @@ protopop3_validate_command(char *packet, UNUSED size_t packet_size)
 }
 
 static int NONNULL(1,2)
-protopop3_validate(pxy_conn_ctx_t *ctx, char *packet, size_t packet_size)
+protopop3_validate(pxy_conn_ctx_t *ctx, char *packet
+#ifdef DEBUG_PROXY
+	, size_t packet_size
+#endif /* DEBUG_PROXY */
+	)
 {
 	protopop3_ctx_t *pop3_ctx = ctx->protoctx->arg;
 
 	if (pop3_ctx->not_valid) {
-#ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protopop3_validate: Not pop3\n");
-#endif /* DEBUG_PROXY */
+		log_finest("Not pop3");
 		return -1;
 	}
-	if (protopop3_validate_command(packet, packet_size) == -1) {
-		pop3_ctx->not_valid = 1;
+	if (protopop3_validate_command(packet
 #ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protopop3_validate: Failed command validation: %.*s\n", (int)packet_size, packet);
+			, packet_size, ctx
 #endif /* DEBUG_PROXY */
+			) == -1) {
+		pop3_ctx->not_valid = 1;
+		log_finest_va("Failed command validation: %.*s", (int)packet_size, packet);
 		return -1;
 	} else {
 		pop3_ctx->seen_command_count++;
 	}
 	if (pop3_ctx->seen_command_count > 2) {
 		ctx->protoctx->is_valid = 1;
-#ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "protopop3_validate: Passed validation\n");
-#endif /* DEBUG_PROXY */
+		log_finest("Passed validation");
 	}
 	return 0;
 }

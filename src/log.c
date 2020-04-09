@@ -59,6 +59,15 @@
  */
 static proxy_ctx_t *proxy_ctx = NULL;
 
+// @attention The order of names should match the numbering in LOG_DBG_MODE_* macros
+char *log_dbg_mode_names[] = {
+	"NONE", // = 0
+	"ERROR",
+	"FINE",
+	"FINER",
+	"FINEST",
+};
+
 void
 log_exceptcb(void)
 {
@@ -197,7 +206,7 @@ log_dbg_printf(const char *fmt, ...)
 }
 
 int
-log_dbg_level_printf(int level, const char *fmt, ...)
+log_dbg_level_printf(int level, const char *function, int thridx, long long unsigned int id, evutil_socket_t fd, evutil_socket_t child_fd, const char *fmt, ...)
 {
 	va_list ap;
 	char *buf;
@@ -211,7 +220,14 @@ log_dbg_level_printf(int level, const char *fmt, ...)
 	va_end(ap);
 	if (rv < 0)
 		return -1;
-	return log_dbg_print_free(buf);
+
+	char *logbuf;
+	if (asprintf(&logbuf, "[%s] [%d.%llu fd=%d cfd=%d] %s: %s\n", log_dbg_mode_names[level], thridx, id, fd, child_fd, function, buf) < 0) {
+		free(buf);
+		return -1;
+	}
+	free(buf);
+	return log_dbg_print_free(logbuf);
 }
 
 void

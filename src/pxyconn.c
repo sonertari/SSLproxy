@@ -184,9 +184,7 @@ pxy_conn_ctx_new(evutil_socket_t fd,
                  proxyspec_t *spec, global_t *global,
 			     evutil_socket_t clisock)
 {
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_new: ENTER, fd=%d\n", fd);
-#endif /* DEBUG_PROXY */
+	log_finest_main_va("ENTER, fd=%d", fd);
 
 	pxy_conn_ctx_t *ctx = malloc(sizeof(pxy_conn_ctx_t));
 	if (!ctx) {
@@ -196,9 +194,7 @@ pxy_conn_ctx_new(evutil_socket_t fd,
 
 	ctx->id = thrmgr->conn_count++;
 
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_new: id=%llu, fd=%d\n", ctx->id, fd);
-#endif /* DEBUG_PROXY */
+	log_finest_main_va("id=%llu, fd=%d", ctx->id, fd);
 	
 	ctx->type = CONN_TYPE_PARENT;
 	ctx->fd = fd;
@@ -229,40 +225,36 @@ pxy_conn_ctx_new(evutil_socket_t fd,
 }
 
 static pxy_conn_child_ctx_t * MALLOC NONNULL(2)
-pxy_conn_ctx_new_child(evutil_socket_t fd, pxy_conn_ctx_t *conn)
+pxy_conn_ctx_new_child(evutil_socket_t fd, pxy_conn_ctx_t *ctx)
 {
-	assert(conn != NULL);
+	assert(ctx != NULL);
 
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_new_child: ENTER, child fd=%d, fd=%d\n", fd, conn->fd);
-#endif /* DEBUG_PROXY */
+	log_finest_va("ENTER, fd=%d", fd);
 
-	pxy_conn_child_ctx_t *ctx = malloc(sizeof(pxy_conn_child_ctx_t));
-	if (!ctx) {
+	pxy_conn_child_ctx_t *child_ctx = malloc(sizeof(pxy_conn_child_ctx_t));
+	if (!child_ctx) {
 		return NULL;
 	}
-	memset(ctx, 0, sizeof(pxy_conn_child_ctx_t));
+	memset(child_ctx, 0, sizeof(pxy_conn_child_ctx_t));
 
-	ctx->type = CONN_TYPE_CHILD;
-	ctx->fd = fd;
-	ctx->conn = conn;
+	child_ctx->type = CONN_TYPE_CHILD;
+	child_ctx->fd = fd;
+	child_ctx->conn = ctx;
 
-	if (pxy_setup_proto_child(ctx) == PROTO_ERROR) {
-		free(ctx);
+	if (pxy_setup_proto_child(child_ctx) == PROTO_ERROR) {
+		free(child_ctx);
 		return NULL;
 	}
 
 	// @attention Child connections use the parent's event bases, otherwise we would get multithreading issues
-	pxy_thrmgr_attach_child(conn);
-	return ctx;
+	pxy_thrmgr_attach_child(ctx);
+	return child_ctx;
 }
 
 static void NONNULL(1)
 pxy_conn_ctx_free_child(pxy_conn_child_ctx_t *ctx)
 {
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_free_child: ENTER, child fd=%d, fd=%d\n", ctx->fd, ctx->conn->fd);
-#endif /* DEBUG_PROXY */
+	log_finest("ENTER");
 
 	if (ctx->conn->thr_locked) {
 		pxy_thrmgr_detach_child_unlocked(ctx->conn);
@@ -284,9 +276,7 @@ pxy_conn_remove_child(pxy_conn_child_ctx_t *ctx)
 	assert(ctx->conn != NULL);
 	assert(ctx->conn->children != NULL);
 
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_remove_child: ENTER, child fd=%d, fd=%d\n", ctx->fd, ctx->conn->fd);
-#endif /* DEBUG_PROXY */
+	log_finest("ENTER");
 
 	if (ctx->fd == ctx->conn->children->fd) {
 		ctx->conn->children = ctx->conn->children->next;
@@ -305,9 +295,7 @@ pxy_conn_remove_child(pxy_conn_child_ctx_t *ctx)
 	}
 	// This should never happen
 	log_err_level_printf(LOG_CRIT, "Cannot find child in conn children\n");
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_conn_remove_child: Cannot find child in conn children, child fd=%d, fd=%d\n", ctx->fd, ctx->conn->fd);
-#endif /* DEBUG_PROXY */
+	log_fine("Cannot find child in conn children");
 	assert(0);
 }
 
@@ -316,18 +304,14 @@ pxy_conn_free_child(pxy_conn_child_ctx_t *ctx)
 {
 	assert(ctx->conn != NULL);
 
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_free_child: ENTER, child fd=%d, fd=%d\n", ctx->fd, ctx->conn->fd);
-#endif /* DEBUG_PROXY */
+	log_finest("ENTER");
 
 	// We always assign NULL to bevs after freeing them
 	if (ctx->src.bev) {
 		ctx->src.free(ctx->src.bev, ctx->conn);
 		ctx->src.bev = NULL;
 	} else if (!ctx->src.closed) {
-#ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_conn_free_child: evutil_closesocket on NULL src->bev, fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
+		log_fine("!src.closed, evutil_closesocket on NULL src.bev");
 
 		// @attention early in the conn setup, src fd may be open, although src.bev is NULL
 		evutil_closesocket(ctx->fd);
@@ -345,19 +329,14 @@ pxy_conn_free_child(pxy_conn_child_ctx_t *ctx)
 void
 pxy_conn_term_child(pxy_conn_child_ctx_t *ctx)
 {
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_term_child: ENTER, child fd=%d, fd=%d\n", ctx->fd, ctx->conn->fd);
-#endif /* DEBUG_PROXY */
-
+	log_finest("ENTER");
 	ctx->term = 1;
 }
 
 void
 pxy_conn_free_children(pxy_conn_ctx_t *ctx)
 {
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_free_children: ENTER, fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
+	log_finest("ENTER");
 
 	// @attention Free the child ctxs asap, we need their fds
 	while (ctx->children) {
@@ -366,10 +345,7 @@ pxy_conn_free_children(pxy_conn_ctx_t *ctx)
 
 	// @attention Parent may be closing before there was any child at all nor was child_evcl ever created
 	if (ctx->child_evcl) {
-#ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_conn_free_children: Freeing child_evcl, child fd=%d, children fd=%d, fd=%d\n",
-				ctx->child_fd, ctx->children ? ctx->children->fd : -1, ctx->fd);
-#endif /* DEBUG_PROXY */
+		log_finer_va("Freeing child_evcl, children fd=%d", ctx->children ? ctx->children->fd : -1);
 
 		// @attention child_evcl was created with LEV_OPT_CLOSE_ON_FREE, so do not close ctx->child_fd
 		evconnlistener_free(ctx->child_evcl);
@@ -380,9 +356,7 @@ pxy_conn_free_children(pxy_conn_ctx_t *ctx)
 void
 pxy_conn_ctx_free(pxy_conn_ctx_t *ctx, int by_requestor)
 {
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_free: ENTER, fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
+	log_finest("ENTER");
 
 	if (WANT_CONTENT_LOG(ctx)) {
 		if (log_content_close(&ctx->logctx, by_requestor) == -1) {
@@ -403,18 +377,12 @@ pxy_conn_ctx_free(pxy_conn_ctx_t *ctx, int by_requestor)
 			strncpy(keys.ether, ctx->ether, sizeof(keys.ether) - 1);
 
 			if (privsep_client_update_atime(ctx->clisock, &keys) == -1) {
-#ifdef DEBUG_PROXY
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_free: Error updating user atime: %s, fd=%d\n", sqlite3_errmsg(ctx->global->userdb), ctx->fd);
-#endif /* DEBUG_PROXY */
+				log_finest_va("Error updating user atime: %s", sqlite3_errmsg(ctx->global->userdb));
 			} else {
-#ifdef DEBUG_PROXY
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_free: Successfully updated user atime, fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
+				log_finest("Successfully updated user atime");
 			}
 		} else {
-#ifdef DEBUG_PROXY
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_free: Will not update user atime, idletime=%u, fd=%d\n", idletime, ctx->fd);
-#endif /* DEBUG_PROXY */
+			log_finest_va("Will not update user atime, idletime=%u", idletime);
 		}
 	}
 
@@ -474,19 +442,14 @@ pxy_conn_ctx_free(pxy_conn_ctx_t *ctx, int by_requestor)
 void
 pxy_conn_free(pxy_conn_ctx_t *ctx, int by_requestor)
 {
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_free: ENTER, fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
+	log_finest("ENTER");
 
 	// We always assign NULL to bevs after freeing them
 	if (ctx->src.bev) {
 		ctx->src.free(ctx->src.bev, ctx);
 		ctx->src.bev = NULL;
 	} else if (!ctx->src.closed) {
-#ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_conn_free: evutil_closesocket on NULL src->bev, fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
-
+		log_fine("evutil_closesocket on NULL src.bev");
 		// @attention early in the conn setup, src fd may be open, although src.bev is NULL
 		evutil_closesocket(ctx->fd);
 	}
@@ -509,10 +472,7 @@ pxy_conn_free(pxy_conn_ctx_t *ctx, int by_requestor)
 void
 pxy_conn_term(pxy_conn_ctx_t *ctx, int by_requestor)
 {
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_term: ENTER, fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
-
+	log_finest("ENTER");
 	ctx->term = 1;
 	ctx->term_requestor = by_requestor;
 }
@@ -815,8 +775,8 @@ pxy_log_dbg_disconnect_child(pxy_conn_child_ctx_t *ctx)
 void
 pxy_log_dbg_evbuf_info(pxy_conn_ctx_t *ctx, pxy_conn_desc_t *this, pxy_conn_desc_t *other)
 {
-	// Use ctx->conn, because this function is used by child conns too
-	if (OPTS_DEBUG(ctx->conn->global)) {
+	// This function is used by child conns too, they pass ctx->conn instead of ctx
+	if (OPTS_DEBUG(ctx->global)) {
 		log_dbg_printf("evbuffer size at EOF: i:%zu o:%zu i:%zu o:%zu\n",
 						evbuffer_get_length(bufferevent_get_input(this->bev)),
 						evbuffer_get_length(bufferevent_get_output(this->bev)),
@@ -857,10 +817,10 @@ pxy_get_event_name(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	} else if (bev == ctx->srvdst.bev) {
 		return bev_names[2];
 	} else if (bev == NULL) {
-		log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_get_event_name: event_name=NULL\n");
+		log_fine("event_name=NULL");
 		return bev_names[3];
 	} else {
-		log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_get_event_name: event_name=UNKWN\n");
+		log_fine("event_name=UNKWN");
 		return bev_names[4];
 	}
 }
@@ -870,9 +830,7 @@ void
 pxy_try_set_watermark(struct bufferevent *bev, pxy_conn_ctx_t *ctx, struct bufferevent *other)
 {
 	if (evbuffer_get_length(bufferevent_get_output(other)) >= OUTBUF_LIMIT) {
-#ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_try_set_watermark: %s, fd=%d\n", pxy_get_event_name(bev, ctx), ctx->fd);
-#endif /* DEBUG_PROXY */
+		log_fine_va("%s", pxy_get_event_name(bev, ctx));
 
 		/* temporarily disable data source;
 		 * set an appropriate watermark. */
@@ -886,9 +844,7 @@ void
 pxy_try_unset_watermark(struct bufferevent *bev, pxy_conn_ctx_t *ctx, pxy_conn_desc_t *other)
 {
 	if (other->bev && !(bufferevent_get_enabled(other->bev) & EV_READ)) {
-#ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_try_unset_watermark: %s, fd=%d\n", pxy_get_event_name(bev, ctx), ctx->fd);
-#endif /* DEBUG_PROXY */
+		log_fine_va("%s", pxy_get_event_name(bev, ctx));
 
 		/* data source temporarily disabled;
 		 * re-enable and reset watermark to 0. */
@@ -911,9 +867,7 @@ pxy_discard_inbuf(struct bufferevent *bev)
 void
 pxy_insert_sslproxy_header(pxy_conn_ctx_t *ctx, unsigned char *packet, size_t *packet_size)
 {
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_insert_sslproxy_header: ENTER, fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
+	log_finer("ENTER");
 
 	// @attention Cannot use string manipulation functions; we are dealing with binary arrays here, not NULL-terminated strings
 	memmove(packet + ctx->sslproxy_header_len + 2, packet, *packet_size);
@@ -929,10 +883,7 @@ pxy_try_remove_sslproxy_header(pxy_conn_child_ctx_t *ctx, unsigned char *packet,
 	// @attention Cannot use string manipulation functions; we are dealing with binary arrays here, not NULL-terminated strings
 	unsigned char *pos = memmem(packet, *packet_size, ctx->conn->sslproxy_header, ctx->conn->sslproxy_header_len);
 	if (pos) {
-#ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_try_remove_sslproxy_header: REMOVE, child fd=%d, fd=%d\n", ctx->fd, ctx->conn->fd);
-#endif /* DEBUG_PROXY */
-
+		log_finer("REMOVE");
 		memmove(pos, pos + ctx->conn->sslproxy_header_len + 2, *packet_size - (pos - packet) - (ctx->conn->sslproxy_header_len + 2));
 		*packet_size -= ctx->conn->sslproxy_header_len + 2;
 		ctx->removed_sslproxy_header = 1;
@@ -1043,10 +994,7 @@ check_fd_usage(
 {
 	int dtable_count = getdtablecount();
 
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINER, "check_fd_usage: descriptor_table_size=%d, dtablecount=%d, reserve=%d, fd=%d\n",
-			descriptor_table_size, dtable_count, FD_RESERVE, fd);
-#endif /* DEBUG_PROXY */
+	log_finer_main_va("descriptor_table_size=%d, dtablecount=%d, reserve=%d, fd=%d", descriptor_table_size, dtable_count, FD_RESERVE, fd);
 
 	if (dtable_count + FD_RESERVE >= descriptor_table_size) {
 		goto out;
@@ -1072,75 +1020,75 @@ static void
 pxy_listener_acceptcb_child(UNUSED struct evconnlistener *listener, evutil_socket_t fd,
 							UNUSED struct sockaddr *peeraddr, UNUSED int peeraddrlen, void *arg)
 {
-	pxy_conn_ctx_t *conn = arg;
+	pxy_conn_ctx_t *ctx = arg;
 
-	conn->atime = time(NULL);
+	ctx->atime = time(NULL);
 
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_listener_acceptcb_child: ENTER, child fd=%d, child_fd=%d, fd=%d\n", fd, conn->child_fd, conn->fd);
+	log_finest_va("ENTER, fd=%d, ctx->child_fd=%d", fd, ctx->child_fd);
 
 	char *host, *port;
 	if (sys_sockaddr_str(peeraddr, peeraddrlen, &host, &port) == 0) {
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_listener_acceptcb_child: peer addr=[%s]:%s, child fd=%d, fd=%d\n", host, port, fd, conn->fd);
+		log_finest_va("peer addr=[%s]:%s, fd=%d", host, port, fd);
 		free(host);
 		free(port);
 	}
 #endif /* DEBUG_PROXY */
 
-	if (!conn->dstaddrlen) {
+	if (!ctx->dstaddrlen) {
 		log_err_level_printf(LOG_CRIT, "Child no target address; aborting connection\n");
 		evutil_closesocket(fd);
-		pxy_conn_term(conn, 1);
+		pxy_conn_term(ctx, 1);
 		goto out;
 	}
 
 	if (check_fd_usage(
 #ifdef DEBUG_PROXY
-			conn->fd
+			ctx->fd
 #endif /* DEBUG_PROXY */
 			) == -1) {
 		evutil_closesocket(fd);
-		pxy_conn_term(conn, 1);
+		pxy_conn_term(ctx, 1);
 		goto out;
 	}
 
-	pxy_conn_child_ctx_t *ctx = pxy_conn_ctx_new_child(fd, conn);
-	if (!ctx) {
+	pxy_conn_child_ctx_t *child_ctx = pxy_conn_ctx_new_child(fd, ctx);
+	if (!child_ctx) {
 		log_err_level_printf(LOG_CRIT, "Error allocating memory\n");
 		evutil_closesocket(fd);
-		pxy_conn_term(conn, 1);
+		pxy_conn_term(ctx, 1);
 		goto out;
 	}
-	conn->thr->max_load = MAX(conn->thr->max_load, conn->thr->load);
+	ctx->thr->max_load = MAX(ctx->thr->max_load, ctx->thr->load);
 
-	conn->child_count++;
-	// Prepend child ctx to conn ctx child list
+	ctx->child_count++;
+	// Prepend child ctx to parent ctx child list
 	// @attention If the last child is deleted, the children list may become null again
-	ctx->next = conn->children;
-	conn->children = ctx;
+	child_ctx->next = ctx->children;
+	ctx->children = child_ctx;
 
 	// @attention Do not enable src events here yet, they will be enabled after dst connects
-	if (prototcp_setup_src_child(ctx) == -1) {
+	if (prototcp_setup_src_child(child_ctx) == -1) {
 		goto out;
 	}
 
-	// @attention fd (ctx->fd) is different from child event listener fd (conn->child_fd)
-	conn->thr->max_fd = MAX(conn->thr->max_fd, ctx->fd);
-	conn->child_src_fd = ctx->fd;
+	// @attention fd (child_ctx->fd) is different from child event listener fd (ctx->child_fd)
+	ctx->thr->max_fd = MAX(ctx->thr->max_fd, child_ctx->fd);
+	ctx->child_src_fd = child_ctx->fd;
 	
 	/* create server-side socket and eventbuffer */
 	// Children rely on the findings of parent
-	ctx->protoctx->connectcb(ctx);
+	child_ctx->protoctx->connectcb(child_ctx);
 
-	if (conn->term || conn->enomem) {
+	if (ctx->term || ctx->enomem) {
 		goto out;
 	}
 
-	bufferevent_enable(ctx->dst.bev, EV_READ|EV_WRITE);
+	bufferevent_enable(child_ctx->dst.bev, EV_READ|EV_WRITE);
 
-	if (OPTS_DEBUG(conn->global)) {
+	if (OPTS_DEBUG(ctx->global)) {
 		char *host, *port;
-		if (sys_sockaddr_str((struct sockaddr *)&conn->dstaddr, conn->dstaddrlen, &host, &port) == 0) {
+		if (sys_sockaddr_str((struct sockaddr *)&ctx->dstaddr, ctx->dstaddrlen, &host, &port) == 0) {
 			log_dbg_printf("Child connecting to [%s]:%s\n", host, port);
 			free(host);
 			free(port);
@@ -1150,23 +1098,23 @@ pxy_listener_acceptcb_child(UNUSED struct evconnlistener *listener, evutil_socke
 	}
 
 	/* initiate connection, except for the first child conn which uses the parent's srvdst as dst */
-	if (ctx->dst.bev != conn->srvdst.bev) {
-		if (bufferevent_socket_connect(ctx->dst.bev, (struct sockaddr *)&conn->dstaddr, conn->dstaddrlen) == -1) {
-			pxy_conn_term(conn, 1);
+	if (child_ctx->dst.bev != ctx->srvdst.bev) {
+		if (bufferevent_socket_connect(child_ctx->dst.bev, (struct sockaddr *)&ctx->dstaddr, ctx->dstaddrlen) == -1) {
+			pxy_conn_term(ctx, 1);
 			goto out;
 		}
 	}
 	
-	ctx->dst_fd = bufferevent_getfd(ctx->dst.bev);
-	conn->child_dst_fd = ctx->dst_fd;
-	conn->thr->max_fd = MAX(conn->thr->max_fd, ctx->dst_fd);
+	child_ctx->dst_fd = bufferevent_getfd(child_ctx->dst.bev);
+	ctx->child_dst_fd = child_ctx->dst_fd;
+	ctx->thr->max_fd = MAX(ctx->thr->max_fd, child_ctx->dst_fd);
 	// Do not return here, but continue and check term/enomem flags below
 out:
-	// @attention Do not use ctx->conn here, ctx may be uninitialized
+	// @attention Do not use child_ctx->conn here, child_ctx may be uninitialized
 	// @attention Call pxy_conn_free() directly, not pxy_conn_term() here
 	// This is our last chance to close and free the conn
-	if (conn->term || conn->enomem) {
-		pxy_conn_free(conn, conn->term ? conn->term_requestor : 1);
+	if (ctx->term || ctx->enomem) {
+		pxy_conn_free(ctx, ctx->term ? ctx->term_requestor : 1);
 	}
 }
 
@@ -1187,9 +1135,7 @@ pxy_setup_child_listener(pxy_conn_ctx_t *ctx)
 	struct evconnlistener *child_evcl = evconnlistener_new(ctx->thr->evbase, pxy_listener_acceptcb_child, ctx, LEV_OPT_CLOSE_ON_FREE, 1024, ctx->child_fd);
 	if (!child_evcl) {
 		log_err_level_printf(LOG_CRIT, "Error creating child evconnlistener: %s\n", strerror(errno));
-#ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_setup_child_listener: Error creating child evconnlistener: %s, child_fd=%d, fd=%d\n", strerror(errno), ctx->child_fd, ctx->fd);
-#endif /* DEBUG_PROXY */
+		log_fine_va("Error creating child evconnlistener: %s", strerror(errno));
 
 		// @attention Cannot call proxy_listener_ctx_free() on child_evcl, child_evcl does not have any ctx with next listener
 		// @attention Close child fd separately, because child evcl does not exist yet, hence fd would not be closed by calling pxy_conn_free()
@@ -1201,9 +1147,7 @@ pxy_setup_child_listener(pxy_conn_ctx_t *ctx)
 
 	evconnlistener_set_error_cb(child_evcl, proxy_listener_errorcb);
 
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINER, "pxy_setup_child_listener: Finished setting up child, NEW child_fd=%d, fd=%d\n", ctx->child_fd, ctx->fd);	
-#endif /* DEBUG_PROXY */
+	log_finer_va("Finished setting up child, NEW child_fd=%d", ctx->child_fd);
 
 	struct sockaddr_in child_listener_addr;
 	socklen_t child_listener_len = sizeof(child_listener_addr);
@@ -1261,10 +1205,7 @@ pxy_try_close_conn_end(pxy_conn_desc_t *conn_end, pxy_conn_ctx_t *ctx)
 	 * to send, close it, otherwise its writecb will close
 	 * it after writing what's left in the output buffer */
 	if (evbuffer_get_length(bufferevent_get_output(conn_end->bev)) == 0) {
-#ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_try_close_conn_end: evbuffer_get_length(outbuf) == 0, terminate conn, fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
-
+		log_finest("evbuffer_get_length(outbuf) == 0, terminate conn");
 		conn_end->free(conn_end->bev, ctx);
 		conn_end->bev = NULL;
 		conn_end->closed = 1;
@@ -1276,9 +1217,7 @@ pxy_try_close_conn_end(pxy_conn_desc_t *conn_end, pxy_conn_ctx_t *ctx)
 int
 pxy_connect_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_connect_srvdst: writecb before connected, fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
+	log_fine("writecb before connected");
 
 	// @attention Sometimes dst write cb fires but not event cb, especially if the listener cb is not finished yet, so the conn stalls.
 	// This is a workaround for this error condition, nothing else seems to work.
@@ -1297,10 +1236,7 @@ pxy_try_disconnect(pxy_conn_ctx_t *ctx, pxy_conn_desc_t *this, pxy_conn_desc_t *
 	this->free(this->bev, ctx);
 	this->bev = NULL;
 	if (other->closed) {
-#ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_try_disconnect: other->closed, terminate conn, fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
-
+		log_finest("other->closed, terminate conn");
 		// Uses only ctx to log disconnect, never any of the bevs
 		pxy_log_dbg_disconnect(ctx);
 		pxy_conn_term(ctx, is_requestor);
@@ -1314,10 +1250,7 @@ pxy_try_disconnect_child(pxy_conn_child_ctx_t *ctx, pxy_conn_desc_t *this, pxy_c
 	this->free(this->bev, ctx->conn);
 	this->bev = NULL;
 	if (other->closed) {
-#ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_try_disconnect_child: other->closed, terminate conn, child fd=%d, fd=%d\n", ctx->fd, ctx->conn->fd);
-#endif /* DEBUG_PROXY */
-
+		log_finest("other->closed, terminate conn");
 		// Uses only ctx to log disconnect, never any of the bevs
 		pxy_log_dbg_disconnect_child(ctx);
 		pxy_conn_term_child(ctx);
@@ -1330,9 +1263,7 @@ pxy_try_consume_last_input(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	/* if there is data pending in the closed connection,
 	 * handle it here, otherwise it will be lost. */
 	if (evbuffer_get_length(bufferevent_get_input(bev))) {
-#ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_try_consume_last_input: evbuffer_get_length(inbuf) > 0, terminate conn, fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
+		log_fine("evbuffer_get_length(inbuf) > 0, terminate conn");
 
 		if (pxy_bev_readcb_preexec_logging_and_stats(bev, ctx) == -1) {
 			return -1;
@@ -1348,9 +1279,7 @@ pxy_try_consume_last_input_child(struct bufferevent *bev, pxy_conn_child_ctx_t *
 	/* if there is data pending in the closed connection,
 	 * handle it here, otherwise it will be lost. */
 	if (evbuffer_get_length(bufferevent_get_input(bev))) {
-#ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_try_consume_last_input_child: evbuffer_get_length(inbuf) > 0, terminate conn, child fd=%d, fd=%d\n", ctx->fd, ctx->conn->fd);
-#endif /* DEBUG_PROXY */
+		log_fine("evbuffer_get_length(inbuf) > 0, terminate conn");
 
 		if (pxy_bev_readcb_preexec_logging_and_stats_child(bev, ctx) == -1) {
 			return -1;
@@ -1449,7 +1378,8 @@ pxy_bev_readcb_child(struct bufferevent *bev, void *arg)
 	}
 
 	if (!ctx->connected) {
-		log_err_level_printf(LOG_CRIT, "pxy_bev_readcb_child: readcb called when not connected - aborting.\n");
+		log_err_level_printf(LOG_CRIT, "readcb called when not connected - aborting.\n");
+		log_fine("readcb called when not connected - aborting.");
 		log_exceptcb();
 		return;
 	}
@@ -1614,9 +1544,7 @@ pxy_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 void
 pxy_conn_connect(pxy_conn_ctx_t *ctx)
 {
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_connect: ENTER, fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
+	log_finest("ENTER");
 
 	if (!ctx->dstaddrlen) {
 		log_err_level_printf(LOG_CRIT, "No target address; aborting connection\n");
@@ -1655,9 +1583,7 @@ identify_user(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
 
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: ENTER, fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
+	log_finest("ENTER");
 
 	if (ctx->ev) {
 		event_free(ctx->ev);
@@ -1665,10 +1591,7 @@ identify_user(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 	}
 
 	if (ctx->identify_user_count++ >= 50) {
-#ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: Cannot get conn user, fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
-
+		log_finest("Cannot get conn user");
 		goto redirect;
 	} else {
 		int rc;
@@ -1680,9 +1603,7 @@ identify_user(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 
 		// Retry in case we cannot acquire db file or database: SQLITE_BUSY or SQLITE_LOCKED respectively
 		if (rc == SQLITE_BUSY || rc == SQLITE_LOCKED) {
-#ifdef DEBUG_PROXY
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: User db busy or locked, retrying, count=%d, fd=%d\n", ctx->identify_user_count, ctx->fd);
-#endif /* DEBUG_PROXY */
+			log_finest_va("User db busy or locked, retrying, count=%d", ctx->identify_user_count);
 
 			// Do not forget to reset sqlite stmt, or else the userdb may remain busy/locked
 			sqlite3_reset(ctx->thr->get_user);
@@ -1695,52 +1616,33 @@ identify_user(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 				goto memout;
 			return;
 		} else if (rc == SQLITE_DONE) {
-#ifdef DEBUG_PROXY
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: Conn has no user, fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
-
+			log_finest("Conn has no user");
 			goto redirect;
 		} else if (rc == SQLITE_ROW) {
 			char *ether = (char *)sqlite3_column_text(ctx->thr->get_user, 1);
 			if (strncasecmp(ether, ctx->ether, 17)) {
-#ifdef DEBUG_PROXY
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: Ethernet addresses do not match, db=%s, arp cache=%s, fd=%d\n", ether, ctx->ether, ctx->fd);
-#endif /* DEBUG_PROXY */
-
+				log_finest_va("Ethernet addresses do not match, db=%s, arp cache=%s", ether, ctx->ether);
 				goto redirect;
 			}
 
-#ifdef DEBUG_PROXY
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: Passed ethernet address test, %s, fd=%d\n", ether, ctx->fd);
-#endif /* DEBUG_PROXY */
+			log_finest_va("Passed ethernet address test, %s", ether);
 
 			ctx->idletime = time(NULL) - sqlite3_column_int(ctx->thr->get_user, 2);
 			if (ctx->idletime > ctx->spec->opts->user_timeout) {
-#ifdef DEBUG_PROXY
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: User entry timed out, idletime=%u, fd=%d\n", ctx->idletime, ctx->fd);
-#endif /* DEBUG_PROXY */
-
+				log_finest_va("User entry timed out, idletime=%u", ctx->idletime);
 				goto redirect;
 			}
 
-#ifdef DEBUG_PROXY
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: Passed timeout test, idletime=%u, fd=%d\n", ctx->idletime, ctx->fd);
-#endif /* DEBUG_PROXY */
+			log_finest_va("Passed timeout test, idletime=%u", ctx->idletime);
 
 			ctx->user = strdup((char *)sqlite3_column_text(ctx->thr->get_user, 0));
 			// Desc is needed for PassSite filtering
 			ctx->desc = strdup((char *)sqlite3_column_text(ctx->thr->get_user, 3));
 
-#ifdef DEBUG_PROXY
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: Conn user=%s, desc=%s, fd=%d\n", ctx->user, ctx->desc, ctx->fd);
-#endif /* DEBUG_PROXY */
+			log_finest_va("Conn user=%s, desc=%s", ctx->user, ctx->desc);
 		}
 	}
-
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "identify_user: Passed user identification, fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
-
+	log_finest("Passed user identification");
 redirect:
 	sqlite3_reset(ctx->thr->get_user);
 
@@ -1786,11 +1688,9 @@ get_client_ether(pxy_conn_ctx_t *ctx)
 	//192.168.0.1     0x1         0x2         00:50:56:2c:bf:e0     *        enp3s0f1
 	while (fscanf(arp_cache, "%45s %*s %*s %17s %*s %*s", ip, ether) == 2) {
 		if (!strncasecmp(ip, ctx->srchost_str, 45)) {
+			log_finest_va("Arp entry for %s: %s", ip, ether);
 			ctx->ether = strdup(ether);
 			rv = 1;
-#ifdef DEBUG_PROXY
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "Arp entry for %s: %s\n", ip, ether);
-#endif /* DEBUG_PROXY */
 			goto out;
 		}
 	}
@@ -1857,9 +1757,7 @@ get_client_ether(in_addr_t addr, pxy_conn_ctx_t *ctx)
 		if (sysctl(mib, 7, buf, &needed, NULL, 0) == -1) {
 			if (errno == ENOMEM)
 				continue;
-#ifdef DEBUG_PROXY
-			log_dbg_level_printf(LOG_DBG_MODE_FINEST, "actual retrieval of routing table\n");
-#endif /* DEBUG_PROXY */
+			log_finest("actual retrieval of routing table");
 		}
 		lim = buf + needed;
 		break;
@@ -1895,11 +1793,9 @@ get_client_ether(in_addr_t addr, pxy_conn_ctx_t *ctx)
 		if (ether) {
 			// Record the first unexpired complete entry
 			if (!ctx->ether && (found_entry - expired) == 1) {
+				log_finest_va("Arp entry for %s: %s", inet_ntoa(sin->sin_addr), ether);
 				// Dup before assignment because we free local var ether below
 				ctx->ether = strdup(ether);
-#ifdef DEBUG_PROXY
-				log_dbg_level_printf(LOG_DBG_MODE_FINEST, "Arp entry for %s: %s\n", inet_ntoa(sin->sin_addr), ether);
-#endif /* DEBUG_PROXY */
 				// Do not care about multiple matches, return immediately
 				free(ether);
 				goto out;
@@ -1908,9 +1804,7 @@ get_client_ether(in_addr_t addr, pxy_conn_ctx_t *ctx)
 			incomplete++;
 		}
 
-#ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "Arp entry %u for %s: %s (%s)\n", found_entry, inet_ntoa(sin->sin_addr), ether ? ether : "incomplete", expire);
-#endif /* DEBUG_PROXY */
+		log_finest_va("Arp entry %u for %s: %s (%s)", found_entry, inet_ntoa(sin->sin_addr), ether ? ether : "incomplete", expire);
 
 		if (ether) {
 			free(ether);
@@ -1972,11 +1866,11 @@ pxy_conn_setup(evutil_socket_t fd,
 			   evutil_socket_t clisock)
 {
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_setup: ENTER, fd=%d\n", fd);
+	log_finest_main_va("ENTER, fd=%d", fd);
 
 	char *host, *port;
 	if (sys_sockaddr_str(peeraddr, peeraddrlen, &host, &port) == 0) {
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_setup: peer addr=[%s]:%s, fd=%d\n", host, port, fd);
+		log_finest_main_va("peer addr=[%s]:%s, fd=%d", host, port, fd);
 		free(host);
 		free(port);
 	}

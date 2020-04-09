@@ -755,7 +755,7 @@ main(int argc, char *argv[])
 			log_dbg_printf("Generated RSA key for leaf certs.\n");
 		}
 	}
-	if (global->certgendir) {
+	if (global->key && global->certgendir) {
 		char *keyid, *keyfn;
 		int prv;
 		FILE *keyf;
@@ -968,9 +968,7 @@ main(int argc, char *argv[])
 		}
 	}
 
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "main: EXIT closing privsep clisock=%d\n", clisock[0]);
-#endif /* DEBUG_PROXY */
+	log_finest_main_va("EXIT closing privsep clisock=%d", clisock[0]);
 	privsep_client_close(clisock[0]);
 
 	proxy_free(proxy);

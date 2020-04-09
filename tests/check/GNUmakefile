@@ -8,7 +8,7 @@ SRCSRCS:=   $(wildcard $(PROJECT_ROOT)$(SRCDIR)/*.c)
 SRCHDRS:=   $(wildcard $(PROJECT_ROOT)$(SRCDIR)/*.h)
 SRCSOBJS:=  $(SRCSRCS:.c=.o)
 OBJS+=	    $(filter-out $(PROJECT_ROOT)$(SRCDIR)/main.o,$(SRCSOBJS))
-MKFS:=	    $(wildcard GNUmakefile $(PROJECT_ROOT)$(SRCDIR)/GNUmakefile $(PROJECT_ROOT)GNUmakefile $(PROJECT_ROOT)Mk/*.mk)
+MKFS:=	    $(wildcard GNUmakefile $(PROJECT_ROOT)$(SRCDIR)/GNUmakefile $(PROJECT_ROOT)GNUmakefile $(PROJECT_ROOT)main.mk $(PROJECT_ROOT)Mk/*.mk)
 
 all: test
 
