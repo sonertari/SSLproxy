@@ -52,7 +52,13 @@ void log_dbg_mode(int);
 #define LOG_DBG_MODE_FINER 3
 #define LOG_DBG_MODE_FINEST 4
 
-#define __FUNCTION__ __extension__ __PRETTY_FUNCTION__
+// Don't use the following __FUNCTION__ definition, because __PRETTY_FUNCTION__ prints a detailed function signature on OpenBSD
+//#define __FUNCTION__ __extension__ __PRETTY_FUNCTION__
+#if defined __STDC_VERSION__ && __STDC_VERSION__ >= 199901L
+#define __FUNCTION__ __func__
+#else
+#define __FUNCTION__ ((const char *) 0)
+#endif
 
 // @attention We don't use ## __VA_ARGS__ to fix missing variable args,
 // because it still gives warnings about ISO C99 requiring at least one argument for the "..." in a variadic macro
