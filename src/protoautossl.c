@@ -276,7 +276,9 @@ protoautossl_enable_src(pxy_conn_ctx_t *ctx)
 		if (protossl_setup_src_new_bev_ssl_accepting(ctx) == -1) {
 			return -1;
 		}
+#if LIBEVENT_VERSION_NUMBER >= 0x02010000
 		bufferevent_openssl_set_allow_dirty_shutdown(ctx->src.bev, 1);
+#endif /* LIBEVENT_VERSION_NUMBER >= 0x02010000 */
 	}
 	bufferevent_setcb(ctx->src.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
 
@@ -323,7 +325,9 @@ protoautossl_enable_conn_src_child(pxy_conn_child_ctx_t *ctx)
 	if (protossl_setup_src_new_bev_ssl_accepting(ctx->conn) == -1) {
 		return -1;
 	}
+#if LIBEVENT_VERSION_NUMBER >= 0x02010000
 	bufferevent_openssl_set_allow_dirty_shutdown(ctx->conn->src.bev, 1);
+#endif /* LIBEVENT_VERSION_NUMBER >= 0x02010000 */
 	bufferevent_setcb(ctx->conn->src.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx->conn);
 
 	// srvdst is xferred to the first child conn, so save the ssl info for logging
