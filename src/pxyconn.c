@@ -1160,13 +1160,16 @@ pxy_setup_child_listener(pxy_conn_ctx_t *ctx)
 		return -1;
 	}
 
-	// @attention Children are assumed to be listening on an IPv4 address
-	// @todo IPv6?
+	// @todo Children are assumed to be listening on an IPv4 address, should we support IPv6 children?
 	char addr[INET_ADDRSTRLEN];
 	if (!inet_ntop(AF_INET, &child_listener_addr.sin_addr, addr, INET_ADDRSTRLEN)) {
 		pxy_conn_term(ctx, 1);
 		return -1;
 	}
+
+	// Port may be 4 or 5 chars long
+	unsigned int port = ntohs(child_listener_addr.sin_port);
+	size_t port_len = port < 10000 ? 4 : 5;
 
 	if (pxy_set_dstaddr(ctx) == -1) {
 		return -1;
@@ -1177,11 +1180,11 @@ pxy_setup_child_listener(pxy_conn_ctx_t *ctx)
 		// +1 for comma
 		user_len = strlen(ctx->user) + 1;
 	}
+
 	// SSLproxy: [127.0.0.1]:34649,[192.168.3.24]:47286,[74.125.206.108]:465,s,soner
-	// @todo Port may be less than 5 chars
-	// SSLproxy:        +   + [ + addr         + ] + : + p + , + [ + srchost_str              + ] + : + srcport_str              + , + [ + dsthost_str              + ] + : + dstport_str              + , + s + , + user
-	// SSLPROXY_KEY_LEN + 1 + 1 + strlen(addr) + 1 + 1 + 5 + 1 + 1 + strlen(ctx->srchost_str) + 1 + 1 + strlen(ctx->srcport_str) + 1 + 1 + strlen(ctx->dsthost_str) + 1 + 1 + strlen(ctx->dstport_str) + 1 + 1 + 1 + strlen(ctx->user)
-	ctx->sslproxy_header_len = SSLPROXY_KEY_LEN + strlen(addr) + strlen(ctx->srchost_str) + strlen(ctx->srcport_str) + strlen(ctx->dsthost_str) + strlen(ctx->dstport_str) + 19 + user_len;
+	// SSLproxy:        +   + [ + addr         + ] + : + p        + , + [ + srchost_str              + ] + : + srcport_str              + , + [ + dsthost_str              + ] + : + dstport_str              + , + s + , + user
+	// SSLPROXY_KEY_LEN + 1 + 1 + strlen(addr) + 1 + 1 + port_len + 1 + 1 + strlen(ctx->srchost_str) + 1 + 1 + strlen(ctx->srcport_str) + 1 + 1 + strlen(ctx->dsthost_str) + 1 + 1 + strlen(ctx->dstport_str) + 1 + 1 + user_len
+	ctx->sslproxy_header_len = SSLPROXY_KEY_LEN + strlen(addr) + port_len + strlen(ctx->srchost_str) + strlen(ctx->srcport_str) + strlen(ctx->dsthost_str) + strlen(ctx->dstport_str) + 14 + user_len;
 
 	// +1 for NULL
 	ctx->sslproxy_header = malloc(ctx->sslproxy_header_len + 1);
@@ -1192,9 +1195,13 @@ pxy_setup_child_listener(pxy_conn_ctx_t *ctx)
 
 	// printf(3): "snprintf() will write at most size-1 of the characters (the size'th character then gets the terminating NULL)"
 	// So, +1 for NULL
-	snprintf(ctx->sslproxy_header, ctx->sslproxy_header_len + 1, "%s [%s]:%u,[%s]:%s,[%s]:%s,%s%s%s",
-			SSLPROXY_KEY, addr, ntohs(child_listener_addr.sin_port), STRORNONE(ctx->srchost_str), STRORNONE(ctx->srcport_str),
-			STRORNONE(ctx->dsthost_str), STRORNONE(ctx->dstport_str), ctx->spec->ssl ? "s":"p", user_len ? "," : "", user_len ? ctx->user : "");
+	if (snprintf(ctx->sslproxy_header, ctx->sslproxy_header_len + 1, "%s [%s]:%u,[%s]:%s,[%s]:%s,%s%s%s",
+			SSLPROXY_KEY, addr, port, STRORNONE(ctx->srchost_str), STRORNONE(ctx->srcport_str),
+			STRORNONE(ctx->dsthost_str), STRORNONE(ctx->dstport_str), ctx->spec->ssl ? "s":"p", user_len ? "," : "", user_len ? ctx->user : "") < 0) {
+		// ctx->sslproxy_header is freed by pxy_conn_ctx_free()
+		pxy_conn_term(ctx, 1);
+		return -1;
+	}
 	return 0;
 }
 
@@ -1336,7 +1343,8 @@ pxy_bev_readcb(struct bufferevent *bev, void *arg)
 	}
 
 	if (!ctx->connected) {
-		log_err_level_printf(LOG_CRIT, "pxy_bev_readcb: readcb called when not connected - aborting.\n");
+		log_err_level_printf(LOG_CRIT, "readcb called when not connected - aborting.\n");
+		log_fine("readcb called when not connected - aborting");
 		log_exceptcb();
 		return;
 	}
