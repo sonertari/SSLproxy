@@ -88,7 +88,6 @@ global_new(void)
 	global->leafkey_rsabits = DFLT_LEAFKEY_RSABITS;
 	global->conn_idle_timeout = 120;
 	global->expired_conn_check_period = 10;
-	global->ssl_shutdown_retry_delay = 100;
 	global->stats_period = 1;
 
 	global->opts = opts_new();
@@ -2688,17 +2687,6 @@ set_global_option(global_t *global, const char *argv0,
 		}
 #ifdef DEBUG_OPTS
 		log_dbg_printf("ExpiredConnCheckPeriod: %u\n", global->expired_conn_check_period);
-#endif /* DEBUG_OPTS */
-	} else if (!strncmp(name, "SSLShutdownRetryDelay", 22)) {
-		unsigned int i = atoi(value);
-		if (i >= 100 && i <= 10000) {
-			global->ssl_shutdown_retry_delay = i;
-		} else {
-			fprintf(stderr, "Invalid SSLShutdownRetryDelay %s on line %d, use 100-10000\n", value, line_num);
-			goto leave;
-		}
-#ifdef DEBUG_OPTS
-		log_dbg_printf("SSLShutdownRetryDelay: %u\n", global->ssl_shutdown_retry_delay);
 #endif /* DEBUG_OPTS */
 	} else if (!strncmp(name, "LogStats", 9)) {
 		yes = check_value_yesno(value, "LogStats", line_num);

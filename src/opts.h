@@ -176,7 +176,6 @@ struct global {
 #endif /* !WITHOUT_MIRROR */
 	unsigned int conn_idle_timeout;
 	unsigned int expired_conn_check_period;
-	unsigned int ssl_shutdown_retry_delay;
 	unsigned int stats_period;
 	unsigned int statslog: 1;
 	unsigned int log_stats: 1;

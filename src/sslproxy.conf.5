@@ -216,13 +216,6 @@ Default: 120
 Check for expired connections every this many seconds.
 .br 
 Default: 10.
-.TP 
-\fBSSLShutdownRetryDelay NUMBER\fR
-Retry to shut ssl conns down after this many micro seconds. Increasing this 
-delay may avoid dirty shutdowns on slow connections, but increases resource 
-usage, such as file descriptors and memory.
-.br 
-Default: 100
 .TP
 \fBLogStats BOOL\fR
 Log statistics to syslog. Equivalent to -J command line option.
