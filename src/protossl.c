@@ -31,7 +31,6 @@
 #include "prototcp.h"
 #include "protopassthrough.h"
 
-#include "pxysslshut.h"
 #include "cachemgr.h"
 
 #include <string.h>
@@ -1007,17 +1006,61 @@ protossl_bufferevent_setup_child(pxy_conn_child_ctx_t *ctx, evutil_socket_t fd, 
 static void
 protossl_bufferevent_free_and_close_fd(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
-	evutil_socket_t fd = bufferevent_getfd(bev);
+	SSL *ssl = bufferevent_openssl_get_ssl(bev); /* does not inc refc */
+	struct bufferevent *ubev = bufferevent_get_underlying(bev);
+	evutil_socket_t fd;
+
+	if (ubev) {
+		fd = bufferevent_getfd(ubev);
+	} else {
+		fd = bufferevent_getfd(bev);
+	}
 
 	log_finer_va("in=%zu, out=%zu, fd=%d", evbuffer_get_length(bufferevent_get_input(bev)), evbuffer_get_length(bufferevent_get_output(bev)), fd);
 
-	SSL *ssl = bufferevent_openssl_get_ssl(bev); /* does not inc refc */
-
-	// @todo Do we need to NULL all cbs?
 	// @see https://stackoverflow.com/questions/31688709/knowing-all-callbacks-have-run-with-libevent-and-bufferevent-free
-	//bufferevent_setcb(bev, NULL, NULL, NULL, NULL);
-	bufferevent_free(bev); /* does not free SSL unless the option BEV_OPT_CLOSE_ON_FREE was set */
-	pxy_ssl_shutdown(ctx->global, ctx->evbase, ssl, fd);
+	bufferevent_setcb(bev, NULL, NULL, NULL, NULL);
+
+	/*
+	 * From the libevent book:  SSL_RECEIVED_SHUTDOWN tells
+	 * SSL_shutdown to act as if we had already received a close
+	 * notify from the other end.  SSL_shutdown will then send the
+	 * final close notify in reply.  The other end will receive the
+	 * close notify and send theirs.  By this time, we will have
+	 * already closed the socket and the other end's real close
+	 * notify will never be received.  In effect, both sides will
+	 * think that they have completed a clean shutdown and keep
+	 * their sessions valid.  This strategy will fail if the socket
+	 * is not ready for writing, in which case this hack will lead
+	 * to an unclean shutdown and lost session on the other end.
+	 *
+	 * Note that in the case of autossl, the SSL object operates on
+	 * a BIO wrapper around the underlying bufferevent.
+	 */
+	SSL_set_shutdown(ssl, SSL_RECEIVED_SHUTDOWN);
+	SSL_shutdown(ssl);
+
+	bufferevent_disable(bev, EV_READ|EV_WRITE);
+	if (ubev) {
+		bufferevent_disable(ubev, EV_READ|EV_WRITE);
+		bufferevent_setfd(ubev, -1);
+		bufferevent_setcb(ubev, NULL, NULL, NULL, NULL);
+		bufferevent_free(ubev);
+	}
+	bufferevent_free(bev);
+
+	if (OPTS_DEBUG(ctx->global)) {
+		log_dbg_print_free(ssl_ssl_state_to_str(ssl, "SSL_free() in state "));
+	}
+#ifdef DEBUG_PROXY
+	char *str = ssl_ssl_state_to_str(ssl, "SSL_free() in state ");
+	log_finer_va("fd=%d, %s", fd, STRORDASH(str));
+	if (str)
+		free(str);
+#endif /* DEBUG_PROXY */
+
+	SSL_free(ssl);
+	evutil_closesocket(fd);
 }
 
 void
