@@ -31,8 +31,6 @@
 #include "prototcp.h"
 #include "protossl.h"
 
-#include "pxysslshut.h"
-
 #include <string.h>
 #include <sys/param.h>
 #include <event2/bufferevent_ssl.h>
@@ -178,25 +176,30 @@ protoautossl_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	struct evbuffer *inbuf = bufferevent_get_input(bev);
 	struct evbuffer *outbuf = bufferevent_get_output(ctx->dst.bev);
 
-	size_t packet_size = evbuffer_get_length(inbuf);
-	// +2 is for \r\n
-	unsigned char *packet = pxy_malloc_packet(packet_size + ctx->sslproxy_header_len + 2, ctx);
-	if (!packet) {
-		return;
-	}
-
-	evbuffer_remove(inbuf, packet, packet_size);
-
-	log_finest_va("ORIG packet, size=%zu:\n%.*s", packet_size, (int)packet_size, packet);
+	// @todo Validate proto?
 
 	if (!ctx->sent_sslproxy_header) {
+		size_t packet_size = evbuffer_get_length(inbuf);
+		// +2 for \r\n
+		unsigned char *packet = pxy_malloc_packet(packet_size + ctx->sslproxy_header_len + 2, ctx);
+		if (!packet) {
+			return;
+		}
+
+		evbuffer_remove(inbuf, packet, packet_size);
+
+		log_finest_va("ORIG packet, size=%zu:\n%.*s", packet_size, (int)packet_size, packet);
+
 		pxy_insert_sslproxy_header(ctx, packet, &packet_size);
+		evbuffer_add(outbuf, packet, packet_size);
+
+		log_finest_va("NEW packet, size=%zu:\n%.*s", packet_size, (int)packet_size, packet);
+
+		free(packet);
 	}
-	evbuffer_add(outbuf, packet, packet_size);
-
-	log_finest_va("NEW packet, size=%zu:\n%.*s", packet_size, (int)packet_size, packet);
-
-	free(packet);
+	else {
+		evbuffer_add_buffer(outbuf, inbuf);
+	}
 	pxy_try_set_watermark(bev, ctx, ctx->dst.bev);
 }
 
@@ -228,14 +231,15 @@ protoautossl_bev_readcb_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		}
 	}
 
+	if (ctx->src.closed) {
+		pxy_discard_inbuf(bev);
+		return;
+	}
+
 	struct evbuffer *inbuf = bufferevent_get_input(bev);
-	size_t inbuf_size = evbuffer_get_length(inbuf);
-
-	log_finer_va("clienthello_search Discarding packet, size=%zu", inbuf_size);
-
-	// Discard packets to client while searching for clienthello in autossl mode, because child conn passes them along already
-	// Otherwise client would receive the same packet twice
-	evbuffer_drain(inbuf, inbuf_size);
+	struct evbuffer *outbuf = bufferevent_get_output(ctx->src.bev);
+	evbuffer_add_buffer(outbuf, inbuf);
+	pxy_try_set_watermark(bev, ctx, ctx->src.bev);
 }
 
 static void NONNULL(1,2)
@@ -272,13 +276,16 @@ protoautossl_enable_src(pxy_conn_ctx_t *ctx)
 		if (protossl_setup_src_new_bev_ssl_accepting(ctx) == -1) {
 			return -1;
 		}
+		bufferevent_openssl_set_allow_dirty_shutdown(ctx->src.bev, 1);
 	}
 	bufferevent_setcb(ctx->src.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
 
 	// srvdst is xferred to the first child conn, so save the srvdst ssl info for logging
 	if (ctx->srvdst.bev && !autossl_ctx->clienthello_search && ctx->srvdst.ssl) {
-		ctx->sslctx->srvdst_ssl_version = strdup(SSL_get_version(ctx->srvdst.ssl));
-		ctx->sslctx->srvdst_ssl_cipher = strdup(SSL_get_cipher(ctx->srvdst.ssl));
+		if (!ctx->sslctx->srvdst_ssl_version && !ctx->sslctx->srvdst_ssl_cipher) {
+			ctx->sslctx->srvdst_ssl_version = strdup(SSL_get_version(ctx->srvdst.ssl));
+			ctx->sslctx->srvdst_ssl_cipher = strdup(SSL_get_cipher(ctx->srvdst.ssl));
+		}
 	}
 
 	// Skip child listener setup if completing autossl upgrade, after finding clienthello
@@ -316,12 +323,15 @@ protoautossl_enable_conn_src_child(pxy_conn_child_ctx_t *ctx)
 	if (protossl_setup_src_new_bev_ssl_accepting(ctx->conn) == -1) {
 		return -1;
 	}
+	bufferevent_openssl_set_allow_dirty_shutdown(ctx->conn->src.bev, 1);
 	bufferevent_setcb(ctx->conn->src.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx->conn);
 
 	// srvdst is xferred to the first child conn, so save the ssl info for logging
 	if (ctx->dst.bev && !autossl_ctx->clienthello_search && ctx->dst.ssl) {
-		ctx->conn->sslctx->srvdst_ssl_version = strdup(SSL_get_version(ctx->dst.ssl));
-		ctx->conn->sslctx->srvdst_ssl_cipher = strdup(SSL_get_cipher(ctx->dst.ssl));
+		if (!ctx->conn->sslctx->srvdst_ssl_version && !ctx->conn->sslctx->srvdst_ssl_cipher) {
+			ctx->conn->sslctx->srvdst_ssl_version = strdup(SSL_get_version(ctx->dst.ssl));
+			ctx->conn->sslctx->srvdst_ssl_cipher = strdup(SSL_get_cipher(ctx->dst.ssl));
+		}
 	}
 
 	log_finer_va("Enabling src, %s", ctx->conn->sslproxy_header);
@@ -366,6 +376,7 @@ protoautossl_bev_eventcb_connected_srvdst(UNUSED struct bufferevent *bev, pxy_co
 			return;
 		}
 		bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
+		bufferevent_enable(ctx->dst.bev, EV_READ|EV_WRITE);
 		if (bufferevent_socket_connect(ctx->dst.bev, (struct sockaddr *)&ctx->spec->conn_dst_addr,
 				ctx->spec->conn_dst_addrlen) == -1) {
 			log_fine("FAILED bufferevent_socket_connect for dst");
