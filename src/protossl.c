@@ -1256,7 +1256,7 @@ protossl_setup_srvdst_ssl(pxy_conn_ctx_t *ctx)
 	return 0;
 }
 
-static int NONNULL(1)
+int
 protossl_setup_srvdst(pxy_conn_ctx_t *ctx)
 {
 	if (protossl_setup_srvdst_ssl(ctx) == -1) {

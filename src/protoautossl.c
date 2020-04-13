@@ -128,7 +128,7 @@ protoautossl_conn_connect(pxy_conn_ctx_t *ctx)
 
 	/* initiate connection */
 	if (bufferevent_socket_connect(ctx->srvdst.bev, (struct sockaddr *)&ctx->dstaddr, ctx->dstaddrlen) == -1) {
-		log_err_level_printf(LOG_CRIT, "bufferevent_socket_connect for srvdst failed\n");
+		log_err_level_printf(LOG_CRIT, "protoautossl_conn_connect: bufferevent_socket_connect for srvdst failed\n");
 		log_fine("bufferevent_socket_connect for srvdst failed");
 		// @attention Do not try to term/close conns or do anything else with conn ctx on the thrmgr thread after setting event callbacks and/or socket connect. Just return 0.
 	}

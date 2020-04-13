@@ -26,6 +26,7 @@
  */
 
 #include "protosmtp.h"
+#include "prototcp.h"
 #include "protossl.h"
 
 #include <string.h>
@@ -91,10 +92,85 @@ protosmtp_validate(pxy_conn_ctx_t *ctx, char *packet
 	return 0;
 }
 
+static int NONNULL(1) WUNRES
+protosmtp_conn_connect(pxy_conn_ctx_t *ctx)
+{
+	log_finest("ENTER");
+
+	/* create server-side socket and eventbuffer */
+	if (ctx->protoctx->proto == PROTO_SMTP) {
+		if (prototcp_setup_srvdst(ctx) == -1) {
+			return -1;
+		}
+	} else {
+		if (protossl_setup_srvdst(ctx) == -1) {
+			return -1;
+		}
+	}
+
+	// Conn setup is successful, so add the conn to the conn list of its thread now
+	pxy_thrmgr_add_conn(ctx);
+
+	// We enable readcb for srvdst to relay the 220 smtp greeting from the server to the client, otherwise the conn stalls
+	bufferevent_setcb(ctx->srvdst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
+	bufferevent_enable(ctx->srvdst.bev, EV_READ|EV_WRITE);
+	
+	/* initiate connection */
+	if (bufferevent_socket_connect(ctx->srvdst.bev, (struct sockaddr *)&ctx->dstaddr, ctx->dstaddrlen) == -1) {
+		log_err_level_printf(LOG_CRIT, "protosmtp_conn_connect: bufferevent_socket_connect for srvdst failed\n");
+		log_fine("bufferevent_socket_connect for srvdst failed");
+		// @attention Do not try to term/close conns or do anything else with conn ctx on the thrmgr thread after setting event callbacks and/or socket connect.
+	}
+	return 0;
+}
+
+static void NONNULL(1)
+protosmtp_bev_readcb_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
+{
+	log_finest_va("ENTER, size=%zu", evbuffer_get_length(bufferevent_get_input(bev)));
+
+	// Make sure src.bev exists
+	if (ctx->src.bev) {
+		if (prototcp_try_send_userauth_msg(ctx->src.bev, ctx)) {
+			return;
+		}
+	}
+
+	if (ctx->src.closed) {
+		pxy_discard_inbuf(bev);
+		return;
+	}
+
+	struct evbuffer *inbuf = bufferevent_get_input(bev);
+	struct evbuffer *outbuf = bufferevent_get_output(ctx->src.bev);
+	evbuffer_add_buffer(outbuf, inbuf);
+	pxy_try_set_watermark(bev, ctx, ctx->src.bev);
+}
+
+static void NONNULL(1)
+protosmtp_bev_readcb(struct bufferevent *bev, void *arg)
+{
+	pxy_conn_ctx_t *ctx = arg;
+
+	if (bev == ctx->src.bev) {
+		prototcp_bev_readcb_src(bev, ctx);
+	} else if (bev == ctx->dst.bev) {
+		prototcp_bev_readcb_dst(bev, ctx);
+	} else if (bev == ctx->srvdst.bev) {
+		protosmtp_bev_readcb_srvdst(bev, ctx);
+	} else {
+		log_err_printf("protosmtp_bev_readcb: UNKWN conn end\n");
+	}
+}
+
 protocol_t
 protosmtp_setup(pxy_conn_ctx_t *ctx)
 {
 	ctx->protoctx->proto = PROTO_SMTP;
+
+	ctx->protoctx->connectcb = protosmtp_conn_connect;
+
+	ctx->protoctx->bev_readcb = protosmtp_bev_readcb;
 
 	ctx->protoctx->validatecb = protosmtp_validate;
 
@@ -112,9 +188,10 @@ protosmtps_setup(pxy_conn_ctx_t *ctx)
 {
 	ctx->protoctx->proto = PROTO_SMTPS;
 
-	ctx->protoctx->connectcb = protossl_conn_connect;
+	ctx->protoctx->connectcb = protosmtp_conn_connect;
 	ctx->protoctx->fd_readcb = protossl_fd_readcb;
 	
+	ctx->protoctx->bev_readcb = protosmtp_bev_readcb;
 	ctx->protoctx->bev_eventcb = protossl_bev_eventcb;
 
 	ctx->protoctx->proto_free = protossl_free;

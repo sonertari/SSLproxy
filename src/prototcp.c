@@ -267,7 +267,7 @@ prototcp_try_validate_proto(struct bufferevent *bev, pxy_conn_ctx_t *ctx, struct
 	return 0;
 }
 
-static void NONNULL(1,2)
+void
 prototcp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 	log_finest_va("ENTER, size=%zu", evbuffer_get_length(bufferevent_get_input(bev)));
@@ -313,7 +313,7 @@ prototcp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	pxy_try_set_watermark(bev, ctx, ctx->dst.bev);
 }
 
-static void NONNULL(1)
+void
 prototcp_bev_readcb_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 	log_finest_va("ENTER, size=%zu", evbuffer_get_length(bufferevent_get_input(bev)));
