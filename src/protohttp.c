@@ -531,7 +531,7 @@ static int NONNULL(1,2)
 protohttp_validate(protohttp_ctx_t *http_ctx, pxy_conn_ctx_t *ctx)
 {
 	if (http_ctx->not_valid) {
-		log_finest("Not http");
+		log_finest("Not http, validation failed previously");
 		return -1;
 	}
 	if (http_ctx->http_method) {

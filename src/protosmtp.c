@@ -71,7 +71,7 @@ protosmtp_validate(pxy_conn_ctx_t *ctx, char *packet
 	protosmtp_ctx_t *smtp_ctx = ctx->protoctx->arg;
 
 	if (smtp_ctx->not_valid) {
-		log_finest("Not smtp");
+		log_finest("Not smtp, validation failed previously");
 		return -1;
 	}
 	if (protosmtp_validate_command(packet
@@ -92,22 +92,73 @@ protosmtp_validate(pxy_conn_ctx_t *ctx, char *packet
 	return 0;
 }
 
-static int NONNULL(1) WUNRES
-protosmtp_conn_connect(pxy_conn_ctx_t *ctx)
+static int NONNULL(1,2)
+protosmtp_validate_response(pxy_conn_ctx_t *ctx, char *packet
+#ifdef DEBUG_PROXY
+	, size_t packet_size
+#endif /* DEBUG_PROXY */
+	)
 {
-	log_finest("ENTER");
+	protosmtp_ctx_t *smtp_ctx = ctx->protoctx->arg;
 
-	/* create server-side socket and eventbuffer */
-	if (ctx->protoctx->proto == PROTO_SMTP) {
-		if (prototcp_setup_srvdst(ctx) == -1) {
-			return -1;
-		}
-	} else {
-		if (protossl_setup_srvdst(ctx) == -1) {
-			return -1;
-		}
+	if (smtp_ctx->not_valid) {
+		log_finest("Not smtp, validation failed previously");
+		return -1;
 	}
 
+	char response[4];
+	memcpy(response, packet, 3);
+	response[3] = '\0';
+
+	unsigned int i = atoi(response);
+	if (i >= 200 && i < 600) {
+		// Don't set is_valid flag here, it should be set on the client side
+		//ctx->protoctx->is_valid = 1;
+		log_finest_va("Passed response validation: %.*s", (int)packet_size, packet);
+		return 0;
+	}
+
+	smtp_ctx->not_valid = 1;
+	log_finest_va("Failed response validation: %.*s", (int)packet_size, packet);
+	return -1;
+}
+
+static int NONNULL(1,2,3,4)
+protosmtp_try_validate_response(struct bufferevent *bev, pxy_conn_ctx_t *ctx, struct evbuffer *inbuf, struct evbuffer *outbuf)
+{
+	if (ctx->spec->opts->validate_proto) {
+		size_t packet_size = evbuffer_get_length(inbuf);
+		char *packet = (char *)pxy_malloc_packet(packet_size, ctx);
+		if (!packet) {
+			return -1;
+		}
+		if (evbuffer_copyout(inbuf, packet, packet_size) == -1) {
+			free(packet);
+			return -1;
+		}
+		if (protosmtp_validate_response(ctx, packet
+#ifdef DEBUG_PROXY
+				, packet_size
+#endif /* DEBUG_PROXY */
+				) == -1) {
+			// Send message to the client: outbuf of src
+			evbuffer_add(outbuf, PROTOERROR_MSG, PROTOERROR_MSG_LEN);
+			ctx->sent_protoerror_msg = 1;
+			// Discard packets from the client: inbuf of src
+			pxy_discard_inbuf(ctx->src.bev);
+			// Discard packets to the server: outbuf of srvdst
+			evbuffer_drain(bufferevent_get_output(bev), evbuffer_get_length(bufferevent_get_output(bev)));
+			free(packet);
+			return -1;
+		}
+		free(packet);
+	}
+	return 0;
+}
+
+static void NONNULL(1)
+protosmtp_conn_connect_common(pxy_conn_ctx_t *ctx)
+{
 	// Conn setup is successful, so add the conn to the conn list of its thread now
 	pxy_thrmgr_add_conn(ctx);
 
@@ -121,6 +172,31 @@ protosmtp_conn_connect(pxy_conn_ctx_t *ctx)
 		log_fine("bufferevent_socket_connect for srvdst failed");
 		// @attention Do not try to term/close conns or do anything else with conn ctx on the thrmgr thread after setting event callbacks and/or socket connect.
 	}
+}
+
+static int NONNULL(1) WUNRES
+protosmtp_conn_connect(pxy_conn_ctx_t *ctx)
+{
+	log_finest("ENTER");
+
+	/* create server-side socket and eventbuffer */
+	if (prototcp_setup_srvdst(ctx) == -1) {
+		return -1;
+	}
+	protosmtp_conn_connect_common(ctx);
+	return 0;
+}
+
+static int NONNULL(1) WUNRES
+protosmtps_conn_connect(pxy_conn_ctx_t *ctx)
+{
+	log_finest("ENTER");
+
+	/* create server-side socket and eventbuffer */
+	if (protossl_setup_srvdst(ctx) == -1) {
+		return -1;
+	}
+	protosmtp_conn_connect_common(ctx);
 	return 0;
 }
 
@@ -130,10 +206,25 @@ protosmtp_bev_readcb_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	log_finest_va("ENTER, size=%zu", evbuffer_get_length(bufferevent_get_input(bev)));
 
 	// Make sure src.bev exists
-	if (ctx->src.bev) {
-		if (prototcp_try_send_userauth_msg(ctx->src.bev, ctx)) {
-			return;
-		}
+	if (!ctx->src.bev) {
+		log_finest("src.bev does not exist");
+		return;
+	}
+
+	if (prototcp_try_send_userauth_msg(ctx->src.bev, ctx)) {
+		return;
+	}
+
+	struct evbuffer *inbuf = bufferevent_get_input(bev);
+	struct evbuffer *outbuf = bufferevent_get_output(ctx->src.bev);
+
+	// We should validate the response from the smtp server to protect the client,
+	// because here we directly relay the packets from the server to the client
+	// until we receive the first packet from the client,
+	// at which time we xfer srvdst to the first child conn and effectively disable this readcb,
+	// hence start diverting packets to the listening program
+	if (protosmtp_try_validate_response(bev, ctx, inbuf, outbuf) != 0) {
+		return;
 	}
 
 	if (ctx->src.closed) {
@@ -141,8 +232,6 @@ protosmtp_bev_readcb_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		return;
 	}
 
-	struct evbuffer *inbuf = bufferevent_get_input(bev);
-	struct evbuffer *outbuf = bufferevent_get_output(ctx->src.bev);
 	evbuffer_add_buffer(outbuf, inbuf);
 	pxy_try_set_watermark(bev, ctx, ctx->src.bev);
 }
@@ -188,7 +277,7 @@ protosmtps_setup(pxy_conn_ctx_t *ctx)
 {
 	ctx->protoctx->proto = PROTO_SMTPS;
 
-	ctx->protoctx->connectcb = protosmtp_conn_connect;
+	ctx->protoctx->connectcb = protosmtps_conn_connect;
 	ctx->protoctx->fd_readcb = protossl_fd_readcb;
 	
 	ctx->protoctx->bev_readcb = protosmtp_bev_readcb;

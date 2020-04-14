@@ -69,7 +69,7 @@ protopop3_validate(pxy_conn_ctx_t *ctx, char *packet
 	protopop3_ctx_t *pop3_ctx = ctx->protoctx->arg;
 
 	if (pop3_ctx->not_valid) {
-		log_finest("Not pop3");
+		log_finest("Not pop3, validation failed previously");
 		return -1;
 	}
 	if (protopop3_validate_command(packet

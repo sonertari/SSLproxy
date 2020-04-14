@@ -225,11 +225,17 @@ protoautossl_bev_readcb_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	log_finest_va("ENTER, size=%zu", evbuffer_get_length(bufferevent_get_input(bev)));
 
 	// Make sure src.bev exists
-	if (ctx->src.bev) {
-		if (prototcp_try_send_userauth_msg(ctx->src.bev, ctx)) {
-			return;
-		}
+	if (!ctx->src.bev) {
+		log_finest("src.bev does not exist");
+		return;
 	}
+
+	if (prototcp_try_send_userauth_msg(ctx->src.bev, ctx)) {
+		return;
+	}
+
+	// @todo We should validate the response from the server to protect the client,
+	// as we do with the smtp protocol, @see protosmtp_bev_readcb_srvdst()
 
 	if (ctx->src.closed) {
 		pxy_discard_inbuf(bev);

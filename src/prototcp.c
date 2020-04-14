@@ -255,9 +255,12 @@ prototcp_try_validate_proto(struct bufferevent *bev, pxy_conn_ctx_t *ctx, struct
 				, packet_size
 #endif /* DEBUG_PROXY */
 				) == -1) {
+			// Send message to the client: outbuf of src
 			evbuffer_add(bufferevent_get_output(bev), PROTOERROR_MSG, PROTOERROR_MSG_LEN);
 			ctx->sent_protoerror_msg = 1;
+			// Discard packets from the client: inbuf of src
 			pxy_discard_inbuf(bev);
+			// Discard packets to the server: outbuf of dst
 			evbuffer_drain(outbuf, evbuffer_get_length(outbuf));
 			free(packet);
 			return 1;
