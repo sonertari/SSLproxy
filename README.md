@@ -1,9 +1,9 @@
 # SSLproxy - transparent SSL/TLS proxy for decrypting and diverting network traffic to other programs for deep SSL inspection [![Build Status](https://travis-ci.org/sonertari/SSLproxy.svg?branch=master)](https://travis-ci.org/sonertari/SSLproxy)
 
-Copyright (C) 2017-2019, [Soner Tari](http://comixwall.org).  
+Copyright (C) 2017-2020, [Soner Tari](http://comixwall.org).
 https://github.com/sonertari/SSLproxy
 
-Copyright (C) 2009-2019, [Daniel Roethlisberger](//daniel.roe.ch/).  
+Copyright (C) 2009-2019, [Daniel Roethlisberger](//daniel.roe.ch/).
 https://www.roe.ch/SSLsplit
 
 ## Overview
