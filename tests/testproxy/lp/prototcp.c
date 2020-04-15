@@ -300,10 +300,10 @@ prototcp_connect_conn_end(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	log_dbg_level_printf(LOG_DBG_MODE_FINE, "prototcp_connect_conn_end: writecb before connected, fd=%d\n", ctx->fd);
 #endif /* DEBUG_PROXY */
 
-	// @attention Sometimes write cb fires but not event cb, especially if the listener cb is not finished yet, so the conn stalls.
-	// This is a workaround for this error condition, nothing else seems to work.
-	// @attention Do not try to free the conn here, since the listener cb may not be finished yet, which causes multithreading issues
-	// XXX: Workaround, should find the real cause: BEV_OPT_DEFER_CALLBACKS?
+	// @attention Sometimes writecb fires but not connectcb, especially if the listener cb is not finished yet,
+	// so as a workaround if we don't call the connectcb here, the conn would stall.
+	// This issue seems to happen if we enable EV_WRITE before we get BEV_EVENT_CONNECTED. Apparently, EV_WRITE consumes BEV_EVENT_CONNECTED.
+	// So we should enable EV_WRITE after we get BEV_EVENT_CONNECTED, e.g. in the connectcb, if possible at all.
 	ctx->protoctx->bev_eventcb(bev, BEV_EVENT_CONNECTED, ctx);
 
 	return pxy_bev_eventcb_postexec_logging_and_stats(bev, BEV_EVENT_CONNECTED, ctx);

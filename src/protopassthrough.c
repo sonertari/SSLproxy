@@ -120,7 +120,6 @@ protopassthrough_conn_connect(pxy_conn_ctx_t *ctx)
 	// Conn setup is successful, so add the conn to the conn list of its thread now
 	pxy_thrmgr_add_conn(ctx);
 
-	// @attention Sometimes dst write cb fires but not event cb, especially if this listener cb is not finished yet, so the conn stalls.
 	bufferevent_setcb(ctx->srvdst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
 	
 	/* initiate connection */
@@ -192,6 +191,7 @@ protopassthrough_bev_writecb_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx
 	log_finest("ENTER");
 
 	if (!ctx->srvdst_connected) {
+		log_fine("writecb before connected");
 		if (pxy_connect_srvdst(bev, ctx) == -1) {
 			return;
 		}

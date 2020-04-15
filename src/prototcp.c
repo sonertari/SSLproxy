@@ -152,10 +152,6 @@ prototcp_conn_connect(pxy_conn_ctx_t *ctx)
 	// Conn setup is successful, so add the conn to the conn list of its thread now
 	pxy_thrmgr_add_conn(ctx);
 
-	// @attention Sometimes dst write cb fires but not event cb, especially if this listener cb is not finished yet, so the conn stalls.
-	// @todo Why does event cb not fire sometimes?
-	// @attention BEV_OPT_DEFER_CALLBACKS seems responsible for the issue with srvdst, libevent acts as if we call event connect() ourselves.
-	// @see Launching connections on socket-based bufferevents at http://www.wangafu.net/~nickm/libevent-book/Ref6_bufferevent.html
 	// Disable and NULL r cb, we do nothing for srvdst in r cb
 	bufferevent_setcb(ctx->srvdst.bev, NULL, pxy_bev_writecb, pxy_bev_eventcb, ctx);
 	
@@ -448,12 +444,10 @@ prototcp_bev_writecb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 static int NONNULL(1,2)
 prototcp_connect_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
-	log_fine("writecb before connected");
-
-	// @attention Sometimes dst write cb fires but not event cb, especially if the listener cb is not finished yet, so the conn stalls.
-	// This is a workaround for this error condition, nothing else seems to work.
-	// @attention Do not try to free the conn here, since the listener cb may not be finished yet, which causes multithreading issues
-	// XXX: Workaround, should find the real cause: BEV_OPT_DEFER_CALLBACKS?
+	// @attention Sometimes writecb fires but not connectcb, especially if the listener cb is not finished yet,
+	// so as a workaround if we don't call the connectcb here, the conn would stall.
+	// This issue seems to happen if we enable EV_WRITE before we get BEV_EVENT_CONNECTED. Apparently, EV_WRITE consumes BEV_EVENT_CONNECTED.
+	// So we should enable EV_WRITE after we get BEV_EVENT_CONNECTED, e.g. in the connectcb, if possible at all.
 	ctx->protoctx->bev_eventcb(bev, BEV_EVENT_CONNECTED, ctx);
 
 	return pxy_bev_eventcb_postexec_logging_and_stats(bev, BEV_EVENT_CONNECTED, ctx);
@@ -465,6 +459,7 @@ prototcp_bev_writecb_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	log_finest("ENTER");
 
 	if (!ctx->dst_connected) {
+		log_fine("writecb before connected");
 		if (prototcp_connect_dst(bev, ctx) == -1) {
 			return;
 		}
@@ -486,6 +481,7 @@ prototcp_bev_writecb_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	log_finest("ENTER");
 
 	if (!ctx->srvdst_connected) {
+		log_fine("writecb before connected");
 		pxy_connect_srvdst(bev, ctx);
 	}
 }
@@ -508,12 +504,10 @@ prototcp_bev_writecb_src_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ct
 static void NONNULL(1,2)
 prototcp_connect_dst_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ctx)
 {
-	log_fine("writecb before connected");
-
-	// @attention Sometimes dst write cb fires but not event cb, especially if the listener cb is not finished yet, so the conn stalls.
-	// This is a workaround for this error condition, nothing else seems to work.
-	// @attention Do not try to free the conn here, since the listener cb may not be finished yet, which causes multithreading issues
-	// XXX: Workaround, should find the real cause: BEV_OPT_DEFER_CALLBACKS?
+	// @attention Sometimes writecb fires but not connectcb, especially if the listener cb is not finished yet,
+	// so as a workaround if we don't call the connectcb here, the conn would stall.
+	// This issue seems to happen if we enable EV_WRITE before we get BEV_EVENT_CONNECTED. Apparently, EV_WRITE consumes BEV_EVENT_CONNECTED.
+	// So we should enable EV_WRITE after we get BEV_EVENT_CONNECTED, e.g. in the connectcb, if possible at all.
 	ctx->protoctx->bev_eventcb(bev, BEV_EVENT_CONNECTED, ctx);
 
 	pxy_bev_eventcb_postexec_stats_child(BEV_EVENT_CONNECTED, ctx);
@@ -525,6 +519,7 @@ prototcp_bev_writecb_dst_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ct
 	log_finest("ENTER");
 
 	if (!ctx->connected) {
+		log_fine("writecb before connected");
 		prototcp_connect_dst_child(bev, ctx);
 	}
 
