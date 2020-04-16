@@ -1392,12 +1392,14 @@ protossl_setup_src_ssl_from_child_dst(pxy_conn_child_ctx_t *ctx)
 	// @todo Make srvdst.ssl the origssl param
 	ctx->conn->src.ssl = protossl_srcssl_create(ctx->conn, ctx->dst.ssl);
 	if (!ctx->conn->src.ssl) {
-		if ((ctx->conn->spec->opts->passthrough || ctx->conn->passsite) && !ctx->conn->enomem) {
-			log_err_level_printf(LOG_WARNING, "Falling back to passthrough\n");
-			protopassthrough_engage(ctx->conn);
-			// report protocol change by returning 1
-			return 1;
-		}
+		// @todo Enable autossl passthrough, this function is used by protoautossl only
+		// Autossl passthrough crashes with signal 10.
+		//if ((ctx->conn->spec->opts->passthrough || ctx->conn->passsite) && !ctx->conn->enomem) {
+		//	log_err_level_printf(LOG_WARNING, "Falling back to passthrough\n");
+		//	protopassthrough_engage(ctx->conn);
+		//	// report protocol change by returning 1
+		//	return 1;
+		//}
 		pxy_conn_term(ctx->conn, 1);
 		return -1;
 	}

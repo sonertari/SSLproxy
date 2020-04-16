@@ -967,8 +967,7 @@ protohttp_free(pxy_conn_ctx_t *ctx)
 static void NONNULL(1)
 protohttps_free(pxy_conn_ctx_t *ctx)
 {
-	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
-	protohttp_free_ctx(http_ctx);
+	protohttp_free(ctx);
 	protossl_free(ctx);
 }
 

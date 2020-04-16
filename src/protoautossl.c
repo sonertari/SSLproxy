@@ -101,7 +101,6 @@ protoautossl_peek_and_upgrade(pxy_conn_ctx_t *ctx)
 			if (OPTS_DEBUG(ctx->global)) {
 				log_dbg_printf("Peek found no ClientHello\n");
 			}
-			return 0;
 		}
 	}
 	return 0;
@@ -380,7 +379,7 @@ protoautossl_bev_eventcb_connected_dst_child(struct bufferevent *bev, pxy_conn_c
 	bufferevent_enable(ctx->src.bev, EV_READ|EV_WRITE);
 
 	if (autossl_ctx->clienthello_found) {
-		if (protoautossl_enable_conn_src_child(ctx) == -1) {
+		if (protoautossl_enable_conn_src_child(ctx) != 0) {
 			return;
 		}
 
