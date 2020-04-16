@@ -965,9 +965,10 @@ protossl_bufferevent_setup(pxy_conn_ctx_t *ctx, evutil_socket_t fd, SSL *ssl)
 	bufferevent_openssl_set_allow_dirty_shutdown(bev, 1);
 #endif /* LIBEVENT_VERSION_NUMBER >= 0x02010000 */
 
-	// @attention Do not set callbacks here, srvdst does not set r cb
+	// @attention Do not set callbacks here, we do not set r cb for tcp/ssl srvdst
 	//bufferevent_setcb(bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
-	// @todo Should we enable events here?
+	// @attention Do not enable r/w events here, we do not set r cb for tcp/ssl srvdst
+	// Also, to avoid r/w cb before connected, we should enable r/w events after the conn is connected
 	//bufferevent_enable(bev, EV_READ|EV_WRITE);
 	return bev;
 }
@@ -995,6 +996,7 @@ protossl_bufferevent_setup_child(pxy_conn_child_ctx_t *ctx, evutil_socket_t fd, 
 	bufferevent_setcb(bev, pxy_bev_readcb_child, pxy_bev_writecb_child, pxy_bev_eventcb_child, ctx);
 
 	// @attention We cannot enable events here, because src events will be deferred until after dst is connected
+	// Also, to avoid r/w cb before connected, we should enable r/w events after the conn is connected
 	//bufferevent_enable(bev, EV_READ|EV_WRITE);
 	return bev;
 }
@@ -1454,7 +1456,7 @@ protossl_setup_dst_new_bev_ssl_connecting_child(pxy_conn_child_ctx_t *ctx)
 	return 0;
 }
 
-static int NONNULL(1)
+int
 protossl_enable_src(pxy_conn_ctx_t *ctx)
 {
 	int rv;
@@ -1480,11 +1482,12 @@ protossl_enable_src(pxy_conn_ctx_t *ctx)
 }
 
 static void NONNULL(1,2)
-protossl_bev_eventcb_connected_dst(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ctx)
+protossl_bev_eventcb_connected_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 	log_finest("ENTER");
 
 	ctx->dst_connected = 1;
+	bufferevent_enable(bev, EV_READ|EV_WRITE);
 
 	if (ctx->srvdst_connected && ctx->dst_connected && !ctx->connected) {
 		ctx->connected = 1;
@@ -1496,18 +1499,17 @@ protossl_bev_eventcb_connected_dst(UNUSED struct bufferevent *bev, pxy_conn_ctx_
 }
 
 static void NONNULL(1,2)
-protossl_bev_eventcb_connected_srvdst(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ctx)
+protossl_bev_eventcb_connected_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 	log_finest("ENTER");
 
 	ctx->srvdst_connected = 1;
-	bufferevent_enable(ctx->srvdst.bev, EV_WRITE);
+	bufferevent_enable(bev, EV_WRITE);
 	
 	if (prototcp_setup_dst(ctx) == -1) {
 		return;
 	}
 	bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
-	bufferevent_enable(ctx->dst.bev, EV_READ|EV_WRITE);
 	if (bufferevent_socket_connect(ctx->dst.bev, (struct sockaddr *)&ctx->spec->conn_dst_addr, ctx->spec->conn_dst_addrlen) == -1) {
 		log_fine("FAILED bufferevent_socket_connect for dst");
 		pxy_conn_term(ctx, 1);
@@ -1563,7 +1565,7 @@ protossl_bev_eventcb_dst(struct bufferevent *bev, short events, pxy_conn_ctx_t *
 	}
 }
 
-static void NONNULL(1)
+void
 protossl_bev_eventcb_srvdst(struct bufferevent *bev, short events, pxy_conn_ctx_t *ctx)
 {
 	if (events & BEV_EVENT_CONNECTED) {

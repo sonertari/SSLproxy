@@ -44,6 +44,8 @@ void protossl_fd_readcb(evutil_socket_t, short, void *);
 int protossl_conn_connect(pxy_conn_ctx_t *) NONNULL(1) WUNRES;
 void protossl_connect_child(pxy_conn_child_ctx_t *) NONNULL(1);
 
+int protossl_enable_src(pxy_conn_ctx_t *) NONNULL(1);
+
 int protossl_setup_src_ssl(pxy_conn_ctx_t *) NONNULL(1);
 int protossl_setup_src_ssl_from_child_dst(pxy_conn_child_ctx_t *) NONNULL(1);
 int protossl_setup_src_new_bev_ssl_accepting(pxy_conn_ctx_t *) NONNULL(1);
@@ -55,6 +57,8 @@ int protossl_setup_dst_child(pxy_conn_child_ctx_t *) NONNULL(1);
 int protossl_setup_srvdst(pxy_conn_ctx_t *ctx) NONNULL(1);
 int protossl_setup_srvdst_ssl(pxy_conn_ctx_t *) NONNULL(1);
 int protossl_setup_srvdst_new_bev_ssl_connecting(pxy_conn_ctx_t *) NONNULL(1);
+
+void protossl_bev_eventcb_srvdst(struct bufferevent *, short, pxy_conn_ctx_t *) NONNULL(1);
 
 void protossl_bev_eventcb(struct bufferevent *, short, void *) NONNULL(1);
 void protossl_bev_eventcb_child(struct bufferevent *, short, void *) NONNULL(1);

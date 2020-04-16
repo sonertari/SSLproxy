@@ -52,9 +52,6 @@ protoautossl_upgrade_dst_child(pxy_conn_child_ctx_t *ctx)
 		return;
 	}
 	bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb_child, pxy_bev_writecb_child, pxy_bev_eventcb_child, ctx);
-
-	log_finer("Enabling dst");
-	bufferevent_enable(ctx->dst.bev, EV_READ|EV_WRITE);
 }
 
 /*
@@ -352,13 +349,15 @@ protoautossl_enable_conn_src_child(pxy_conn_child_ctx_t *ctx)
 }
 
 static void NONNULL(1,2)
-protoautossl_bev_eventcb_connected_dst(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ctx)
+protoautossl_bev_eventcb_connected_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 	protoautossl_ctx_t *autossl_ctx = ctx->protoctx->arg;
 
 	log_finest("ENTER");
 
 	ctx->dst_connected = 1;
+	bufferevent_enable(bev, EV_READ|EV_WRITE);
+	bufferevent_enable(ctx->srvdst.bev, EV_READ|EV_WRITE);
 
 	// @todo Reduce this if condition
 	if (ctx->srvdst_connected && ctx->dst_connected && (!ctx->connected || (autossl_ctx->clienthello_found && ctx->srvdst.bev))) {
@@ -371,7 +370,7 @@ protoautossl_bev_eventcb_connected_dst(UNUSED struct bufferevent *bev, pxy_conn_
 }
 
 static void NONNULL(1,2)
-protoautossl_bev_eventcb_connected_srvdst(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ctx)
+protoautossl_bev_eventcb_connected_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 	protoautossl_ctx_t *autossl_ctx = ctx->protoctx->arg;
 
@@ -380,13 +379,12 @@ protoautossl_bev_eventcb_connected_srvdst(UNUSED struct bufferevent *bev, pxy_co
 	// srvdst may be already connected while upgrading to ssl
 	if (!ctx->srvdst_connected) {
 		ctx->srvdst_connected = 1;
-		bufferevent_enable(ctx->srvdst.bev, EV_READ|EV_WRITE);
+		bufferevent_enable(bev, EV_WRITE);
 
 		if (prototcp_setup_dst(ctx) == -1) {
 			return;
 		}
 		bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
-		bufferevent_enable(ctx->dst.bev, EV_READ|EV_WRITE);
 		if (bufferevent_socket_connect(ctx->dst.bev, (struct sockaddr *)&ctx->spec->conn_dst_addr,
 				ctx->spec->conn_dst_addrlen) == -1) {
 			log_fine("FAILED bufferevent_socket_connect for dst");
@@ -474,15 +472,14 @@ protoautossl_bev_readcb_dst_child(struct bufferevent *bev, pxy_conn_child_ctx_t 
 }
 
 static void NONNULL(1,2)
-protoautossl_bev_eventcb_connected_dst_child(UNUSED struct bufferevent *bev, pxy_conn_child_ctx_t *ctx)
+protoautossl_bev_eventcb_connected_dst_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ctx)
 {
 	protoautossl_ctx_t *autossl_ctx = ctx->conn->protoctx->arg;
 
 	log_finest("ENTER");
 
 	ctx->connected = 1;
-
-	// @attention Create and enable src.bev before, but connect here, because we check if dst.bev is NULL elsewhere
+	bufferevent_enable(bev, EV_READ|EV_WRITE);
 	bufferevent_enable(ctx->src.bev, EV_READ|EV_WRITE);
 
 	if (autossl_ctx->clienthello_found) {

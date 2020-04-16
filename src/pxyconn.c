@@ -1084,8 +1084,6 @@ pxy_listener_acceptcb_child(UNUSED struct evconnlistener *listener, evutil_socke
 		goto out;
 	}
 
-	bufferevent_enable(child_ctx->dst.bev, EV_READ|EV_WRITE);
-
 	if (OPTS_DEBUG(ctx->global)) {
 		char *host, *port;
 		if (sys_sockaddr_str((struct sockaddr *)&ctx->dstaddr, ctx->dstaddrlen, &host, &port) == 0) {
@@ -1221,22 +1219,9 @@ pxy_try_close_conn_end(pxy_conn_desc_t *conn_end, pxy_conn_ctx_t *ctx)
 	return 0;
 }
 
-int
-pxy_connect_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
-{
-	// @attention Sometimes writecb fires but not connectcb, especially if the listener cb is not finished yet,
-	// so as a workaround if we don't call the connectcb here, the conn would stall.
-	// This issue seems to happen if we enable EV_WRITE before we get BEV_EVENT_CONNECTED. Apparently, EV_WRITE consumes BEV_EVENT_CONNECTED.
-	// So we should enable EV_WRITE after we get BEV_EVENT_CONNECTED, e.g. in the connectcb, if possible at all.
-	ctx->protoctx->bev_eventcb(bev, BEV_EVENT_CONNECTED, ctx);
-
-	return pxy_bev_eventcb_postexec_logging_and_stats(bev, BEV_EVENT_CONNECTED, ctx);
-}
-
 void
 pxy_try_disconnect(pxy_conn_ctx_t *ctx, pxy_conn_desc_t *this, pxy_conn_desc_t *other, int is_requestor)
 {
-	// @attention srvdst should never reach here unless in passthrough mode, its bev may be NULL
 	this->closed = 1;
 	this->free(this->bev, ctx);
 	this->bev = NULL;

@@ -164,7 +164,6 @@ protosmtp_conn_connect_common(pxy_conn_ctx_t *ctx)
 
 	// We enable readcb for srvdst to relay the 220 smtp greeting from the server to the client, otherwise the conn stalls
 	bufferevent_setcb(ctx->srvdst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
-	bufferevent_enable(ctx->srvdst.bev, EV_READ|EV_WRITE);
 	
 	/* initiate connection */
 	if (bufferevent_socket_connect(ctx->srvdst.bev, (struct sockaddr *)&ctx->dstaddr, ctx->dstaddrlen) == -1) {
@@ -236,6 +235,30 @@ protosmtp_bev_readcb_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	pxy_try_set_watermark(bev, ctx, ctx->src.bev);
 }
 
+static void NONNULL(1,2)
+protosmtp_bev_eventcb_connected_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
+{
+	log_finest("ENTER");
+
+	ctx->dst_connected = 1;
+	bufferevent_enable(bev, EV_READ|EV_WRITE);
+	bufferevent_enable(ctx->srvdst.bev, EV_READ|EV_WRITE);
+
+	if (ctx->srvdst_connected && ctx->dst_connected && !ctx->connected) {
+		ctx->connected = 1;
+
+		if (ctx->proto == PROTO_SMTP) {
+			if (prototcp_enable_src(ctx) == -1) {
+				return;
+			}
+		} else {
+			if (protossl_enable_src(ctx) == -1) {
+				return;
+			}
+		}
+	}
+}
+
 static void NONNULL(1)
 protosmtp_bev_readcb(struct bufferevent *bev, void *arg)
 {
@@ -252,6 +275,54 @@ protosmtp_bev_readcb(struct bufferevent *bev, void *arg)
 	}
 }
 
+static void NONNULL(1)
+protosmtp_bev_eventcb_dst(struct bufferevent *bev, short events, pxy_conn_ctx_t *ctx)
+{
+	if (events & BEV_EVENT_CONNECTED) {
+		protosmtp_bev_eventcb_connected_dst(bev, ctx);
+	} else if (events & BEV_EVENT_EOF) {
+		prototcp_bev_eventcb_eof_dst(bev, ctx);
+	} else if (events & BEV_EVENT_ERROR) {
+		prototcp_bev_eventcb_error_dst(bev, ctx);
+	}
+}
+
+static void NONNULL(1)
+protosmtp_bev_eventcb(struct bufferevent *bev, short events, void *arg)
+{
+	pxy_conn_ctx_t *ctx = arg;
+
+	if (bev == ctx->src.bev) {
+		prototcp_bev_eventcb_src(bev, events, ctx);
+	} else if (bev == ctx->dst.bev) {
+		protosmtp_bev_eventcb_dst(bev, events, ctx);
+	} else if (bev == ctx->srvdst.bev) {
+		prototcp_bev_eventcb_srvdst(bev, events, ctx);
+	} else {
+		log_err_printf("protosmtp_bev_eventcb: UNKWN conn end\n");
+	}
+}
+
+void
+protosmtps_bev_eventcb(struct bufferevent *bev, short events, void *arg)
+{
+	pxy_conn_ctx_t *ctx = arg;
+
+	if (events & BEV_EVENT_ERROR) {
+		protossl_log_ssl_error(bev, ctx);
+	}
+
+	if (bev == ctx->src.bev) {
+		prototcp_bev_eventcb_src(bev, events, ctx);
+	} else if (bev == ctx->dst.bev) {
+		protosmtp_bev_eventcb_dst(bev, events, ctx);
+	} else if (bev == ctx->srvdst.bev) {
+		protossl_bev_eventcb_srvdst(bev, events, ctx);
+	} else {
+		log_err_printf("protosmtps_bev_eventcb: UNKWN conn end\n");
+	}
+}
+
 protocol_t
 protosmtp_setup(pxy_conn_ctx_t *ctx)
 {
@@ -260,6 +331,7 @@ protosmtp_setup(pxy_conn_ctx_t *ctx)
 	ctx->protoctx->connectcb = protosmtp_conn_connect;
 
 	ctx->protoctx->bev_readcb = protosmtp_bev_readcb;
+	ctx->protoctx->bev_eventcb = protosmtp_bev_eventcb;
 
 	ctx->protoctx->validatecb = protosmtp_validate;
 
@@ -281,7 +353,7 @@ protosmtps_setup(pxy_conn_ctx_t *ctx)
 	ctx->protoctx->fd_readcb = protossl_fd_readcb;
 	
 	ctx->protoctx->bev_readcb = protosmtp_bev_readcb;
-	ctx->protoctx->bev_eventcb = protossl_bev_eventcb;
+	ctx->protoctx->bev_eventcb = protosmtps_bev_eventcb;
 
 	ctx->protoctx->proto_free = protossl_free;
 	ctx->protoctx->validatecb = protosmtp_validate;

@@ -65,6 +65,9 @@ void prototcp_bev_eventcb_error_dst_child(struct bufferevent *, pxy_conn_child_c
 void prototcp_bev_eventcb_src_child(struct bufferevent *, short, pxy_conn_child_ctx_t *) NONNULL(1,3);
 void prototcp_bev_eventcb_dst_child(struct bufferevent *, short, pxy_conn_child_ctx_t *) NONNULL(1,3);
 
+int prototcp_enable_src(pxy_conn_ctx_t *) NONNULL(1);
+void prototcp_bev_eventcb_srvdst(struct bufferevent *, short, pxy_conn_ctx_t *) NONNULL(1);
+
 int prototcp_setup_src(pxy_conn_ctx_t *) NONNULL(1);
 int prototcp_setup_dst(pxy_conn_ctx_t *) NONNULL(1);
 int prototcp_setup_srvdst(pxy_conn_ctx_t *) NONNULL(1);

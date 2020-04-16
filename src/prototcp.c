@@ -49,7 +49,6 @@ prototcp_bufferevent_setup(pxy_conn_ctx_t *ctx, evutil_socket_t fd)
 {
 	log_finest_va("ENTER, fd=%d", fd);
 
-	// @todo Do we really need to defer callbacks? BEV_OPT_DEFER_CALLBACKS seems responsible for the issue with srvdst: We get writecb sometimes, no eventcb for CONNECTED event
 	struct bufferevent *bev = bufferevent_socket_new(ctx->evbase, fd, BEV_OPT_DEFER_CALLBACKS|BEV_OPT_THREADSAFE);
 	if (!bev) {
 		log_err_level_printf(LOG_CRIT, "Error creating bufferevent socket\n");
@@ -57,9 +56,10 @@ prototcp_bufferevent_setup(pxy_conn_ctx_t *ctx, evutil_socket_t fd)
 		return NULL;
 	}
 
-	// @attention Do not set callbacks here, srvdst does not set r cb
+	// @attention Do not set callbacks here, we do not set r cb for tcp/ssl srvdst
 	//bufferevent_setcb(bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
-	// @todo Should we enable events here?
+	// @attention Do not enable r/w events here, we do not set r cb for tcp/ssl srvdst
+	// Also, to avoid r/w cb before connected, we should enable r/w events after the conn is connected
 	//bufferevent_enable(bev, EV_READ|EV_WRITE);
 	return bev;
 }
@@ -79,6 +79,7 @@ prototcp_bufferevent_setup_child(pxy_conn_child_ctx_t *ctx, evutil_socket_t fd)
 	bufferevent_setcb(bev, pxy_bev_readcb_child, pxy_bev_writecb_child, pxy_bev_eventcb_child, ctx);
 
 	// @attention We cannot enable events here, because src events will be deferred until after dst is connected
+	// Also, to avoid r/w cb before connected, we should enable r/w events after the conn is connected
 	//bufferevent_enable(bev, EV_READ|EV_WRITE);
 	return bev;
 }
@@ -441,29 +442,10 @@ prototcp_bev_writecb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	pxy_try_unset_watermark(bev, ctx, &ctx->dst);
 }
 
-static int NONNULL(1,2)
-prototcp_connect_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
-{
-	// @attention Sometimes writecb fires but not connectcb, especially if the listener cb is not finished yet,
-	// so as a workaround if we don't call the connectcb here, the conn would stall.
-	// This issue seems to happen if we enable EV_WRITE before we get BEV_EVENT_CONNECTED. Apparently, EV_WRITE consumes BEV_EVENT_CONNECTED.
-	// So we should enable EV_WRITE after we get BEV_EVENT_CONNECTED, e.g. in the connectcb, if possible at all.
-	ctx->protoctx->bev_eventcb(bev, BEV_EVENT_CONNECTED, ctx);
-
-	return pxy_bev_eventcb_postexec_logging_and_stats(bev, BEV_EVENT_CONNECTED, ctx);
-}
-
 void
 prototcp_bev_writecb_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 	log_finest("ENTER");
-
-	if (!ctx->dst_connected) {
-		log_fine("writecb before connected");
-		if (prototcp_connect_dst(bev, ctx) == -1) {
-			return;
-		}
-	}
 
 	if (ctx->src.closed) {
 		if (pxy_try_close_conn_end(&ctx->dst, ctx) == 1) {
@@ -476,14 +458,9 @@ prototcp_bev_writecb_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 }
 
 void
-prototcp_bev_writecb_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
+prototcp_bev_writecb_srvdst(UNUSED struct bufferevent *bev, UNUSED pxy_conn_ctx_t *ctx)
 {
 	log_finest("ENTER");
-
-	if (!ctx->srvdst_connected) {
-		log_fine("writecb before connected");
-		pxy_connect_srvdst(bev, ctx);
-	}
 }
 
 static void NONNULL(1)
@@ -501,27 +478,10 @@ prototcp_bev_writecb_src_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ct
 	pxy_try_unset_watermark(bev, ctx->conn, &ctx->dst);
 }
 
-static void NONNULL(1,2)
-prototcp_connect_dst_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ctx)
-{
-	// @attention Sometimes writecb fires but not connectcb, especially if the listener cb is not finished yet,
-	// so as a workaround if we don't call the connectcb here, the conn would stall.
-	// This issue seems to happen if we enable EV_WRITE before we get BEV_EVENT_CONNECTED. Apparently, EV_WRITE consumes BEV_EVENT_CONNECTED.
-	// So we should enable EV_WRITE after we get BEV_EVENT_CONNECTED, e.g. in the connectcb, if possible at all.
-	ctx->protoctx->bev_eventcb(bev, BEV_EVENT_CONNECTED, ctx);
-
-	pxy_bev_eventcb_postexec_stats_child(BEV_EVENT_CONNECTED, ctx);
-}
-
 static void NONNULL(1)
 prototcp_bev_writecb_dst_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ctx)
 {
 	log_finest("ENTER");
-
-	if (!ctx->connected) {
-		log_fine("writecb before connected");
-		prototcp_connect_dst_child(bev, ctx);
-	}
 
 	if (ctx->src.closed) {
 		if (pxy_try_close_conn_end(&ctx->dst, ctx->conn) == 1) {
@@ -533,7 +493,7 @@ prototcp_bev_writecb_dst_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ct
 	pxy_try_unset_watermark(bev, ctx->conn, &ctx->src);
 }
 
-static int NONNULL(1)
+int
 prototcp_enable_src(pxy_conn_ctx_t *ctx)
 {
 	if (prototcp_setup_src(ctx) == -1) {
@@ -559,11 +519,12 @@ prototcp_bev_eventcb_connected_src(UNUSED struct bufferevent *bev, UNUSED pxy_co
 }
 
 static void NONNULL(1,2)
-prototcp_bev_eventcb_connected_dst(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ctx)
+prototcp_bev_eventcb_connected_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 	log_finest("ENTER");
 
 	ctx->dst_connected = 1;
+	bufferevent_enable(bev, EV_READ|EV_WRITE);
 
 	if (ctx->srvdst_connected && ctx->dst_connected && !ctx->connected) {
 		ctx->connected = 1;
@@ -575,18 +536,17 @@ prototcp_bev_eventcb_connected_dst(UNUSED struct bufferevent *bev, pxy_conn_ctx_
 }
 
 static void NONNULL(1,2)
-prototcp_bev_eventcb_connected_srvdst(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ctx)
+prototcp_bev_eventcb_connected_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 	log_finest("ENTER");
 
 	ctx->srvdst_connected = 1;
-	bufferevent_enable(ctx->srvdst.bev, EV_WRITE);
+	bufferevent_enable(bev, EV_WRITE);
 
 	if (prototcp_setup_dst(ctx) == -1) {
 		return;
 	}
 	bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
-	bufferevent_enable(ctx->dst.bev, EV_READ|EV_WRITE);
 	if (bufferevent_socket_connect(ctx->dst.bev, (struct sockaddr *)&ctx->spec->conn_dst_addr, ctx->spec->conn_dst_addrlen) == -1) {
 		log_fine("FAILED bufferevent_socket_connect for dst");
 		pxy_conn_term(ctx, 1);
@@ -706,13 +666,12 @@ prototcp_bev_eventcb_connected_src_child(UNUSED struct bufferevent *bev, UNUSED 
 }
 
 static void NONNULL(1,2)
-prototcp_bev_eventcb_connected_dst_child(UNUSED struct bufferevent *bev, pxy_conn_child_ctx_t *ctx)
+prototcp_bev_eventcb_connected_dst_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ctx)
 {
 	log_finest("ENTER");
 
 	ctx->connected = 1;
-
-	// @attention Create and enable src.bev before, but connect here, because we check if dst.bev is NULL elsewhere
+	bufferevent_enable(bev, EV_READ|EV_WRITE);
 	bufferevent_enable(ctx->src.bev, EV_READ|EV_WRITE);
 }
 
@@ -830,7 +789,7 @@ prototcp_bev_eventcb_dst(struct bufferevent *bev, short events, pxy_conn_ctx_t *
 	}
 }
 
-static void NONNULL(1)
+void
 prototcp_bev_eventcb_srvdst(struct bufferevent *bev, short events, pxy_conn_ctx_t *ctx)
 {
 	if (events & BEV_EVENT_CONNECTED) {

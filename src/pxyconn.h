@@ -389,8 +389,6 @@ void pxy_conn_term(pxy_conn_ctx_t *, int) NONNULL(1);
 void pxy_conn_term_child(pxy_conn_child_ctx_t *) NONNULL(1);
 void pxy_conn_free_children(pxy_conn_ctx_t *) NONNULL(1);
 
-int pxy_connect_srvdst(struct bufferevent *, pxy_conn_ctx_t *) NONNULL(1,2);
-
 int pxy_setup_child_listener(pxy_conn_ctx_t *) NONNULL(1);
 
 int pxy_bev_readcb_preexec_logging_and_stats(struct bufferevent *, pxy_conn_ctx_t *) NONNULL(1,2);

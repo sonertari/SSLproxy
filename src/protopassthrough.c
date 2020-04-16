@@ -190,13 +190,6 @@ protopassthrough_bev_writecb_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx
 {
 	log_finest("ENTER");
 
-	if (!ctx->srvdst_connected) {
-		log_fine("writecb before connected");
-		if (pxy_connect_srvdst(bev, ctx) == -1) {
-			return;
-		}
-	}
-
 	if (ctx->src.closed) {
 		if (pxy_try_close_conn_end(&ctx->srvdst, ctx) == 1) {
 			log_finest("src.closed, terminate conn");
@@ -231,21 +224,15 @@ protopassthrough_enable_src(pxy_conn_ctx_t *ctx)
 }
 
 static void NONNULL(1,2)
-protopassthrough_bev_eventcb_connected_srvdst(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ctx)
+protopassthrough_bev_eventcb_connected_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 	log_finest("ENTER");
 
-	if (!ctx->srvdst_connected) {
-		ctx->srvdst_connected = 1;
-		bufferevent_enable(ctx->srvdst.bev, EV_READ|EV_WRITE);
-	}
+	ctx->connected = 1;
+	bufferevent_enable(bev, EV_READ|EV_WRITE);
 
-	if (ctx->srvdst_connected && !ctx->connected) {
-		ctx->connected = 1;
-
-		if (protopassthrough_enable_src(ctx) == -1) {
-			return;
-		}
+	if (protopassthrough_enable_src(ctx) == -1) {
+		return;
 	}
 
 	if (!ctx->term && !ctx->enomem) {
