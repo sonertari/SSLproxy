@@ -51,7 +51,7 @@
         "1": {
           "testend": "client",
           "cmd": "sslconnectfail",
-          "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\n\r\n"
+          "payload": "GET / HTTP/1.1\r\nHost: example.com\r\n\r\n"
         },
         "2": {
           "testend": "server",

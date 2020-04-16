@@ -24,7 +24,7 @@
         "1": {
           "testend": "client",
           "cmd": "send",
-          "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\n\r\n",
+          "payload": "GET / HTTP/1.1\r\nHost: example.com\r\n\r\n",
           "assert": {
             "peer_certificate": {
               "==": [
@@ -36,7 +36,7 @@
         "2": {
           "testend": "server",
           "cmd": "recv",
-          "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\nConnection: close\r\n\r\n"
+          "payload": "GET / HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n"
         }
       }
     }

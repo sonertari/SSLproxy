@@ -37,12 +37,12 @@
         "1": {
           "testend": "client",
           "cmd": "send",
-          "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\n\r\n"
+          "payload": "GET / HTTP/1.1\r\nHost: example.com\r\n\r\n"
         },
         "2": {
           "testend": "server",
           "cmd": "recv",
-          "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\nConnection: close\r\n\r\n"
+          "payload": "GET / HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n"
         }
       }
     },
@@ -52,7 +52,7 @@
         "1": {
           "testend": "client",
           "cmd": "send",
-          "payload": "GE / HTTP/1.1\r\nHost: comixwall.org\r\n\r\n"
+          "payload": "GE / HTTP/1.1\r\nHost: example.com\r\n\r\n"
         },
         "2": {
           "testend": "server",
@@ -68,7 +68,7 @@
         "1": {
           "testend": "client",
           "cmd": "send",
-          "payload": "GE1 / HTTP/1.1\r\nHost: comixwall.org\r\n\r\n"
+          "payload": "GE1 / HTTP/1.1\r\nHost: example.com\r\n\r\n"
         },
         "2": {
           "testend": "server",
@@ -83,7 +83,7 @@
         "1": {
           "testend": "client",
           "cmd": "send",
-          "payload": "GET1 / HTTP/1.1\r\nHost: comixwall.org\r\n\r\n"
+          "payload": "GET1 / HTTP/1.1\r\nHost: example.com\r\n\r\n"
         },
         "2": {
           "testend": "server",

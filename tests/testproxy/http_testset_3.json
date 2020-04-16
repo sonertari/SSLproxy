@@ -37,7 +37,7 @@
         "1": {
           "testend": "client",
           "cmd": "send",
-          "payload": "POST / HTTP/1.1\r\nHost: comixwall.org\r\nContent-Type: application/ocsp-request\r\n\r\n",
+          "payload": "POST / HTTP/1.1\r\nHost: example.com\r\nContent-Type: application/ocsp-request\r\n\r\n",
           "comment": "It is easier to send a dummy POST ocsp request than a valid GET one"
         },
         "2": {
@@ -55,12 +55,12 @@
         "1": {
           "testend": "client",
           "cmd": "send",
-          "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\nAccept-Encoding: encoding\r\n\r\n"
+          "payload": "GET / HTTP/1.1\r\nHost: example.com\r\nAccept-Encoding: encoding\r\n\r\n"
         },
         "2": {
           "testend": "server",
           "cmd": "recv",
-          "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\nConnection: close\r\n\r\n"
+          "payload": "GET / HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n"
         }
       }
     },
@@ -70,12 +70,12 @@
         "1": {
           "testend": "client",
           "cmd": "send",
-          "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\nReferer: referer\r\n\r\n"
+          "payload": "GET / HTTP/1.1\r\nHost: example.com\r\nReferer: referer\r\n\r\n"
         },
         "2": {
           "testend": "server",
           "cmd": "recv",
-          "payload": "GET / HTTP/1.1\r\nHost: comixwall.org\r\nReferer: referer\r\nConnection: close\r\n\r\n"
+          "payload": "GET / HTTP/1.1\r\nHost: example.com\r\nReferer: referer\r\nConnection: close\r\n\r\n"
         }
       }
     }
