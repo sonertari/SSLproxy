@@ -153,8 +153,8 @@ prototcp_conn_connect(pxy_conn_ctx_t *ctx)
 	// Conn setup is successful, so add the conn to the conn list of its thread now
 	pxy_thrmgr_add_conn(ctx);
 
-	// Disable and NULL r cb, we do nothing for srvdst in r cb
-	bufferevent_setcb(ctx->srvdst.bev, NULL, pxy_bev_writecb, pxy_bev_eventcb, ctx);
+	// Disable and NULL r/w cbs, we do nothing for srvdst in r/w cbs
+	bufferevent_setcb(ctx->srvdst.bev, NULL, NULL, pxy_bev_eventcb, ctx);
 	
 	/* initiate connection */
 	if (bufferevent_socket_connect(ctx->srvdst.bev, (struct sockaddr *)&ctx->dstaddr, ctx->dstaddrlen) == -1) {
@@ -457,12 +457,6 @@ prototcp_bev_writecb_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	pxy_try_unset_watermark(bev, ctx, &ctx->src);
 }
 
-void
-prototcp_bev_writecb_srvdst(UNUSED struct bufferevent *bev, UNUSED pxy_conn_ctx_t *ctx)
-{
-	log_finest("ENTER");
-}
-
 static void NONNULL(1)
 prototcp_bev_writecb_src_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ctx)
 {
@@ -523,25 +517,16 @@ prototcp_bev_eventcb_connected_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 	log_finest("ENTER");
 
-	ctx->dst_connected = 1;
+	ctx->connected = 1;
 	bufferevent_enable(bev, EV_READ|EV_WRITE);
 
-	if (ctx->srvdst_connected && ctx->dst_connected && !ctx->connected) {
-		ctx->connected = 1;
-
-		if (prototcp_enable_src(ctx) == -1) {
-			return;
-		}
-	}
+	prototcp_enable_src(ctx);
 }
 
 static void NONNULL(1,2)
-prototcp_bev_eventcb_connected_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
+prototcp_bev_eventcb_connected_srvdst(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 	log_finest("ENTER");
-
-	ctx->srvdst_connected = 1;
-	bufferevent_enable(bev, EV_WRITE);
 
 	if (prototcp_setup_dst(ctx) == -1) {
 		return;
@@ -551,14 +536,6 @@ prototcp_bev_eventcb_connected_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *c
 		log_fine("FAILED bufferevent_socket_connect for dst");
 		pxy_conn_term(ctx, 1);
 		return;
-	}
-
-	if (ctx->srvdst_connected && ctx->dst_connected && !ctx->connected) {
-		ctx->connected = 1;
-
-		if (prototcp_enable_src(ctx) == -1) {
-			return;
-		}
 	}
 
 	if (!ctx->term && !ctx->enomem) {
@@ -850,8 +827,6 @@ prototcp_bev_writecb(struct bufferevent *bev, void *arg)
 		prototcp_bev_writecb_src(bev, ctx);
 	} else if (bev == ctx->dst.bev) {
 		prototcp_bev_writecb_dst(bev, ctx);
-	} else if (bev == ctx->srvdst.bev) {
-		prototcp_bev_writecb_srvdst(bev, ctx);
 	} else {
 		log_err_printf("prototcp_bev_writecb: UNKWN conn end\n");
 	}

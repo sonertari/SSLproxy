@@ -227,8 +227,6 @@ struct pxy_conn_ctx {
 	/* status flags */
 	unsigned int connected : 1;       /* 0 until both ends are connected */
 	unsigned int enomem : 1;                       /* 1 if out of memory */
-	unsigned int srvdst_connected : 1;    /* 0 until server is connected */
-	unsigned int dst_connected : 1;          /* 0 until dst is connected */
 	unsigned int term : 1;                     /* 0 until term requested */
 	unsigned int term_requestor : 1;          /* 1 client, 0 server side */
 

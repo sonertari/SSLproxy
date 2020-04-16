@@ -925,8 +925,6 @@ protohttp_bev_writecb(struct bufferevent *bev, void *arg)
 		protohttp_bev_writecb_src(bev, ctx);
 	} else if (bev == ctx->dst.bev) {
 		prototcp_bev_writecb_dst(bev, ctx);
-	} else if (bev == ctx->srvdst.bev) {
-		prototcp_bev_writecb_srvdst(bev, ctx);
 	} else {
 		log_err_printf("protohttp_bev_writecb: UNKWN conn end\n");
 	}

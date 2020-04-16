@@ -42,7 +42,6 @@ void prototcp_bev_readcb_src(struct bufferevent *, pxy_conn_ctx_t *) NONNULL(1,2
 void prototcp_bev_readcb_dst(struct bufferevent *, pxy_conn_ctx_t *) NONNULL(1);
 
 void prototcp_bev_writecb_dst(struct bufferevent *, pxy_conn_ctx_t *) NONNULL(1);
-void prototcp_bev_writecb_srvdst(struct bufferevent *, pxy_conn_ctx_t *) NONNULL(1);
 
 void prototcp_bev_writecb(struct bufferevent *, void *) NONNULL(1);
 

@@ -121,7 +121,7 @@ protoautossl_conn_connect(pxy_conn_ctx_t *ctx)
 	pxy_thrmgr_add_conn(ctx);
 
 	// Enable srvdst r cb for autossl mode
-	bufferevent_setcb(ctx->srvdst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
+	bufferevent_setcb(ctx->srvdst.bev, pxy_bev_readcb, NULL, pxy_bev_eventcb, ctx);
 
 	/* initiate connection */
 	if (bufferevent_socket_connect(ctx->srvdst.bev, (struct sockaddr *)&ctx->dstaddr, ctx->dstaddrlen) == -1) {
@@ -130,22 +130,6 @@ protoautossl_conn_connect(pxy_conn_ctx_t *ctx)
 		// @attention Do not try to term/close conns or do anything else with conn ctx on the thrmgr thread after setting event callbacks and/or socket connect. Just return 0.
 	}
 	return 0;
-}
-
-static void NONNULL(1)
-protoautossl_connect_child(pxy_conn_child_ctx_t *ctx)
-{
-	protoautossl_ctx_t *autossl_ctx = ctx->conn->protoctx->arg;
-
-	log_finest("ENTER");
-
-	/* create server-side socket and eventbuffer */
-	// Children rely on the findings of parent
-	if (!autossl_ctx->clienthello_found) {
-		prototcp_setup_dst_child(ctx);
-	} else {
-		protossl_setup_dst_child(ctx);
-	}
 }
 
 static void NONNULL(1)
@@ -221,12 +205,6 @@ protoautossl_bev_readcb_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 	log_finest_va("ENTER, size=%zu", evbuffer_get_length(bufferevent_get_input(bev)));
 
-	// Make sure src.bev exists
-	if (!ctx->src.bev) {
-		log_finest("src.bev does not exist");
-		return;
-	}
-
 	if (prototcp_try_send_userauth_msg(ctx->src.bev, ctx)) {
 		return;
 	}
@@ -254,55 +232,21 @@ protoautossl_bev_eventcb_connected_src(UNUSED struct bufferevent *bev, UNUSED px
 static int NONNULL(1)
 protoautossl_enable_src(pxy_conn_ctx_t *ctx)
 {
-	protoautossl_ctx_t *autossl_ctx = ctx->protoctx->arg;
-
 	log_finest("ENTER");
 
-	// Create and set up src.bev
-	if (!autossl_ctx->clienthello_found) {
-		// Create tcp src.bev first
-		if (prototcp_setup_src(ctx) == -1) {
-			return -1;
-		}
-	} else {
-		if (OPTS_DEBUG(ctx->global)) {
-			log_dbg_printf("Completing autossl upgrade\n");
-		}
-		log_finest("Completing autossl upgrade");
-
-		// tcp src.bev is already created above
-		int rv;
-		if ((rv = protossl_setup_src_ssl(ctx)) != 0) {
-			return rv;
-		}
-		// Replace tcp src.bev with ssl version
-		if (protossl_setup_src_new_bev_ssl_accepting(ctx) == -1) {
-			return -1;
-		}
-#if LIBEVENT_VERSION_NUMBER >= 0x02010000
-		bufferevent_openssl_set_allow_dirty_shutdown(ctx->src.bev, 1);
-#endif /* LIBEVENT_VERSION_NUMBER >= 0x02010000 */
+	// Create and set up tcp src.bev first
+	if (prototcp_setup_src(ctx) == -1) {
+		return -1;
 	}
+
 	bufferevent_setcb(ctx->src.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
 
-	// srvdst is xferred to the first child conn, so save the srvdst ssl info for logging
-	if (ctx->srvdst.bev && !autossl_ctx->clienthello_search && ctx->srvdst.ssl) {
-		if (!ctx->sslctx->srvdst_ssl_version && !ctx->sslctx->srvdst_ssl_cipher) {
-			ctx->sslctx->srvdst_ssl_version = strdup(SSL_get_version(ctx->srvdst.ssl));
-			ctx->sslctx->srvdst_ssl_cipher = strdup(SSL_get_cipher(ctx->srvdst.ssl));
-		}
+	if (pxy_setup_child_listener(ctx) == -1) {
+		return -1;
 	}
 
-	// Skip child listener setup if completing autossl upgrade, after finding clienthello
-	if (autossl_ctx->clienthello_search) {
-		if (pxy_setup_child_listener(ctx) == -1) {
-			return -1;
-		}
-	}
+	log_finer_va("Enabling tcp src, %s", ctx->sslproxy_header);
 
-	log_finer_va("Enabling src, %s", ctx->sslproxy_header);
-
-	// Now open the gates, perhaps for a second time in autossl mode
 	bufferevent_enable(ctx->src.bev, EV_READ|EV_WRITE);
 	return 0;
 }
@@ -310,8 +254,6 @@ protoautossl_enable_src(pxy_conn_ctx_t *ctx)
 static int NONNULL(1)
 protoautossl_enable_conn_src_child(pxy_conn_child_ctx_t *ctx)
 {
-	protoautossl_ctx_t *autossl_ctx = ctx->conn->protoctx->arg;
-
 	log_finest("ENTER");
 
 	// Create and set up src.bev
@@ -334,16 +276,12 @@ protoautossl_enable_conn_src_child(pxy_conn_child_ctx_t *ctx)
 	bufferevent_setcb(ctx->conn->src.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx->conn);
 
 	// srvdst is xferred to the first child conn, so save the ssl info for logging
-	if (ctx->dst.bev && !autossl_ctx->clienthello_search && ctx->dst.ssl) {
-		if (!ctx->conn->sslctx->srvdst_ssl_version && !ctx->conn->sslctx->srvdst_ssl_cipher) {
-			ctx->conn->sslctx->srvdst_ssl_version = strdup(SSL_get_version(ctx->dst.ssl));
-			ctx->conn->sslctx->srvdst_ssl_cipher = strdup(SSL_get_cipher(ctx->dst.ssl));
-		}
-	}
+	ctx->conn->sslctx->srvdst_ssl_version = strdup(SSL_get_version(ctx->dst.ssl));
+	ctx->conn->sslctx->srvdst_ssl_cipher = strdup(SSL_get_cipher(ctx->dst.ssl));
 
-	log_finer_va("Enabling src, %s", ctx->conn->sslproxy_header);
+	log_finer_va("Enabling ssl src, %s", ctx->conn->sslproxy_header);
 
-	// Now open the gates, perhaps for a second time in autossl mode
+	// Now open the gates for a second time after autossl upgrade
 	bufferevent_enable(ctx->conn->src.bev, EV_READ|EV_WRITE);
 	return 0;
 }
@@ -351,54 +289,29 @@ protoautossl_enable_conn_src_child(pxy_conn_child_ctx_t *ctx)
 static void NONNULL(1,2)
 protoautossl_bev_eventcb_connected_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
-	protoautossl_ctx_t *autossl_ctx = ctx->protoctx->arg;
-
 	log_finest("ENTER");
 
-	ctx->dst_connected = 1;
+	ctx->connected = 1;
 	bufferevent_enable(bev, EV_READ|EV_WRITE);
-	bufferevent_enable(ctx->srvdst.bev, EV_READ|EV_WRITE);
+	bufferevent_enable(ctx->srvdst.bev, EV_READ);
 
-	// @todo Reduce this if condition
-	if (ctx->srvdst_connected && ctx->dst_connected && (!ctx->connected || (autossl_ctx->clienthello_found && ctx->srvdst.bev))) {
-		ctx->connected = 1;
-
-		if (protoautossl_enable_src(ctx) == -1) {
-			return;
-		}
-	}
+	protoautossl_enable_src(ctx);
 }
 
 static void NONNULL(1,2)
-protoautossl_bev_eventcb_connected_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
+protoautossl_bev_eventcb_connected_srvdst(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
-	protoautossl_ctx_t *autossl_ctx = ctx->protoctx->arg;
-
 	log_finest("ENTER");
 
-	// srvdst may be already connected while upgrading to ssl
-	if (!ctx->srvdst_connected) {
-		ctx->srvdst_connected = 1;
-		bufferevent_enable(bev, EV_WRITE);
-
-		if (prototcp_setup_dst(ctx) == -1) {
-			return;
-		}
-		bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
-		if (bufferevent_socket_connect(ctx->dst.bev, (struct sockaddr *)&ctx->spec->conn_dst_addr,
-				ctx->spec->conn_dst_addrlen) == -1) {
-			log_fine("FAILED bufferevent_socket_connect for dst");
-			pxy_conn_term(ctx, 1);
-			return;
-		}
+	if (prototcp_setup_dst(ctx) == -1) {
+		return;
 	}
-
-	if (ctx->srvdst_connected && ctx->dst_connected && (!ctx->connected || autossl_ctx->clienthello_found)) {
-		ctx->connected = 1;
-
-		if (protoautossl_enable_src(ctx) == -1) {
-			return;
-		}
+	bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
+	if (bufferevent_socket_connect(ctx->dst.bev, (struct sockaddr *)&ctx->spec->conn_dst_addr,
+			ctx->spec->conn_dst_addrlen) == -1) {
+		log_fine("FAILED bufferevent_socket_connect for dst");
+		pxy_conn_term(ctx, 1);
+		return;
 	}
 
 	if (!ctx->term && !ctx->enomem) {
@@ -411,14 +324,6 @@ protoautossl_bev_readcb_src_child(struct bufferevent *bev, pxy_conn_child_ctx_t 
 {
 	log_finest_va("ENTER, size=%zu", evbuffer_get_length(bufferevent_get_input(bev)));
 		
-	protoautossl_ctx_t *autossl_ctx = ctx->conn->protoctx->arg;
-
-	if (ctx->conn->srvdst_xferred && autossl_ctx->clienthello_search) {
-		if (protoautossl_peek_and_upgrade(ctx->conn)) {
-			return;
-		}
-	}
-
 	if (ctx->dst.closed) {
 		pxy_discard_inbuf(bev);
 		return;
@@ -452,14 +357,6 @@ protoautossl_bev_readcb_dst_child(struct bufferevent *bev, pxy_conn_child_ctx_t 
 {
 	log_finest_va("ENTER, size=%zu", evbuffer_get_length(bufferevent_get_input(bev)));
 		
-	protoautossl_ctx_t *autossl_ctx = ctx->conn->protoctx->arg;
-
-	if (ctx->conn->srvdst_xferred && autossl_ctx->clienthello_search) {
-		if (protoautossl_peek_and_upgrade(ctx->conn)) {
-			return;
-		}
-	}
-
 	if (ctx->src.closed) {
 		pxy_discard_inbuf(bev);
 		return;
@@ -486,18 +383,18 @@ protoautossl_bev_eventcb_connected_dst_child(struct bufferevent *bev, pxy_conn_c
 		if (protoautossl_enable_conn_src_child(ctx) == -1) {
 			return;
 		}
-	}
 
-	// Check if we have arrived here right after autossl upgrade, which may be triggered by readcb on src
-	// Autossl upgrade code leaves readcb without processing any data in input buffer of src
-	// So, if we don't call readcb here, the connection would stall
-	if (autossl_ctx->clienthello_found && evbuffer_get_length(bufferevent_get_input(ctx->src.bev))) {
-		log_finer("clienthello_found src inbuf len > 0, calling bev_readcb for src");
+		// Check if we have arrived here right after autossl upgrade, which may be triggered by readcb on src
+		// Autossl upgrade code leaves readcb without processing any data in input buffer of src
+		// So, if we don't call readcb here, the connection could stall
+		if (evbuffer_get_length(bufferevent_get_input(ctx->src.bev))) {
+			log_finer("clienthello_found and src inbuf len > 0, calling bev_readcb for src");
 
-		if (pxy_bev_readcb_preexec_logging_and_stats_child(bev, ctx) == -1) {
-			return;
+			if (pxy_bev_readcb_preexec_logging_and_stats_child(bev, ctx) == -1) {
+				return;
+			}
+			ctx->protoctx->bev_readcb(ctx->src.bev, ctx);
 		}
-		ctx->protoctx->bev_readcb(ctx->src.bev, ctx);
 	}
 }
 
@@ -657,7 +554,6 @@ protocol_t
 protoautossl_setup_child(pxy_conn_child_ctx_t *ctx)
 {
 	ctx->protoctx->proto = PROTO_AUTOSSL;
-	ctx->protoctx->connectcb = protoautossl_connect_child;
 
 	ctx->protoctx->bev_readcb = protoautossl_bev_readcb_child;
 	ctx->protoctx->bev_writecb = prototcp_bev_writecb_child;

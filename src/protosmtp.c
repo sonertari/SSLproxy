@@ -162,8 +162,8 @@ protosmtp_conn_connect_common(pxy_conn_ctx_t *ctx)
 	// Conn setup is successful, so add the conn to the conn list of its thread now
 	pxy_thrmgr_add_conn(ctx);
 
-	// We enable readcb for srvdst to relay the 220 smtp greeting from the server to the client, otherwise the conn stalls
-	bufferevent_setcb(ctx->srvdst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
+	// Enable readcb for srvdst to relay the 220 smtp greeting from the server to the client, otherwise the conn stalls
+	bufferevent_setcb(ctx->srvdst.bev, pxy_bev_readcb, NULL, pxy_bev_eventcb, ctx);
 	
 	/* initiate connection */
 	if (bufferevent_socket_connect(ctx->srvdst.bev, (struct sockaddr *)&ctx->dstaddr, ctx->dstaddrlen) == -1) {
@@ -240,22 +240,14 @@ protosmtp_bev_eventcb_connected_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx
 {
 	log_finest("ENTER");
 
-	ctx->dst_connected = 1;
+	ctx->connected = 1;
 	bufferevent_enable(bev, EV_READ|EV_WRITE);
-	bufferevent_enable(ctx->srvdst.bev, EV_READ|EV_WRITE);
+	bufferevent_enable(ctx->srvdst.bev, EV_READ);
 
-	if (ctx->srvdst_connected && ctx->dst_connected && !ctx->connected) {
-		ctx->connected = 1;
-
-		if (ctx->proto == PROTO_SMTP) {
-			if (prototcp_enable_src(ctx) == -1) {
-				return;
-			}
-		} else {
-			if (protossl_enable_src(ctx) == -1) {
-				return;
-			}
-		}
+	if (ctx->proto == PROTO_SMTP) {
+		prototcp_enable_src(ctx);
+	} else {
+		protossl_enable_src(ctx);
 	}
 }
 

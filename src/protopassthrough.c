@@ -83,7 +83,6 @@ protopassthrough_engage(pxy_conn_ctx_t *ctx)
 	ctx->srvdst.bev = NULL;
 	ctx->srvdst.ssl = NULL;
 	ctx->connected = 0;
-	ctx->srvdst_connected = 0;
 
 	// Close and free dst if open
 	// Make sure bev is not NULL, as dst may not have been initialized yet
