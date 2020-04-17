@@ -192,22 +192,6 @@ protoautossl_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 }
 
 static void NONNULL(1)
-protoautossl_bev_readcb_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
-{
-	log_finest_va("ENTER, size=%zu", evbuffer_get_length(bufferevent_get_input(bev)));
-
-	if (ctx->src.closed) {
-		pxy_discard_inbuf(bev);
-		return;
-	}
-
-	struct evbuffer *inbuf = bufferevent_get_input(bev);
-	struct evbuffer *outbuf = bufferevent_get_output(ctx->src.bev);
-	evbuffer_add_buffer(outbuf, inbuf);
-	pxy_try_set_watermark(bev, ctx, ctx->src.bev);
-}
-
-static void NONNULL(1)
 protoautossl_bev_readcb_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 	log_finest_va("ENTER, size=%zu", evbuffer_get_length(bufferevent_get_input(bev)));
@@ -224,9 +208,7 @@ protoautossl_bev_readcb_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		return;
 	}
 
-	struct evbuffer *inbuf = bufferevent_get_input(bev);
-	struct evbuffer *outbuf = bufferevent_get_output(ctx->src.bev);
-	evbuffer_add_buffer(outbuf, inbuf);
+	evbuffer_add_buffer(bufferevent_get_output(ctx->src.bev), bufferevent_get_input(bev));
 	pxy_try_set_watermark(bev, ctx, ctx->src.bev);
 }
 
@@ -326,55 +308,6 @@ protoautossl_bev_eventcb_connected_srvdst(UNUSED struct bufferevent *bev, pxy_co
 	}
 }
 
-static void NONNULL(1)
-protoautossl_bev_readcb_src_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ctx)
-{
-	log_finest_va("ENTER, size=%zu", evbuffer_get_length(bufferevent_get_input(bev)));
-		
-	if (ctx->dst.closed) {
-		pxy_discard_inbuf(bev);
-		return;
-	}
-
-	struct evbuffer *inbuf = bufferevent_get_input(bev);
-	struct evbuffer *outbuf = bufferevent_get_output(ctx->dst.bev);
-
-	if (!ctx->removed_sslproxy_header) {
-		size_t packet_size = evbuffer_get_length(inbuf);
-		unsigned char *packet = pxy_malloc_packet(packet_size, ctx->conn);
-		if (!packet) {
-			return;
-		}
-
-		evbuffer_remove(inbuf, packet, packet_size);
-		pxy_try_remove_sslproxy_header(ctx, packet, &packet_size);
-		evbuffer_add(outbuf, packet, packet_size);
-
-		log_finest_va("NEW packet, size=%zu:\n%.*s", packet_size, (int)packet_size, packet);
-
-		free(packet);
-	} else {
-		evbuffer_add_buffer(outbuf, inbuf);
-	}
-	pxy_try_set_watermark(bev, ctx->conn, ctx->dst.bev);
-}
-
-static void NONNULL(1)
-protoautossl_bev_readcb_dst_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ctx)
-{
-	log_finest_va("ENTER, size=%zu", evbuffer_get_length(bufferevent_get_input(bev)));
-		
-	if (ctx->src.closed) {
-		pxy_discard_inbuf(bev);
-		return;
-	}
-
-	struct evbuffer *inbuf = bufferevent_get_input(bev);
-	struct evbuffer *outbuf = bufferevent_get_output(ctx->src.bev);
-	evbuffer_add_buffer(outbuf, inbuf);
-	pxy_try_set_watermark(bev, ctx->conn, ctx->src.bev);
-}
-
 static void NONNULL(1,2)
 protoautossl_bev_eventcb_connected_dst_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ctx)
 {
@@ -461,25 +394,11 @@ protoautossl_bev_readcb(struct bufferevent *bev, void *arg)
 	if (bev == ctx->src.bev) {
 		protoautossl_bev_readcb_src(bev, ctx);
 	} else if (bev == ctx->dst.bev) {
-		protoautossl_bev_readcb_dst(bev, ctx);
+		prototcp_bev_readcb_dst(bev, ctx);
 	} else if (bev == ctx->srvdst.bev) {
 		protoautossl_bev_readcb_srvdst(bev, ctx);
 	} else {
 		log_err_printf("protoautossl_bev_readcb: UNKWN conn end\n");
-	}
-}
-
-static void NONNULL(1)
-protoautossl_bev_readcb_child(struct bufferevent *bev, void *arg)
-{
-	pxy_conn_child_ctx_t *ctx = arg;
-
-	if (bev == ctx->src.bev) {
-		protoautossl_bev_readcb_src_child(bev, ctx);
-	} else if (bev == ctx->dst.bev) {
-		protoautossl_bev_readcb_dst_child(bev, ctx);
-	} else {
-		log_err_printf("protoautossl_bev_readcb_child: UNKWN conn end\n");
 	}
 }
 
@@ -562,7 +481,6 @@ protoautossl_setup_child(pxy_conn_child_ctx_t *ctx)
 {
 	ctx->protoctx->proto = PROTO_AUTOSSL;
 
-	ctx->protoctx->bev_readcb = protoautossl_bev_readcb_child;
 	ctx->protoctx->bev_writecb = prototcp_bev_writecb_child;
 	ctx->protoctx->bev_eventcb = protoautossl_bev_eventcb_child;
 

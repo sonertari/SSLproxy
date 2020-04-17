@@ -178,7 +178,7 @@ protopassthrough_bev_writecb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		if (pxy_try_close_conn_end(&ctx->src, ctx)) {
 			log_finest("srvdst.closed, terminate conn");
 			pxy_conn_term(ctx, 1);
-		}			
+		}
 		return;
 	}
 	pxy_try_unset_watermark(bev, ctx, &ctx->srvdst);
@@ -193,7 +193,7 @@ protopassthrough_bev_writecb_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx
 		if (pxy_try_close_conn_end(&ctx->srvdst, ctx) == 1) {
 			log_finest("src.closed, terminate conn");
 			pxy_conn_term(ctx, 0);
-		}			
+		}
 		return;
 	}
 	pxy_try_unset_watermark(bev, ctx, &ctx->src);

@@ -1413,7 +1413,7 @@ protossl_setup_src(pxy_conn_ctx_t *ctx)
 	if ((rv = protossl_setup_src_ssl(ctx)) != 0) {
 		return rv;
 	}
-		
+
 	ctx->src.bev = protossl_bufferevent_setup(ctx, ctx->fd, ctx->src.ssl);
 	if (!ctx->src.bev) {
 		log_err_level_printf(LOG_CRIT, "Error creating src bufferevent\n");

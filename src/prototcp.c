@@ -317,15 +317,13 @@ void
 prototcp_bev_readcb_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 	log_finest_va("ENTER, size=%zu", evbuffer_get_length(bufferevent_get_input(bev)));
-	
+
 	if (ctx->src.closed) {
 		pxy_discard_inbuf(bev);
 		return;
 	}
 
-	struct evbuffer *inbuf = bufferevent_get_input(bev);
-	struct evbuffer *outbuf = bufferevent_get_output(ctx->src.bev);
-	evbuffer_add_buffer(outbuf, inbuf);
+	evbuffer_add_buffer(bufferevent_get_output(ctx->src.bev), bufferevent_get_input(bev));
 	pxy_try_set_watermark(bev, ctx, ctx->src.bev);
 }
 
@@ -340,7 +338,7 @@ static void NONNULL(1)
 prototcp_bev_readcb_src_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ctx)
 {
 	log_finest_va("ENTER, size=%zu", evbuffer_get_length(bufferevent_get_input(bev)));
-		
+
 	if (ctx->dst.closed) {
 		pxy_discard_inbuf(bev);
 		return;
@@ -373,15 +371,13 @@ static void NONNULL(1)
 prototcp_bev_readcb_dst_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ctx)
 {
 	log_finest_va("ENTER, size=%zu", evbuffer_get_length(bufferevent_get_input(bev)));
-		
+
 	if (ctx->src.closed) {
 		pxy_discard_inbuf(bev);
 		return;
 	}
 
-	struct evbuffer *inbuf = bufferevent_get_input(bev);
-	struct evbuffer *outbuf = bufferevent_get_output(ctx->src.bev);
-	evbuffer_add_buffer(outbuf, inbuf);
+	evbuffer_add_buffer(bufferevent_get_output(ctx->src.bev), bufferevent_get_input(bev));
 	pxy_try_set_watermark(bev, ctx->conn, ctx->src.bev);
 }
 
@@ -451,7 +447,7 @@ prototcp_bev_writecb_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		if (pxy_try_close_conn_end(&ctx->dst, ctx) == 1) {
 			log_finest("src.closed, terminate conn");
 			pxy_conn_term(ctx, 0);
-		}			
+		}
 		return;
 	}
 	pxy_try_unset_watermark(bev, ctx, &ctx->src);
@@ -466,7 +462,7 @@ prototcp_bev_writecb_src_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ct
 		if (pxy_try_close_conn_end(&ctx->src, ctx->conn) == 1) {
 			log_finest("dst.closed, terminate conn");
 			pxy_conn_term_child(ctx);
-		}			
+		}
 		return;
 	}
 	pxy_try_unset_watermark(bev, ctx->conn, &ctx->dst);
@@ -481,7 +477,7 @@ prototcp_bev_writecb_dst_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ct
 		if (pxy_try_close_conn_end(&ctx->dst, ctx->conn) == 1) {
 			log_finest("src.closed, terminate conn");
 			pxy_conn_term_child(ctx);
-		}			
+		}
 		return;
 	}
 	pxy_try_unset_watermark(bev, ctx->conn, &ctx->src);

@@ -287,9 +287,7 @@ prototcp_bev_readcb_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		return;
 	}
 
-	struct evbuffer *inbuf = bufferevent_get_input(bev);
-	struct evbuffer *outbuf = bufferevent_get_output(ctx->src.bev);
-	evbuffer_add_buffer(outbuf, inbuf);
+	evbuffer_add_buffer(bufferevent_get_output(ctx->src.bev), bufferevent_get_input(bev));
 	pxy_try_set_watermark(bev, ctx, ctx->src.bev);
 }
 
