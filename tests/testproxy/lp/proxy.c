@@ -107,10 +107,7 @@ proxy_listener_acceptcb(UNUSED struct evconnlistener *listener,
                         void *arg)
 {
 	proxy_listener_ctx_t *lctx = arg;
-
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "proxy_listener_acceptcb: ENTER, fd=%d\n", fd);
-#endif /* DEBUG_PROXY */
+	log_finest_main_va("ENTER, fd=%d", fd);
 	pxy_conn_setup(fd, peeraddr, peeraddrlen, lctx->thrmgr, lctx->opts);
 }
 
@@ -157,9 +154,7 @@ static proxy_listener_ctx_t *
 proxy_listener_setup(struct event_base *evbase, pxy_thrmgr_ctx_t *thrmgr,
                      proxyspec_t *spec, opts_t *opts, evutil_socket_t clisock)
 {
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "proxy_listener_setup: ENTER\n");
-#endif /* DEBUG_PROXY */
+	log_finest_main("ENTER");
 
 	proxy_listener_ctx_t *lctx;
 	int fd;

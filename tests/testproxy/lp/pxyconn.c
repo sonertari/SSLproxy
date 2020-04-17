@@ -94,9 +94,7 @@ static pxy_conn_ctx_t * MALLOC NONNULL(2,3)
 pxy_conn_ctx_new(evutil_socket_t fd,
                  pxy_thrmgr_ctx_t *thrmgr, opts_t *opts)
 {
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_new: ENTER, fd=%d\n", fd);
-#endif /* DEBUG_PROXY */
+	log_finest_main_va("ENTER, fd=%d", fd);
 
 	pxy_conn_ctx_t *ctx = malloc(sizeof(pxy_conn_ctx_t));
 	if (!ctx) {
@@ -106,9 +104,7 @@ pxy_conn_ctx_new(evutil_socket_t fd,
 
 	ctx->id = thrmgr->conn_count++;
 
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_new: id=%llu, fd=%d\n", ctx->id, fd);
-#endif /* DEBUG_PROXY */
+	log_finest_main_va("id=%llu, fd=%d", ctx->id, fd);
 	
 	ctx->fd = fd;
 	ctx->thrmgr = thrmgr;
@@ -133,9 +129,7 @@ pxy_conn_ctx_new(evutil_socket_t fd,
 void
 pxy_conn_ctx_free(pxy_conn_ctx_t *ctx, int by_requestor)
 {
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_ctx_free: ENTER, fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
+	log_finest("ENTER");
 
 	if (WANT_CONTENT_LOG(ctx)) {
 		if (log_content_close(&ctx->logctx, by_requestor) == -1) {
@@ -172,19 +166,14 @@ pxy_conn_ctx_free(pxy_conn_ctx_t *ctx, int by_requestor)
 void
 pxy_conn_free(pxy_conn_ctx_t *ctx, int by_requestor)
 {
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_free: ENTER, fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
+	log_finest("ENTER");
 
 	// We always assign NULL to bevs after freeing them
 	if (ctx->src.bev) {
 		ctx->src.free(ctx->src.bev, ctx);
 		ctx->src.bev = NULL;
 	} else if (!ctx->src.closed) {
-#ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_conn_free: evutil_closesocket on NULL src->bev, fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
-
+		log_fine("evutil_closesocket on NULL src.bev");
 		// @attention early in the conn setup, src fd may be open, although src.bev is NULL
 		evutil_closesocket(ctx->fd);
 	}
@@ -200,10 +189,7 @@ pxy_conn_free(pxy_conn_ctx_t *ctx, int by_requestor)
 void
 pxy_conn_term(pxy_conn_ctx_t *ctx, int by_requestor)
 {
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_term: ENTER, fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
-
+	log_finest("ENTER");
 	ctx->term = 1;
 	ctx->term_requestor = by_requestor;
 }
@@ -372,10 +358,10 @@ pxy_get_event_name(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	} else if (bev == ctx->dst.bev) {
 		return bev_names[1];
 	} else if (bev == NULL) {
-		log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_get_event_name: event_name=NULL\n");
+		log_fine("event_name=NULL");
 		return bev_names[2];
 	} else {
-		log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_get_event_name: event_name=UNKWN\n");
+		log_fine("event_name=UNKWN");
 		return bev_names[3];
 	}
 }
@@ -385,9 +371,7 @@ void
 pxy_try_set_watermark(struct bufferevent *bev, pxy_conn_ctx_t *ctx, struct bufferevent *other)
 {
 	if (evbuffer_get_length(bufferevent_get_output(other)) >= OUTBUF_LIMIT) {
-#ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_try_set_watermark: %s, fd=%d\n", pxy_get_event_name(bev, ctx), ctx->fd);
-#endif /* DEBUG_PROXY */
+		log_fine_va("%s", pxy_get_event_name(bev, ctx));
 
 		/* temporarily disable data source;
 		 * set an appropriate watermark. */
@@ -401,9 +385,7 @@ void
 pxy_try_unset_watermark(struct bufferevent *bev, pxy_conn_ctx_t *ctx, pxy_conn_desc_t *other)
 {
 	if (other->bev && !(bufferevent_get_enabled(other->bev) & EV_READ)) {
-#ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_try_unset_watermark: %s, fd=%d\n", pxy_get_event_name(bev, ctx), ctx->fd);
-#endif /* DEBUG_PROXY */
+		log_fine_va("%s", pxy_get_event_name(bev, ctx));
 
 		/* data source temporarily disabled;
 		 * re-enable and reset watermark to 0. */
@@ -527,10 +509,7 @@ check_fd_usage(
 {
 	int dtable_count = getdtablecount();
 
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINER, "check_fd_usage: descriptor_table_size=%d, dtablecount=%d, reserve=%d, fd=%d\n",
-			descriptor_table_size, dtable_count, FD_RESERVE, fd);
-#endif /* DEBUG_PROXY */
+	log_finer_main_va("descriptor_table_size=%d, dtablecount=%d, reserve=%d, fd=%d", descriptor_table_size, dtable_count, FD_RESERVE, fd);
 
 	if (dtable_count + FD_RESERVE >= descriptor_table_size) {
 		goto out;
@@ -556,10 +535,7 @@ pxy_try_close_conn_end(pxy_conn_desc_t *conn_end, pxy_conn_ctx_t *ctx)
 	 * to send, close it, otherwise its writecb will close
 	 * it after writing what's left in the output buffer */
 	if (evbuffer_get_length(bufferevent_get_output(conn_end->bev)) == 0) {
-#ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_try_close_conn_end: evbuffer_get_length(outbuf) == 0, terminate conn, fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
-
+		log_finest("evbuffer_get_length(outbuf) == 0, terminate conn");
 		conn_end->free(conn_end->bev, ctx);
 		conn_end->bev = NULL;
 		conn_end->closed = 1;
@@ -576,10 +552,7 @@ pxy_try_disconnect(pxy_conn_ctx_t *ctx, pxy_conn_desc_t *this, pxy_conn_desc_t *
 	this->free(this->bev, ctx);
 	this->bev = NULL;
 	if (other->closed) {
-#ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_try_disconnect: other->closed, terminate conn, fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
-
+		log_finest("other->closed, terminate conn");
 		// Uses only ctx to log disconnect, never any of the bevs
 		pxy_log_dbg_disconnect(ctx);
 		pxy_conn_term(ctx, is_requestor);
@@ -592,10 +565,7 @@ pxy_try_consume_last_input(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	/* if there is data pending in the closed connection,
 	 * handle it here, otherwise it will be lost. */
 	if (evbuffer_get_length(bufferevent_get_input(bev))) {
-#ifdef DEBUG_PROXY
-		log_dbg_level_printf(LOG_DBG_MODE_FINE, "pxy_try_consume_last_input: evbuffer_get_length(inbuf) > 0, terminate conn, fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
-
+		log_fine("evbuffer_get_length(inbuf) > 0, terminate conn");
 		if (pxy_bev_readcb_preexec_logging_and_stats(bev, ctx) == -1) {
 			return -1;
 		}
@@ -720,9 +690,7 @@ pxy_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 void
 pxy_conn_connect(pxy_conn_ctx_t *ctx)
 {
-#ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_connect: ENTER, fd=%d\n", ctx->fd);
-#endif /* DEBUG_PROXY */
+	log_finest("ENTER");
 
 	if (ctx->protoctx->connectcb(ctx) == -1) {
 		// @attention Do not try to close conns or do anything else with conn ctx on the thrmgr thread after setting event callbacks and/or socket connect.
@@ -752,11 +720,11 @@ pxy_conn_setup(evutil_socket_t fd,
                pxy_thrmgr_ctx_t *thrmgr, opts_t *opts)
 {
 #ifdef DEBUG_PROXY
-	log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_setup: ENTER, fd=%d\n", fd);
+	log_finest_main_va("ENTER, fd=%d", fd);
 
 	char *host, *port;
 	if (sys_sockaddr_str(peeraddr, peeraddrlen, &host, &port) == 0) {
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, "pxy_conn_setup: peer addr=[%s]:%s, fd=%d\n", host, port, fd);
+		log_finest_main_va("peer addr=[%s]:%s, fd=%d", host, port, fd);
 		free(host);
 		free(port);
 	}

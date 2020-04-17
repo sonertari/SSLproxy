@@ -41,15 +41,63 @@ void log_err_mode(int);
 #define LOG_ERR_MODE_SYSLOG 1
 
 int log_dbg_printf(const char *, ...) PRINTF(1,2);
-int log_dbg_level_printf(int, const char *, ...) PRINTF(2,3);
+int log_dbg_level_printf(int, const char *, int, long long unsigned int, evutil_socket_t, const char *, ...) PRINTF(6,7);
 int log_dbg_print_free(char *);
 int log_dbg_write_free(void *, size_t);
 void log_dbg_mode(int);
+
 #define LOG_DBG_MODE_NONE 0
 #define LOG_DBG_MODE_ERRLOG 1
 #define LOG_DBG_MODE_FINE 2
 #define LOG_DBG_MODE_FINER 3
 #define LOG_DBG_MODE_FINEST 4
+
+#if defined __STDC_VERSION__ && __STDC_VERSION__ >= 199901L
+#define __FUNCTION__ __func__
+#else
+#define __FUNCTION__ ((const char *) 0)
+#endif
+
+#ifdef DEBUG_PROXY
+// FINE
+#define log_fine_main_va(format_str, ...) \
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, __FUNCTION__, 0, 0, 0, (format_str), __VA_ARGS__)
+#define log_fine(str) \
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, __FUNCTION__, ctx->thr ? ctx->thr->thridx : 0, ctx->id, ctx->fd, (str))
+#define log_fine_va(format_str, ...) \
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, __FUNCTION__, ctx->thr ? ctx->thr->thridx : 0, ctx->id, ctx->fd, (format_str), __VA_ARGS__)
+
+// FINER
+#define log_finer_main_va(format_str, ...) \
+		log_dbg_level_printf(LOG_DBG_MODE_FINER, __FUNCTION__, 0, 0, 0, (format_str), __VA_ARGS__)
+#define log_finer(str) \
+		log_dbg_level_printf(LOG_DBG_MODE_FINER, __FUNCTION__, ctx->thr ? ctx->thr->thridx : 0, ctx->id, ctx->fd, (str))
+#define log_finer_va(format_str, ...) \
+		log_dbg_level_printf(LOG_DBG_MODE_FINER, __FUNCTION__, ctx->thr ? ctx->thr->thridx : 0, ctx->id, ctx->fd, (format_str), __VA_ARGS__)
+
+// FINEST
+#define log_finest_main(str) \
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, __FUNCTION__, 0, 0, 0, (str))
+#define log_finest_main_va(format_str, ...) \
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, __FUNCTION__, 0, 0, 0, (format_str), __VA_ARGS__)
+#define log_finest(str) \
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, __FUNCTION__, ctx->thr ? ctx->thr->thridx : 0, ctx->id, ctx->fd, (str))
+#define log_finest_va(format_str, ...) \
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, __FUNCTION__, ctx->thr ? ctx->thr->thridx : 0, ctx->id, ctx->fd, (format_str), __VA_ARGS__)
+#else /* !DEBUG_PROXY */
+#define log_fine_main_va(format_str, ...) ((void)0)
+#define log_fine(str) ((void)0)
+#define log_fine_va(format_str, ...) ((void)0)
+
+#define log_finer_main_va(format_str, ...) ((void)0)
+#define log_finer(str) ((void)0)
+#define log_finer_va(format_str, ...) ((void)0)
+
+#define log_finest_main(str) ((void)0)
+#define log_finest_main_va(format_str, ...) ((void)0)
+#define log_finest(str) ((void)0)
+#define log_finest_va(format_str, ...) ((void)0)
+#endif /* !DEBUG_PROXY */
 
 extern logger_t *masterkey_log;
 #define log_masterkey_printf(fmt, ...) \

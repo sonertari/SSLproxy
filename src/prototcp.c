@@ -52,7 +52,7 @@ prototcp_bufferevent_setup(pxy_conn_ctx_t *ctx, evutil_socket_t fd)
 	struct bufferevent *bev = bufferevent_socket_new(ctx->evbase, fd, BEV_OPT_DEFER_CALLBACKS|BEV_OPT_THREADSAFE);
 	if (!bev) {
 		log_err_level_printf(LOG_CRIT, "Error creating bufferevent socket\n");
-		log_fine_va("bufferevent_socket_connect failed, fd=%d", fd);
+		log_fine_va("bufferevent_socket_new, fd=%d", fd);
 		return NULL;
 	}
 
@@ -72,7 +72,7 @@ prototcp_bufferevent_setup_child(pxy_conn_child_ctx_t *ctx, evutil_socket_t fd)
 	struct bufferevent *bev = bufferevent_socket_new(ctx->conn->evbase, fd, BEV_OPT_DEFER_CALLBACKS|BEV_OPT_THREADSAFE);
 	if (!bev) {
 		log_err_level_printf(LOG_CRIT, "Error creating bufferevent socket\n");
-		log_fine_va("bufferevent_socket_connect failed, fd=%d", fd);
+		log_fine_va("bufferevent_socket_new failed, fd=%d", fd);
 		return NULL;
 	}
 
