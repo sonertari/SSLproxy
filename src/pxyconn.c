@@ -809,7 +809,6 @@ char *bev_names[] = {
 static char *
 pxy_get_event_name(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
-	// XXX: Used by watermark functions only, remove
 	if (bev == ctx->src.bev) {
 		return bev_names[0];
 	} else if (bev == ctx->dst.bev) {

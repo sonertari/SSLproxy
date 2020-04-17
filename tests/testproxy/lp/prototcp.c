@@ -126,7 +126,6 @@ static void
 prototcp_fd_readcb(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
-
 	log_finest("ENTER");
 	pxy_conn_connect(ctx);
 }

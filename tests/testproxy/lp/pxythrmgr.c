@@ -399,17 +399,11 @@ pxy_thrmgr_attach(pxy_conn_ctx_t *ctx)
  * This function cannot fail.
  */
 void
-pxy_thrmgr_detach_unlocked(pxy_conn_ctx_t *ctx)
-{
-	log_finest("ENTER");
-	pxy_thrmgr_remove_conn_unlocked(ctx);
-}
-
-void
 pxy_thrmgr_detach(pxy_conn_ctx_t *ctx)
 {
 	pthread_mutex_lock(&ctx->thr->mutex);
-	pxy_thrmgr_detach_unlocked(ctx);
+	log_finest("ENTER");
+	pxy_thrmgr_remove_conn_unlocked(ctx);
 	pthread_mutex_unlock(&ctx->thr->mutex);
 }
 

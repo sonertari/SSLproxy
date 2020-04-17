@@ -137,11 +137,7 @@ pxy_conn_ctx_free(pxy_conn_ctx_t *ctx, int by_requestor)
 		}
 	}
 
-	if (ctx->thr_locked) {
-		pxy_thrmgr_detach_unlocked(ctx);
-	} else {
-		pxy_thrmgr_detach(ctx);
-	}
+	pxy_thrmgr_detach(ctx);
 
 	if (ctx->srchost_str) {
 		free(ctx->srchost_str);
@@ -352,7 +348,6 @@ char *bev_names[] = {
 static char *
 pxy_get_event_name(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
-	// XXX: Used by watermark functions only, remove
 	if (bev == ctx->src.bev) {
 		return bev_names[0];
 	} else if (bev == ctx->dst.bev) {
@@ -746,8 +741,6 @@ pxy_conn_setup(evutil_socket_t fd,
 		evutil_closesocket(fd);
 		return;
 	}
-
-	ctx->af = peeraddr->sa_family;
 
 	if (sys_sockaddr_str(peeraddr, peeraddrlen, &ctx->srchost_str, &ctx->srcport_str) != 0) {
 		log_err_level_printf(LOG_CRIT, "Aborting connection setup (out of memory)!\n");

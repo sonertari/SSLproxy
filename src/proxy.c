@@ -69,10 +69,7 @@ struct proxy_ctx {
 	int loopbreak_reason;
 };
 
-static proxy_listener_ctx_t *
-proxy_listener_ctx_new(pxy_thrmgr_ctx_t *thrmgr, proxyspec_t *spec,
-                       global_t *global) MALLOC;
-static proxy_listener_ctx_t *
+static proxy_listener_ctx_t * MALLOC
 proxy_listener_ctx_new(pxy_thrmgr_ctx_t *thrmgr, proxyspec_t *spec,
                        global_t *global)
 {
@@ -86,9 +83,7 @@ proxy_listener_ctx_new(pxy_thrmgr_ctx_t *thrmgr, proxyspec_t *spec,
 	return ctx;
 }
 
-static void
-proxy_listener_ctx_free(proxy_listener_ctx_t *ctx) NONNULL(1);
-static void
+static void NONNULL(1)
 proxy_listener_ctx_free(proxy_listener_ctx_t *ctx)
 {
 	if (ctx->evcl) {
@@ -159,16 +154,14 @@ proxy_listener_setup(struct event_base *evbase, pxy_thrmgr_ctx_t *thrmgr,
 {
 	log_finest_main("ENTER");
 
-	proxy_listener_ctx_t *lctx;
 	int fd;
-
 	if ((fd = privsep_client_opensock(clisock, spec)) == -1) {
 		log_err_level_printf(LOG_CRIT, "Error opening socket: %s (%i)\n",
 		               strerror(errno), errno);
 		return NULL;
 	}
 
-	lctx = proxy_listener_ctx_new(thrmgr, spec, global);
+	proxy_listener_ctx_t *lctx = proxy_listener_ctx_new(thrmgr, spec, global);
 	if (!lctx) {
 		log_err_level_printf(LOG_CRIT, "Error creating listener context\n");
 		evutil_closesocket(fd);
@@ -181,7 +174,6 @@ proxy_listener_setup(struct event_base *evbase, pxy_thrmgr_ctx_t *thrmgr,
 	// @attention Do not pass NULL as user-supplied pointer
 	lctx->evcl = evconnlistener_new(evbase, proxy_listener_acceptcb,
 	                               lctx, LEV_OPT_CLOSE_ON_FREE, 1024, fd);
-//	                               lctx, LEV_OPT_CLOSE_ON_FREE|LEV_OPT_THREADSAFE, 1024, fd);
 	if (!lctx->evcl) {
 		log_err_level_printf(LOG_CRIT, "Error creating evconnlistener: %s\n",
 		               strerror(errno));

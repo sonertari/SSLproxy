@@ -128,16 +128,12 @@ struct pxy_conn_ctx {
 	unsigned int term_requestor : 1;          /* 1 client, 0 server side */
 	unsigned int seen_sslproxy_line : 1;      /* 1 if seen sslproxy line */
 
-	/* original source and destination address, and family */
-	struct sockaddr_storage srcaddr;
-	socklen_t srcaddrlen;
+	/* destination address */
 	struct sockaddr_storage dstaddr;
 	socklen_t dstaddrlen;
-	int af;
 
 	// Thread that the conn is attached to
 	pxy_thr_ctx_t *thr;
-	unsigned int thr_locked : 1;          /* 1 to prevent double locking */
 	unsigned int in_thr_conns : 1;          /* 1 to prevent adding twice */
 
 	// Unique id of the conn
