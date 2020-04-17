@@ -1145,7 +1145,7 @@ pxy_setup_child_listener(pxy_conn_ctx_t *ctx)
 
 	evconnlistener_set_error_cb(child_evcl, proxy_listener_errorcb);
 
-	log_finer_va("Finished setting up child, NEW child_fd=%d", ctx->child_fd);
+	log_finer_va("Finished setting up child listener, child_fd=%d", ctx->child_fd);
 
 	struct sockaddr_in child_listener_addr;
 	socklen_t child_listener_len = sizeof(child_listener_addr);

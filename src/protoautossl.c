@@ -91,6 +91,14 @@ protoautossl_peek_and_upgrade(pxy_conn_ctx_t *ctx)
 				log_dbg_printf("Peek found ClientHello\n");
 			}
 
+			if (!ctx->children) {
+				// This means that there was no autossl handshake prior to ClientHello, e.g. no STARTTLS message
+				// This is perhaps the SSL handshake of a direct SSL connection, i.e. invalid protocol
+				log_err_level_printf(LOG_CRIT, "No children setup yet, autossl protocol error\n");
+				log_fine("No children setup yet, autossl protocol error");
+				return -1;
+			}
+
 			// @attention Autossl protocol should never have multiple children.
 			protoautossl_upgrade_dst_child(ctx->children);
 
@@ -143,7 +151,7 @@ protoautossl_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	}
 
 	if (autossl_ctx->clienthello_search) {
-		if (protoautossl_peek_and_upgrade(ctx)) {
+		if (protoautossl_peek_and_upgrade(ctx) != 0) {
 			return;
 		}
 	}
