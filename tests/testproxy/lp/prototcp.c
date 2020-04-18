@@ -142,33 +142,53 @@ prototcp_parse_sslproxy_line(char *line, pxy_conn_ctx_t *ctx)
 			log_dbg_printf("%s\n", line);
 		}
 
-		char *ip_start = strchr(line, '[') + 1;
-		char *ip_end = strchr(ip_start, ']');
-		char *port_start = strchr(ip_end, ':') + 1;
-		char *port_end = strchr(port_start, ',');
+		// The checks here cannot cover all possible error conditions
+		// But we should at least avoid crashes, for example caused by passing NULL pointers to str*() functions
+		char *ip_start = strchr(line, '[');
+		if (!ip_start) {
+			log_err_level_printf(LOG_ERR, "Unable to find sslproxy ip_start: %s\n", line);
+			return -1;
+		}
+		ip_start++;
 
-		if (!ip_start || !ip_end || !port_start || !port_end) {
-			log_err_level_printf(LOG_ERR, "Unable to find sslproxy addr: %s", line);
+		char *ip_end = strchr(ip_start, ']');
+		if (!ip_end) {
+			log_err_level_printf(LOG_ERR, "Unable to find sslproxy ip_end: %s\n", line);
+			return -1;
+		}
+
+		char *port_start = strchr(ip_end, ':');
+		if (!port_start) {
+			log_err_level_printf(LOG_ERR, "Unable to find sslproxy port_start: %s\n", line);
+			return -1;
+		}
+		port_start++;
+
+		char *port_end = strchr(port_start, ',');
+		if (!port_end) {
+			log_err_level_printf(LOG_ERR, "Unable to find sslproxy port_end: %s\n", line);
 			return -1;
 		}
 
 		int addr_len = ip_end - ip_start;
 		if (addr_len > MAX_IPADDR_LEN) {
-			log_err_level_printf(LOG_ERR, "sslproxy addr_len larger than MAX_IPADDR_LEN: %d\n", addr_len);
+			log_err_level_printf(LOG_ERR, "sslproxy addr_len greater than MAX_IPADDR_LEN: %d\n", addr_len);
 			return -1;
 		}
 
-		char addr[MAX_IPADDR_LEN + 1];
+		// We can use addr_len for size restriction here, because we check it against MAX_IPADDR_LEN above
+		char addr[addr_len + 1];
 		strncpy(addr, ip_start, addr_len);
 		addr[addr_len] = '\0';
 
 		int port_len = port_end - port_start;
 		if (port_len > MAX_PORT_LEN) {
-			log_err_level_printf(LOG_ERR, "sslproxy port_len larger than MAX_PORT_LEN: %d\n", port_len);
+			log_err_level_printf(LOG_ERR, "sslproxy port_len greater than MAX_PORT_LEN: %d\n", port_len);
 			return -1;
 		}
 
-		char port[MAX_PORT_LEN + 1];
+		// We can use port_len for size restriction here, because we check it against MAX_PORT_LEN above
+		char port[port_len + 1];
 		strncpy(port, port_start, port_len);
 		port[port_len] = '\0';
 

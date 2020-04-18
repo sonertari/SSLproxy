@@ -146,7 +146,7 @@ client IP address from the arp cache of the system, then compares it with
 the value in the users table. If the ethernet addresses do not match, the 
 connection is redirected to the login page. SSLproxy also compares the atime 
 value in the users table with the current system time. If the difference is 
-larger than the configured value of the user timeout option, then the 
+greater than the configured value of the user timeout option, then the 
 connection is redirected to the login page. The atime of the IP address in the 
 users table is updated with the system time while the connection is being 
 terminated. Since this atime update is run using a privsep command, it is 
