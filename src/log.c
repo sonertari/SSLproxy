@@ -222,12 +222,17 @@ log_dbg_level_printf(int level, const char *function, int thridx, long long unsi
 		return -1;
 
 	char *logbuf;
-	if (asprintf(&logbuf, "[%s] [%d.%llu fd=%d cfd=%d] %s: %s\n", log_dbg_mode_names[level], thridx, id, fd, child_fd, function, buf) < 0) {
-		free(buf);
-		return -1;
+	// The *_main and *_main_va macros always pass 0 as fd, and the other macros fd > 0
+	if (fd) {
+		rv = asprintf(&logbuf, "[%s] [%d.%llu fd=%d cfd=%d] %s: %s\n", log_dbg_mode_names[level], thridx, id, fd, child_fd, function, buf);
+	} else {
+		rv = asprintf(&logbuf, "[%s] %s: %s\n", log_dbg_mode_names[level], function, buf);
+	}
+	if (rv >= 0) {
+		rv = log_dbg_print_free(logbuf);
 	}
 	free(buf);
-	return log_dbg_print_free(logbuf);
+	return rv;
 }
 
 void
