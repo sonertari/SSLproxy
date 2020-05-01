@@ -1126,45 +1126,40 @@ protossl_sni_resolve_cb(int errcode, struct evutil_addrinfo *ai, void *arg)
  * connection.  If ctx->opts->passthrough is set, it was called a second time
  * after the first ssl callout failed because of client cert auth.
  */
-#ifndef OPENSSL_NO_TLSEXT
-#define MAYBE_UNUSED 
-#else /* OPENSSL_NO_TLSEXT */
-#define MAYBE_UNUSED UNUSED
-#endif /* OPENSSL_NO_TLSEXT */
 void
-protossl_fd_readcb(MAYBE_UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
+protossl_fd_readcb(evutil_socket_t fd, UNUSED short what, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
 
 	log_finest("ENTER");
 
+	event_free(ctx->ev);
+	ctx->ev = NULL;
+
 #ifndef OPENSSL_NO_TLSEXT
-	// ctx->ev is NULL during initial conn setup
-	if (!ctx->ev) {
-		// THRMGR THREAD
+	// We pass -1 as fd during initial conn setup
+	if (fd == -1) {
+		// ONE-SHOT
+
 		/* for SSL, defer dst connection setup to initial_readcb */
 		ctx->ev = event_new(ctx->evbase, ctx->fd, EV_READ, ctx->protoctx->fd_readcb, ctx);
 		if (!ctx->ev)
 			goto out;
 
 		// @attention Add the conn to pending ssl conns list before adding (activating) the event
-		// Because the event may (and does) fire before this thrmgr thread adds the conn to pending ssl conns list,
+		// Because the event may (and does) fire before this thread adds the conn to pending ssl conns list,
 		// and since the pending flag is not set yet, the conn remains in the pending list
 		pxy_thrmgr_add_pending_ssl_conn(ctx);
 
 		if (event_add(ctx->ev, NULL) == -1) {
 			log_finest("event_add failed");
-			// @attention Ignore event_add() failure and do not try to close the conn after adding it to pending ssl conns list,
-			// because thr timercb may try to access the ctx causing multithreading issues (signal 6 crash)
-			// It is ok if event_add() fails, hence readcb never fires, because we can expire and close the conn as it is in the pending list now
-			//goto out;
+			// Note that the timercb of the connection handling thread may try to access the ctx
+			goto out;
 		}
-		// @attention This is the thrmgr thread, do not do anything else with the conn after adding the event, just return
 		return;
 	}
-	// CONN HANDLING THREAD
-	// From this point on is the connection handling thread (not the thrmgr thread)
 
+	// EV_READ or EV_TIMEOUT
 	pxy_thrmgr_remove_pending_ssl_conn(ctx);
 
 	// Child connections will use the sni info obtained by the parent conn
@@ -1209,7 +1204,6 @@ protossl_fd_readcb(MAYBE_UNUSED evutil_socket_t fd, UNUSED short what, void *arg
 		 * reading now.  We use 25 * 0.2 s = 5 s timeout. */
 		struct timeval retry_delay = {0, 100};
 
-		event_free(ctx->ev);
 		ctx->ev = event_new(ctx->evbase, fd, 0, ctx->protoctx->fd_readcb, ctx);
 		if (!ctx->ev) {
 			log_err_level_printf(LOG_CRIT, "Error creating retry event, aborting connection\n");
@@ -1220,8 +1214,6 @@ protossl_fd_readcb(MAYBE_UNUSED evutil_socket_t fd, UNUSED short what, void *arg
 			goto out;
 		return;
 	}
-	event_free(ctx->ev);
-	ctx->ev = NULL;
 
 	if (ctx->sslctx->sni && !ctx->dstaddrlen && ctx->spec->sni_port) {
 		char sniport[6];
@@ -1303,18 +1295,8 @@ protossl_conn_connect(pxy_conn_ctx_t *ctx)
 		return -1;
 	}
 
-	// Conn setup is successful, so add the conn to the conn list of its thread now
-	pxy_thrmgr_add_conn(ctx);
-
 	// Disable and NULL r/w cbs, we do nothing for srvdst in r/w cbs
 	bufferevent_setcb(ctx->srvdst.bev, NULL, NULL, pxy_bev_eventcb, ctx);
-	
-	/* initiate connection */
-	if (bufferevent_socket_connect(ctx->srvdst.bev, (struct sockaddr *)&ctx->dstaddr, ctx->dstaddrlen) == -1) {
-		log_err_level_printf(LOG_CRIT, "protossl_conn_connect: bufferevent_socket_connect for srvdst failed\n");
-		log_fine("bufferevent_socket_connect for srvdst failed");
-		// @attention Do not try to term/close conns or do anything else with conn ctx on the thrmgr thread after setting event callbacks and/or socket connect. Just return 0.
-	}
 	return 0;
 }
 

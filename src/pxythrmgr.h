@@ -103,8 +103,6 @@ void pxy_thrmgr_free(pxy_thrmgr_ctx_t *) NONNULL(1);
 void pxy_thrmgr_add_pending_ssl_conn(pxy_conn_ctx_t *) NONNULL(1);
 void pxy_thrmgr_remove_pending_ssl_conn(pxy_conn_ctx_t *) NONNULL(1);
 
-void pxy_thrmgr_add_conn(pxy_conn_ctx_t *) NONNULL(1);
-
 void pxy_thrmgr_attach(pxy_conn_ctx_t *) NONNULL(1);
 void pxy_thrmgr_attach_child(pxy_conn_ctx_t *) NONNULL(1);
 void pxy_thrmgr_detach_unlocked(pxy_conn_ctx_t *) NONNULL(1);

@@ -1555,16 +1555,18 @@ pxy_conn_connect(pxy_conn_ctx_t *ctx)
 	}
 
 	if (ctx->protoctx->connectcb(ctx) == -1) {
-		// @attention Do not try to close conns or do anything else with conn ctx on the thrmgr thread after setting event callbacks and/or socket connect.
 		// The return value of -1 from connectcb indicates that there was a fatal error before event callbacks were set, so we can terminate the connection.
-		// Otherwise, it is up to the event callbacks to terminate the connection. This is necessary to avoid multithreading issues.
+		// Otherwise, it is up to the event callbacks to terminate the connection.
 		if (ctx->term || ctx->enomem) {
 			pxy_conn_free(ctx, ctx->term ? ctx->term_requestor : 1);
 		}
 	}
-	// @attention Do not do anything with the conn ctx after this point on the thrmgr thread
-	// All SSL conns start running on their conn handling threads for sni peek before they reach here, not on the thrmgr thread,
-	// so the comments above are true for non-SSL conns only, but we treat all conns the same way
+
+	if (bufferevent_socket_connect(ctx->srvdst.bev, (struct sockaddr *)&ctx->dstaddr, ctx->dstaddrlen) == -1) {
+		log_err_level_printf(LOG_CRIT, "bufferevent_socket_connect for srvdst failed\n");
+		log_fine("bufferevent_socket_connect for srvdst failed");
+		pxy_conn_free(ctx, ctx->term ? ctx->term_requestor : 1);
+	}
 }
 
 #if defined(__OpenBSD__) || defined(__linux__)
@@ -1924,7 +1926,18 @@ pxy_conn_setup(evutil_socket_t fd,
 		memcpy(&ctx->srcaddr, peeraddr, ctx->srcaddrlen);
 	}
 
-	ctx->protoctx->fd_readcb(ctx->fd, 0, ctx);
+	// Switch from thrmgr to connection handling thread, i.e. change the event base, asap
+	// This prevents possible multithreading issues between thrmgr and conn handling threads
+	ctx->ev = event_new(ctx->evbase, -1, 0, ctx->protoctx->fd_readcb, ctx);
+	if (!ctx->ev) {
+		log_err_level_printf(LOG_CRIT, "Error creating initial event, aborting connection\n");
+		log_fine("Error creating initial event, aborting connection");
+		goto out;
+	}
+	// The only purpose of this event is to change the event base, so it is a one-shot event
+	if (event_add(ctx->ev, NULL) == -1)
+		goto out;
+	event_active(ctx->ev, EV_TIMEOUT, 0);
 	return;
 
 out:

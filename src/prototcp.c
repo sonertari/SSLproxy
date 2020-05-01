@@ -150,21 +150,8 @@ prototcp_conn_connect(pxy_conn_ctx_t *ctx)
 		return -1;
 	}
 
-	// Conn setup is successful, so add the conn to the conn list of its thread now
-	pxy_thrmgr_add_conn(ctx);
-
 	// Disable and NULL r/w cbs, we do nothing for srvdst in r/w cbs
 	bufferevent_setcb(ctx->srvdst.bev, NULL, NULL, pxy_bev_eventcb, ctx);
-	
-	/* initiate connection */
-	if (bufferevent_socket_connect(ctx->srvdst.bev, (struct sockaddr *)&ctx->dstaddr, ctx->dstaddrlen) == -1) {
-		log_err_level_printf(LOG_CRIT, "prototcp_conn_connect: bufferevent_socket_connect for srvdst failed\n");
-		log_fine("bufferevent_socket_connect for srvdst failed");
-		// @attention Do not try to term/close conns or do anything else with conn ctx on the thrmgr thread after setting event callbacks and/or socket connect.
-		// Otherwise both pxy_conn_connect() and eventcb may try to free the conn using pxy_conn_free(), which are running on different threads.
-		// Also, pxy_thrmgr_timer_cb() may try to access conn ctx while printing thr conns.
-		// These all may cause multithreading issues, e.g. signal 10 crash. Just return 0.
-	}
 	return 0;
 }
 
@@ -218,6 +205,8 @@ prototcp_fd_readcb(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
 	log_finest("ENTER");
+	event_free(ctx->ev);
+	ctx->ev = NULL;
 	pxy_conn_connect(ctx);
 }
 

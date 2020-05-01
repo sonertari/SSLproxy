@@ -245,7 +245,6 @@ struct pxy_conn_ctx {
 	// Thread that the conn is attached to
 	pxy_thr_ctx_t *thr;
 	unsigned int thr_locked : 1;          /* 1 to prevent double locking */
-	unsigned int in_thr_conns : 1;          /* 1 to prevent adding twice */
 
 	// Unique id of the conn
 	long long unsigned int id;

@@ -156,23 +156,6 @@ protosmtp_try_validate_response(struct bufferevent *bev, pxy_conn_ctx_t *ctx, st
 	return 0;
 }
 
-static void NONNULL(1)
-protosmtp_conn_connect_common(pxy_conn_ctx_t *ctx)
-{
-	// Conn setup is successful, so add the conn to the conn list of its thread now
-	pxy_thrmgr_add_conn(ctx);
-
-	// Enable readcb for srvdst to relay the 220 smtp greeting from the server to the client, otherwise the conn stalls
-	bufferevent_setcb(ctx->srvdst.bev, pxy_bev_readcb, NULL, pxy_bev_eventcb, ctx);
-	
-	/* initiate connection */
-	if (bufferevent_socket_connect(ctx->srvdst.bev, (struct sockaddr *)&ctx->dstaddr, ctx->dstaddrlen) == -1) {
-		log_err_level_printf(LOG_CRIT, "protosmtp_conn_connect: bufferevent_socket_connect for srvdst failed\n");
-		log_fine("bufferevent_socket_connect for srvdst failed");
-		// @attention Do not try to term/close conns or do anything else with conn ctx on the thrmgr thread after setting event callbacks and/or socket connect.
-	}
-}
-
 static int NONNULL(1) WUNRES
 protosmtp_conn_connect(pxy_conn_ctx_t *ctx)
 {
@@ -182,7 +165,9 @@ protosmtp_conn_connect(pxy_conn_ctx_t *ctx)
 	if (prototcp_setup_srvdst(ctx) == -1) {
 		return -1;
 	}
-	protosmtp_conn_connect_common(ctx);
+
+	// Enable readcb for srvdst to relay the 220 smtp greeting from the server to the client, otherwise the conn stalls
+	bufferevent_setcb(ctx->srvdst.bev, pxy_bev_readcb, NULL, pxy_bev_eventcb, ctx);
 	return 0;
 }
 
@@ -195,7 +180,9 @@ protosmtps_conn_connect(pxy_conn_ctx_t *ctx)
 	if (protossl_setup_srvdst(ctx) == -1) {
 		return -1;
 	}
-	protosmtp_conn_connect_common(ctx);
+
+	// Enable readcb for srvdst to relay the 220 smtp greeting from the server to the client, otherwise the conn stalls
+	bufferevent_setcb(ctx->srvdst.bev, pxy_bev_readcb, NULL, pxy_bev_eventcb, ctx);
 	return 0;
 }
 

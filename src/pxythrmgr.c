@@ -516,65 +516,38 @@ pxy_thrmgr_remove_pending_ssl_conn(pxy_conn_ctx_t *ctx)
 	pthread_mutex_unlock(&ctx->thr->mutex);
 }
 
-void 
-pxy_thrmgr_add_conn(pxy_conn_ctx_t *ctx)
-{
-	pthread_mutex_lock(&ctx->thr->mutex);
-	if (!ctx->in_thr_conns) {
-		log_finest("Adding conn");
-		ctx->in_thr_conns = 1;
-		// Always keep thr load and conns list in sync
-		ctx->thr->load++;
-		ctx->next = ctx->thr->conns;
-		ctx->thr->conns = ctx;
-	} else {
-		// Do not add conns twice
-		// While switching to passthrough mode, the conn must have already been added to its thread's conn list by the previous proto
-		log_finest("Will not add conn twice");
-	}
-	pthread_mutex_unlock(&ctx->thr->mutex);
-}
-
 static void NONNULL(1)
 pxy_thrmgr_remove_conn_unlocked(pxy_conn_ctx_t *ctx)
 {
 	assert(ctx != NULL);
 	assert(ctx->children == NULL);
+	// Thr conns list cannot be empty
+	assert(ctx->thr->conns != NULL);
 
-	if (ctx->in_thr_conns) {
-		log_finest("Removing conn");
+	log_finest("Removing conn");
 
-		// Thr conns list cannot be empty, if the in_thr_conns flag of a conn is set
-		assert(ctx->thr->conns != NULL);
+	// We increment thr load in pxy_thrmgr_attach() only (for parent conns)
+	ctx->thr->load--;
 
-		// Shouldn't need to reset the in_thr_conns flag, because the conn ctx will be freed next, but just in case
-		ctx->in_thr_conns = 0;
-		// We increment thr load in pxy_thrmgr_add_conn() only (for parent conns)
-		ctx->thr->load--;
-
-		// @attention We may get multiple conns with the same fd combinations, so fds cannot uniquely define a conn; hence the need for unique ids.
-		if (ctx->id == ctx->thr->conns->id) {
-			ctx->thr->conns = ctx->thr->conns->next;
-			return;
-		} else {
-			pxy_conn_ctx_t *current = ctx->thr->conns->next;
-			pxy_conn_ctx_t *previous = ctx->thr->conns;
-			while (current != NULL && previous != NULL) {
-				if (ctx->id == current->id) {
-					previous->next = current->next;
-					return;
-				}
-				previous = current;
-				current = current->next;
-			}
-			// This should never happen
-			log_err_level_printf(LOG_CRIT, "Cannot find conn in thr conns\n");
-			log_fine("Cannot find conn in thr conns");
-			assert(0);
-		}
+	// @attention We may get multiple conns with the same fd combinations, so fds cannot uniquely define a conn; hence the need for unique ids.
+	if (ctx->id == ctx->thr->conns->id) {
+		ctx->thr->conns = ctx->thr->conns->next;
+		return;
 	} else {
-		// This can happen if we are closing the conn after a fatal error before setting its event callback
-		log_finest("Conn not in thr conns");
+		pxy_conn_ctx_t *current = ctx->thr->conns->next;
+		pxy_conn_ctx_t *previous = ctx->thr->conns;
+		while (current != NULL && previous != NULL) {
+			if (ctx->id == current->id) {
+				previous->next = current->next;
+				return;
+			}
+			previous = current;
+			current = current->next;
+		}
+		// This should never happen
+		log_err_level_printf(LOG_CRIT, "Cannot find conn in thr conns\n");
+		log_fine("Cannot find conn in thr conns");
+		assert(0);
 	}
 }
 
@@ -615,9 +588,15 @@ pxy_thrmgr_attach(pxy_conn_ctx_t *ctx)
 		pthread_mutex_unlock(&tmctx->thr[idx]->mutex);
 	}
 
-	// Defer adding the conn to the conn list of its thread until after a successful conn setup while returning from pxy_conn_connect()
-	// otherwise pxy_thrmgr_timer_cb() may try to access the conn ctx while it is being freed on failure (signal 6 crash)
 	ctx->thr = tmctx->thr[thridx];
+
+	pthread_mutex_lock(&ctx->thr->mutex);
+	// Always keep thr load and conns list in sync
+	ctx->thr->load++;
+	ctx->next = ctx->thr->conns;
+	ctx->thr->conns = ctx;
+	pthread_mutex_unlock(&ctx->thr->mutex);
+
 	ctx->evbase = ctx->thr->evbase;
 	ctx->dnsbase = ctx->thr->dnsbase;
 
