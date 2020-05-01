@@ -59,7 +59,7 @@
 
 typedef struct pxy_conn_child_ctx pxy_conn_child_ctx_t;
 
-typedef void (*fd_readcb_func_t)(evutil_socket_t,  short, void *);
+typedef void (*init_conn_func_t)(evutil_socket_t,  short, void *);
 typedef int (*connect_func_t)(pxy_conn_ctx_t *);
 
 typedef void (*callback_func_t)(struct bufferevent *, void *);
@@ -147,7 +147,7 @@ struct proto_ctx {
 	protocol_t proto;
 
 	connect_func_t connectcb;
-	fd_readcb_func_t fd_readcb;
+	init_conn_func_t init_conn;
 
 	callback_func_t bev_readcb;
 	callback_func_t bev_writecb;

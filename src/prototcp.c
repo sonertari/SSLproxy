@@ -201,12 +201,15 @@ prototcp_connect_child(pxy_conn_child_ctx_t *ctx)
 }
 
 void
-prototcp_fd_readcb(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
+prototcp_init_conn(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
+
 	log_finest("ENTER");
+
 	event_free(ctx->ev);
 	ctx->ev = NULL;
+
 	pxy_conn_connect(ctx);
 }
 
@@ -880,7 +883,7 @@ prototcp_setup(pxy_conn_ctx_t *ctx)
 {
 	ctx->protoctx->proto = PROTO_TCP;
 	ctx->protoctx->connectcb = prototcp_conn_connect;
-	ctx->protoctx->fd_readcb = prototcp_fd_readcb;
+	ctx->protoctx->init_conn = prototcp_init_conn;
 	
 	ctx->protoctx->bev_readcb = prototcp_bev_readcb;
 	ctx->protoctx->bev_writecb = prototcp_bev_writecb;

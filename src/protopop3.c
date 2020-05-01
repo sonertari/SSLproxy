@@ -112,7 +112,7 @@ protopop3s_setup(pxy_conn_ctx_t *ctx)
 	ctx->protoctx->proto = PROTO_POP3S;
 
 	ctx->protoctx->connectcb = protossl_conn_connect;
-	ctx->protoctx->fd_readcb = protossl_fd_readcb;
+	ctx->protoctx->init_conn = protossl_init_conn;
 	
 	ctx->protoctx->bev_eventcb = protossl_bev_eventcb;
 

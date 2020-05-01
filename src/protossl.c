@@ -1126,7 +1126,7 @@ protossl_sni_resolve_cb(int errcode, struct evutil_addrinfo *ai, void *arg)
  * connection.  If ctx->opts->passthrough is set, it was called a second time
  * after the first ssl callout failed because of client cert auth.
  */
-void
+static void
 protossl_fd_readcb(evutil_socket_t fd, UNUSED short what, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
@@ -1136,30 +1136,6 @@ protossl_fd_readcb(evutil_socket_t fd, UNUSED short what, void *arg)
 	event_free(ctx->ev);
 	ctx->ev = NULL;
 
-#ifndef OPENSSL_NO_TLSEXT
-	// We pass -1 as fd during initial conn setup
-	if (fd == -1) {
-		// ONE-SHOT
-
-		/* for SSL, defer dst connection setup to initial_readcb */
-		ctx->ev = event_new(ctx->evbase, ctx->fd, EV_READ, ctx->protoctx->fd_readcb, ctx);
-		if (!ctx->ev)
-			goto out;
-
-		// @attention Add the conn to pending ssl conns list before adding (activating) the event
-		// Because the event may (and does) fire before this thread adds the conn to pending ssl conns list,
-		// and since the pending flag is not set yet, the conn remains in the pending list
-		pxy_thrmgr_add_pending_ssl_conn(ctx);
-
-		if (event_add(ctx->ev, NULL) == -1) {
-			log_finest("event_add failed");
-			// Note that the timercb of the connection handling thread may try to access the ctx
-			goto out;
-		}
-		return;
-	}
-
-	// EV_READ or EV_TIMEOUT
 	pxy_thrmgr_remove_pending_ssl_conn(ctx);
 
 	// Child connections will use the sni info obtained by the parent conn
@@ -1204,7 +1180,7 @@ protossl_fd_readcb(evutil_socket_t fd, UNUSED short what, void *arg)
 		 * reading now.  We use 25 * 0.2 s = 5 s timeout. */
 		struct timeval retry_delay = {0, 100};
 
-		ctx->ev = event_new(ctx->evbase, fd, 0, ctx->protoctx->fd_readcb, ctx);
+		ctx->ev = event_new(ctx->evbase, fd, 0, protossl_fd_readcb, ctx);
 		if (!ctx->ev) {
 			log_err_level_printf(LOG_CRIT, "Error creating retry event, aborting connection\n");
 			log_fine("Error creating retry event, aborting connection");
@@ -1229,9 +1205,44 @@ protossl_fd_readcb(evutil_socket_t fd, UNUSED short what, void *arg)
 		evdns_getaddrinfo(ctx->dnsbase, ctx->sslctx->sni, sniport, &hints, protossl_sni_resolve_cb, ctx);
 		return;
 	}
-#endif /* !OPENSSL_NO_TLSEXT */
 
 	pxy_conn_connect(ctx);
+	return;
+out:
+	evutil_closesocket(fd);
+	pxy_conn_ctx_free(ctx, 1);
+}
+
+void
+protossl_init_conn(evutil_socket_t fd, UNUSED short what, void *arg)
+{
+	pxy_conn_ctx_t *ctx = arg;
+
+	log_finest("ENTER");
+
+	event_free(ctx->ev);
+	ctx->ev = NULL;
+
+#ifdef OPENSSL_NO_TLSEXT
+	pxy_conn_connect(ctx);
+	return;
+#endif /* !OPENSSL_NO_TLSEXT */
+
+	/* for SSL, defer dst connection setup to initial_readcb */
+	ctx->ev = event_new(ctx->evbase, ctx->fd, EV_READ, protossl_fd_readcb, ctx);
+	if (!ctx->ev)
+		goto out;
+
+	// @attention Add the conn to pending ssl conns list before adding (activating) the event
+	// Because the event may (and does) fire before this thread adds the conn to pending ssl conns list,
+	// and since the pending flag is not set yet, the conn remains in the pending list
+	pxy_thrmgr_add_pending_ssl_conn(ctx);
+
+	if (event_add(ctx->ev, NULL) == -1) {
+		log_finest("event_add failed");
+		// Note that the timercb of the connection handling thread may try to access the ctx
+		goto out;
+	}
 	return;
 out:
 	evutil_closesocket(fd);
@@ -1587,7 +1598,7 @@ protossl_setup(pxy_conn_ctx_t *ctx)
 {
 	ctx->protoctx->proto = PROTO_SSL;
 	ctx->protoctx->connectcb = protossl_conn_connect;
-	ctx->protoctx->fd_readcb = protossl_fd_readcb;
+	ctx->protoctx->init_conn = protossl_init_conn;
 	
 	ctx->protoctx->bev_eventcb = protossl_bev_eventcb;
 

@@ -32,7 +32,7 @@
 
 #include "pxyconn.h"
 
-void prototcp_fd_readcb(evutil_socket_t, short, void *);
+void prototcp_init_conn(evutil_socket_t, short, void *);
 
 int prototcp_try_send_userauth_msg(struct bufferevent *, pxy_conn_ctx_t *) NONNULL(1,2);
 int prototcp_try_close_unauth_conn(struct bufferevent *, pxy_conn_ctx_t *) NONNULL(1,2);

@@ -104,7 +104,7 @@ protopassthrough_engage(pxy_conn_ctx_t *ctx)
 	}
 
 	ctx->proto = protopassthrough_setup(ctx);
-	ctx->protoctx->fd_readcb(ctx->fd, 0, ctx);
+	pxy_conn_connect(ctx);
 }
 
 static int NONNULL(1) WUNRES
@@ -399,7 +399,8 @@ protopassthrough_setup(pxy_conn_ctx_t *ctx)
 	// This is different from initial protocol setup, which may choose to keep the default tcp settings.
 	ctx->protoctx->proto = PROTO_PASSTHROUGH;
 	ctx->protoctx->connectcb = protopassthrough_conn_connect;
-	ctx->protoctx->fd_readcb = prototcp_fd_readcb;
+	// Never used, but set it to the correct callback anyway
+	ctx->protoctx->init_conn = prototcp_init_conn;
 	
 	ctx->protoctx->bev_readcb = protopassthrough_bev_readcb;
 	ctx->protoctx->bev_writecb = protopassthrough_bev_writecb;

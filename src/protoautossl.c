@@ -440,8 +440,8 @@ protoautossl_setup(pxy_conn_ctx_t *ctx)
 {
 	ctx->protoctx->proto = PROTO_AUTOSSL;
 	ctx->protoctx->connectcb = protoautossl_conn_connect;
-	ctx->protoctx->fd_readcb = prototcp_fd_readcb;
-	
+	ctx->protoctx->init_conn = prototcp_init_conn;
+
 	ctx->protoctx->bev_readcb = protoautossl_bev_readcb;
 	ctx->protoctx->bev_writecb = prototcp_bev_writecb;
 	ctx->protoctx->bev_eventcb = protoautossl_bev_eventcb;

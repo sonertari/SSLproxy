@@ -329,7 +329,7 @@ protosmtps_setup(pxy_conn_ctx_t *ctx)
 	ctx->protoctx->proto = PROTO_SMTPS;
 
 	ctx->protoctx->connectcb = protosmtps_conn_connect;
-	ctx->protoctx->fd_readcb = protossl_fd_readcb;
+	ctx->protoctx->init_conn = protossl_init_conn;
 	
 	ctx->protoctx->bev_readcb = protosmtp_bev_readcb;
 	ctx->protoctx->bev_eventcb = protosmtps_bev_eventcb;

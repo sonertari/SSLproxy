@@ -1559,6 +1559,7 @@ pxy_conn_connect(pxy_conn_ctx_t *ctx)
 		// Otherwise, it is up to the event callbacks to terminate the connection.
 		if (ctx->term || ctx->enomem) {
 			pxy_conn_free(ctx, ctx->term ? ctx->term_requestor : 1);
+			return;
 		}
 	}
 
@@ -1928,7 +1929,7 @@ pxy_conn_setup(evutil_socket_t fd,
 
 	// Switch from thrmgr to connection handling thread, i.e. change the event base, asap
 	// This prevents possible multithreading issues between thrmgr and conn handling threads
-	ctx->ev = event_new(ctx->evbase, -1, 0, ctx->protoctx->fd_readcb, ctx);
+	ctx->ev = event_new(ctx->evbase, -1, 0, ctx->protoctx->init_conn, ctx);
 	if (!ctx->ev) {
 		log_err_level_printf(LOG_CRIT, "Error creating initial event, aborting connection\n");
 		log_fine("Error creating initial event, aborting connection");
@@ -1937,7 +1938,7 @@ pxy_conn_setup(evutil_socket_t fd,
 	// The only purpose of this event is to change the event base, so it is a one-shot event
 	if (event_add(ctx->ev, NULL) == -1)
 		goto out;
-	event_active(ctx->ev, EV_TIMEOUT, 0);
+	event_active(ctx->ev, 0, 0);
 	return;
 
 out:
