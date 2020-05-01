@@ -526,10 +526,11 @@ pxy_thrmgr_remove_conn_unlocked(pxy_conn_ctx_t *ctx)
 
 	log_finest("Removing conn");
 
-	// We increment thr load in pxy_thrmgr_attach() only (for parent conns)
+	// We increment thr load in pxy_conn_init() only (for parent conns)
 	ctx->thr->load--;
+	// No need to reset the ctx->in_thr_conns flag, as we free the ctx right after calling this function
 
-	// @attention We may get multiple conns with the same fd combinations, so fds cannot uniquely define a conn; hence the need for unique ids.
+	// @attention We may get multiple conns with the same fd combinations, so fds cannot uniquely identify a conn; hence the need for unique ids.
 	if (ctx->id == ctx->thr->conns->id) {
 		ctx->thr->conns = ctx->thr->conns->next;
 		return;
@@ -589,14 +590,6 @@ pxy_thrmgr_attach(pxy_conn_ctx_t *ctx)
 	}
 
 	ctx->thr = tmctx->thr[thridx];
-
-	pthread_mutex_lock(&ctx->thr->mutex);
-	// Always keep thr load and conns list in sync
-	ctx->thr->load++;
-	ctx->next = ctx->thr->conns;
-	ctx->thr->conns = ctx;
-	pthread_mutex_unlock(&ctx->thr->mutex);
-
 	ctx->evbase = ctx->thr->evbase;
 	ctx->dnsbase = ctx->thr->dnsbase;
 

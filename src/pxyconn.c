@@ -386,10 +386,12 @@ pxy_conn_ctx_free(pxy_conn_ctx_t *ctx, int by_requestor)
 		}
 	}
 
-	if (ctx->conn->thr_locked) {
-		pxy_thrmgr_detach_unlocked(ctx);
-	} else {
-		pxy_thrmgr_detach(ctx);
+	if (ctx->in_thr_conns) {
+		if (ctx->thr_locked) {
+			pxy_thrmgr_detach_unlocked(ctx);
+		} else {
+			pxy_thrmgr_detach(ctx);
+		}
 	}
 
 	if (ctx->srchost_str) {
@@ -987,13 +989,13 @@ getdtablecount()
 static int
 check_fd_usage(
 #ifdef DEBUG_PROXY
-	evutil_socket_t fd
+	pxy_conn_ctx_t *ctx
 #endif /* DEBUG_PROXY */
 	)
 {
 	int dtable_count = getdtablecount();
 
-	log_finer_main_va("descriptor_table_size=%d, dtablecount=%d, reserve=%d, fd=%d", descriptor_table_size, dtable_count, FD_RESERVE, fd);
+	log_finer_va("descriptor_table_size=%d, dtablecount=%d, reserve=%d", descriptor_table_size, dtable_count, FD_RESERVE);
 
 	if (dtable_count + FD_RESERVE >= descriptor_table_size) {
 		goto out;
@@ -1043,7 +1045,7 @@ pxy_listener_acceptcb_child(UNUSED struct evconnlistener *listener, evutil_socke
 
 	if (check_fd_usage(
 #ifdef DEBUG_PROXY
-			ctx->fd
+			ctx
 #endif /* DEBUG_PROXY */
 			) == -1) {
 		evutil_closesocket(fd);
@@ -1840,6 +1842,60 @@ pxy_userauth(pxy_conn_ctx_t *ctx)
 	return 0;
 }
 
+int
+pxy_conn_init(pxy_conn_ctx_t *ctx)
+{
+	log_finest("ENTER");
+
+	// Always keep thr load and conns list in sync
+	ctx->thr->load++;
+	ctx->next = ctx->thr->conns;
+	ctx->thr->conns = ctx;
+	ctx->in_thr_conns = 1;
+
+	if (check_fd_usage(
+#ifdef DEBUG_PROXY
+			ctx
+#endif /* DEBUG_PROXY */
+			) == -1) {
+			goto out;
+	}
+
+	ctx->af = ctx->srcaddr.ss_family;
+
+	/* determine original destination of connection */
+	if (ctx->spec->natlookup) {
+		/* NAT engine lookup */
+		ctx->dstaddrlen = sizeof(struct sockaddr_storage);
+		if (ctx->spec->natlookup((struct sockaddr *)&ctx->dstaddr, &ctx->dstaddrlen, ctx->fd, (struct sockaddr *)&ctx->srcaddr, ctx->srcaddrlen) == -1) {
+			log_err_printf("Connection not found in NAT state table, aborting connection\n");
+			goto out;
+		}
+	} else if (ctx->spec->connect_addrlen > 0) {
+		/* static forwarding */
+		ctx->dstaddrlen = ctx->spec->connect_addrlen;
+		memcpy(&ctx->dstaddr, &ctx->spec->connect_addr, ctx->dstaddrlen);
+	} else {
+		/* SNI mode */
+		if (!ctx->spec->ssl) {
+			/* if this happens, the proxyspec parser is broken */
+			log_err_printf("SNI mode used for non-SSL connection; aborting connection\n");
+			goto out;
+		}
+	}
+
+	if (sys_sockaddr_str((struct sockaddr *)&ctx->srcaddr, ctx->srcaddrlen, &ctx->srchost_str, &ctx->srcport_str) != 0) {
+		log_err_level_printf(LOG_CRIT, "Aborting connection setup (out of memory)!\n");
+		goto out;
+	}
+	log_finest_va("srcaddr= [%s]:%s", ctx->srchost_str, ctx->srcport_str);
+	return 0;
+out:
+	evutil_closesocket(ctx->fd);
+	pxy_conn_ctx_free(ctx, 1);
+	return -1;
+}
+
 /*
  * Callback for accept events on the socket listener bufferevent.
  * Called when a new incoming connection has been accepted.
@@ -1858,74 +1914,19 @@ pxy_conn_setup(evutil_socket_t fd,
                proxyspec_t *spec, global_t *global,
 			   evutil_socket_t clisock)
 {
-#ifdef DEBUG_PROXY
 	log_finest_main_va("ENTER, fd=%d", fd);
-
-	char *host, *port;
-	if (sys_sockaddr_str(peeraddr, peeraddrlen, &host, &port) == 0) {
-		log_finest_main_va("peer addr=[%s]:%s, fd=%d", host, port, fd);
-		free(host);
-		free(port);
-	}
-#endif /* DEBUG_PROXY */
-
-	if (check_fd_usage(
-#ifdef DEBUG_PROXY
-			fd
-#endif /* DEBUG_PROXY */
-			) == -1) {
-		evutil_closesocket(fd);
-		return;
-	}
 
 	/* create per connection state and attach to thread */
 	pxy_conn_ctx_t *ctx = pxy_conn_ctx_new(fd, thrmgr, spec, global, clisock);
 	if (!ctx) {
-		log_err_level_printf(LOG_CRIT, "Error allocating memory\n");
+		log_err_level_printf(LOG_CRIT, "Error allocating ctx memory\n");
 		evutil_closesocket(fd);
 		return;
 	}
 
-	ctx->af = peeraddr->sa_family;
-
-	/* determine original destination of connection */
-	if (spec->natlookup) {
-		/* NAT engine lookup */
-		ctx->dstaddrlen = sizeof(struct sockaddr_storage);
-		if (spec->natlookup((struct sockaddr *)&ctx->dstaddr, &ctx->dstaddrlen, fd, peeraddr, peeraddrlen) == -1) {
-			log_err_printf("Connection not found in NAT state table, aborting connection\n");
-			goto out;
-		}
-	} else if (spec->connect_addrlen > 0) {
-		/* static forwarding */
-		ctx->dstaddrlen = spec->connect_addrlen;
-		memcpy(&ctx->dstaddr, &spec->connect_addr, ctx->dstaddrlen);
-	} else {
-		/* SNI mode */
-		if (!ctx->spec->ssl) {
-			/* if this happens, the proxyspec parser is broken */
-			log_err_printf("SNI mode used for non-SSL connection; aborting connection\n");
-			goto out;
-		}
-	}
-
-	if (sys_sockaddr_str(peeraddr, peeraddrlen, &ctx->srchost_str, &ctx->srcport_str) != 0) {
-		log_err_level_printf(LOG_CRIT, "Aborting connection setup (out of memory)!\n");
-		goto out;
-	}
-
 	/* prepare logging part 1 and user auth */
-	if (global->pcaplog || spec->opts->user_auth
-#ifndef WITHOUT_MIRROR
-		|| global->mirrorif
-#endif /* !WITHOUT_MIRROR */
-#ifdef HAVE_LOCAL_PROCINFO
-		|| global->lprocinfo
-#endif /* HAVE_LOCAL_PROCINFO */
-		) {
-		ctx->srcaddrlen = peeraddrlen;
-		memcpy(&ctx->srcaddr, peeraddr, ctx->srcaddrlen);
-	}
+	ctx->srcaddrlen = peeraddrlen;
+	memcpy(&ctx->srcaddr, peeraddr, ctx->srcaddrlen);
 
 	// Switch from thrmgr to connection handling thread, i.e. change the event base, asap
 	// This prevents possible multithreading issues between thrmgr and conn handling threads

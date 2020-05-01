@@ -210,6 +210,8 @@ prototcp_init_conn(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 	event_free(ctx->ev);
 	ctx->ev = NULL;
 
+	if (pxy_conn_init(ctx) == -1)
+		return;
 	pxy_conn_connect(ctx);
 }
 
