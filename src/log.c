@@ -228,11 +228,10 @@ log_dbg_level_printf(int level, const char *function, int thridx, long long unsi
 	} else {
 		rv = asprintf(&logbuf, "[%s] %s: %s\n", log_dbg_mode_names[level], function, buf);
 	}
-	if (rv >= 0) {
-		rv = log_dbg_print_free(logbuf);
-	}
 	free(buf);
-	return rv;
+	if (rv < 0)
+		return -1;
+	return log_dbg_print_free(logbuf);
 }
 
 void
