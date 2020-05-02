@@ -97,6 +97,14 @@ proxy_listener_ctx_free(proxy_listener_ctx_t *ctx)
 
 /*
  * Callback for accept events on the socket listener bufferevent.
+ * Called when a new incoming connection has been accepted.
+ * Initiates the connection to the server.  The incoming connection
+ * from the client is not being activated until we have a successful
+ * connection to the server, because we need the server's certificate
+ * in order to set up the SSL session to the client.
+ * For consistency, plain TCP works the same way, even if we could
+ * start reading from the client while waiting on the connection to
+ * the server to connect.
  */
 static void
 proxy_listener_acceptcb(UNUSED struct evconnlistener *listener,
@@ -105,8 +113,39 @@ proxy_listener_acceptcb(UNUSED struct evconnlistener *listener,
                         void *arg)
 {
 	proxy_listener_ctx_t *lctx = arg;
+
 	log_finest_main_va("ENTER, fd=%d", fd);
-	pxy_conn_setup(fd, peeraddr, peeraddrlen, lctx->thrmgr, lctx->spec, lctx->global, lctx->clisock);
+
+	/* create per connection state and attach to thread */
+	pxy_conn_ctx_t *ctx = pxy_conn_ctx_new(fd, lctx->thrmgr, lctx->spec, lctx->global, lctx->clisock);
+	if (!ctx) {
+		log_err_level_printf(LOG_CRIT, "Error allocating ctx memory\n");
+		evutil_closesocket(fd);
+		return;
+	}
+
+	pxy_thrmgr_attach(ctx);
+
+	/* prepare logging part 1 and user auth */
+	ctx->srcaddrlen = peeraddrlen;
+	memcpy(&ctx->srcaddr, peeraddr, ctx->srcaddrlen);
+
+	// Switch from thrmgr to connection handling thread, i.e. change the event base, asap
+	// This prevents possible multithreading issues between thrmgr and conn handling threads
+	ctx->ev = event_new(ctx->evbase, -1, 0, ctx->protoctx->init_conn, ctx);
+	if (!ctx->ev) {
+		log_err_level_printf(LOG_CRIT, "Error creating initial event, aborting connection\n");
+		log_fine("Error creating initial event, aborting connection");
+		goto out;
+	}
+	// The only purpose of this event is to change the event base, so it is a one-shot event
+	if (event_add(ctx->ev, NULL) == -1)
+		goto out;
+	event_active(ctx->ev, 0, 0);
+	return;
+out:
+	evutil_closesocket(fd);
+	pxy_conn_ctx_free(ctx, 1);
 }
 
 /*

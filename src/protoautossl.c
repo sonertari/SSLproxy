@@ -435,6 +435,7 @@ protoautossl_free(pxy_conn_ctx_t *ctx)
 	protossl_free(ctx);
 }
 
+// @attention Called by thrmgr thread
 protocol_t
 protoautossl_setup(pxy_conn_ctx_t *ctx)
 {

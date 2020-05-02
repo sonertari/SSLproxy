@@ -90,6 +90,7 @@ protopop3_validate(pxy_conn_ctx_t *ctx, char *packet
 	return 0;
 }
 
+// @attention Called by thrmgr thread
 protocol_t
 protopop3_setup(pxy_conn_ctx_t *ctx)
 {
@@ -106,6 +107,7 @@ protopop3_setup(pxy_conn_ctx_t *ctx)
 	return PROTO_POP3;
 }
 
+// @attention Called by thrmgr thread
 protocol_t
 protopop3s_setup(pxy_conn_ctx_t *ctx)
 {

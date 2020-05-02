@@ -1136,7 +1136,7 @@ protossl_fd_readcb(evutil_socket_t fd, UNUSED short what, void *arg)
 	event_free(ctx->ev);
 	ctx->ev = NULL;
 
-	pxy_thrmgr_remove_pending_ssl_conn(ctx);
+	pxy_thr_remove_pending_ssl_conn(ctx);
 
 	// Child connections will use the sni info obtained by the parent conn
 	/* for SSL, peek ClientHello and parse SNI from it */
@@ -1239,7 +1239,7 @@ protossl_init_conn(evutil_socket_t fd, UNUSED short what, void *arg)
 	// @attention Add the conn to pending ssl conns list before adding (activating) the event
 	// Because the event may (and does) fire before this thread adds the conn to pending ssl conns list,
 	// and since the pending flag is not set yet, the conn remains in the pending list
-	pxy_thrmgr_add_pending_ssl_conn(ctx);
+	pxy_thr_add_pending_ssl_conn(ctx);
 
 	if (event_add(ctx->ev, NULL) == -1) {
 		log_finest("event_add failed");
@@ -1596,6 +1596,7 @@ protossl_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 	}
 }
 
+// @attention Called by thrmgr thread
 protocol_t
 protossl_setup(pxy_conn_ctx_t *ctx)
 {

@@ -302,6 +302,7 @@ protosmtps_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 	}
 }
 
+// @attention Called by thrmgr thread
 protocol_t
 protosmtp_setup(pxy_conn_ctx_t *ctx)
 {
@@ -323,6 +324,7 @@ protosmtp_setup(pxy_conn_ctx_t *ctx)
 	return PROTO_SMTP;
 }
 
+// @attention Called by thrmgr thread
 protocol_t
 protosmtps_setup(pxy_conn_ctx_t *ctx)
 {

@@ -88,6 +88,7 @@ char *protocol_names[] = {
 	"SSL",
 };
 
+// @attention Called by thrmgr thread
 static protocol_t NONNULL(1)
 pxy_setup_proto(pxy_conn_ctx_t *ctx)
 {
@@ -178,7 +179,8 @@ pxy_setup_proto_child(pxy_conn_child_ctx_t *ctx)
 	return proto;
 }
 
-static pxy_conn_ctx_t * MALLOC NONNULL(2,3,4)
+// @attention Called by thrmgr thread
+pxy_conn_ctx_t *
 pxy_conn_ctx_new(evutil_socket_t fd,
                  pxy_thrmgr_ctx_t *thrmgr,
                  proxyspec_t *spec, global_t *global,
@@ -216,8 +218,6 @@ pxy_conn_ctx_new(evutil_socket_t fd,
 
 	ctx->next = NULL;
 
-	pxy_thrmgr_attach(ctx);
-
 #ifdef HAVE_LOCAL_PROCINFO
 	ctx->lproc.pid = -1;
 #endif /* HAVE_LOCAL_PROCINFO */
@@ -247,7 +247,7 @@ pxy_conn_ctx_new_child(evutil_socket_t fd, pxy_conn_ctx_t *ctx)
 	}
 
 	// @attention Child connections use the parent's event bases, otherwise we would get multithreading issues
-	pxy_thrmgr_attach_child(ctx);
+	pxy_thr_inc_load(ctx->thr);
 	return child_ctx;
 }
 
@@ -256,11 +256,7 @@ pxy_conn_ctx_free_child(pxy_conn_child_ctx_t *ctx)
 {
 	log_finest("ENTER");
 
-	if (ctx->conn->thr_locked) {
-		pxy_thrmgr_detach_child_unlocked(ctx->conn);
-	} else {
-		pxy_thrmgr_detach_child(ctx->conn);
-	}
+	pxy_thr_dec_load(ctx->conn->thr);
 
 	// If the proto doesn't have special args, proto_free() callback is NULL
 	if (ctx->protoctx->proto_free) {
@@ -386,13 +382,7 @@ pxy_conn_ctx_free(pxy_conn_ctx_t *ctx, int by_requestor)
 		}
 	}
 
-	if (ctx->in_thr_conns) {
-		if (ctx->thr_locked) {
-			pxy_thrmgr_detach_unlocked(ctx);
-		} else {
-			pxy_thrmgr_detach(ctx);
-		}
-	}
+	pxy_thr_detach(ctx);
 
 	if (ctx->srchost_str) {
 		free(ctx->srchost_str);
@@ -1060,7 +1050,7 @@ pxy_listener_acceptcb_child(UNUSED struct evconnlistener *listener, evutil_socke
 		pxy_conn_term(ctx, 1);
 		goto out;
 	}
-	ctx->thr->max_load = MAX(ctx->thr->max_load, ctx->thr->load);
+	ctx->thr->max_load = MAX(ctx->thr->max_load, pxy_thr_get_load(ctx->thr));
 
 	ctx->child_count++;
 	// Prepend child ctx to parent ctx child list
@@ -1449,7 +1439,7 @@ pxy_bev_eventcb_postexec_logging_and_stats(struct bufferevent *bev, short events
 		}
 
 		if (bev == ctx->srvdst.bev) {
-			ctx->thr->max_load = MAX(ctx->thr->max_load, ctx->thr->load);
+			ctx->thr->max_load = MAX(ctx->thr->max_load, pxy_thr_get_load(ctx->thr));
 			ctx->thr->max_fd = MAX(ctx->thr->max_fd, ctx->fd);
 
 			// src and other fd stats are collected in acceptcb functions
@@ -1848,7 +1838,8 @@ pxy_conn_init(pxy_conn_ctx_t *ctx)
 	log_finest("ENTER");
 
 	// Always keep thr load and conns list in sync
-	ctx->thr->load++;
+	pxy_thr_inc_load(ctx->thr);
+
 	ctx->next = ctx->thr->conns;
 	ctx->thr->conns = ctx;
 	ctx->in_thr_conns = 1;
@@ -1894,57 +1885,6 @@ out:
 	evutil_closesocket(ctx->fd);
 	pxy_conn_ctx_free(ctx, 1);
 	return -1;
-}
-
-/*
- * Callback for accept events on the socket listener bufferevent.
- * Called when a new incoming connection has been accepted.
- * Initiates the connection to the server.  The incoming connection
- * from the client is not being activated until we have a successful
- * connection to the server, because we need the server's certificate
- * in order to set up the SSL session to the client.
- * For consistency, plain TCP works the same way, even if we could
- * start reading from the client while waiting on the connection to
- * the server to connect.
- */
-void
-pxy_conn_setup(evutil_socket_t fd,
-               struct sockaddr *peeraddr, int peeraddrlen,
-               pxy_thrmgr_ctx_t *thrmgr,
-               proxyspec_t *spec, global_t *global,
-			   evutil_socket_t clisock)
-{
-	log_finest_main_va("ENTER, fd=%d", fd);
-
-	/* create per connection state and attach to thread */
-	pxy_conn_ctx_t *ctx = pxy_conn_ctx_new(fd, thrmgr, spec, global, clisock);
-	if (!ctx) {
-		log_err_level_printf(LOG_CRIT, "Error allocating ctx memory\n");
-		evutil_closesocket(fd);
-		return;
-	}
-
-	/* prepare logging part 1 and user auth */
-	ctx->srcaddrlen = peeraddrlen;
-	memcpy(&ctx->srcaddr, peeraddr, ctx->srcaddrlen);
-
-	// Switch from thrmgr to connection handling thread, i.e. change the event base, asap
-	// This prevents possible multithreading issues between thrmgr and conn handling threads
-	ctx->ev = event_new(ctx->evbase, -1, 0, ctx->protoctx->init_conn, ctx);
-	if (!ctx->ev) {
-		log_err_level_printf(LOG_CRIT, "Error creating initial event, aborting connection\n");
-		log_fine("Error creating initial event, aborting connection");
-		goto out;
-	}
-	// The only purpose of this event is to change the event base, so it is a one-shot event
-	if (event_add(ctx->ev, NULL) == -1)
-		goto out;
-	event_active(ctx->ev, 0, 0);
-	return;
-
-out:
-	evutil_closesocket(fd);
-	pxy_conn_ctx_free(ctx, 1);
 }
 
 /* vim: set noet ft=c: */

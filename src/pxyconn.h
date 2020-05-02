@@ -244,7 +244,6 @@ struct pxy_conn_ctx {
 
 	// Thread that the conn is attached to
 	pxy_thr_ctx_t *thr;
-	unsigned int thr_locked : 1;          /* 1 to prevent double locking */
 	unsigned int in_thr_conns : 1;        /* 1 if conn in thr conns list */
 
 	// Unique id of the conn
@@ -382,7 +381,7 @@ int pxy_try_consume_last_input_child(struct bufferevent *, pxy_conn_child_ctx_t 
 void pxy_discard_inbuf(struct bufferevent *) NONNULL(1);
 
 int pxy_conn_init(pxy_conn_ctx_t *) NONNULL(1);
-
+pxy_conn_ctx_t *pxy_conn_ctx_new(evutil_socket_t, pxy_thrmgr_ctx_t *, proxyspec_t *, global_t *, evutil_socket_t) MALLOC NONNULL(2,3,4);
 void pxy_conn_ctx_free(pxy_conn_ctx_t *, int) NONNULL(1);
 void pxy_conn_free(pxy_conn_ctx_t *, int) NONNULL(1);
 void pxy_conn_term(pxy_conn_ctx_t *, int) NONNULL(1);
