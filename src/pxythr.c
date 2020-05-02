@@ -38,26 +38,26 @@ size_t
 pxy_thr_get_load(pxy_thr_ctx_t *tctx)
 {
 	size_t load;
-	pthread_mutex_lock(&tctx->mutex);
+	//pthread_mutex_lock(&tctx->mutex);
 	load = tctx->load;
-	pthread_mutex_unlock(&tctx->mutex);
+	//pthread_mutex_unlock(&tctx->mutex);
 	return load;
 }
 
 void
 pxy_thr_inc_load(pxy_thr_ctx_t *tctx)
 {
-	pthread_mutex_lock(&tctx->mutex);
+	//pthread_mutex_lock(&tctx->mutex);
 	tctx->load++;
-	pthread_mutex_unlock(&tctx->mutex);
+	//pthread_mutex_unlock(&tctx->mutex);
 }
 
 void
 pxy_thr_dec_load(pxy_thr_ctx_t *tctx)
 {
-	pthread_mutex_lock(&tctx->mutex);
+	//pthread_mutex_lock(&tctx->mutex);
 	tctx->load--;
-	pthread_mutex_unlock(&tctx->mutex);
+	//pthread_mutex_unlock(&tctx->mutex);
 }
 
 void

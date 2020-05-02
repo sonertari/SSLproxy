@@ -50,9 +50,11 @@ typedef struct pxy_thr_ctx {
 	struct evdns_base *dnsbase;
 	int running;
 
-	// Per-thread locking is necessary during connection setup and termination
+	// @todo Do we need a thr mutex?
+	// This mutex is for thread-safe access to thr.load. But thrmgr read-accesses thr.load, and write-accesses are by thr only.
+	// Per-thread locking is necessary during connection setup
 	// to prevent multithreading issues between thrmgr thread and conn handling threads
-	pthread_mutex_t mutex;
+	//pthread_mutex_t mutex;
 
 	// Statistics
 	evutil_socket_t max_fd;

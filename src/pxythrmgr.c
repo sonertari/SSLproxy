@@ -112,10 +112,10 @@ pxy_thrmgr_run(pxy_thrmgr_ctx_t *ctx)
 			log_err_level_printf(LOG_CRIT, "Error preparing get_user sql stmt: %s\n", sqlite3_errmsg(ctx->global->userdb));
 			goto leave;
 		}
-		if (pthread_mutex_init(&ctx->thr[idx]->mutex, NULL)) {
-			log_dbg_printf("Failed to initialize thr mutex\n");
-			goto leave;
-		}
+		//if (pthread_mutex_init(&ctx->thr[idx]->mutex, NULL)) {
+		//	log_dbg_printf("Failed to initialize thr mutex\n");
+		//	goto leave;
+		//}
 	}
 
 	log_dbg_printf("Initialized %d connection handling threads\n",
@@ -155,7 +155,7 @@ leave:
 			if (ctx->global->opts->user_auth || global_has_userauth_spec(ctx->global)) {
 				sqlite3_finalize(ctx->thr[idx]->get_user);
 			}
-			pthread_mutex_destroy(&ctx->thr[idx]->mutex);
+			//pthread_mutex_destroy(&ctx->thr[idx]->mutex);
 			free(ctx->thr[idx]);
 		}
 		idx--;
@@ -191,7 +191,7 @@ pxy_thrmgr_free(pxy_thrmgr_ctx_t *ctx)
 			if (ctx->global->opts->user_auth || global_has_userauth_spec(ctx->global)) {
 				sqlite3_finalize(ctx->thr[idx]->get_user);
 			}
-			pthread_mutex_destroy(&ctx->thr[idx]->mutex);
+			//pthread_mutex_destroy(&ctx->thr[idx]->mutex);
 			free(ctx->thr[idx]);
 		}
 		free(ctx->thr);
