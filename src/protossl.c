@@ -952,7 +952,7 @@ protossl_bufferevent_setup(pxy_conn_ctx_t *ctx, evutil_socket_t fd, SSL *ssl)
 	log_finest_va("ENTER, fd=%d", fd);
 
 	struct bufferevent *bev = bufferevent_openssl_socket_new(ctx->evbase, fd, ssl,
-			((fd == -1) ? BUFFEREVENT_SSL_CONNECTING : BUFFEREVENT_SSL_ACCEPTING), BEV_OPT_DEFER_CALLBACKS|BEV_OPT_THREADSAFE);
+			((fd == -1) ? BUFFEREVENT_SSL_CONNECTING : BUFFEREVENT_SSL_ACCEPTING), BEV_OPT_DEFER_CALLBACKS);
 	if (!bev) {
 		log_err_level_printf(LOG_CRIT, "Error creating bufferevent socket\n");
 		return NULL;
@@ -979,7 +979,7 @@ protossl_bufferevent_setup_child(pxy_conn_child_ctx_t *ctx, evutil_socket_t fd, 
 	log_finest_va("ENTER, fd=%d", fd);
 
 	struct bufferevent *bev = bufferevent_openssl_socket_new(ctx->conn->evbase, fd, ssl,
-			((fd == -1) ? BUFFEREVENT_SSL_CONNECTING : BUFFEREVENT_SSL_ACCEPTING), BEV_OPT_DEFER_CALLBACKS|BEV_OPT_THREADSAFE);
+			((fd == -1) ? BUFFEREVENT_SSL_CONNECTING : BUFFEREVENT_SSL_ACCEPTING), BEV_OPT_DEFER_CALLBACKS);
 	if (!bev) {
 		log_err_level_printf(LOG_CRIT, "Error creating bufferevent socket\n");
 		return NULL;
@@ -1287,7 +1287,7 @@ int
 protossl_setup_srvdst_new_bev_ssl_connecting(pxy_conn_ctx_t *ctx)
 {
 	ctx->srvdst.bev = bufferevent_openssl_filter_new(ctx->evbase, ctx->srvdst.bev, ctx->srvdst.ssl,
-			BUFFEREVENT_SSL_CONNECTING, BEV_OPT_DEFER_CALLBACKS|BEV_OPT_THREADSAFE);
+			BUFFEREVENT_SSL_CONNECTING, BEV_OPT_DEFER_CALLBACKS);
 	if (!ctx->srvdst.bev) {
 		log_err_level_printf(LOG_CRIT, "Error creating srvdst bufferevent\n");
 		SSL_free(ctx->srvdst.ssl);
@@ -1426,7 +1426,7 @@ int
 protossl_setup_src_new_bev_ssl_accepting(pxy_conn_ctx_t *ctx)
 {
 	ctx->src.bev = bufferevent_openssl_filter_new(ctx->evbase, ctx->src.bev, ctx->src.ssl,
-			BUFFEREVENT_SSL_ACCEPTING, BEV_OPT_DEFER_CALLBACKS|BEV_OPT_THREADSAFE);
+			BUFFEREVENT_SSL_ACCEPTING, BEV_OPT_DEFER_CALLBACKS);
 	if (!ctx->src.bev) {
 		log_err_level_printf(LOG_CRIT, "Error creating src bufferevent\n");
 		SSL_free(ctx->src.ssl);
@@ -1442,7 +1442,7 @@ int
 protossl_setup_dst_new_bev_ssl_connecting_child(pxy_conn_child_ctx_t *ctx)
 {
 	ctx->dst.bev = bufferevent_openssl_filter_new(ctx->conn->evbase, ctx->dst.bev, ctx->dst.ssl,
-			BUFFEREVENT_SSL_CONNECTING, BEV_OPT_DEFER_CALLBACKS|BEV_OPT_THREADSAFE);
+			BUFFEREVENT_SSL_CONNECTING, BEV_OPT_DEFER_CALLBACKS);
 	if (!ctx->dst.bev) {
 		log_err_level_printf(LOG_CRIT, "Error creating dst bufferevent\n");
 		SSL_free(ctx->dst.ssl);
