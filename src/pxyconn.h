@@ -140,6 +140,7 @@ struct ssl_ctx {
 	// Note that accepting a connection does not mean that a packet will be received,
 	// so we should keep track of such conns, otherwise they may get lost causing memory and fd leak
 	pxy_conn_ctx_t *next_pending;
+	pxy_conn_ctx_t *prev_pending;
 	unsigned int pending : 1;                    /* 1 until first readcb */
 };
 
@@ -290,6 +291,7 @@ struct pxy_conn_ctx {
 	
 	// Per-thread conn list, used to determine idle and expired conns, and to close them
 	pxy_conn_ctx_t *next;
+	pxy_conn_ctx_t *prev;
 
 	// Expired conns are link-listed using this pointer, a temporary list used in conn thr timercb only
 	pxy_conn_ctx_t *next_expired;
@@ -346,8 +348,8 @@ struct pxy_conn_child_ctx {
 	int removed_sslproxy_header;   /* 1 after SSLproxy header is removed */
 
 	// Children of the conn are link-listed using this pointer
-	// We identify child conns with their src fds, so the src fd of child is used as its id while removing it from this list
 	pxy_conn_child_ctx_t *next;
+	pxy_conn_child_ctx_t *prev;
 };
 
 #ifdef HAVE_LOCAL_PROCINFO

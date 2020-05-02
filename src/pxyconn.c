@@ -274,25 +274,38 @@ pxy_conn_remove_child(pxy_conn_child_ctx_t *ctx)
 
 	log_finest("ENTER");
 
-	if (ctx->fd == ctx->conn->children->fd) {
-		ctx->conn->children = ctx->conn->children->next;
-		return;
+	if (ctx->prev) {
+		ctx->prev->next = ctx->next;
+	} else {
+		ctx->conn->children = ctx->next;
 	}
+	if (ctx->next)
+		ctx->next->prev = ctx->prev;
 
-	pxy_conn_child_ctx_t *current = ctx->conn->children->next;
-	pxy_conn_child_ctx_t *previous = ctx->conn->children;
-	while (current != NULL && previous != NULL) {
-		if (ctx->fd == current->fd) {
-			previous->next = current->next;
-			return;
+#ifdef DEBUG_PROXY
+	// We identify child conns with their src fds, so the src fd of child is used as its id while removing it from this list
+	if (ctx->conn->children) {
+		if (ctx->fd == ctx->conn->children->fd) {
+			log_fine("Found child in conn children, first");
+			assert(0);
+		} else {
+			pxy_conn_child_ctx_t *current = ctx->conn->children->next;
+			pxy_conn_child_ctx_t *previous = ctx->conn->children;
+			while (current != NULL && previous != NULL) {
+				if (ctx->fd == current->fd) {
+					previous->next = current->next;
+					log_fine("Found child in conn children");
+					assert(0);
+				}
+				previous = current;
+				current = current->next;
+			}
+			log_fine("Cannot find child in conn children");
 		}
-		previous = current;
-		current = current->next;
+	} else {
+		log_fine("Cannot find child in conn children, empty");
 	}
-	// This should never happen
-	log_err_level_printf(LOG_CRIT, "Cannot find child in conn children\n");
-	log_fine("Cannot find child in conn children");
-	assert(0);
+#endif /* DEBUG_PROXY */
 }
 
 static void
@@ -1053,10 +1066,12 @@ pxy_listener_acceptcb_child(UNUSED struct evconnlistener *listener, evutil_socke
 	ctx->thr->max_load = MAX(ctx->thr->max_load, pxy_thr_get_load(ctx->thr));
 
 	ctx->child_count++;
+
 	// Prepend child ctx to parent ctx child list
-	// @attention If the last child is deleted, the children list may become null again
 	child_ctx->next = ctx->children;
 	ctx->children = child_ctx;
+	if (child_ctx->next)
+		child_ctx->next->prev = child_ctx;
 
 	// @attention Do not enable src events here yet, they will be enabled after dst connects
 	if (prototcp_setup_src_child(child_ctx) == -1) {
@@ -1842,6 +1857,9 @@ pxy_conn_init(pxy_conn_ctx_t *ctx)
 
 	ctx->next = ctx->thr->conns;
 	ctx->thr->conns = ctx;
+	if (ctx->next)
+		ctx->next->prev = ctx;
+
 	ctx->in_thr_conns = 1;
 
 	if (check_fd_usage(

@@ -67,8 +67,11 @@ pxy_thr_add_pending_ssl_conn(pxy_conn_ctx_t *ctx)
 		log_finest("Adding conn");
 		ctx->sslctx->pending = 1;
 		ctx->thr->pending_ssl_conn_count++;
+
 		ctx->sslctx->next_pending = ctx->thr->pending_ssl_conns;
 		ctx->thr->pending_ssl_conns = ctx;
+		if (ctx->sslctx->next_pending)
+			ctx->sslctx->next_pending->sslctx->prev_pending = ctx;
 	}
 }
 
@@ -84,26 +87,38 @@ pxy_thr_remove_pending_ssl_conn(pxy_conn_ctx_t *ctx)
 		ctx->sslctx->pending = 0;
 		ctx->thr->pending_ssl_conn_count--;
 
-		// @attention We may get multiple conns with the same fd combinations, so fds cannot uniquely define a conn; hence the need for unique ids.
-		if (ctx->id == ctx->thr->pending_ssl_conns->id) {
-			ctx->thr->pending_ssl_conns = ctx->thr->pending_ssl_conns->sslctx->next_pending;
-			return;
+		if (ctx->sslctx->prev_pending) {
+			ctx->sslctx->prev_pending->sslctx->next_pending = ctx->sslctx->next_pending;
 		} else {
-			pxy_conn_ctx_t *current = ctx->thr->pending_ssl_conns->sslctx->next_pending;
-			pxy_conn_ctx_t *previous = ctx->thr->pending_ssl_conns;
-			while (current != NULL && previous != NULL) {
-				if (ctx->id == current->id) {
-					previous->sslctx->next_pending = current->sslctx->next_pending;
-					return;
-				}
-				previous = current;
-				current = current->sslctx->next_pending;
-			}
-			// This should never happen
-			log_err_level_printf(LOG_CRIT, "Cannot find conn in thrmgr pending_conns\n");
-			log_fine("Cannot find conn in thrmgr pending_conns");
-			assert(0);
+			ctx->thr->pending_ssl_conns = ctx->sslctx->next_pending;
 		}
+		if (ctx->sslctx->next_pending)
+			ctx->sslctx->next_pending->sslctx->prev_pending = ctx->sslctx->prev_pending;
+
+#ifdef DEBUG_PROXY
+		// @attention We may get multiple conns with the same fd combinations, so fds cannot uniquely define a conn; hence the need for unique ids.
+		if (ctx->thr->pending_ssl_conns) {
+			if (ctx->id == ctx->thr->pending_ssl_conns->id) {
+				log_fine("Found conn in thr pending_ssl_conns, first");
+				assert(0);
+			} else {
+				pxy_conn_ctx_t *current = ctx->thr->pending_ssl_conns->sslctx->next_pending;
+				pxy_conn_ctx_t *previous = ctx->thr->pending_ssl_conns;
+				while (current != NULL && previous != NULL) {
+					if (ctx->id == current->id) {
+						log_fine("Found conn in thr pending_ssl_conns");
+						assert(0);
+						return;
+					}
+					previous = current;
+					current = current->sslctx->next_pending;
+				}
+				log_fine("Cannot find conn in thr pending_ssl_conns");
+			}
+		} else {
+			log_fine("Cannot find conn in thr pending_ssl_conns, empty");
+		}
+#endif /* DEBUG_PROXY */
 	}
 }
 
@@ -134,28 +149,39 @@ pxy_thr_detach(pxy_conn_ctx_t *ctx)
 	// We increment thr load in pxy_conn_init() only (for parent conns)
 	pxy_thr_dec_load(ctx->thr);
 
+	if (ctx->prev) {
+		ctx->prev->next = ctx->next;
+	} else {
+		ctx->thr->conns = ctx->next;
+	}
+	if (ctx->next)
+		ctx->next->prev = ctx->prev;
+
 	// No need to reset the ctx->in_thr_conns flag, as we free the ctx right after calling this function
 
+#ifdef DEBUG_PROXY
 	// @attention We may get multiple conns with the same fd combinations, so fds cannot uniquely identify a conn; hence the need for unique ids.
-	if (ctx->id == ctx->thr->conns->id) {
-		ctx->thr->conns = ctx->thr->conns->next;
-		return;
-	} else {
-		pxy_conn_ctx_t *current = ctx->thr->conns->next;
-		pxy_conn_ctx_t *previous = ctx->thr->conns;
-		while (current != NULL && previous != NULL) {
-			if (ctx->id == current->id) {
-				previous->next = current->next;
-				return;
+	if (ctx->thr->conns) {
+		if (ctx->id == ctx->thr->conns->id) {
+			log_fine("Found conn in thr conns, first");
+			assert(0);
+		} else {
+			pxy_conn_ctx_t *current = ctx->thr->conns->next;
+			pxy_conn_ctx_t *previous = ctx->thr->conns;
+			while (current != NULL && previous != NULL) {
+				if (ctx->id == current->id) {
+					log_fine("Found conn in thr conns");
+					assert(0);
+				}
+				previous = current;
+				current = current->next;
 			}
-			previous = current;
-			current = current->next;
+			log_finest("Cannot find conn in thr conns");
 		}
-		// This should never happen
-		log_err_level_printf(LOG_CRIT, "Cannot find conn in thr conns\n");
-		log_fine("Cannot find conn in thr conns");
-		assert(0);
+	} else {
+		log_finest("Cannot find conn in thr conns, empty");
 	}
+#endif /* DEBUG_PROXY */
 }
 
 static void
