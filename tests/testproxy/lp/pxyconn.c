@@ -37,6 +37,7 @@
 #include <string.h>
 #include <arpa/inet.h>
 #include <sys/param.h>
+#include <errno.h>
 
 #include <event2/listener.h>
 
