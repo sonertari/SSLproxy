@@ -28,6 +28,7 @@
 
 #include "proxy.h"
 
+#include "prototcp.h"
 #include "privsep.h"
 #include "pxythrmgr.h"
 #include "pxyconn.h"
@@ -50,7 +51,6 @@
 #include <event2/bufferevent_ssl.h>
 #include <event2/buffer.h>
 #include <event2/thread.h>
-
 
 /*
  * Proxy engine, built around libevent 2.x.
@@ -92,8 +92,85 @@ proxy_listener_ctx_free(proxy_listener_ctx_t *ctx)
 	free(ctx);
 }
 
+static protocol_t NONNULL(1)
+proxy_setup_proto(pxy_conn_ctx_t *ctx)
+{
+	ctx->protoctx = malloc(sizeof(proto_ctx_t));
+	if (!ctx->protoctx) {
+		return PROTO_ERROR;
+	}
+	memset(ctx->protoctx, 0, sizeof(proto_ctx_t));
+
+	protocol_t proto = prototcp_setup(ctx);
+
+	if (proto == PROTO_ERROR) {
+		free(ctx->protoctx);
+	}
+	return proto;
+}
+
+static pxy_conn_ctx_t * MALLOC NONNULL(2,3)
+proxy_conn_ctx_new(evutil_socket_t fd,
+                 pxy_thrmgr_ctx_t *thrmgr, opts_t *opts)
+{
+	log_finest_main_va("ENTER, fd=%d", fd);
+
+	pxy_conn_ctx_t *ctx = malloc(sizeof(pxy_conn_ctx_t));
+	if (!ctx) {
+		return NULL;
+	}
+	memset(ctx, 0, sizeof(pxy_conn_ctx_t));
+
+	ctx->id = thrmgr->conn_count++;
+
+	log_finest_main_va("id=%llu, fd=%d", ctx->id, fd);
+
+	ctx->fd = fd;
+	ctx->thrmgr = thrmgr;
+
+	ctx->proto = proxy_setup_proto(ctx);
+	if (ctx->proto == PROTO_ERROR) {
+		free(ctx);
+		return NULL;
+	}
+
+	ctx->opts = opts;
+
+	ctx->ctime = time(NULL);
+	ctx->atime = ctx->ctime;
+
+	ctx->next = NULL;
+	return ctx;
+}
+
+/*
+ * Does minimal clean-up, called on error by proxy_listener_acceptcb() only.
+ * We call this function instead of pxy_conn_ctx_free(), because
+ * proxy_listener_acceptcb() runs on thrmgr, whereas pxy_conn_ctx_free()
+ * runs on conn handling thr. This is necessary to prevent multithreading issues.
+ */
+static void NONNULL(1)
+proxy_conn_ctx_free(pxy_conn_ctx_t *ctx)
+{
+	log_finest("ENTER");
+
+	if (ctx->ev) {
+		event_free(ctx->ev);
+	}
+	free(ctx->protoctx);
+	free(ctx);
+}
+
 /*
  * Callback for accept events on the socket listener bufferevent.
+ * Called when a new incoming connection has been accepted.
+ * Initiates the connection to the server.  The incoming connection
+ * from the client is not being activated until we have a successful
+ * connection to the server, because we need the server's certificate
+ * in order to set up the SSL session to the client.
+ * For consistency, plain TCP works the same way, even if we could
+ * start reading from the client while waiting on the connection to
+ * the server to connect.
  */
 static void
 proxy_listener_acceptcb(UNUSED struct evconnlistener *listener,
@@ -103,7 +180,36 @@ proxy_listener_acceptcb(UNUSED struct evconnlistener *listener,
 {
 	proxy_listener_ctx_t *lctx = arg;
 	log_finest_main_va("ENTER, fd=%d", fd);
-	pxy_conn_setup(fd, peeraddr, peeraddrlen, lctx->thrmgr, lctx->opts);
+
+	/* create per connection state */
+	pxy_conn_ctx_t *ctx = proxy_conn_ctx_new(fd, lctx->thrmgr, lctx->opts);
+	if (!ctx) {
+		log_err_level_printf(LOG_CRIT, "Error allocating memory\n");
+		evutil_closesocket(fd);
+		return;
+	}
+
+	// Choose the conn handling thr
+	pxy_thrmgr_attach(ctx);
+
+	ctx->srcaddrlen = peeraddrlen;
+	memcpy(&ctx->srcaddr, peeraddr, ctx->srcaddrlen);
+
+	// Switch from thrmgr to connection handling thread, i.e. change the event base, asap
+	// This prevents possible multithreading issues between thrmgr and conn handling threads
+	ctx->ev = event_new(ctx->thr->evbase, -1, 0, prototcp_connect, ctx);
+	if (!ctx->ev) {
+		log_err_level(LOG_CRIT, "Error creating connect event, aborting connection");
+		goto out;
+	}
+	// The only purpose of this event is to change the event base, so it is a one-shot event
+	if (event_add(ctx->ev, NULL) == -1)
+		goto out;
+	event_active(ctx->ev, 0, 0);
+	return;
+out:
+	evutil_closesocket(fd);
+	proxy_conn_ctx_free(ctx);
 }
 
 /*

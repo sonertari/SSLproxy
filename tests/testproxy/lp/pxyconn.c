@@ -29,8 +29,6 @@
 
 #include "pxyconn.h"
 
-#include "prototcp.h"
-
 #include "privsep.h"
 #include "sys.h"
 #include "log.h"
@@ -43,20 +41,6 @@
 #include <errno.h>
 
 #include <event2/listener.h>
-
-#ifdef __linux__
-#include <glob.h>
-#endif /* __linux__ */
-
-#include <net/if_arp.h>
-#include <sys/ioctl.h>
-#include <sys/socket.h>
-#include <sys/sysctl.h>
-#include <net/route.h>
-#include <netinet/if_ether.h>
-#ifdef __OpenBSD__
-#include <net/if_dl.h>
-#endif /* __OpenBSD__ */
 
 /*
  * Maximum size of data to buffer per connection direction before
@@ -72,60 +56,6 @@ char *protocol_names[] = {
 	"TCP", // = 0
 };
 
-static protocol_t NONNULL(1)
-pxy_setup_proto(pxy_conn_ctx_t *ctx)
-{
-	ctx->protoctx = malloc(sizeof(proto_ctx_t));
-	if (!ctx->protoctx) {
-		return PROTO_ERROR;
-	}
-	memset(ctx->protoctx, 0, sizeof(proto_ctx_t));
-
-	// Default to tcp
-	protocol_t proto = prototcp_setup(ctx);
-
-	if (proto == PROTO_ERROR) {
-		free(ctx->protoctx);
-	}
-	return proto;
-}
-
-static pxy_conn_ctx_t * MALLOC NONNULL(2,3)
-pxy_conn_ctx_new(evutil_socket_t fd,
-                 pxy_thrmgr_ctx_t *thrmgr, opts_t *opts)
-{
-	log_finest_main_va("ENTER, fd=%d", fd);
-
-	pxy_conn_ctx_t *ctx = malloc(sizeof(pxy_conn_ctx_t));
-	if (!ctx) {
-		return NULL;
-	}
-	memset(ctx, 0, sizeof(pxy_conn_ctx_t));
-
-	ctx->id = thrmgr->conn_count++;
-
-	log_finest_main_va("id=%llu, fd=%d", ctx->id, fd);
-	
-	ctx->fd = fd;
-	ctx->thrmgr = thrmgr;
-
-	ctx->proto = pxy_setup_proto(ctx);
-	if (ctx->proto == PROTO_ERROR) {
-		free(ctx);
-		return NULL;
-	}
-
-	ctx->opts = opts;
-
-	ctx->ctime = time(NULL);
-	ctx->atime = ctx->ctime;
-
-	ctx->next = NULL;
-
-	pxy_thrmgr_attach(ctx);
-	return ctx;
-}
-
 void
 pxy_conn_ctx_free(pxy_conn_ctx_t *ctx, int by_requestor)
 {
@@ -137,7 +67,7 @@ pxy_conn_ctx_free(pxy_conn_ctx_t *ctx, int by_requestor)
 		}
 	}
 
-	pxy_thrmgr_detach(ctx);
+	pxy_thr_detach(ctx);
 
 	if (ctx->srchost_str) {
 		free(ctx->srchost_str);
@@ -151,9 +81,8 @@ pxy_conn_ctx_free(pxy_conn_ctx_t *ctx, int by_requestor)
 	if (ctx->dstport_str) {
 		free(ctx->dstport_str);
 	}
-	// If the proto doesn't have special args, proto_free() callback is NULL
-	if (ctx->protoctx->proto_free) {
-		ctx->protoctx->proto_free(ctx);
+	if (ctx->ev) {
+		event_free(ctx->ev);
 	}
 	free(ctx->protoctx);
 	free(ctx);
@@ -400,129 +329,6 @@ pxy_discard_inbuf(struct bufferevent *bev)
 	evbuffer_drain(inbuf, inbuf_size);
 }
 
-#if defined(__APPLE__) || defined(__FreeBSD__)
-#define getdtablecount() 0
-
-/*
- * Copied from:
- * opensmtpd-201801101641p1/openbsd-compat/imsg.c
- * 
- * Copyright (c) 2003, 2004 Henning Brauer <henning@openbsd.org>
- *
- * Permission to use, copy, modify, and distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
- *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
- */
-static int
-available_fds(unsigned int n)
-{
-	unsigned int i;
-	int ret, fds[256];
-
-	if (n > (sizeof(fds)/sizeof(fds[0])))
-		return -1;
-
-	ret = 0;
-	for (i = 0; i < n; i++) {
-		fds[i] = -1;
-		if ((fds[i] = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
-			ret = -1;
-			break;
-		}
-	}
-
-	for (i = 0; i < n && fds[i] >= 0; i++)
-		close(fds[i]);
-
-	return ret;
-}
-#endif /* __APPLE__ || __FreeBSD__ */
-
-#ifdef __linux__
-/*
- * Copied from:
- * https://github.com/tmux/tmux/blob/master/compat/getdtablecount.c
- * 
- * Copyright (c) 2017 Nicholas Marriott <nicholas.marriott@gmail.com>
- *
- * Permission to use, copy, modify, and distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
- *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF MIND, USE, DATA OR PROFITS, WHETHER
- * IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
- * OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
- */
-int
-getdtablecount()
-{
-	char path[PATH_MAX];
-	glob_t g;
-	int n = 0;
-
-	if (snprintf(path, sizeof path, "/proc/%ld/fd/*", (long)getpid()) < 0) {
-		log_err_level_printf(LOG_CRIT, "snprintf overflow\n");
-		return 0;
-	}
-	if (glob(path, 0, NULL, &g) == 0)
-		n = g.gl_pathc;
-	globfree(&g);
-	return n;
-}
-#endif /* __linux__ */
-
-/*
- * Check if we are out of file descriptors to close the conn, or else libevent will crash us
- * @attention We cannot guess the number of children in a connection at conn setup time. So, FD_RESERVE is just a ball park figure.
- * But what if a connection passes the check below, but eventually tries to create more children than FD_RESERVE allows for? This will crash us the same.
- * Beware, this applies to all current conns, not just the last connection setup.
- * For example, 20x conns pass the check below before creating any children, at which point we reach the last FD_RESERVE fds,
- * then they all start creating children, which crashes us again.
- * So, no matter how large an FD_RESERVE we choose, there will always be a risk of running out of fds, if we check the number of fds during parent conn setup only.
- * If we are left with less than FD_RESERVE fds, we should not create more children than FD_RESERVE allows for either.
- * Therefore, we check if we are out of fds in pxy_listener_acceptcb_child() and close the conn there too.
- * @attention These checks are expected to slow us further down, but it is critical to avoid a crash in case we run out of fds.
- */
-static int
-check_fd_usage(
-#ifdef DEBUG_PROXY
-	evutil_socket_t fd
-#endif /* DEBUG_PROXY */
-	)
-{
-	int dtable_count = getdtablecount();
-
-	log_finer_main_va("descriptor_table_size=%d, dtablecount=%d, reserve=%d, fd=%d", descriptor_table_size, dtable_count, FD_RESERVE, fd);
-
-	if (dtable_count + FD_RESERVE >= descriptor_table_size) {
-		goto out;
-	}
-
-#if defined(__APPLE__) || defined(__FreeBSD__)
-	if (available_fds(FD_RESERVE) == -1) {
-		goto out;
-	}
-#endif /* __APPLE__ || __FreeBSD__ */
-
-	return 0;
-out:
-	errno = EMFILE;
-	log_err_level_printf(LOG_CRIT, "Out of file descriptors\n");
-	return -1;
-}
-
 int
 pxy_try_close_conn_end(pxy_conn_desc_t *conn_end, pxy_conn_ctx_t *ctx)
 {
@@ -677,82 +483,6 @@ pxy_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 	if (ctx->term || ctx->enomem) {
 		pxy_conn_free(ctx, ctx->term ? ctx->term_requestor : (bev == ctx->src.bev));
 	}
-}
-
-/*
- * Complete the connection.
- */
-void
-pxy_conn_connect(pxy_conn_ctx_t *ctx)
-{
-	log_finest("ENTER");
-
-	if (ctx->protoctx->connectcb(ctx) == -1) {
-		// @attention Do not try to close conns or do anything else with conn ctx on the thrmgr thread after setting event callbacks and/or socket connect.
-		// The return value of -1 from connectcb indicates that there was a fatal error before event callbacks were set, so we can terminate the connection.
-		// Otherwise, it is up to the event callbacks to terminate the connection. This is necessary to avoid multithreading issues.
-		if (ctx->term || ctx->enomem) {
-			pxy_conn_free(ctx, ctx->term ? ctx->term_requestor : 1);
-		}
-	}
-	// @attention Do not do anything with the conn ctx after this point on the thrmgr thread
-}
-
-/*
- * Callback for accept events on the socket listener bufferevent.
- * Called when a new incoming connection has been accepted.
- * Initiates the connection to the server.  The incoming connection
- * from the client is not being activated until we have a successful
- * connection to the server, because we need the server's certificate
- * in order to set up the SSL session to the client.
- * For consistency, plain TCP works the same way, even if we could
- * start reading from the client while waiting on the connection to
- * the server to connect.
- */
-void
-pxy_conn_setup(evutil_socket_t fd,
-               struct sockaddr *peeraddr, int peeraddrlen,
-               pxy_thrmgr_ctx_t *thrmgr, opts_t *opts)
-{
-#ifdef DEBUG_PROXY
-	log_finest_main_va("ENTER, fd=%d", fd);
-
-	char *host, *port;
-	if (sys_sockaddr_str(peeraddr, peeraddrlen, &host, &port) == 0) {
-		log_finest_main_va("peer addr=[%s]:%s, fd=%d", host, port, fd);
-		free(host);
-		free(port);
-	}
-#endif /* DEBUG_PROXY */
-
-	if (check_fd_usage(
-#ifdef DEBUG_PROXY
-			fd
-#endif /* DEBUG_PROXY */
-			) == -1) {
-		evutil_closesocket(fd);
-		return;
-	}
-
-	/* create per connection state and attach to thread */
-	pxy_conn_ctx_t *ctx = pxy_conn_ctx_new(fd, thrmgr, opts);
-	if (!ctx) {
-		log_err_level_printf(LOG_CRIT, "Error allocating memory\n");
-		evutil_closesocket(fd);
-		return;
-	}
-
-	if (sys_sockaddr_str(peeraddr, peeraddrlen, &ctx->srchost_str, &ctx->srcport_str) != 0) {
-		log_err_level_printf(LOG_CRIT, "Aborting connection setup (out of memory)!\n");
-		goto out;
-	}
-
-	ctx->protoctx->fd_readcb(ctx->fd, 0, ctx);
-	return;
-
-out:
-	evutil_closesocket(fd);
-	pxy_conn_ctx_free(ctx, 1);
 }
 
 /* vim: set noet ft=c: */

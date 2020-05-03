@@ -35,127 +35,6 @@
 
 #include <string.h>
 #include <event2/bufferevent.h>
-#include <pthread.h>
-#include <assert.h>
-#include <sys/param.h>
-
-/*
- * Proxy thread manager: manages the connection handling worker threads
- * and the per-thread resources (i.e. event bases).  The load is shared
- * across num_cpu * 2 connection handling threads, using the number of
- * currently assigned connections as the sole metric.
- *
- * The attach and detach functions are thread-safe.
- */
-
-static void
-pxy_thrmgr_print_thr_info(pxy_thr_ctx_t *tctx)
-{
-	log_finest_main_va("thr=%d, load=%lu", tctx->thridx, tctx->load);
-
-	unsigned int idx = 1;
-	evutil_socket_t max_fd = 0;
-	time_t max_atime = 0;
-	time_t max_ctime = 0;
-
-	char *smsg = NULL;
-
-	if (tctx->conns) {
-		time_t now = time(NULL);
-
-		pxy_conn_ctx_t *ctx = tctx->conns;
-		while (ctx) {
-			time_t atime = now - ctx->atime;
-			time_t ctime = now - ctx->ctime;
-			
-			log_finest_main_va("CONN: thr=%d, id=%u, fd=%d, dst=%d, p=%d-%d, at=%lld ct=%lld, src_addr=%s:%s, dst_addr=%s:%s",
-				tctx->thridx, idx, ctx->fd, ctx->dst_fd, ctx->src.closed, ctx->dst.closed, (long long)atime, (long long)ctime,
-				STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str));
-
-			max_fd = MAX(max_fd, MAX(ctx->fd, ctx->dst_fd));
-			max_atime = MAX(max_atime, atime);
-			max_ctime = MAX(max_ctime, ctime);
-
-			idx++;
-			ctx = ctx->next;
-		}
-	}
-
-	log_finest_main_va("STATS: thr=%d, mld=%zu, mfd=%d, mat=%lld, mct=%lld, iib=%llu, iob=%llu, eib=%llu, eob=%llu, swm=%zu, uwm=%zu, err=%zu, si=%u",
-			tctx->thridx, tctx->max_load, tctx->max_fd, (long long)max_atime, (long long)max_ctime, tctx->intif_in_bytes, tctx->intif_out_bytes, tctx->extif_in_bytes, tctx->extif_out_bytes,
-			tctx->set_watermarks, tctx->unset_watermarks, tctx->errors, tctx->stats_id);
-
-	if (asprintf(&smsg, "STATS: thr=%d, mld=%zu, mfd=%d, mat=%lld, mct=%lld, iib=%llu, iob=%llu, eib=%llu, eob=%llu, swm=%zu, uwm=%zu, err=%zu, si=%u\n",
-			tctx->thridx, tctx->max_load, tctx->max_fd, (long long)max_atime, (long long)max_ctime, tctx->intif_in_bytes, tctx->intif_out_bytes, tctx->extif_in_bytes, tctx->extif_out_bytes,
-			tctx->set_watermarks, tctx->unset_watermarks, tctx->errors, tctx->stats_id) < 0) {
-		return;
-	}
-
-	if (log_stats(smsg) == -1) {
-		log_err_level_printf(LOG_WARNING, "Stats logging failed\n");
-	}
-	free(smsg);
-
-	tctx->stats_id++;
-
-	tctx->errors = 0;
-	tctx->set_watermarks = 0;
-	tctx->unset_watermarks = 0;
-
-	tctx->intif_in_bytes = 0;
-	tctx->intif_out_bytes = 0;
-	tctx->extif_in_bytes = 0;
-	tctx->extif_out_bytes = 0;
-
-	// Reset these stats with the current values (do not reset to 0 directly, there may be active conns)
-	tctx->max_fd = max_fd;
-	tctx->max_load = tctx->load;
-}
-
-/*
- * Recurring timer event to prevent the event loops from exiting when
- * they run out of events.
- */
-static void
-pxy_thrmgr_timer_cb(UNUSED evutil_socket_t fd, UNUSED short what, UNUSED void *arg)
-{
-	pxy_thr_ctx_t *ctx = arg;
-
-	pthread_mutex_lock(&ctx->mutex);
-	log_finest_main_va("thr=%d, load=%lu, to=%u", ctx->thridx, ctx->load, ctx->timeout_count);
-
-	// @attention Print thread info only if stats logging is enabled, if disabled debug logs are not printed either
-	if (ctx->thrmgr->opts->statslog) {
-		ctx->timeout_count++;
-		if (ctx->timeout_count >= ctx->thrmgr->opts->stats_period) {
-			ctx->timeout_count = 0;
-			pxy_thrmgr_print_thr_info(ctx);
-		}
-	}
-	pthread_mutex_unlock(&ctx->mutex);
-}
-
-/*
- * Thread entry point; runs the event loop of the event base.
- * Does not exit until the libevent loop is broken explicitly.
- */
-static void *
-pxy_thrmgr_thr(void *arg)
-{
-	pxy_thr_ctx_t *ctx = arg;
-	struct timeval timer_delay = {10, 0};
-	struct event *ev;
-
-	ev = event_new(ctx->evbase, -1, EV_PERSIST, pxy_thrmgr_timer_cb, ctx);
-	if (!ev)
-		return NULL;
-	evtimer_add(ev, &timer_delay);
-	ctx->running = 1;
-	event_base_dispatch(ctx->evbase);
-	event_free(ev);
-
-	return NULL;
-}
 
 /*
  * Create new thread manager but do not start any threads yet.
@@ -209,11 +88,6 @@ pxy_thrmgr_run(pxy_thrmgr_ctx_t *ctx)
 		ctx->thr[idx]->thridx = idx;
 		ctx->thr[idx]->timeout_count = 0;
 		ctx->thr[idx]->thrmgr = ctx;
-
-		if (pthread_mutex_init(&ctx->thr[idx]->mutex, NULL)) {
-			log_dbg_printf("Failed to initialize thr mutex\n");
-			goto leave;
-		}
 	}
 
 	log_dbg_printf("Initialized %d connection handling threads\n",
@@ -221,7 +95,7 @@ pxy_thrmgr_run(pxy_thrmgr_ctx_t *ctx)
 
 	for (idx = 0; idx < ctx->num_thr; idx++) {
 		if (pthread_create(&ctx->thr[idx]->thr, NULL,
-		                   pxy_thrmgr_thr, ctx->thr[idx]))
+		                   pxy_thr, ctx->thr[idx]))
 			goto leave_thr;
 		while (!ctx->thr[idx]->running) {
 			sched_yield();
@@ -248,7 +122,6 @@ leave:
 			if (ctx->thr[idx]->evbase) {
 				event_base_free(ctx->thr[idx]->evbase);
 			}
-			pthread_mutex_destroy(&ctx->thr[idx]->mutex);
 			free(ctx->thr[idx]);
 		}
 		idx--;
@@ -278,73 +151,11 @@ pxy_thrmgr_free(pxy_thrmgr_ctx_t *ctx)
 			if (ctx->thr[idx]->evbase) {
 				event_base_free(ctx->thr[idx]->evbase);
 			}
-			pthread_mutex_destroy(&ctx->thr[idx]->mutex);
 			free(ctx->thr[idx]);
 		}
 		free(ctx->thr);
 	}
 	free(ctx);
-}
-
-void 
-pxy_thrmgr_add_conn(pxy_conn_ctx_t *ctx)
-{
-	pthread_mutex_lock(&ctx->thr->mutex);
-	if (!ctx->in_thr_conns) {
-		log_finest("Adding conn");
-
-		ctx->in_thr_conns = 1;
-		// Always keep thr load and conns list in sync
-		ctx->thr->load++;
-		ctx->next = ctx->thr->conns;
-		ctx->thr->conns = ctx;
-	} else {
-		// Do not add conns twice
-		log_finest("Will not add conn twice");
-	}
-	pthread_mutex_unlock(&ctx->thr->mutex);
-}
-
-static void NONNULL(1)
-pxy_thrmgr_remove_conn_unlocked(pxy_conn_ctx_t *ctx)
-{
-	assert(ctx != NULL);
-
-	if (ctx->in_thr_conns) {
-		log_finest("Removing conn");
-
-		// Thr conns list cannot be empty, if the in_thr_conns flag of a conn is set
-		assert(ctx->thr->conns != NULL);
-
-		// Shouldn't need to reset the in_thr_conns flag, because the conn ctx will be freed next, but just in case
-		ctx->in_thr_conns = 0;
-		// We increment thr load in pxy_thrmgr_add_conn() only
-		ctx->thr->load--;
-
-		// @attention We may get multiple conns with the same fd combinations, so fds cannot uniquely define a conn; hence the need for unique ids.
-		if (ctx->id == ctx->thr->conns->id) {
-			ctx->thr->conns = ctx->thr->conns->next;
-			return;
-		} else {
-			pxy_conn_ctx_t *current = ctx->thr->conns->next;
-			pxy_conn_ctx_t *previous = ctx->thr->conns;
-			while (current != NULL && previous != NULL) {
-				if (ctx->id == current->id) {
-					previous->next = current->next;
-					return;
-				}
-				previous = current;
-				current = current->next;
-			}
-			// This should never happen
-			log_err_level_printf(LOG_CRIT, "Cannot find conn in thr conns\n");
-			log_fine_main_va("Cannot find conn in thr conns, id=%llu, fd=%d", ctx->id, ctx->fd);
-			assert(0);
-		}
-	} else {
-		// This can happen if we are closing the conn after a fatal error before setting its event callback
-		log_finest("Conn not in thr conns");
-	}
 }
 
 /*
@@ -360,51 +171,32 @@ pxy_thrmgr_attach(pxy_conn_ctx_t *ctx)
 {
 	log_finest("ENTER");
 
-	int thridx = 0;
-	size_t minload;
-
 	pxy_thrmgr_ctx_t *tmctx = ctx->thrmgr;
-	pthread_mutex_lock(&tmctx->thr[0]->mutex);
-	minload = tmctx->thr[0]->load;
-	pthread_mutex_unlock(&tmctx->thr[0]->mutex);
+	size_t minload = tmctx->thr[0]->load;
 
 #ifdef DEBUG_THREAD
-	log_dbg_printf("===> Proxy connection handler thread status:\n"
-	               "thr[0]: %zu\n", minload);
+	log_dbg_printf("===> Proxy connection handler thread status:\nthr[0]: %zu\n", minload);
 #endif /* DEBUG_THREAD */
+
+	int thridx = 0;
 	for (int idx = 1; idx < tmctx->num_thr; idx++) {
-		pthread_mutex_lock(&tmctx->thr[idx]->mutex);
-#ifdef DEBUG_THREAD
-		log_dbg_printf("thr[%d]: %zu\n", idx, tmctx->thr[idx]->load);
-#endif /* DEBUG_THREAD */
-		if (minload > tmctx->thr[idx]->load) {
-			minload = tmctx->thr[idx]->load;
+		size_t thrload = tmctx->thr[idx]->load;
+
+		if (minload > thrload) {
+			minload = thrload;
 			thridx = idx;
 		}
-		pthread_mutex_unlock(&tmctx->thr[idx]->mutex);
+
+#ifdef DEBUG_THREAD
+		log_dbg_printf("thr[%d]: %zu\n", idx, thrload);
+#endif /* DEBUG_THREAD */
 	}
 
-	// Defer adding the conn to the conn list of its thread until after a successful conn setup while returning from pxy_conn_connect()
-	// otherwise pxy_thrmgr_timer_cb() may try to access the conn ctx while it is being freed on failure (signal 6 crash)
 	ctx->thr = tmctx->thr[thridx];
-	ctx->evbase = ctx->thr->evbase;
 
 #ifdef DEBUG_THREAD
 	log_dbg_printf("thridx: %d\n", thridx);
 #endif /* DEBUG_THREAD */
-}
-
-/*
- * Detach a connection from a thread by index.
- * This function cannot fail.
- */
-void
-pxy_thrmgr_detach(pxy_conn_ctx_t *ctx)
-{
-	pthread_mutex_lock(&ctx->thr->mutex);
-	log_finest("ENTER");
-	pxy_thrmgr_remove_conn_unlocked(ctx);
-	pthread_mutex_unlock(&ctx->thr->mutex);
 }
 
 /* vim: set noet ft=c: */

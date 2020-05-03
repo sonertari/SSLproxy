@@ -123,6 +123,8 @@ extern logger_t *connect_log;
 #define log_connect_write_free(buf, sz) \
         logger_write_freebuf(connect_log, NULL, 0, (buf), (sz))
 
+#define log_err_level(level, str) { log_err_level_printf((level), (str"\n")); log_fine((str)); }
+
 int log_stats(const char *);
 int log_conn(const char *);
 

@@ -26,6 +26,7 @@
 /tests/testproxy/lp/lp
 
 /nbproject/
+/tests/testproxy/lp/nbproject/
 
 # CVS default ignores begin
 tags

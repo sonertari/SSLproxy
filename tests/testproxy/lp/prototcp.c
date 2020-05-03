@@ -33,6 +33,10 @@
 #include <sys/param.h>
 #include <string.h>
 
+#ifdef __linux__
+#include <glob.h>
+#endif /* __linux__ */
+
 /*
  * Set up a bufferevent structure for either a dst or src connection,
  * optionally with or without SSL.  Sets all callbacks, enables read
@@ -49,10 +53,9 @@ prototcp_bufferevent_setup(pxy_conn_ctx_t *ctx, evutil_socket_t fd)
 {
 	log_finest_va("ENTER, fd=%d", fd);
 
-	struct bufferevent *bev = bufferevent_socket_new(ctx->evbase, fd, BEV_OPT_DEFER_CALLBACKS|BEV_OPT_THREADSAFE);
+	struct bufferevent *bev = bufferevent_socket_new(ctx->thr->evbase, fd, BEV_OPT_DEFER_CALLBACKS|BEV_OPT_THREADSAFE);
 	if (!bev) {
-		log_err_level_printf(LOG_CRIT, "Error creating bufferevent socket\n");
-		log_fine_va("bufferevent_socket_new failed, fd=%d", fd);
+		log_err_level(LOG_CRIT, "Error creating bufferevent socket");
 		return NULL;
 	}
 	return bev;
@@ -96,21 +99,168 @@ prototcp_setup_dst(pxy_conn_ctx_t *ctx)
 	return 0;
 }
 
-static int NONNULL(1) WUNRES
-prototcp_conn_connect(pxy_conn_ctx_t *ctx)
+#if defined(__APPLE__) || defined(__FreeBSD__)
+#define getdtablecount() 0
+
+/*
+ * Copied from:
+ * opensmtpd-201801101641p1/openbsd-compat/imsg.c
+ * 
+ * Copyright (c) 2003, 2004 Henning Brauer <henning@openbsd.org>
+ *
+ * Permission to use, copy, modify, and distribute this software for any
+ * purpose with or without fee is hereby granted, provided that the above
+ * copyright notice and this permission notice appear in all copies.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+ * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ */
+static int
+available_fds(unsigned int n)
 {
+	unsigned int i;
+	int ret, fds[256];
+
+	if (n > (sizeof(fds)/sizeof(fds[0])))
+		return -1;
+
+	ret = 0;
+	for (i = 0; i < n; i++) {
+		fds[i] = -1;
+		if ((fds[i] = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+			ret = -1;
+			break;
+		}
+	}
+
+	for (i = 0; i < n && fds[i] >= 0; i++)
+		close(fds[i]);
+
+	return ret;
+}
+#endif /* __APPLE__ || __FreeBSD__ */
+
+#ifdef __linux__
+/*
+ * Copied from:
+ * https://github.com/tmux/tmux/blob/master/compat/getdtablecount.c
+ * 
+ * Copyright (c) 2017 Nicholas Marriott <nicholas.marriott@gmail.com>
+ *
+ * Permission to use, copy, modify, and distribute this software for any
+ * purpose with or without fee is hereby granted, provided that the above
+ * copyright notice and this permission notice appear in all copies.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+ * WHATSOEVER RESULTING FROM LOSS OF MIND, USE, DATA OR PROFITS, WHETHER
+ * IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
+ * OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ */
+int
+getdtablecount()
+{
+	char path[PATH_MAX];
+	glob_t g;
+	int n = 0;
+
+	if (snprintf(path, sizeof path, "/proc/%ld/fd/*", (long)getpid()) < 0) {
+		log_err_level_printf(LOG_CRIT, "snprintf overflow\n");
+		return 0;
+	}
+	if (glob(path, 0, NULL, &g) == 0)
+		n = g.gl_pathc;
+	globfree(&g);
+	return n;
+}
+#endif /* __linux__ */
+
+/*
+ * Check if we are out of file descriptors to close the conn, or else libevent will crash us
+ * @attention We cannot guess the number of children in a connection at conn setup time. So, FD_RESERVE is just a ball park figure.
+ * But what if a connection passes the check below, but eventually tries to create more children than FD_RESERVE allows for? This will crash us the same.
+ * Beware, this applies to all current conns, not just the last connection setup.
+ * For example, 20x conns pass the check below before creating any children, at which point we reach the last FD_RESERVE fds,
+ * then they all start creating children, which crashes us again.
+ * So, no matter how large an FD_RESERVE we choose, there will always be a risk of running out of fds, if we check the number of fds during parent conn setup only.
+ * If we are left with less than FD_RESERVE fds, we should not create more children than FD_RESERVE allows for either.
+ * Therefore, we check if we are out of fds in pxy_listener_acceptcb_child() and close the conn there too.
+ * @attention These checks are expected to slow us further down, but it is critical to avoid a crash in case we run out of fds.
+ */
+static int
+check_fd_usage(
+#ifdef DEBUG_PROXY
+	pxy_conn_ctx_t *ctx
+#endif /* DEBUG_PROXY */
+	)
+{
+	int dtable_count = getdtablecount();
+
+	log_finer_va("descriptor_table_size=%d, dtablecount=%d, reserve=%d", descriptor_table_size, dtable_count, FD_RESERVE);
+
+	if (dtable_count + FD_RESERVE >= descriptor_table_size) {
+		goto out;
+	}
+
+#if defined(__APPLE__) || defined(__FreeBSD__)
+	if (available_fds(FD_RESERVE) == -1) {
+		goto out;
+	}
+#endif /* __APPLE__ || __FreeBSD__ */
+
+	return 0;
+out:
+	errno = EMFILE;
+	log_err_level_printf(LOG_CRIT, "Out of file descriptors\n");
+	return -1;
+}
+
+void
+prototcp_connect(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
+{
+	pxy_conn_ctx_t *ctx = arg;
+
 	log_finest("ENTER");
 
+	event_free(ctx->ev);
+	ctx->ev = NULL;
+
+	// Always keep thr load and conns list in sync
+	ctx->thr->load++;
+
+	ctx->next = ctx->thr->conns;
+	ctx->thr->conns = ctx;
+	if (ctx->next)
+		ctx->next->prev = ctx;
+
+	if (check_fd_usage(
+#ifdef DEBUG_PROXY
+			ctx
+#endif /* DEBUG_PROXY */
+			) == -1) {
+		goto out;
+	}
+
+	if (sys_sockaddr_str((struct sockaddr *)&ctx->srcaddr, ctx->srcaddrlen, &ctx->srchost_str, &ctx->srcport_str) != 0) {
+		log_err_level_printf(LOG_CRIT, "Aborting connection setup (out of memory)!\n");
+		goto out;
+	}
+	log_finest_va("srcaddr= [%s]:%s", ctx->srchost_str, ctx->srcport_str);
+
 	if (prototcp_setup_src(ctx) == -1) {
-		return -1;
+		goto out;
 	}
 
 	if (prototcp_setup_dst(ctx) == -1) {
-		return -1;
+		goto out;
 	}
-
-	// Conn setup is successful, so add the conn to the conn list of its thread now
-	pxy_thrmgr_add_conn(ctx);
 
 	bufferevent_setcb(ctx->src.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
 	bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
@@ -119,15 +269,10 @@ prototcp_conn_connect(pxy_conn_ctx_t *ctx)
 
 	// Now open the gates
 	bufferevent_enable(ctx->src.bev, EV_READ|EV_WRITE);
-	return 0;
-}
-
-static void
-prototcp_fd_readcb(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
-{
-	pxy_conn_ctx_t *ctx = arg;
-	log_finest("ENTER");
-	pxy_conn_connect(ctx);
+	return;
+out:
+	evutil_closesocket(ctx->fd);
+	pxy_conn_free(ctx, 1);
 }
 
 static int
@@ -239,8 +384,7 @@ prototcp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 				/* initiate connection */
 				bufferevent_enable(ctx->dst.bev, EV_READ|EV_WRITE);
 				if (bufferevent_socket_connect(ctx->dst.bev, (struct sockaddr *)&ctx->dstaddr, ctx->dstaddrlen) == -1) {
-					log_err_level_printf(LOG_CRIT, "prototcp_bev_readcb_src: bufferevent_socket_connect for dst failed\n");
-					log_fine("bufferevent_socket_connect for dst failed");
+					log_err_level(LOG_CRIT, "bufferevent_socket_connect for dst failed");
 				}
 			}
 
@@ -362,8 +506,7 @@ prototcp_bev_eventcb_eof_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 #endif /* DEBUG_PROXY */
 
 	if (!ctx->src_connected) {
-		log_err_level_printf(LOG_WARNING, "EOF on connection before connection establishment\n");
-		log_fine("EOF on connection before connection establishment");
+		log_err_level(LOG_WARNING, "EOF on connection before connection establishment");
 		ctx->dst.closed = 1;
 	} else if (!ctx->dst.closed) {
 		log_finest("!dst->closed, terminate conn");
@@ -385,8 +528,7 @@ prototcp_bev_eventcb_eof_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 #endif /* DEBUG_PROXY */
 
 	if (!ctx->dst_connected) {
-		log_err_level_printf(LOG_WARNING, "EOF on connection before connection establishment\n");
-		log_fine("EOF on connection before connection establishment");
+		log_err_level(LOG_WARNING, "EOF on connection before connection establishment");
 		ctx->src.closed = 1;
 	} else if (!ctx->src.closed) {
 		log_finest("!src->closed, terminate conn");
@@ -497,13 +639,9 @@ protocol_t
 prototcp_setup(pxy_conn_ctx_t *ctx)
 {
 	ctx->protoctx->proto = PROTO_TCP;
-	ctx->protoctx->connectcb = prototcp_conn_connect;
-	ctx->protoctx->fd_readcb = prototcp_fd_readcb;
-	
 	ctx->protoctx->bev_readcb = prototcp_bev_readcb;
 	ctx->protoctx->bev_writecb = prototcp_bev_writecb;
 	ctx->protoctx->bev_eventcb = prototcp_bev_eventcb;
-
 	return PROTO_TCP;
 }
 

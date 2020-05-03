@@ -49,15 +49,10 @@
 #define WANT_CONNECT_LOG(ctx)	((ctx)->opts->connectlog||!(ctx)->opts->detach||(ctx)->opts->statslog)
 #define WANT_CONTENT_LOG(ctx)	((ctx)->opts->contentlog)
 
-typedef void (*fd_readcb_func_t)(evutil_socket_t,  short, void *);
-typedef int (*connect_func_t)(pxy_conn_ctx_t *);
-
 typedef void (*callback_func_t)(struct bufferevent *, void *);
 typedef void (*eventcb_func_t)(struct bufferevent *, short, void *);
 
 typedef void (*bev_free_func_t)(struct bufferevent *, pxy_conn_ctx_t *);
-
-typedef void (*proto_free_func_t)(pxy_conn_ctx_t *);
 
 /*
  * Proxy connection context state, describes a proxy connection
@@ -82,18 +77,9 @@ typedef struct proto_ctx proto_ctx_t;
 
 struct proto_ctx {
 	protocol_t proto;
-
-	connect_func_t connectcb;
-	fd_readcb_func_t fd_readcb;
-
 	callback_func_t bev_readcb;
 	callback_func_t bev_writecb;
 	eventcb_func_t bev_eventcb;
-
-	proto_free_func_t proto_free;
-
-	// For protocol specific fields, if any
-	void *arg;
 };
 
 /* connection state consisting of two connection descriptors,
@@ -128,21 +114,22 @@ struct pxy_conn_ctx {
 	unsigned int term_requestor : 1;          /* 1 client, 0 server side */
 	unsigned int seen_sslproxy_line : 1;      /* 1 if seen sslproxy line */
 
-	/* destination address */
+	struct event *ev;
+
+	/* original source and destination address */
+	struct sockaddr_storage srcaddr;
+	socklen_t srcaddrlen;
 	struct sockaddr_storage dstaddr;
 	socklen_t dstaddrlen;
 
 	// Thread that the conn is attached to
 	pxy_thr_ctx_t *thr;
-	unsigned int in_thr_conns : 1;          /* 1 to prevent adding twice */
 
 	// Unique id of the conn
 	long long unsigned int id;
 
 	pxy_thrmgr_ctx_t *thrmgr;
 	opts_t *opts;
-
-	struct event_base *evbase;
 
 	evutil_socket_t dst_fd;
 
@@ -155,6 +142,7 @@ struct pxy_conn_ctx {
 	
 	// Per-thread conn list, used to determine idle and expired conns, and to close them
 	pxy_conn_ctx_t *next;
+	pxy_conn_ctx_t *prev;
 };
 
 void pxy_log_connect(pxy_conn_ctx_t *) NONNULL(1);
@@ -183,11 +171,6 @@ int pxy_bev_eventcb_postexec_logging_and_stats(struct bufferevent *, short , pxy
 void pxy_bev_readcb(struct bufferevent *, void *);
 void pxy_bev_writecb(struct bufferevent *, void *);
 void pxy_bev_eventcb(struct bufferevent *, short, void *);
-
-void pxy_conn_connect(pxy_conn_ctx_t *) NONNULL(1);
-void pxy_conn_setup(evutil_socket_t, struct sockaddr *, int,
-                    pxy_thrmgr_ctx_t *, opts_t *)
-                    NONNULL(2,4,5);
 
 #endif /* !PXYCONN_H */
 
