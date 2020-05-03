@@ -96,9 +96,10 @@ pxy_thr_remove_pending_ssl_conn(pxy_conn_ctx_t *ctx)
 			ctx->sslctx->next_pending->sslctx->prev_pending = ctx->sslctx->prev_pending;
 
 #ifdef DEBUG_PROXY
-		// @attention We may get multiple conns with the same fd combinations, so fds cannot uniquely define a conn; hence the need for unique ids.
+		// We may get multiple conns with the same fd combinations, so fds cannot uniquely define a conn; hence the need for unique ids.
 		if (ctx->thr->pending_ssl_conns) {
 			if (ctx->id == ctx->thr->pending_ssl_conns->id) {
+				// This should never happen
 				log_fine("Found conn in thr pending_ssl_conns, first");
 				assert(0);
 			} else {
@@ -106,6 +107,7 @@ pxy_thr_remove_pending_ssl_conn(pxy_conn_ctx_t *ctx)
 				pxy_conn_ctx_t *previous = ctx->thr->pending_ssl_conns;
 				while (current != NULL && previous != NULL) {
 					if (ctx->id == current->id) {
+						// This should never happen
 						log_fine("Found conn in thr pending_ssl_conns");
 						assert(0);
 						return;
@@ -113,10 +115,10 @@ pxy_thr_remove_pending_ssl_conn(pxy_conn_ctx_t *ctx)
 					previous = current;
 					current = current->sslctx->next_pending;
 				}
-				log_fine("Cannot find conn in thr pending_ssl_conns");
+				log_finest("Cannot find conn in thr pending_ssl_conns");
 			}
 		} else {
-			log_fine("Cannot find conn in thr pending_ssl_conns, empty");
+			log_finest("Cannot find conn in thr pending_ssl_conns, empty");
 		}
 #endif /* DEBUG_PROXY */
 	}
@@ -160,9 +162,10 @@ pxy_thr_detach(pxy_conn_ctx_t *ctx)
 	// No need to reset the ctx->in_thr_conns flag, as we free the ctx right after calling this function
 
 #ifdef DEBUG_PROXY
-	// @attention We may get multiple conns with the same fd combinations, so fds cannot uniquely identify a conn; hence the need for unique ids.
+	// We may get multiple conns with the same fd combinations, so fds cannot uniquely identify a conn; hence the need for unique ids.
 	if (ctx->thr->conns) {
 		if (ctx->id == ctx->thr->conns->id) {
+			// This should never happen
 			log_fine("Found conn in thr conns, first");
 			assert(0);
 		} else {
@@ -170,6 +173,7 @@ pxy_thr_detach(pxy_conn_ctx_t *ctx)
 			pxy_conn_ctx_t *previous = ctx->thr->conns;
 			while (current != NULL && previous != NULL) {
 				if (ctx->id == current->id) {
+					// This should never happen
 					log_fine("Found conn in thr conns");
 					assert(0);
 				}

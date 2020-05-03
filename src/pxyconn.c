@@ -35,7 +35,6 @@
 #include "protopop3.h"
 #include "protosmtp.h"
 #include "protoautossl.h"
-#include "protopassthrough.h"
 
 #include "privsep.h"
 #include "sys.h"
@@ -88,52 +87,6 @@ char *protocol_names[] = {
 	"SSL",
 };
 
-// @attention Called by thrmgr thread
-static protocol_t NONNULL(1)
-pxy_setup_proto(pxy_conn_ctx_t *ctx)
-{
-	ctx->protoctx = malloc(sizeof(proto_ctx_t));
-	if (!ctx->protoctx) {
-		return PROTO_ERROR;
-	}
-	memset(ctx->protoctx, 0, sizeof(proto_ctx_t));
-
-	// Default to tcp
-	prototcp_setup(ctx);
-
-	protocol_t proto;
-	if (ctx->spec->upgrade) {
-		proto = protoautossl_setup(ctx);
-	} else if (ctx->spec->http) {
-		if (ctx->spec->ssl) {
-			proto = protohttps_setup(ctx);
-		} else {
-			proto = protohttp_setup(ctx);
-		}
-	} else if (ctx->spec->pop3) {
-		if (ctx->spec->ssl) {
-			proto = protopop3s_setup(ctx);
-		} else {
-			proto = protopop3_setup(ctx);
-		}
-	} else if (ctx->spec->smtp) {
-		if (ctx->spec->ssl) {
-			proto = protosmtps_setup(ctx);
-		} else {
-			proto = protosmtp_setup(ctx);
-		}
-	} else if (ctx->spec->ssl) {
-		proto = protossl_setup(ctx);
-	} else {
-		proto = PROTO_TCP;
-	}
-
-	if (proto == PROTO_ERROR) {
-		free(ctx->protoctx);
-	}
-	return proto;
-}
-
 static protocol_t NONNULL(1)
 pxy_setup_proto_child(pxy_conn_child_ctx_t *ctx)
 {
@@ -177,51 +130,6 @@ pxy_setup_proto_child(pxy_conn_child_ctx_t *ctx)
 		free(ctx->protoctx);
 	}
 	return proto;
-}
-
-// @attention Called by thrmgr thread
-pxy_conn_ctx_t *
-pxy_conn_ctx_new(evutil_socket_t fd,
-                 pxy_thrmgr_ctx_t *thrmgr,
-                 proxyspec_t *spec, global_t *global,
-			     evutil_socket_t clisock)
-{
-	log_finest_main_va("ENTER, fd=%d", fd);
-
-	pxy_conn_ctx_t *ctx = malloc(sizeof(pxy_conn_ctx_t));
-	if (!ctx) {
-		return NULL;
-	}
-	memset(ctx, 0, sizeof(pxy_conn_ctx_t));
-
-	ctx->id = thrmgr->conn_count++;
-
-	log_finest_main_va("id=%llu, fd=%d", ctx->id, fd);
-	
-	ctx->type = CONN_TYPE_PARENT;
-	ctx->fd = fd;
-	ctx->conn = ctx;
-	ctx->thrmgr = thrmgr;
-	ctx->spec = spec;
-
-	ctx->proto = pxy_setup_proto(ctx);
-	if (ctx->proto == PROTO_ERROR) {
-		free(ctx);
-		return NULL;
-	}
-
-	ctx->global = global;
-	ctx->clisock = clisock;
-
-	ctx->ctime = time(NULL);
-	ctx->atime = ctx->ctime;
-
-	ctx->next = NULL;
-
-#ifdef HAVE_LOCAL_PROCINFO
-	ctx->lproc.pid = -1;
-#endif /* HAVE_LOCAL_PROCINFO */
-	return ctx;
 }
 
 static pxy_conn_child_ctx_t * MALLOC NONNULL(2)
@@ -283,9 +191,10 @@ pxy_conn_remove_child(pxy_conn_child_ctx_t *ctx)
 		ctx->next->prev = ctx->prev;
 
 #ifdef DEBUG_PROXY
-	// We identify child conns with their src fds, so the src fd of child is used as its id while removing it from this list
+	// We identify child conns with their src fds
 	if (ctx->conn->children) {
 		if (ctx->fd == ctx->conn->children->fd) {
+			// This should never happen
 			log_fine("Found child in conn children, first");
 			assert(0);
 		} else {
@@ -293,17 +202,17 @@ pxy_conn_remove_child(pxy_conn_child_ctx_t *ctx)
 			pxy_conn_child_ctx_t *previous = ctx->conn->children;
 			while (current != NULL && previous != NULL) {
 				if (ctx->fd == current->fd) {
-					previous->next = current->next;
+					// This should never happen
 					log_fine("Found child in conn children");
 					assert(0);
 				}
 				previous = current;
 				current = current->next;
 			}
-			log_fine("Cannot find child in conn children");
+			log_finest("Cannot find child in conn children");
 		}
 	} else {
-		log_fine("Cannot find child in conn children, empty");
+		log_finest("Cannot find child in conn children, empty");
 	}
 #endif /* DEBUG_PROXY */
 }
@@ -362,6 +271,12 @@ pxy_conn_free_children(pxy_conn_ctx_t *ctx)
 	}
 }
 
+/*
+ * Does full clean-up of conn ctx.
+ * This is the conn handling thr version of a similar function
+ * proxy_conn_ctx_free(), which runs on thrmgr and does minimal
+ * clean-up.
+ */
 void
 pxy_conn_ctx_free(pxy_conn_ctx_t *ctx, int by_requestor)
 {
@@ -1067,7 +982,7 @@ pxy_listener_acceptcb_child(UNUSED struct evconnlistener *listener, evutil_socke
 
 	ctx->child_count++;
 
-	// Prepend child ctx to parent ctx child list
+	// Prepend child to the children list of parent
 	child_ctx->next = ctx->children;
 	ctx->children = child_ctx;
 	if (child_ctx->next)

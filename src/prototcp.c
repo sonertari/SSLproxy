@@ -880,6 +880,7 @@ prototcp_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 	}
 }
 
+// @attention Called by thrmgr thread
 protocol_t
 prototcp_setup(pxy_conn_ctx_t *ctx)
 {

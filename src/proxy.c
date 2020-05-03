@@ -31,6 +31,12 @@
 #include "privsep.h"
 #include "pxythrmgr.h"
 #include "pxyconn.h"
+#include "prototcp.h"
+#include "protossl.h"
+#include "protohttp.h"
+#include "protopop3.h"
+#include "protosmtp.h"
+#include "protoautossl.h"
 #include "cachemgr.h"
 #include "opts.h"
 #include "log.h"
@@ -51,7 +57,6 @@
 #include <event2/bufferevent_ssl.h>
 #include <event2/buffer.h>
 #include <event2/thread.h>
-
 
 /*
  * Proxy engine, built around libevent 2.x.
@@ -95,6 +100,117 @@ proxy_listener_ctx_free(proxy_listener_ctx_t *ctx)
 	free(ctx);
 }
 
+static protocol_t NONNULL(1)
+proxy_setup_proto(pxy_conn_ctx_t *ctx)
+{
+	ctx->protoctx = malloc(sizeof(proto_ctx_t));
+	if (!ctx->protoctx) {
+		return PROTO_ERROR;
+	}
+	memset(ctx->protoctx, 0, sizeof(proto_ctx_t));
+
+	// Default to tcp
+	prototcp_setup(ctx);
+
+	protocol_t proto;
+	if (ctx->spec->upgrade) {
+		proto = protoautossl_setup(ctx);
+	} else if (ctx->spec->http) {
+		if (ctx->spec->ssl) {
+			proto = protohttps_setup(ctx);
+		} else {
+			proto = protohttp_setup(ctx);
+		}
+	} else if (ctx->spec->pop3) {
+		if (ctx->spec->ssl) {
+			proto = protopop3s_setup(ctx);
+		} else {
+			proto = protopop3_setup(ctx);
+		}
+	} else if (ctx->spec->smtp) {
+		if (ctx->spec->ssl) {
+			proto = protosmtps_setup(ctx);
+		} else {
+			proto = protosmtp_setup(ctx);
+		}
+	} else if (ctx->spec->ssl) {
+		proto = protossl_setup(ctx);
+	} else {
+		proto = PROTO_TCP;
+	}
+
+	if (proto == PROTO_ERROR) {
+		free(ctx->protoctx);
+	}
+	return proto;
+}
+
+static pxy_conn_ctx_t * MALLOC NONNULL(2,3,4)
+proxy_conn_ctx_new(evutil_socket_t fd,
+                 pxy_thrmgr_ctx_t *thrmgr,
+                 proxyspec_t *spec, global_t *global,
+			     evutil_socket_t clisock)
+{
+	log_finest_main_va("ENTER, fd=%d", fd);
+
+	pxy_conn_ctx_t *ctx = malloc(sizeof(pxy_conn_ctx_t));
+	if (!ctx) {
+		return NULL;
+	}
+	memset(ctx, 0, sizeof(pxy_conn_ctx_t));
+
+	ctx->id = thrmgr->conn_count++;
+
+	log_finest_main_va("id=%llu, fd=%d", ctx->id, fd);
+
+	ctx->type = CONN_TYPE_PARENT;
+	ctx->fd = fd;
+	ctx->conn = ctx;
+	ctx->thrmgr = thrmgr;
+	ctx->spec = spec;
+
+	ctx->proto = proxy_setup_proto(ctx);
+	if (ctx->proto == PROTO_ERROR) {
+		free(ctx);
+		return NULL;
+	}
+
+	ctx->global = global;
+	ctx->clisock = clisock;
+
+	ctx->ctime = time(NULL);
+	ctx->atime = ctx->ctime;
+
+	ctx->next = NULL;
+
+#ifdef HAVE_LOCAL_PROCINFO
+	ctx->lproc.pid = -1;
+#endif /* HAVE_LOCAL_PROCINFO */
+	return ctx;
+}
+
+/*
+ * Does minimal clean-up, called on error by proxy_listener_acceptcb() only.
+ * We call this function instead of pxy_conn_ctx_free(), because
+ * proxy_listener_acceptcb() runs on thrmgr, whereas pxy_conn_ctx_free()
+ * runs on conn handling thr. This is necessary to prevent multithreading issues.
+ */
+static void NONNULL(1)
+proxy_conn_ctx_free(pxy_conn_ctx_t *ctx)
+{
+	log_finest("ENTER");
+
+	if (ctx->ev) {
+		event_free(ctx->ev);
+	}
+	// If the proto doesn't have special args, proto_free() callback is NULL
+	if (ctx->protoctx->proto_free) {
+		ctx->protoctx->proto_free(ctx);
+	}
+	free(ctx->protoctx);
+	free(ctx);
+}
+
 /*
  * Callback for accept events on the socket listener bufferevent.
  * Called when a new incoming connection has been accepted.
@@ -116,14 +232,15 @@ proxy_listener_acceptcb(UNUSED struct evconnlistener *listener,
 
 	log_finest_main_va("ENTER, fd=%d", fd);
 
-	/* create per connection state and attach to thread */
-	pxy_conn_ctx_t *ctx = pxy_conn_ctx_new(fd, lctx->thrmgr, lctx->spec, lctx->global, lctx->clisock);
+	/* create per connection state */
+	pxy_conn_ctx_t *ctx = proxy_conn_ctx_new(fd, lctx->thrmgr, lctx->spec, lctx->global, lctx->clisock);
 	if (!ctx) {
 		log_err_level_printf(LOG_CRIT, "Error allocating ctx memory\n");
 		evutil_closesocket(fd);
 		return;
 	}
 
+	// Choose the conn handling thr
 	pxy_thrmgr_attach(ctx);
 
 	/* prepare logging part 1 and user auth */
@@ -145,7 +262,7 @@ proxy_listener_acceptcb(UNUSED struct evconnlistener *listener,
 	return;
 out:
 	evutil_closesocket(fd);
-	pxy_conn_ctx_free(ctx, 1);
+	proxy_conn_ctx_free(ctx);
 }
 
 /*
