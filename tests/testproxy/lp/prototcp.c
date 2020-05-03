@@ -29,6 +29,7 @@
 
 #include "prototcp.h"
 #include "sys.h"
+#include "log.h"
 
 #include <sys/param.h>
 #include <string.h>
