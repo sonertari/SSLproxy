@@ -104,6 +104,8 @@ void log_dbg_mode(int);
 #define log_finest_va(format_str, ...) ((void)0)
 #endif /* !DEBUG_PROXY */
 
+#define log_err_level(level, str) { log_err_level_printf((level), (str"\n")); log_fine((str)); }
+
 extern logger_t *masterkey_log;
 #define log_masterkey_printf(fmt, ...) \
         logger_printf(masterkey_log, NULL, 0, (fmt), __VA_ARGS__)

@@ -1052,13 +1052,16 @@ protossl_bufferevent_free_and_close_fd(struct bufferevent *bev, pxy_conn_ctx_t *
 	bufferevent_free(bev);
 
 	if (OPTS_DEBUG(ctx->global)) {
-		log_dbg_print_free(ssl_ssl_state_to_str(ssl, "SSL_free() in state "));
+		char *str = ssl_ssl_state_to_str(ssl, "SSL_free() in state ", 1);
+		if (str)
+			log_dbg_print_free(str);
 	}
 #ifdef DEBUG_PROXY
-	char *str = ssl_ssl_state_to_str(ssl, "SSL_free() in state ");
-	log_finer_va("fd=%d, %s", fd, STRORDASH(str));
-	if (str)
+	char *str = ssl_ssl_state_to_str(ssl, "SSL_free() in state ", 0);
+	if (str) {
+		log_finer_va("fd=%d, %s", fd, str);
 		free(str);
+	}
 #endif /* DEBUG_PROXY */
 
 	SSL_free(ssl);
@@ -1182,8 +1185,7 @@ protossl_fd_readcb(evutil_socket_t fd, UNUSED short what, void *arg)
 
 		ctx->ev = event_new(ctx->evbase, fd, 0, protossl_fd_readcb, ctx);
 		if (!ctx->ev) {
-			log_err_level_printf(LOG_CRIT, "Error creating retry event, aborting connection\n");
-			log_fine("Error creating retry event, aborting connection");
+			log_err_level(LOG_CRIT, "Error creating retry event, aborting connection");
 			goto out;
 		}
 		if (event_add(ctx->ev, &retry_delay) == -1)

@@ -251,8 +251,7 @@ proxy_listener_acceptcb(UNUSED struct evconnlistener *listener,
 	// This prevents possible multithreading issues between thrmgr and conn handling threads
 	ctx->ev = event_new(ctx->evbase, -1, 0, ctx->protoctx->init_conn, ctx);
 	if (!ctx->ev) {
-		log_err_level_printf(LOG_CRIT, "Error creating initial event, aborting connection\n");
-		log_fine("Error creating initial event, aborting connection");
+		log_err_level(LOG_CRIT, "Error creating initial event, aborting connection");
 		goto out;
 	}
 	// The only purpose of this event is to change the event base, so it is a one-shot event

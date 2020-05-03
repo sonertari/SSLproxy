@@ -1247,8 +1247,7 @@ pxy_bev_readcb(struct bufferevent *bev, void *arg)
 	}
 
 	if (!ctx->connected) {
-		log_err_level_printf(LOG_CRIT, "readcb called when not connected - aborting.\n");
-		log_fine("readcb called when not connected - aborting");
+		log_err_level(LOG_CRIT, "readcb called when not connected - aborting");
 		log_exceptcb();
 		return;
 	}
@@ -1290,8 +1289,7 @@ pxy_bev_readcb_child(struct bufferevent *bev, void *arg)
 	}
 
 	if (!ctx->connected) {
-		log_err_level_printf(LOG_CRIT, "readcb called when not connected - aborting.\n");
-		log_fine("readcb called when not connected - aborting.");
+		log_err_level(LOG_CRIT, "readcb called when not connected - aborting");
 		log_exceptcb();
 		return;
 	}
@@ -1486,8 +1484,7 @@ pxy_conn_connect(pxy_conn_ctx_t *ctx)
 	}
 
 	if (bufferevent_socket_connect(ctx->srvdst.bev, (struct sockaddr *)&ctx->dstaddr, ctx->dstaddrlen) == -1) {
-		log_err_level_printf(LOG_CRIT, "bufferevent_socket_connect for srvdst failed\n");
-		log_fine("bufferevent_socket_connect for srvdst failed");
+		log_err_level(LOG_CRIT, "bufferevent_socket_connect for srvdst failed");
 		pxy_conn_free(ctx, ctx->term ? ctx->term_requestor : 1);
 	}
 }

@@ -567,12 +567,12 @@ ssl_sha1_to_str(unsigned char *rawhash, int colons)
  * Returns pointer to string that must be freed by caller, or NULL on error.
  */
 char *
-ssl_ssl_state_to_str(SSL *ssl, const char *prepend)
+ssl_ssl_state_to_str(SSL *ssl, const char *prepend, int nl)
 {
 	char *str = NULL;
 	int rv;
 
-	rv = asprintf(&str, "%s%08x = %s%s%04x = %s (%s) [%s]\n",
+	rv = asprintf(&str, "%s%08x = %s%s%04x = %s (%s) [%s]%s",
 	              prepend,
 	              SSL_get_state(ssl),
 	              (SSL_get_state(ssl) & SSL_ST_CONNECT) ? "SSL_ST_CONNECT|" : "",
@@ -580,7 +580,8 @@ ssl_ssl_state_to_str(SSL *ssl, const char *prepend)
 	              SSL_get_state(ssl) & SSL_ST_MASK,
 	              SSL_state_string(ssl),
 	              SSL_state_string_long(ssl),
-	              SSL_is_server(ssl) ? "accept socket" : "connect socket");
+	              SSL_is_server(ssl) ? "accept socket" : "connect socket",
+				  nl ? "\n" : "");
 
 	return (rv < 0) ? NULL : str;
 }

@@ -238,8 +238,7 @@ protopassthrough_bev_eventcb_eof_src(struct bufferevent *bev, pxy_conn_ctx_t *ct
 #endif /* DEBUG_PROXY */
 
 	if (!ctx->connected) {
-		log_err_level_printf(LOG_WARNING, "EOF on outbound connection before connection establishment\n");
-		log_fine("EOF on outbound connection before connection establishment");
+		log_err_level(LOG_WARNING, "EOF on outbound connection before connection establishment");
 		ctx->srvdst.closed = 1;
 	} else if (!ctx->srvdst.closed) {
 		log_finest("!srvdst.closed, terminate conn");
@@ -261,8 +260,7 @@ protopassthrough_bev_eventcb_eof_srvdst(struct bufferevent *bev, pxy_conn_ctx_t 
 #endif /* DEBUG_PROXY */
 
 	if (!ctx->connected) {
-		log_err_level_printf(LOG_WARNING, "EOF on outbound connection before connection establishment\n");
-		log_fine("EOF on outbound connection before connection establishment");
+		log_err_level(LOG_WARNING, "EOF on outbound connection before connection establishment");
 		ctx->src.closed = 1;
 	} else if (!ctx->src.closed) {
 		log_finest("!src.closed, terminate conn");

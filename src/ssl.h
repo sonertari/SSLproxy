@@ -209,7 +209,7 @@ int ssl_engine(const char *) WUNRES;
 
 char * ssl_sha1_to_str(unsigned char *, int) NONNULL(1) MALLOC;
 
-char * ssl_ssl_state_to_str(SSL *, const char *) NONNULL(1) MALLOC;
+char * ssl_ssl_state_to_str(SSL *, const char *, int) NONNULL(1) MALLOC;
 char * ssl_ssl_masterkey_to_str(SSL *) NONNULL(1) MALLOC;
 
 #ifndef OPENSSL_NO_DH

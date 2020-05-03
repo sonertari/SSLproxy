@@ -51,8 +51,7 @@ prototcp_bufferevent_setup(pxy_conn_ctx_t *ctx, evutil_socket_t fd)
 
 	struct bufferevent *bev = bufferevent_socket_new(ctx->evbase, fd, BEV_OPT_DEFER_CALLBACKS);
 	if (!bev) {
-		log_err_level_printf(LOG_CRIT, "Error creating bufferevent socket\n");
-		log_fine_va("bufferevent_socket_new, fd=%d", fd);
+		log_err_level(LOG_CRIT, "Error creating bufferevent socket");
 		return NULL;
 	}
 
@@ -71,8 +70,7 @@ prototcp_bufferevent_setup_child(pxy_conn_child_ctx_t *ctx, evutil_socket_t fd)
 
 	struct bufferevent *bev = bufferevent_socket_new(ctx->conn->evbase, fd, BEV_OPT_DEFER_CALLBACKS);
 	if (!bev) {
-		log_err_level_printf(LOG_CRIT, "Error creating bufferevent socket\n");
-		log_fine_va("bufferevent_socket_new failed, fd=%d", fd);
+		log_err_level(LOG_CRIT, "Error creating bufferevent socket");
 		return NULL;
 	}
 
@@ -542,8 +540,7 @@ prototcp_bev_eventcb_eof_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 #endif /* DEBUG_PROXY */
 
 	if (!ctx->connected) {
-		log_err_level_printf(LOG_WARNING, "EOF on outbound connection before connection establishment\n");
-		log_fine("EOF on outbound connection before connection establishment");
+		log_err_level(LOG_WARNING, "EOF on outbound connection before connection establishment");
 		ctx->dst.closed = 1;
 	} else if (!ctx->dst.closed) {
 		log_finest("!dst.closed, terminate conn");
@@ -565,8 +562,7 @@ prototcp_bev_eventcb_eof_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 #endif /* DEBUG_PROXY */
 
 	if (!ctx->connected) {
-		log_err_level_printf(LOG_WARNING, "EOF on outbound connection before connection establishment\n");
-		log_fine("EOF on outbound connection before connection establishment");
+		log_err_level(LOG_WARNING, "EOF on outbound connection before connection establishment");
 		ctx->src.closed = 1;
 	} else if (!ctx->src.closed) {
 		log_finest("!src.closed, terminate conn");
@@ -582,8 +578,7 @@ prototcp_bev_eventcb_eof_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 void
 prototcp_bev_eventcb_eof_srvdst(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
-	log_err_level_printf(LOG_WARNING, "EOF on outbound connection before connection establishment on srvdst\n");
-	log_fine("EOF on outbound connection before connection establishment");
+	log_err_level(LOG_WARNING, "EOF on outbound connection before connection establishment");
 	pxy_conn_term(ctx, 0);
 }
 
@@ -652,9 +647,7 @@ prototcp_bev_eventcb_eof_src_child(struct bufferevent *bev, pxy_conn_child_ctx_t
 
 	// @todo How to handle the following case?
 	if (!ctx->connected) {
-		log_err_level_printf(LOG_WARNING, "EOF on outbound connection before connection establishment\n");
-		log_fine("EOF on outbound connection before connection establishment");
-
+		log_err_level(LOG_WARNING, "EOF on outbound connection before connection establishment");
 		ctx->dst.closed = 1;
 	} else if (!ctx->dst.closed) {
 		log_finest("!dst.closed, terminate conn");
@@ -677,9 +670,7 @@ prototcp_bev_eventcb_eof_dst_child(struct bufferevent *bev, pxy_conn_child_ctx_t
 
 	// @todo How to handle the following case?
 	if (!ctx->connected) {
-		log_err_level_printf(LOG_WARNING, "EOF on outbound connection before connection establishment\n");
-		log_fine("EOF on outbound connection before connection establishment");
-
+		log_err_level(LOG_WARNING, "EOF on outbound connection before connection establishment");
 		ctx->src.closed = 1;
 	} else if (!ctx->src.closed) {
 		log_finest("!src.closed, terminate conn");

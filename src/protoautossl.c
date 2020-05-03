@@ -94,8 +94,7 @@ protoautossl_peek_and_upgrade(pxy_conn_ctx_t *ctx)
 			if (!ctx->children) {
 				// This means that there was no autossl handshake prior to ClientHello, e.g. no STARTTLS message
 				// This is perhaps the SSL handshake of a direct SSL connection, i.e. invalid protocol
-				log_err_level_printf(LOG_CRIT, "No children setup yet, autossl protocol error\n");
-				log_fine("No children setup yet, autossl protocol error");
+				log_err_level(LOG_CRIT, "No children setup yet, autossl protocol error");
 				return -1;
 			}
 
