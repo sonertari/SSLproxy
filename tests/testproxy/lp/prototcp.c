@@ -29,10 +29,10 @@
 
 #include "prototcp.h"
 #include "sys.h"
-#include "log.h"
 
 #include <sys/param.h>
 #include <string.h>
+#include <errno.h>
 
 #ifdef __linux__
 #include <glob.h>
