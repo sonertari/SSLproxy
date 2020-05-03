@@ -234,8 +234,6 @@ pxy_thrmgr_attach(pxy_conn_ctx_t *ctx)
 	}
 
 	ctx->thr = tmctx->thr[thridx];
-	ctx->evbase = ctx->thr->evbase;
-	ctx->dnsbase = ctx->thr->dnsbase;
 
 #ifdef DEBUG_THREAD
 	log_dbg_printf("thridx: %d\n", thridx);

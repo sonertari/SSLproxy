@@ -246,9 +246,6 @@ struct pxy_conn_ctx {
 	proxyspec_t *spec;
 	global_t *global;
 
-	struct event_base *evbase;
-	struct evdns_base *dnsbase;
-
 	evutil_socket_t dst_fd;
 	evutil_socket_t srvdst_fd;
 

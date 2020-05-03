@@ -951,7 +951,7 @@ protossl_bufferevent_setup(pxy_conn_ctx_t *ctx, evutil_socket_t fd, SSL *ssl)
 {
 	log_finest_va("ENTER, fd=%d", fd);
 
-	struct bufferevent *bev = bufferevent_openssl_socket_new(ctx->evbase, fd, ssl,
+	struct bufferevent *bev = bufferevent_openssl_socket_new(ctx->thr->evbase, fd, ssl,
 			((fd == -1) ? BUFFEREVENT_SSL_CONNECTING : BUFFEREVENT_SSL_ACCEPTING), BEV_OPT_DEFER_CALLBACKS);
 	if (!bev) {
 		log_err_level_printf(LOG_CRIT, "Error creating bufferevent socket\n");
@@ -978,7 +978,7 @@ protossl_bufferevent_setup_child(pxy_conn_child_ctx_t *ctx, evutil_socket_t fd, 
 {
 	log_finest_va("ENTER, fd=%d", fd);
 
-	struct bufferevent *bev = bufferevent_openssl_socket_new(ctx->conn->evbase, fd, ssl,
+	struct bufferevent *bev = bufferevent_openssl_socket_new(ctx->conn->thr->evbase, fd, ssl,
 			((fd == -1) ? BUFFEREVENT_SSL_CONNECTING : BUFFEREVENT_SSL_ACCEPTING), BEV_OPT_DEFER_CALLBACKS);
 	if (!bev) {
 		log_err_level_printf(LOG_CRIT, "Error creating bufferevent socket\n");
@@ -1181,7 +1181,7 @@ protossl_fd_readcb(evutil_socket_t fd, UNUSED short what, void *arg)
 		 * reading now.  We use 25 * 0.2 s = 5 s timeout. */
 		struct timeval retry_delay = {0, 100};
 
-		ctx->ev = event_new(ctx->evbase, fd, 0, protossl_fd_readcb, ctx);
+		ctx->ev = event_new(ctx->thr->evbase, fd, 0, protossl_fd_readcb, ctx);
 		if (!ctx->ev) {
 			log_err_level(LOG_CRIT, "Error creating retry event, aborting connection");
 			goto out;
@@ -1202,7 +1202,7 @@ protossl_fd_readcb(evutil_socket_t fd, UNUSED short what, void *arg)
 		hints.ai_protocol = IPPROTO_TCP;
 
 		snprintf(sniport, sizeof(sniport), "%i", ctx->spec->sni_port);
-		evdns_getaddrinfo(ctx->dnsbase, ctx->sslctx->sni, sniport, &hints, protossl_sni_resolve_cb, ctx);
+		evdns_getaddrinfo(ctx->thr->dnsbase, ctx->sslctx->sni, sniport, &hints, protossl_sni_resolve_cb, ctx);
 		return;
 	}
 
@@ -1232,7 +1232,7 @@ protossl_init_conn(evutil_socket_t fd, UNUSED short what, void *arg)
 #endif /* !OPENSSL_NO_TLSEXT */
 
 	/* for SSL, defer dst connection setup to initial_readcb */
-	ctx->ev = event_new(ctx->evbase, ctx->fd, EV_READ, protossl_fd_readcb, ctx);
+	ctx->ev = event_new(ctx->thr->evbase, ctx->fd, EV_READ, protossl_fd_readcb, ctx);
 	if (!ctx->ev)
 		goto out;
 
@@ -1281,7 +1281,7 @@ protossl_setup_srvdst(pxy_conn_ctx_t *ctx)
 int
 protossl_setup_srvdst_new_bev_ssl_connecting(pxy_conn_ctx_t *ctx)
 {
-	ctx->srvdst.bev = bufferevent_openssl_filter_new(ctx->evbase, ctx->srvdst.bev, ctx->srvdst.ssl,
+	ctx->srvdst.bev = bufferevent_openssl_filter_new(ctx->thr->evbase, ctx->srvdst.bev, ctx->srvdst.ssl,
 			BUFFEREVENT_SSL_CONNECTING, BEV_OPT_DEFER_CALLBACKS);
 	if (!ctx->srvdst.bev) {
 		log_err_level_printf(LOG_CRIT, "Error creating srvdst bufferevent\n");
@@ -1420,7 +1420,7 @@ protossl_setup_src(pxy_conn_ctx_t *ctx)
 int
 protossl_setup_src_new_bev_ssl_accepting(pxy_conn_ctx_t *ctx)
 {
-	ctx->src.bev = bufferevent_openssl_filter_new(ctx->evbase, ctx->src.bev, ctx->src.ssl,
+	ctx->src.bev = bufferevent_openssl_filter_new(ctx->thr->evbase, ctx->src.bev, ctx->src.ssl,
 			BUFFEREVENT_SSL_ACCEPTING, BEV_OPT_DEFER_CALLBACKS);
 	if (!ctx->src.bev) {
 		log_err_level_printf(LOG_CRIT, "Error creating src bufferevent\n");
@@ -1436,7 +1436,7 @@ protossl_setup_src_new_bev_ssl_accepting(pxy_conn_ctx_t *ctx)
 int
 protossl_setup_dst_new_bev_ssl_connecting_child(pxy_conn_child_ctx_t *ctx)
 {
-	ctx->dst.bev = bufferevent_openssl_filter_new(ctx->conn->evbase, ctx->dst.bev, ctx->dst.ssl,
+	ctx->dst.bev = bufferevent_openssl_filter_new(ctx->conn->thr->evbase, ctx->dst.bev, ctx->dst.ssl,
 			BUFFEREVENT_SSL_CONNECTING, BEV_OPT_DEFER_CALLBACKS);
 	if (!ctx->dst.bev) {
 		log_err_level_printf(LOG_CRIT, "Error creating dst bufferevent\n");

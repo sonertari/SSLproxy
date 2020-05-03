@@ -1520,7 +1520,7 @@ identify_user(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 			// Do not forget to reset sqlite stmt, or else the userdb may remain busy/locked
 			sqlite3_reset(ctx->thr->get_user);
 
-			ctx->ev = event_new(ctx->evbase, -1, 0, identify_user, ctx);
+			ctx->ev = event_new(ctx->thr->evbase, -1, 0, identify_user, ctx);
 			if (!ctx->ev)
 				goto memout;
 			struct timeval retry_delay = {0, 100};
