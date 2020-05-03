@@ -77,19 +77,11 @@ typedef struct pxy_thr_ctx {
 
 	// Per-thread sqlite stmt is necessary to prevent multithreading issues between threads
 	struct sqlite3_stmt *get_user;
-
-	// SSL conns wait for the first readcb to complete connection setup
-	// We keep track of conns at that stage using this list, to close them if they time out
-	pxy_conn_ctx_t *pending_ssl_conns;
-	long long unsigned int pending_ssl_conn_count;
 } pxy_thr_ctx_t;
 
 size_t pxy_thr_get_load(pxy_thr_ctx_t *) NONNULL(1);
 void pxy_thr_inc_load(pxy_thr_ctx_t *) NONNULL(1);
 void pxy_thr_dec_load(pxy_thr_ctx_t *) NONNULL(1);
-
-void pxy_thr_add_pending_ssl_conn(pxy_conn_ctx_t *) NONNULL(1);
-void pxy_thr_remove_pending_ssl_conn(pxy_conn_ctx_t *) NONNULL(1);
 
 void pxy_thr_detach(pxy_conn_ctx_t *) NONNULL(1);
 

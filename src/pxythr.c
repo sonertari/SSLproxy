@@ -60,70 +60,6 @@ pxy_thr_dec_load(pxy_thr_ctx_t *tctx)
 	//pthread_mutex_unlock(&tctx->mutex);
 }
 
-void
-pxy_thr_add_pending_ssl_conn(pxy_conn_ctx_t *ctx)
-{
-	if (!ctx->sslctx->pending) {
-		log_finest("Adding conn");
-		ctx->sslctx->pending = 1;
-		ctx->thr->pending_ssl_conn_count++;
-
-		ctx->sslctx->next_pending = ctx->thr->pending_ssl_conns;
-		ctx->thr->pending_ssl_conns = ctx;
-		if (ctx->sslctx->next_pending)
-			ctx->sslctx->next_pending->sslctx->prev_pending = ctx;
-	}
-}
-
-void
-pxy_thr_remove_pending_ssl_conn(pxy_conn_ctx_t *ctx)
-{
-	if (ctx->sslctx && ctx->sslctx->pending) {
-		log_finest("Removing conn");
-
-		// Thr pending_ssl_conns list cannot be empty, if the sslctx->pending flag of a conn is set
-		assert(ctx->thr->pending_ssl_conns != NULL);
-
-		ctx->sslctx->pending = 0;
-		ctx->thr->pending_ssl_conn_count--;
-
-		if (ctx->sslctx->prev_pending) {
-			ctx->sslctx->prev_pending->sslctx->next_pending = ctx->sslctx->next_pending;
-		} else {
-			ctx->thr->pending_ssl_conns = ctx->sslctx->next_pending;
-		}
-		if (ctx->sslctx->next_pending)
-			ctx->sslctx->next_pending->sslctx->prev_pending = ctx->sslctx->prev_pending;
-
-#ifdef DEBUG_PROXY
-		// We may get multiple conns with the same fd combinations, so fds cannot uniquely define a conn; hence the need for unique ids.
-		if (ctx->thr->pending_ssl_conns) {
-			if (ctx->id == ctx->thr->pending_ssl_conns->id) {
-				// This should never happen
-				log_fine("Found conn in thr pending_ssl_conns, first");
-				assert(0);
-			} else {
-				pxy_conn_ctx_t *current = ctx->thr->pending_ssl_conns->sslctx->next_pending;
-				pxy_conn_ctx_t *previous = ctx->thr->pending_ssl_conns;
-				while (current != NULL && previous != NULL) {
-					if (ctx->id == current->id) {
-						// This should never happen
-						log_fine("Found conn in thr pending_ssl_conns");
-						assert(0);
-						return;
-					}
-					previous = current;
-					current = current->sslctx->next_pending;
-				}
-				log_finest("Cannot find conn in thr pending_ssl_conns");
-			}
-		} else {
-			log_finest("Cannot find conn in thr pending_ssl_conns, empty");
-		}
-#endif /* DEBUG_PROXY */
-	}
-}
-
 /*
  * Detach a connection from a thread by index.
  * This function cannot fail.
@@ -133,17 +69,7 @@ pxy_thr_detach(pxy_conn_ctx_t *ctx)
 {
 	assert(ctx != NULL);
 	assert(ctx->children == NULL);
-
-	log_finest("ENTER");
-
-	pxy_thr_remove_pending_ssl_conn(ctx);
-
-	if (!ctx->in_thr_conns) {
-		log_fine("Not in thr conns");
-		return;
-	}
-
-	// Thr conns list cannot be empty
+	// If this function is called, the thr conns list cannot be empty
 	assert(ctx->thr->conns != NULL);
 
 	log_finest("Removing conn");
@@ -158,8 +84,6 @@ pxy_thr_detach(pxy_conn_ctx_t *ctx)
 	}
 	if (ctx->next)
 		ctx->next->prev = ctx->prev;
-
-	// No need to reset the ctx->in_thr_conns flag, as we free the ctx right after calling this function
 
 #ifdef DEBUG_PROXY
 	// We may get multiple conns with the same fd combinations, so fds cannot uniquely identify a conn; hence the need for unique ids.
@@ -206,23 +130,13 @@ pxy_thr_get_expired_conns(pxy_thr_ctx_t *tctx, pxy_conn_ctx_t **expired_conns)
 			ctx = ctx->next;
 		}
 
-		ctx = tctx->pending_ssl_conns;
-		while (ctx) {
-			time_t elapsed_time = now - ctx->atime;
-			if (elapsed_time > (time_t)tctx->thrmgr->global->conn_idle_timeout) {
-				ctx->next_expired = *expired_conns;
-				*expired_conns = ctx;
-			}
-			ctx = ctx->sslctx->next_pending;
-		}
-
 		if (tctx->thrmgr->global->statslog) {
 			ctx = *expired_conns;
 			while (ctx) {
-				log_finest_main_va("thr=%d, fd=%d, child_fd=%d, time=%lld, src_addr=%s:%s, dst_addr=%s:%s, user=%s, valid=%d, pc=%d",
+				log_finest_main_va("thr=%d, fd=%d, child_fd=%d, time=%lld, src_addr=%s:%s, dst_addr=%s:%s, user=%s, valid=%d",
 					ctx->thr->thridx, ctx->fd, ctx->child_fd, (long long)(now - ctx->atime),
 					STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
-					STRORDASH(ctx->user), ctx->protoctx->is_valid, ctx->sslctx ? ctx->sslctx->pending : 0);
+					STRORDASH(ctx->user), ctx->protoctx->is_valid);
 
 				char *msg;
 				if (asprintf(&msg, "EXPIRED: thr=%d, time=%lld, src_addr=%s:%s, dst_addr=%s:%s, user=%s, valid=%d\n", 
@@ -273,33 +187,27 @@ pxy_thr_print_info(pxy_thr_ctx_t *tctx)
 
 	char *smsg = NULL;
 
-	if (tctx->conns || tctx->pending_ssl_conns) {
+	if (tctx->conns) {
 		time_t now = time(NULL);
 
-		int conns_list = 1;
 		pxy_conn_ctx_t *ctx = tctx->conns;
-		if (!ctx) {
-			ctx = tctx->pending_ssl_conns;
-			conns_list = 0;
-		}
-
 		while (ctx) {
 			time_t atime = now - ctx->atime;
 			time_t ctime = now - ctx->ctime;
 
-			log_finest_main_va("PARENT CONN: thr=%d, id=%u, fd=%d, child_fd=%d, dst=%d, srvdst=%d, child_src=%d, child_dst=%d, p=%d-%d-%d c=%d-%d, ce=%d cc=%d, at=%lld ct=%lld, src_addr=%s:%s, dst_addr=%s:%s, user=%s, valid=%d, pc=%d",
+			log_finest_main_va("PARENT CONN: thr=%d, id=%u, fd=%d, child_fd=%d, dst=%d, srvdst=%d, child_src=%d, child_dst=%d, p=%d-%d-%d c=%d-%d, ce=%d cc=%d, at=%lld ct=%lld, src_addr=%s:%s, dst_addr=%s:%s, user=%s, valid=%d",
 				tctx->thridx, idx, ctx->fd, ctx->child_fd, ctx->dst_fd, ctx->srvdst_fd, ctx->child_src_fd, ctx->child_dst_fd,
 				ctx->src.closed, ctx->dst.closed, ctx->srvdst.closed, ctx->children ? ctx->children->src.closed : 0, ctx->children ? ctx->children->dst.closed : 0,
 				ctx->children ? 1:0, ctx->child_count, (long long)atime, (long long)ctime,
 				STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
-				STRORDASH(ctx->user), ctx->protoctx->is_valid, ctx->sslctx ? ctx->sslctx->pending : 0);
+				STRORDASH(ctx->user), ctx->protoctx->is_valid);
 
 			// @attention Report idle connections only, i.e. the conns which have been idle since the last time we checked for expired conns
 			if (atime >= (time_t)tctx->thrmgr->global->expired_conn_check_period) {
-				if (asprintf(&smsg, "IDLE: thr=%d, id=%u, ce=%d cc=%d, at=%lld ct=%lld, src_addr=%s:%s, dst_addr=%s:%s, user=%s, valid=%d, pc=%d\n",
+				if (asprintf(&smsg, "IDLE: thr=%d, id=%u, ce=%d cc=%d, at=%lld ct=%lld, src_addr=%s:%s, dst_addr=%s:%s, user=%s, valid=%d\n",
 						tctx->thridx, idx, ctx->children ? 1:0, ctx->child_count, (long long)atime, (long long)ctime,
 						STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
-						STRORDASH(ctx->user), ctx->protoctx->is_valid, ctx->sslctx ? ctx->sslctx->pending : 0) < 0) {
+						STRORDASH(ctx->user), ctx->protoctx->is_valid) < 0) {
 					return;
 				}
 				if (log_conn(smsg) == -1) {
@@ -325,27 +233,17 @@ pxy_thr_print_info(pxy_thr_ctx_t *tctx)
 			}
 
 			idx++;
-
-			if (conns_list) {
-				ctx = ctx->next;
-				if (!ctx) {
-					// Switch to pending ssl conns list
-					ctx = tctx->pending_ssl_conns;
-					conns_list = 0;
-				}
-			} else {
-				ctx = ctx->sslctx->next_pending;
-			}
+			ctx = ctx->next;
 		}
 	}
 
-	log_finest_main_va("thr=%d, mld=%zu, mfd=%d, mat=%lld, mct=%lld, iib=%llu, iob=%llu, eib=%llu, eob=%llu, swm=%zu, uwm=%zu, to=%zu, err=%zu, pc=%llu, si=%u",
+	log_finest_main_va("thr=%d, mld=%zu, mfd=%d, mat=%lld, mct=%lld, iib=%llu, iob=%llu, eib=%llu, eob=%llu, swm=%zu, uwm=%zu, to=%zu, err=%zu, si=%u",
 			tctx->thridx, tctx->max_load, tctx->max_fd, (long long)max_atime, (long long)max_ctime, tctx->intif_in_bytes, tctx->intif_out_bytes, tctx->extif_in_bytes, tctx->extif_out_bytes,
-			tctx->set_watermarks, tctx->unset_watermarks, tctx->timedout_conns, tctx->errors, tctx->pending_ssl_conn_count, tctx->stats_id);
+			tctx->set_watermarks, tctx->unset_watermarks, tctx->timedout_conns, tctx->errors, tctx->stats_id);
 
-	if (asprintf(&smsg, "STATS: thr=%d, mld=%zu, mfd=%d, mat=%lld, mct=%lld, iib=%llu, iob=%llu, eib=%llu, eob=%llu, swm=%zu, uwm=%zu, to=%zu, err=%zu, pc=%llu, si=%u\n",
+	if (asprintf(&smsg, "STATS: thr=%d, mld=%zu, mfd=%d, mat=%lld, mct=%lld, iib=%llu, iob=%llu, eib=%llu, eob=%llu, swm=%zu, uwm=%zu, to=%zu, err=%zu, si=%u\n",
 			tctx->thridx, tctx->max_load, tctx->max_fd, (long long)max_atime, (long long)max_ctime, tctx->intif_in_bytes, tctx->intif_out_bytes, tctx->extif_in_bytes, tctx->extif_out_bytes,
-			tctx->set_watermarks, tctx->unset_watermarks, tctx->timedout_conns, tctx->errors, tctx->pending_ssl_conn_count, tctx->stats_id) < 0) {
+			tctx->set_watermarks, tctx->unset_watermarks, tctx->timedout_conns, tctx->errors, tctx->stats_id) < 0) {
 		return;
 	}
 	if (log_stats(smsg) == -1) {

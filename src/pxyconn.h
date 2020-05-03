@@ -135,13 +135,6 @@ struct ssl_ctx {
 
 	char *srvdst_ssl_version;
 	char *srvdst_ssl_cipher;
-
-	// Per-thread list of ssl conns waiting for the first read event to complete ssl setup
-	// Note that accepting a connection does not mean that a packet will be received,
-	// so we should keep track of such conns, otherwise they may get lost causing memory and fd leak
-	pxy_conn_ctx_t *next_pending;
-	pxy_conn_ctx_t *prev_pending;
-	unsigned int pending : 1;                    /* 1 until first readcb */
 };
 
 struct proto_ctx {
@@ -245,7 +238,6 @@ struct pxy_conn_ctx {
 
 	// Thread that the conn is attached to
 	pxy_thr_ctx_t *thr;
-	unsigned int in_thr_conns : 1;        /* 1 if conn in thr conns list */
 
 	// Unique id of the conn
 	long long unsigned int id;

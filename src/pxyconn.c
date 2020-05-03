@@ -1772,8 +1772,6 @@ pxy_conn_init(pxy_conn_ctx_t *ctx)
 	if (ctx->next)
 		ctx->next->prev = ctx;
 
-	ctx->in_thr_conns = 1;
-
 	if (check_fd_usage(
 #ifdef DEBUG_PROXY
 			ctx

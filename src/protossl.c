@@ -1139,8 +1139,6 @@ protossl_fd_readcb(evutil_socket_t fd, UNUSED short what, void *arg)
 	event_free(ctx->ev);
 	ctx->ev = NULL;
 
-	pxy_thr_remove_pending_ssl_conn(ctx);
-
 	// Child connections will use the sni info obtained by the parent conn
 	/* for SSL, peek ClientHello and parse SNI from it */
 
@@ -1237,11 +1235,6 @@ protossl_init_conn(evutil_socket_t fd, UNUSED short what, void *arg)
 	ctx->ev = event_new(ctx->evbase, ctx->fd, EV_READ, protossl_fd_readcb, ctx);
 	if (!ctx->ev)
 		goto out;
-
-	// @attention Add the conn to pending ssl conns list before adding (activating) the event
-	// Because the event may (and does) fire before this thread adds the conn to pending ssl conns list,
-	// and since the pending flag is not set yet, the conn remains in the pending list
-	pxy_thr_add_pending_ssl_conn(ctx);
 
 	if (event_add(ctx->ev, NULL) == -1) {
 		log_finest("event_add failed");
