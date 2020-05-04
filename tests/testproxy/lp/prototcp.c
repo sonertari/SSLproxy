@@ -235,6 +235,9 @@ prototcp_connect(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 
 	pxy_thr_attach(ctx);
 
+	ctx->ctime = time(NULL);
+	ctx->atime = ctx->ctime;
+
 	if (check_fd_usage(
 #ifdef DEBUG_PROXY
 			ctx

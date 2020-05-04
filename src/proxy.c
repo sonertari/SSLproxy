@@ -178,11 +178,6 @@ proxy_conn_ctx_new(evutil_socket_t fd,
 	ctx->global = global;
 	ctx->clisock = clisock;
 
-	ctx->ctime = time(NULL);
-	ctx->atime = ctx->ctime;
-
-	ctx->next = NULL;
-
 #ifdef HAVE_LOCAL_PROCINFO
 	ctx->lproc.pid = -1;
 #endif /* HAVE_LOCAL_PROCINFO */

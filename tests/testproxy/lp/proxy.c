@@ -135,11 +135,6 @@ proxy_conn_ctx_new(evutil_socket_t fd,
 	}
 
 	ctx->opts = opts;
-
-	ctx->ctime = time(NULL);
-	ctx->atime = ctx->ctime;
-
-	ctx->next = NULL;
 	return ctx;
 }
 

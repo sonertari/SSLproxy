@@ -1766,6 +1766,9 @@ pxy_conn_init(pxy_conn_ctx_t *ctx)
 
 	pxy_thr_attach(ctx);
 
+	ctx->ctime = time(NULL);
+	ctx->atime = ctx->ctime;
+
 	if (check_fd_usage(
 #ifdef DEBUG_PROXY
 			ctx
