@@ -1037,14 +1037,59 @@ out:
 	}
 }
 
+static int WUNRES NONNULL(1)
+pxy_opensock_child(pxy_conn_ctx_t *ctx)
+{
+	evutil_socket_t fd = socket(ctx->spec->child_src_addr.ss_family, SOCK_STREAM, IPPROTO_TCP);
+	if (fd == -1) {
+		log_err_level_printf(LOG_CRIT, "Error from socket(): %s (%i)\n", strerror(errno), errno);
+		log_fine_va("Error from socket(): %s (%i)\n", strerror(errno), errno);
+		evutil_closesocket(fd);
+		return -1;
+	}
+
+	if (evutil_make_socket_nonblocking(fd) == -1) {
+		log_err_level_printf(LOG_CRIT, "Error making socket nonblocking: %s (%i)\n", strerror(errno), errno);
+		log_fine_va("Error making socket nonblocking: %s (%i)\n", strerror(errno), errno);
+		evutil_closesocket(fd);
+		return -1;
+	}
+
+	int on = 1;
+	if (setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, (void*)&on, sizeof(on)) == -1) {
+		log_err_level_printf(LOG_CRIT, "Error from setsockopt(SO_KEEPALIVE): %s (%i)\n", strerror(errno), errno);
+		log_fine_va("Error from setsockopt(SO_KEEPALIVE): %s (%i)\n", strerror(errno), errno);
+		evutil_closesocket(fd);
+		return -1;
+	}
+
+	if (evutil_make_listen_socket_reuseable(fd) == -1) {
+		log_err_level_printf(LOG_CRIT, "Error from setsockopt(SO_REUSABLE): %s\n", strerror(errno));
+		log_fine_va("Error from setsockopt(SO_REUSABLE): %s\n", strerror(errno));
+		evutil_closesocket(fd);
+		return -1;
+	}
+
+	if (bind(fd, (struct sockaddr *)&ctx->spec->child_src_addr, ctx->spec->child_src_addrlen) == -1) {
+		log_err_level_printf(LOG_CRIT, "Error from bind(): %s\n", strerror(errno));
+		log_fine_va("Error from bind(): %s\n", strerror(errno));
+		evutil_closesocket(fd);
+		return -1;
+	}
+	return fd;
+}
+
 int
 pxy_setup_child_listener(pxy_conn_ctx_t *ctx)
 {
 	// @attention Defer child setup and evcl creation until after parent init is complete, otherwise (1) causes multithreading issues (proxy_listener_acceptcb is
 	// running on a different thread from the conn, and we only have thrmgr mutex), and (2) we need to clean up less upon errors.
 	// Child evcls use the evbase of the parent thread, otherwise we would get multithreading issues.
-	if ((ctx->child_fd = privsep_client_opensock_child(ctx->clisock, ctx->spec)) == -1) {
+	// We don't need a privsep call to open a socket for child listener,
+	// because listener port of child conns are assigned by the system, hence are from non-privileged range above 1024
+	if ((ctx->child_fd = pxy_opensock_child(ctx)) == -1) {
 		log_err_level_printf(LOG_CRIT, "Error opening child socket: %s (%i)\n", strerror(errno), errno);
+		log_fine_va("Error opening child socket: %s (%i)\n", strerror(errno), errno);
 		pxy_conn_term(ctx, 1);
 		return -1;
 	}
@@ -1056,7 +1101,6 @@ pxy_setup_child_listener(pxy_conn_ctx_t *ctx)
 		log_err_level_printf(LOG_CRIT, "Error creating child evconnlistener: %s\n", strerror(errno));
 		log_fine_va("Error creating child evconnlistener: %s", strerror(errno));
 
-		// @attention Cannot call proxy_listener_ctx_free() on child_evcl, child_evcl does not have any ctx with next listener
 		// @attention Close child fd separately, because child evcl does not exist yet, hence fd would not be closed by calling pxy_conn_free()
 		evutil_closesocket(ctx->child_fd);
 		pxy_conn_term(ctx, 1);
@@ -1073,7 +1117,6 @@ pxy_setup_child_listener(pxy_conn_ctx_t *ctx)
 
 	if (getsockname(ctx->child_fd, (struct sockaddr *)&child_listener_addr, &child_listener_len) < 0) {
 		log_err_level_printf(LOG_CRIT, "Error in getsockname: %s\n", strerror(errno));
-		// @todo If getsockname() fails, should we really terminate the connection?
 		// @attention Do not close the child fd here, because child evcl exists now, hence pxy_conn_free() will close it while freeing child_evcl
 		pxy_conn_term(ctx, 1);
 		return -1;

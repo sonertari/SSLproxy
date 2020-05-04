@@ -66,8 +66,7 @@
 #define PRIVSEP_REQ_OPENFILE_P	2	/* open content log file w/mkpath */
 #define PRIVSEP_REQ_OPENSOCK	3	/* open socket and pass fd */
 #define PRIVSEP_REQ_CERTFILE	4	/* open cert file in certgendir */
-#define PRIVSEP_REQ_OPENSOCK_CHILD	5	/* open child socket and pass fd */
-#define PRIVSEP_REQ_UPDATE_ATIME	6	/* update ip,user atime */
+#define PRIVSEP_REQ_UPDATE_ATIME	5	/* update ip,user atime */
 /* response byte */
 #define PRIVSEP_ANS_SUCCESS	0	/* success */
 #define PRIVSEP_ANS_UNK_CMD	1	/* unknown command */
@@ -305,56 +304,6 @@ privsep_server_opensock(const proxyspec_t *spec)
 }
 
 static int WUNRES
-privsep_server_opensock_child(const proxyspec_t *spec)
-{
-	evutil_socket_t fd;
-	int on = 1;
-	int rv;
-
-	fd = socket(spec->child_src_addr.ss_family, SOCK_STREAM, IPPROTO_TCP);
-	if (fd == -1) {
-		log_err_level_printf(LOG_CRIT, "Error from socket() child_fd: %s (%i)\n",
-		               strerror(errno), errno);
-		evutil_closesocket(fd);
-		return -1;
-	}
-
-	rv = evutil_make_socket_nonblocking(fd);
-	if (rv == -1) {
-		log_err_level_printf(LOG_CRIT, "Error making socket nonblocking: %s (%i)\n",
-		               strerror(errno), errno);
-		evutil_closesocket(fd);
-		return -1;
-	}
-
-	rv = setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, (void*)&on, sizeof(on));
-	if (rv == -1) {
-		log_err_level_printf(LOG_CRIT, "Error from setsockopt(SO_KEEPALIVE): %s (%i)\n",
-		               strerror(errno), errno);
-		evutil_closesocket(fd);
-		return -1;
-	}
-
-	rv = evutil_make_listen_socket_reuseable(fd);
-	if (rv == -1) {
-		log_err_level_printf(LOG_CRIT, "Error from setsockopt(SO_REUSABLE) child_fd: %s\n",
-		               strerror(errno));
-		evutil_closesocket(fd);
-		return -1;
-	}
-
-	rv = bind(fd, (struct sockaddr *)&spec->child_src_addr,
-	          spec->child_src_addrlen);
-	if (rv == -1) {
-		log_err_level_printf(LOG_CRIT, "Error from bind(): %s\n", strerror(errno));
-		evutil_closesocket(fd);
-		return -1;
-	}
-
-	return fd;
-}
-
-static int WUNRES
 privsep_server_certfile_verify(global_t *global, const char *fn)
 {
 	if (!global->certgendir)
@@ -523,44 +472,6 @@ privsep_server_handle_req(global_t *global, int srvsock)
 			return 0;
 		}
 		if ((s = privsep_server_opensock(arg)) == -1) {
-			ans[0] = PRIVSEP_ANS_SYS_ERR;
-			*((int*)&ans[1]) = errno;
-			if (sys_sendmsgfd(srvsock, ans, 1 + sizeof(int),
-			                  -1) == -1) {
-				log_err_level_printf(LOG_CRIT, "Sending message failed: %s (%i"
-				               ")\n", strerror(errno), errno);
-				return -1;
-			}
-			return 0;
-		} else {
-			ans[0] = PRIVSEP_ANS_SUCCESS;
-			if (sys_sendmsgfd(srvsock, ans, 1, s) == -1) {
-				evutil_closesocket(s);
-				log_err_level_printf(LOG_CRIT, "Sending message failed: %s (%i"
-				               ")\n", strerror(errno), errno);
-				return -1;
-			}
-			evutil_closesocket(s);
-			return 0;
-		}
-		/* not reached */
-		break;
-	}
-	case PRIVSEP_REQ_OPENSOCK_CHILD: {
-		proxyspec_t *arg;
-		int s;
-
-		if (n != sizeof(char) + sizeof(arg)) {
-			ans[0] = PRIVSEP_ANS_INVALID;
-			if (sys_sendmsgfd(srvsock, ans, 1, -1) == -1) {
-				log_err_level_printf(LOG_CRIT, "Sending message failed: %s (%i"
-				               ")\n", strerror(errno), errno);
-				return -1;
-			}
-			return 0;
-		}
-		arg = *(proxyspec_t**)(&req[1]);
-		if ((s = privsep_server_opensock_child(arg)) == -1) {
 			ans[0] = PRIVSEP_ANS_SYS_ERR;
 			*((int*)&ans[1]) = errno;
 			if (sys_sendmsgfd(srvsock, ans, 1 + sizeof(int),
@@ -911,53 +822,6 @@ privsep_client_opensock(int clisock, const proxyspec_t *spec)
 		return privsep_server_opensock(spec);
 
 	req[0] = PRIVSEP_REQ_OPENSOCK;
-	*((const proxyspec_t **)&req[1]) = spec;
-
-	if (sys_sendmsgfd(clisock, req, sizeof(req), -1) == -1) {
-		return -1;
-	}
-
-	if ((n = sys_recvmsgfd(clisock, ans, sizeof(ans), &fd)) == -1) {
-		return -1;
-	}
-
-	if (n < 1) {
-		errno = EINVAL;
-		return -1;
-	}
-
-	switch (ans[0]) {
-	case PRIVSEP_ANS_SUCCESS:
-		break;
-	case PRIVSEP_ANS_DENIED:
-		errno = EACCES;
-		return -1;
-	case PRIVSEP_ANS_SYS_ERR:
-		if (n < (ssize_t)(1 + sizeof(int))) {
-			errno = EINVAL;
-			return -1;
-		}
-		errno = *((int*)&ans[1]);
-		return -1;
-	case PRIVSEP_ANS_UNK_CMD:
-	case PRIVSEP_ANS_INVALID:
-	default:
-		errno = EINVAL;
-		return -1;
-	}
-
-	return fd;
-}
-
-int
-privsep_client_opensock_child(int clisock, const proxyspec_t *spec)
-{
-	char ans[PRIVSEP_MAX_ANS_SIZE];
-	char req[1 + sizeof(spec)];
-	int fd = -1;
-	ssize_t n;
-
-	req[0] = PRIVSEP_REQ_OPENSOCK_CHILD;
 	*((const proxyspec_t **)&req[1]) = spec;
 
 	if (sys_sendmsgfd(clisock, req, sizeof(req), -1) == -1) {

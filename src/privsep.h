@@ -36,7 +36,6 @@ int privsep_fork(global_t *, int[], size_t, int *);
 
 int privsep_client_openfile(int, const char *, int);
 int privsep_client_opensock(int, const proxyspec_t *spec);
-int privsep_client_opensock_child(int, const proxyspec_t *spec);
 int privsep_client_certfile(int, const char *);
 int privsep_client_close(int);
 int privsep_client_update_atime(int, const userdbkeys_t *);

@@ -249,7 +249,7 @@ struct pxy_conn_ctx {
 	evutil_socket_t dst_fd;
 	evutil_socket_t srvdst_fd;
 
-	// Priv sep socket to obtain a socket for children
+	// Privsep socket to update user atime
 	evutil_socket_t clisock;
 
 	// fd of event listener for children, explicitly closed on error (not for stats only)
