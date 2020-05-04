@@ -1764,13 +1764,7 @@ pxy_conn_init(pxy_conn_ctx_t *ctx)
 {
 	log_finest("ENTER");
 
-	// Always keep thr load and conns list in sync
-	pxy_thr_inc_load(ctx->thr);
-
-	ctx->next = ctx->thr->conns;
-	ctx->thr->conns = ctx;
-	if (ctx->next)
-		ctx->next->prev = ctx;
+	pxy_thr_attach(ctx);
 
 	if (check_fd_usage(
 #ifdef DEBUG_PROXY

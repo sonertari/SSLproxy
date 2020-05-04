@@ -68,6 +68,7 @@ typedef struct pxy_thr_ctx {
 	pxy_conn_ctx_t *conns;
 } pxy_thr_ctx_t;
 
+void pxy_thr_attach(pxy_conn_ctx_t *) NONNULL(1);
 void pxy_thr_detach(pxy_conn_ctx_t *) NONNULL(1);
 void *pxy_thr(void *);
 

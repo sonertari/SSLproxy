@@ -35,6 +35,28 @@
 #include <sys/param.h>
 
 /*
+ * Attach a connection to its thread.
+ * This function cannot fail.
+ */
+void
+pxy_thr_attach(pxy_conn_ctx_t *ctx)
+{
+	assert(ctx != NULL);
+	// A thr should have already been assigned
+	assert(ctx->thr != NULL);
+
+	log_finest("Adding conn");
+
+	// Always keep thr load and conns list in sync
+	ctx->thr->load++;
+
+	ctx->next = ctx->thr->conns;
+	ctx->thr->conns = ctx;
+	if (ctx->next)
+		ctx->next->prev = ctx;
+}
+
+/*
  * Detach a connection from a thread by index.
  * This function cannot fail.
  */
@@ -57,15 +79,6 @@ pxy_thr_detach(pxy_conn_ctx_t *ctx)
 	if (ctx->next)
 		ctx->next->prev = ctx->prev;
 }
-
-/*
- * Proxy thread manager: manages the connection handling worker threads
- * and the per-thread resources (i.e. event bases).  The load is shared
- * across num_cpu * 2 connection handling threads, using the number of
- * currently assigned connections as the sole metric.
- *
- * The attach and detach functions are thread-safe.
- */
 
 static void
 pxy_thr_print_thr_info(pxy_thr_ctx_t *tctx)

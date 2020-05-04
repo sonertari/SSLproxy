@@ -241,7 +241,7 @@ proxy_listener_acceptcb(UNUSED struct evconnlistener *listener,
 	}
 
 	// Choose the conn handling thr
-	pxy_thrmgr_attach(ctx);
+	pxy_thrmgr_assign_thr(ctx);
 
 	/* prepare logging part 1 and user auth */
 	ctx->srcaddrlen = peeraddrlen;

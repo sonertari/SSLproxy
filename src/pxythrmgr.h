@@ -50,7 +50,7 @@ pxy_thrmgr_ctx_t * pxy_thrmgr_new(global_t *) MALLOC;
 int pxy_thrmgr_run(pxy_thrmgr_ctx_t *) NONNULL(1) WUNRES;
 void pxy_thrmgr_free(pxy_thrmgr_ctx_t *) NONNULL(1);
 
-void pxy_thrmgr_attach(pxy_conn_ctx_t *) NONNULL(1);
+void pxy_thrmgr_assign_thr(pxy_conn_ctx_t *) NONNULL(1);
 
 #endif /* !PXYTHRMGR_H */
 

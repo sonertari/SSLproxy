@@ -233,13 +233,7 @@ prototcp_connect(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 	event_free(ctx->ev);
 	ctx->ev = NULL;
 
-	// Always keep thr load and conns list in sync
-	ctx->thr->load++;
-
-	ctx->next = ctx->thr->conns;
-	ctx->thr->conns = ctx;
-	if (ctx->next)
-		ctx->next->prev = ctx;
+	pxy_thr_attach(ctx);
 
 	if (check_fd_usage(
 #ifdef DEBUG_PROXY

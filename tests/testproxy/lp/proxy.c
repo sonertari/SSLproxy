@@ -190,7 +190,7 @@ proxy_listener_acceptcb(UNUSED struct evconnlistener *listener,
 	}
 
 	// Choose the conn handling thr
-	pxy_thrmgr_attach(ctx);
+	pxy_thrmgr_assign_thr(ctx);
 
 	ctx->srcaddrlen = peeraddrlen;
 	memcpy(&ctx->srcaddr, peeraddr, ctx->srcaddrlen);

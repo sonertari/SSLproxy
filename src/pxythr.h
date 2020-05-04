@@ -83,6 +83,7 @@ size_t pxy_thr_get_load(pxy_thr_ctx_t *) NONNULL(1);
 void pxy_thr_inc_load(pxy_thr_ctx_t *) NONNULL(1);
 void pxy_thr_dec_load(pxy_thr_ctx_t *) NONNULL(1);
 
+void pxy_thr_attach(pxy_conn_ctx_t *) NONNULL(1);
 void pxy_thr_detach(pxy_conn_ctx_t *) NONNULL(1);
 
 void *pxy_thr(void *);

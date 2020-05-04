@@ -61,6 +61,28 @@ pxy_thr_dec_load(pxy_thr_ctx_t *tctx)
 }
 
 /*
+ * Attach a connection to its thread.
+ * This function cannot fail.
+ */
+void
+pxy_thr_attach(pxy_conn_ctx_t *ctx)
+{
+	assert(ctx != NULL);
+	// A thr should have already been assigned
+	assert(ctx->thr != NULL);
+
+	log_finest("Adding conn");
+
+	// Always keep thr load and conns list in sync
+	pxy_thr_inc_load(ctx->thr);
+
+	ctx->next = ctx->thr->conns;
+	ctx->thr->conns = ctx;
+	if (ctx->next)
+		ctx->next->prev = ctx;
+}
+
+/*
  * Detach a connection from a thread by index.
  * This function cannot fail.
  */

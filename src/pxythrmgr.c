@@ -200,7 +200,7 @@ pxy_thrmgr_free(pxy_thrmgr_ctx_t *ctx)
 }
 
 /*
- * Attach a new connection to a thread.  Chooses the thread with the fewest
+ * Assign a new connection to a thread.  Chooses the thread with the fewest
  * currently active connections, returns the appropriate event bases.
  * No need to be so accurate about balancing thread loads, so uses 
  * thread-level mutexes, instead of a thrmgr level mutex.
@@ -208,7 +208,7 @@ pxy_thrmgr_free(pxy_thrmgr_ctx_t *ctx)
  * This function cannot fail.
  */
 void
-pxy_thrmgr_attach(pxy_conn_ctx_t *ctx)
+pxy_thrmgr_assign_thr(pxy_conn_ctx_t *ctx)
 {
 	log_finest("ENTER");
 

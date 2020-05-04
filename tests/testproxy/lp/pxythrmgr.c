@@ -37,6 +37,13 @@
 #include <event2/bufferevent.h>
 
 /*
+ * Proxy thread manager: manages the connection handling worker threads
+ * and the per-thread resources (i.e. event bases).  The load is shared
+ * across num_cpu * 2 connection handling threads, using the number of
+ * currently assigned connections as the sole metric.
+ */
+
+/*
  * Create new thread manager but do not start any threads yet.
  * This gets called before forking to background.
  */
@@ -159,7 +166,7 @@ pxy_thrmgr_free(pxy_thrmgr_ctx_t *ctx)
 }
 
 /*
- * Attach a new connection to a thread.  Chooses the thread with the fewest
+ * Assign a new connection to a thread.  Chooses the thread with the fewest
  * currently active connections, returns the appropriate event bases.
  * No need to be so accurate about balancing thread loads, so uses 
  * thread-level mutexes, instead of a thrmgr level mutex.
@@ -167,7 +174,7 @@ pxy_thrmgr_free(pxy_thrmgr_ctx_t *ctx)
  * This function cannot fail.
  */
 void
-pxy_thrmgr_attach(pxy_conn_ctx_t *ctx)
+pxy_thrmgr_assign_thr(pxy_conn_ctx_t *ctx)
 {
 	log_finest("ENTER");
 
