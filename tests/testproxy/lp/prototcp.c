@@ -380,6 +380,9 @@ prototcp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 				bufferevent_enable(ctx->dst.bev, EV_READ|EV_WRITE);
 				if (bufferevent_socket_connect(ctx->dst.bev, (struct sockaddr *)&ctx->dstaddr, ctx->dstaddrlen) == -1) {
 					log_err_level(LOG_CRIT, "bufferevent_socket_connect for dst failed");
+					free(line);
+					pxy_conn_term(ctx, 1);
+					return;
 				}
 			}
 

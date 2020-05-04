@@ -118,8 +118,8 @@ pxy_conn_term(pxy_conn_ctx_t *ctx, int by_requestor)
 	ctx->term_requestor = by_requestor;
 }
 
-void
-pxy_log_connect_nonhttp(pxy_conn_ctx_t *ctx)
+static void
+pxy_log_connect_tcp(pxy_conn_ctx_t *ctx)
 {
 	char *msg;
 	int rv;
@@ -230,7 +230,7 @@ pxy_log_connect(pxy_conn_ctx_t *ctx)
 {
 	/* log connection if we don't analyze any headers */
 	if (WANT_CONNECT_LOG(ctx)) {
-		pxy_log_connect_nonhttp(ctx);
+		pxy_log_connect_tcp(ctx);
 	}
 
 	pxy_log_dbg_connect_type(ctx);

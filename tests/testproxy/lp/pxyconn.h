@@ -148,7 +148,6 @@ struct pxy_conn_ctx {
 void pxy_log_connect(pxy_conn_ctx_t *) NONNULL(1);
 
 int pxy_log_content_inbuf(pxy_conn_ctx_t *, struct evbuffer *, int) NONNULL(1);
-void pxy_log_connect_nonhttp(pxy_conn_ctx_t *) NONNULL(1);
 void pxy_log_dbg_evbuf_info(pxy_conn_ctx_t *, pxy_conn_desc_t *, pxy_conn_desc_t *) NONNULL(1,2,3);
 
 void pxy_try_set_watermark(struct bufferevent *, pxy_conn_ctx_t *, struct bufferevent *) NONNULL(1,2,3);
