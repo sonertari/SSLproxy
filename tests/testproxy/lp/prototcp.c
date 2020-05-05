@@ -71,7 +71,8 @@ prototcp_bufferevent_free_and_close_fd(struct bufferevent *bev, UNUSED pxy_conn_
 	evutil_socket_t fd = bufferevent_getfd(bev);
 	log_finer_va("in=%zu, out=%zu, fd=%d", evbuffer_get_length(bufferevent_get_input(bev)), evbuffer_get_length(bufferevent_get_output(bev)), fd);
 	bufferevent_free(bev);
-	evutil_closesocket(fd);
+	if (fd >= 0)
+		evutil_closesocket(fd);
 }
 
 static int NONNULL(1)

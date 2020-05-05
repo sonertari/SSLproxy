@@ -81,6 +81,9 @@ opts_free(opts_t *opts)
 	if (opts->pidfile) {
 		free(opts->pidfile);
 	}
+	if (opts->conffile) {
+		free(opts->conffile);
+	}
 	if (opts->connectlog) {
 		free(opts->connectlog);
 	}
@@ -731,13 +734,14 @@ opts_load_conffile(opts_t *opts, const char *argv0)
 		if (retval == -1) {
 			goto leave;
 		}
+		free(line);
+		line = NULL;
 	}
 
 leave:
 	fclose(f);
-	if (line) {
+	if (line)
 		free(line);
-	}
 	return retval;
 }
 

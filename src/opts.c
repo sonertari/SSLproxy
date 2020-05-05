@@ -227,6 +227,9 @@ global_free(global_t *global)
 	if (global->pidfile) {
 		free(global->pidfile);
 	}
+	if (global->conffile) {
+		free(global->conffile);
+	}
 	if (global->connectlog) {
 		free(global->connectlog);
 	}
@@ -258,6 +261,11 @@ global_free(global_t *global)
 #endif /* !WITHOUT_MIRROR */
 	if (global->userdb_path) {
 		free(global->userdb_path);
+	}
+	if (global->userdb) {
+		// sqlite3.h: "Invoking sqlite3_finalize() on a NULL pointer is a harmless no-op."
+		sqlite3_finalize(global->update_user_atime);
+		sqlite3_close(global->userdb);
 	}
 	if (global->opts) {
 		opts_free(global->opts);
@@ -2541,9 +2549,13 @@ load_proxyspec_struct(global_t *global, const char *argv0, char **natengine, int
 		} else if (retval == 1) {
 			break;
 		}
+		free(line);
+		line = NULL;
 	}
 	retval = 0;
 leave:
+	if (line)
+		free(line);
 	return retval;
 }
 
@@ -2806,13 +2818,14 @@ global_load_conffile(global_t *global, const char *argv0, char **natengine)
 		if (retval == -1) {
 			goto leave;
 		}
+		free(line);
+		line = NULL;
 	}
 
 leave:
 	fclose(f);
-	if (line) {
+	if (line)
 		free(line);
-	}
 	return retval;
 }
 

@@ -143,7 +143,8 @@ leave:
 			if (ctx->thr[i]->evbase) {
 				event_base_free(ctx->thr[i]->evbase);
 			}
-			if (ctx->global->opts->user_auth || global_has_userauth_spec(ctx->global)) {
+			if (ctx->global->userdb) {
+				// sqlite3.h: "Invoking sqlite3_finalize() on a NULL pointer is a harmless no-op."
 				sqlite3_finalize(ctx->thr[i]->get_user);
 			}
 			free(ctx->thr[i]);
@@ -178,7 +179,8 @@ pxy_thrmgr_free(pxy_thrmgr_ctx_t *ctx)
 			if (ctx->thr[i]->evbase) {
 				event_base_free(ctx->thr[i]->evbase);
 			}
-			if (ctx->global->opts->user_auth || global_has_userauth_spec(ctx->global)) {
+			if (ctx->global->userdb) {
+				// sqlite3.h: "Invoking sqlite3_finalize() on a NULL pointer is a harmless no-op."
 				sqlite3_finalize(ctx->thr[i]->get_user);
 			}
 			free(ctx->thr[i]);

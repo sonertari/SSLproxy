@@ -767,6 +767,8 @@ sys_sendmsgfd(int sock, void *buf, size_t bufsz, int fd)
 	char cmsgbuf[CMSG_SPACE(sizeof(int))];
 	ssize_t n;
 
+	memset(cmsgbuf, 0, sizeof(cmsgbuf));
+
 	iov.iov_base = buf;
 	iov.iov_len = bufsz;
 

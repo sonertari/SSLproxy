@@ -982,6 +982,8 @@ out_log_failed:
 out_parent:
 	global_free(global);
 	ssl_fini();
+	if (natengine)
+		free(natengine);
 	return rv;
 }
 
