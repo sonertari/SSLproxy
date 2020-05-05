@@ -43,6 +43,7 @@
 # Build a macOS binary for El Capitan using the default SDK from Xcode 7.3.1:
 # % MACOSX_VERSION_MIN=10.11 DEVELOPER_DIR=/Applications/Xcode-7.3.1.app/Contents/Developer make
 
+PROJECT_ROOT= ../../../
 VERSION=
 
 ### Debugging
@@ -79,7 +80,7 @@ DEBUG_CFLAGS?=	-g
 # Note that you can override the XNU headers used by defining XNU_VERSION.
 
 ifeq ($(shell uname),Darwin)
-include ../../../Mk/xcode.mk
+include $(PROJECT_ROOT)Mk/xcode.mk
 ifneq ($(wildcard /usr/include/libproc.h),)
 FEATURES+=	-DHAVE_DARWIN_LIBPROC
 endif
@@ -94,15 +95,15 @@ XNU_HAVE:=	$(XNU_VERSION)
 endif
 ifeq ($(wildcard xnu/xnu-$(XNU_VERSION)),)
 XNU_METHOD=	sw_vers
-XNU_VERSION=	$(shell awk '/^XNU_RELS.*\# $(OSX_VERSION)$$/ {print $$2}' ../../../xnu/GNUmakefile)
+XNU_VERSION=	$(shell awk '/^XNU_RELS.*\# $(OSX_VERSION)$$/ {print $$2}' $(PROJECT_ROOT)xnu/GNUmakefile)
 endif
 ifeq ($(wildcard xnu/xnu-$(XNU_VERSION)),)
 XNU_METHOD=	fallback
-XNU_VERSION=	$(shell awk '/^XNU_RELS/ {print $$2}' ../../../xnu/GNUmakefile|tail -1)
+XNU_VERSION=	$(shell awk '/^XNU_RELS/ {print $$2}' $(PROJECT_ROOT)xnu/GNUmakefile|tail -1)
 endif
 ifneq ($(wildcard xnu/xnu-$(XNU_VERSION)),)
 FEATURES+=	-DHAVE_PF
-PKG_CPPFLAGS+=	-I../../../xnu/xnu-$(XNU_VERSION)
+PKG_CPPFLAGS+=	-I$(PROJECT_ROOT)xnu/xnu-$(XNU_VERSION)
 BUILD_INFO+=	OSX:$(OSX_VERSION) XNU:$(XNU_VERSION):$(XNU_METHOD):$(XNU_HAVE)
 endif
 endif
@@ -203,7 +204,7 @@ OBJS:=		$(SRCS:.c=.o)
 MKFS=		$(wildcard GNUmakefile Mk/*.mk)
 FEATURES:=	$(sort $(FEATURES))
 
-include Mk/buildinfo.mk
+include $(PROJECT_ROOT)Mk/buildinfo.mk
 VERSION:=	$(BUILD_VERSION)
 ifdef GITDIR
 CFLAGS+=	$(DEBUG_CFLAGS)
