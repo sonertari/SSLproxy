@@ -206,7 +206,7 @@ log_dbg_printf(const char *fmt, ...)
 }
 
 int
-log_dbg_level_printf(int level, const char *function, int thridx, long long unsigned int id, evutil_socket_t fd, evutil_socket_t child_fd, const char *fmt, ...)
+log_dbg_level_printf(int level, const char *function, int thrid, long long unsigned int id, evutil_socket_t fd, evutil_socket_t child_fd, const char *fmt, ...)
 {
 	va_list ap;
 	char *buf;
@@ -224,7 +224,7 @@ log_dbg_level_printf(int level, const char *function, int thridx, long long unsi
 	char *logbuf;
 	// The *_main and *_main_va macros always pass 0 as fd, and the other macros fd > 0
 	if (fd) {
-		rv = asprintf(&logbuf, "[%s] [%d.%llu fd=%d cfd=%d] %s: %s\n", log_dbg_mode_names[level], thridx, id, fd, child_fd, function, buf);
+		rv = asprintf(&logbuf, "[%s] [%d.%llu fd=%d cfd=%d] %s: %s\n", log_dbg_mode_names[level], thrid, id, fd, child_fd, function, buf);
 	} else {
 		rv = asprintf(&logbuf, "[%s] %s: %s\n", log_dbg_mode_names[level], function, buf);
 	}

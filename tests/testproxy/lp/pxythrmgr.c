@@ -70,7 +70,7 @@ pxy_thrmgr_new(opts_t *opts)
 int
 pxy_thrmgr_run(pxy_thrmgr_ctx_t *ctx)
 {
-	int idx = -1;
+	int i = -1;
 
 	if (!(ctx->thr = malloc(ctx->num_thr * sizeof(pxy_thr_ctx_t*)))) {
 		log_dbg_printf("Failed to allocate memory\n");
@@ -78,33 +78,33 @@ pxy_thrmgr_run(pxy_thrmgr_ctx_t *ctx)
 	}
 	memset(ctx->thr, 0, ctx->num_thr * sizeof(pxy_thr_ctx_t*));
 
-	for (idx = 0; idx < ctx->num_thr; idx++) {
-		if (!(ctx->thr[idx] = malloc(sizeof(pxy_thr_ctx_t)))) {
+	for (i = 0; i < ctx->num_thr; i++) {
+		if (!(ctx->thr[i] = malloc(sizeof(pxy_thr_ctx_t)))) {
 			log_dbg_printf("Failed to allocate memory\n");
 			goto leave;
 		}
-		memset(ctx->thr[idx], 0, sizeof(pxy_thr_ctx_t));
-		ctx->thr[idx]->evbase = event_base_new();
-		if (!ctx->thr[idx]->evbase) {
-			log_dbg_printf("Failed to create evbase %d\n", idx);
+		memset(ctx->thr[i], 0, sizeof(pxy_thr_ctx_t));
+		ctx->thr[i]->evbase = event_base_new();
+		if (!ctx->thr[i]->evbase) {
+			log_dbg_printf("Failed to create evbase %d\n", i);
 			goto leave;
 		}
-		ctx->thr[idx]->load = 0;
-		ctx->thr[idx]->running = 0;
-		ctx->thr[idx]->conns = NULL;
-		ctx->thr[idx]->thridx = idx;
-		ctx->thr[idx]->timeout_count = 0;
-		ctx->thr[idx]->thrmgr = ctx;
+		ctx->thr[i]->load = 0;
+		ctx->thr[i]->running = 0;
+		ctx->thr[i]->conns = NULL;
+		ctx->thr[i]->id = i;
+		ctx->thr[i]->timeout_count = 0;
+		ctx->thr[i]->thrmgr = ctx;
 	}
 
 	log_dbg_printf("Initialized %d connection handling threads\n",
 	               ctx->num_thr);
 
-	for (idx = 0; idx < ctx->num_thr; idx++) {
-		if (pthread_create(&ctx->thr[idx]->thr, NULL,
-		                   pxy_thr, ctx->thr[idx]))
+	for (i = 0; i < ctx->num_thr; i++) {
+		if (pthread_create(&ctx->thr[i]->thr, NULL,
+		                   pxy_thr, ctx->thr[i]))
 			goto leave_thr;
-		while (!ctx->thr[idx]->running) {
+		while (!ctx->thr[i]->running) {
 			sched_yield();
 		}
 	}
@@ -115,23 +115,23 @@ pxy_thrmgr_run(pxy_thrmgr_ctx_t *ctx)
 	return 0;
 
 leave_thr:
-	idx--;
-	while (idx >= 0) {
-		pthread_cancel(ctx->thr[idx]->thr);
-		pthread_join(ctx->thr[idx]->thr, NULL);
-		idx--;
+	i--;
+	while (i >= 0) {
+		pthread_cancel(ctx->thr[i]->thr);
+		pthread_join(ctx->thr[i]->thr, NULL);
+		i--;
 	}
-	idx = ctx->num_thr - 1;
+	i = ctx->num_thr - 1;
 
 leave:
-	while (idx >= 0) {
-		if (ctx->thr[idx]) {
-			if (ctx->thr[idx]->evbase) {
-				event_base_free(ctx->thr[idx]->evbase);
+	while (i >= 0) {
+		if (ctx->thr[i]) {
+			if (ctx->thr[i]->evbase) {
+				event_base_free(ctx->thr[i]->evbase);
 			}
-			free(ctx->thr[idx]);
+			free(ctx->thr[i]);
 		}
-		idx--;
+		i--;
 	}
 	if (ctx->thr) {
 		free(ctx->thr);
@@ -147,18 +147,18 @@ void
 pxy_thrmgr_free(pxy_thrmgr_ctx_t *ctx)
 {
 	if (ctx->thr) {
-		for (int idx = 0; idx < ctx->num_thr; idx++) {
-			event_base_loopbreak(ctx->thr[idx]->evbase);
+		for (int i = 0; i < ctx->num_thr; i++) {
+			event_base_loopbreak(ctx->thr[i]->evbase);
 			sched_yield();
 		}
-		for (int idx = 0; idx < ctx->num_thr; idx++) {
-			pthread_join(ctx->thr[idx]->thr, NULL);
+		for (int i = 0; i < ctx->num_thr; i++) {
+			pthread_join(ctx->thr[i]->thr, NULL);
 		}
-		for (int idx = 0; idx < ctx->num_thr; idx++) {
-			if (ctx->thr[idx]->evbase) {
-				event_base_free(ctx->thr[idx]->evbase);
+		for (int i = 0; i < ctx->num_thr; i++) {
+			if (ctx->thr[i]->evbase) {
+				event_base_free(ctx->thr[i]->evbase);
 			}
-			free(ctx->thr[idx]);
+			free(ctx->thr[i]);
 		}
 		free(ctx->thr);
 	}
@@ -185,24 +185,23 @@ pxy_thrmgr_assign_thr(pxy_conn_ctx_t *ctx)
 	log_dbg_printf("===> Proxy connection handler thread status:\nthr[0]: %zu\n", minload);
 #endif /* DEBUG_THREAD */
 
-	int thridx = 0;
-	for (int idx = 1; idx < tmctx->num_thr; idx++) {
-		size_t thrload = tmctx->thr[idx]->load;
-
+	int thrid = 0;
+	for (int i = 1; i < tmctx->num_thr; i++) {
+		size_t thrload = tmctx->thr[i]->load;
 		if (minload > thrload) {
 			minload = thrload;
-			thridx = idx;
+			thrid = i;
 		}
 
 #ifdef DEBUG_THREAD
-		log_dbg_printf("thr[%d]: %zu\n", idx, thrload);
+		log_dbg_printf("thr[%d]: %zu\n", i, thrload);
 #endif /* DEBUG_THREAD */
 	}
 
-	ctx->thr = tmctx->thr[thridx];
+	ctx->thr = tmctx->thr[thrid];
 
 #ifdef DEBUG_THREAD
-	log_dbg_printf("thridx: %d\n", thridx);
+	log_dbg_printf("thrid: %d\n", thrid);
 #endif /* DEBUG_THREAD */
 }
 

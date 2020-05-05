@@ -43,7 +43,7 @@ typedef struct pxy_thrmgr_ctx pxy_thrmgr_ctx_t;
 
 typedef struct pxy_thr_ctx {
 	pthread_t thr;
-	int thridx;
+	int id;
 	pxy_thrmgr_ctx_t *thrmgr;
 	size_t load;
 	struct event_base *evbase;

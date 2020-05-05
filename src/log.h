@@ -68,17 +68,17 @@ void log_dbg_mode(int);
 #define log_fine_main_va(format_str, ...) \
 		log_dbg_level_printf(LOG_DBG_MODE_FINE, __FUNCTION__, 0, 0, 0, 0, (format_str), __VA_ARGS__)
 #define log_fine(str) \
-		log_dbg_level_printf(LOG_DBG_MODE_FINE, __FUNCTION__, ctx->conn->thr ? ctx->conn->thr->thridx : 0, ctx->conn->id, ctx->conn->fd, ctx->conn->child_fd, (str))
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, __FUNCTION__, ctx->conn->thr ? ctx->conn->thr->id : 0, ctx->conn->id, ctx->conn->fd, ctx->conn->child_fd, (str))
 #define log_fine_va(format_str, ...) \
-		log_dbg_level_printf(LOG_DBG_MODE_FINE, __FUNCTION__, ctx->conn->thr ? ctx->conn->thr->thridx : 0, ctx->conn->id, ctx->conn->fd, ctx->conn->child_fd, (format_str), __VA_ARGS__)
+		log_dbg_level_printf(LOG_DBG_MODE_FINE, __FUNCTION__, ctx->conn->thr ? ctx->conn->thr->id : 0, ctx->conn->id, ctx->conn->fd, ctx->conn->child_fd, (format_str), __VA_ARGS__)
 
 // FINER
 #define log_finer_main_va(format_str, ...) \
 		log_dbg_level_printf(LOG_DBG_MODE_FINER, __FUNCTION__, 0, 0, 0, 0, (format_str), __VA_ARGS__)
 #define log_finer(str) \
-		log_dbg_level_printf(LOG_DBG_MODE_FINER, __FUNCTION__, ctx->conn->thr ? ctx->conn->thr->thridx : 0, ctx->conn->id, ctx->conn->fd, ctx->conn->child_fd, (str))
+		log_dbg_level_printf(LOG_DBG_MODE_FINER, __FUNCTION__, ctx->conn->thr ? ctx->conn->thr->id : 0, ctx->conn->id, ctx->conn->fd, ctx->conn->child_fd, (str))
 #define log_finer_va(format_str, ...) \
-		log_dbg_level_printf(LOG_DBG_MODE_FINER, __FUNCTION__, ctx->conn->thr ? ctx->conn->thr->thridx : 0, ctx->conn->id, ctx->conn->fd, ctx->conn->child_fd, (format_str), __VA_ARGS__)
+		log_dbg_level_printf(LOG_DBG_MODE_FINER, __FUNCTION__, ctx->conn->thr ? ctx->conn->thr->id : 0, ctx->conn->id, ctx->conn->fd, ctx->conn->child_fd, (format_str), __VA_ARGS__)
 
 // FINEST
 #define log_finest_main(str) \
@@ -86,9 +86,9 @@ void log_dbg_mode(int);
 #define log_finest_main_va(format_str, ...) \
 		log_dbg_level_printf(LOG_DBG_MODE_FINEST, __FUNCTION__, 0, 0, 0, 0, (format_str), __VA_ARGS__)
 #define log_finest(str) \
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, __FUNCTION__, ctx->conn->thr ? ctx->conn->thr->thridx : 0, ctx->conn->id, ctx->conn->fd, ctx->conn->child_fd, (str))
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, __FUNCTION__, ctx->conn->thr ? ctx->conn->thr->id : 0, ctx->conn->id, ctx->conn->fd, ctx->conn->child_fd, (str))
 #define log_finest_va(format_str, ...) \
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, __FUNCTION__, ctx->conn->thr ? ctx->conn->thr->thridx : 0, ctx->conn->id, ctx->conn->fd, ctx->conn->child_fd, (format_str), __VA_ARGS__)
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, __FUNCTION__, ctx->conn->thr ? ctx->conn->thr->id : 0, ctx->conn->id, ctx->conn->fd, ctx->conn->child_fd, (format_str), __VA_ARGS__)
 #else /* !DEBUG_PROXY */
 #define log_fine_main_va(format_str, ...) ((void)0)
 #define log_fine(str) ((void)0)

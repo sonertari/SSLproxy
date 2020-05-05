@@ -83,9 +83,8 @@ pxy_thr_detach(pxy_conn_ctx_t *ctx)
 static void
 pxy_thr_print_thr_info(pxy_thr_ctx_t *tctx)
 {
-	log_finest_main_va("thr=%d, load=%lu", tctx->thridx, tctx->load);
+	log_finest_main_va("thr=%d, load=%lu", tctx->id, tctx->load);
 
-	unsigned int idx = 1;
 	evutil_socket_t max_fd = 0;
 	time_t max_atime = 0;
 	time_t max_ctime = 0;
@@ -100,25 +99,24 @@ pxy_thr_print_thr_info(pxy_thr_ctx_t *tctx)
 			time_t atime = now - ctx->atime;
 			time_t ctime = now - ctx->ctime;
 
-			log_finest_main_va("CONN: thr=%d, id=%u, fd=%d, dst=%d, p=%d-%d, at=%lld ct=%lld, src_addr=%s:%s, dst_addr=%s:%s",
-				tctx->thridx, idx, ctx->fd, ctx->dst_fd, ctx->src.closed, ctx->dst.closed, (long long)atime, (long long)ctime,
+			log_finest_main_va("CONN: thr=%d, id=%llu, fd=%d, dst=%d, p=%d-%d, at=%lld ct=%lld, src_addr=%s:%s, dst_addr=%s:%s",
+				tctx->id, ctx->id, ctx->fd, ctx->dst_fd, ctx->src.closed, ctx->dst.closed, (long long)atime, (long long)ctime,
 				STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str));
 
 			max_fd = MAX(max_fd, MAX(ctx->fd, ctx->dst_fd));
 			max_atime = MAX(max_atime, atime);
 			max_ctime = MAX(max_ctime, ctime);
 
-			idx++;
 			ctx = ctx->next;
 		}
 	}
 
 	log_finest_main_va("STATS: thr=%d, mld=%zu, mfd=%d, mat=%lld, mct=%lld, iib=%llu, iob=%llu, eib=%llu, eob=%llu, swm=%zu, uwm=%zu, err=%zu, si=%u",
-			tctx->thridx, tctx->max_load, tctx->max_fd, (long long)max_atime, (long long)max_ctime, tctx->intif_in_bytes, tctx->intif_out_bytes, tctx->extif_in_bytes, tctx->extif_out_bytes,
+			tctx->id, tctx->max_load, tctx->max_fd, (long long)max_atime, (long long)max_ctime, tctx->intif_in_bytes, tctx->intif_out_bytes, tctx->extif_in_bytes, tctx->extif_out_bytes,
 			tctx->set_watermarks, tctx->unset_watermarks, tctx->errors, tctx->stats_id);
 
 	if (asprintf(&smsg, "STATS: thr=%d, mld=%zu, mfd=%d, mat=%lld, mct=%lld, iib=%llu, iob=%llu, eib=%llu, eob=%llu, swm=%zu, uwm=%zu, err=%zu, si=%u\n",
-			tctx->thridx, tctx->max_load, tctx->max_fd, (long long)max_atime, (long long)max_ctime, tctx->intif_in_bytes, tctx->intif_out_bytes, tctx->extif_in_bytes, tctx->extif_out_bytes,
+			tctx->id, tctx->max_load, tctx->max_fd, (long long)max_atime, (long long)max_ctime, tctx->intif_in_bytes, tctx->intif_out_bytes, tctx->extif_in_bytes, tctx->extif_out_bytes,
 			tctx->set_watermarks, tctx->unset_watermarks, tctx->errors, tctx->stats_id) < 0) {
 		return;
 	}
@@ -151,16 +149,16 @@ pxy_thr_print_thr_info(pxy_thr_ctx_t *tctx)
 static void
 pxy_thr_timer_cb(UNUSED evutil_socket_t fd, UNUSED short what, UNUSED void *arg)
 {
-	pxy_thr_ctx_t *ctx = arg;
+	pxy_thr_ctx_t *tctx = arg;
 
-	log_finest_main_va("thr=%d, load=%lu, to=%u", ctx->thridx, ctx->load, ctx->timeout_count);
+	log_finest_main_va("thr=%d, load=%lu, to=%u", tctx->id, tctx->load, tctx->timeout_count);
 
 	// @attention Print thread info only if stats logging is enabled, if disabled debug logs are not printed either
-	if (ctx->thrmgr->opts->statslog) {
-		ctx->timeout_count++;
-		if (ctx->timeout_count >= ctx->thrmgr->opts->stats_period) {
-			ctx->timeout_count = 0;
-			pxy_thr_print_thr_info(ctx);
+	if (tctx->thrmgr->opts->statslog) {
+		tctx->timeout_count++;
+		if (tctx->timeout_count >= tctx->thrmgr->opts->stats_period) {
+			tctx->timeout_count = 0;
+			pxy_thr_print_thr_info(tctx);
 		}
 	}
 }
@@ -172,16 +170,16 @@ pxy_thr_timer_cb(UNUSED evutil_socket_t fd, UNUSED short what, UNUSED void *arg)
 void *
 pxy_thr(void *arg)
 {
-	pxy_thr_ctx_t *ctx = arg;
+	pxy_thr_ctx_t *tctx = arg;
 	struct timeval timer_delay = {10, 0};
 	struct event *ev;
 
-	ev = event_new(ctx->evbase, -1, EV_PERSIST, pxy_thr_timer_cb, ctx);
+	ev = event_new(tctx->evbase, -1, EV_PERSIST, pxy_thr_timer_cb, tctx);
 	if (!ev)
 		return NULL;
 	evtimer_add(ev, &timer_delay);
-	ctx->running = 1;
-	event_base_dispatch(ctx->evbase);
+	tctx->running = 1;
+	event_base_dispatch(tctx->evbase);
 	event_free(ev);
 
 	return NULL;

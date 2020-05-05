@@ -137,7 +137,7 @@ struct pxy_conn_ctx {
 	time_t ctime;
 
 	// Conn last access time, used to determine expired conns
-	// Updated on entry to callback functions, parent or child
+	// Updated on entry to callback functions
 	time_t atime;
 	
 	// Per-thread conn list, used to determine idle and expired conns, and to close them

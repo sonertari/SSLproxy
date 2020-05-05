@@ -43,18 +43,12 @@ typedef struct pxy_thrmgr_ctx pxy_thrmgr_ctx_t;
 
 typedef struct pxy_thr_ctx {
 	pthread_t thr;
-	int thridx;
+	int id;
 	pxy_thrmgr_ctx_t *thrmgr;
 	size_t load;
 	struct event_base *evbase;
 	struct evdns_base *dnsbase;
 	int running;
-
-	// @todo Do we need a thr mutex?
-	// This mutex is for thread-safe access to thr.load. But thrmgr read-accesses thr.load, and write-accesses are by thr only.
-	// Per-thread locking is necessary during connection setup
-	// to prevent multithreading issues between thrmgr thread and conn handling threads
-	//pthread_mutex_t mutex;
 
 	// Statistics
 	evutil_socket_t max_fd;
@@ -78,10 +72,6 @@ typedef struct pxy_thr_ctx {
 	// Per-thread sqlite stmt is necessary to prevent multithreading issues between threads
 	struct sqlite3_stmt *get_user;
 } pxy_thr_ctx_t;
-
-size_t pxy_thr_get_load(pxy_thr_ctx_t *) NONNULL(1);
-void pxy_thr_inc_load(pxy_thr_ctx_t *) NONNULL(1);
-void pxy_thr_dec_load(pxy_thr_ctx_t *) NONNULL(1);
 
 void pxy_thr_attach(pxy_conn_ctx_t *) NONNULL(1);
 void pxy_thr_detach(pxy_conn_ctx_t *) NONNULL(1);

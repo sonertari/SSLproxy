@@ -34,32 +34,6 @@
 #include <assert.h>
 #include <sys/param.h>
 
-size_t
-pxy_thr_get_load(pxy_thr_ctx_t *tctx)
-{
-	size_t load;
-	//pthread_mutex_lock(&tctx->mutex);
-	load = tctx->load;
-	//pthread_mutex_unlock(&tctx->mutex);
-	return load;
-}
-
-void
-pxy_thr_inc_load(pxy_thr_ctx_t *tctx)
-{
-	//pthread_mutex_lock(&tctx->mutex);
-	tctx->load++;
-	//pthread_mutex_unlock(&tctx->mutex);
-}
-
-void
-pxy_thr_dec_load(pxy_thr_ctx_t *tctx)
-{
-	//pthread_mutex_lock(&tctx->mutex);
-	tctx->load--;
-	//pthread_mutex_unlock(&tctx->mutex);
-}
-
 /*
  * Attach a connection to its thread.
  * This function cannot fail.
@@ -74,7 +48,7 @@ pxy_thr_attach(pxy_conn_ctx_t *ctx)
 	log_finest("Adding conn");
 
 	// Always keep thr load and conns list in sync
-	pxy_thr_inc_load(ctx->thr);
+	ctx->thr->load++;
 
 	ctx->next = ctx->thr->conns;
 	ctx->thr->conns = ctx;
@@ -97,7 +71,7 @@ pxy_thr_detach(pxy_conn_ctx_t *ctx)
 	log_finest("Removing conn");
 
 	// We increment thr load in pxy_conn_init() only (for parent conns)
-	pxy_thr_dec_load(ctx->thr);
+	ctx->thr->load--;
 
 	if (ctx->prev) {
 		ctx->prev->next = ctx->next;
@@ -155,14 +129,14 @@ pxy_thr_get_expired_conns(pxy_thr_ctx_t *tctx, pxy_conn_ctx_t **expired_conns)
 		if (tctx->thrmgr->global->statslog) {
 			ctx = *expired_conns;
 			while (ctx) {
-				log_finest_main_va("thr=%d, fd=%d, child_fd=%d, time=%lld, src_addr=%s:%s, dst_addr=%s:%s, user=%s, valid=%d",
-					ctx->thr->thridx, ctx->fd, ctx->child_fd, (long long)(now - ctx->atime),
+				log_finest_main_va("thr=%d, id=%llu, fd=%d, child_fd=%d, time=%lld, src_addr=%s:%s, dst_addr=%s:%s, user=%s, valid=%d",
+					ctx->thr->id, ctx->id, ctx->fd, ctx->child_fd, (long long)(now - ctx->atime),
 					STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
 					STRORDASH(ctx->user), ctx->protoctx->is_valid);
 
 				char *msg;
-				if (asprintf(&msg, "EXPIRED: thr=%d, time=%lld, src_addr=%s:%s, dst_addr=%s:%s, user=%s, valid=%d\n", 
-						ctx->thr->thridx, (long long)(now - ctx->atime),
+				if (asprintf(&msg, "EXPIRED: thr=%d, id=%llu, time=%lld, src_addr=%s:%s, dst_addr=%s:%s, user=%s, valid=%d\n",
+						ctx->thr->id, ctx->id, (long long)(now - ctx->atime),
 						STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
 						STRORDASH(ctx->user), ctx->protoctx->is_valid) < 0) {
 					break;
@@ -180,17 +154,13 @@ pxy_thr_get_expired_conns(pxy_thr_ctx_t *tctx, pxy_conn_ctx_t **expired_conns)
 }
 
 static evutil_socket_t
-pxy_thr_print_children(pxy_conn_child_ctx_t *ctx,
-#ifdef DEBUG_PROXY
-	unsigned int parent_idx,
-#endif /* DEBUG_PROXY */
-	evutil_socket_t max_fd)
+pxy_thr_print_children(pxy_conn_child_ctx_t *ctx)
 {
+	evutil_socket_t max_fd = 0;
 	while (ctx) {
-		// @attention No need to log child stats
-		log_finest_main_va("CHILD CONN: thr=%d, id=%d, pid=%u, src=%d, dst=%d, c=%d-%d",
-			ctx->conn->thr->thridx, ctx->conn->child_count, parent_idx, ctx->fd, ctx->dst_fd, ctx->src.closed, ctx->dst.closed);
-
+		// No need to log child stats
+		log_finest_main_va("CHILD CONN: thr=%d, id=%llu, cid=%d, src=%d, dst=%d, c=%d-%d",
+			ctx->conn->thr->id, ctx->conn->id, ctx->conn->child_count, ctx->fd, ctx->dst_fd, ctx->src.closed, ctx->dst.closed);
 		max_fd = MAX(max_fd, MAX(ctx->fd, ctx->dst_fd));
 		ctx = ctx->next;
 	}
@@ -200,9 +170,8 @@ pxy_thr_print_children(pxy_conn_child_ctx_t *ctx,
 static void
 pxy_thr_print_info(pxy_thr_ctx_t *tctx)
 {
-	log_finest_main_va("thr=%d, load=%zu", tctx->thridx, pxy_thr_get_load(tctx));
+	log_finest_main_va("thr=%d, load=%zu", tctx->id, tctx->load);
 
-	unsigned int idx = 1;
 	evutil_socket_t max_fd = 0;
 	time_t max_atime = 0;
 	time_t max_ctime = 0;
@@ -217,8 +186,8 @@ pxy_thr_print_info(pxy_thr_ctx_t *tctx)
 			time_t atime = now - ctx->atime;
 			time_t ctime = now - ctx->ctime;
 
-			log_finest_main_va("PARENT CONN: thr=%d, id=%u, fd=%d, child_fd=%d, dst=%d, srvdst=%d, child_src=%d, child_dst=%d, p=%d-%d-%d c=%d-%d, ce=%d cc=%d, at=%lld ct=%lld, src_addr=%s:%s, dst_addr=%s:%s, user=%s, valid=%d",
-				tctx->thridx, idx, ctx->fd, ctx->child_fd, ctx->dst_fd, ctx->srvdst_fd, ctx->child_src_fd, ctx->child_dst_fd,
+			log_finest_main_va("PARENT CONN: thr=%d, id=%llu, fd=%d, child_fd=%d, dst=%d, srvdst=%d, child_src=%d, child_dst=%d, p=%d-%d-%d c=%d-%d, ce=%d cc=%d, at=%lld ct=%lld, src_addr=%s:%s, dst_addr=%s:%s, user=%s, valid=%d",
+				tctx->id, ctx->id, ctx->fd, ctx->child_fd, ctx->dst_fd, ctx->srvdst_fd, ctx->child_src_fd, ctx->child_dst_fd,
 				ctx->src.closed, ctx->dst.closed, ctx->srvdst.closed, ctx->children ? ctx->children->src.closed : 0, ctx->children ? ctx->children->dst.closed : 0,
 				ctx->children ? 1:0, ctx->child_count, (long long)atime, (long long)ctime,
 				STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
@@ -226,8 +195,8 @@ pxy_thr_print_info(pxy_thr_ctx_t *tctx)
 
 			// @attention Report idle connections only, i.e. the conns which have been idle since the last time we checked for expired conns
 			if (atime >= (time_t)tctx->thrmgr->global->expired_conn_check_period) {
-				if (asprintf(&smsg, "IDLE: thr=%d, id=%u, ce=%d cc=%d, at=%lld ct=%lld, src_addr=%s:%s, dst_addr=%s:%s, user=%s, valid=%d\n",
-						tctx->thridx, idx, ctx->children ? 1:0, ctx->child_count, (long long)atime, (long long)ctime,
+				if (asprintf(&smsg, "IDLE: thr=%d, id=%llu, ce=%d cc=%d, at=%lld ct=%lld, src_addr=%s:%s, dst_addr=%s:%s, user=%s, valid=%d\n",
+						tctx->id, ctx->id, ctx->children ? 1:0, ctx->child_count, (long long)atime, (long long)ctime,
 						STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
 						STRORDASH(ctx->user), ctx->protoctx->is_valid) < 0) {
 					return;
@@ -247,24 +216,18 @@ pxy_thr_print_info(pxy_thr_ctx_t *tctx)
 			max_ctime = MAX(max_ctime, ctime);
 
 			if (ctx->children) {
-				max_fd = pxy_thr_print_children(ctx->children,
-#ifdef DEBUG_PROXY
-					idx,
-#endif /* DEBUG_PROXY */
-					max_fd);
+				max_fd = MAX(max_fd, pxy_thr_print_children(ctx->children));
 			}
-
-			idx++;
 			ctx = ctx->next;
 		}
 	}
 
 	log_finest_main_va("thr=%d, mld=%zu, mfd=%d, mat=%lld, mct=%lld, iib=%llu, iob=%llu, eib=%llu, eob=%llu, swm=%zu, uwm=%zu, to=%zu, err=%zu, si=%u",
-			tctx->thridx, tctx->max_load, tctx->max_fd, (long long)max_atime, (long long)max_ctime, tctx->intif_in_bytes, tctx->intif_out_bytes, tctx->extif_in_bytes, tctx->extif_out_bytes,
+			tctx->id, tctx->max_load, tctx->max_fd, (long long)max_atime, (long long)max_ctime, tctx->intif_in_bytes, tctx->intif_out_bytes, tctx->extif_in_bytes, tctx->extif_out_bytes,
 			tctx->set_watermarks, tctx->unset_watermarks, tctx->timedout_conns, tctx->errors, tctx->stats_id);
 
 	if (asprintf(&smsg, "STATS: thr=%d, mld=%zu, mfd=%d, mat=%lld, mct=%lld, iib=%llu, iob=%llu, eib=%llu, eob=%llu, swm=%zu, uwm=%zu, to=%zu, err=%zu, si=%u\n",
-			tctx->thridx, tctx->max_load, tctx->max_fd, (long long)max_atime, (long long)max_ctime, tctx->intif_in_bytes, tctx->intif_out_bytes, tctx->extif_in_bytes, tctx->extif_out_bytes,
+			tctx->id, tctx->max_load, tctx->max_fd, (long long)max_atime, (long long)max_ctime, tctx->intif_in_bytes, tctx->intif_out_bytes, tctx->extif_in_bytes, tctx->extif_out_bytes,
 			tctx->set_watermarks, tctx->unset_watermarks, tctx->timedout_conns, tctx->errors, tctx->stats_id) < 0) {
 		return;
 	}
@@ -287,7 +250,7 @@ pxy_thr_print_info(pxy_thr_ctx_t *tctx)
 
 	// Reset these stats with the current values (do not reset to 0 directly, there may be active conns)
 	tctx->max_fd = max_fd;
-	tctx->max_load = pxy_thr_get_load(tctx);
+	tctx->max_load = tctx->load;
 }
 
 /*
@@ -297,12 +260,12 @@ pxy_thr_print_info(pxy_thr_ctx_t *tctx)
 static void
 pxy_thr_timer_cb(UNUSED evutil_socket_t fd, UNUSED short what, UNUSED void *arg)
 {
-	pxy_thr_ctx_t *ctx = arg;
+	pxy_thr_ctx_t *tctx = arg;
 
-	log_finest_main_va("thr=%d, load=%zu, to=%u", ctx->thridx, pxy_thr_get_load(ctx), ctx->timeout_count);
+	log_finest_main_va("thr=%d, load=%zu, to=%u", tctx->id, tctx->load, tctx->timeout_count);
 
 	pxy_conn_ctx_t *expired = NULL;
-	pxy_thr_get_expired_conns(ctx, &expired);
+	pxy_thr_get_expired_conns(tctx, &expired);
 
 #ifdef DEBUG_PROXY
 	if (expired) {
@@ -312,11 +275,11 @@ pxy_thr_timer_cb(UNUSED evutil_socket_t fd, UNUSED short what, UNUSED void *arg)
 			pxy_conn_ctx_t *next = expired->next_expired;
 
 			log_fine_main_va("Delete timed out conn thr=%d, fd=%d, child_fd=%d, at=%lld ct=%lld",
-				expired->thr->thridx, expired->fd, expired->child_fd, (long long)(now - expired->atime), (long long)(now - expired->ctime));
+				expired->thr->id, expired->fd, expired->child_fd, (long long)(now - expired->atime), (long long)(now - expired->ctime));
 
 			// @attention Do not call the term function here, free the conn directly
 			pxy_conn_free(expired, 1);
-			ctx->timedout_conns++;
+			tctx->timedout_conns++;
 
 			expired = next;
 		}
@@ -325,11 +288,11 @@ pxy_thr_timer_cb(UNUSED evutil_socket_t fd, UNUSED short what, UNUSED void *arg)
 #endif /* DEBUG_PROXY */
 
 	// @attention Print thread info only if stats logging is enabled, if disabled debug logs are not printed either
-	if (ctx->thrmgr->global->statslog) {
-		ctx->timeout_count++;
-		if (ctx->timeout_count >= ctx->thrmgr->global->stats_period) {
-			ctx->timeout_count = 0;
-			pxy_thr_print_info(ctx);
+	if (tctx->thrmgr->global->statslog) {
+		tctx->timeout_count++;
+		if (tctx->timeout_count >= tctx->thrmgr->global->stats_period) {
+			tctx->timeout_count = 0;
+			pxy_thr_print_info(tctx);
 		}
 	}
 }
@@ -341,16 +304,16 @@ pxy_thr_timer_cb(UNUSED evutil_socket_t fd, UNUSED short what, UNUSED void *arg)
 void *
 pxy_thr(void *arg)
 {
-	pxy_thr_ctx_t *ctx = arg;
-	struct timeval timer_delay = {ctx->thrmgr->global->expired_conn_check_period, 0};
+	pxy_thr_ctx_t *tctx = arg;
+	struct timeval timer_delay = {tctx->thrmgr->global->expired_conn_check_period, 0};
 	struct event *ev;
 
-	ev = event_new(ctx->evbase, -1, EV_PERSIST, pxy_thr_timer_cb, ctx);
+	ev = event_new(tctx->evbase, -1, EV_PERSIST, pxy_thr_timer_cb, tctx);
 	if (!ev)
 		return NULL;
 	evtimer_add(ev, &timer_delay);
-	ctx->running = 1;
-	event_base_dispatch(ctx->evbase);
+	tctx->running = 1;
+	event_base_dispatch(tctx->evbase);
 	event_free(ev);
 
 	return NULL;

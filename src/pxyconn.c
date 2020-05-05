@@ -153,9 +153,6 @@ pxy_conn_ctx_new_child(evutil_socket_t fd, pxy_conn_ctx_t *ctx)
 		free(child_ctx);
 		return NULL;
 	}
-
-	// @attention Child connections use the parent's event bases, otherwise we would get multithreading issues
-	pxy_thr_inc_load(ctx->thr);
 	return child_ctx;
 }
 
@@ -163,8 +160,6 @@ static void NONNULL(1)
 pxy_conn_ctx_free_child(pxy_conn_child_ctx_t *ctx)
 {
 	log_finest("ENTER");
-
-	pxy_thr_dec_load(ctx->conn->thr);
 
 	// If the proto doesn't have special args, proto_free() callback is NULL
 	if (ctx->protoctx->proto_free) {
@@ -174,13 +169,34 @@ pxy_conn_ctx_free_child(pxy_conn_child_ctx_t *ctx)
 	free(ctx);
 }
 
+// This function cannot fail.
 static void NONNULL(1)
-pxy_conn_remove_child(pxy_conn_child_ctx_t *ctx)
+pxy_conn_attach_child(pxy_conn_child_ctx_t *ctx)
+{
+	log_finest("Adding child conn");
+
+	// @attention Child connections use the parent's event bases, otherwise we would get multithreading issues
+	// Always keep thr load and conns list in sync
+	ctx->conn->thr->load++;
+	ctx->conn->thr->max_load = MAX(ctx->conn->thr->max_load, ctx->conn->thr->load);
+
+	// Prepend child to the children list of parent
+	ctx->next = ctx->conn->children;
+	ctx->conn->children = ctx;
+	if (ctx->next)
+		ctx->next->prev = ctx;
+}
+
+// This function cannot fail.
+static void NONNULL(1)
+pxy_conn_detach_child(pxy_conn_child_ctx_t *ctx)
 {
 	assert(ctx->conn != NULL);
 	assert(ctx->conn->children != NULL);
 
-	log_finest("ENTER");
+	log_finest("Removing child conn");
+
+	ctx->conn->thr->load--;
 
 	if (ctx->prev) {
 		ctx->prev->next = ctx->next;
@@ -240,7 +256,7 @@ pxy_conn_free_child(pxy_conn_child_ctx_t *ctx)
 		ctx->dst.bev = NULL;
 	}
 
-	pxy_conn_remove_child(ctx);
+	pxy_conn_detach_child(ctx);
 	pxy_conn_ctx_free_child(ctx);
 }
 
@@ -978,15 +994,9 @@ pxy_listener_acceptcb_child(UNUSED struct evconnlistener *listener, evutil_socke
 		pxy_conn_term(ctx, 1);
 		goto out;
 	}
-	ctx->thr->max_load = MAX(ctx->thr->max_load, pxy_thr_get_load(ctx->thr));
 
+	pxy_conn_attach_child(child_ctx);
 	ctx->child_count++;
-
-	// Prepend child to the children list of parent
-	child_ctx->next = ctx->children;
-	ctx->children = child_ctx;
-	if (child_ctx->next)
-		child_ctx->next->prev = child_ctx;
 
 	// @attention Do not enable src events here yet, they will be enabled after dst connects
 	if (prototcp_setup_src_child(child_ctx) == -1) {
@@ -1043,14 +1053,14 @@ pxy_opensock_child(pxy_conn_ctx_t *ctx)
 	evutil_socket_t fd = socket(ctx->spec->child_src_addr.ss_family, SOCK_STREAM, IPPROTO_TCP);
 	if (fd == -1) {
 		log_err_level_printf(LOG_CRIT, "Error from socket(): %s (%i)\n", strerror(errno), errno);
-		log_fine_va("Error from socket(): %s (%i)\n", strerror(errno), errno);
+		log_fine_va("Error from socket(): %s (%i)", strerror(errno), errno);
 		evutil_closesocket(fd);
 		return -1;
 	}
 
 	if (evutil_make_socket_nonblocking(fd) == -1) {
 		log_err_level_printf(LOG_CRIT, "Error making socket nonblocking: %s (%i)\n", strerror(errno), errno);
-		log_fine_va("Error making socket nonblocking: %s (%i)\n", strerror(errno), errno);
+		log_fine_va("Error making socket nonblocking: %s (%i)", strerror(errno), errno);
 		evutil_closesocket(fd);
 		return -1;
 	}
@@ -1058,21 +1068,21 @@ pxy_opensock_child(pxy_conn_ctx_t *ctx)
 	int on = 1;
 	if (setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, (void*)&on, sizeof(on)) == -1) {
 		log_err_level_printf(LOG_CRIT, "Error from setsockopt(SO_KEEPALIVE): %s (%i)\n", strerror(errno), errno);
-		log_fine_va("Error from setsockopt(SO_KEEPALIVE): %s (%i)\n", strerror(errno), errno);
+		log_fine_va("Error from setsockopt(SO_KEEPALIVE): %s (%i)", strerror(errno), errno);
 		evutil_closesocket(fd);
 		return -1;
 	}
 
 	if (evutil_make_listen_socket_reuseable(fd) == -1) {
-		log_err_level_printf(LOG_CRIT, "Error from setsockopt(SO_REUSABLE): %s\n", strerror(errno));
-		log_fine_va("Error from setsockopt(SO_REUSABLE): %s\n", strerror(errno));
+		log_err_level_printf(LOG_CRIT, "Error from setsockopt(SO_REUSABLE): %s (%i)\n", strerror(errno), errno);
+		log_fine_va("Error from setsockopt(SO_REUSABLE): %s (%i)", strerror(errno), errno);
 		evutil_closesocket(fd);
 		return -1;
 	}
 
 	if (bind(fd, (struct sockaddr *)&ctx->spec->child_src_addr, ctx->spec->child_src_addrlen) == -1) {
-		log_err_level_printf(LOG_CRIT, "Error from bind(): %s\n", strerror(errno));
-		log_fine_va("Error from bind(): %s\n", strerror(errno));
+		log_err_level_printf(LOG_CRIT, "Error from bind(): %s (%i)\n", strerror(errno), errno);
+		log_fine_va("Error from bind(): %s (%i)", strerror(errno), errno);
 		evutil_closesocket(fd);
 		return -1;
 	}
@@ -1087,9 +1097,10 @@ pxy_setup_child_listener(pxy_conn_ctx_t *ctx)
 	// Child evcls use the evbase of the parent thread, otherwise we would get multithreading issues.
 	// We don't need a privsep call to open a socket for child listener,
 	// because listener port of child conns are assigned by the system, hence are from non-privileged range above 1024
-	if ((ctx->child_fd = pxy_opensock_child(ctx)) == -1) {
+	ctx->child_fd = pxy_opensock_child(ctx);
+	if (ctx->child_fd < 0) {
 		log_err_level_printf(LOG_CRIT, "Error opening child socket: %s (%i)\n", strerror(errno), errno);
-		log_fine_va("Error opening child socket: %s (%i)\n", strerror(errno), errno);
+		log_fine_va("Error opening child socket: %s (%i)", strerror(errno), errno);
 		pxy_conn_term(ctx, 1);
 		return -1;
 	}
@@ -1410,7 +1421,7 @@ pxy_bev_eventcb_postexec_logging_and_stats(struct bufferevent *bev, short events
 		}
 
 		if (bev == ctx->srvdst.bev) {
-			ctx->thr->max_load = MAX(ctx->thr->max_load, pxy_thr_get_load(ctx->thr));
+			ctx->thr->max_load = MAX(ctx->thr->max_load, ctx->thr->load);
 			ctx->thr->max_fd = MAX(ctx->thr->max_fd, ctx->fd);
 
 			// src and other fd stats are collected in acceptcb functions

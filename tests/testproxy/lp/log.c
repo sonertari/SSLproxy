@@ -205,7 +205,7 @@ log_dbg_printf(const char *fmt, ...)
 }
 
 int
-log_dbg_level_printf(int level, const char *function, int thridx, long long unsigned int id, evutil_socket_t fd, const char *fmt, ...)
+log_dbg_level_printf(int level, const char *function, int thrid, long long unsigned int id, evutil_socket_t fd, const char *fmt, ...)
 {
 	va_list ap;
 	char *buf;
@@ -221,7 +221,7 @@ log_dbg_level_printf(int level, const char *function, int thridx, long long unsi
 		return -1;
 
 	char *logbuf;
-	if (asprintf(&logbuf, "[%s] [%d.%llu fd=%d] %s: %s\n", log_dbg_mode_names[level], thridx, id, fd, function, buf) < 0) {
+	if (asprintf(&logbuf, "[%s] [%d.%llu fd=%d] %s: %s\n", log_dbg_mode_names[level], thrid, id, fd, function, buf) < 0) {
 		free(buf);
 		return -1;
 	}
