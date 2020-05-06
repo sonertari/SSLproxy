@@ -684,9 +684,8 @@ opts_set_option(opts_t *opts, const char *argv0, const char *optarg)
 		retval = set_option(opts, argv0, name, value, 0);
 	}
 
-	if (line) {
+	if (line)
 		free(line);
-	}
 	return retval;
 }
 

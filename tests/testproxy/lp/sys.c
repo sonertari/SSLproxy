@@ -584,8 +584,6 @@ sys_sendmsgfd(int sock, void *buf, size_t bufsz, int fd)
 	char cmsgbuf[CMSG_SPACE(sizeof(int))];
 	ssize_t n;
 
-	memset(cmsgbuf, 0, sizeof(cmsgbuf));
-
 	iov.iov_base = buf;
 	iov.iov_len = bufsz;
 
@@ -593,10 +591,12 @@ sys_sendmsgfd(int sock, void *buf, size_t bufsz, int fd)
 	msg.msg_namelen = 0;
 	msg.msg_iov = &iov;
 	msg.msg_iovlen = 1;
+	msg.msg_flags = 0;
 
 	if (fd != -1) {
 		msg.msg_control = cmsgbuf;
 		msg.msg_controllen = sizeof(cmsgbuf);
+		memset(cmsgbuf, 0, sizeof(cmsgbuf));
 
 		cmsg = CMSG_FIRSTHDR(&msg);
 		if (!cmsg)
@@ -675,4 +675,3 @@ sys_recvmsgfd(int sock, void *buf, size_t bufsz, int *pfd)
 }
 
 /* vim: set noet ft=c: */
-

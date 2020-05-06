@@ -2768,9 +2768,8 @@ global_set_option(global_t *global, const char *argv0, const char *optarg,
 		retval = set_global_option(global, argv0, name, value, natengine, 0, NULL);
 	}
 
-	if (line) {
+	if (line)
 		free(line);
-	}
 	return retval;
 }
 
