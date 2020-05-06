@@ -54,7 +54,7 @@ prototcp_bufferevent_setup(pxy_conn_ctx_t *ctx, evutil_socket_t fd)
 {
 	log_finest_va("ENTER, fd=%d", fd);
 
-	struct bufferevent *bev = bufferevent_socket_new(ctx->thr->evbase, fd, BEV_OPT_DEFER_CALLBACKS|BEV_OPT_THREADSAFE);
+	struct bufferevent *bev = bufferevent_socket_new(ctx->thr->evbase, fd, BEV_OPT_DEFER_CALLBACKS);
 	if (!bev) {
 		log_err_level(LOG_CRIT, "Error creating bufferevent socket");
 		return NULL;
