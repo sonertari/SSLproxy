@@ -41,6 +41,7 @@
 #include "log.h"
 #include "attrib.h"
 #include "proc.h"
+#include "util.h"
 
 #include <string.h>
 #include <arpa/inet.h>
@@ -178,7 +179,7 @@ pxy_conn_attach_child(pxy_conn_child_ctx_t *ctx)
 	// @attention Child connections use the parent's event bases, otherwise we would get multithreading issues
 	// Always keep thr load and conns list in sync
 	ctx->conn->thr->load++;
-	ctx->conn->thr->max_load = MAX(ctx->conn->thr->max_load, ctx->conn->thr->load);
+	ctx->conn->thr->max_load = max(ctx->conn->thr->max_load, ctx->conn->thr->load);
 
 	// Prepend child to the children list of parent
 	ctx->next = ctx->conn->children;
@@ -1004,7 +1005,7 @@ pxy_listener_acceptcb_child(UNUSED struct evconnlistener *listener, evutil_socke
 	}
 
 	// @attention fd (child_ctx->fd) is different from child event listener fd (ctx->child_fd)
-	ctx->thr->max_fd = MAX(ctx->thr->max_fd, child_ctx->fd);
+	ctx->thr->max_fd = max(ctx->thr->max_fd, child_ctx->fd);
 	ctx->child_src_fd = child_ctx->fd;
 	
 	/* create server-side socket and eventbuffer */
@@ -1036,7 +1037,7 @@ pxy_listener_acceptcb_child(UNUSED struct evconnlistener *listener, evutil_socke
 	
 	child_ctx->dst_fd = bufferevent_getfd(child_ctx->dst.bev);
 	ctx->child_dst_fd = child_ctx->dst_fd;
-	ctx->thr->max_fd = MAX(ctx->thr->max_fd, child_ctx->dst_fd);
+	ctx->thr->max_fd = max(ctx->thr->max_fd, child_ctx->dst_fd);
 	// Do not return here, but continue and check term/enomem flags below
 out:
 	// @attention Do not use child_ctx->conn here, child_ctx may be uninitialized
@@ -1104,7 +1105,7 @@ pxy_setup_child_listener(pxy_conn_ctx_t *ctx)
 		pxy_conn_term(ctx, 1);
 		return -1;
 	}
-	ctx->thr->max_fd = MAX(ctx->thr->max_fd, ctx->child_fd);
+	ctx->thr->max_fd = max(ctx->thr->max_fd, ctx->child_fd);
 
 	// @attention Do not pass NULL as user-supplied pointer
 	struct evconnlistener *child_evcl = evconnlistener_new(ctx->thr->evbase, pxy_listener_acceptcb_child, ctx, LEV_OPT_CLOSE_ON_FREE, 1024, ctx->child_fd);
@@ -1421,17 +1422,17 @@ pxy_bev_eventcb_postexec_logging_and_stats(struct bufferevent *bev, short events
 		}
 
 		if (bev == ctx->srvdst.bev) {
-			ctx->thr->max_load = MAX(ctx->thr->max_load, ctx->thr->load);
-			ctx->thr->max_fd = MAX(ctx->thr->max_fd, ctx->fd);
+			ctx->thr->max_load = max(ctx->thr->max_load, ctx->thr->load);
+			ctx->thr->max_fd = max(ctx->thr->max_fd, ctx->fd);
 
 			// src and other fd stats are collected in acceptcb functions
 			ctx->srvdst_fd = bufferevent_getfd(ctx->srvdst.bev);
-			ctx->thr->max_fd = MAX(ctx->thr->max_fd, ctx->srvdst_fd);
+			ctx->thr->max_fd = max(ctx->thr->max_fd, ctx->srvdst_fd);
 
 			// Passthrough proto may have a NULL dst.bev
 			if (ctx->dst.bev) {
 				ctx->dst_fd = bufferevent_getfd(ctx->dst.bev);
-				ctx->thr->max_fd = MAX(ctx->thr->max_fd, ctx->dst_fd);
+				ctx->thr->max_fd = max(ctx->thr->max_fd, ctx->dst_fd);
 			}
 		}
 	}
@@ -1469,7 +1470,7 @@ void
 pxy_bev_eventcb_postexec_stats_child(short events, pxy_conn_child_ctx_t *ctx)
 {
 	if (events & BEV_EVENT_CONNECTED) {
-		ctx->conn->thr->max_fd = MAX(ctx->conn->thr->max_fd, MAX(bufferevent_getfd(ctx->src.bev), bufferevent_getfd(ctx->dst.bev)));
+		ctx->conn->thr->max_fd = max(ctx->conn->thr->max_fd, max(bufferevent_getfd(ctx->src.bev), bufferevent_getfd(ctx->dst.bev)));
 	}
 }
 

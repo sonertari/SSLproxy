@@ -103,7 +103,8 @@ pxy_thr_print_thr_info(pxy_thr_ctx_t *tctx)
 				tctx->id, ctx->id, ctx->fd, ctx->dst_fd, ctx->src.closed, ctx->dst.closed, (long long)atime, (long long)ctime,
 				STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str));
 
-			max_fd = MAX(max_fd, MAX(ctx->fd, ctx->dst_fd));
+			max_fd = MAX(max_fd, ctx->fd);
+			max_fd = MAX(max_fd, ctx->dst_fd);
 			max_atime = MAX(max_atime, atime);
 			max_ctime = MAX(max_ctime, ctime);
 

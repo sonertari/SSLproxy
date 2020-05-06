@@ -30,9 +30,9 @@
 
 #include "log.h"
 #include "pxyconn.h"
+#include "util.h"
 
 #include <assert.h>
-#include <sys/param.h>
 
 /*
  * Attach a connection to its thread.
@@ -161,7 +161,7 @@ pxy_thr_print_children(pxy_conn_child_ctx_t *ctx)
 		// No need to log child stats
 		log_finest_main_va("CHILD CONN: thr=%d, id=%llu, cid=%d, src=%d, dst=%d, c=%d-%d",
 			ctx->conn->thr->id, ctx->conn->id, ctx->conn->child_count, ctx->fd, ctx->dst_fd, ctx->src.closed, ctx->dst.closed);
-		max_fd = MAX(max_fd, MAX(ctx->fd, ctx->dst_fd));
+		max_fd = max(max_fd, max(ctx->fd, ctx->dst_fd));
 		ctx = ctx->next;
 	}
 	return max_fd;
@@ -211,12 +211,14 @@ pxy_thr_print_info(pxy_thr_ctx_t *tctx)
 			// child_src_fd and child_dst_fd fields are mostly for debugging purposes, used in debug printing parent conns.
 			// However, while an ssl child is closing, the children list may be empty, but child's ssl fd may be still open,
 			// hence we include those fields in this max comparisons too
-			max_fd = MAX(max_fd, MAX(ctx->fd, MAX(ctx->dst_fd, MAX(ctx->srvdst_fd, MAX(ctx->child_fd, MAX(ctx->child_src_fd, ctx->child_dst_fd))))));
-			max_atime = MAX(max_atime, atime);
-			max_ctime = MAX(max_ctime, ctime);
+			max_fd = max(max_fd, max(ctx->fd, max(ctx->dst_fd, max(ctx->srvdst_fd, max(ctx->child_fd, max(ctx->child_src_fd, ctx->child_dst_fd))))));
+			max_atime = util_max(max_atime, atime);
+			max_ctime = util_max(max_ctime, ctime);
 
 			if (ctx->children) {
-				max_fd = MAX(max_fd, pxy_thr_print_children(ctx->children));
+				// @attention Do not pass pxy_thr_print_children() to MAX() or util_max() macro functions as param, or else it is called twice
+				// Use the inline max() function instead
+				max_fd = max(max_fd, pxy_thr_print_children(ctx->children));
 			}
 			ctx = ctx->next;
 		}

@@ -35,6 +35,12 @@ char * util_skipws(const char *) NONNULL(1) PURE;
 
 #define util_max(a,b) ((a) > (b) ? (a) : (b))
 
+inline int INLINE
+max(int a, int b)
+{
+	return a > b ? a : b;
+}
+
 #endif /* !UTIL_H */
 
 /* vim: set noet ft=c: */

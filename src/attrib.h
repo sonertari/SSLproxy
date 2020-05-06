@@ -54,6 +54,7 @@
 #define MALLOC          __attribute__((malloc)) WUNRES
 #define NONNULL(...)    __attribute__((nonnull(__VA_ARGS__)))
 #define PURE            __attribute__((pure))
+#define INLINE          __attribute__((always_inline))
 
 /*
  * Branch prediction macros.
