@@ -160,7 +160,7 @@ pxy_thr_print_children(pxy_conn_child_ctx_t *ctx)
 	while (ctx) {
 		// No need to log child stats
 		log_finest_main_va("CHILD CONN: thr=%d, id=%llu, cid=%d, src=%d, dst=%d, c=%d-%d",
-			ctx->conn->thr->id, ctx->conn->id, ctx->conn->child_count, ctx->fd, ctx->dst_fd, ctx->src.closed, ctx->dst.closed);
+			ctx->conn->thr->id, ctx->conn->id, ctx->id, ctx->fd, ctx->dst_fd, ctx->src.closed, ctx->dst.closed);
 		max_fd = max(max_fd, max(ctx->fd, ctx->dst_fd));
 		ctx = ctx->next;
 	}

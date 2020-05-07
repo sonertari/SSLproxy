@@ -159,13 +159,10 @@ proxy_conn_ctx_new(evutil_socket_t fd,
 	}
 	memset(ctx, 0, sizeof(pxy_conn_ctx_t));
 
-	ctx->id = thrmgr->conn_count++;
-
-	log_finest_main_va("id=%llu, fd=%d", ctx->id, fd);
-
 	ctx->type = CONN_TYPE_PARENT;
-	ctx->fd = fd;
+	ctx->id = thrmgr->conn_count++;
 	ctx->conn = ctx;
+	ctx->fd = fd;
 	ctx->thrmgr = thrmgr;
 	ctx->spec = spec;
 
@@ -181,6 +178,8 @@ proxy_conn_ctx_new(evutil_socket_t fd,
 #ifdef HAVE_LOCAL_PROCINFO
 	ctx->lproc.pid = -1;
 #endif /* HAVE_LOCAL_PROCINFO */
+
+	log_finest("Created new conn");
 	return ctx;
 }
 

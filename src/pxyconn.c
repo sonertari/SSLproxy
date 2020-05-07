@@ -147,8 +147,9 @@ pxy_conn_ctx_new_child(evutil_socket_t fd, pxy_conn_ctx_t *ctx)
 	memset(child_ctx, 0, sizeof(pxy_conn_child_ctx_t));
 
 	child_ctx->type = CONN_TYPE_CHILD;
-	child_ctx->fd = fd;
+	child_ctx->id = ctx->child_count++;
 	child_ctx->conn = ctx;
+	child_ctx->fd = fd;
 
 	if (pxy_setup_proto_child(child_ctx) == PROTO_ERROR) {
 		free(child_ctx);
@@ -208,9 +209,8 @@ pxy_conn_detach_child(pxy_conn_child_ctx_t *ctx)
 		ctx->next->prev = ctx->prev;
 
 #ifdef DEBUG_PROXY
-	// We identify child conns with their src fds
 	if (ctx->conn->children) {
-		if (ctx->fd == ctx->conn->children->fd) {
+		if (ctx->id == ctx->conn->children->id) {
 			// This should never happen
 			log_fine("Found child in conn children, first");
 			assert(0);
@@ -218,7 +218,7 @@ pxy_conn_detach_child(pxy_conn_child_ctx_t *ctx)
 			pxy_conn_child_ctx_t *current = ctx->conn->children->next;
 			pxy_conn_child_ctx_t *previous = ctx->conn->children;
 			while (current != NULL && previous != NULL) {
-				if (ctx->fd == current->fd) {
+				if (ctx->id == current->id) {
 					// This should never happen
 					log_fine("Found child in conn children");
 					assert(0);
@@ -997,7 +997,6 @@ pxy_listener_acceptcb_child(UNUSED struct evconnlistener *listener, evutil_socke
 	}
 
 	pxy_conn_attach_child(child_ctx);
-	ctx->child_count++;
 
 	// @attention Do not enable src events here yet, they will be enabled after dst connects
 	if (prototcp_setup_src_child(child_ctx) == -1) {
