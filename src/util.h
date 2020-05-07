@@ -35,7 +35,7 @@ char * util_skipws(const char *) NONNULL(1) PURE;
 
 #define util_max(a,b) ((a) > (b) ? (a) : (b))
 
-inline int INLINE
+inline int INLINE WUNRES
 max(int a, int b)
 {
 	return a > b ? a : b;
