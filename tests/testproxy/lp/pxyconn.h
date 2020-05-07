@@ -125,8 +125,10 @@ struct pxy_conn_ctx {
 	// Thread that the conn is attached to
 	pxy_thr_ctx_t *thr;
 
-	// Unique id of the conn
+#ifdef DEBUG_PROXY
+	// Unique id of the conn, used in debugging only
 	long long unsigned int id;
+#endif /* DEBUG_PROXY */
 
 	pxy_thrmgr_ctx_t *thrmgr;
 	opts_t *opts;

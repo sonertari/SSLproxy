@@ -147,7 +147,9 @@ pxy_conn_ctx_new_child(evutil_socket_t fd, pxy_conn_ctx_t *ctx)
 	memset(child_ctx, 0, sizeof(pxy_conn_child_ctx_t));
 
 	child_ctx->type = CONN_TYPE_CHILD;
+#ifdef DEBUG_PROXY
 	child_ctx->id = ctx->child_count++;
+#endif /* DEBUG_PROXY */
 	child_ctx->conn = ctx;
 	child_ctx->fd = fd;
 

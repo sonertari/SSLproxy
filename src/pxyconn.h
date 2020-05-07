@@ -192,8 +192,10 @@ typedef struct pxy_conn_lproc_desc {
 struct pxy_conn_ctx {
 	enum conn_type type;
 
-	// Unique id of the conn
+#ifdef DEBUG_PROXY
+	// Unique id of the conn, used in debugging only
 	long long unsigned int id;
+#endif /* DEBUG_PROXY */
 
 	pxy_conn_ctx_t *conn;                 /* parent's conn ctx is itself */
 
@@ -262,9 +264,11 @@ struct pxy_conn_ctx {
 	size_t sslproxy_header_len;
 	unsigned int sent_sslproxy_header : 1; /* 1 to prevent inserting SSLproxy header twice */
 
+#ifdef DEBUG_PROXY
 	// Listening programs may create multiple child connections, such as Squid http proxy
-	// Number of child conns, active or closed, always goes up never down, also used as child id
+	// Number of child conns, active or closed, always goes up never down, also used as child id, used in debugging only
 	unsigned int child_count;
+#endif /* DEBUG_PROXY */
 	// List of child conns
 	pxy_conn_child_ctx_t *children;
 
@@ -315,8 +319,10 @@ struct pxy_conn_ctx {
 struct pxy_conn_child_ctx {
 	enum conn_type type;
 
-	// Unique id, set to the children count of parent conn
+#ifdef DEBUG_PROXY
+	// Unique id, set to the children count of parent conn, used in debugging only
 	unsigned int id;
+#endif /* DEBUG_PROXY */
 
 	// Parent conn
 	pxy_conn_ctx_t *conn;

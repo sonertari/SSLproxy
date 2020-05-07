@@ -121,10 +121,9 @@ proxy_conn_ctx_new(evutil_socket_t fd,
 	}
 	memset(ctx, 0, sizeof(pxy_conn_ctx_t));
 
+#ifdef DEBUG_PROXY
 	ctx->id = thrmgr->conn_count++;
-
-	log_finest_main_va("id=%llu, fd=%d", ctx->id, fd);
-
+#endif /* DEBUG_PROXY */
 	ctx->fd = fd;
 	ctx->thrmgr = thrmgr;
 
@@ -135,6 +134,8 @@ proxy_conn_ctx_new(evutil_socket_t fd,
 	}
 
 	ctx->opts = opts;
+
+	log_finest("Created new conn");
 	return ctx;
 }
 

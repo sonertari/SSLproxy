@@ -129,14 +129,19 @@ pxy_thr_get_expired_conns(pxy_thr_ctx_t *tctx, pxy_conn_ctx_t **expired_conns)
 		if (tctx->thrmgr->global->statslog) {
 			ctx = *expired_conns;
 			while (ctx) {
-				log_finest_main_va("thr=%d, id=%llu, fd=%d, child_fd=%d, time=%lld, src_addr=%s:%s, dst_addr=%s:%s, user=%s, valid=%d",
-					ctx->thr->id, ctx->id, ctx->fd, ctx->child_fd, (long long)(now - ctx->atime),
+				time_t atime = now - ctx->atime;
+				time_t ctime = now - ctx->ctime;
+
+				log_finest_main_va("thr=%d, id=%llu, fd=%d, child_fd=%d, dst=%d, srvdst=%d, child_src=%d, child_dst=%d, p=%d-%d-%d c=%d-%d, ce=%d cc=%d, at=%lld ct=%lld, src_addr=%s:%s, dst_addr=%s:%s, user=%s, valid=%d",
+					tctx->id, ctx->id, ctx->fd, ctx->child_fd, ctx->dst_fd, ctx->srvdst_fd, ctx->child_src_fd, ctx->child_dst_fd,
+					ctx->src.closed, ctx->dst.closed, ctx->srvdst.closed, ctx->children ? ctx->children->src.closed : 0, ctx->children ? ctx->children->dst.closed : 0,
+					ctx->children ? 1:0, ctx->child_count, (long long)atime, (long long)ctime,
 					STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
 					STRORDASH(ctx->user), ctx->protoctx->is_valid);
 
 				char *msg;
-				if (asprintf(&msg, "EXPIRED: thr=%d, id=%llu, time=%lld, src_addr=%s:%s, dst_addr=%s:%s, user=%s, valid=%d\n",
-						ctx->thr->id, ctx->id, (long long)(now - ctx->atime),
+				if (asprintf(&msg, "EXPIRED: atime=%lld, ctime=%lld, src_addr=%s:%s, dst_addr=%s:%s, user=%s, valid=%d\n",
+						(long long)atime, (long long)ctime,
 						STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
 						STRORDASH(ctx->user), ctx->protoctx->is_valid) < 0) {
 					break;
@@ -195,8 +200,8 @@ pxy_thr_print_info(pxy_thr_ctx_t *tctx)
 
 			// @attention Report idle connections only, i.e. the conns which have been idle since the last time we checked for expired conns
 			if (atime >= (time_t)tctx->thrmgr->global->expired_conn_check_period) {
-				if (asprintf(&smsg, "IDLE: thr=%d, id=%llu, ce=%d cc=%d, at=%lld ct=%lld, src_addr=%s:%s, dst_addr=%s:%s, user=%s, valid=%d\n",
-						tctx->id, ctx->id, ctx->children ? 1:0, ctx->child_count, (long long)atime, (long long)ctime,
+				if (asprintf(&smsg, "IDLE: atime=%lld, ctime=%lld, src_addr=%s:%s, dst_addr=%s:%s, user=%s, valid=%d\n",
+						(long long)atime, (long long)ctime,
 						STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
 						STRORDASH(ctx->user), ctx->protoctx->is_valid) < 0) {
 					return;

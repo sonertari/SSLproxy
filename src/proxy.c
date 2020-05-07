@@ -160,7 +160,9 @@ proxy_conn_ctx_new(evutil_socket_t fd,
 	memset(ctx, 0, sizeof(pxy_conn_ctx_t));
 
 	ctx->type = CONN_TYPE_PARENT;
+#ifdef DEBUG_PROXY
 	ctx->id = thrmgr->conn_count++;
+#endif /* DEBUG_PROXY */
 	ctx->conn = ctx;
 	ctx->fd = fd;
 	ctx->thrmgr = thrmgr;

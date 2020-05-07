@@ -41,9 +41,11 @@ struct pxy_thrmgr_ctx {
 	int num_thr;
 	global_t *global;
 	pxy_thr_ctx_t **thr;
-	// Provides unique conn id, always goes up, never down
+#ifdef DEBUG_PROXY
+	// Provides unique conn id, always goes up, never down, used in debugging only
 	// There is no risk of collision if/when it rolls back to 0
 	long long unsigned int conn_count;
+#endif /* DEBUG_PROXY */
 };
 
 pxy_thrmgr_ctx_t * pxy_thrmgr_new(global_t *) MALLOC;
