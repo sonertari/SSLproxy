@@ -322,7 +322,7 @@ prototcp_parse_sslproxy_line(char *line, pxy_conn_ctx_t *ctx)
 
 		// We can use addr_len for size restriction here, because we check it against MAX_IPADDR_LEN above
 		char addr[addr_len + 1];
-		strncpy(addr, ip_start, addr_len);
+		memcpy(addr, ip_start, addr_len);
 		addr[addr_len] = '\0';
 
 		int port_len = port_end - port_start;
@@ -333,7 +333,7 @@ prototcp_parse_sslproxy_line(char *line, pxy_conn_ctx_t *ctx)
 
 		// We can use port_len for size restriction here, because we check it against MAX_PORT_LEN above
 		char port[port_len + 1];
-		strncpy(port, port_start, port_len);
+		memcpy(port, port_start, port_len);
 		port[port_len] = '\0';
 
 		if (sys_sockaddr_parse(&ctx->dstaddr,
