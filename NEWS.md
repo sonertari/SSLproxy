@@ -1,8 +1,40 @@
 
-### SSLsplit develop
+### SSLproxy 0.8.0
 
+-   Restructure source tree, create src and tests folders, move files
+    and update make files accordingly.
+-   Automate testproxy e2e tests, add them to travis config except for osx.
+-   Improve verbose debug logs using common header fields to better identify
+    connections. Create macro functions for fine* debug logs.
+-   Switch from thrmgr to connection handling thread asap. Cleanly decouple
+    code for thrmgr and conn handling threads. This prevents possible
+    multithreading issues between thrmgr and conn handling threads. So disable
+    thr mutex and remove BEV_OPT_THREADSAFE.
+-   Offload thrmgr. Carry almost all conn init tasks from thrmgr to conn
+    handling thread. Remove pending ssl conns list.
+-   Convert linked lists to doubly linked lists. It is very fast to remove a
+    list node now. And disable all conn ids unless debugging.
+-   Fix readcb and writecb before connected, do not enable srvdst readcb until
+    connected, enable read and write callbacks only after connected.
+-   Do not use privsep to open socket for child listener.
+-   Disable autossl passthrough. Autossl passthrough crashes with signal 10.
+-   Remove ssl_shutdown_retry_delay and SSLShutdownRetryDelay, not used
+    anymore.
+-   Improve testproxy e2e tests.
+-   Update with SSLsplit 0.5.5 changes.
+-   Various fixes and improvements.
+
+
+### SSLsplit 0.5.5 2019-08-30
+
+-   Add -A option for specifying a default leaf certificate instead of
+    generating it on the fly (issue #139).
+-   Rename the following config file options for clarity and consistency:
+    -   LeafCerts to LeafKey
+    -   TargetCertDir to LeafCertDir
+    -   CRL to LeafCRLURL
 -   Increase the default RSA leaf key size to 2048 bits and force an OpenSSL
-    security level of 1 in order to maximize interoperability in the default
+    security level of 0 in order to maximize interoperability in the default
     configuration.  OpenSSL with a security level of 2 or higher was rejecting
     our old default leaf key size of 1024 bits (issue #248).
 -   Propagate the exit status of the privsep child process to the parent
@@ -11,7 +43,7 @@
     common name.
 -   Fix TCP ports in packet mirroring mode (issue #247).
 -   Fix certificate loading with LibreSSL 2.9.2 and later.
--   Add XNU headers for macOS Mojave 10.14.1.
+-   Add XNU headers for macOS Mojave 10.14.1 to 10.14.3.
 -   Minor bugfixes and improvements.
 
 
