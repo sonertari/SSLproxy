@@ -182,6 +182,16 @@ As SSLproxy is based on SSLsplit, this is a modified SSLsplit man page.
 .B \-a \fIpemfile\fP
 Use client certificate from \fIpemfile\fP when destination server requests a
 client certificate.
+.B \-A \fIpemfile\fP
+Use private key, certificate and certificate chain from PEM file \fIpemfile\fP
+as leaf certificate instead of generating a leaf certificate on the fly.
+The PEM file must contain a single private key, a single certificate and
+optionally intermediate and root CA certificates to use as certificate chain.
+When using \fB-t\fP, SSLproxy will first attempt to use a matching certificate
+loaded from \fIcertdir\fP.
+If \fB-t\fP is also used and a connection matches any certificate in the
+directory specified with the \fB-t\fP option, that matching certificate is used
+instead, taking precedence over the certificate specified with \fB-A\fP.
 .TP
 .B \-b \fIpemfile\fP
 Use client private key from \fIpemfile\fP when destination server requests a

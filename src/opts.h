@@ -33,6 +33,7 @@
 #include "proc.h"
 #include "nat.h"
 #include "ssl.h"
+#include "cert.h"
 #include "attrib.h"
 
 #include <sys/types.h>
@@ -84,7 +85,7 @@ typedef struct opts {
 #ifndef OPENSSL_NO_ECDH
 	char *ecdhcurve;
 #endif /* !OPENSSL_NO_ECDH */
-	char *crlurl;
+	char *leafcrlurl;
 	unsigned int remove_http_accept_encoding: 1;
 	unsigned int remove_http_referer: 1;
 	unsigned int verify_peer: 1;
@@ -158,7 +159,7 @@ struct global {
 #endif /* HAVE_LOCAL_PROCINFO */
 	unsigned int certgen_writeall : 1;
 	char *certgendir;
-	char *tgcrtdir;
+	char *leafcertdir;
 	char *dropuser;
 	char *dropgroup;
 	char *jaildir;
@@ -189,7 +190,8 @@ struct global {
 	// Otherwise, cache HIT fetches certs forged using different leaf cert keys,
 	// which fails loading src server keys
 	// We must use the same key while forging and reusing certs
-	EVP_PKEY *key;
+	EVP_PKEY *leafkey;
+	cert_t *defaultleafcert;
 	int leafkey_rsabits;
 
 #ifndef OPENSSL_NO_ENGINE
@@ -204,7 +206,7 @@ struct global {
 	char *chain_str;
 	char *clientcrt_str;
 	char *clientkey_str;
-	char *crl_str;
+	char *leafcrlurl_str;
 	char *dh_str;
 };
 
@@ -215,6 +217,7 @@ typedef struct userdbkeys {
 } userdbkeys_t;
 
 void NORET oom_die(const char *) NONNULL(1);
+cert_t *opts_load_cert_chain_key(const char *) NONNULL(1);
 
 void proxyspec_free(proxyspec_t *);
 proxyspec_t *proxyspec_new(global_t *, const char *);
@@ -229,7 +232,7 @@ char *opts_proto_dbg_dump(opts_t *) NONNULL(1);
 void opts_set_cacrt(opts_t *, const char *, const char *, int) NONNULL(1,2,3);
 void opts_set_cakey(opts_t *, const char *, const char *, int) NONNULL(1,2,3);
 void opts_set_chain(opts_t *, const char *, const char *, int) NONNULL(1,2,3);
-void opts_set_crl(opts_t *, const char *, int) NONNULL(1,2);
+void opts_set_leafcrlurl(opts_t *, const char *, int) NONNULL(1,2);
 void opts_set_deny_ocsp(opts_t *) NONNULL(1);
 void opts_set_passthrough(opts_t *) NONNULL(1);
 void opts_set_clientcrt(opts_t *, const char *, const char *, int) NONNULL(1,2,3);
@@ -286,13 +289,14 @@ int check_value_yesno(const char *, const char *, int);
 int get_name_value(char **, char **, const char, int);
 int global_set_option(global_t *, const char *, const char *, char **)
     NONNULL(1,2,3);
-void global_set_key(global_t *, const char *, const char *) NONNULL(1,2,3);
-void global_set_openssl_engine(global_t *, const char *, const char *)
-     NONNULL(1,2,3);
-void global_set_tgcrtdir(global_t *, const char *, const char *) NONNULL(1,2,3);
+void global_set_leafkey(global_t *, const char *, const char *) NONNULL(1,2,3);
+void global_set_leafcertdir(global_t *, const char *, const char *) NONNULL(1,2,3);
+void global_set_defaultleafcert(global_t *, const char *, const char *) NONNULL(1,2,3);
 void global_set_certgendir_writeall(global_t *, const char *, const char *)
      NONNULL(1,2,3);
 void global_set_certgendir_writegencerts(global_t *, const char *, const char *)
+     NONNULL(1,2,3);
+void global_set_openssl_engine(global_t *, const char *, const char *)
      NONNULL(1,2,3);
 int global_load_conffile(global_t *, const char *, char **) NONNULL(1,2);
 #endif /* !OPTS_H */

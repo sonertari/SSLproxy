@@ -473,7 +473,7 @@ protossl_srccert_create(pxy_conn_ctx_t *ctx)
 {
 	cert_t *cert = NULL;
 
-	if (ctx->global->tgcrtdir) {
+	if (ctx->global->leafcertdir) {
 		if (ctx->sslctx->sni) {
 			cert = cachemgr_tgcrt_get(ctx->sslctx->sni);
 			if (!cert) {
@@ -501,6 +501,7 @@ protossl_srccert_create(pxy_conn_ctx_t *ctx)
 					if (!wildcarded) {
 						ctx->enomem = 1;
 					} else {
+						/* increases ref count */
 						cert = cachemgr_tgcrt_get(
 						       wildcarded);
 						free(wildcarded);
@@ -522,7 +523,16 @@ protossl_srccert_create(pxy_conn_ctx_t *ctx)
 		}
 	}
 
-	if (!cert && ctx->sslctx->origcrt && ctx->global->key) {
+	if (!cert && ctx->global->defaultleafcert) {
+		cert = ctx->global->defaultleafcert;
+		cert_refcount_inc(cert);
+		ctx->sslctx->immutable_cert = 1;
+		if (OPTS_DEBUG(ctx->global)) {
+			log_dbg_printf("Using default leaf certificate\n");
+		}
+	}
+
+	if (!cert && ctx->sslctx->origcrt && ctx->global->leafkey) {
 		cert = cert_new();
 
 		cert->crt = cachemgr_fkcrt_get(ctx->sslctx->origcrt);
@@ -535,12 +545,12 @@ protossl_srccert_create(pxy_conn_ctx_t *ctx)
 			cert->crt = ssl_x509_forge(ctx->spec->opts->cacrt,
 			                           ctx->spec->opts->cakey,
 			                           ctx->sslctx->origcrt,
-			                           ctx->global->key,
+			                           ctx->global->leafkey,
 			                           NULL,
-			                           ctx->spec->opts->crlurl);
+			                           ctx->spec->opts->leafcrlurl);
 			cachemgr_fkcrt_set(ctx->sslctx->origcrt, cert->crt);
 		}
-		cert_set_key(cert, ctx->global->key);
+		cert_set_key(cert, ctx->global->leafkey);
 		cert_set_chain(cert, ctx->spec->opts->chain);
 		ctx->sslctx->generated_cert = 1;
 	}
@@ -792,8 +802,8 @@ protossl_ossl_servername_cb(SSL *ssl, UNUSED int *al, void *arg)
 			               "(SNI mismatch)\n");
 		}
 		newcrt = ssl_x509_forge(ctx->spec->opts->cacrt, ctx->spec->opts->cakey,
-		                        sslcrt, ctx->global->key,
-		                        sn, ctx->spec->opts->crlurl);
+		                        sslcrt, ctx->global->leafkey,
+		                        sn, ctx->spec->opts->leafcrlurl);
 		if (!newcrt) {
 			ctx->enomem = 1;
 			return SSL_TLSEXT_ERR_NOACK;
@@ -825,7 +835,7 @@ protossl_ossl_servername_cb(SSL *ssl, UNUSED int *al, void *arg)
 		}
 
 		newsslctx = protossl_srcsslctx_create(ctx, newcrt, ctx->spec->opts->chain,
-		                                 ctx->global->key);
+		                                 ctx->global->leafkey);
 		if (!newsslctx) {
 			X509_free(newcrt);
 			return SSL_TLSEXT_ERR_NOACK;
