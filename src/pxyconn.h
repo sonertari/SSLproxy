@@ -127,6 +127,9 @@ struct ssl_ctx {
 	unsigned int immutable_cert : 1;  /* 1 if the cert cannot be changed */
 	unsigned int generated_cert : 1;     /* 1 if we generated a new cert */
 	unsigned int have_sslerr : 1;           /* 1 if we have an ssl error */
+	// We should not switch to passthrough mode in error conditions unless Passthrough option is set,
+	// that is why PassSite option requires a flag of its own to differentiate it from Passthrough option
+	unsigned int passsite : 1;         /* 1 to pass the SSL site through */
 
 	/* server name indicated by client in SNI TLS extension */
 	char *sni;
@@ -303,10 +306,6 @@ struct pxy_conn_ctx {
 	// We send redirect/error msg to client if user auth or proto validation fails
 	unsigned int sent_userauth_msg : 1;     /* 1 until error msg is sent */
 	unsigned int sent_protoerror_msg : 1;   /* 1 until error msg is sent */
-
-	// We should not switch to passthrough mode in error conditions unless Passthrough option is set,
-	// that is why PassSite option requires a flag of its own to differentiate it from Passthrough option
-	unsigned int passsite : 1;         /* 1 to pass the SSL site through */
 
 #ifdef HAVE_LOCAL_PROCINFO
 	/* local process information */

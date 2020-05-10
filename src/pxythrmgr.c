@@ -106,7 +106,8 @@ pxy_thrmgr_run(pxy_thrmgr_ctx_t *ctx)
 		ctx->thr[i]->timeout_count = 0;
 		ctx->thr[i]->thrmgr = ctx;
 
-		if ((ctx->global->opts->user_auth || global_has_userauth_spec(ctx->global)) && sqlite3_prepare_v2(ctx->global->userdb, "SELECT user,ether,atime,desc FROM users WHERE ip = ?1", 100, &ctx->thr[i]->get_user, NULL)) {
+		if ((ctx->global->opts->user_auth || global_has_userauth_spec(ctx->global)) &&
+				sqlite3_prepare_v2(ctx->global->userdb, "SELECT user,ether,atime,desc FROM users WHERE ip = ?1", 100, &ctx->thr[i]->get_user, NULL)) {
 			log_err_level_printf(LOG_CRIT, "Error preparing get_user sql stmt: %s\n", sqlite3_errmsg(ctx->global->userdb));
 			goto leave;
 		}

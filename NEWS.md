@@ -8,8 +8,8 @@
     connections. Create macro functions for fine* debug logs.
 -   Switch from thrmgr to connection handling thread asap. Cleanly decouple
     code for thrmgr and conn handling threads. This prevents possible
-    multithreading issues between thrmgr and conn handling threads. So disable
-    thr mutex and remove BEV_OPT_THREADSAFE.
+    multithreading issues between thrmgr and conn handling threads. So remove
+    thr mutex and BEV_OPT_THREADSAFE.
 -   Offload thrmgr. Carry almost all conn init tasks from thrmgr to conn
     handling thread. Remove pending ssl conns list.
 -   Convert linked lists to doubly linked lists. It is very fast to remove a

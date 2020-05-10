@@ -716,7 +716,7 @@ protossl_srcssl_create(pxy_conn_ctx_t *ctx, SSL *origssl)
 					passsite->ip ? passsite->ip : (passsite->all ? "*" : STRORDASH(passsite->user)), STRORDASH(passsite->keyword));
 			cert_free(cert);
 			// Differentiate passsite from passthrough option by raising the passsite flag
-			ctx->passsite = 1;
+			ctx->sslctx->passsite = 1;
 			return NULL;
 		}
 		passsite = passsite->next;
@@ -1378,7 +1378,7 @@ protossl_setup_src_ssl(pxy_conn_ctx_t *ctx)
 	// @todo Make srvdst.ssl the origssl param
 	ctx->src.ssl = protossl_srcssl_create(ctx, ctx->srvdst.ssl);
 	if (!ctx->src.ssl) {
-		if ((ctx->spec->opts->passthrough || ctx->passsite) && !ctx->enomem) {
+		if ((ctx->spec->opts->passthrough || ctx->sslctx->passsite) && !ctx->enomem) {
 			log_err_level_printf(LOG_WARNING, "Falling back to passthrough\n");
 			protopassthrough_engage(ctx);
 			// report protocol change by returning 1
@@ -1531,7 +1531,7 @@ protossl_bev_eventcb_error_srvdst(UNUSED struct bufferevent *bev, pxy_conn_ctx_t
 		 * close the accepted socket and clean up */
 		// Passite is and can only be set in protossl_srcssl_create() after srvdst obtains the orig cert
 		// So the passsite condition here will most probably never used
-		if ((ctx->spec->opts->passthrough || ctx->passsite) && ctx->sslctx->have_sslerr) {
+		if ((ctx->spec->opts->passthrough || ctx->sslctx->passsite) && ctx->sslctx->have_sslerr) {
 			/* ssl callout failed, fall back to plain TCP passthrough of SSL connection */
 			log_err_level_printf(LOG_WARNING, "SSL srvdst connection failed; falling back to passthrough\n");
 			ctx->sslctx->have_sslerr = 0;
