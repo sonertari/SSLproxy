@@ -53,9 +53,9 @@ protopop3_validate_command(char *packet, size_t packet_size
 	unsigned int i;
 	for (i = 0; i < sizeof(protopop3_commands)/sizeof(char *); i++) {
 		char *c = protopop3_commands[i];
-		// Compare 1 byte longer than c's len, so that CAPA1 is not validated as CAPA
-		size_t n = strlen(c);
-		if (!memcmp(packet, c, command_len >= n ? command_len : n + 1)) {
+		// We need case-insensitive comparison, and here it is safe to call strncasecmp()
+		// with a non-string param packet, as we call it only if the lengths are the same
+		if (strlen(c) == command_len && !strncasecmp(packet, c, command_len)) {
 			log_finest_va("Passed command validation: %.*s", (int)packet_size, packet);
 			return 0;
 		}

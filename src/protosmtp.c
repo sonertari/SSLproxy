@@ -55,9 +55,9 @@ protosmtp_validate_command(char *packet, size_t packet_size
 	unsigned int i;
 	for (i = 0; i < sizeof(protosmtp_commands)/sizeof(char *); i++) {
 		char *c = protosmtp_commands[i];
-		// Compare 1 byte longer than c's len, so that EHLO1 is not validated as EHLO
-		size_t n = strlen(c);
-		if (!memcmp(packet, c, command_len >= n ? command_len : n + 1)) {
+		// We need case-insensitive comparison, and here it is safe to call strncasecmp()
+		// with a non-string param packet, as we call it only if the lengths are the same
+		if (strlen(c) == command_len && !strncasecmp(packet, c, command_len)) {
 			log_finest_va("Passed command validation: %.*s", (int)packet_size, packet);
 			return 0;
 		}
@@ -112,7 +112,7 @@ protosmtp_validate_response(pxy_conn_ctx_t *ctx, char *packet
 
 	unsigned int i = atoi(response);
 	if (i >= 200 && i < 600) {
-		// Don't set is_valid flag here, it should be set on the client side
+		// Don't set the is_valid flag here, it should be set on the client side
 		//ctx->protoctx->is_valid = 1;
 		log_finest_va("Passed response validation: %.*s", (int)packet_size, packet);
 		return 0;

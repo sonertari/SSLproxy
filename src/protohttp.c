@@ -514,12 +514,12 @@ protohttp_validate_method(char *method
 #endif /* DEBUG_PROXY */
 	)
 {
-	char *m;
+	size_t method_len = strlen(method);
+
 	unsigned int i;
 	for (i = 0; i < sizeof(http_methods)/sizeof(char *); i++) {
-		m = http_methods[i];
-		// Compare 1 byte longer than m's len, so that GET1 is not validated as GET
-		if (!strncasecmp(method, m, strlen(m) + 1)) {
+		char *m = http_methods[i];
+		if (strlen(m) == method_len && !strncasecmp(method, m, method_len)) {
 			log_finest_va("Passed method validation: %s", method);
 			return 0;
 		}

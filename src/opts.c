@@ -43,6 +43,8 @@
 #endif /* !OPENSSL_NO_DH */
 #include <openssl/x509.h>
 
+#define equal(s1, s2) strlen((s1)) == strlen((s2)) && !strcmp((s1), (s2))
+
 /*
  * Handle out of memory conditions in early stages of main().
  * Print error message and exit with failure status code.
@@ -2159,12 +2161,11 @@ global_unset_debug(global_t *global)
 void
 global_set_debug_level(const char *optarg)
 {
-	// Compare strlen(s2)+1 chars to match exactly
-	if (strncmp(optarg, "2", 2) == 0) {
+	if (equal(optarg, "2")) {
 		log_dbg_mode(LOG_DBG_MODE_FINE);
-	} else if (strncmp(optarg, "3", 2) == 0) {
+	} else if (equal(optarg, "3")) {
 		log_dbg_mode(LOG_DBG_MODE_FINER);
-	} else if (strncmp(optarg, "4", 2) == 0) {
+	} else if (equal(optarg, "4")) {
 		log_dbg_mode(LOG_DBG_MODE_FINEST);
 	} else {
 		fprintf(stderr, "Invalid DebugLevel '%s', use 2-4\n", optarg);
@@ -2201,10 +2202,9 @@ global_set_userdb_path(global_t *global, const char *optarg)
 int
 check_value_yesno(const char *value, const char *name, int line_num)
 {
-	/* Compare strlen(s2)+1 chars to match exactly */
-	if (!strncmp(value, "yes", 4)) {
+	if (equal(value, "yes")) {
 		return 1;
-	} else if (!strncmp(value, "no", 3)) {
+	} else if (equal(value, "no")) {
 		return 0;
 	}
 	fprintf(stderr, "Error in conf: Invalid '%s' value '%s' on line %d, use yes|no\n", name, value, line_num);
@@ -2227,20 +2227,19 @@ set_option(opts_t *opts, const char *argv0,
 		goto leave;
 	}
 
-	/* Compare strlen(s2)+1 chars to match exactly */
-	if (!strncmp(name, "CACert", 7)) {
+	if (equal(name, "CACert")) {
 		opts_set_cacrt(opts, argv0, value, global_opt);
-	} else if (!strncmp(name, "CAKey", 6)) {
+	} else if (equal(name, "CAKey")) {
 		opts_set_cakey(opts, argv0, value, global_opt);
-	} else if (!strncmp(name, "ClientCert", 11)) {
+	} else if (equal(name, "ClientCert")) {
 		opts_set_clientcrt(opts, argv0, value, global_opt);
-	} else if (!strncmp(name, "ClientKey", 10)) {
+	} else if (equal(name, "ClientKey")) {
 		opts_set_clientkey(opts, argv0, value, global_opt);
-	} else if (!strncmp(name, "CAChain", 8)) {
+	} else if (equal(name, "CAChain")) {
 		opts_set_chain(opts, argv0, value, global_opt);
-	} else if (!strncmp(name, "LeafCRLURL", 11)) {
+	} else if (equal(name, "LeafCRLURL")) {
 		opts_set_leafcrlurl(opts, value, global_opt);
-	} else if (!strncmp(name, "DenyOCSP", 9)) {
+	} else if (equal(name, "DenyOCSP")) {
 		yes = check_value_yesno(value, "DenyOCSP", line_num);
 		if (yes == -1) {
 			goto leave;
@@ -2249,7 +2248,7 @@ set_option(opts_t *opts, const char *argv0,
 #ifdef DEBUG_OPTS
 		log_dbg_printf("DenyOCSP: %u\n", opts->deny_ocsp);
 #endif /* DEBUG_OPTS */
-	} else if (!strncmp(name, "Passthrough", 12)) {
+	} else if (equal(name, "Passthrough")) {
 		yes = check_value_yesno(value, "Passthrough", line_num);
 		if (yes == -1) {
 			goto leave;
@@ -2259,15 +2258,15 @@ set_option(opts_t *opts, const char *argv0,
 		log_dbg_printf("Passthrough: %u\n", opts->passthrough);
 #endif /* DEBUG_OPTS */
 #ifndef OPENSSL_NO_DH
-	} else if (!strncmp(name, "DHGroupParams", 14)) {
+	} else if (equal(name, "DHGroupParams")) {
 		opts_set_dh(opts, argv0, value, global_opt);
 #endif /* !OPENSSL_NO_DH */
 #ifndef OPENSSL_NO_ECDH
-	} else if (!strncmp(name, "ECDHCurve", 10)) {
+	} else if (equal(name, "ECDHCurve")) {
 		opts_set_ecdhcurve(opts, argv0, value);
 #endif /* !OPENSSL_NO_ECDH */
 #ifdef SSL_OP_NO_COMPRESSION
-	} else if (!strncmp(name, "SSLCompression", 15)) {
+	} else if (equal(name, "SSLCompression")) {
 		yes = check_value_yesno(value, "SSLCompression", line_num);
 		if (yes == -1) {
 			goto leave;
@@ -2277,17 +2276,17 @@ set_option(opts_t *opts, const char *argv0,
 		log_dbg_printf("SSLCompression: %u\n", opts->sslcomp);
 #endif /* DEBUG_OPTS */
 #endif /* SSL_OP_NO_COMPRESSION */
-	} else if (!strncmp(name, "ForceSSLProto", 14)) {
+	} else if (equal(name, "ForceSSLProto")) {
 		opts_force_proto(opts, argv0, value);
-	} else if (!strncmp(name, "DisableSSLProto", 16)) {
+	} else if (equal(name, "DisableSSLProto")) {
 		opts_disable_proto(opts, argv0, value);
-	} else if (!strncmp(name, "MinSSLProto", 12)) {
+	} else if (equal(name, "MinSSLProto")) {
 		opts_set_min_proto(opts, argv0, value);
-	} else if (!strncmp(name, "MaxSSLProto", 12)) {
+	} else if (equal(name, "MaxSSLProto")) {
 		opts_set_max_proto(opts, argv0, value);
-	} else if (!strncmp(name, "Ciphers", 8)) {
+	} else if (equal(name, "Ciphers")) {
 		opts_set_ciphers(opts, argv0, value);
-	} else if (!strncmp(name, "NATEngine", 10)) {
+	} else if (equal(name, "NATEngine")) {
 		if (*natengine)
 			free(*natengine);
 		*natengine = strdup(value);
@@ -2296,7 +2295,7 @@ set_option(opts_t *opts, const char *argv0,
 #ifdef DEBUG_OPTS
 		log_dbg_printf("NATEngine: %s\n", *natengine);
 #endif /* DEBUG_OPTS */
-	} else if (!strncmp(name, "UserAuth", 9)) {
+	} else if (equal(name, "UserAuth")) {
 		yes = check_value_yesno(value, "UserAuth", line_num);
 		if (yes == -1) {
 			goto leave;
@@ -2305,9 +2304,9 @@ set_option(opts_t *opts, const char *argv0,
 #ifdef DEBUG_OPTS
 		log_dbg_printf("UserAuth: %u\n", opts->user_auth);
 #endif /* DEBUG_OPTS */
-	} else if (!strncmp(name, "UserAuthURL", 12)) {
+	} else if (equal(name, "UserAuthURL")) {
 		opts_set_user_auth_url(opts, value);
-	} else if (!strncmp(name, "UserTimeout", 12)) {
+	} else if (equal(name, "UserTimeout")) {
 		unsigned int i = atoi(value);
 		if (i <= 86400) {
 			opts->user_timeout = i;
@@ -2318,7 +2317,7 @@ set_option(opts_t *opts, const char *argv0,
 #ifdef DEBUG_OPTS
 		log_dbg_printf("UserTimeout: %u\n", opts->user_timeout);
 #endif /* DEBUG_OPTS */
-	} else if (!strncmp(name, "ValidateProto", 14)) {
+	} else if (equal(name, "ValidateProto")) {
 		yes = check_value_yesno(value, "ValidateProto", line_num);
 		if (yes == -1) {
 			goto leave;
@@ -2327,7 +2326,7 @@ set_option(opts_t *opts, const char *argv0,
 #ifdef DEBUG_OPTS
 		log_dbg_printf("ValidateProto: %u\n", opts->validate_proto);
 #endif /* DEBUG_OPTS */
-	} else if (!strncmp(name, "MaxHTTPHeaderSize", 18)) {
+	} else if (equal(name, "MaxHTTPHeaderSize")) {
 		unsigned int i = atoi(value);
 		if (i >= 1024 && i <= 65536) {
 			opts->max_http_header_size = i;
@@ -2338,7 +2337,7 @@ set_option(opts_t *opts, const char *argv0,
 #ifdef DEBUG_OPTS
 		log_dbg_printf("MaxHTTPHeaderSize: %u\n", opts->max_http_header_size);
 #endif /* DEBUG_OPTS */
-	} else if (!strncmp(name, "VerifyPeer", 11)) {
+	} else if (equal(name, "VerifyPeer")) {
 		yes = check_value_yesno(value, "VerifyPeer", line_num);
 		if (yes == -1) {
 			goto leave;
@@ -2347,7 +2346,7 @@ set_option(opts_t *opts, const char *argv0,
 #ifdef DEBUG_OPTS
 		log_dbg_printf("VerifyPeer: %u\n", opts->verify_peer);
 #endif /* DEBUG_OPTS */
-	} else if (!strncmp(name, "AllowWrongHost", 15)) {
+	} else if (equal(name, "AllowWrongHost")) {
 		yes = check_value_yesno(value, "AllowWrongHost", line_num);
 		if (yes == -1) {
 			goto leave;
@@ -2357,7 +2356,7 @@ set_option(opts_t *opts, const char *argv0,
 #ifdef DEBUG_OPTS
 		log_dbg_printf("AllowWrongHost: %u\n", opts->allow_wrong_host);
 #endif /* DEBUG_OPTS */
-	} else if (!strncmp(name, "RemoveHTTPAcceptEncoding", 25)) {
+	} else if (equal(name, "RemoveHTTPAcceptEncoding")) {
 		yes = check_value_yesno(value, "RemoveHTTPAcceptEncoding", line_num);
 		if (yes == -1) {
 			goto leave;
@@ -2366,7 +2365,7 @@ set_option(opts_t *opts, const char *argv0,
 #ifdef DEBUG_OPTS
 		log_dbg_printf("RemoveHTTPAcceptEncoding: %u\n", opts->remove_http_accept_encoding);
 #endif /* DEBUG_OPTS */
-	} else if (!strncmp(name, "RemoveHTTPReferer", 18)) {
+	} else if (equal(name, "RemoveHTTPReferer")) {
 		yes = check_value_yesno(value, "RemoveHTTPReferer", line_num);
 		if (yes == -1) {
 			goto leave;
@@ -2375,7 +2374,7 @@ set_option(opts_t *opts, const char *argv0,
 #ifdef DEBUG_OPTS
 		log_dbg_printf("RemoveHTTPReferer: %u\n", opts->remove_http_referer);
 #endif /* DEBUG_OPTS */
-	} else if (!strncmp(name, "PassSite", 9)) {
+	} else if (equal(name, "PassSite")) {
 		opts_set_pass_site(opts, value, line_num);
 	} else {
 		fprintf(stderr, "Error in conf: Unknown option "
@@ -2393,14 +2392,13 @@ set_proxyspec_option(proxyspec_t *spec, const char *argv0, const char *name, cha
 {
 	int retval = -1;
 
-	/* Compare strlen(s2)+1 chars to match exactly */
-	if (!strncmp(name, "Proto", 6)) {
+	if (equal(name, "Proto")) {
 		proxyspec_set_proto(spec, value);
 	}
-	else if (!strncmp(name, "Addr", 5)) {
+	else if (equal(name, "Addr")) {
 		spec->addr = strdup(value);
 	}
-	else if (!strncmp(name, "Port", 5)) {
+	else if (equal(name, "Port")) {
 		if (spec->addr) {
 			proxyspec_set_listen_addr(spec, spec->addr, value, *natengine);
 			free(spec->addr);
@@ -2409,10 +2407,10 @@ set_proxyspec_option(proxyspec_t *spec, const char *argv0, const char *name, cha
 			exit(EXIT_FAILURE);
 		}
 	}
-	else if (!strncmp(name, "DivertAddr", 11)) {
+	else if (equal(name, "DivertAddr")) {
 		spec->divert_addr = strdup(value);
 	}
-	else if (!strncmp(name, "DivertPort", 11)) {
+	else if (equal(name, "DivertPort")) {
 		if (spec->divert_addr) {
 			proxyspec_set_divert_addr(spec, spec->divert_addr, value);
 			free(spec->divert_addr);
@@ -2420,13 +2418,13 @@ set_proxyspec_option(proxyspec_t *spec, const char *argv0, const char *name, cha
 			proxyspec_set_divert_addr(spec, "127.0.0.1", value);
 		}
 	}
-	else if (!strncmp(name, "ReturnAddr", 11)) {
+	else if (equal(name, "ReturnAddr")) {
 		proxyspec_set_return_addr(spec, value);
 	}
-	else if (!strncmp(name, "TargetAddr", 11)) {
+	else if (equal(name, "TargetAddr")) {
 		spec->target_addr = strdup(value);
 	}
-	else if (!strncmp(name, "TargetPort", 11)) {
+	else if (equal(name, "TargetPort")) {
 		if (spec->target_addr) {
 			proxyspec_set_target_addr(spec, spec->target_addr, value);
 			free(spec->target_addr);
@@ -2435,13 +2433,13 @@ set_proxyspec_option(proxyspec_t *spec, const char *argv0, const char *name, cha
 			exit(EXIT_FAILURE);
 		}
 	}
-	else if (!strncmp(name, "SNIPort", 8)) {
+	else if (equal(name, "SNIPort")) {
 		proxyspec_set_sni_port(spec, value);
 	}
-	else if (!strncmp(name, "NatEngine", 10)) {
+	else if (equal(name, "NatEngine")) {
 		proxyspec_set_natengine(spec, value);
 	}
-	else if (!strncmp(name, "}", 2)) {
+	else if (equal(name, "}")) {
 #ifdef DEBUG_OPTS
 		log_dbg_printf("ProxySpec } on line %d\n", line_num);
 #endif /* DEBUG_OPTS */
@@ -2651,33 +2649,32 @@ set_global_option(global_t *global, const char *argv0,
 		goto leave;
 	}
 
-	/* Compare strlen(s2)+1 chars to match exactly */
-	if (!strncmp(name, "LeafCertDir", 12)) {
+	if (equal(name, "LeafCertDir")) {
 		global_set_leafcertdir(global, argv0, value);
-	} else if (!strncmp(name, "DefaultLeafCert", 16)) {
+	} else if (equal(name, "DefaultLeafCert")) {
 		global_set_defaultleafcert(global, argv0, value);
-	} else if (!strncmp(name, "WriteGenCertsDir", 17)) {
+	} else if (equal(name, "WriteGenCertsDir")) {
 		global_set_certgendir_writegencerts(global, argv0, value);
-	} else if (!strncmp(name, "WriteAllCertsDir", 17)) {
+	} else if (equal(name, "WriteAllCertsDir")) {
 		global_set_certgendir_writeall(global, argv0, value);
-	} else if (!strncmp(name, "User", 5)) {
+	} else if (equal(name, "User")) {
 		global_set_user(global, argv0, value);
-	} else if (!strncmp(name, "Group", 6)) {
+	} else if (equal(name, "Group")) {
 		global_set_group(global, argv0, value);
-	} else if (!strncmp(name, "Chroot", 7)) {
+	} else if (equal(name, "Chroot")) {
 		global_set_jaildir(global, argv0, value);
-	} else if (!strncmp(name, "PidFile", 8)) {
+	} else if (equal(name, "PidFile")) {
 		global_set_pidfile(global, argv0, value);
-	} else if (!strncmp(name, "ConnectLog", 11)) {
+	} else if (equal(name, "ConnectLog")) {
 		global_set_connectlog(global, argv0, value);
-	} else if (!strncmp(name, "ContentLog", 11)) {
+	} else if (equal(name, "ContentLog")) {
 		global_set_contentlog(global, argv0, value);
-	} else if (!strncmp(name, "ContentLogDir", 14)) {
+	} else if (equal(name, "ContentLogDir")) {
 		global_set_contentlogdir(global, argv0, value);
-	} else if (!strncmp(name, "ContentLogPathSpec", 19)) {
+	} else if (equal(name, "ContentLogPathSpec")) {
 		global_set_contentlogpathspec(global, argv0, value);
 #ifdef HAVE_LOCAL_PROCINFO
-	} else if (!strncmp(name, "LogProcInfo", 11)) {
+	} else if (equal(name, "LogProcInfo")) {
 		yes = check_value_yesno(value, "LogProcInfo", line_num);
 		if (yes == -1) {
 			goto leave;
@@ -2687,21 +2684,21 @@ set_global_option(global_t *global, const char *argv0,
 		log_dbg_printf("LogProcInfo: %u\n", global->lprocinfo);
 #endif /* DEBUG_OPTS */
 #endif /* HAVE_LOCAL_PROCINFO */
-	} else if (!strncmp(name, "MasterKeyLog", 13)) {
+	} else if (equal(name, "MasterKeyLog")) {
 		global_set_masterkeylog(global, argv0, value);
-	} else if (!strncmp(name, "PcapLog", 8)) {
+	} else if (equal(name, "PcapLog")) {
 		global_set_pcaplog(global, argv0, value);
-	} else if (!strncmp(name, "PcapLogDir", 11)) {
+	} else if (equal(name, "PcapLogDir")) {
 		global_set_pcaplogdir(global, argv0, value);
-	} else if (!strncmp(name, "PcapLogPathSpec", 16)) {
+	} else if (equal(name, "PcapLogPathSpec")) {
 		global_set_pcaplogpathspec(global, argv0, value);
 #ifndef WITHOUT_MIRROR
-	} else if (!strncmp(name, "MirrorIf", 9)) {
+	} else if (equal(name, "MirrorIf")) {
 		global_set_mirrorif(global, argv0, value);
-	} else if (!strncmp(name, "MirrorTarget", 13)) {
+	} else if (equal(name, "MirrorTarget")) {
 		global_set_mirrortarget(global, argv0, value);
 #endif /* !WITHOUT_MIRROR */
-	} else if (!strncmp(name, "Daemon", 7)) {
+	} else if (equal(name, "Daemon")) {
 		yes = check_value_yesno(value, "Daemon", line_num);
 		if (yes == -1) {
 			goto leave;
@@ -2710,7 +2707,7 @@ set_global_option(global_t *global, const char *argv0,
 #ifdef DEBUG_OPTS
 		log_dbg_printf("Daemon: %u\n", global->detach);
 #endif /* DEBUG_OPTS */
-	} else if (!strncmp(name, "Debug", 6)) {
+	} else if (equal(name, "Debug")) {
 		yes = check_value_yesno(value, "Debug", line_num);
 		if (yes == -1) {
 			goto leave;
@@ -2719,12 +2716,12 @@ set_global_option(global_t *global, const char *argv0,
 #ifdef DEBUG_OPTS
 		log_dbg_printf("Debug: %u\n", global->debug);
 #endif /* DEBUG_OPTS */
-	} else if (!strncmp(name, "DebugLevel", 11)) {
+	} else if (equal(name, "DebugLevel")) {
 		global_set_debug_level(value);
-	} else if (!strncmp(name, "UserDBPath", 11)) {
+	} else if (equal(name, "UserDBPath")) {
 		global_set_userdb_path(global, value);
-	} else if (!strncmp(name, "ProxySpec", 10)) {
-		if (!strncmp(value, "{", 2)) {
+	} else if (equal(name, "ProxySpec")) {
+		if (equal(value, "{")) {
 #ifdef DEBUG_OPTS
 			log_dbg_printf("ProxySpec { on line %d\n", line_num);
 #endif /* DEBUG_OPTS */
@@ -2734,7 +2731,7 @@ set_global_option(global_t *global, const char *argv0,
 		} else {
 			load_proxyspec_line(global, argv0, value, natengine);
 		}
-	} else if (!strncmp(name, "ConnIdleTimeout", 16)) {
+	} else if (equal(name, "ConnIdleTimeout")) {
 		unsigned int i = atoi(value);
 		if (i >= 10 && i <= 3600) {
 			global->conn_idle_timeout = i;
@@ -2745,7 +2742,7 @@ set_global_option(global_t *global, const char *argv0,
 #ifdef DEBUG_OPTS
 		log_dbg_printf("ConnIdleTimeout: %u\n", global->conn_idle_timeout);
 #endif /* DEBUG_OPTS */
-	} else if (!strncmp(name, "ExpiredConnCheckPeriod", 23)) {
+	} else if (equal(name, "ExpiredConnCheckPeriod")) {
 		unsigned int i = atoi(value);
 		if (i >= 10 && i <= 60) {
 			global->expired_conn_check_period = i;
@@ -2756,7 +2753,7 @@ set_global_option(global_t *global, const char *argv0,
 #ifdef DEBUG_OPTS
 		log_dbg_printf("ExpiredConnCheckPeriod: %u\n", global->expired_conn_check_period);
 #endif /* DEBUG_OPTS */
-	} else if (!strncmp(name, "LogStats", 9)) {
+	} else if (equal(name, "LogStats")) {
 		yes = check_value_yesno(value, "LogStats", line_num);
 		if (yes == -1) {
 			goto leave;
@@ -2765,7 +2762,7 @@ set_global_option(global_t *global, const char *argv0,
 #ifdef DEBUG_OPTS
 		log_dbg_printf("LogStats: %u\n", global->statslog);
 #endif /* DEBUG_OPTS */
-	} else if (!strncmp(name, "StatsPeriod", 12)) {
+	} else if (equal(name, "StatsPeriod")) {
 		unsigned int i = atoi(value);
 		if (i >= 1 && i <= 10) {
 			global->stats_period = i;
@@ -2776,11 +2773,11 @@ set_global_option(global_t *global, const char *argv0,
 #ifdef DEBUG_OPTS
 		log_dbg_printf("StatsPeriod: %u\n", global->stats_period);
 #endif /* DEBUG_OPTS */
-	} else if (!strncmp(name, "OpenFilesLimit", 15)) {
+	} else if (equal(name, "OpenFilesLimit")) {
 		global_set_open_files_limit(value, line_num);
-	} else if (!strncmp(name, "LeafKey", 8)) {
+	} else if (equal(name, "LeafKey")) {
 		global_set_leafkey(global, argv0, value);
-	} else if (!strncmp(name, "LeafKeyRSABits", 15)) {
+	} else if (equal(name, "LeafKeyRSABits")) {
 		unsigned int i = atoi(value);
 		if (i == 1024 || i == 2048 || i == 3072 || i == 4096) {
 			global->leafkey_rsabits = i;
@@ -2792,7 +2789,7 @@ set_global_option(global_t *global, const char *argv0,
 		log_dbg_printf("LeafKeyRSABits: %u\n", global->leafkey_rsabits);
 #endif /* DEBUG_OPTS */
 #ifndef OPENSSL_NO_ENGINE
-	} else if (!strncmp(name, "OpenSSLEngine", 14)) {
+	} else if (equal(name, "OpenSSLEngine")) {
 		global_set_openssl_engine(global, argv0, value);
 #endif /* !OPENSSL_NO_ENGINE */
 	} else {

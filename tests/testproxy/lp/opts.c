@@ -39,6 +39,8 @@
 #include <sys/resource.h>
 #include <errno.h>
 
+#define equal(s1, s2) strlen((s1)) == strlen((s2)) && !strcmp((s1), (s2))
+
 /*
  * Handle out of memory conditions in early stages of main().
  * Print error message and exit with failure status code.
@@ -434,12 +436,11 @@ opts_unset_debug(opts_t *opts)
 void
 opts_set_debug_level(const char *optarg)
 {
-	// Compare strlen(s2)+1 chars to match exactly
-	if (strncmp(optarg, "2", 2) == 0) {
+	if (equal(optarg, "2")) {
 		log_dbg_mode(LOG_DBG_MODE_FINE);
-	} else if (strncmp(optarg, "3", 2) == 0) {
+	} else if (equal(optarg, "3")) {
 		log_dbg_mode(LOG_DBG_MODE_FINER);
-	} else if (strncmp(optarg, "4", 2) == 0) {
+	} else if (equal(optarg, "4")) {
 		log_dbg_mode(LOG_DBG_MODE_FINEST);
 	} else {
 		fprintf(stderr, "Invalid DebugLevel '%s', use 2-4\n", optarg);
@@ -489,10 +490,9 @@ opts_set_open_files_limit(const char *value, int line_num)
 static int
 check_value_yesno(const char *value, const char *name, int line_num)
 {
-	/* Compare strlen(s2)+1 chars to match exactly */
-	if (!strncmp(value, "yes", 4)) {
+	if (equal(value, "yes")) {
 		return 1;
-	} else if (!strncmp(value, "no", 3)) {
+	} else if (equal(value, "no")) {
 		return 0;
 	}
 	fprintf(stderr, "Error in conf: Invalid '%s' value '%s' on line %d, use yes|no\n", name, value, line_num);
@@ -508,24 +508,23 @@ set_option(opts_t *opts, const char *argv0,
 	int yes;
 	int retval = -1;
 
-	/* Compare strlen(s2)+1 chars to match exactly */
-	if (!strncmp(name, "User", 5)) {
+	if (equal(name, "User")) {
 		opts_set_user(opts, argv0, value);
-	} else if (!strncmp(name, "Group", 6)) {
+	} else if (equal(name, "Group")) {
 		opts_set_group(opts, argv0, value);
-	} else if (!strncmp(name, "Chroot", 7)) {
+	} else if (equal(name, "Chroot")) {
 		opts_set_jaildir(opts, argv0, value);
-	} else if (!strncmp(name, "PidFile", 8)) {
+	} else if (equal(name, "PidFile")) {
 		opts_set_pidfile(opts, argv0, value);
-	} else if (!strncmp(name, "ConnectLog", 11)) {
+	} else if (equal(name, "ConnectLog")) {
 		opts_set_connectlog(opts, argv0, value);
-	} else if (!strncmp(name, "ContentLog", 11)) {
+	} else if (equal(name, "ContentLog")) {
 		opts_set_contentlog(opts, argv0, value);
-	} else if (!strncmp(name, "ContentLogDir", 14)) {
+	} else if (equal(name, "ContentLogDir")) {
 		opts_set_contentlogdir(opts, argv0, value);
-	} else if (!strncmp(name, "ContentLogPathSpec", 19)) {
+	} else if (equal(name, "ContentLogPathSpec")) {
 		opts_set_contentlogpathspec(opts, argv0, value);
-	} else if (!strncmp(name, "Daemon", 7)) {
+	} else if (equal(name, "Daemon")) {
 		yes = check_value_yesno(value, "Daemon", line_num);
 		if (yes == -1) {
 			goto leave;
@@ -534,7 +533,7 @@ set_option(opts_t *opts, const char *argv0,
 #ifdef DEBUG_OPTS
 		log_dbg_printf("Daemon: %u\n", opts->detach);
 #endif /* DEBUG_OPTS */
-	} else if (!strncmp(name, "Debug", 6)) {
+	} else if (equal(name, "Debug")) {
 		yes = check_value_yesno(value, "Debug", line_num);
 		if (yes == -1) {
 			goto leave;
@@ -543,9 +542,9 @@ set_option(opts_t *opts, const char *argv0,
 #ifdef DEBUG_OPTS
 		log_dbg_printf("Debug: %u\n", opts->debug);
 #endif /* DEBUG_OPTS */
-	} else if (!strncmp(name, "DebugLevel", 11)) {
+	} else if (equal(name, "DebugLevel")) {
 		opts_set_debug_level(value);
-	} else if (!strncmp(name, "ProxySpec", 10)) {
+	} else if (equal(name, "ProxySpec")) {
 		/* Use MAX_TOKEN instead of computing the actual number of tokens in value */
 		char **argv = malloc(sizeof(char *) * MAX_TOKEN);
 		char **save_argv = argv;
