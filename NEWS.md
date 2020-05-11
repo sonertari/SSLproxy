@@ -15,11 +15,15 @@
 -   Convert linked lists to doubly linked lists. It is very fast to remove a
     list node now. And disable all conn ids unless debugging.
 -   Fix readcb and writecb before connected, do not enable srvdst readcb until
-    connected, enable read and write callbacks only after connected.
+    connected, enable read and write callbacks only after connected, disable
+    unnecessary callbacks.
 -   Do not use privsep to open socket for child listener.
+-   Shut ssl conns down immediately after setting SSL_RECEIVED_SHUTDOWN,
+    instead of trying to close them cleanly using low-level fd events and
+    returned values from repeated calls to SSL_shutdown(), so remove
+    ssl_shutdown_retry_delay and SSLShutdownRetryDelay, not used anymore.
+    This also fixes stalled conn issues with autossl.
 -   Disable autossl passthrough. Autossl passthrough crashes with signal 10.
--   Remove ssl_shutdown_retry_delay and SSLShutdownRetryDelay, not used
-    anymore.
 -   Improve testproxy e2e tests.
 -   Update with SSLsplit 0.5.5 changes.
 -   Various fixes and improvements.

@@ -43,17 +43,21 @@ static char *protosmtp_commands[] = { "EHLO", "HELO", "AUTH", "MAIL", "MAIL FROM
 	"SAML", "SOML", "EXPN", "NOOP", "HELP", "ONEX", "BDAT", "BURL", "SUBMITTER", "VERB", "VRFY" };
 
 static int NONNULL(1)
-protosmtp_validate_command(char *packet
+protosmtp_validate_command(char *packet, size_t packet_size
 #ifdef DEBUG_PROXY
-	, size_t packet_size, pxy_conn_ctx_t *ctx
+	, pxy_conn_ctx_t *ctx
 #endif /* DEBUG_PROXY */
 	)
 {
-	char *c;
+	char *command_end = memchr(packet, ' ', packet_size);
+	size_t command_len = command_end ? (size_t)(command_end - packet) : packet_size;
+
 	unsigned int i;
 	for (i = 0; i < sizeof(protosmtp_commands)/sizeof(char *); i++) {
-		c = protosmtp_commands[i];
-		if (!strncasecmp(packet, c, strlen(c))) {
+		char *c = protosmtp_commands[i];
+		// Compare 1 byte longer than c's len, so that EHLO1 is not validated as EHLO
+		size_t n = strlen(c);
+		if (!memcmp(packet, c, command_len >= n ? command_len : n + 1)) {
 			log_finest_va("Passed command validation: %.*s", (int)packet_size, packet);
 			return 0;
 		}
@@ -62,11 +66,7 @@ protosmtp_validate_command(char *packet
 }
 
 static int NONNULL(1,2)
-protosmtp_validate(pxy_conn_ctx_t *ctx, char *packet
-#ifdef DEBUG_PROXY
-	, size_t packet_size
-#endif /* DEBUG_PROXY */
-	)
+protosmtp_validate(pxy_conn_ctx_t *ctx, char *packet, size_t packet_size)
 {
 	protosmtp_ctx_t *smtp_ctx = ctx->protoctx->arg;
 
@@ -74,9 +74,9 @@ protosmtp_validate(pxy_conn_ctx_t *ctx, char *packet
 		log_finest("Not smtp, validation failed previously");
 		return -1;
 	}
-	if (protosmtp_validate_command(packet
+	if (protosmtp_validate_command(packet, packet_size
 #ifdef DEBUG_PROXY
-			, packet_size, ctx
+			, ctx
 #endif /* DEBUG_PROXY */
 			) == -1) {
 		smtp_ctx->not_valid = 1;

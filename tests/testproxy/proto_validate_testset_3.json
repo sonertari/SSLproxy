@@ -1,0 +1,110 @@
+{
+  "comment": "Tests for POP3",
+  "configs": {
+    "1": {
+      "proto": {
+        "proto": "tcp"
+      },
+      "client": {
+        "ip": "127.0.0.1",
+        "port": "8188"
+      },
+      "server": {
+        "ip": "127.0.0.1",
+        "port": "9188"
+      }
+    },
+    "2": {
+      "proto": {
+        "proto": "ssl"
+      },
+      "client": {
+        "ip": "127.0.0.1",
+        "port": "8460"
+      },
+      "server": {
+        "ip": "127.0.0.1",
+        "port": "9460",
+        "crt": "server.crt",
+        "key": "server.key"
+      }
+    }
+  },
+  "tests": {
+    "1": {
+      "comment": "Validates CAPA",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "CAPA"
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": "CAPA"
+        }
+      }
+    },
+    "2": {
+      "comment": "Does not validate CAP",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "CAP"
+        },
+        "2": {
+          "testend": "client",
+          "cmd": "recv",
+          "payload": "Connection is terminated due to protocol error\r\n"
+        },
+        "3": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": ""
+        }
+      }
+    },
+    "3": {
+      "comment": "Does not validate CAP1",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "CAP1"
+        },
+        "2": {
+          "testend": "client",
+          "cmd": "recv",
+          "payload": "Connection is terminated due to protocol error\r\n"
+        },
+        "3": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": ""
+        }
+      }
+    },
+    "3": {
+      "comment": "Does not validate CAPA1",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "CAPA1"
+        },
+        "2": {
+          "testend": "client",
+          "cmd": "recv",
+          "payload": "Connection is terminated due to protocol error\r\n"
+        },
+        "3": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": ""
+        }
+      }
+    }
+  }
+}

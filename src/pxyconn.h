@@ -68,11 +68,7 @@ typedef void (*eventcb_func_t)(struct bufferevent *, short, void *);
 typedef void (*bev_free_func_t)(struct bufferevent *, pxy_conn_ctx_t *);
 
 typedef void (*proto_free_func_t)(pxy_conn_ctx_t *);
-typedef int (*proto_validate_func_t)(pxy_conn_ctx_t *, char *
-#ifdef DEBUG_PROXY
-	, size_t
-#endif /* DEBUG_PROXY */
-	);
+typedef int (*proto_validate_func_t)(pxy_conn_ctx_t *, char *, size_t);
 
 typedef void (*child_connect_func_t)(pxy_conn_child_ctx_t *);
 typedef void (*child_proto_free_func_t)(pxy_conn_child_ctx_t *);

@@ -240,11 +240,7 @@ prototcp_try_validate_proto(struct bufferevent *bev, pxy_conn_ctx_t *ctx, struct
 			free(packet);
 			return -1;
 		}
-		if (ctx->protoctx->validatecb(ctx, packet
-#ifdef DEBUG_PROXY
-				, packet_size
-#endif /* DEBUG_PROXY */
-				) == -1) {
+		if (ctx->protoctx->validatecb(ctx, packet, packet_size) == -1) {
 			// Send message to the client: outbuf of src
 			evbuffer_add(bufferevent_get_output(bev), PROTOERROR_MSG, PROTOERROR_MSG_LEN);
 			ctx->sent_protoerror_msg = 1;

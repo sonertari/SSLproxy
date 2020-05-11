@@ -1,0 +1,241 @@
+{
+  "comment": "Tests for SMTP",
+  "configs": {
+    "1": {
+      "proto": {
+        "proto": "tcp"
+      },
+      "client": {
+        "ip": "127.0.0.1",
+        "port": "8189"
+      },
+      "server": {
+        "ip": "127.0.0.1",
+        "port": "9189"
+      }
+    },
+    "2": {
+      "proto": {
+        "proto": "ssl"
+      },
+      "client": {
+        "ip": "127.0.0.1",
+        "port": "8461"
+      },
+      "server": {
+        "ip": "127.0.0.1",
+        "port": "9461",
+        "crt": "server.crt",
+        "key": "server.key"
+      }
+    }
+  },
+  "tests": {
+    "1": {
+      "comment": "Validates 220 smtp greeting",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "",
+          "comment": "The client should connect before the server can send its greeting"
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "send",
+          "payload": "220 smtp.example.com"
+        },
+        "3": {
+          "testend": "client",
+          "cmd": "recv",
+          "payload": "220 smtp.example.com"
+        }
+      }
+    },
+    "2": {
+      "comment": "Does not validate 199 smtp response",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": ""
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "send",
+          "payload": "199 smtp.example.com"
+        },
+        "3": {
+          "testend": "client",
+          "cmd": "recv",
+          "payload": "Connection is terminated due to protocol error\r\n"
+        },
+        "4": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": ""
+        }
+      }
+    },
+    "3": {
+      "comment": "Does not validate 600 smtp response",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": ""
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "send",
+          "payload": "600 smtp.example.com"
+        },
+        "3": {
+          "testend": "client",
+          "cmd": "recv",
+          "payload": "Connection is terminated due to protocol error\r\n"
+        },
+        "4": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": ""
+        }
+      }
+    },
+    "4": {
+      "comment": "Validates EHLO",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": ""
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "send",
+          "payload": "220 smtp.example.com"
+        },
+        "3": {
+          "testend": "client",
+          "cmd": "recv",
+          "payload": "220 smtp.example.com"
+        },
+        "4": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "EHLO soner"
+        },
+        "5": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": "EHLO soner"
+        }
+      }
+    },
+    "5": {
+      "comment": "Does not validate EHL",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": ""
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "send",
+          "payload": "220 smtp.example.com"
+        },
+        "3": {
+          "testend": "client",
+          "cmd": "recv",
+          "payload": "220 smtp.example.com"
+        },
+        "4": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "EHL soner"
+        },
+        "5": {
+          "testend": "client",
+          "cmd": "recv",
+          "payload": "Connection is terminated due to protocol error\r\n"
+        },
+        "6": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": ""
+        }
+      }
+    },
+    "6": {
+      "comment": "Does not validate EHL1",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": ""
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "send",
+          "payload": "220 smtp.example.com"
+        },
+        "3": {
+          "testend": "client",
+          "cmd": "recv",
+          "payload": "220 smtp.example.com"
+        },
+        "4": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "EHL1 soner"
+        },
+        "5": {
+          "testend": "client",
+          "cmd": "recv",
+          "payload": "Connection is terminated due to protocol error\r\n"
+        },
+        "6": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": ""
+        }
+      }
+    },
+    "7": {
+      "comment": "Does not validate EHLO1",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": ""
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "send",
+          "payload": "220 smtp.example.com"
+        },
+        "3": {
+          "testend": "client",
+          "cmd": "recv",
+          "payload": "220 smtp.example.com"
+        },
+        "4": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "EHLO1 soner"
+        },
+        "5": {
+          "testend": "client",
+          "cmd": "recv",
+          "payload": "Connection is terminated due to protocol error\r\n"
+        },
+        "6": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": ""
+        }
+      }
+    }
+  }
+}

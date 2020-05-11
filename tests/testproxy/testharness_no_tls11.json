@@ -21,7 +21,9 @@
         "1": "tcp_ssl_testends_testset_1.json",
         "2": "ssl_tcp_testends_testset_1.json",
         "3": "proto_validate_testset_1.json",
-        "4": "proto_validate_testset_2.json"
+        "4": "proto_validate_testset_2.json",
+        "5": "proto_validate_testset_3.json",
+        "6": "proto_validate_testset_4.json"
       }
     },
     "4": {

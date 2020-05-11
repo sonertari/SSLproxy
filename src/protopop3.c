@@ -41,17 +41,21 @@ struct protopop3_ctx {
 static char *protopop3_commands[] = { "CAPA", "USER", "PASS", "AUTH", "APOP", "STLS", "LIST", "STAT", "UIDL", "RETR", "DELE", "RSET", "TOP", "QUIT", "NOOP" };
 
 static int NONNULL(1)
-protopop3_validate_command(char *packet
+protopop3_validate_command(char *packet, size_t packet_size
 #ifdef DEBUG_PROXY
-	, size_t packet_size, pxy_conn_ctx_t *ctx
+	, pxy_conn_ctx_t *ctx
 #endif /* DEBUG_PROXY */
 	)
 {
-	char *c;
+	char *command_end = memchr(packet, ' ', packet_size);
+	size_t command_len = command_end ? (size_t)(command_end - packet) : packet_size;
+
 	unsigned int i;
 	for (i = 0; i < sizeof(protopop3_commands)/sizeof(char *); i++) {
-		c = protopop3_commands[i];
-		if (!strncasecmp(packet, c, strlen(c))) {
+		char *c = protopop3_commands[i];
+		// Compare 1 byte longer than c's len, so that CAPA1 is not validated as CAPA
+		size_t n = strlen(c);
+		if (!memcmp(packet, c, command_len >= n ? command_len : n + 1)) {
 			log_finest_va("Passed command validation: %.*s", (int)packet_size, packet);
 			return 0;
 		}
@@ -60,11 +64,7 @@ protopop3_validate_command(char *packet
 }
 
 static int NONNULL(1,2)
-protopop3_validate(pxy_conn_ctx_t *ctx, char *packet
-#ifdef DEBUG_PROXY
-	, size_t packet_size
-#endif /* DEBUG_PROXY */
-	)
+protopop3_validate(pxy_conn_ctx_t *ctx, char *packet, size_t packet_size)
 {
 	protopop3_ctx_t *pop3_ctx = ctx->protoctx->arg;
 
@@ -72,9 +72,9 @@ protopop3_validate(pxy_conn_ctx_t *ctx, char *packet
 		log_finest("Not pop3, validation failed previously");
 		return -1;
 	}
-	if (protopop3_validate_command(packet
+	if (protopop3_validate_command(packet, packet_size
 #ifdef DEBUG_PROXY
-			, packet_size, ctx
+			, ctx
 #endif /* DEBUG_PROXY */
 			) == -1) {
 		pop3_ctx->not_valid = 1;
