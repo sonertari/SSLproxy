@@ -39,7 +39,6 @@
 #define CONNECT_CMD "openssl s_client -connect www.google.com:443" \
                     " -quiet -no_ign_eof </dev/null >/dev/null 2>/dev/null"
 
-#ifndef DOCKER
 START_TEST(defaults_dropuser_01)
 {
 	fail_unless(0 == sys_privdrop(DFLT_DROPUSER, NULL, NULL),
@@ -62,7 +61,6 @@ START_TEST(defaults_dropuser_02)
 	            "connect failed for default dropuser " DFLT_DROPUSER);
 }
 END_TEST
-#endif /* DOCKER */
 
 Suite *
 defaults_suite(void)
@@ -73,7 +71,6 @@ defaults_suite(void)
 	s = suite_create("defaults");
 
 	tc = tcase_create("dropuser");
-#ifndef DOCKER
 	if (getuid() == 0) {
 		tcase_add_test(tc, defaults_dropuser_01);
 		tcase_add_test(tc, defaults_dropuser_02);
@@ -81,10 +78,6 @@ defaults_suite(void)
 		fprintf(stderr, "defaults: 2 tests omitted because "
 		                "not building as root\n");
 	}
-#else /* DOCKER */
-	fprintf(stderr, "defaults: 2 tests omitted because "
-	                "building in docker\n");
-#endif /* DOCKER */
 	suite_add_tcase(s, tc);
 
 	return s;
