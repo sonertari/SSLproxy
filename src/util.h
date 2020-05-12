@@ -31,7 +31,10 @@
 
 #include "attrib.h"
 
+#include <string.h>
+
 char * util_skipws(const char *) NONNULL(1) PURE;
+size_t util_get_first_word_len(char *packet, size_t packet_size) NONNULL(1);
 
 #define util_max(a,b) ((a) > (b) ? (a) : (b))
 

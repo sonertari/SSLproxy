@@ -47,6 +47,81 @@
       }
     },
     "2": {
+      "comment": "Validates CAPA+CR",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "CAPA\r"
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": "CAPA\r"
+        }
+      }
+    },
+    "3": {
+      "comment": "Validates CAPA+NL",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "CAPA\n"
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": "CAPA\n"
+        }
+      }
+    },
+    "4": {
+      "comment": "Validates CAPA+CRNL",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "CAPA\r\n"
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": "CAPA\r\n"
+        }
+      }
+    },
+    "5": {
+      "comment": "Validates CAPA+TAB",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "CAPA\t"
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": "CAPA\t"
+        }
+      }
+    },
+    "6": {
+      "comment": "Validates CAPA+TABCRNL",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "CAPA\t\r\n"
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": "CAPA\t\r\n"
+        }
+      }
+    },
+    "7": {
       "comment": "Does not validate CAP",
       "states": {
         "1": {
@@ -66,7 +141,7 @@
         }
       }
     },
-    "3": {
+    "8": {
       "comment": "Does not validate CAP1",
       "states": {
         "1": {
@@ -86,7 +161,7 @@
         }
       }
     },
-    "3": {
+    "9": {
       "comment": "Does not validate CAPA1",
       "states": {
         "1": {

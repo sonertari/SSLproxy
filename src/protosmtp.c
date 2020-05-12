@@ -28,6 +28,7 @@
 #include "protosmtp.h"
 #include "prototcp.h"
 #include "protossl.h"
+#include "util.h"
 
 #include <string.h>
 
@@ -49,8 +50,7 @@ protosmtp_validate_command(char *packet, size_t packet_size
 #endif /* DEBUG_PROXY */
 	)
 {
-	char *command_end = memchr(packet, ' ', packet_size);
-	size_t command_len = command_end ? (size_t)(command_end - packet) : packet_size;
+	size_t command_len = util_get_first_word_len(packet, packet_size);
 
 	unsigned int i;
 	for (i = 0; i < sizeof(protosmtp_commands)/sizeof(char *); i++) {
