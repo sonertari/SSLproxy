@@ -32,13 +32,6 @@
 
 #include <string.h>
 
-typedef struct protosmtp_ctx protosmtp_ctx_t;
-
-struct protosmtp_ctx {
-	unsigned int not_valid : 1;
-	unsigned int seen_command_count;
-};
-
 // Size = 25
 static char *protosmtp_commands[] = { "EHLO", "HELO", "AUTH", "MAIL", "MAIL FROM", "RCPT", "RCPT TO", "DATA", "SEND", "RSET", "QUIT", "ATRN", "ETRN", "TURN",
 	"SAML", "SOML", "EXPN", "NOOP", "HELP", "ONEX", "BDAT", "BURL", "SUBMITTER", "VERB", "VRFY" };
@@ -50,6 +43,7 @@ protosmtp_validate_command(char *packet, size_t packet_size
 #endif /* DEBUG_PROXY */
 	)
 {
+	// @attention We validate MAIL FROM and RCPT TO commands as MAIL and RCPT, since we use space as separator.
 	size_t command_len = util_get_first_word_len(packet, packet_size);
 
 	unsigned int i;
@@ -65,7 +59,7 @@ protosmtp_validate_command(char *packet, size_t packet_size
 	return -1;
 }
 
-static int NONNULL(1,2)
+int
 protosmtp_validate(pxy_conn_ctx_t *ctx, char *packet, size_t packet_size)
 {
 	protosmtp_ctx_t *smtp_ctx = ctx->protoctx->arg;
@@ -92,12 +86,8 @@ protosmtp_validate(pxy_conn_ctx_t *ctx, char *packet, size_t packet_size)
 	return 0;
 }
 
-static int NONNULL(1,2)
-protosmtp_validate_response(pxy_conn_ctx_t *ctx, char *packet
-#ifdef DEBUG_PROXY
-	, size_t packet_size
-#endif /* DEBUG_PROXY */
-	)
+int
+protosmtp_validate_response(pxy_conn_ctx_t *ctx, char *packet, size_t packet_size)
 {
 	protosmtp_ctx_t *smtp_ctx = ctx->protoctx->arg;
 
@@ -106,9 +96,11 @@ protosmtp_validate_response(pxy_conn_ctx_t *ctx, char *packet
 		return -1;
 	}
 
-	char response[4];
-	memcpy(response, packet, 3);
-	response[3] = '\0';
+	size_t response_len = util_get_first_word_len(packet, packet_size);
+
+	char response[response_len + 1];
+	memcpy(response, packet, response_len);
+	response[response_len] = '\0';
 
 	unsigned int i = atoi(response);
 	if (i >= 200 && i < 600) {
@@ -136,11 +128,7 @@ protosmtp_try_validate_response(struct bufferevent *bev, pxy_conn_ctx_t *ctx, st
 			free(packet);
 			return -1;
 		}
-		if (protosmtp_validate_response(ctx, packet
-#ifdef DEBUG_PROXY
-				, packet_size
-#endif /* DEBUG_PROXY */
-				) == -1) {
+		if (protosmtp_validate_response(ctx, packet, packet_size) == -1) {
 			// Send message to the client: outbuf of src
 			evbuffer_add(outbuf, PROTOERROR_MSG, PROTOERROR_MSG_LEN);
 			ctx->sent_protoerror_msg = 1;

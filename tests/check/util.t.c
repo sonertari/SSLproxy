@@ -3,6 +3,7 @@
  * https://www.roe.ch/SSLsplit
  *
  * Copyright (c) 2009-2019, Daniel Roethlisberger <daniel@roe.ch>.
+ * Copyright (c) 2017-2020, Soner Tari <sonertari@gmail.com>.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -98,6 +99,98 @@ START_TEST(util_skipws_06)
 }
 END_TEST
 
+START_TEST(util_get_first_word_len_01)
+{
+	size_t l;
+
+	char array01[] = {'\0'};
+	l = util_get_first_word_len(array01, sizeof(array01));
+	fail_unless(l == 0, "wrong len for null = %d", l);
+
+	char array02[] = {' '};
+	l = util_get_first_word_len(array02, sizeof(array02));
+	fail_unless(l == 0, "wrong len for space = %d", l);
+
+	char array03[] = {'\t'};
+	l = util_get_first_word_len(array03, sizeof(array03));
+	fail_unless(l == 0, "wrong len for tab = %d", l);
+
+	char array04[] = {'\r'};
+	l = util_get_first_word_len(array04, sizeof(array04));
+	fail_unless(l == 0, "wrong len for cr = %d", l);
+
+	char array05[] = {'\n'};
+	l = util_get_first_word_len(array05, sizeof(array05));
+	fail_unless(l == 0, "wrong len for nl = %d", l);
+
+	char array06[] = {'\t', '\r', '\n'};
+	l = util_get_first_word_len(array06, sizeof(array06));
+	fail_unless(l == 0, "wrong len for space, tab, cr, nl = %d", l);
+
+	char array07[] = {'1'};
+	l = util_get_first_word_len(array07, sizeof(array07));
+	fail_unless(l == 1, "wrong len for 1 = %d", l);
+
+	char array08[] = {'1', ' '};
+	l = util_get_first_word_len(array08, sizeof(array08));
+	fail_unless(l == 1, "wrong len for 1, space = %d", l);
+
+	char array09[] = {'1', '\t'};
+	l = util_get_first_word_len(array09, sizeof(array09));
+	fail_unless(l == 1, "wrong len for 1, tab = %d", l);
+
+	char array10[] = {'1', '\r'};
+	l = util_get_first_word_len(array10, sizeof(array10));
+	fail_unless(l == 1, "wrong len for 1, cr = %d", l);
+
+	char array11[] = {'1', '\n'};
+	l = util_get_first_word_len(array11, sizeof(array11));
+	fail_unless(l == 1, "wrong len for 1, nl = %d", l);
+
+	char array12[] = {'1', ' ', '\t', '\r', '\n'};
+	l = util_get_first_word_len(array12, sizeof(array12));
+	fail_unless(l == 1, "wrong len for 1, space, tab, cr, nl = %d", l);
+
+	char array13[] = {'1', '\t', '\r', '\n'};
+	l = util_get_first_word_len(array13, sizeof(array13));
+	fail_unless(l == 1, "wrong len for 1, tab, cr, nl = %d", l);
+
+	char array14[] = {'1', '\r', '\n'};
+	l = util_get_first_word_len(array14, sizeof(array14));
+	fail_unless(l == 1, "wrong len for 1, cr, nl = %d", l);
+
+	char array15[] = {'1', '2', '\r', '\n'};
+	l = util_get_first_word_len(array15, sizeof(array15));
+	fail_unless(l == 2, "wrong len for 12, cr, nl = %d", l);
+
+	char array16[] = {'1', '2'};
+	l = util_get_first_word_len(array16, sizeof(array16));
+	fail_unless(l == 2, "wrong len for 12 = %d", l);
+
+	char array17[] = {'1', '2', '3', '4', '5', '6', '7', '8', '9', '0'};
+	l = util_get_first_word_len(array17, sizeof(array17));
+	fail_unless(l == 10, "wrong len for 1234567890 = %d", l);
+
+	char array18[] = {'1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '\r', '\n'};
+	l = util_get_first_word_len(array18, sizeof(array18));
+	fail_unless(l == 10, "wrong len for 1234567890, cr, nl = %d", l);
+
+	l = util_get_first_word_len(array18, 1);
+	fail_unless(l == 1, "wrong len for size 1 in 1234567890, cr, nl = %d", l);
+
+	l = util_get_first_word_len(array18, 0);
+	fail_unless(l == 0, "wrong len for size 0 in 1234567890, cr, nl = %d", l);
+
+	char array19[] = {'1', ' ', '2', '\r', '\n'};
+	l = util_get_first_word_len(array19, sizeof(array19));
+	fail_unless(l == 1, "wrong len for 1 2, cr, nl = %d", l);
+
+	char array20[] = {' ', '1'};
+	l = util_get_first_word_len(array20, sizeof(array20));
+	fail_unless(l == 0, "wrong len for space, 1 = %d", l);
+}
+END_TEST
+
 Suite *
 util_suite(void)
 {
@@ -113,6 +206,10 @@ util_suite(void)
 	tcase_add_test(tc, util_skipws_04);
 	tcase_add_test(tc, util_skipws_05);
 	tcase_add_test(tc, util_skipws_06);
+	suite_add_tcase(s, tc);
+
+	tc = tcase_create("util_get_first_word_len");
+	tcase_add_test(tc, util_get_first_word_len_01);
 	suite_add_tcase(s, tc);
 
 	return s;

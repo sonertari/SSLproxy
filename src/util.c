@@ -50,13 +50,14 @@ util_skipws(const char *s)
 size_t
 util_get_first_word_len(char *mem, size_t size)
 {
-	char *command_end;
+	char *end;
 	// @attention The detection order of ws chars is important: space, tab, cr, and nl
-	if ((command_end = memchr(mem, ' ', size)) ||
-			(command_end = memchr(mem, '\t', size)) ||
-			(command_end = memchr(mem, '\r', size)) ||
-			(command_end = memchr(mem, '\n', size))) {
-		return (size_t)(command_end - mem);
+	if ((end = memchr(mem, ' ', size)) ||
+			(end = memchr(mem, '\t', size)) ||
+			(end = memchr(mem, '\r', size)) ||
+			(end = memchr(mem, '\n', size)) ||
+			(end = memchr(mem, '\0', size))) {
+		return (size_t)(end - mem);
 	}
 	return size;
 }

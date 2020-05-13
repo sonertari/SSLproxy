@@ -31,13 +31,6 @@
 
 #include <string.h>
 
-typedef struct protopop3_ctx protopop3_ctx_t;
-
-struct protopop3_ctx {
-	unsigned int not_valid : 1;
-	unsigned int seen_command_count;
-};
-
 // Size = 14
 static char *protopop3_commands[] = { "CAPA", "USER", "PASS", "AUTH", "APOP", "STLS", "LIST", "STAT", "UIDL", "RETR", "DELE", "RSET", "TOP", "QUIT", "NOOP" };
 
@@ -63,7 +56,7 @@ protopop3_validate_command(char *packet, size_t packet_size
 	return -1;
 }
 
-static int NONNULL(1,2)
+int
 protopop3_validate(pxy_conn_ctx_t *ctx, char *packet, size_t packet_size)
 {
 	protopop3_ctx_t *pop3_ctx = ctx->protoctx->arg;

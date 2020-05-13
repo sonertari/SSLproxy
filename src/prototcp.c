@@ -319,8 +319,7 @@ prototcp_bev_readcb_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 static void NONNULL(1)
 prototcp_bev_readcb_srvdst(UNUSED struct bufferevent *bev, UNUSED pxy_conn_ctx_t *ctx)
 {
-	log_err_printf("readcb called on srvdst\n");
-	log_fine("readcb called on srvdst");
+	log_err_level(LOG_ERR, "readcb called on srvdst");
 }
 
 static void NONNULL(1)

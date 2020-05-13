@@ -38,30 +38,6 @@
 #include <string.h>
 #include <event2/bufferevent.h>
 
-typedef struct protohttp_ctx protohttp_ctx_t;
-
-struct protohttp_ctx {
-	unsigned int seen_req_header : 1; /* 0 until request header complete */
-	unsigned int seen_resp_header : 1;  /* 0 until response hdr complete */
-	unsigned int sent_http_conn_close : 1;   /* 0 until Conn: close sent */
-	unsigned int ocsp_denied : 1;                /* 1 if OCSP was denied */
-
-	/* log strings from HTTP request */
-	char *http_method;
-	char *http_uri;
-	char *http_host;
-	char *http_content_type;
-
-	/* log strings from HTTP response */
-	char *http_status_code;
-	char *http_status_text;
-	char *http_content_length;
-
-	unsigned int not_valid : 1;    /* 1 if cannot find HTTP on first line */
-	unsigned int seen_keyword_count;
-	long long unsigned int seen_bytes;
-};
-
 static void NONNULL(1)
 protohttp_log_connect(pxy_conn_ctx_t *ctx)
 {
@@ -527,9 +503,11 @@ protohttp_validate_method(char *method
 	return -1;
 }
 
-static int NONNULL(1,2)
-protohttp_validate(protohttp_ctx_t *http_ctx, pxy_conn_ctx_t *ctx)
+int
+protohttp_validate(pxy_conn_ctx_t *ctx)
 {
+	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
+
 	if (http_ctx->not_valid) {
 		log_finest("Not http, validation failed previously");
 		return -1;
@@ -629,7 +607,7 @@ protohttp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	}
 
 	if (ctx->spec->opts->validate_proto && !ctx->protoctx->is_valid) {
-		if (protohttp_validate(http_ctx, ctx) == -1) {
+		if (protohttp_validate(ctx) == -1) {
 			evbuffer_add(bufferevent_get_output(bev), proto_error, strlen(proto_error));
 			ctx->sent_protoerror_msg = 1;
 			pxy_discard_inbuf(bev);
@@ -787,8 +765,7 @@ protohttp_bev_readcb_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 static void NONNULL(1)
 protohttp_bev_readcb_srvdst(UNUSED struct bufferevent *bev, UNUSED pxy_conn_ctx_t *ctx)
 {
-	log_err_printf("readcb called on srvdst\n");
-	log_fine("readcb called on srvdst");
+	log_err_level(LOG_ERR, "readcb called on srvdst");
 }
 
 static void NONNULL(1)

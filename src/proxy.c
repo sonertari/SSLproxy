@@ -145,7 +145,7 @@ proxy_setup_proto(pxy_conn_ctx_t *ctx)
 	return proto;
 }
 
-static pxy_conn_ctx_t * MALLOC NONNULL(2,3,4)
+pxy_conn_ctx_t *
 proxy_conn_ctx_new(evutil_socket_t fd,
                  pxy_thrmgr_ctx_t *thrmgr,
                  proxyspec_t *spec, global_t *global,
