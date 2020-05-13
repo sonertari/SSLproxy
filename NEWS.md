@@ -24,7 +24,7 @@
     ssl_shutdown_retry_delay and SSLShutdownRetryDelay, not used anymore.
     This also fixes stalled conn issues with autossl.
 -   Disable autossl passthrough. Autossl passthrough crashes with signal 10.
--   Improve testproxy e2e tests.
+-   Improve check unit tests and testproxy e2e tests.
 -   Update with SSLsplit 0.5.5 changes.
 -   Various fixes and improvements.
 

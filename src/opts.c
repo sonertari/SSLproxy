@@ -46,6 +46,18 @@
 #define equal(s1, s2) strlen((s1)) == strlen((s2)) && !strcmp((s1), (s2))
 
 /*
+ * Temporary struct used while configuring proxyspec.
+ * These vars are used while configuring proxyspecs,
+ * and freed right after they are used, not in proxyspec_free().
+ */
+typedef struct spec_addrs {
+	int af;
+	char *addr;
+	char *divert_addr;
+	char *target_addr;
+} spec_addrs_t;
+
+/*
  * Handle out of memory conditions in early stages of main().
  * Print error message and exit with failure status code.
  * Does not return.
@@ -176,6 +188,19 @@ opts_free(opts_t *opts)
 	}
 	memset(opts, 0, sizeof(opts_t));
 	free(opts);
+}
+
+void
+spec_addrs_free(spec_addrs_t *spec_addrs)
+{
+	if (spec_addrs->addr)
+		free(spec_addrs->addr);
+	if (spec_addrs->divert_addr)
+		free(spec_addrs->divert_addr);
+	if (spec_addrs->target_addr)
+		free(spec_addrs->target_addr);
+	memset(spec_addrs, 0, sizeof(spec_addrs_t));
+	free(spec_addrs);
 }
 
 /*
@@ -655,15 +680,15 @@ proxyspec_set_proto(proxyspec_t *spec, const char *value)
 #endif /* DEBUG_OPTS */
 }
 
-static void
+static int WUNRES
 proxyspec_set_listen_addr(proxyspec_t *spec, char *addr, char *port, const char *natengine)
 {
-	spec->af = sys_sockaddr_parse(&spec->listen_addr,
+	int af = sys_sockaddr_parse(&spec->listen_addr,
 							&spec->listen_addrlen,
 							addr, port,
 							sys_get_af(addr),
 							EVUTIL_AI_PASSIVE);
-	if (spec->af == -1) {
+	if (af == -1) {
 		exit(EXIT_FAILURE);
 	}
 	if (natengine) {
@@ -678,6 +703,7 @@ proxyspec_set_listen_addr(proxyspec_t *spec, char *addr, char *port, const char 
 #ifdef DEBUG_OPTS
 	log_dbg_printf("Addr: [%s]:%s, %s\n", addr, port, natengine);
 #endif /* DEBUG_OPTS */
+	return af;
 }
 
 static void
@@ -707,11 +733,11 @@ proxyspec_set_return_addr(proxyspec_t *spec, char *addr)
 }
 					
 static void
-proxyspec_set_target_addr(proxyspec_t *spec, char *addr, char *port)
+proxyspec_set_target_addr(proxyspec_t *spec, char *addr, char *port, int af)
 {
 	if (sys_sockaddr_parse(&spec->connect_addr,
 							&spec->connect_addrlen,
-							addr, port, spec->af, 0) == -1) {
+							addr, port, af, 0) == -1) {
 		exit(EXIT_FAILURE);
 	}
 	/* explicit target address */
@@ -777,6 +803,7 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine, global_t *globa
 	proxyspec_t *spec = NULL;
 	char *addr = NULL;
 	int state = 0;
+	int af;
 
 	while ((*argc)--) {
 		switch (state) {
@@ -797,7 +824,7 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine, global_t *globa
 				break;
 			case 2:
 				/* listenport */
-				proxyspec_set_listen_addr(spec, addr, **argv, natengine);
+				af = proxyspec_set_listen_addr(spec, addr, **argv, natengine);
 				state++;
 				break;
 			case 3:
@@ -856,7 +883,7 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine, global_t *globa
 				break;
 			case 5:
 				/* explicit target port */
-				proxyspec_set_target_addr(spec, addr, **argv);
+				proxyspec_set_target_addr(spec, addr, **argv, af);
 				state = 0;
 				break;
 			case 6:
@@ -2217,7 +2244,7 @@ check_value_yesno(const char *value, const char *name, int line_num)
  */
 static int
 set_option(opts_t *opts, const char *argv0,
-           const char *name, char *value, char **natengine, int line_num, int global_opt)
+		const char *name, char *value, char **natengine, int line_num, int global_opt)
 {
 	int yes;
 	int retval = -1;
@@ -2388,7 +2415,8 @@ leave:
 }
 
 static int
-set_proxyspec_option(proxyspec_t *spec, const char *argv0, const char *name, char *value, char **natengine, int line_num)
+set_proxyspec_option(proxyspec_t *spec, const char *argv0,
+		const char *name, char *value, char **natengine, spec_addrs_t *spec_addrs, int line_num)
 {
 	int retval = -1;
 
@@ -2396,24 +2424,22 @@ set_proxyspec_option(proxyspec_t *spec, const char *argv0, const char *name, cha
 		proxyspec_set_proto(spec, value);
 	}
 	else if (equal(name, "Addr")) {
-		spec->addr = strdup(value);
+		spec_addrs->addr = strdup(value);
 	}
 	else if (equal(name, "Port")) {
-		if (spec->addr) {
-			proxyspec_set_listen_addr(spec, spec->addr, value, *natengine);
-			free(spec->addr);
+		if (spec_addrs->addr) {
+			spec_addrs->af = proxyspec_set_listen_addr(spec, spec_addrs->addr, value, *natengine);
 		} else {
 			fprintf(stderr, "ProxySpec Port without Addr on line %d\n", line_num);
 			exit(EXIT_FAILURE);
 		}
 	}
 	else if (equal(name, "DivertAddr")) {
-		spec->divert_addr = strdup(value);
+		spec_addrs->divert_addr = strdup(value);
 	}
 	else if (equal(name, "DivertPort")) {
-		if (spec->divert_addr) {
-			proxyspec_set_divert_addr(spec, spec->divert_addr, value);
-			free(spec->divert_addr);
+		if (spec_addrs->divert_addr) {
+			proxyspec_set_divert_addr(spec, spec_addrs->divert_addr, value);
 		} else {
 			proxyspec_set_divert_addr(spec, "127.0.0.1", value);
 		}
@@ -2422,12 +2448,11 @@ set_proxyspec_option(proxyspec_t *spec, const char *argv0, const char *name, cha
 		proxyspec_set_return_addr(spec, value);
 	}
 	else if (equal(name, "TargetAddr")) {
-		spec->target_addr = strdup(value);
+		spec_addrs->target_addr = strdup(value);
 	}
 	else if (equal(name, "TargetPort")) {
-		if (spec->target_addr) {
-			proxyspec_set_target_addr(spec, spec->target_addr, value);
-			free(spec->target_addr);
+		if (spec_addrs->target_addr) {
+			proxyspec_set_target_addr(spec, spec_addrs->target_addr, value, spec_addrs->af);
 		} else {
 			fprintf(stderr, "ProxySpec TargetPort without TargetAddr on line %d\n", line_num);
 			exit(EXIT_FAILURE);
@@ -2560,18 +2585,19 @@ static int WUNRES
 load_proxyspec_struct(global_t *global, const char *argv0, char **natengine, int line_num, FILE *f)
 {
 	int retval = -1;
-	char *line, *name, *value;
+	char *name, *value;
+	char *line = NULL;
 	size_t line_len;
-	
-	line = NULL;
 
-	proxyspec_t *spec = NULL;
-	spec = proxyspec_new(global, argv0);
+	proxyspec_t *spec = proxyspec_new(global, argv0);
 	spec->next = global->spec;
 	global->spec = spec;
 
 	// Set the default return addr
 	proxyspec_set_return_addr(spec, "127.0.0.1");
+
+	spec_addrs_t *spec_addrs = malloc(sizeof(spec_addrs_t));
+	memset(spec_addrs, 0, sizeof(spec_addrs_t));
 
 	while (!feof(f)) {
 		if (getline(&line, &line_len, f) == -1) {
@@ -2594,7 +2620,7 @@ load_proxyspec_struct(global_t *global, const char *argv0, char **natengine, int
 
 		retval = get_name_value(&name, &value, ' ', line_num);
 		if (retval == 0) {
-			retval = set_proxyspec_option(spec, argv0, name, value, natengine, line_num);
+			retval = set_proxyspec_option(spec, argv0, name, value, natengine, spec_addrs, line_num);
 		}
 		if (retval == -1) {
 			goto leave;
@@ -2608,6 +2634,7 @@ load_proxyspec_struct(global_t *global, const char *argv0, char **natengine, int
 leave:
 	if (line)
 		free(line);
+	spec_addrs_free(spec_addrs);
 	return retval;
 }
 

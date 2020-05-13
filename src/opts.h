@@ -125,14 +125,6 @@ typedef struct proxyspec {
 	struct sockaddr_storage child_src_addr;
 	socklen_t child_src_addrlen;
 
-	// @todo Is there a better way?
-	// These vars are used while configuring proxyspecs,
-	// and freed right after they are used, not in proxyspec_free()
-	int af;
-	char *addr;
-	char *divert_addr;
-	char *target_addr;
-
 	// Each proxyspec has its own opts
 	opts_t *opts;
 } proxyspec_t;
