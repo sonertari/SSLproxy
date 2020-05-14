@@ -190,7 +190,7 @@ opts_free(opts_t *opts)
 	free(opts);
 }
 
-void
+static void
 spec_addrs_free(spec_addrs_t *spec_addrs)
 {
 	if (spec_addrs->addr)

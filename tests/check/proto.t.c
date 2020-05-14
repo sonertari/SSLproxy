@@ -32,19 +32,55 @@
 
 #include <check.h>
 
+static void
+proto_free(pxy_conn_ctx_t *ctx)
+{
+	global_t *global = ctx->global;
+	pxy_thrmgr_ctx_t *thrmgr = ctx->thrmgr;
+	proxyspec_t *spec = ctx->spec;
+
+	pxy_conn_ctx_free(ctx, 1);
+	proxyspec_free(spec);
+	pxy_thrmgr_free(thrmgr);
+	global_free(global);
+}
+
+/*
+ * We need to initialize further than just calling the *_new() functions,
+ * because the *_free() functions called in proto_free() depend on those extra
+ * initialization.
+ */
 static pxy_conn_ctx_t *
-protohttp_init()
+proto_init(protocol_t proto)
 {
 	global_t *global = global_new();
+
 	pxy_thrmgr_ctx_t *thrmgr = pxy_thrmgr_new(global);
+	thrmgr->num_thr = 1;
+	thrmgr->thr = malloc(thrmgr->num_thr * sizeof(pxy_thr_ctx_t*));
+	memset(thrmgr->thr, 0, thrmgr->num_thr * sizeof(pxy_thr_ctx_t*));
+	thrmgr->thr[0] = malloc(sizeof(pxy_thr_ctx_t));
+	memset(thrmgr->thr[0], 0, sizeof(pxy_thr_ctx_t));
+
 	proxyspec_t *spec = proxyspec_new(global, "sslproxy");
-	spec->http = 1;
-	return proxy_conn_ctx_new(0, thrmgr, spec, global, 0);
+	if (proto == PROTO_HTTP) {
+		spec->http = 1;
+	} else if (proto == PROTO_POP3) {
+		spec->pop3 = 1;
+	} else if (proto == PROTO_SMTP) {
+		spec->smtp = 1;
+	}
+
+	pxy_conn_ctx_t *ctx = proxy_conn_ctx_new(0, thrmgr, spec, global, 0);
+	pxy_thrmgr_assign_thr(ctx);
+	pxy_thr_attach(ctx);
+
+	return ctx;
 }
 
 START_TEST(protohttp_validate_01)
 {
-	pxy_conn_ctx_t *ctx = protohttp_init();
+	pxy_conn_ctx_t *ctx = proto_init(PROTO_HTTP);
 	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
 
 	http_ctx->seen_keyword_count = 1;
@@ -55,16 +91,18 @@ START_TEST(protohttp_validate_01)
 	fail_unless(http_ctx->seen_keyword_count == 1, "wrong seen_keyword_count");
 	fail_unless(ctx->protoctx->is_valid == 1, "wrong is_valid");
 	fail_unless(http_ctx->seen_bytes == 0, "wrong seen_bytes");
+
+	proto_free(ctx);
 }
 END_TEST
 
 START_TEST(protohttp_validate_02)
 {
-	pxy_conn_ctx_t *ctx = protohttp_init();
+	pxy_conn_ctx_t *ctx = proto_init(PROTO_HTTP);
 	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
 
 	http_ctx->seen_keyword_count = 1;
-	http_ctx->http_method = "GET";
+	http_ctx->http_method = strdup("GET");
 	int rv = protohttp_validate(ctx);
 
 	fail_unless(rv == 0, "wrong return value");
@@ -72,15 +110,17 @@ START_TEST(protohttp_validate_02)
 	fail_unless(http_ctx->seen_keyword_count == 1, "wrong seen_keyword_count");
 	fail_unless(ctx->protoctx->is_valid == 1, "wrong is_valid");
 	fail_unless(http_ctx->seen_bytes == 0, "wrong seen_bytes");
+
+	proto_free(ctx);
 }
 END_TEST
 
 START_TEST(protohttp_validate_03)
 {
-	pxy_conn_ctx_t *ctx = protohttp_init();
+	pxy_conn_ctx_t *ctx = proto_init(PROTO_HTTP);
 	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
 
-	http_ctx->http_method = "GET";
+	http_ctx->http_method = strdup("GET");
 	int rv = protohttp_validate(ctx);
 
 	fail_unless(rv == 0, "wrong return value");
@@ -88,15 +128,17 @@ START_TEST(protohttp_validate_03)
 	fail_unless(http_ctx->seen_keyword_count == 0, "wrong seen_keyword_count");
 	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
 	fail_unless(http_ctx->seen_bytes == 0, "wrong seen_bytes");
+
+	proto_free(ctx);
 }
 END_TEST
 
 START_TEST(protohttp_validate_04)
 {
-	pxy_conn_ctx_t *ctx = protohttp_init();
+	pxy_conn_ctx_t *ctx = proto_init(PROTO_HTTP);
 	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
 
-	http_ctx->http_method = "GET1";
+	http_ctx->http_method = strdup("GET1");
 	int rv = protohttp_validate(ctx);
 
 	fail_unless(rv == -1, "wrong return value");
@@ -104,16 +146,18 @@ START_TEST(protohttp_validate_04)
 	fail_unless(http_ctx->seen_keyword_count == 0, "wrong seen_keyword_count");
 	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
 	fail_unless(http_ctx->seen_bytes == 0, "wrong seen_bytes");
+
+	proto_free(ctx);
 }
 END_TEST
 
 START_TEST(protohttp_validate_05)
 {
-	pxy_conn_ctx_t *ctx = protohttp_init();
+	pxy_conn_ctx_t *ctx = proto_init(PROTO_HTTP);
 	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
 
 	http_ctx->seen_keyword_count = 1;
-	http_ctx->http_method = "GET1";
+	http_ctx->http_method = strdup("GET1");
 	int rv = protohttp_validate(ctx);
 
 	fail_unless(rv == -1, "wrong return value");
@@ -130,7 +174,8 @@ START_TEST(protohttp_validate_05)
 	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
 	fail_unless(http_ctx->seen_bytes == 0, "wrong seen_bytes");
 
-	http_ctx->http_method = "GET";
+	free(http_ctx->http_method);
+	http_ctx->http_method = strdup("GET");
 	rv = protohttp_validate(ctx);
 
 	fail_unless(rv == -1, "wrong return value");
@@ -138,16 +183,18 @@ START_TEST(protohttp_validate_05)
 	fail_unless(http_ctx->seen_keyword_count == 1, "wrong seen_keyword_count");
 	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
 	fail_unless(http_ctx->seen_bytes == 0, "wrong seen_bytes");
+
+	proto_free(ctx);
 }
 END_TEST
 
 START_TEST(protohttp_validate_06)
 {
-	pxy_conn_ctx_t *ctx = protohttp_init();
+	pxy_conn_ctx_t *ctx = proto_init(PROTO_HTTP);
 	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
 
 	http_ctx->seen_keyword_count = 1;
-	http_ctx->http_method = "GET";
+	http_ctx->http_method = strdup("GET");
 	int rv = protohttp_validate(ctx);
 
 	fail_unless(rv == 0, "wrong return value");
@@ -167,7 +214,8 @@ START_TEST(protohttp_validate_06)
 	// Normally we don't call protohttp_validate() if ctx->protoctx->is_valid is set,
 	// So both not_valid and is_valid are set.
 	// This is for testing purposes only.
-	http_ctx->http_method = "GET1";
+	free(http_ctx->http_method);
+	http_ctx->http_method = strdup("GET1");
 	rv = protohttp_validate(ctx);
 
 	fail_unless(rv == -1, "wrong return value");
@@ -175,12 +223,14 @@ START_TEST(protohttp_validate_06)
 	fail_unless(http_ctx->seen_keyword_count == 1, "wrong seen_keyword_count");
 	fail_unless(ctx->protoctx->is_valid == 1, "wrong is_valid");
 	fail_unless(http_ctx->seen_bytes == 0, "wrong seen_bytes");
+
+	proto_free(ctx);
 }
 END_TEST
 
 START_TEST(protohttp_validate_07)
 {
-	pxy_conn_ctx_t *ctx = protohttp_init();
+	pxy_conn_ctx_t *ctx = proto_init(PROTO_HTTP);
 	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
 
 	http_ctx->seen_bytes = 8193;
@@ -191,12 +241,14 @@ START_TEST(protohttp_validate_07)
 	fail_unless(http_ctx->seen_keyword_count == 0, "wrong seen_keyword_count");
 	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
 	fail_unless(http_ctx->seen_bytes == 8193, "wrong seen_bytes");
+
+	proto_free(ctx);
 }
 END_TEST
 
 START_TEST(protohttp_validate_08)
 {
-	pxy_conn_ctx_t *ctx = protohttp_init();
+	pxy_conn_ctx_t *ctx = proto_init(PROTO_HTTP);
 	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
 
 	http_ctx->seen_bytes = 8193;
@@ -208,16 +260,18 @@ START_TEST(protohttp_validate_08)
 	fail_unless(http_ctx->seen_keyword_count == 1, "wrong seen_keyword_count");
 	fail_unless(ctx->protoctx->is_valid == 1, "wrong is_valid");
 	fail_unless(http_ctx->seen_bytes == 8193, "wrong seen_bytes");
+
+	proto_free(ctx);
 }
 END_TEST
 
 START_TEST(protohttp_validate_09)
 {
-	pxy_conn_ctx_t *ctx = protohttp_init();
+	pxy_conn_ctx_t *ctx = proto_init(PROTO_HTTP);
 	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
 
 	http_ctx->seen_bytes = 8193;
-	http_ctx->http_method = "GET";
+	http_ctx->http_method = strdup("GET");
 	int rv = protohttp_validate(ctx);
 
 	fail_unless(rv == -1, "wrong return value");
@@ -225,17 +279,19 @@ START_TEST(protohttp_validate_09)
 	fail_unless(http_ctx->seen_keyword_count == 0, "wrong seen_keyword_count");
 	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
 	fail_unless(http_ctx->seen_bytes == 8193, "wrong seen_bytes");
+
+	proto_free(ctx);
 }
 END_TEST
 
 START_TEST(protohttp_validate_10)
 {
-	pxy_conn_ctx_t *ctx = protohttp_init();
+	pxy_conn_ctx_t *ctx = proto_init(PROTO_HTTP);
 	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
 
 	http_ctx->seen_bytes = 8193;
 	http_ctx->seen_keyword_count = 1;
-	http_ctx->http_method = "GET";
+	http_ctx->http_method = strdup("GET");
 	int rv = protohttp_validate(ctx);
 
 	fail_unless(rv == 0, "wrong return value");
@@ -243,22 +299,14 @@ START_TEST(protohttp_validate_10)
 	fail_unless(http_ctx->seen_keyword_count == 1, "wrong seen_keyword_count");
 	fail_unless(ctx->protoctx->is_valid == 1, "wrong is_valid");
 	fail_unless(http_ctx->seen_bytes == 8193, "wrong seen_bytes");
+
+	proto_free(ctx);
 }
 END_TEST
 
-static pxy_conn_ctx_t *
-protopop3_init()
-{
-	global_t *global = global_new();
-	pxy_thrmgr_ctx_t *thrmgr = pxy_thrmgr_new(global);
-	proxyspec_t *spec = proxyspec_new(global, "sslproxy");
-	spec->pop3 = 1;
-	return proxy_conn_ctx_new(0, thrmgr, spec, global, 0);
-}
-
 START_TEST(protopop3_validate_01)
 {
-	pxy_conn_ctx_t *ctx = protopop3_init();
+	pxy_conn_ctx_t *ctx = proto_init(PROTO_POP3);
 	protopop3_ctx_t *pop3_ctx = ctx->protoctx->arg;
 
 	char array01[] = {'C', 'A', 'P', 'A'};
@@ -295,12 +343,14 @@ START_TEST(protopop3_validate_01)
 	fail_unless(pop3_ctx->not_valid == 0, "wrong not_valid");
 	fail_unless(pop3_ctx->seen_command_count == 4, "wrong seen_command_count");
 	fail_unless(ctx->protoctx->is_valid == 1, "wrong is_valid");
+
+	proto_free(ctx);
 }
 END_TEST
 
 START_TEST(protopop3_validate_02)
 {
-	pxy_conn_ctx_t *ctx = protopop3_init();
+	pxy_conn_ctx_t *ctx = proto_init(PROTO_POP3);
 	protopop3_ctx_t *pop3_ctx = ctx->protoctx->arg;
 
 	char array01[] = {'C', 'A', 'P'};
@@ -310,12 +360,14 @@ START_TEST(protopop3_validate_02)
 	fail_unless(pop3_ctx->not_valid == 1, "wrong not_valid");
 	fail_unless(pop3_ctx->seen_command_count == 0, "wrong seen_command_count");
 	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
+
+	proto_free(ctx);
 }
 END_TEST
 
 START_TEST(protopop3_validate_03)
 {
-	pxy_conn_ctx_t *ctx = protopop3_init();
+	pxy_conn_ctx_t *ctx = proto_init(PROTO_POP3);
 	protopop3_ctx_t *pop3_ctx = ctx->protoctx->arg;
 
 	char array01[] = {'C', 'A', 'P', 'A'};
@@ -333,12 +385,14 @@ START_TEST(protopop3_validate_03)
 	fail_unless(pop3_ctx->not_valid == 1, "wrong not_valid");
 	fail_unless(pop3_ctx->seen_command_count == 1, "wrong seen_command_count");
 	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
+
+	proto_free(ctx);
 }
 END_TEST
 
 START_TEST(protopop3_validate_04)
 {
-	pxy_conn_ctx_t *ctx = protopop3_init();
+	pxy_conn_ctx_t *ctx = proto_init(PROTO_POP3);
 	protopop3_ctx_t *pop3_ctx = ctx->protoctx->arg;
 
 	char array01[] = {'C', 'A', 'P', 'A'};
@@ -364,12 +418,14 @@ START_TEST(protopop3_validate_04)
 	fail_unless(pop3_ctx->not_valid == 1, "wrong not_valid");
 	fail_unless(pop3_ctx->seen_command_count == 2, "wrong seen_command_count");
 	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
+
+	proto_free(ctx);
 }
 END_TEST
 
 START_TEST(protopop3_validate_05)
 {
-	pxy_conn_ctx_t *ctx = protopop3_init();
+	pxy_conn_ctx_t *ctx = proto_init(PROTO_POP3);
 	protopop3_ctx_t *pop3_ctx = ctx->protoctx->arg;
 
 	char array01[] = {'C', 'A', 'P', 'A'};
@@ -414,12 +470,14 @@ START_TEST(protopop3_validate_05)
 	fail_unless(pop3_ctx->not_valid == 1, "wrong not_valid");
 	fail_unless(pop3_ctx->seen_command_count == 3, "wrong seen_command_count");
 	fail_unless(ctx->protoctx->is_valid == 1, "wrong is_valid");
+
+	proto_free(ctx);
 }
 END_TEST
 
 START_TEST(protopop3_validate_06)
 {
-	pxy_conn_ctx_t *ctx = protopop3_init();
+	pxy_conn_ctx_t *ctx = proto_init(PROTO_POP3);
 	protopop3_ctx_t *pop3_ctx = ctx->protoctx->arg;
 
 	char array01[] = {'C', 'A', 'P'};
@@ -436,22 +494,14 @@ START_TEST(protopop3_validate_06)
 	fail_unless(pop3_ctx->not_valid == 1, "wrong not_valid");
 	fail_unless(pop3_ctx->seen_command_count == 0, "wrong seen_command_count");
 	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
+
+	proto_free(ctx);
 }
 END_TEST
 
-static pxy_conn_ctx_t *
-protosmtp_init()
-{
-	global_t *global = global_new();
-	pxy_thrmgr_ctx_t *thrmgr = pxy_thrmgr_new(global);
-	proxyspec_t *spec = proxyspec_new(global, "sslproxy");
-	spec->smtp = 1;
-	return proxy_conn_ctx_new(0, thrmgr, spec, global, 0);
-}
-
 START_TEST(protosmtp_validate_01)
 {
-	pxy_conn_ctx_t *ctx = protosmtp_init();
+	pxy_conn_ctx_t *ctx = proto_init(PROTO_SMTP);
 	protosmtp_ctx_t *smtp_ctx = ctx->protoctx->arg;
 
 	char array01[] = {'E', 'H', 'L', 'O'};
@@ -488,12 +538,14 @@ START_TEST(protosmtp_validate_01)
 	fail_unless(smtp_ctx->not_valid == 0, "wrong not_valid");
 	fail_unless(smtp_ctx->seen_command_count == 4, "wrong seen_command_count");
 	fail_unless(ctx->protoctx->is_valid == 1, "wrong is_valid");
+
+	proto_free(ctx);
 }
 END_TEST
 
 START_TEST(protosmtp_validate_02)
 {
-	pxy_conn_ctx_t *ctx = protosmtp_init();
+	pxy_conn_ctx_t *ctx = proto_init(PROTO_SMTP);
 	protosmtp_ctx_t *smtp_ctx = ctx->protoctx->arg;
 
 	char array01[] = {'E', 'H', 'L'};
@@ -503,12 +555,14 @@ START_TEST(protosmtp_validate_02)
 	fail_unless(smtp_ctx->not_valid == 1, "wrong not_valid");
 	fail_unless(smtp_ctx->seen_command_count == 0, "wrong seen_command_count");
 	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
+
+	proto_free(ctx);
 }
 END_TEST
 
 START_TEST(protosmtp_validate_03)
 {
-	pxy_conn_ctx_t *ctx = protosmtp_init();
+	pxy_conn_ctx_t *ctx = proto_init(PROTO_SMTP);
 	protosmtp_ctx_t *smtp_ctx = ctx->protoctx->arg;
 
 	char array01[] = {'E', 'H', 'L', 'O'};
@@ -526,12 +580,14 @@ START_TEST(protosmtp_validate_03)
 	fail_unless(smtp_ctx->not_valid == 1, "wrong not_valid");
 	fail_unless(smtp_ctx->seen_command_count == 1, "wrong seen_command_count");
 	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
+
+	proto_free(ctx);
 }
 END_TEST
 
 START_TEST(protosmtp_validate_04)
 {
-	pxy_conn_ctx_t *ctx = protosmtp_init();
+	pxy_conn_ctx_t *ctx = proto_init(PROTO_SMTP);
 	protosmtp_ctx_t *smtp_ctx = ctx->protoctx->arg;
 
 	char array01[] = {'E', 'H', 'L', 'O'};
@@ -557,12 +613,14 @@ START_TEST(protosmtp_validate_04)
 	fail_unless(smtp_ctx->not_valid == 1, "wrong not_valid");
 	fail_unless(smtp_ctx->seen_command_count == 2, "wrong seen_command_count");
 	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
+
+	proto_free(ctx);
 }
 END_TEST
 
 START_TEST(protosmtp_validate_05)
 {
-	pxy_conn_ctx_t *ctx = protosmtp_init();
+	pxy_conn_ctx_t *ctx = proto_init(PROTO_SMTP);
 	protosmtp_ctx_t *smtp_ctx = ctx->protoctx->arg;
 
 	char array01[] = {'E', 'H', 'L', 'O'};
@@ -607,12 +665,14 @@ START_TEST(protosmtp_validate_05)
 	fail_unless(smtp_ctx->not_valid == 1, "wrong not_valid");
 	fail_unless(smtp_ctx->seen_command_count == 3, "wrong seen_command_count");
 	fail_unless(ctx->protoctx->is_valid == 1, "wrong is_valid");
+
+	proto_free(ctx);
 }
 END_TEST
 
 START_TEST(protosmtp_validate_06)
 {
-	pxy_conn_ctx_t *ctx = protosmtp_init();
+	pxy_conn_ctx_t *ctx = proto_init(PROTO_SMTP);
 	protosmtp_ctx_t *smtp_ctx = ctx->protoctx->arg;
 
 	char array01[] = {'E', 'H', 'L'};
@@ -629,12 +689,14 @@ START_TEST(protosmtp_validate_06)
 	fail_unless(smtp_ctx->not_valid == 1, "wrong not_valid");
 	fail_unless(smtp_ctx->seen_command_count == 0, "wrong seen_command_count");
 	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
+
+	proto_free(ctx);
 }
 END_TEST
 
 START_TEST(protosmtp_validate_response_01)
 {
-	pxy_conn_ctx_t *ctx = protosmtp_init();
+	pxy_conn_ctx_t *ctx = proto_init(PROTO_SMTP);
 	protosmtp_ctx_t *smtp_ctx = ctx->protoctx->arg;
 
 	char array01[] = {'2', '2', '0', ' ', 's', 'm', 't', 'p'};
@@ -644,12 +706,14 @@ START_TEST(protosmtp_validate_response_01)
 	fail_unless(smtp_ctx->not_valid == 0, "wrong not_valid");
 	fail_unless(smtp_ctx->seen_command_count == 0, "wrong seen_command_count");
 	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
+
+	proto_free(ctx);
 }
 END_TEST
 
 START_TEST(protosmtp_validate_response_02)
 {
-	pxy_conn_ctx_t *ctx = protosmtp_init();
+	pxy_conn_ctx_t *ctx = proto_init(PROTO_SMTP);
 	protosmtp_ctx_t *smtp_ctx = ctx->protoctx->arg;
 
 	char array01[] = {'1', '9', '9', ' ', 's', 'm', 't', 'p'};
@@ -659,12 +723,14 @@ START_TEST(protosmtp_validate_response_02)
 	fail_unless(smtp_ctx->not_valid == 1, "wrong not_valid");
 	fail_unless(smtp_ctx->seen_command_count == 0, "wrong seen_command_count");
 	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
+
+	proto_free(ctx);
 }
 END_TEST
 
 START_TEST(protosmtp_validate_response_03)
 {
-	pxy_conn_ctx_t *ctx = protosmtp_init();
+	pxy_conn_ctx_t *ctx = proto_init(PROTO_SMTP);
 	protosmtp_ctx_t *smtp_ctx = ctx->protoctx->arg;
 
 	char array01[] = {'6', '0', '0', ' ', 's', 'm', 't', 'p'};
@@ -674,12 +740,14 @@ START_TEST(protosmtp_validate_response_03)
 	fail_unless(smtp_ctx->not_valid == 1, "wrong not_valid");
 	fail_unless(smtp_ctx->seen_command_count == 0, "wrong seen_command_count");
 	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
+
+	proto_free(ctx);
 }
 END_TEST
 
 START_TEST(protosmtp_validate_response_04)
 {
-	pxy_conn_ctx_t *ctx = protosmtp_init();
+	pxy_conn_ctx_t *ctx = proto_init(PROTO_SMTP);
 	protosmtp_ctx_t *smtp_ctx = ctx->protoctx->arg;
 
 	char array01[] = {'2', '2', '0', ' ', 's', 'm', 't', 'p'};
@@ -709,12 +777,14 @@ START_TEST(protosmtp_validate_response_04)
 	fail_unless(smtp_ctx->not_valid == 1, "wrong not_valid");
 	fail_unless(smtp_ctx->seen_command_count == 0, "wrong seen_command_count");
 	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
+
+	proto_free(ctx);
 }
 END_TEST
 
 START_TEST(protosmtp_validate_response_05)
 {
-	pxy_conn_ctx_t *ctx = protosmtp_init();
+	pxy_conn_ctx_t *ctx = proto_init(PROTO_SMTP);
 	protosmtp_ctx_t *smtp_ctx = ctx->protoctx->arg;
 
 	char array01[] = {'1', '9', '9', ' ', 's', 'm', 't', 'p'};
@@ -744,12 +814,14 @@ START_TEST(protosmtp_validate_response_05)
 	fail_unless(smtp_ctx->not_valid == 1, "wrong not_valid");
 	fail_unless(smtp_ctx->seen_command_count == 0, "wrong seen_command_count");
 	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
+
+	proto_free(ctx);
 }
 END_TEST
 
 START_TEST(protosmtp_validate_response_06)
 {
-	pxy_conn_ctx_t *ctx = protosmtp_init();
+	pxy_conn_ctx_t *ctx = proto_init(PROTO_SMTP);
 	protosmtp_ctx_t *smtp_ctx = ctx->protoctx->arg;
 
 	char array01[] = {'2', '2', '0', '0', ' ', 's', 'm', 't', 'p'};
@@ -759,12 +831,14 @@ START_TEST(protosmtp_validate_response_06)
 	fail_unless(smtp_ctx->not_valid == 1, "wrong not_valid");
 	fail_unless(smtp_ctx->seen_command_count == 0, "wrong seen_command_count");
 	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
+
+	proto_free(ctx);
 }
 END_TEST
 
 START_TEST(protosmtp_validate_response_07)
 {
-	pxy_conn_ctx_t *ctx = protosmtp_init();
+	pxy_conn_ctx_t *ctx = proto_init(PROTO_SMTP);
 	protosmtp_ctx_t *smtp_ctx = ctx->protoctx->arg;
 
 	char array01[] = {'1', '9', '9', '9', ' ', 's', 'm', 't', 'p'};
@@ -774,12 +848,14 @@ START_TEST(protosmtp_validate_response_07)
 	fail_unless(smtp_ctx->not_valid == 1, "wrong not_valid");
 	fail_unless(smtp_ctx->seen_command_count == 0, "wrong seen_command_count");
 	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
+
+	proto_free(ctx);
 }
 END_TEST
 
 START_TEST(protosmtp_validate_response_08)
 {
-	pxy_conn_ctx_t *ctx = protosmtp_init();
+	pxy_conn_ctx_t *ctx = proto_init(PROTO_SMTP);
 	protosmtp_ctx_t *smtp_ctx = ctx->protoctx->arg;
 
 	char array01[] = {'6', '0', '0', '0'};
@@ -789,6 +865,8 @@ START_TEST(protosmtp_validate_response_08)
 	fail_unless(smtp_ctx->not_valid == 1, "wrong not_valid");
 	fail_unless(smtp_ctx->seen_command_count == 0, "wrong seen_command_count");
 	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
+
+	proto_free(ctx);
 }
 END_TEST
 
