@@ -62,7 +62,7 @@ proto_init(protocol_t proto)
 	thrmgr->thr[0] = malloc(sizeof(pxy_thr_ctx_t));
 	memset(thrmgr->thr[0], 0, sizeof(pxy_thr_ctx_t));
 
-	proxyspec_t *spec = proxyspec_new(global, "sslproxy");
+	proxyspec_t *spec = proxyspec_new(global, "sslproxy", NULL);
 	if (proto == PROTO_HTTP) {
 		spec->http = 1;
 	} else if (proto == PROTO_POP3) {
@@ -858,7 +858,7 @@ START_TEST(protosmtp_validate_response_08)
 	pxy_conn_ctx_t *ctx = proto_init(PROTO_SMTP);
 	protosmtp_ctx_t *smtp_ctx = ctx->protoctx->arg;
 
-	char array01[] = {'6', '0', '0', '0'};
+	char array01[] = {'6', '0', '0', '0', ' ', 's', 'm', 't', 'p'};
 	int rv = protosmtp_validate_response(ctx, array01, sizeof(array01));
 
 	fail_unless(rv == -1, "wrong return value");

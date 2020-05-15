@@ -99,7 +99,7 @@ START_TEST(proxyspec_parse_01)
 	int argc = 6;
 	char **argv = argv01;
 
-	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy");
+	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", NULL);
 	spec = global->spec;
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(spec->ssl, "not SSL");
@@ -126,7 +126,7 @@ START_TEST(proxyspec_parse_02)
 	int argc = 6;
 	char **argv = argv02;
 
-	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy");
+	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", NULL);
 	spec = global->spec;
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(spec->ssl, "not SSL");
@@ -153,7 +153,7 @@ START_TEST(proxyspec_parse_03)
 	char **argv = argv01;
 
 	close(2);
-	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy");
+	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", NULL);
 	global_free(global);
 }
 END_TEST
@@ -165,7 +165,7 @@ START_TEST(proxyspec_parse_04)
 	char **argv = argv01;
 
 	close(2);
-	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy");
+	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", NULL);
 	global_free(global);
 }
 END_TEST
@@ -177,7 +177,7 @@ START_TEST(proxyspec_parse_05)
 	int argc = 6;
 	char **argv = argv03;
 
-	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy");
+	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", NULL);
 	spec = global->spec;
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(!spec->ssl, "SSL");
@@ -203,7 +203,7 @@ START_TEST(proxyspec_parse_06)
 	int argc = 6;
 	char **argv = argv04;
 
-	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy");
+	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", NULL);
 	spec = global->spec;
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(spec->ssl, "not SSL");
@@ -229,7 +229,7 @@ START_TEST(proxyspec_parse_07)
 	int argc = 6;
 	char **argv = argv05;
 
-	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy");
+	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", NULL);
 	spec = global->spec;
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(!spec->ssl, "SSL");
@@ -255,7 +255,7 @@ START_TEST(proxyspec_parse_08)
 	int argc = 6;
 	char **argv = argv06;
 
-	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy");
+	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", NULL);
 	spec = global->spec;
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(spec->ssl, "not SSL");
@@ -280,7 +280,7 @@ START_TEST(proxyspec_parse_09)
 	char **argv = argv07;
 
 	close(2);
-	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy");
+	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", NULL);
 	global_free(global);
 }
 END_TEST
@@ -292,7 +292,7 @@ START_TEST(proxyspec_parse_10)
 	char **argv = argv06;
 
 	close(2);
-	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy");
+	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", NULL);
 	global_free(global);
 }
 END_TEST
@@ -304,7 +304,7 @@ START_TEST(proxyspec_parse_11)
 	int argc = 4;
 	char **argv = argv08;
 
-	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy");
+	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", NULL);
 	spec = global->spec;
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(spec->ssl, "not SSL");
@@ -330,7 +330,7 @@ START_TEST(proxyspec_parse_12)
 	char **argv = argv08;
 
 	close(2);
-	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy");
+	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", NULL);
 	global_free(global);
 }
 END_TEST
@@ -343,7 +343,7 @@ START_TEST(proxyspec_parse_13)
 	int argc = 12;
 	char **argv = argv09;
 
-	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy");
+	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", NULL);
 	spec = global->spec;
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(spec->ssl, "not SSL");
@@ -380,7 +380,7 @@ START_TEST(proxyspec_parse_14)
 	int argc = 8;
 	char **argv = argv10;
 
-	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy");
+	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", NULL);
 	spec = global->spec;
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(spec->ssl, "not SSL");
@@ -419,7 +419,7 @@ START_TEST(proxyspec_parse_15)
 	int argc = 4;
 	char **argv = argv11;
 
-	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy");
+	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", NULL);
 	spec = global->spec;
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(!spec->ssl, "SSL");
@@ -444,7 +444,7 @@ START_TEST(proxyspec_parse_16)
 	int argc = 12;
 	char **argv = argv12;
 
-	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy");
+	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", NULL);
 	spec = global->spec;
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(spec->ssl, "not SSL");
@@ -481,7 +481,7 @@ START_TEST(proxyspec_parse_17)
 	char **argv = argv13;
 
 	close(2);
-	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy");
+	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", NULL);
 	global_free(global);
 }
 END_TEST
@@ -493,7 +493,7 @@ START_TEST(proxyspec_parse_18)
 	int argc = 10;
 	char **argv = argv14;
 
-	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy");
+	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", NULL);
 	spec = global->spec;
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(!spec->ssl, "SSL");
@@ -525,7 +525,7 @@ END_TEST
 START_TEST(proxyspec_set_proto_01)
 {
 	global_t *global = global_new();
-	proxyspec_t *spec  = proxyspec_new(global, "sslproxy");
+	proxyspec_t *spec  = proxyspec_new(global, "sslproxy", NULL);
 
 	proxyspec_set_proto(spec, "tcp");
 	fail_unless(!spec->ssl, "ssl set in tcp spec");

@@ -267,7 +267,6 @@ proxy_listener_setup(struct event_base *evbase, pxy_thrmgr_ctx_t *thrmgr,
 		return NULL;
 	}
 
-	// @todo Should we enable threadsafe event structs?
 	// @attention Do not pass NULL as user-supplied pointer
 	lctx->evcl = evconnlistener_new(evbase, proxy_listener_acceptcb,
 	                               lctx, LEV_OPT_CLOSE_ON_FREE, 1024, fd);

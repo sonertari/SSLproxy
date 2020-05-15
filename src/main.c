@@ -369,6 +369,10 @@ main(int argc, char *argv[])
 		natengine = NULL;
 	}
 
+	// This var is temporary, hence freed immediately after configuration is complete.
+	global_opts_str_t *global_opts_str = malloc(sizeof(global_opts_str_t));
+	memset(global_opts_str, 0, sizeof(global_opts_str_t));
+
 	while ((ch = getopt(argc, argv,
 	                    OPT_g OPT_G OPT_Z OPT_i OPT_x OPT_T OPT_I
 	                    "k:c:C:K:t:A:OPa:b:s:r:R:e:Eu:m:j:p:l:L:S:F:M:"
@@ -383,23 +387,23 @@ main(int argc, char *argv[])
 #ifdef DEBUG_OPTS
 				log_dbg_printf("Conf file: %s\n", global->conffile);
 #endif /* DEBUG_OPTS */
-				if (global_load_conffile(global, argv0, &natengine) == -1) {
+				if (global_load_conffile(global, argv0, &natengine, global_opts_str) == -1) {
 					exit(EXIT_FAILURE);
 				}
 				break;
 			case 'o':
-				if (global_set_option(global, argv0, optarg, &natengine) == -1) {
+				if (global_set_option(global, argv0, optarg, &natengine, global_opts_str) == -1) {
 					exit(EXIT_FAILURE);
 				}
 				break;
 			case 'c':
-				opts_set_cacrt(global->opts, argv0, optarg, 1);
+				opts_set_cacrt(global->opts, argv0, optarg, global_opts_str);
 				break;
 			case 'k':
-				opts_set_cakey(global->opts, argv0, optarg, 1);
+				opts_set_cakey(global->opts, argv0, optarg, global_opts_str);
 				break;
 			case 'C':
-				opts_set_chain(global->opts, argv0, optarg, 1);
+				opts_set_chain(global->opts, argv0, optarg, global_opts_str);
 				break;
 			case 'K':
 				global_set_leafkey(global, argv0, optarg);
@@ -411,7 +415,7 @@ main(int argc, char *argv[])
 				global_set_defaultleafcert(global, argv0, optarg);
 				break;
 			case 'q':
-				opts_set_leafcrlurl(global->opts, optarg, 1);
+				opts_set_leafcrlurl(global->opts, optarg, global_opts_str);
 				break;
 			case 'O':
 				opts_set_deny_ocsp(global->opts);
@@ -420,14 +424,14 @@ main(int argc, char *argv[])
 				opts_set_passthrough(global->opts);
 				break;
 			case 'a':
-				opts_set_clientcrt(global->opts, argv0, optarg, 1);
+				opts_set_clientcrt(global->opts, argv0, optarg, global_opts_str);
 				break;
 			case 'b':
-				opts_set_clientkey(global->opts, argv0, optarg, 1);
+				opts_set_clientkey(global->opts, argv0, optarg, global_opts_str);
 				break;
 #ifndef OPENSSL_NO_DH
 			case 'g':
-				opts_set_dh(global->opts, argv0, optarg, 1);
+				opts_set_dh(global->opts, argv0, optarg, global_opts_str);
 				break;
 #endif /* !OPENSSL_NO_DH */
 #ifndef OPENSSL_NO_ECDH
@@ -547,10 +551,11 @@ main(int argc, char *argv[])
 	}
 	argc -= optind;
 	argv += optind;
-	proxyspec_parse(&argc, &argv, natengine, global, argv0);
+	proxyspec_parse(&argc, &argv, natengine, global, argv0, global_opts_str);
 
 	// We don't need the tmp strs used to clone global opts into proxyspecs anymore
-	global_free_opts_clone_strs(global);
+	global_opts_str_free(global_opts_str);
+	global_opts_str = NULL;
 
 	/* usage checks before defaults */
 	if (global->detach && OPTS_DEBUG(global)) {
@@ -844,7 +849,7 @@ main(int argc, char *argv[])
 		}
 		if (global->defaultleafcert) {
 			log_dbg_printf("- Default leaf key\n");
-		// @todo Debug print the cakey and passthrough opts for proxspecs too
+		// @todo Debug print the cakey and passthrough opts for proxspecs too?
 		} else if (global->opts->cakey) {
 			log_dbg_printf("- Global generated on the fly\n");
 		} else if (global->opts->passthrough) {

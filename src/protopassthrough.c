@@ -77,8 +77,6 @@ protopassthrough_engage(pxy_conn_ctx_t *ctx)
 {
 	log_fine("ENTER");
 
-	// @todo When we call bufferevent_free_and_close_fd(), connection stalls due to ssl shutdown?
-	// We get srvdst writecb while ssl shutdown is still in progress, and srvdst readcb never fires
 	ctx->srvdst.free(ctx->srvdst.bev, ctx);
 	ctx->srvdst.bev = NULL;
 	ctx->srvdst.ssl = NULL;
