@@ -35,12 +35,8 @@ TR?=		tr
 WC?=		wc
 
 GITDIR:=	$(wildcard $(PROJECT_ROOT).git)
-ifdef VERSION
 VERSION_FILE:=	$(wildcard $(PROJECT_ROOT)VERSION)
-endif
-ifdef HASHES
 HASHES_FILE:=	$(wildcard $(PROJECT_ROOT)HASHES)
-endif
 NEWS_FILE:=	$(firstword $(wildcard $(PROJECT_ROOT)NEWS*))
 
 ifdef GITDIR
