@@ -1,5 +1,5 @@
 
-### SSLproxy 0.8.0
+### SSLproxy 0.8.0 2020-05-24
 
 -   Restructure source tree, create src and tests folders, move files
     and update make files accordingly.
