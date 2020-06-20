@@ -112,7 +112,11 @@ opts_new(void)
 	opts->sslmethod = SSLv23_method;
 #if (OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER >= 0x20702000L)
 	opts->minsslversion = TLS1_VERSION;
+#ifdef HAVE_TLSV13
 	opts->maxsslversion = TLS1_3_VERSION;
+#else /* !HAVE_TLSV13 */
+	opts->maxsslversion = TLS1_2_VERSION;
+#endif /* !HAVE_TLSV13 */
 #endif /* OPENSSL_VERSION_NUMBER >= 0x10100000L */
 	opts->remove_http_referer = 1;
 	opts->verify_peer = 1;
