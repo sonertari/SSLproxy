@@ -112,7 +112,7 @@ opts_new(void)
 	opts->sslmethod = SSLv23_method;
 #if (OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER >= 0x20702000L)
 	opts->minsslversion = TLS1_VERSION;
-	opts->maxsslversion = TLS1_2_VERSION;
+	opts->maxsslversion = TLS1_3_VERSION;
 #endif /* OPENSSL_VERSION_NUMBER >= 0x10100000L */
 	opts->remove_http_referer = 1;
 	opts->verify_peer = 1;
@@ -451,6 +451,9 @@ opts_proto_dbg_dump(opts_t *opts)
 #ifdef HAVE_TLSV12
 	               (opts->sslversion == TLS1_2_VERSION) ? "tls12" :
 #endif /* HAVE_TLSV12 */
+#ifdef HAVE_TLSV13
+	               (opts->sslversion == TLS1_3_VERSION) ? "tls13" :
+#endif /* HAVE_TLSV13 */
 #endif /* OPENSSL_VERSION_NUMBER >= 0x10100000L */
 	               "negotiate",
 #ifdef HAVE_SSLV2
@@ -472,6 +475,9 @@ opts_proto_dbg_dump(opts_t *opts)
 #ifdef HAVE_TLSV12
 	               opts->no_tls12 ? " -tls12" :
 #endif /* HAVE_TLSV12 */
+#ifdef HAVE_TLSV13
+	               opts->no_tls13 ? " -tls13" :
+#endif /* HAVE_TLSV12 */
 	               "",
 #if (OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER >= 0x20702000L)
 #ifdef HAVE_SSLV3
@@ -486,6 +492,9 @@ opts_proto_dbg_dump(opts_t *opts)
 #ifdef HAVE_TLSV12
 	               (opts->minsslversion == TLS1_2_VERSION) ? ">=tls12" :
 #endif /* HAVE_TLSV12 */
+#ifdef HAVE_TLSV13
+	               (opts->minsslversion == TLS1_3_VERSION) ? ">=tls13" :
+#endif /* HAVE_TLSV13 */
 	               "",
 #ifdef HAVE_SSLV3
 	               (opts->maxsslversion == SSL3_VERSION) ? "<=ssl3" :
@@ -499,6 +508,9 @@ opts_proto_dbg_dump(opts_t *opts)
 #ifdef HAVE_TLSV12
 	               (opts->maxsslversion == TLS1_2_VERSION) ? "<=tls12" :
 #endif /* HAVE_TLSV12 */
+#ifdef HAVE_TLSV13
+	               (opts->maxsslversion == TLS1_3_VERSION) ? "<=tls13" :
+#endif /* HAVE_TLSV13 */
 	               ""
 #else /* OPENSSL_VERSION_NUMBER < 0x10100000L */
 	               "", ""
@@ -1460,6 +1472,11 @@ opts_force_proto(opts_t *opts, const char *argv0, const char *optarg)
 		opts->sslversion = TLS1_2_VERSION;
 	} else
 #endif /* HAVE_TLSV12 */
+#ifdef HAVE_TLSV13
+	if (!strcmp(optarg, "tls13")) {
+		opts->sslversion = TLS1_3_VERSION;
+	} else
+#endif /* HAVE_TLSV13 */
 #endif /* OPENSSL_VERSION_NUMBER >= 0x10100000L */
 	{
 		fprintf(stderr, "%s: Unsupported SSL/TLS protocol '%s'\n",
@@ -1503,6 +1520,11 @@ opts_disable_proto(opts_t *opts, const char *argv0, const char *optarg)
 		opts->no_tls12 = 1;
 	} else
 #endif /* HAVE_TLSV12 */
+#ifdef HAVE_TLSV13
+	if (!strcmp(optarg, "tls13")) {
+		opts->no_tls13 = 1;
+	} else
+#endif /* HAVE_TLSV13 */
 	{
 		fprintf(stderr, "%s: Unsupported SSL/TLS protocol '%s'\n",
 		                argv0, optarg);
@@ -1537,6 +1559,11 @@ opts_set_min_proto(UNUSED opts_t *opts, const char *argv0, const char *optarg)
 		opts->minsslversion = TLS1_2_VERSION;
 	} else
 #endif /* HAVE_TLSV12 */
+#ifdef HAVE_TLSV13
+	if (!strcmp(optarg, "tls13")) {
+		opts->minsslversion = TLS1_3_VERSION;
+	} else
+#endif /* HAVE_TLSV13 */
 #endif /* OPENSSL_VERSION_NUMBER >= 0x10100000L */
 	{
 		fprintf(stderr, "%s: Unsupported SSL/TLS protocol '%s'\n",
@@ -1572,6 +1599,11 @@ opts_set_max_proto(UNUSED opts_t *opts, const char *argv0, const char *optarg)
 		opts->maxsslversion = TLS1_2_VERSION;
 	} else
 #endif /* HAVE_TLSV12 */
+#ifdef HAVE_TLSV13
+	if (!strcmp(optarg, "tls13")) {
+		opts->maxsslversion = TLS1_3_VERSION;
+	} else
+#endif /* HAVE_TLSV13 */
 #endif /* OPENSSL_VERSION_NUMBER >= 0x10100000L */
 	{
 		fprintf(stderr, "%s: Unsupported SSL/TLS protocol '%s'\n",

@@ -1,5 +1,5 @@
 {
-  "comment": "Tests for SSL configuration: Rejects unsupported SSL/TLS proto",
+  "comment": "Tests for SSL configuration: tls13 only",
   "configs": {
     "1": {
       "proto": {
@@ -8,16 +8,16 @@
         "no_ssl3": "yes",
         "no_tls10": "yes",
         "no_tls11": "yes",
-        "no_tls12": "no",
-        "no_tls13": "yes"
+        "no_tls12": "yes",
+        "no_tls13": "no"
       },
       "client": {
         "ip": "127.0.0.1",
-        "port": "8452"
+        "port": "8462"
       },
       "server": {
         "ip": "127.0.0.1",
-        "port": "9452",
+        "port": "9462",
         "crt": "server.crt",
         "key": "server.key"
       }
@@ -25,20 +25,20 @@
     "2": {
       "proto": {
         "proto": "ssl",
-        "no_ssl2": "yes",
-        "no_ssl3": "yes",
+        "no_ssl2": "no",
+        "no_ssl3": "no",
         "no_tls10": "no",
-        "no_tls11": "yes",
-        "no_tls12": "yes",
-        "no_tls13": "yes"
+        "no_tls11": "no",
+        "no_tls12": "no",
+        "no_tls13": "no"
       },
       "client": {
         "ip": "127.0.0.1",
-        "port": "8453"
+        "port": "8462"
       },
       "server": {
         "ip": "127.0.0.1",
-        "port": "9453",
+        "port": "9462",
         "crt": "server.crt",
         "key": "server.key"
       }
@@ -46,17 +46,71 @@
   },
   "tests": {
     "1": {
-      "comment": "Rejects tls10 over tls12 and tls12 over tls10 proxyspecs",
+      "comment": "Configures tls13 only",
       "states": {
         "1": {
           "testend": "client",
-          "cmd": "sslconnectfail",
-          "payload": "GET / HTTP/1.1\r\nHost: example.com\r\n\r\n"
+          "cmd": "send",
+          "payload": "GET / HTTP/1.1\r\nHost: example.com\r\n\r\n",
+          "assert": {
+            "current_cipher_version": {
+              "==": [
+                "TLSv1.3"
+              ],
+              "!match": [
+                "SSLv3",
+                "^TLSv1\\.[012]?$"
+              ]
+            },
+            "ssl_proto_version": {
+              "==": [
+                "TLSv1.3"
+              ],
+              "!=": [
+                "SSLv3"
+              ],
+              "!match": [
+                "^TLSv1\\.[012]?$"
+              ]
+            },
+            "ssl_state": {
+              "==": [
+                "SSLOK "
+              ]
+            }
+          }
         },
         "2": {
           "testend": "server",
-          "cmd": "timeout",
-          "payload": ""
+          "cmd": "recv",
+          "payload": "GET / HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n",
+          "assert": {
+            "current_cipher_version": {
+              "==": [
+                "TLSv1.3"
+              ],
+              "!match": [
+                "SSLv3",
+                "^TLSv1\\.[012]?$"
+              ]
+            },
+            "ssl_proto_version": {
+              "==": [
+                "TLSv1.3"
+              ],
+              "!=": [
+                "SSLv3"
+              ],
+              "!match": [
+                "^TLSv1\\.[012]?$"
+              ]
+            },
+            "ssl_state": {
+              "==": [
+                "SSLOK "
+              ]
+            }
+          }
         }
       }
     }
