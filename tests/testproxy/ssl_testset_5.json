@@ -13,7 +13,9 @@
       },
       "client": {
         "ip": "127.0.0.1",
-        "port": "8462"
+        "port": "8462",
+        "use_sni": "yes",
+        "sni_servername": "example.com"
       },
       "server": {
         "ip": "127.0.0.1",
@@ -34,7 +36,9 @@
       },
       "client": {
         "ip": "127.0.0.1",
-        "port": "8462"
+        "port": "8462",
+        "use_sni": "yes",
+        "sni_servername": "example.com"
       },
       "server": {
         "ip": "127.0.0.1",
@@ -108,6 +112,11 @@
             "ssl_state": {
               "==": [
                 "SSLOK "
+              ]
+            },
+            "sni_servername": {
+              "==": [
+                "example.com"
               ]
             }
           }
