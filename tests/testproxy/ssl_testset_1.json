@@ -10,7 +10,7 @@
         "read_timeout": "50",
         "write_timeout": "50",
         "verify_peer": "no",
-        "ciphers": "HIGH",
+        "cipher_list": "HIGH",
         "no_ssl2": "yes",
         "no_ssl3": "yes",
         "no_tls10": "yes",
@@ -48,7 +48,7 @@
   },
   "tests": {
     "1": {
-      "comment": "Configures ssl cert, proto, ciphers correctly",
+      "comment": "Configures ssl cert, proto, cipher_list correctly",
       "states": {
         "1": {
           "testend": "client",

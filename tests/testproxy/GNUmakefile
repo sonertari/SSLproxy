@@ -1,6 +1,11 @@
 PROJECT_ROOT= ../../
 TESTPROXY:= ~/.cargo/bin/testproxy
 
+TESTPROXY_VERSION=$(shell $(TESTPROXY) -V)
+ifneq ($(TESTPROXY_VERSION),testproxy 0.0.3)
+$(error Use Testproxy v0.0.3 with this version of SSLproxy, found $(TESTPROXY_VERSION))
+endif
+
 all: test
 
 buildsslproxy:
