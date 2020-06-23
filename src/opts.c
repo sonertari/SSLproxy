@@ -442,6 +442,8 @@ opts_proto_dbg_dump(opts_t *opts)
 #ifdef HAVE_TLSV12
 	               (opts->sslmethod == TLSv1_2_method) ? "tls12" :
 #endif /* HAVE_TLSV12 */
+/* There is no TLSv1_3_method defined,
+ * since no ssl version < 0x10100000L supports it. */
 #else /* OPENSSL_VERSION_NUMBER >= 0x10100000L */
 #ifdef HAVE_SSLV3
 	               (opts->sslversion == SSL3_VERSION) ? "ssl3" :
@@ -481,7 +483,7 @@ opts_proto_dbg_dump(opts_t *opts)
 #endif /* HAVE_TLSV12 */
 #ifdef HAVE_TLSV13
 	               opts->no_tls13 ? " -tls13" :
-#endif /* HAVE_TLSV12 */
+#endif /* HAVE_TLSV13 */
 	               "",
 #if (OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER >= 0x20702000L)
 #ifdef HAVE_SSLV3
@@ -562,6 +564,9 @@ clone_global_opts(global_t *global, const char *argv0, global_opts_str_t *global
 #ifdef HAVE_TLSV12
 	opts->no_tls12 = global->opts->no_tls12;
 #endif /* HAVE_TLSV12 */
+#ifdef HAVE_TLSV13
+	opts->no_tls13 = global->opts->no_tls13;
+#endif /* HAVE_TLSV13 */
 	opts->passthrough = global->opts->passthrough;
 	opts->deny_ocsp = global->opts->deny_ocsp;
 	opts->sslmethod = global->opts->sslmethod;
@@ -990,6 +995,9 @@ opts_str(opts_t *opts)
 #ifdef HAVE_TLSV12
 				 "%s"
 #endif /* HAVE_TLSV12 */
+#ifdef HAVE_TLSV13
+				 "%s"
+#endif /* HAVE_TLSV13 */
 				 "%s%s"
 				 "|%s"
 #ifndef OPENSSL_NO_ECDH
@@ -1012,6 +1020,9 @@ opts_str(opts_t *opts)
 #ifdef HAVE_TLSV12
 	             (opts->no_tls12 ? "|no_tls12" : ""),
 #endif /* HAVE_TLSV12 */
+#ifdef HAVE_TLSV13
+	             (opts->no_tls13 ? "|no_tls13" : ""),
+#endif /* HAVE_TLSV13 */
 	             (opts->passthrough ? "|passthrough" : ""),
 	             (opts->deny_ocsp ? "|deny_ocsp" : ""),
 	             (opts->ciphers ? opts->ciphers : "no ciphers"),
@@ -1450,6 +1461,8 @@ opts_force_proto(opts_t *opts, const char *argv0, const char *optarg)
 		opts->sslmethod = TLSv1_2_method;
 	} else
 #endif /* HAVE_TLSV12 */
+/* There is no TLSv1_3_method defined,
+ * since no ssl version < 0x10100000L supports it. */
 #else /* OPENSSL_VERSION_NUMBER >= 0x10100000L */
 /*
  * Support for SSLv2 and the corresponding SSLv2_method(),

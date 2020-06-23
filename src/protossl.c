@@ -302,6 +302,11 @@ protossl_sslctx_setoptions(SSL_CTX *sslctx, pxy_conn_ctx_t *ctx)
 		SSL_CTX_set_options(sslctx, SSL_OP_NO_TLSv1_2);
 	}
 #endif /* HAVE_TLSV12 */
+#ifdef HAVE_TLSV13
+	if (ctx->spec->opts->no_tls13) {
+		SSL_CTX_set_options(sslctx, SSL_OP_NO_TLSv1_3);
+	}
+#endif /* HAVE_TLSV13 */
 
 #ifdef SSL_OP_NO_COMPRESSION
 	if (!ctx->spec->opts->sslcomp) {
