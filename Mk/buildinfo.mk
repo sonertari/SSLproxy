@@ -34,10 +34,10 @@ SORT?=		sort
 TR?=		tr
 WC?=		wc
 
-GITDIR:=	$(wildcard $(PROJECT_ROOT).git)
-VERSION_FILE:=	$(wildcard $(PROJECT_ROOT)VERSION)
-HASHES_FILE:=	$(wildcard $(PROJECT_ROOT)HASHES)
-NEWS_FILE:=	$(firstword $(wildcard $(PROJECT_ROOT)NEWS*))
+GITDIR:=	$(wildcard $(PROJECT_ROOT)/.git)
+VERSION_FILE:=	$(wildcard $(PROJECT_ROOT)/VERSION)
+HASHES_FILE:=	$(wildcard $(PROJECT_ROOT)/HASHES)
+NEWS_FILE:=	$(firstword $(wildcard $(PROJECT_ROOT)/NEWS*))
 
 ifdef GITDIR
 BUILD_VERSION:=	$(shell cd $(PROJECT_ROOT) && $(GIT) describe --tags --dirty --always)

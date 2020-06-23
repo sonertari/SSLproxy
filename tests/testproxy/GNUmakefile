@@ -1,4 +1,4 @@
-PROJECT_ROOT= ../../
+PROJECT_ROOT= ../..
 TESTPROXY:= ~/.cargo/bin/testproxy
 
 TESTPROXY_VERSION=$(shell $(TESTPROXY) -V)
@@ -15,12 +15,12 @@ buildlp:
 	$(MAKE) -C lp
 
 # XXX: How to build sslproxy before setting the vars? Otherwise, we depend on the main makefile to have already built it.
-test: SSL_PROTOS=$(shell $(PROJECT_ROOT)src/sslproxy -V 2>&1 | grep "SSL/TLS protocol availability")
+test: SSL_PROTOS=$(shell $(PROJECT_ROOT)/src/sslproxy -V 2>&1 | grep "SSL/TLS protocol availability")
 test: TLS11=$(findstring tls11,$(SSL_PROTOS))
 test: TLS13=$(findstring tls13,$(SSL_PROTOS))
 test: SSLPROXY_CONF=$(if $(TLS13),sslproxy.conf,sslproxy_no_tls13.conf)
 test: SSLPROXY_CONF:=$(if $(TLS11),$(SSLPROXY_CONF),sslproxy_no_tls11.conf)
-test: SSLPROXY_COMMAND=$(PROJECT_ROOT)src/sslproxy -f $(SSLPROXY_CONF) -o Debug=no -o Daemon=yes -o User=nobody
+test: SSLPROXY_COMMAND=$(PROJECT_ROOT)/src/sslproxy -f $(SSLPROXY_CONF) -o Debug=no -o Daemon=yes -o User=nobody
 test: TESTHARNESS=$(if $(TLS13),testharness.json,testharness_no_tls13.json)
 test: TESTHARNESS:=$(if $(TLS11),$(TESTHARNESS),testharness_no_tls11.json)
 test: buildsslproxy buildlp

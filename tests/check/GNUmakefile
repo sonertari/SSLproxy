@@ -1,14 +1,18 @@
-PROJECT_ROOT= ../../
-include $(PROJECT_ROOT)main.mk
+PROJECT_ROOT= ../..
+include $(PROJECT_ROOT)/Mk/main.mk
+
+ifndef SRCDIR
+$(error SRCDIR not defined)
+endif
 
 SRCS:=	    $(wildcard *.t.c)
 OBJS:=	    $(SRCS:.t.c=.t.o)
 
-SRCSRCS:=   $(wildcard $(PROJECT_ROOT)$(SRCDIR)/*.c)
-SRCHDRS:=   $(wildcard $(PROJECT_ROOT)$(SRCDIR)/*.h)
+SRCSRCS:=   $(wildcard $(PROJECT_ROOT)/$(SRCDIR)/*.c)
+SRCHDRS:=   $(wildcard $(PROJECT_ROOT)/$(SRCDIR)/*.h)
 SRCSOBJS:=  $(SRCSRCS:.c=.o)
-OBJS+=	    $(filter-out $(PROJECT_ROOT)$(SRCDIR)/main.o,$(SRCSOBJS))
-MKFS:=	    $(wildcard GNUmakefile $(PROJECT_ROOT)$(SRCDIR)/GNUmakefile $(PROJECT_ROOT)GNUmakefile $(PROJECT_ROOT)main.mk $(PROJECT_ROOT)Mk/*.mk)
+OBJS+=	    $(filter-out $(PROJECT_ROOT)/$(SRCDIR)/main.o,$(SRCSOBJS))
+MKFS:=	    $(wildcard GNUmakefile $(PROJECT_ROOT)/$(SRCDIR)/GNUmakefile $(PROJECT_ROOT)/GNUmakefile $(PROJECT_ROOT)/Mk/*.mk)
 
 all: test
 
@@ -25,7 +29,7 @@ endif
 
 buildtest: TCPPFLAGS+=-D"TEST_ZEROUSR=\"$(shell id -u -n root||echo 0)\""
 buildtest: TCPPFLAGS+=-D"TEST_ZEROGRP=\"$(shell id -g -n root||echo 0)\""
-buildtest: TCPPFLAGS+=-I$(PROJECT_ROOT)$(SRCDIR)
+buildtest: TCPPFLAGS+=-I$(PROJECT_ROOT)/$(SRCDIR)
 buildtest: $(TARGET).test
 	$(MAKE) -C engine
 	$(MAKE) -C pki testreqs
