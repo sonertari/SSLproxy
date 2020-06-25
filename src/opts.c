@@ -425,7 +425,7 @@ char *
 opts_proto_dbg_dump(opts_t *opts)
 {
 	char *s;
-	if (asprintf(&s, "SSL/TLS protocol: %s%s%s%s%s%s%s%s",
+	if (asprintf(&s, "SSL/TLS protocol: %s%s%s%s%s%s%s%s%s",
 #if (OPENSSL_VERSION_NUMBER < 0x10100000L) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER < 0x20702000L)
 #ifdef HAVE_SSLV2
 	               (opts->sslmethod == SSLv2_method) ? "ssl2" :
@@ -481,6 +481,7 @@ opts_proto_dbg_dump(opts_t *opts)
 #ifdef HAVE_TLSV12
 	               opts->no_tls12 ? " -tls12" :
 #endif /* HAVE_TLSV12 */
+	               "",
 #ifdef HAVE_TLSV13
 	               opts->no_tls13 ? " -tls13" :
 #endif /* HAVE_TLSV13 */
