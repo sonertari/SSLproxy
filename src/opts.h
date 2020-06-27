@@ -71,6 +71,7 @@ typedef struct opts {
 	unsigned int passthrough : 1;
 	unsigned int deny_ocsp : 1;
 	char *ciphers;
+	char *ciphersuites;
 	CONST_SSL_METHOD *(*sslmethod)(void);
 #if (OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER >= 0x20702000L)
 	int sslversion;
@@ -246,6 +247,7 @@ void opts_unset_sslcomp(opts_t *) NONNULL(1);
 void opts_force_proto(opts_t *, const char *, const char *) NONNULL(1,2,3);
 void opts_disable_proto(opts_t *, const char *, const char *) NONNULL(1,2,3);
 void opts_set_ciphers(opts_t *, const char *, const char *) NONNULL(1,2,3);
+void opts_set_ciphersuites(opts_t *, const char *, const char *) NONNULL(1,2,3);
 void opts_set_pass_site(opts_t *, char *, int);
 #define OPTS_DEBUG(global) unlikely((global)->debug)
 

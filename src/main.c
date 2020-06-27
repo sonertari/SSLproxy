@@ -187,7 +187,9 @@ main_usage(void)
 #endif /* !SSL_OP_NO_COMPRESSION */
 "  -r proto    only support one of " SSL_PROTO_SUPPORT_S "(default: all)\n"
 "  -R proto    disable one of " SSL_PROTO_SUPPORT_S "(default: none)\n"
-"  -s ciphers  use the given OpenSSL cipher suite spec (default: " DFLT_CIPHERS ")\n"
+"  -s ciphers  use the given OpenSSL ciphers spec (default: " DFLT_CIPHERS ")\n"
+"  -U ciphersuites use the given OpenSSL ciphersuites spec (default: " DFLT_CIPHERSUITES ")\n"
+"              The ciphersuites spec is for TLS 1.3\n"
 #ifndef OPENSSL_NO_ENGINE
 "  -x engine   load OpenSSL engine with the given identifier\n"
 #define OPT_x "x:"
@@ -447,6 +449,9 @@ main(int argc, char *argv[])
 			case 's':
 				opts_set_ciphers(global->opts, argv0, optarg);
 				break;
+			case 'U':
+				opts_set_ciphersuites(global->opts, argv0, optarg);
+				break;
 			case 'r':
 				opts_force_proto(global->opts, argv0, optarg);
 				break;
@@ -662,10 +667,20 @@ main(int argc, char *argv[])
 		if (!global->opts->ciphers)
 			oom_die(argv0);
 	}
+	if (!global->opts->ciphersuites) {
+		global->opts->ciphersuites = strdup(DFLT_CIPHERSUITES);
+		if (!global->opts->ciphersuites)
+			oom_die(argv0);
+	}
 	for (proxyspec_t *spec = global->spec; spec; spec = spec->next) {
 		if (!spec->opts->ciphers) {
 			spec->opts->ciphers = strdup(DFLT_CIPHERS);
 			if (!spec->opts->ciphers)
+				oom_die(argv0);
+		}
+		if (!spec->opts->ciphersuites) {
+			spec->opts->ciphersuites = strdup(DFLT_CIPHERSUITES);
+			if (!spec->opts->ciphersuites)
 				oom_die(argv0);
 		}
 	}

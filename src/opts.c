@@ -174,6 +174,9 @@ opts_free(opts_t *opts)
 	if (opts->ciphers) {
 		free(opts->ciphers);
 	}
+	if (opts->ciphersuites) {
+		free(opts->ciphersuites);
+	}
 	if (opts->user_auth_url) {
 		free(opts->user_auth_url);
 	}
@@ -618,6 +621,9 @@ clone_global_opts(global_t *global, const char *argv0, global_opts_str_t *global
 	if (global->opts->ciphers) {
 		opts_set_ciphers(opts, argv0, global->opts->ciphers);
 	}
+	if (global->opts->ciphersuites) {
+		opts_set_ciphersuites(opts, argv0, global->opts->ciphersuites);
+	}
 	if (global->opts->user_auth_url) {
 		opts_set_user_auth_url(opts, global->opts->user_auth_url);
 	}
@@ -999,8 +1005,7 @@ opts_str(opts_t *opts)
 #ifdef HAVE_TLSV13
 				 "%s"
 #endif /* HAVE_TLSV13 */
-				 "%s%s"
-				 "|%s"
+				 "%s%s|%s|%s"
 #ifndef OPENSSL_NO_ECDH
 				 "|%s"
 #endif /* !OPENSSL_NO_ECDH */
@@ -1027,6 +1032,7 @@ opts_str(opts_t *opts)
 	             (opts->passthrough ? "|passthrough" : ""),
 	             (opts->deny_ocsp ? "|deny_ocsp" : ""),
 	             (opts->ciphers ? opts->ciphers : "no ciphers"),
+	             (opts->ciphersuites ? opts->ciphersuites : "no ciphersuites"),
 #ifndef OPENSSL_NO_ECDH
 	             (opts->ecdhcurve ? opts->ecdhcurve : "no ecdhcurve"),
 #endif /* !OPENSSL_NO_ECDH */
@@ -1417,6 +1423,19 @@ opts_set_ciphers(opts_t *opts, const char *argv0, const char *optarg)
 		oom_die(argv0);
 #ifdef DEBUG_OPTS
 	log_dbg_printf("Ciphers: %s\n", opts->ciphers);
+#endif /* DEBUG_OPTS */
+}
+
+void
+opts_set_ciphersuites(opts_t *opts, const char *argv0, const char *optarg)
+{
+	if (opts->ciphersuites)
+		free(opts->ciphersuites);
+	opts->ciphersuites = strdup(optarg);
+	if (!opts->ciphersuites)
+		oom_die(argv0);
+#ifdef DEBUG_OPTS
+	log_dbg_printf("CipherSuites: %s\n", opts->ciphersuites);
 #endif /* DEBUG_OPTS */
 }
 
@@ -2363,6 +2382,8 @@ set_option(opts_t *opts, const char *argv0,
 		opts_set_max_proto(opts, argv0, value);
 	} else if (equal(name, "Ciphers")) {
 		opts_set_ciphers(opts, argv0, value);
+	} else if (equal(name, "CipherSuites")) {
+		opts_set_ciphersuites(opts, argv0, value);
 	} else if (equal(name, "NATEngine")) {
 		if (*natengine)
 			free(*natengine);
