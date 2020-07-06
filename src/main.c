@@ -188,8 +188,8 @@ main_usage(void)
 "  -r proto    only support one of " SSL_PROTO_SUPPORT_S "(default: all)\n"
 "  -R proto    disable one of " SSL_PROTO_SUPPORT_S "(default: none)\n"
 "  -s ciphers  use the given OpenSSL ciphers spec (default: " DFLT_CIPHERS ")\n"
-"  -U ciphersuites use the given OpenSSL ciphersuites spec (default: " DFLT_CIPHERSUITES ")\n"
-"              The ciphersuites spec is for TLS 1.3\n"
+"  -U ciphersuites use the given OpenSSL ciphersuites spec with TLS 1.3\n"
+"  (default: " DFLT_CIPHERSUITES ")\n"
 #ifndef OPENSSL_NO_ENGINE
 "  -x engine   load OpenSSL engine with the given identifier\n"
 #define OPT_x "x:"
@@ -377,7 +377,7 @@ main(int argc, char *argv[])
 
 	while ((ch = getopt(argc, argv,
 	                    OPT_g OPT_G OPT_Z OPT_i OPT_x OPT_T OPT_I
-	                    "k:c:C:K:t:A:OPa:b:s:r:R:e:Eu:m:j:p:l:L:S:F:M:"
+	                    "k:c:C:K:t:A:OPa:b:s:U:r:R:e:Eu:m:j:p:l:L:S:F:M:"
 	                    "dD::VhW:w:q:f:o:X:Y:y:J")) != -1) {
 		switch (ch) {
 			case 'f':
