@@ -1756,7 +1756,7 @@ opts_set_pass_site(opts_t *opts, char *value, int line_num)
 	size_t len = strlen(argv[0]);
 	// Common names are separated by slashes
 	char s[len + 3];
-	strncpy(s + 1, argv[0], len);
+	memcpy(s + 1, argv[0], len);
 	s[0] = '/';
 	s[len + 1] = '/';
 	s[len + 2] = '\0';
