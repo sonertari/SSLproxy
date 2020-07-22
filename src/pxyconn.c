@@ -57,7 +57,9 @@
 #include <net/if_arp.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
+#if (__linux__ && HAVE_SYSCTL) || !__linux__
 #include <sys/sysctl.h>
+#endif
 #include <net/route.h>
 #include <netinet/if_ether.h>
 #ifdef __OpenBSD__
