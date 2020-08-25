@@ -2700,7 +2700,7 @@ load_proxyspec_line(global_t *global, const char *argv0, char *value, char **nat
 }
 
 static int WUNRES
-load_proxyspec_struct(global_t *global, const char *argv0, char **natengine, int line_num, FILE *f, global_opts_str_t *global_opts_str)
+load_proxyspec_struct(global_t *global, const char *argv0, char **natengine, int *line_num, FILE *f, global_opts_str_t *global_opts_str)
 {
 	int retval = -1;
 	char *name, *value;
@@ -2722,10 +2722,10 @@ load_proxyspec_struct(global_t *global, const char *argv0, char **natengine, int
 			break;
 		}
 		if (line == NULL) {
-			fprintf(stderr, "Error in conf file: getline() returns NULL line after line %d\n", line_num);
+			fprintf(stderr, "Error in conf file: getline() returns NULL line after line %d\n", *line_num);
 			goto leave;
 		}
-		line_num++;
+		(*line_num)++;
 
 		/* Skip white space */
 		for (name = line; *name == ' ' || *name == '\t'; name++); 
@@ -2736,9 +2736,9 @@ load_proxyspec_struct(global_t *global, const char *argv0, char **natengine, int
 			continue;
 		}
 
-		retval = get_name_value(&name, &value, ' ', line_num);
+		retval = get_name_value(&name, &value, ' ', *line_num);
 		if (retval == 0) {
-			retval = set_proxyspec_option(spec, argv0, name, value, natengine, spec_addrs, line_num);
+			retval = set_proxyspec_option(spec, argv0, name, value, natengine, spec_addrs, *line_num);
 		}
 		if (retval == -1) {
 			goto leave;
@@ -2784,13 +2784,13 @@ global_set_open_files_limit(const char *value, int line_num)
 
 static int
 set_global_option(global_t *global, const char *argv0,
-           const char *name, char *value, char **natengine, int line_num, FILE *f, global_opts_str_t *global_opts_str)
+           const char *name, char *value, char **natengine, int *line_num, FILE *f, global_opts_str_t *global_opts_str)
 {
 	int yes;
 	int retval = -1;
 
 	if (!value) {
-		fprintf(stderr, "Error in conf: No value assigned for %s on line %d\n", name, line_num);
+		fprintf(stderr, "Error in conf: No value assigned for %s on line %d\n", name, *line_num);
 		goto leave;
 	}
 
@@ -2820,7 +2820,7 @@ set_global_option(global_t *global, const char *argv0,
 		global_set_contentlogpathspec(global, argv0, value);
 #ifdef HAVE_LOCAL_PROCINFO
 	} else if (equal(name, "LogProcInfo")) {
-		yes = check_value_yesno(value, "LogProcInfo", line_num);
+		yes = check_value_yesno(value, "LogProcInfo", *line_num);
 		if (yes == -1) {
 			goto leave;
 		}
@@ -2844,7 +2844,7 @@ set_global_option(global_t *global, const char *argv0,
 		global_set_mirrortarget(global, argv0, value);
 #endif /* !WITHOUT_MIRROR */
 	} else if (equal(name, "Daemon")) {
-		yes = check_value_yesno(value, "Daemon", line_num);
+		yes = check_value_yesno(value, "Daemon", *line_num);
 		if (yes == -1) {
 			goto leave;
 		}
@@ -2853,7 +2853,7 @@ set_global_option(global_t *global, const char *argv0,
 		log_dbg_printf("Daemon: %u\n", global->detach);
 #endif /* DEBUG_OPTS */
 	} else if (equal(name, "Debug")) {
-		yes = check_value_yesno(value, "Debug", line_num);
+		yes = check_value_yesno(value, "Debug", *line_num);
 		if (yes == -1) {
 			goto leave;
 		}
@@ -2870,7 +2870,7 @@ set_global_option(global_t *global, const char *argv0,
 	} else if (equal(name, "ProxySpec")) {
 		if (equal(value, "{")) {
 #ifdef DEBUG_OPTS
-			log_dbg_printf("ProxySpec { on line %d\n", line_num);
+			log_dbg_printf("ProxySpec { on line %d\n", *line_num);
 #endif /* DEBUG_OPTS */
 			if (load_proxyspec_struct(global, argv0, natengine, line_num, f, global_opts_str) == -1) {
 				goto leave;
@@ -2883,7 +2883,7 @@ set_global_option(global_t *global, const char *argv0,
 		if (i >= 10 && i <= 3600) {
 			global->conn_idle_timeout = i;
 		} else {
-			fprintf(stderr, "Invalid ConnIdleTimeout %s on line %d, use 10-3600\n", value, line_num);
+			fprintf(stderr, "Invalid ConnIdleTimeout %s on line %d, use 10-3600\n", value, *line_num);
 			goto leave;
 		}
 #ifdef DEBUG_OPTS
@@ -2894,14 +2894,14 @@ set_global_option(global_t *global, const char *argv0,
 		if (i >= 10 && i <= 60) {
 			global->expired_conn_check_period = i;
 		} else {
-			fprintf(stderr, "Invalid ExpiredConnCheckPeriod %s on line %d, use 10-60\n", value, line_num);
+			fprintf(stderr, "Invalid ExpiredConnCheckPeriod %s on line %d, use 10-60\n", value, *line_num);
 			goto leave;
 		}
 #ifdef DEBUG_OPTS
 		log_dbg_printf("ExpiredConnCheckPeriod: %u\n", global->expired_conn_check_period);
 #endif /* DEBUG_OPTS */
 	} else if (equal(name, "LogStats")) {
-		yes = check_value_yesno(value, "LogStats", line_num);
+		yes = check_value_yesno(value, "LogStats", *line_num);
 		if (yes == -1) {
 			goto leave;
 		}
@@ -2914,14 +2914,14 @@ set_global_option(global_t *global, const char *argv0,
 		if (i >= 1 && i <= 10) {
 			global->stats_period = i;
 		} else {
-			fprintf(stderr, "Invalid StatsPeriod %s on line %d, use 1-10\n", value, line_num);
+			fprintf(stderr, "Invalid StatsPeriod %s on line %d, use 1-10\n", value, *line_num);
 			goto leave;
 		}
 #ifdef DEBUG_OPTS
 		log_dbg_printf("StatsPeriod: %u\n", global->stats_period);
 #endif /* DEBUG_OPTS */
 	} else if (equal(name, "OpenFilesLimit")) {
-		global_set_open_files_limit(value, line_num);
+		global_set_open_files_limit(value, *line_num);
 	} else if (equal(name, "LeafKey")) {
 		global_set_leafkey(global, argv0, value);
 	} else if (equal(name, "LeafKeyRSABits")) {
@@ -2929,7 +2929,7 @@ set_global_option(global_t *global, const char *argv0,
 		if (i == 1024 || i == 2048 || i == 3072 || i == 4096) {
 			global->leafkey_rsabits = i;
 		} else {
-			fprintf(stderr, "Invalid LeafKeyRSABits %s on line %d, use 1024|2048|3072|4096\n", value, line_num);
+			fprintf(stderr, "Invalid LeafKeyRSABits %s on line %d, use 1024|2048|3072|4096\n", value, *line_num);
 			goto leave;
 		}
 #ifdef DEBUG_OPTS
@@ -2940,7 +2940,7 @@ set_global_option(global_t *global, const char *argv0,
 		global_set_openssl_engine(global, argv0, value);
 #endif /* !OPENSSL_NO_ENGINE */
 	} else {
-		retval = set_option(global->opts, argv0, name, value, natengine, line_num, global_opts_str);
+		retval = set_option(global->opts, argv0, name, value, natengine, *line_num, global_opts_str);
 		goto leave;
 	}
 
@@ -2965,7 +2965,8 @@ global_set_option(global_t *global, const char *argv0, const char *optarg,
 	retval = get_name_value(&name, &value, '=', 0);
 	if (retval == 0) {
 		/* Line number param is for conf file, pass 0 for command line options */
-		retval = set_global_option(global, argv0, name, value, natengine, 0, NULL, global_opts_str);
+		int line_num = 0;
+		retval = set_global_option(global, argv0, name, value, natengine, &line_num, NULL, global_opts_str);
 	}
 
 	if (line)
@@ -3011,7 +3012,7 @@ global_load_conffile(global_t *global, const char *argv0, char **natengine, glob
 
 		retval = get_name_value(&name, &value, ' ', line_num);
 		if (retval == 0) {
-			retval = set_global_option(global, argv0, name, value, natengine, line_num, f, global_opts_str);
+			retval = set_global_option(global, argv0, name, value, natengine, &line_num, f, global_opts_str);
 		}
 
 		if (retval == -1) {
