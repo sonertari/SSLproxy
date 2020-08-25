@@ -74,7 +74,11 @@ protohttp_log_connect(pxy_conn_ctx_t *ctx)
 #ifdef HAVE_LOCAL_PROCINFO
 		              " %s"
 #endif /* HAVE_LOCAL_PROCINFO */
-		              "%s user:%s\n",
+		              "%s"
+#ifndef WITHOUT_USERAUTH
+		              " user:%s"
+#endif /* !WITHOUT_USERAUTH */
+		              "\n",
 		              STRORDASH(ctx->srchost_str),
 		              STRORDASH(ctx->srcport_str),
 		              STRORDASH(ctx->dsthost_str),
@@ -87,8 +91,11 @@ protohttp_log_connect(pxy_conn_ctx_t *ctx)
 #ifdef HAVE_LOCAL_PROCINFO
 		              lpi,
 #endif /* HAVE_LOCAL_PROCINFO */
-		              http_ctx->ocsp_denied ? " ocsp:denied" : "",
-		              STRORDASH(ctx->user));
+		              http_ctx->ocsp_denied ? " ocsp:denied" : ""
+#ifndef WITHOUT_USERAUTH
+		              , STRORDASH(ctx->user)
+#endif /* !WITHOUT_USERAUTH */
+		              );
 	} else {
 		rv = asprintf(&msg, "CONN: https %s %s %s %s %s %s %s %s %s "
 		              "sni:%s names:%s "
@@ -97,7 +104,11 @@ protohttp_log_connect(pxy_conn_ctx_t *ctx)
 #ifdef HAVE_LOCAL_PROCINFO
 		              " %s"
 #endif /* HAVE_LOCAL_PROCINFO */
-		              "%s user:%s\n",
+		              "%s"
+#ifndef WITHOUT_USERAUTH
+		              " user:%s"
+#endif /* !WITHOUT_USERAUTH */
+		              "\n",
 		              STRORDASH(ctx->srchost_str),
 		              STRORDASH(ctx->srcport_str),
 		              STRORDASH(ctx->dsthost_str),
@@ -118,8 +129,11 @@ protohttp_log_connect(pxy_conn_ctx_t *ctx)
 #ifdef HAVE_LOCAL_PROCINFO
 		              lpi,
 #endif /* HAVE_LOCAL_PROCINFO */
-		              http_ctx->ocsp_denied ? " ocsp:denied" : "",
-		              STRORDASH(ctx->user));
+		              http_ctx->ocsp_denied ? " ocsp:denied" : ""
+#ifndef WITHOUT_USERAUTH
+		              , STRORDASH(ctx->user)
+#endif /* !WITHOUT_USERAUTH */
+		              );
 	}
 	if ((rv < 0 ) || !msg) {
 		ctx->enomem = 1;
@@ -416,6 +430,7 @@ protohttp_filter_request_header(struct evbuffer *inbuf, struct evbuffer *outbuf,
 	}
 }
 
+#ifndef WITHOUT_USERAUTH
 static char * NONNULL(1,2)
 protohttp_get_url(struct evbuffer *inbuf, pxy_conn_ctx_t *ctx)
 {
@@ -477,6 +492,7 @@ memout:
 		free(path);
 	return url;
 }
+#endif /* !WITHOUT_USERAUTH */
 
 // Size = 39
 static char *http_methods[] = { "GET", "PUT", "ICY", "COPY", "HEAD", "LOCK", "MOVE", "POLL", "POST", "BCOPY", "BMOVE", "MKCOL", "TRACE", "LABEL", "MERGE", "DELETE",
@@ -542,6 +558,7 @@ protohttp_validate(pxy_conn_ctx_t *ctx)
 static void NONNULL(1,2)
 protohttp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
+#ifndef WITHOUT_USERAUTH
 	static const char redirect[] =
 		"HTTP/1.1 302 Found\r\n"
 		"Location: %s\r\n"
@@ -550,6 +567,7 @@ protohttp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		"HTTP/1.1 302 Found\r\n"
 		"Location: %s?SSLproxy=%s\r\n"
 		"\r\n";
+#endif /* !WITHOUT_USERAUTH */
 	static const char proto_error[] =
 		"HTTP/1.1 400 Bad request\r\n"
 		"Cache-Control: no-cache\r\n"
@@ -568,6 +586,7 @@ protohttp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	struct evbuffer *inbuf = bufferevent_get_input(bev);
 	struct evbuffer *outbuf = bufferevent_get_output(ctx->dst.bev);
 
+#ifndef WITHOUT_USERAUTH
 	if (ctx->spec->opts->user_auth && !ctx->user) {
 		log_finest("Redirecting conn");
 		char *url = protohttp_get_url(inbuf, ctx);
@@ -581,6 +600,7 @@ protohttp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		ctx->sent_userauth_msg = 1;
 		return;
 	}
+#endif /* !WITHOUT_USERAUTH */
 
 	if (ctx->spec->opts->validate_proto && !ctx->protoctx->is_valid) {
 		http_ctx->seen_bytes += evbuffer_get_length(inbuf);
@@ -874,9 +894,11 @@ protohttp_bev_writecb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 	log_finest("ENTER");
 
+#ifndef WITHOUT_USERAUTH
 	if (prototcp_try_close_unauth_conn(bev, ctx)) {
 		return;
 	}
+#endif /* !WITHOUT_USERAUTH */
 
 	if (prototcp_try_close_protoerror_conn(bev, ctx)) {
 		return;

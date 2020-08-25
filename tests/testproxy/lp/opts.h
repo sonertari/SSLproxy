@@ -33,7 +33,6 @@
 
 #include <sys/types.h>
 #include <sys/socket.h>
-#include <sqlite3.h>
 
 /*
  * Print helper for logging code.

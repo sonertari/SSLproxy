@@ -66,7 +66,9 @@
 #define PRIVSEP_REQ_OPENFILE_P	2	/* open content log file w/mkpath */
 #define PRIVSEP_REQ_OPENSOCK	3	/* open socket and pass fd */
 #define PRIVSEP_REQ_CERTFILE	4	/* open cert file in certgendir */
+#ifndef WITHOUT_USERAUTH
 #define PRIVSEP_REQ_UPDATE_ATIME	5	/* update ip,user atime */
+#endif /* !WITHOUT_USERAUTH */
 /* response byte */
 #define PRIVSEP_ANS_SUCCESS	0	/* success */
 #define PRIVSEP_ANS_UNK_CMD	1	/* unknown command */
@@ -327,6 +329,7 @@ privsep_server_certfile(const char *fn)
 	return fd;
 }
 
+#ifndef WITHOUT_USERAUTH
 static int WUNRES
 privsep_server_update_atime(global_t *global, const userdbkeys_t *keys)
 {
@@ -350,6 +353,7 @@ privsep_server_update_atime(global_t *global, const userdbkeys_t *keys)
 	sqlite3_reset(global->update_user_atime);
 	return 0;
 }
+#endif /* !WITHOUT_USERAUTH */
 
 /*
  * Handle a single request on a readable server socket.
@@ -495,6 +499,7 @@ privsep_server_handle_req(global_t *global, int srvsock)
 		/* not reached */
 		break;
 	}
+#ifndef WITHOUT_USERAUTH
 	case PRIVSEP_REQ_UPDATE_ATIME: {
 		userdbkeys_t arg;
 
@@ -531,6 +536,7 @@ privsep_server_handle_req(global_t *global, int srvsock)
 		/* not reached */
 		break;
 	}
+#endif /* !WITHOUT_USERAUTH */
 	case PRIVSEP_REQ_CERTFILE: {
 		char *fn;
 		int fd;
@@ -926,6 +932,7 @@ privsep_client_close(int clisock)
 	return 0;
 }
 
+#ifndef WITHOUT_USERAUTH
 int
 privsep_client_update_atime(int clisock, const userdbkeys_t *keys)
 {
@@ -974,6 +981,7 @@ privsep_client_update_atime(int clisock, const userdbkeys_t *keys)
 	// Does not return an fd
 	return 0;
 }
+#endif /* !WITHOUT_USERAUTH */
 
 /*
  * Fork and set up privilege separated monitor process.

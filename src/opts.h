@@ -36,9 +36,11 @@
 #include "cert.h"
 #include "attrib.h"
 
+#ifndef WITHOUT_USERAUTH
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sqlite3.h>
+#endif /* !WITHOUT_USERAUTH */
 
 /*
  * Print helper for logging code.
@@ -94,9 +96,11 @@ typedef struct opts {
 	unsigned int remove_http_referer: 1;
 	unsigned int verify_peer: 1;
 	unsigned int allow_wrong_host: 1;
+#ifndef WITHOUT_USERAUTH
 	unsigned int user_auth: 1;
 	char *user_auth_url;
 	unsigned int user_timeout;
+#endif /* !WITHOUT_USERAUTH */
 	unsigned int validate_proto : 1;
 	unsigned int max_http_header_size;
 	struct passsite *passsites;
@@ -137,9 +141,11 @@ typedef struct passsite {
 	char *site;
 	// Filter definition fields
 	char *ip;
+#ifndef WITHOUT_USERAUTH
 	char *user;
 	unsigned int all : 1; /* 1 for all users */
 	char *keyword;
+#endif /* !WITHOUT_USERAUTH */
 	struct passsite *next;
 } passsite_t;
 
@@ -190,9 +196,11 @@ struct global {
 	unsigned int stats_period;
 	unsigned int statslog: 1;
 	unsigned int log_stats: 1;
+#ifndef WITHOUT_USERAUTH
 	char *userdb_path;
 	sqlite3 *userdb;
 	struct sqlite3_stmt *update_user_atime;
+#endif /* !WITHOUT_USERAUTH */
 	proxyspec_t *spec;
 	opts_t *opts;
 
@@ -210,11 +218,13 @@ struct global {
 #endif /* !OPENSSL_NO_ENGINE */
 };
 
+#ifndef WITHOUT_USERAUTH
 typedef struct userdbkeys {
 	char ip[46];
 	char user[32];
 	char ether[18];
 } userdbkeys_t;
+#endif /* !WITHOUT_USERAUTH */
 
 void NORET oom_die(const char *) NONNULL(1);
 cert_t *opts_load_cert_chain_key(const char *) NONNULL(1);

@@ -44,7 +44,9 @@ typedef struct proxy_listener_ctx {
 	pxy_thrmgr_ctx_t *thrmgr;
 	proxyspec_t *spec;
 	global_t *global;
+#ifndef WITHOUT_USERAUTH
 	evutil_socket_t clisock;
+#endif /* !WITHOUT_USERAUTH */
 	struct evconnlistener *evcl;
 	struct proxy_listener_ctx *next;
 } proxy_listener_ctx_t;
@@ -55,7 +57,11 @@ void proxy_loopbreak(proxy_ctx_t *, int) NONNULL(1);
 void proxy_free(proxy_ctx_t *) NONNULL(1);
 void proxy_listener_errorcb(struct evconnlistener *, UNUSED void *);
 
-pxy_conn_ctx_t *proxy_conn_ctx_new(evutil_socket_t, pxy_thrmgr_ctx_t *, proxyspec_t *, global_t *, evutil_socket_t) MALLOC NONNULL(2,3,4);
+pxy_conn_ctx_t *proxy_conn_ctx_new(evutil_socket_t, pxy_thrmgr_ctx_t *, proxyspec_t *, global_t *
+#ifndef WITHOUT_USERAUTH
+	, evutil_socket_t
+#endif /* !WITHOUT_USERAUTH */
+	) MALLOC NONNULL(2,3,4);
 #endif /* !PROXY_H */
 
 /* vim: set noet ft=c: */

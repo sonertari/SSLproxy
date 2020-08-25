@@ -214,6 +214,7 @@ prototcp_init_conn(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 	pxy_conn_connect(ctx);
 }
 
+#ifndef WITHOUT_USERAUTH
 int
 prototcp_try_send_userauth_msg(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
@@ -226,6 +227,7 @@ prototcp_try_send_userauth_msg(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	}
 	return 0;
 }
+#endif /* !WITHOUT_USERAUTH */
 
 static int NONNULL(1,2,3,4)
 prototcp_try_validate_proto(struct bufferevent *bev, pxy_conn_ctx_t *ctx, struct evbuffer *inbuf, struct evbuffer *outbuf)
@@ -266,9 +268,11 @@ prototcp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		return;
 	}
 
+#ifndef WITHOUT_USERAUTH
 	if (prototcp_try_send_userauth_msg(bev, ctx)) {
 		return;
 	}
+#endif /* !WITHOUT_USERAUTH */
 
 	struct evbuffer *inbuf = bufferevent_get_input(bev);
 	struct evbuffer *outbuf = bufferevent_get_output(ctx->dst.bev);
@@ -369,6 +373,7 @@ prototcp_bev_readcb_dst_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ctx
 	pxy_try_set_watermark(bev, ctx->conn, ctx->src.bev);
 }
 
+#ifndef WITHOUT_USERAUTH
 int
 prototcp_try_close_unauth_conn(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
@@ -386,6 +391,7 @@ prototcp_try_close_unauth_conn(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	}
 	return 0;
 }
+#endif /* !WITHOUT_USERAUTH */
 
 int
 prototcp_try_close_protoerror_conn(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
@@ -408,9 +414,11 @@ prototcp_bev_writecb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 	log_finest("ENTER");
 
+#ifndef WITHOUT_USERAUTH
 	if (prototcp_try_close_unauth_conn(bev, ctx)) {
 		return;
 	}
+#endif /* !WITHOUT_USERAUTH */
 
 	if (prototcp_try_close_protoerror_conn(bev, ctx)) {
 		return;
@@ -522,9 +530,11 @@ prototcp_bev_eventcb_connected_srvdst(UNUSED struct bufferevent *bev, pxy_conn_c
 		return;
 	}
 
+#ifndef WITHOUT_USERAUTH
 	if (!ctx->term && !ctx->enomem) {
 		pxy_userauth(ctx);
 	}
+#endif /* !WITHOUT_USERAUTH */
 }
 
 void

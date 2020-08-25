@@ -185,9 +185,11 @@ protosmtp_bev_readcb_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		return;
 	}
 
+#ifndef WITHOUT_USERAUTH
 	if (prototcp_try_send_userauth_msg(ctx->src.bev, ctx)) {
 		return;
 	}
+#endif /* !WITHOUT_USERAUTH */
 
 	struct evbuffer *inbuf = bufferevent_get_input(bev);
 	struct evbuffer *outbuf = bufferevent_get_output(ctx->src.bev);

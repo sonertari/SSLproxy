@@ -148,8 +148,11 @@ proxy_setup_proto(pxy_conn_ctx_t *ctx)
 pxy_conn_ctx_t *
 proxy_conn_ctx_new(evutil_socket_t fd,
                  pxy_thrmgr_ctx_t *thrmgr,
-                 proxyspec_t *spec, global_t *global,
-			     evutil_socket_t clisock)
+                 proxyspec_t *spec, global_t *global
+#ifndef WITHOUT_USERAUTH
+                 , evutil_socket_t clisock
+#endif /* !WITHOUT_USERAUTH */
+                 )
 {
 	log_finest_main_va("ENTER, fd=%d", fd);
 
@@ -175,7 +178,9 @@ proxy_conn_ctx_new(evutil_socket_t fd,
 	}
 
 	ctx->global = global;
+#ifndef WITHOUT_USERAUTH
 	ctx->clisock = clisock;
+#endif /* !WITHOUT_USERAUTH */
 
 #ifdef HAVE_LOCAL_PROCINFO
 	ctx->lproc.pid = -1;
@@ -229,7 +234,11 @@ proxy_listener_acceptcb(UNUSED struct evconnlistener *listener,
 	log_finest_main_va("ENTER, fd=%d", fd);
 
 	/* create per connection state */
-	pxy_conn_ctx_t *ctx = proxy_conn_ctx_new(fd, lctx->thrmgr, lctx->spec, lctx->global, lctx->clisock);
+	pxy_conn_ctx_t *ctx = proxy_conn_ctx_new(fd, lctx->thrmgr, lctx->spec, lctx->global
+#ifndef WITHOUT_USERAUTH
+			, lctx->clisock
+#endif /* !WITHOUT_USERAUTH */
+			);
 	if (!ctx) {
 		log_err_level_printf(LOG_CRIT, "Error allocating ctx memory\n");
 		evutil_closesocket(fd);
@@ -319,7 +328,9 @@ proxy_listener_setup(struct event_base *evbase, pxy_thrmgr_ctx_t *thrmgr,
 		return NULL;
 	}
 
+#ifndef WITHOUT_USERAUTH
 	lctx->clisock = clisock;
+#endif /* !WITHOUT_USERAUTH */
 	
 	// @attention Do not pass NULL as user-supplied pointer
 	lctx->evcl = evconnlistener_new(evbase, proxy_listener_acceptcb,
@@ -490,8 +501,10 @@ proxy_new(global_t *global, int clisock)
 		goto leave4;
 	evtimer_add(ctx->gcev, &gc_delay);
 
-	// @attention Do not close privsep sock, we use it to update user atime
-	//privsep_client_close(clisock);
+	// @attention Do not close privsep sock if the USERAUTH feature is compiled in, we use it to update user atime
+#ifdef WITHOUT_USERAUTH
+	privsep_client_close(clisock);
+#endif /* !WITHOUT_USERAUTH */
 	return ctx;
 
 leave4:

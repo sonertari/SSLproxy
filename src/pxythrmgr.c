@@ -106,11 +106,13 @@ pxy_thrmgr_run(pxy_thrmgr_ctx_t *ctx)
 		ctx->thr[i]->timeout_count = 0;
 		ctx->thr[i]->thrmgr = ctx;
 
+#ifndef WITHOUT_USERAUTH
 		if ((ctx->global->opts->user_auth || global_has_userauth_spec(ctx->global)) &&
 				sqlite3_prepare_v2(ctx->global->userdb, "SELECT user,ether,atime,desc FROM users WHERE ip = ?1", 100, &ctx->thr[i]->get_user, NULL)) {
 			log_err_level_printf(LOG_CRIT, "Error preparing get_user sql stmt: %s\n", sqlite3_errmsg(ctx->global->userdb));
 			goto leave;
 		}
+#endif /* !WITHOUT_USERAUTH */
 	}
 
 	log_dbg_printf("Initialized %d connection handling threads\n", ctx->num_thr);
@@ -144,10 +146,12 @@ leave:
 			if (ctx->thr[i]->evbase) {
 				event_base_free(ctx->thr[i]->evbase);
 			}
+#ifndef WITHOUT_USERAUTH
 			if (ctx->global->userdb) {
 				// sqlite3.h: "Invoking sqlite3_finalize() on a NULL pointer is a harmless no-op."
 				sqlite3_finalize(ctx->thr[i]->get_user);
 			}
+#endif /* !WITHOUT_USERAUTH */
 			free(ctx->thr[i]);
 		}
 		i--;
@@ -180,10 +184,12 @@ pxy_thrmgr_free(pxy_thrmgr_ctx_t *ctx)
 			if (ctx->thr[i]->evbase) {
 				event_base_free(ctx->thr[i]->evbase);
 			}
+#ifndef WITHOUT_USERAUTH
 			if (ctx->global->userdb) {
 				// sqlite3.h: "Invoking sqlite3_finalize() on a NULL pointer is a harmless no-op."
 				sqlite3_finalize(ctx->thr[i]->get_user);
 			}
+#endif /* !WITHOUT_USERAUTH */
 			free(ctx->thr[i]);
 		}
 		free(ctx->thr);

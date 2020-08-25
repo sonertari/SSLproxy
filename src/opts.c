@@ -120,7 +120,9 @@ opts_new(void)
 #endif /* OPENSSL_VERSION_NUMBER >= 0x10100000L */
 	opts->remove_http_referer = 1;
 	opts->verify_peer = 1;
+#ifndef WITHOUT_USERAUTH
 	opts->user_timeout = 300;
+#endif /* !WITHOUT_USERAUTH */
 	opts->max_http_header_size = 8192;
 	return opts;
 }
@@ -177,19 +179,23 @@ opts_free(opts_t *opts)
 	if (opts->ciphersuites) {
 		free(opts->ciphersuites);
 	}
+#ifndef WITHOUT_USERAUTH
 	if (opts->user_auth_url) {
 		free(opts->user_auth_url);
 	}
+#endif /* !WITHOUT_USERAUTH */
 	passsite_t *passsite = opts->passsites;
 	while (passsite) {
 		passsite_t *next = passsite->next;
 		free(passsite->site);
 		if (passsite->ip)
 			free(passsite->ip);
+#ifndef WITHOUT_USERAUTH
 		if (passsite->user)
 			free(passsite->user);
 		if (passsite->keyword)
 			free(passsite->keyword);
+#endif /* !WITHOUT_USERAUTH */
 		free(passsite);
 		passsite = next;
 	}
@@ -327,6 +333,7 @@ global_free(global_t *global)
 		free(global->mirrortarget);
 	}
 #endif /* !WITHOUT_MIRROR */
+#ifndef WITHOUT_USERAUTH
 	if (global->userdb_path) {
 		free(global->userdb_path);
 	}
@@ -335,6 +342,7 @@ global_free(global_t *global)
 		sqlite3_finalize(global->update_user_atime);
 		sqlite3_close(global->userdb);
 	}
+#endif /* !WITHOUT_USERAUTH */
 	if (global->opts) {
 		opts_free(global->opts);
 	}
@@ -387,6 +395,7 @@ global_has_dns_spec(global_t *global)
 	return 0;
 }
 
+#ifndef WITHOUT_USERAUTH
 /*
  * Return 1 if global_t contains a proxyspec with user_auth, 0 otherwise.
  */
@@ -403,6 +412,7 @@ global_has_userauth_spec(global_t *global)
 
 	return 0;
 }
+#endif /* !WITHOUT_USERAUTH */
 
 /*
  * Return 1 if global_t contains a proxyspec with cakey defined, 0 otherwise.
@@ -531,6 +541,7 @@ opts_proto_dbg_dump(opts_t *opts)
 	return s;
 }
 
+#ifndef WITHOUT_USERAUTH
 static void
 opts_set_user_auth_url(opts_t *opts, const char *optarg)
 {
@@ -541,6 +552,7 @@ opts_set_user_auth_url(opts_t *opts, const char *optarg)
 	log_dbg_printf("UserAuthURL: %s\n", opts->user_auth_url);
 #endif /* DEBUG_OPTS */
 }
+#endif /* !WITHOUT_USERAUTH */
 
 static opts_t *
 clone_global_opts(global_t *global, const char *argv0, global_opts_str_t *global_opts_str)
@@ -583,8 +595,10 @@ clone_global_opts(global_t *global, const char *argv0, global_opts_str_t *global
 	opts->remove_http_referer = global->opts->remove_http_referer;
 	opts->verify_peer = global->opts->verify_peer;
 	opts->allow_wrong_host = global->opts->allow_wrong_host;
+#ifndef WITHOUT_USERAUTH
 	opts->user_auth = global->opts->user_auth;
 	opts->user_timeout = global->opts->user_timeout;
+#endif /* !WITHOUT_USERAUTH */
 	opts->validate_proto = global->opts->validate_proto;
 	opts->max_http_header_size = global->opts->max_http_header_size;
 
@@ -624,9 +638,11 @@ clone_global_opts(global_t *global, const char *argv0, global_opts_str_t *global
 	if (global->opts->ciphersuites) {
 		opts_set_ciphersuites(opts, argv0, global->opts->ciphersuites);
 	}
+#ifndef WITHOUT_USERAUTH
 	if (global->opts->user_auth_url) {
 		opts_set_user_auth_url(opts, global->opts->user_auth_url);
 	}
+#endif /* !WITHOUT_USERAUTH */
 
 	passsite_t *passsite = global->opts->passsites;
 	while (passsite) {
@@ -637,11 +653,13 @@ clone_global_opts(global_t *global, const char *argv0, global_opts_str_t *global
 			ps->site = strdup(passsite->site);
 		if (passsite->ip)
 			ps->ip = strdup(passsite->ip);
+#ifndef WITHOUT_USERAUTH
 		if (passsite->user)
 			ps->user = strdup(passsite->user);
 		if (passsite->keyword)
 			ps->keyword = strdup(passsite->keyword);
 		ps->all = passsite->all;
+#endif /* !WITHOUT_USERAUTH */
 
 		ps->next = opts->passsites;
 		opts->passsites = ps;
@@ -941,8 +959,15 @@ passsite_str(passsite_t *passsite)
 	int count = 0;
 	while (passsite) {
 		char *p;
-		if (asprintf(&p, "site=%s,ip=%s,user=%s,keyword=%s,all=%d", 
-					passsite->site, STRORNONE(passsite->ip), STRORNONE(passsite->user), STRORNONE(passsite->keyword), passsite->all) < 0) {
+		if (asprintf(&p, "site=%s,ip=%s"
+#ifndef WITHOUT_USERAUTH
+				",user=%s,keyword=%s,all=%d"
+#endif /* !WITHOUT_USERAUTH */
+				, passsite->site, STRORNONE(passsite->ip)
+#ifndef WITHOUT_USERAUTH
+				, STRORNONE(passsite->user), STRORNONE(passsite->keyword), passsite->all
+#endif /* !WITHOUT_USERAUTH */
+				) < 0) {
 			goto err;
 		}
 		char *nps;
@@ -1009,7 +1034,11 @@ opts_str(opts_t *opts)
 #ifndef OPENSSL_NO_ECDH
 				 "|%s"
 #endif /* !OPENSSL_NO_ECDH */
-				 "|%s%s%s%s%s%s|%s|%d%s|%d\n%s%s%s",
+				 "|%s%s%s%s%s"
+#ifndef WITHOUT_USERAUTH
+				 "%s|%s|%d"
+#endif /* !WITHOUT_USERAUTH */
+				 "%s|%d\n%s%s%s",
 	             (!opts->sslcomp ? "no sslcomp" : ""),
 #ifdef HAVE_SSLV2
 	             (opts->no_ssl2 ? "|no_ssl2" : ""),
@@ -1041,9 +1070,11 @@ opts_str(opts_t *opts)
 	             (opts->remove_http_referer ? "|remove_http_referer" : ""),
 	             (opts->verify_peer ? "|verify_peer" : ""),
 	             (opts->allow_wrong_host ? "|allow_wrong_host" : ""),
+#ifndef WITHOUT_USERAUTH
 	             (opts->user_auth ? "|user_auth" : ""),
 	             (opts->user_auth_url ? opts->user_auth_url : "no user_auth_url"),
-				 opts->user_timeout,
+	             opts->user_timeout,
+#endif /* !WITHOUT_USERAUTH */
 	             (opts->validate_proto ? "|validate_proto" : ""),
 				 opts->max_http_header_size,
 				 proto_dump,
@@ -1700,6 +1731,7 @@ opts_unset_allow_wrong_host(opts_t *opts)
 	opts->allow_wrong_host = 0;
 }
 
+#ifndef WITHOUT_USERAUTH
 static void
 opts_set_user_auth(UNUSED opts_t *opts)
 {
@@ -1714,6 +1746,7 @@ opts_unset_user_auth(opts_t *opts)
 {
 	opts->user_auth = 0;
 }
+#endif /* !WITHOUT_USERAUTH */
 
 static void
 opts_set_validate_proto(opts_t *opts)
@@ -1763,6 +1796,7 @@ opts_set_pass_site(opts_t *opts, char *value, int line_num)
 	ps->site = strdup(s);
 
 	if (argc > 1) {
+#ifndef WITHOUT_USERAUTH
 		if (!strcmp(argv[1], "*")) {
 			ps->all = 1;
 		} else if (sys_isuser(argv[1])) {
@@ -1772,8 +1806,11 @@ opts_set_pass_site(opts_t *opts, char *value, int line_num)
 			}
 			ps->user = strdup(argv[1]);
 		} else {
+#endif /* !WITHOUT_USERAUTH */
 			ps->ip = strdup(argv[1]);
+#ifndef WITHOUT_USERAUTH
 		}
+#endif /* !WITHOUT_USERAUTH */
 	}
 
 	if (argc > 2) {
@@ -1781,13 +1818,19 @@ opts_set_pass_site(opts_t *opts, char *value, int line_num)
 			fprintf(stderr, "PassSite client ip cannot define keyword filter on line %d\n", line_num);
 			exit(EXIT_FAILURE);
 		}
+#ifndef WITHOUT_USERAUTH
 		ps->keyword = strdup(argv[2]);
+#endif /* !WITHOUT_USERAUTH */
 	}
 
 	ps->next = opts->passsites;
 	opts->passsites = ps;
 #ifdef DEBUG_OPTS
+#ifndef WITHOUT_USERAUTH
 	log_dbg_printf("PassSite: %s, %s, %s, %s\n", ps->site, STRORDASH(ps->ip), ps->all ? "*" : STRORDASH(ps->user), STRORDASH(ps->keyword));
+#else /* WITHOUT_USERAUTH */
+	log_dbg_printf("PassSite: %s, %s\n", ps->site, STRORDASH(ps->ip));
+#endif /* WITHOUT_USERAUTH */
 #endif /* DEBUG_OPTS */
 }
 
@@ -2284,6 +2327,7 @@ global_unset_statslog(global_t *global)
 	global->statslog = 0;
 }
 
+#ifndef WITHOUT_USERAUTH
 static void
 global_set_userdb_path(global_t *global, const char *optarg)
 {
@@ -2294,6 +2338,7 @@ global_set_userdb_path(global_t *global, const char *optarg)
 	log_dbg_printf("UserDBPath: %s\n", global->userdb_path);
 #endif /* DEBUG_OPTS */
 }
+#endif /* !WITHOUT_USERAUTH */
 
 int
 check_value_yesno(const char *value, const char *name, int line_num)
@@ -2393,6 +2438,7 @@ set_option(opts_t *opts, const char *argv0,
 #ifdef DEBUG_OPTS
 		log_dbg_printf("NATEngine: %s\n", *natengine);
 #endif /* DEBUG_OPTS */
+#ifndef WITHOUT_USERAUTH
 	} else if (equal(name, "UserAuth")) {
 		yes = check_value_yesno(value, "UserAuth", line_num);
 		if (yes == -1) {
@@ -2415,6 +2461,7 @@ set_option(opts_t *opts, const char *argv0,
 #ifdef DEBUG_OPTS
 		log_dbg_printf("UserTimeout: %u\n", opts->user_timeout);
 #endif /* DEBUG_OPTS */
+#endif /* !WITHOUT_USERAUTH */
 	} else if (equal(name, "ValidateProto")) {
 		yes = check_value_yesno(value, "ValidateProto", line_num);
 		if (yes == -1) {
@@ -2816,8 +2863,10 @@ set_global_option(global_t *global, const char *argv0,
 #endif /* DEBUG_OPTS */
 	} else if (equal(name, "DebugLevel")) {
 		global_set_debug_level(value);
+#ifndef WITHOUT_USERAUTH
 	} else if (equal(name, "UserDBPath")) {
 		global_set_userdb_path(global, value);
+#endif /* !WITHOUT_USERAUTH */
 	} else if (equal(name, "ProxySpec")) {
 		if (equal(value, "{")) {
 #ifdef DEBUG_OPTS

@@ -69,8 +69,10 @@ typedef struct pxy_thr_ctx {
 	// List of active connections on the thread
 	pxy_conn_ctx_t *conns;
 
+#ifndef WITHOUT_USERAUTH
 	// Per-thread sqlite stmt is necessary to prevent multithreading issues between threads
 	struct sqlite3_stmt *get_user;
+#endif /* !WITHOUT_USERAUTH */
 } pxy_thr_ctx_t;
 
 void pxy_thr_attach(pxy_conn_ctx_t *) NONNULL(1);

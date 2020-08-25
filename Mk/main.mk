@@ -75,6 +75,13 @@
 #FEATURES+=	-DWITH_SSLV2
 
 
+### User Authentication
+
+# Define to disable support for user authentication.
+# Doing so will remove the dependency on sqlite.
+#FEATURES+=	-DWITHOUT_USERAUTH
+
+
 ### Debugging
 
 # These flags are added to CFLAGS iff building from a git repo.
@@ -281,9 +288,11 @@ PKGS+=		$(shell $(PKGCONFIG) $(PCFLAGS) --exists libpcap \
 		&& echo libpcap)
 endif
 endif
+ifneq ($(filter -DWITHOUT_USERAUTH,$(FEATURES)),-DWITHOUT_USERAUTH)
 ifndef SQLITE_BASE
 PKGS+=		$(shell $(PKGCONFIG) $(PCFLAGS) --exists sqlite3 \
 		&& echo sqlite3)
+endif
 endif
 TPKGS:=		
 ifndef CHECK_BASE
@@ -328,11 +337,13 @@ $(error dependency 'libpcap' not found; \
 endif
 endif
 endif
+ifneq ($(filter -DWITHOUT_USERAUTH,$(FEATURES)),-DWITHOUT_USERAUTH)
 ifeq (,$(filter sqlite3,$(PKGS)))
 SQLITE_FOUND:=$(call locate,sqlite3,include/sqlite3.h,$(SQLITE_BASE))
 ifndef SQLITE_FOUND
 $(error dependency 'SQLite3' not found; \
 	install it or point SQLITE_BASE to base path)
+endif
 endif
 endif
 ifeq (,$(filter check,$(TPKGS)))
@@ -385,10 +396,12 @@ PKG_LDFLAGS+=	-L$(LIBPCAP_FOUND)/lib
 PKG_LIBS+=	-lpcap
 endif
 endif
+ifneq ($(filter -DWITHOUT_USERAUTH,$(FEATURES)),-DWITHOUT_USERAUTH)
 ifdef SQLITE_FOUND
 PKG_CPPFLAGS+=	-I$(SQLITE_FOUND)/include
 PKG_LDFLAGS+=	-L$(SQLITE_FOUND)/lib
 PKG_LIBS+=	-lsqlite3
+endif
 endif
 ifdef CHECK_FOUND
 TPKG_CPPFLAGS+=	-I$(CHECK_FOUND)/include

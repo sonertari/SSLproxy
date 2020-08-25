@@ -129,9 +129,11 @@ protopassthrough_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		return;
 	}
 
+#ifndef WITHOUT_USERAUTH
 	if (prototcp_try_send_userauth_msg(bev, ctx)) {
 		return;
 	}
+#endif /* !WITHOUT_USERAUTH */
 
 	evbuffer_add_buffer(bufferevent_get_output(ctx->srvdst.bev), bufferevent_get_input(bev));
 	pxy_try_set_watermark(bev, ctx, ctx->srvdst.bev);
@@ -157,9 +159,11 @@ protopassthrough_bev_writecb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 	log_finest("ENTER");
 
+#ifndef WITHOUT_USERAUTH
 	if (prototcp_try_close_unauth_conn(bev, ctx)) {
 		return;
 	}
+#endif /* !WITHOUT_USERAUTH */
 
 	// @attention srvdst.bev may be NULL
 	if (ctx->srvdst.closed) {
@@ -222,9 +226,11 @@ protopassthrough_bev_eventcb_connected_srvdst(struct bufferevent *bev, pxy_conn_
 		return;
 	}
 
+#ifndef WITHOUT_USERAUTH
 	if (!ctx->term && !ctx->enomem) {
 		pxy_userauth(ctx);
 	}
+#endif /* !WITHOUT_USERAUTH */
 }
 
 static void NONNULL(1,2)

@@ -309,6 +309,7 @@ pxy_conn_ctx_free(pxy_conn_ctx_t *ctx, int by_requestor)
 		}
 	}
 
+#ifndef WITHOUT_USERAUTH
 	if (ctx->spec->opts->user_auth && ctx->srchost_str && ctx->user && ctx->ether) {
 		// Update userdb atime if idle time is more than 50% of user timeout, which is expected to reduce update frequency
 		unsigned int idletime = ctx->idletime + (time(NULL) - ctx->ctime);
@@ -330,6 +331,7 @@ pxy_conn_ctx_free(pxy_conn_ctx_t *ctx, int by_requestor)
 			log_finest_va("Will not update user atime, idletime=%u", idletime);
 		}
 	}
+#endif /* !WITHOUT_USERAUTH */
 
 	pxy_thr_detach(ctx);
 
@@ -368,6 +370,7 @@ pxy_conn_ctx_free(pxy_conn_ctx_t *ctx, int by_requestor)
 	}
 	free(ctx->protoctx);
 
+#ifndef WITHOUT_USERAUTH
 	if (ctx->user) {
 		free(ctx->user);
 	}
@@ -377,6 +380,7 @@ pxy_conn_ctx_free(pxy_conn_ctx_t *ctx, int by_requestor)
 	if (ctx->desc) {
 		free(ctx->desc);
 	}
+#endif /* !WITHOUT_USERAUTH */
 	free(ctx);
 }
 
@@ -454,16 +458,22 @@ pxy_log_connect_nonhttp(pxy_conn_ctx_t *ctx)
 #ifdef HAVE_LOCAL_PROCINFO
 		              " %s"
 #endif /* HAVE_LOCAL_PROCINFO */
-		              " user:%s\n",
+#ifndef WITHOUT_USERAUTH
+		              " user:%s"
+#endif /* !WITHOUT_USERAUTH */
+		              "\n",
 		              ctx->proto == PROTO_PASSTHROUGH ? "passthrough" : (ctx->proto == PROTO_POP3 ? "pop3" : (ctx->proto == PROTO_SMTP ? "smtp" : "tcp")),
 		              STRORDASH(ctx->srchost_str),
 		              STRORDASH(ctx->srcport_str),
 		              STRORDASH(ctx->dsthost_str),
-		              STRORDASH(ctx->dstport_str),
+		              STRORDASH(ctx->dstport_str)
 #ifdef HAVE_LOCAL_PROCINFO
-		              lpi,
+		              , lpi
 #endif /* HAVE_LOCAL_PROCINFO */
-		              STRORDASH(ctx->user));
+#ifndef WITHOUT_USERAUTH
+		              , STRORDASH(ctx->user)
+#endif /* !WITHOUT_USERAUTH */
+		              );
 	} else {
 		rv = asprintf(&msg, "CONN: %s %s %s %s %s "
 		              "sni:%s names:%s "
@@ -472,7 +482,10 @@ pxy_log_connect_nonhttp(pxy_conn_ctx_t *ctx)
 #ifdef HAVE_LOCAL_PROCINFO
 		              " %s"
 #endif /* HAVE_LOCAL_PROCINFO */
-		              " user:%s\n",
+#ifndef WITHOUT_USERAUTH
+		              " user:%s"
+#endif /* !WITHOUT_USERAUTH */
+		              "\n",
 		              ctx->proto == PROTO_AUTOSSL ? "autossl" : (ctx->proto == PROTO_POP3S ? "pop3s" : (ctx->proto == PROTO_SMTPS ? "smtps" : "ssl")),
 		              STRORDASH(ctx->srchost_str),
 		              STRORDASH(ctx->srcport_str),
@@ -485,11 +498,14 @@ pxy_log_connect_nonhttp(pxy_conn_ctx_t *ctx)
 		              STRORDASH(ctx->sslctx->srvdst_ssl_version),
 		              STRORDASH(ctx->sslctx->srvdst_ssl_cipher),
 		              STRORDASH(ctx->sslctx->origcrtfpr),
-		              STRORDASH(ctx->sslctx->usedcrtfpr),
+		              STRORDASH(ctx->sslctx->usedcrtfpr)
 #ifdef HAVE_LOCAL_PROCINFO
-		              lpi,
+		              , lpi
 #endif /* HAVE_LOCAL_PROCINFO */
-		              STRORDASH(ctx->user));
+#ifndef WITHOUT_USERAUTH
+		              , STRORDASH(ctx->user)
+#endif /* !WITHOUT_USERAUTH */
+		              );
 	}
 	if ((rv < 0) || !msg) {
 		ctx->enomem = 1;
@@ -1152,16 +1168,22 @@ pxy_setup_child_listener(pxy_conn_ctx_t *ctx)
 		return -1;
 	}
 
+#ifndef WITHOUT_USERAUTH
 	int user_len = 0;
 	if (ctx->spec->opts->user_auth && ctx->user) {
 		// +1 for comma
 		user_len = strlen(ctx->user) + 1;
 	}
+#endif /* !WITHOUT_USERAUTH */
 
 	// SSLproxy: [127.0.0.1]:34649,[192.168.3.24]:47286,[74.125.206.108]:465,s,soner
 	// SSLproxy:        +   + [ + addr         + ] + : + p        + , + [ + srchost_str              + ] + : + srcport_str              + , + [ + dsthost_str              + ] + : + dstport_str              + , + s + , + user
 	// SSLPROXY_KEY_LEN + 1 + 1 + strlen(addr) + 1 + 1 + port_len + 1 + 1 + strlen(ctx->srchost_str) + 1 + 1 + strlen(ctx->srcport_str) + 1 + 1 + strlen(ctx->dsthost_str) + 1 + 1 + strlen(ctx->dstport_str) + 1 + 1 + user_len
-	ctx->sslproxy_header_len = SSLPROXY_KEY_LEN + strlen(addr) + port_len + strlen(ctx->srchost_str) + strlen(ctx->srcport_str) + strlen(ctx->dsthost_str) + strlen(ctx->dstport_str) + 14 + user_len;
+	ctx->sslproxy_header_len = SSLPROXY_KEY_LEN + strlen(addr) + port_len + strlen(ctx->srchost_str) + strlen(ctx->srcport_str) + strlen(ctx->dsthost_str) + strlen(ctx->dstport_str) + 14
+#ifndef WITHOUT_USERAUTH
+			+ user_len
+#endif /* !WITHOUT_USERAUTH */
+			;
 
 	// +1 for NULL
 	ctx->sslproxy_header = malloc(ctx->sslproxy_header_len + 1);
@@ -1172,9 +1194,17 @@ pxy_setup_child_listener(pxy_conn_ctx_t *ctx)
 
 	// printf(3): "snprintf() will write at most size-1 of the characters (the size'th character then gets the terminating NULL)"
 	// So, +1 for NULL
-	if (snprintf(ctx->sslproxy_header, ctx->sslproxy_header_len + 1, "%s [%s]:%u,[%s]:%s,[%s]:%s,%s%s%s",
+	if (snprintf(ctx->sslproxy_header, ctx->sslproxy_header_len + 1, "%s [%s]:%u,[%s]:%s,[%s]:%s,%s"
+#ifndef WITHOUT_USERAUTH
+			"%s%s"
+#endif /* !WITHOUT_USERAUTH */
+			,
 			SSLPROXY_KEY, addr, port, STRORNONE(ctx->srchost_str), STRORNONE(ctx->srcport_str),
-			STRORNONE(ctx->dsthost_str), STRORNONE(ctx->dstport_str), ctx->spec->ssl ? "s":"p", user_len ? "," : "", user_len ? ctx->user : "") < 0) {
+			STRORNONE(ctx->dsthost_str), STRORNONE(ctx->dstport_str), ctx->spec->ssl ? "s":"p"
+#ifndef WITHOUT_USERAUTH
+			, user_len ? "," : "", user_len ? ctx->user : ""
+#endif /* !WITHOUT_USERAUTH */
+			) < 0) {
 		// ctx->sslproxy_header is freed by pxy_conn_ctx_free()
 		pxy_conn_term(ctx, 1);
 		return -1;
@@ -1547,6 +1577,7 @@ pxy_conn_connect(pxy_conn_ctx_t *ctx)
 	}
 }
 
+#ifndef WITHOUT_USERAUTH
 #if defined(__OpenBSD__) || defined(__linux__)
 static void
 identify_user(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
@@ -1816,6 +1847,7 @@ pxy_userauth(pxy_conn_ctx_t *ctx)
 	}
 	return 0;
 }
+#endif /* !WITHOUT_USERAUTH */
 
 int
 pxy_conn_init(pxy_conn_ctx_t *ctx)

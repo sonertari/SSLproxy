@@ -52,7 +52,9 @@
 #define SSLPROXY_KEY		"SSLproxy:"
 #define SSLPROXY_KEY_LEN	strlen(SSLPROXY_KEY)
 
+#ifndef WITHOUT_USERAUTH
 #define USERAUTH_MSG		"You must authenticate to access the Internet at %s\r\n"
+#endif /* !WITHOUT_USERAUTH */
 
 #define PROTOERROR_MSG		"Connection is terminated due to protocol error\r\n"
 #define PROTOERROR_MSG_LEN	strlen(PROTOERROR_MSG)
@@ -250,8 +252,10 @@ struct pxy_conn_ctx {
 	evutil_socket_t dst_fd;
 	evutil_socket_t srvdst_fd;
 
+#ifndef WITHOUT_USERAUTH
 	// Privsep socket to update user atime
 	evutil_socket_t clisock;
+#endif /* !WITHOUT_USERAUTH */
 
 	// fd of event listener for children, explicitly closed on error (not for stats only)
 	evutil_socket_t child_fd;
@@ -289,6 +293,7 @@ struct pxy_conn_ctx {
 	// Expired conns are link-listed using this pointer, a temporary list used in conn thr timercb only
 	pxy_conn_ctx_t *next_expired;
 
+#ifndef WITHOUT_USERAUTH
 	// Number of times we try to acquire user db before giving up
 	unsigned int identify_user_count;
 	// User owner of conn
@@ -301,6 +306,7 @@ struct pxy_conn_ctx {
 	char *desc;
 	// We send redirect/error msg to client if user auth or proto validation fails
 	unsigned int sent_userauth_msg : 1;     /* 1 until error msg is sent */
+#endif /* !WITHOUT_USERAUTH */
 	unsigned int sent_protoerror_msg : 1;   /* 1 until error msg is sent */
 
 #ifdef HAVE_LOCAL_PROCINFO
@@ -400,7 +406,9 @@ void pxy_bev_writecb_child(struct bufferevent *, void *);
 void pxy_bev_eventcb_child(struct bufferevent *, short, void *);
 
 void pxy_conn_connect(pxy_conn_ctx_t *) NONNULL(1);
+#ifndef WITHOUT_USERAUTH
 int pxy_userauth(pxy_conn_ctx_t *) NONNULL(1);
+#endif /* !WITHOUT_USERAUTH */
 void pxy_conn_setup(evutil_socket_t, struct sockaddr *, int,
                     pxy_thrmgr_ctx_t *, proxyspec_t *, global_t *,
 					evutil_socket_t)

@@ -71,7 +71,11 @@ proto_init(protocol_t proto)
 		spec->smtp = 1;
 	}
 
-	pxy_conn_ctx_t *ctx = proxy_conn_ctx_new(0, thrmgr, spec, global, 0);
+	pxy_conn_ctx_t *ctx = proxy_conn_ctx_new(0, thrmgr, spec, global
+#ifndef WITHOUT_USERAUTH
+			, 0
+#endif /* !WITHOUT_USERAUTH */
+			);
 	pxy_thrmgr_assign_thr(ctx);
 	pxy_thr_attach(ctx);
 

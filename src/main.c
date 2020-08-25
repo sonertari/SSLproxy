@@ -135,8 +135,10 @@ main_version(void)
 		lpv += 16;
 	fprintf(stderr, "rtlinked against libpcap %s\n", lpv);
 #endif /* !WITHOUT_MIRROR */
+#ifndef WITHOUT_USERAUTH
 	fprintf(stderr, "compiled against sqlite %s\n", SQLITE_VERSION);
 	fprintf(stderr, "rtlinked against sqlite %s\n", sqlite3_libversion());
+#endif /* !WITHOUT_USERAUTH */
 	fprintf(stderr, "%d CPU cores detected\n", sys_get_cpu_cores());
 }
 
@@ -641,6 +643,7 @@ main(int argc, char *argv[])
 		}
 	}
 
+#ifndef WITHOUT_USERAUTH
 	if (global->opts->user_auth || global_has_userauth_spec(global)) {
 		if (!global->userdb_path) {
 			fprintf(stderr, "User auth requires a userdb path\n");
@@ -660,6 +663,7 @@ main(int argc, char *argv[])
 			exit(EXIT_FAILURE);
 		}
 	}
+#endif /* !WITHOUT_USERAUTH */
 
 	/* dynamic defaults */
 	if (!global->opts->ciphers) {

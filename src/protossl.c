@@ -581,10 +581,18 @@ protossl_srccert_create(pxy_conn_ctx_t *ctx)
 static int NONNULL(1,2)
 protossl_pass_user(pxy_conn_ctx_t *ctx, passsite_t *passsite)
 {
+#ifndef WITHOUT_USERAUTH
 	log_finest_va("ENTER, %s, %s, %s, %s", passsite->site, STRORDASH(passsite->ip), passsite->all ? "*" : STRORDASH(passsite->user), STRORDASH(passsite->keyword));
+#else /* WITHOUT_USERAUTH */
+	log_finest_va("ENTER, %s, %s", passsite->site, STRORDASH(passsite->ip));
+#endif /* WITHOUT_USERAUTH */
 
 	// No filter or * (all) without desc keyword defined
-	if (!passsite->ip && !passsite->user && !passsite->keyword) {
+	if (!passsite->ip
+#ifndef WITHOUT_USERAUTH
+			&& !passsite->user && !passsite->keyword
+#endif /* !WITHOUT_USERAUTH */
+			) {
 		return 1;
 	}
 
@@ -595,14 +603,16 @@ protossl_pass_user(pxy_conn_ctx_t *ctx, passsite_t *passsite)
 		return 1;
 	}
 
+#ifndef WITHOUT_USERAUTH
 	log_finest_va("Filter user: %s, %s", STRORDASH(ctx->user), STRORDASH(ctx->desc));
 
-	// Make sure ctx->user and ctx->desc are set, otherwise if the user did not log in yet, they may be NULL
+	// Make sure ctx->user and ctx->desc are set, otherwise if the user has not logged in yet, they may be NULL
 	// User and/or description keyword filters defined
 	if (ctx->spec->opts->user_auth && (passsite->all || (passsite->user && ctx->user && !strcmp(ctx->user, passsite->user))) &&
 			(!passsite->keyword || (ctx->desc && strcasestr(ctx->desc, passsite->keyword)))) {
 		return 1;
 	}
+#endif /* !WITHOUT_USERAUTH */
 	return 0;
 }
 
@@ -720,8 +730,12 @@ protossl_srcssl_create(pxy_conn_ctx_t *ctx, SSL *origssl)
 	while (passsite) {
 		if (protossl_pass_user(ctx, passsite) && protossl_pass_site(ctx, passsite->site)) {
 			// Do not print the surrounding slashes
+#ifndef WITHOUT_USERAUTH
 			log_err_level_printf(LOG_WARNING, "Found pass site: %.*s for user %s and keyword %s\n", (int)strlen(passsite->site) - 2, passsite->site + 1,
 					passsite->ip ? passsite->ip : (passsite->all ? "*" : STRORDASH(passsite->user)), STRORDASH(passsite->keyword));
+#else /* WITHOUT_USERAUTH */
+			log_err_level_printf(LOG_WARNING, "Found pass site: %.*s for ip %s\n", (int)strlen(passsite->site) - 2, passsite->site + 1, STRORDASH(passsite->ip));
+#endif /* WITHOUT_USERAUTH */
 			cert_free(cert);
 			// Differentiate passsite from passthrough option by raising the passsite flag
 			ctx->sslctx->passsite = 1;
@@ -1521,9 +1535,11 @@ protossl_bev_eventcb_connected_srvdst(UNUSED struct bufferevent *bev, pxy_conn_c
 		return;
 	}
 
+#ifndef WITHOUT_USERAUTH
 	if (!ctx->term && !ctx->enomem) {
 		pxy_userauth(ctx);
 	}
+#endif /* !WITHOUT_USERAUTH */
 }
 
 static void NONNULL(1,2)
