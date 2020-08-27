@@ -608,10 +608,10 @@ pxy_prepare_logging(pxy_conn_ctx_t *ctx)
 #endif /* HAVE_LOCAL_PROCINFO */
 	if (WANT_CONTENT_LOG(ctx)) {
 		if (log_content_open(&ctx->logctx, ctx->global,
-							(struct sockaddr *)&ctx->srcaddr,
-							ctx->srcaddrlen,
-							(struct sockaddr *)&ctx->dstaddr,
-							ctx->dstaddrlen,
+							 (struct sockaddr *)&ctx->srcaddr,
+							 ctx->srcaddrlen,
+							 (struct sockaddr *)&ctx->dstaddr,
+							 ctx->dstaddrlen,
 							 STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str),
 							 STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
 #ifdef HAVE_LOCAL_PROCINFO
@@ -621,7 +621,7 @@ pxy_prepare_logging(pxy_conn_ctx_t *ctx)
 #else /* HAVE_LOCAL_PROCINFO */
 							 NULL, NULL, NULL
 #endif /* HAVE_LOCAL_PROCINFO */
-							) == -1) {
+							 ) == -1) {
 			if (errno == ENOMEM)
 				ctx->enomem = 1;
 			pxy_conn_term(ctx, 1);
