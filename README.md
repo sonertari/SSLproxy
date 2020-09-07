@@ -92,7 +92,8 @@ dynamically upgrade plain TCP to SSL in order to generically support SMTP
 STARTTLS and similar upgrade mechanisms.  SSLproxy fully supports Server Name 
 Indication (SNI) and is able to work with RSA, DSA and ECDSA keys and DHE and 
 ECDHE cipher suites.  Depending on the version of OpenSSL, SSLproxy supports 
-SSL 3.0, TLS 1.0, TLS 1.1 and TLS 1.2, and optionally SSL 2.0 as well.
+SSL 3.0, TLS 1.0, TLS 1.1, TLS 1.2, and TLS 1.3, and optionally SSL 2.0 as 
+well.
 
 For SSL and HTTPS connections, SSLproxy generates and signs forged X509v3
 certificates on-the-fly, mimicking the original server certificate's subject

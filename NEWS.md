@@ -1,4 +1,14 @@
 
+### SSLproxy 0.8.1 2020-09-07
+
+-   Partial support for TLS 1.3. No support for encrypted SNI yet. TLS 1.3 is 
+    enabled by default depending on the version of OpenSSL.
+-   Add -U CipherSuites option for TLS 1.3.
+-   Add WITHOUT_USERAUTH switch, which removes the dependency on sqlite too.
+-   Improve testproxy e2e tests.
+-   Various fixes and improvements.
+
+
 ### SSLproxy 0.8.0 2020-05-24
 
 -   Restructure source tree, create src and tests folders, move files
