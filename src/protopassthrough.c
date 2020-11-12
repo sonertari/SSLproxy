@@ -214,6 +214,19 @@ protopassthrough_enable_src(pxy_conn_ctx_t *ctx)
 	return 0;
 }
 
+#ifndef WITHOUT_USERAUTH
+static void NONNULL(1)
+protopassthrough_clasify_user(pxy_conn_ctx_t *ctx)
+{
+	// Make sure the user owner has already been identified
+	if (ctx->user && ctx->spec->opts->passusers && !pxy_is_passuser(ctx) &&
+			ctx->spec->opts->divertusers && !pxy_is_divertuser(ctx)) {
+		log_fine_va("User %s not in PassUsers and DivertUsers; terminating connection\n", ctx->user);
+		pxy_conn_term(ctx, 1);
+	}
+}
+#endif /* !WITHOUT_USERAUTH */
+
 static void NONNULL(1,2)
 protopassthrough_bev_eventcb_connected_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
@@ -228,7 +241,8 @@ protopassthrough_bev_eventcb_connected_srvdst(struct bufferevent *bev, pxy_conn_
 
 #ifndef WITHOUT_USERAUTH
 	if (!ctx->term && !ctx->enomem) {
-		pxy_userauth(ctx);
+		if (!pxy_userauth(ctx))
+			protopassthrough_clasify_user(ctx);
 	}
 #endif /* !WITHOUT_USERAUTH */
 }

@@ -35,6 +35,7 @@
 #include "protopop3.h"
 #include "protosmtp.h"
 #include "protoautossl.h"
+#include "protopassthrough.h"
 
 #include "privsep.h"
 #include "sys.h"
@@ -1816,6 +1817,45 @@ out:
 	return found_entry - expired - incomplete;
 }
 #endif /* __OpenBSD__ */
+
+int
+pxy_is_divertuser(pxy_conn_ctx_t *ctx)
+{
+	userlist_t *divertuser = ctx->spec->opts->divertusers;
+	while (divertuser) {
+		if (equal(ctx->user, divertuser->user))
+			return 1;
+		divertuser = divertuser->next;
+	}
+	return 0;
+}
+
+int
+pxy_is_passuser(pxy_conn_ctx_t *ctx)
+{
+	userlist_t *passuser = ctx->spec->opts->passusers;
+	while (passuser) {
+		if (equal(ctx->user, passuser->user))
+			return 1;
+		passuser = passuser->next;
+	}
+	return 0;
+}
+
+void
+pxy_clasify_user(pxy_conn_ctx_t *ctx)
+{
+	// Make sure the user owner has already been identified
+	if (ctx->user) {
+		if (ctx->spec->opts->passusers && pxy_is_passuser(ctx)) {
+			log_fine_va("User %s in PassUsers; engaging passthrough mode\n", ctx->user);
+			protopassthrough_engage(ctx);
+		} else if (ctx->spec->opts->divertusers && !pxy_is_divertuser(ctx)) {
+			log_fine_va("User %s not in DivertUsers; terminating connection\n", ctx->user);
+			pxy_conn_term(ctx, 1);
+		}
+	}
+}
 
 int
 pxy_userauth(pxy_conn_ctx_t *ctx)

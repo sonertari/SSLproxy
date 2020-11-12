@@ -253,7 +253,7 @@ main_usage(void)
 "  -V          print version information and exit\n"
 "  -h          print usage information and exit\n";
 	const char *usagefmt2 =
-"  proxyspec = type listenaddr+port  \"up:\"port\n"
+"  proxyspec = type listenaddr+port  \"up:\"port [\"ua:\"utmaddr \"ra:\"returnaddr]\n"
 "                [natengine|targetaddr+port|\"sni\"+port]\n"
 "      e.g.    http 0.0.0.0 8080 up:8080 roe.ch 80    # http/4; static\n"
 "                                                     # hostname dst\n"

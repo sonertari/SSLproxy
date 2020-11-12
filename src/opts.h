@@ -48,6 +48,13 @@
 #define STRORDASH(x)	(((x)&&*(x))?(x):"-")
 #define STRORNONE(x)	(((x)&&*(x))?(x):"")
 
+#ifndef WITHOUT_USERAUTH
+typedef struct userlist {
+	char *user;
+	struct userlist *next;
+} userlist_t;
+#endif /* !WITHOUT_USERAUTH */
+
 typedef struct global global_t;
 
 typedef struct opts {
@@ -100,6 +107,8 @@ typedef struct opts {
 	unsigned int user_auth: 1;
 	char *user_auth_url;
 	unsigned int user_timeout;
+	userlist_t *divertusers;
+	userlist_t *passusers;
 #endif /* !WITHOUT_USERAUTH */
 	unsigned int validate_proto : 1;
 	unsigned int max_http_header_size;

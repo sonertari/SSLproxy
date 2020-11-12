@@ -32,6 +32,7 @@
 #include "sys.h"
 #include "log.h"
 #include "defaults.h"
+#include "util.h"
 
 #include <string.h>
 #include <sys/types.h>
@@ -42,8 +43,6 @@
 #include <openssl/dh.h>
 #endif /* !OPENSSL_NO_DH */
 #include <openssl/x509.h>
-
-#define equal(s1, s2) strlen((s1)) == strlen((s2)) && !strcmp((s1), (s2))
 
 /*
  * Temporary struct used while configuring proxyspec.
@@ -145,6 +144,32 @@ global_new(void)
 	return global;
 }
 
+#ifndef WITHOUT_USERAUTH
+static void
+free_divertusers(opts_t *opts)
+{
+	userlist_t *du = opts->divertusers;
+	while (du) {
+		userlist_t *next = du->next;
+		free(du->user);
+		free(du);
+		du = next;
+	}
+}
+
+static void
+free_passusers(opts_t *opts)
+{
+	userlist_t *pu = opts->passusers;
+	while (pu) {
+		userlist_t *next = pu->next;
+		free(pu->user);
+		free(pu);
+		pu = next;
+	}
+}
+#endif /* !WITHOUT_USERAUTH */
+
 void
 opts_free(opts_t *opts)
 {
@@ -183,6 +208,8 @@ opts_free(opts_t *opts)
 	if (opts->user_auth_url) {
 		free(opts->user_auth_url);
 	}
+	free_divertusers(opts);
+	free_passusers(opts);
 #endif /* !WITHOUT_USERAUTH */
 	passsite_t *passsite = opts->passsites;
 	while (passsite) {
@@ -642,6 +669,28 @@ clone_global_opts(global_t *global, const char *argv0, global_opts_str_t *global
 	if (global->opts->user_auth_url) {
 		opts_set_user_auth_url(opts, global->opts->user_auth_url);
 	}
+	userlist_t *divertusers = global->opts->divertusers;
+	while (divertusers) {
+		userlist_t *du = malloc(sizeof(userlist_t));
+		memset(du, 0, sizeof(userlist_t));
+
+		du->user = strdup(divertusers->user);
+		du->next = opts->divertusers;
+		opts->divertusers = du;
+
+		divertusers = divertusers->next;
+	}
+	userlist_t *passusers = global->opts->passusers;
+	while (passusers) {
+		userlist_t *pu = malloc(sizeof(userlist_t));
+		memset(pu, 0, sizeof(userlist_t));
+
+		pu->user = strdup(passusers->user);
+		pu->next = opts->passusers;
+		opts->passusers = pu;
+
+		passusers = passusers->next;
+	}
 #endif /* !WITHOUT_USERAUTH */
 
 	passsite_t *passsite = global->opts->passsites;
@@ -875,10 +924,9 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine, global_t *globa
 				break;
 			case 3:
 				// Divert port is mandatory
-				// The divert port is set/used in pf and UTM service config.
-				// @todo IPv6?
 				if (strstr(**argv, "up:")) {
 					char *dp = **argv + 3;
+					// @todo IPv6?
 					char *da = "127.0.0.1";
 					char *ra = "127.0.0.1";
 
@@ -950,7 +998,7 @@ char *
 passsite_str(passsite_t *passsite)
 {
 	char *ps = NULL;
-	
+
 	if (!passsite) {
 		ps = strdup("");
 		goto out;
@@ -993,23 +1041,66 @@ out:
 	return ps;
 }
 
+#ifndef WITHOUT_USERAUTH
+char *
+users_str(userlist_t *u)
+{
+	char *us = NULL;
+
+	if (!u) {
+		us = strdup("");
+		goto out;
+	}
+
+	while (u) {
+		char *nus;
+		if (asprintf(&nus, "%s%s%s", STRORNONE(us), us ? "," : "", u->user) < 0) {
+			goto err;
+		}
+
+		if (us)
+			free(us);
+		us = nus;
+		u = u->next;
+	}
+	goto out;
+err:
+	if (us) {
+		free(us);
+		us = NULL;
+	}
+out:
+	return us;
+}
+#endif /* !WITHOUT_USERAUTH */
+
 static char *
 opts_str(opts_t *opts)
 {
-	char *s;
+	char *s = NULL;
 	char *proto_dump = NULL;
+	char *ps = NULL;
 
-	char *ps = passsite_str(opts->passsites);
-	if (!ps) {
-		s = NULL;
+#ifndef WITHOUT_USERAUTH
+	char *du = NULL;
+	char *pu = NULL;
+
+	du = users_str(opts->divertusers);
+	if (!du)
 		goto out;
-	}
+
+	pu = users_str(opts->passusers);
+	if (!pu)
+		goto out;
+#endif /* !WITHOUT_USERAUTH */
+
+	ps = passsite_str(opts->passsites);
+	if (!ps)
+		goto out;
 
 	proto_dump = opts_proto_dbg_dump(opts);
-	if (!proto_dump) {
-		s = NULL;
+	if (!proto_dump)
 		goto out;
-	}
 
 	if (asprintf(&s, "opts=%s"
 #ifdef HAVE_SSLV2
@@ -1036,7 +1127,7 @@ opts_str(opts_t *opts)
 #endif /* !OPENSSL_NO_ECDH */
 				 "|%s%s%s%s%s"
 #ifndef WITHOUT_USERAUTH
-				 "%s|%s|%d"
+				 "%s|%s|%d|%s|%s"
 #endif /* !WITHOUT_USERAUTH */
 				 "%s|%d\n%s%s%s",
 	             (!opts->sslcomp ? "no sslcomp" : ""),
@@ -1074,6 +1165,8 @@ opts_str(opts_t *opts)
 	             (opts->user_auth ? "|user_auth" : ""),
 	             (opts->user_auth_url ? opts->user_auth_url : "no user_auth_url"),
 	             opts->user_timeout,
+	             du,
+	             pu,
 #endif /* !WITHOUT_USERAUTH */
 	             (opts->validate_proto ? "|validate_proto" : ""),
 				 opts->max_http_header_size,
@@ -1082,6 +1175,12 @@ opts_str(opts_t *opts)
 		s = NULL;
 	}
 out:
+#ifndef WITHOUT_USERAUTH
+	if (du)
+		free(du);
+	if (pu)
+		free(pu);
+#endif /* !WITHOUT_USERAUTH */
 	if (ps)
 		free(ps);
 	if (proto_dump)
@@ -1834,6 +1933,89 @@ opts_set_pass_site(opts_t *opts, char *value, int line_num)
 #endif /* DEBUG_OPTS */
 }
 
+#ifndef WITHOUT_USERAUTH
+// Limit the number of users to max 50
+#define MAX_USERS 50
+
+void
+opts_set_divertusers(opts_t *opts, char *value, int line_num)
+{
+	// user1[,user2[,user3]]
+	char *argv[sizeof(char *) * MAX_USERS];
+	int argc = 0;
+	char *p, *last = NULL;
+
+	for ((p = strtok_r(value, ",", &last));
+		 p;
+		 (p = strtok_r(NULL, ",", &last))) {
+		if (argc < MAX_USERS) {
+			argv[argc++] = p;
+		} else {
+			break;
+		}
+	}
+
+	if (!argc) {
+		fprintf(stderr, "DivertUsers requires at least one parameter on line %d\n", line_num);
+		exit(EXIT_FAILURE);
+	}
+
+	// Override the cloned global list, if any
+	if (opts->divertusers) {
+		free_divertusers(opts);
+		opts->divertusers = NULL;
+	}
+
+	while (argc--) {
+		userlist_t *du = malloc(sizeof(userlist_t));
+		memset(du, 0, sizeof(userlist_t));
+
+		du->user = strdup(argv[argc]);
+		du->next = opts->divertusers;
+		opts->divertusers = du;
+	}
+}
+
+void
+opts_set_passusers(opts_t *opts, char *value, int line_num)
+{
+	// user1[,user2[,user3]]
+	char *argv[sizeof(char *) * MAX_USERS];
+	int argc = 0;
+	char *p, *last = NULL;
+
+	for ((p = strtok_r(value, ",", &last));
+		 p;
+		 (p = strtok_r(NULL, ",", &last))) {
+		if (argc < MAX_USERS) {
+			argv[argc++] = p;
+		} else {
+			break;
+		}
+	}
+
+	if (!argc) {
+		fprintf(stderr, "PassUsers requires at least one parameter on line %d\n", line_num);
+		exit(EXIT_FAILURE);
+	}
+
+	// Override the cloned global list, if any
+	if (opts->passusers) {
+		free_passusers(opts);
+		opts->passusers = NULL;
+	}
+
+	while (argc--) {
+		userlist_t *pu = malloc(sizeof(userlist_t));
+		memset(pu, 0, sizeof(userlist_t));
+
+		pu->user = strdup(argv[argc]);
+		pu->next = opts->passusers;
+		opts->passusers = pu;
+	}
+}
+#endif /* !WITHOUT_USERAUTH */
+
 void
 global_set_leafkey(global_t *global, const char *argv0, const char *optarg)
 {
@@ -2461,6 +2643,10 @@ set_option(opts_t *opts, const char *argv0,
 #ifdef DEBUG_OPTS
 		log_dbg_printf("UserTimeout: %u\n", opts->user_timeout);
 #endif /* DEBUG_OPTS */
+	} else if (equal(name, "DivertUsers")) {
+		opts_set_divertusers(opts, value, line_num);
+	} else if (equal(name, "PassUsers")) {
+		opts_set_passusers(opts, value, line_num);
 #endif /* !WITHOUT_USERAUTH */
 	} else if (equal(name, "ValidateProto")) {
 		yes = check_value_yesno(value, "ValidateProto", line_num);
