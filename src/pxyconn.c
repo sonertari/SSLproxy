@@ -1580,6 +1580,46 @@ pxy_conn_connect(pxy_conn_ctx_t *ctx)
 
 #ifndef WITHOUT_USERAUTH
 #if defined(__OpenBSD__) || defined(__linux__)
+int
+pxy_is_divertuser(pxy_conn_ctx_t *ctx)
+{
+	userlist_t *divertuser = ctx->spec->opts->divertusers;
+	while (divertuser) {
+		if (equal(ctx->user, divertuser->user)) {
+			log_finest_va("User %s in DivertUsers", ctx->user);
+			return 1;
+		}
+		divertuser = divertuser->next;
+	}
+	return 0;
+}
+
+int
+pxy_is_passuser(pxy_conn_ctx_t *ctx)
+{
+	userlist_t *passuser = ctx->spec->opts->passusers;
+	while (passuser) {
+		if (equal(ctx->user, passuser->user)) {
+			log_finest_va("User %s in PassUsers", ctx->user);
+			return 1;
+		}
+		passuser = passuser->next;
+	}
+	return 0;
+}
+
+void
+pxy_classify_user(pxy_conn_ctx_t *ctx)
+{
+	if (ctx->spec->opts->passusers && pxy_is_passuser(ctx)) {
+		log_fine_va("User %s in PassUsers; engaging passthrough mode", ctx->user);
+		protopassthrough_engage(ctx);
+	} else if (ctx->spec->opts->divertusers && !pxy_is_divertuser(ctx)) {
+		log_fine_va("User %s not in DivertUsers; terminating connection", ctx->user);
+		pxy_conn_term(ctx, 1);
+	}
+}
+
 static void
 identify_user(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 {
@@ -1640,8 +1680,13 @@ identify_user(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 			ctx->user = strdup((char *)sqlite3_column_text(ctx->thr->get_user, 0));
 			// Desc is needed for PassSite filtering
 			ctx->desc = strdup((char *)sqlite3_column_text(ctx->thr->get_user, 3));
+			if (!ctx->user || !ctx->desc) {
+				goto memout;
+			}
 
 			log_finest_va("Conn user=%s, desc=%s", ctx->user, ctx->desc);
+
+			ctx->protoctx->classify_usercb(ctx);
 		}
 	}
 	log_finest("Passed user identification");
@@ -1818,46 +1863,7 @@ out:
 }
 #endif /* __OpenBSD__ */
 
-int
-pxy_is_divertuser(pxy_conn_ctx_t *ctx)
-{
-	userlist_t *divertuser = ctx->spec->opts->divertusers;
-	while (divertuser) {
-		if (equal(ctx->user, divertuser->user))
-			return 1;
-		divertuser = divertuser->next;
-	}
-	return 0;
-}
-
-int
-pxy_is_passuser(pxy_conn_ctx_t *ctx)
-{
-	userlist_t *passuser = ctx->spec->opts->passusers;
-	while (passuser) {
-		if (equal(ctx->user, passuser->user))
-			return 1;
-		passuser = passuser->next;
-	}
-	return 0;
-}
-
 void
-pxy_clasify_user(pxy_conn_ctx_t *ctx)
-{
-	// Make sure the user owner has already been identified
-	if (ctx->user) {
-		if (ctx->spec->opts->passusers && pxy_is_passuser(ctx)) {
-			log_fine_va("User %s in PassUsers; engaging passthrough mode\n", ctx->user);
-			protopassthrough_engage(ctx);
-		} else if (ctx->spec->opts->divertusers && !pxy_is_divertuser(ctx)) {
-			log_fine_va("User %s not in DivertUsers; terminating connection\n", ctx->user);
-			pxy_conn_term(ctx, 1);
-		}
-	}
-}
-
-int
 pxy_userauth(pxy_conn_ctx_t *ctx)
 {
 	if (ctx->spec->opts->user_auth && !ctx->user) {
@@ -1870,7 +1876,7 @@ pxy_userauth(pxy_conn_ctx_t *ctx)
 #endif /* __linux__ */
 		if (ec == 1) {
 			identify_user(-1, 0, ctx);
-			return 0;
+			return;
 		} else if (ec == 0) {
 			log_err_level_printf(LOG_CRIT, "Cannot find ethernet address of client IP address\n");
 		} else if (ec > 1) {
@@ -1883,9 +1889,7 @@ pxy_userauth(pxy_conn_ctx_t *ctx)
 #endif /* __OpenBSD__ || __linux__ */
 		log_err_level_printf(LOG_CRIT, "Aborting connection setup (user auth)!\n");
 		pxy_conn_term(ctx, 1);
-		return -1;
 	}
-	return 0;
 }
 #endif /* !WITHOUT_USERAUTH */
 

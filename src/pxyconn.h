@@ -71,6 +71,9 @@ typedef void (*bev_free_func_t)(struct bufferevent *, pxy_conn_ctx_t *);
 
 typedef void (*proto_free_func_t)(pxy_conn_ctx_t *);
 typedef int (*proto_validate_func_t)(pxy_conn_ctx_t *, char *, size_t);
+#ifndef WITHOUT_USERAUTH
+typedef void (*proto_classify_user_func_t)(pxy_conn_ctx_t *);
+#endif /* !WITHOUT_USERAUTH */
 
 typedef void (*child_connect_func_t)(pxy_conn_child_ctx_t *);
 typedef void (*child_proto_free_func_t)(pxy_conn_child_ctx_t *);
@@ -151,6 +154,12 @@ struct proto_ctx {
 	proto_free_func_t proto_free;
 	proto_validate_func_t validatecb;
 	unsigned int is_valid : 1;        /* 0 until passed proto validation */
+
+#ifndef WITHOUT_USERAUTH
+	// We should not (re-)engage passthrough mode for certain protocols,
+	// hence the need for this callback
+	proto_classify_user_func_t classify_usercb;
+#endif /* !WITHOUT_USERAUTH */
 
 	// For protocol specific fields, if any
 	void *arg;
@@ -409,8 +418,8 @@ void pxy_conn_connect(pxy_conn_ctx_t *) NONNULL(1);
 #ifndef WITHOUT_USERAUTH
 int pxy_is_divertuser(pxy_conn_ctx_t *) NONNULL(1);
 int pxy_is_passuser(pxy_conn_ctx_t *) NONNULL(1);
-void pxy_clasify_user(pxy_conn_ctx_t *) NONNULL(1);
-int pxy_userauth(pxy_conn_ctx_t *) NONNULL(1);
+void pxy_classify_user(pxy_conn_ctx_t *) NONNULL(1);
+void pxy_userauth(pxy_conn_ctx_t *) NONNULL(1);
 #endif /* !WITHOUT_USERAUTH */
 void pxy_conn_setup(evutil_socket_t, struct sockaddr *, int,
                     pxy_thrmgr_ctx_t *, proxyspec_t *, global_t *,

@@ -532,8 +532,7 @@ prototcp_bev_eventcb_connected_srvdst(UNUSED struct bufferevent *bev, pxy_conn_c
 
 #ifndef WITHOUT_USERAUTH
 	if (!ctx->term && !ctx->enomem) {
-		if (!pxy_userauth(ctx))
-			pxy_clasify_user(ctx);
+		pxy_userauth(ctx);
 	}
 #endif /* !WITHOUT_USERAUTH */
 }
@@ -889,6 +888,10 @@ prototcp_setup(pxy_conn_ctx_t *ctx)
 	ctx->protoctx->bev_readcb = prototcp_bev_readcb;
 	ctx->protoctx->bev_writecb = prototcp_bev_writecb;
 	ctx->protoctx->bev_eventcb = prototcp_bev_eventcb;
+
+#ifndef WITHOUT_USERAUTH
+	ctx->protoctx->classify_usercb = pxy_classify_user;
+#endif /* !WITHOUT_USERAUTH */
 
 	return PROTO_TCP;
 }

@@ -1537,8 +1537,7 @@ protossl_bev_eventcb_connected_srvdst(UNUSED struct bufferevent *bev, pxy_conn_c
 
 #ifndef WITHOUT_USERAUTH
 	if (!ctx->term && !ctx->enomem) {
-		if (!pxy_userauth(ctx))
-			pxy_clasify_user(ctx);
+		pxy_userauth(ctx);
 	}
 #endif /* !WITHOUT_USERAUTH */
 }

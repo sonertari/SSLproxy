@@ -216,12 +216,12 @@ protopassthrough_enable_src(pxy_conn_ctx_t *ctx)
 
 #ifndef WITHOUT_USERAUTH
 static void NONNULL(1)
-protopassthrough_clasify_user(pxy_conn_ctx_t *ctx)
+protopassthrough_classify_user(pxy_conn_ctx_t *ctx)
 {
-	// Make sure the user owner has already been identified
-	if (ctx->user && ctx->spec->opts->passusers && !pxy_is_passuser(ctx) &&
+	// Do not re-engage passthrough mode in passthrough mode
+	if (ctx->spec->opts->passusers && !pxy_is_passuser(ctx) &&
 			ctx->spec->opts->divertusers && !pxy_is_divertuser(ctx)) {
-		log_fine_va("User %s not in PassUsers and DivertUsers; terminating connection\n", ctx->user);
+		log_fine_va("User %s not in PassUsers and DivertUsers; terminating connection", ctx->user);
 		pxy_conn_term(ctx, 1);
 	}
 }
@@ -241,8 +241,7 @@ protopassthrough_bev_eventcb_connected_srvdst(struct bufferevent *bev, pxy_conn_
 
 #ifndef WITHOUT_USERAUTH
 	if (!ctx->term && !ctx->enomem) {
-		if (!pxy_userauth(ctx))
-			protopassthrough_clasify_user(ctx);
+		pxy_userauth(ctx);
 	}
 #endif /* !WITHOUT_USERAUTH */
 }
@@ -421,6 +420,10 @@ protopassthrough_setup(pxy_conn_ctx_t *ctx)
 	ctx->protoctx->bev_readcb = protopassthrough_bev_readcb;
 	ctx->protoctx->bev_writecb = protopassthrough_bev_writecb;
 	ctx->protoctx->bev_eventcb = protopassthrough_bev_eventcb;
+
+#ifndef WITHOUT_USERAUTH
+	ctx->protoctx->classify_usercb = protopassthrough_classify_user;
+#endif /* !WITHOUT_USERAUTH */
 
 	return PROTO_PASSTHROUGH;
 }

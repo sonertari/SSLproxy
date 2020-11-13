@@ -280,6 +280,18 @@ protoautossl_bev_eventcb_connected_dst(struct bufferevent *bev, pxy_conn_ctx_t *
 	protoautossl_enable_src(ctx);
 }
 
+#ifndef WITHOUT_USERAUTH
+static void NONNULL(1)
+protoautossl_classify_user(pxy_conn_ctx_t *ctx)
+{
+	// Do not engage passthrough mode in autossl
+	if (ctx->spec->opts->divertusers && !pxy_is_divertuser(ctx)) {
+		log_fine_va("User %s not in DivertUsers; terminating connection", ctx->user);
+		pxy_conn_term(ctx, 1);
+	}
+}
+#endif /* !WITHOUT_USERAUTH */
+
 static void NONNULL(1,2)
 protoautossl_bev_eventcb_connected_srvdst(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
@@ -298,8 +310,7 @@ protoautossl_bev_eventcb_connected_srvdst(UNUSED struct bufferevent *bev, pxy_co
 
 #ifndef WITHOUT_USERAUTH
 	if (!ctx->term && !ctx->enomem) {
-		if (!pxy_userauth(ctx))
-			pxy_clasify_user(ctx);
+		pxy_userauth(ctx);
 	}
 #endif /* !WITHOUT_USERAUTH */
 }
@@ -454,6 +465,10 @@ protoautossl_setup(pxy_conn_ctx_t *ctx)
 	ctx->protoctx->bev_eventcb = protoautossl_bev_eventcb;
 
 	ctx->protoctx->proto_free = protoautossl_free;
+
+#ifndef WITHOUT_USERAUTH
+	ctx->protoctx->classify_usercb = protoautossl_classify_user;
+#endif /* !WITHOUT_USERAUTH */
 
 	ctx->protoctx->arg = malloc(sizeof(protoautossl_ctx_t));
 	if (!ctx->protoctx->arg) {
