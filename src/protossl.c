@@ -70,9 +70,9 @@ protossl_log_ssl_error(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		 * only log error if debugging is activated */
 		log_dbg_printf("Error from bufferevent: %i:%s %lu:%i:%s:%i:%s:%i:%s\n",
 					   errno, errno ? strerror(errno) : "-", sslerr,
-					   ERR_GET_REASON(sslerr), sslerr ? ERR_reason_error_string(sslerr) : "-",
-					   ERR_GET_LIB(sslerr), sslerr ? ERR_lib_error_string(sslerr) : "-",
-					   ERR_GET_FUNC(sslerr), sslerr ? ERR_func_error_string(sslerr) : "-");
+					   ERR_GET_REASON(sslerr), STRORDASH(ERR_reason_error_string(sslerr)),
+					   ERR_GET_LIB(sslerr), STRORDASH(ERR_lib_error_string(sslerr)),
+					   ERR_GET_FUNC(sslerr), STRORDASH(ERR_func_error_string(sslerr)));
 		while ((sslerr = bufferevent_get_openssl_error(bev))) {
 			log_dbg_printf("Additional SSL error: %lu:%i:%s:%i:%s:%i:%s\n",
 						   sslerr,
@@ -85,9 +85,9 @@ protossl_log_ssl_error(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		log_err_printf("Error from bufferevent: %i:%s %lu:%i:%s:%i:%s:%i:%s\n",
 					   errno, errno ? strerror(errno) : "-",
 					   sslerr,
-					   ERR_GET_REASON(sslerr), sslerr ? ERR_reason_error_string(sslerr) : "-",
-					   ERR_GET_LIB(sslerr), sslerr ? ERR_lib_error_string(sslerr) : "-",
-					   ERR_GET_FUNC(sslerr), sslerr ? ERR_func_error_string(sslerr) : "-");
+					   ERR_GET_REASON(sslerr), STRORDASH(ERR_reason_error_string(sslerr)),
+					   ERR_GET_LIB(sslerr), STRORDASH(ERR_lib_error_string(sslerr)),
+					   ERR_GET_FUNC(sslerr), STRORDASH(ERR_func_error_string(sslerr)));
 		while ((sslerr = bufferevent_get_openssl_error(bev))) {
 			log_err_printf("Additional SSL error: %lu:%i:%s:%i:%s:%i:%s\n",
 						   sslerr,
