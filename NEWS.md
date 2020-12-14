@@ -1,4 +1,11 @@
 
+### SSLproxy 0.8.2 2020-12-14
+
+-   Add DivertUsers and PassUsers options.
+-   Allow mirroring without explicit target, copied from SSLsplit.
+-   Various fixes and improvements.
+
+
 ### SSLproxy 0.8.1 2020-09-07
 
 -   Partial support for TLS 1.3. No support for encrypted SNI yet. TLS 1.3 is 

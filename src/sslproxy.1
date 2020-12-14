@@ -29,7 +29,7 @@
 .\" ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 .\" POSSIBILITY OF SUCH DAMAGE.
 .\"
-.TH "sslproxy" "1" "07 September 2020" "v0.8.1" "SSLproxy"
+.TH "sslproxy" "1" "14 December 2020" "v0.8.2" "SSLproxy"
 .SH NAME
 sslproxy \-\- transparent SSL/TLS proxy for decrypting and diverting network 
 traffic to other programs for deep SSL inspection
@@ -153,6 +153,16 @@ users table is updated with the system time while the connection is being
 terminated. Since this atime update is run using a privsep command, it is 
 expensive. So, to reduce the frequency of such updates, it is deferred until 
 the user idle time is more than half of the timeout period.
+.LP
+DivertUsers and PassUsers options can be used to divert, pass through, or 
+block users. If neither DivertUsers nor PassUsers is defined, all users are 
+diverted to listening programs. Connections from users in DivertUsers, if 
+defined, are diverted to listening programs. Connections from users in 
+PassUsers, if defined, are simply passed through to their original 
+destinations. Users not listed in DivertUsers or PassUsers are blocked. If no 
+DivertUsers list is defined, only users not listed in PassUsers are diverted 
+to listening programs. These user lists can be defined globally or 
+per-proxyspec.
 .LP
 If enabled, the ValidateProto option validates protocols in proxy 
 specifications. If a connection cannot pass protocol validation, then it is 

@@ -26,7 +26,7 @@
 .\" ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 .\" POSSIBILITY OF SUCH DAMAGE.
 .\"
-.TH "sslproxy.conf" "5" "07 September 2020" "v0.8.1" "SSLproxy"
+.TH "sslproxy.conf" "5" "14 December 2020" "v0.8.2" "SSLproxy"
 .SH "NAME"
 .LP 
 \fBsslproxy.conf\fR \- Configuration file for SSLproxy
@@ -263,6 +263,17 @@ Require authentication for users to use SSLproxy.
 .br
 Default: no
 .TP
+\fBDivertUsers STRING\fR
+Comma separated list of users. Connections from these users are diverted to 
+listening programs. Users not listed in DivertUsers or PassUsers are blocked. 
+Max of 50 users can be listed.
+.TP
+\fBPassUsers STRING\fR
+Comma separated list of users. Connections from these users are simply passed 
+through to their original destinations, not diverted to listening programs. 
+Users not listed in DivertUsers or PassUsers are blocked. 
+Max of 50 users can be listed.
+.TP
 \fBUserDBPath STRING\fR
 Path to user db file.
 .TP
@@ -351,6 +362,10 @@ RemoveHTTPReferer
 VerifyPeer
 .br
 UserAuth
+.br
+DivertUsers
+.br
+PassUsers
 .br
 UserTimeout
 .br
