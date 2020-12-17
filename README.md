@@ -152,6 +152,16 @@ terminated. Since this atime update is run using a privsep command, it is
 expensive. So, to reduce the frequency of such updates, it is deferred until 
 the user idle time is more than half of the timeout period.
 
+DivertUsers and PassUsers options can be used to divert, pass through, or 
+block users. If neither DivertUsers nor PassUsers is defined, all users are 
+diverted to listening programs. Connections from users in DivertUsers, if 
+defined, are diverted to listening programs. Connections from users in 
+PassUsers, if defined, are simply passed through to their original 
+destinations. Users not listed in DivertUsers or PassUsers are blocked. If no 
+DivertUsers list is defined, only users not listed in PassUsers are diverted 
+to listening programs. These user lists can be defined globally or 
+per-proxyspec.
+
 If the UserAuth option is enabled, the user owner of the connection is 
 appended at the end of the SSLproxy line, so that the listening program can 
 parse and use this information in its logic and/or logging:
