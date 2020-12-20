@@ -53,7 +53,7 @@ For example, given the following proxy specification:
 
 	https 127.0.0.1 8443 up:8080
 
-The SSLproxy listens for HTTPS connections on 127.0.0.1:8443. Upon receiving a 
+SSLproxy listens for HTTPS connections on 127.0.0.1:8443. Upon receiving a 
 connection from the Client, it decrypts and diverts the packets to a Program 
 listening on 127.0.0.1:8080. After processing the packets, the Program gives 
 them back to SSLproxy listening on a dynamically assigned address, which the 
@@ -313,7 +313,8 @@ With the requirements above available, run:
 Dependencies are autoconfigured using pkg-config. If dependencies are not
 picked up and fixing `PKG_CONFIG_PATH` does not help, you can specify their
 respective locations manually by setting `OPENSSL_BASE`, `LIBEVENT_BASE`,
-`LIBPCAP_BASE`, `LIBNET_BASE` and/or `CHECK_BASE` to the respective prefixes.
+`LIBPCAP_BASE`, `LIBNET_BASE`, `SQLITE_BASE` and/or `CHECK_BASE` to the 
+respective prefixes.
 
 You can override the default install prefix (`/usr/local`) by setting `PREFIX`.
 For more build options and build-time defaults see [`GNUmakefile`](GNUmakefile)

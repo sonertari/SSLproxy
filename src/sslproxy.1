@@ -1,13 +1,11 @@
 .\"-
-.\" SSLproxy - transparent SSL/TLS proxy for diverting packets to programs
+.\" SSLproxy - transparent SSL/TLS proxy for decrypting and diverting network 
+.\" traffic to other programs for deep SSL inspection
 .\" https://github.com/sonertari/SSLproxy
 .\"
 .\" Copyright (c) 2009-2019, Daniel Roethlisberger <daniel@roe.ch>.
 .\" Copyright (c) 2017-2020, Soner Tari <sonertari@gmail.com>.
 .\" All rights reserved.
-.\"
-.\" The modifications for SSLproxy are licensed under the same terms as
-.\" SSLsplit.
 .\"
 .\" Redistribution and use in source and binary forms, with or without
 .\" modification, are permitted provided that the following conditions are met:
@@ -57,19 +55,26 @@ traffic to other programs for deep SSL inspection
 .br
 .ad
 .SH DESCRIPTION
-SSLproxy is a proxy for SSL/TLS encrypted network connections.  It is intended 
+SSLproxy is a proxy for SSL/TLS encrypted network connections. It is intended 
 to be used for decrypting and diverting network traffic to other programs, such 
-as UTM services.
+as UTM services, for deep SSL inspection.
 .LP
-SSLproxy is designed to transparently terminate connections that are redirected 
-to it using a network address translation engine.  SSLproxy then terminates 
-SSL/TLS and initiates a new SSL/TLS connection to the original destination 
-address. Packets received on the client side are decrypted and sent to a 
-program listening on the port given in the proxy specification. SSLproxy 
-inserts in the first packet the address and port it is expecting to receive the 
-packets back from the program. Upon receiving the packets back, SSLproxy 
-re-encrypts and sends them to their original destination. The return traffic 
-follows the same path back to the client in reverse order.
+The UTMFW project uses SSLproxy to decyrpt and feed network traffic into its 
+UTM services: Web Filter, POP3 Proxy, SMTP Proxy, and Inline IPS; and also 
+indirectly into Virus Scanner and Spam Filter through those UTM software. 
+Given that most of the Internet traffic is encrypted now, it wouldn't be 
+possible without SSLproxy to deeply inspect most of the network traffic 
+passing through UTMFW.
+.SH Mode of Operation
+SSLproxy is designed to transparently terminate connections that are redirected
+to it using a network address translation engine. SSLproxy then terminates
+SSL/TLS and initiates a new SSL/TLS connection to the original destination
+address. Packets received on the client side are decrypted and sent to the
+program listening on a port given in the proxy specification. SSLproxy inserts
+in the first packet the address and port it is expecting to receive the packets
+back from the program. Upon receiving the packets back, SSLproxy re-encrypts
+and sends them to their original destination. The return traffic follows the
+same path back to the client in reverse order.
 .LP
 This is similar in principle to divert sockets, divert(4), where the packet 
 filter diverts the packets to a program listening on a divert socket, and after 
@@ -78,61 +83,128 @@ no program listening on that divert socket or the program does not reinject the
 packets into the kernel, the connection is effectively blocked. In the case of 
 SSLproxy, SSLproxy acts as both the packet filter and the kernel, and the 
 communication occurs over networking sockets.
+.SH 	Proxy specification
+For example, given the following proxy specification:
 .LP
-The program that packets are diverted to should support this mode of operation. 
-Specifically, it should be able to recognize the SSLproxy address in the first 
-packet, and give the first and subsequent packets back to SSLproxy listening on 
-that address, instead of sending them to the original destination as it 
-normally would. For an example, see the lp program under the extra folder in 
-the sources.
+https 127.0.0.1 8443 up:8080
 .LP
+SSLproxy listens for HTTPS connections on 127.0.0.1:8443. Upon receiving a 
+connection from the Client, it decrypts and diverts the packets to a Program 
+listening on 127.0.0.1:8080. After processing the packets, the Program gives 
+them back to SSLproxy listening on a dynamically assigned address, which the 
+Program obtains from the SSLproxy line in the first packet in the connection. 
+Then SSLproxy re-encrypts and sends the packets to the Server. The response 
+from the Server follows the same path to the Client in reverse 
+order.
+.SH 	SSLproxy line
+A sample line SSLproxy inserts into the first packet in the connection is the 
+following:
+.LP
+SSLproxy: [127.0.0.1]:34649,[192.168.3.24]:47286,[192.168.111.130]:443,s
+.LP
+The first IP:port pair is a dynamically assigned address that SSLproxy expects 
+the program send the packets back to it. The second and third IP:port pairs 
+are the actual source and destination addresses of the connection 
+respectively. Since the program receives the packets from SSLproxy, it cannot 
+determine the source and destination addresses of the packets by itself, hence 
+must rely on the information in this SSLproxy line. The last letter is either 
+s or p, for SSL/TLS encrypted or plain traffic respectively. This information 
+is also important for the program, because it cannot reliably determine if the 
+actual network traffic it is processing was encrypted or not 
+before being diverted to it.
+.SH 	Listening program
+The program that packets are diverted to should support this mode of operation.
+Specifically, it should be able to recognize the SSLproxy address in the first
+packet, and give the first and subsequent packets back to SSLproxy listening 
+on that address, instead of sending them to the original destination as it 
+normally would.
+.LP
+You can use any software as a listening program as long as it supports this 
+mode of operation. So existing or new software developed in any programming 
+language can be modified to be used with SSLproxy to inspect and/or modify any 
+or all parts of the packets diverted to it.
+.LP
+You can offload the system SSLproxy is running on by diverting packets to 
+remote listening programs too. For example, given the following proxy 
+specification:
+.LP
+https 127.0.0.1 8443 up:8080 ua:192.168.0.1 ra:192.168.1.1
+.LP
+The ua option instructs SSLproxy to divert packets to 192.168.0.1:8080, 
+instead of 127.0.0.1:8080 as in the previous example. Also, the ra option 
+instructs SSLproxy to listen for returned packets from the program on 
+192.168.1.1. Accordingly, the line SSLproxy inserts into the first packet in 
+the connection now becomes:
+.LP
+SSLproxy: [192.168.1.1]:34649,[192.168.3.24]:47286,[192.168.111.130]:443,s
+.LP
+So, the listening program can be running on a machine anywhere in the world. 
+Since the packets between SSLproxy and the listening program are always 
+unencrypted, you should be careful while using such a setup.
+.SH Protocols
+.SH 	Supported protocols
 SSLproxy supports plain TCP, plain SSL, HTTP, HTTPS, POP3, POP3S, SMTP, and 
-SMTPS connections over both IPv4 and IPv6.  It also has the ability to 
+SMTPS connections over both IPv4 and IPv6. It also has the ability to 
 dynamically upgrade plain TCP to SSL in order to generically support SMTP 
-STARTTLS and similar upgrade mechanisms.  SSLproxy fully supports Server Name 
-Indication (SNI) and is able to work with RSA, DSA and ECDSA keys and DHE and 
-ECDHE cipher suites.  Depending on the version of OpenSSL, SSLproxy supports 
-SSL 3.0, TLS 1.0, TLS 1.1, TLS 1.2, and TLS 1.3, and optionally SSL 2.0 as 
-well.
-.LP
-For SSL/TLS connections, SSLproxy generates and signs forged X509v3 
-certificates on-the-fly, mimicking the original server certificate's subject 
-DN, subjectAltName extension and other characteristics.  SSLproxy has the 
-ability to use existing certificates of which the private key is available, 
-instead of generating forged ones.  SSLproxy supports NULL-prefix CN 
-certificates but otherwise does not implement exploits against specific 
-certificate verification vulnerabilities in SSL/TLS stacks.
-.LP
-SSLproxy implements a number of defences against mechanisms which would 
-normally prevent MitM attacks or make them more difficult.  SSLproxy can deny 
-OCSP requests in a generic way.
-For HTTP and HTTPS connections, SSLproxy mangles headers to
-prevent server-instructed public key pinning (HPKP),
-avoid strict transport security restrictions (HSTS),
-avoid Certificate Transparency enforcement (Expect-CT) and
-prevent switching to QUIC/SPDY, HTTP/2 or WebSockets (Upgrade,
-Alternate Protocols).
-HTTP compression, encodings and keep-alive are disabled to make the logs more
-readable.
+STARTTLS and similar upgrade mechanisms. Depending on the version of OpenSSL, 
+SSLproxy supports SSL 3.0, TLS 1.0, TLS 1.1, TLS 1.2, and TLS 1.3, and 
+optionally SSL 2.0 as well. SSLproxy supports Server Name Indication (SNI), 
+but not Encrypted SNI in TLS 1.3. It is able to work with RSA, DSA and ECDSA 
+keys and DHE and ECDHE cipher suites.
+.SH 	OCSP, HPKP, HSTS, Upgrade et al.
+SSLproxy implements a number of defences against mechanisms which would
+normally prevent MitM attacks or make them more difficult. SSLproxy can deny
+OCSP requests in a generic way. For HTTP and HTTPS connections, SSLproxy
+mangles headers to prevent server-instructed public key pinning (HPKP), avoid
+strict transport security restrictions (HSTS), avoid Certificate Transparency
+enforcement (Expect-CT) and prevent switching to QUIC/SPDY, HTTP/2 or
+WebSockets (Upgrade, Alternate Protocols). HTTP compression, encodings and
+keep-alive are disabled to make the logs more readable.
 .LP
 Another reason to disable persistent connections is to reduce file descriptor 
 usage. Accordingly, connections are closed if they remain idle for a certain 
-period of time. The default timeout is 120 seconds, which can be changed in 
-configuration file.
+period of time. The default timeout is 120 seconds, which can be configured by 
+the ConnIdleTimeout option.
+.SH 	Protocol validation
+Protocol validation makes sure the traffic handled by a proxyspec is using the 
+protocol specified in that proxyspec. The ValidateProto option can be used to 
+enable global and/or per-proxyspec protocol validation. This feature currently 
+supports HTTP, POP3, and SMTP protocols. If a connection cannot pass protocol 
+validation, then it is terminated.
 .LP
-SSLproxy verifies upstream certificates by default. If the verification fails, 
-the connection is terminated immediately. This is in contrast to SSLsplit, 
-because in order to maximize the chances that a connection can be successfully 
-split, SSLsplit accepts all certificates by default, including self-signed 
+SSLproxy uses only client requests for protocol validation. However, it also 
+validates SMTP responses until it starts processing the packets from the 
+client. If there is no excessive fragmentation, the first couple of packets in 
+the connection should be enough for validating protocols.
+.SH Certificates
+.SH 	Certificate forging
+For SSL and HTTPS connections, SSLproxy generates and signs forged X509v3
+certificates on-the-fly, mimicking the original server certificate's subject
+DN, subjectAltName extension and other characteristics. SSLproxy has the
+ability to use existing certificates of which the private key is available,
+instead of generating forged ones. SSLproxy supports NULL-prefix CN
+certificates but otherwise does not implement exploits against specific
+certificate verification vulnerabilities in SSL/TLS stacks.
+.SH 	Certificate verification
+SSLproxy verifies upstream certificates by default. If the verification fails,
+the connection is terminated immediately. This is in contrast to SSLsplit,
+because in order to maximize the chances that a connection can be successfully
+split, SSLsplit accepts all certificates by default, including self-signed
 ones.
+.SH 	Client certificates
+SSLproxy uses the certificate and key from the pemfiles configured by the 
+ClientCert and ClientKey options when the destination requests client 
+certificates. These options can be defined globally and/or per-proxyspec.
 .LP
-If enabled, the UserAuth option requires network users to log in to the system 
-to use SSLproxy (this feature is currently available on OpenBSD and Linux 
-only). When users are logged in, they should be recorded on the users table in 
-an SQLite3 database. SSLproxy does not create this users table by itself, so 
-it should already exist in the SQLite3 database file configured by the 
-UserDBPath option. The users table should be created using the following SQL 
-statement:
+Alternatively, you can use the PassSite option to pass through certain 
+destinations requesting client certificates.
+.SH User authentication
+If the UserAuth option is enabled, SSLproxy requires network users to log in 
+to the system to establish connections to the external network.
+.LP
+SSLproxy determines the user owner of a connection using a users table in an 
+SQLite3 database configured by the UserDBPath option. The users table should 
+be created using the following SQL statement:
 .LP
 CREATE TABLE USERS(
    IP             CHAR(45)     PRIMARY KEY     NOT NULL,
@@ -142,39 +214,66 @@ CREATE TABLE USERS(
    DESC           CHAR(50)
 );
 .LP
+SSLproxy does not create this users table or the database file by itself, nor 
+does it log users in or out. So the database file and this table should 
+already exist at the location pointed to by the UserDBPath option. An external 
+program should log users in and out on the users table. The external program 
+should fill out all the fields in user records, except perhaps for the DESC 
+field, which can be left blank.
+.LP
 When SSLproxy accepts a connection, it obtains the ethernet address of the
 client IP address from the arp cache of the system, then compares it with
 the value in the users table. If the ethernet addresses do not match, the 
-connection is redirected to the login page. SSLproxy also compares the atime 
-value in the users table with the current system time. If the difference is 
-greater than the configured value of the user timeout option, then the 
-connection is redirected to the login page. The atime of the IP address in the 
-users table is updated with the system time while the connection is being 
-terminated. Since this atime update is run using a privsep command, it is 
-expensive. So, to reduce the frequency of such updates, it is deferred until 
-the user idle time is more than half of the timeout period.
+connection is redirected to a login page configured by the UserAuthURL option.
 .LP
+SSLproxy also compares the atime value in the users table with the current 
+system time. If the difference is greater than the value configured by the 
+UserTimeout option, then the connection is redirected to the login page.
+.LP
+The atime of the IP address in the users table is updated with the system time 
+while the connection is being terminated. Since this atime update is executed 
+using a privsep command, it is expensive. So, to reduce the frequency of such 
+updates, it is deferred until after the user idle time is more than half of 
+the timeout period.
+.LP
+If a description text is provided in the DESC field, it can be used with the 
+PassSite option to treat the user logged in from different locations, i.e. 
+from different client IP addresses, separately.
+.LP
+If the UserAuth option is enabled, the user owner of the connection is 
+appended at the end of the SSLproxy line, so that the listening program can 
+parse and use this information in its logic and/or logging:
+.LP
+SSLproxy: [127.0.0.1]:34649,[192.168.3.24]:47286,[192.168.111.130]:443,s,soner
+.LP
+The user authentication feature is currently available on OpenBSD and Linux only.
+.SH 	User control lists
 DivertUsers and PassUsers options can be used to divert, pass through, or 
-block users. If neither DivertUsers nor PassUsers is defined, all users are 
-diverted to listening programs. Connections from users in DivertUsers, if 
-defined, are diverted to listening programs. Connections from users in 
-PassUsers, if defined, are simply passed through to their original 
-destinations. Users not listed in DivertUsers or PassUsers are blocked. If no 
-DivertUsers list is defined, only users not listed in PassUsers are diverted 
-to listening programs. These user lists can be defined globally or 
-per-proxyspec.
+block users.
 .LP
-If enabled, the ValidateProto option validates protocols in proxy 
-specifications. If a connection cannot pass protocol validation, then it is 
-terminated. This feature currently supports HTTP, POP3, and SMTP protocols.
+ - If neither DivertUsers nor PassUsers is defined, all users are diverted to 
+listening programs.
+ - Connections from users in DivertUsers, if defined, are diverted to listening 
+programs.
+ - Connections from users in PassUsers, if defined, are simply passed through 
+to their original destinations.
+ - Users not listed in DivertUsers or PassUsers are blocked.
+ - If no DivertUsers list is defined, only users *not* listed in PassUsers are 
+diverted to listening programs.
 .LP
+These user control lists can be defined globally or per-proxyspec.
+.SH Servers Excluded from SSL Inspection
 PassSite option allows certain SSL sites to be excluded from SSL inspection. 
 If a PassSite matches SNI or common names in the SSL certificate, the 
 connection is passed through the proxy without being diverted to the listening 
 program. For example, sites requiring client authentication can be added as 
-PassSite. Per site filters can be defined using client IP addresses, users, 
-and description keywords. Multiple sites can be defined, one on each line.
+PassSite.
 .LP
+Per-site filters can be defined using client IP addresses, users, and 
+description keywords. If the UserAuth option is disabled, only client IP 
+addresses can be used in PassSite filters. Multiple sites can be defined, one 
+on each line.
+.SH Logging
 Logging options include traditional SSLproxy connect and content log files as
 well as PCAP files and mirroring decrypted traffic to a network interface.
 Additionally, certificates, master secrets and local process information can be
@@ -186,8 +285,6 @@ running \fBsslproxy\fP.  Your options include running \fBsslproxy\fP on a
 legitimate router, ARP spoofing, ND spoofing, DNS poisoning, deploying a rogue
 access point (e.g. using hostap mode), physical recabling, malicious VLAN
 reconfiguration or route injection, /etc/hosts modification and so on.
-.LP
-As SSLproxy is based on SSLsplit, this is a modified SSLsplit man page.
 .SH OPTIONS
 .TP
 .B \-a \fIpemfile\fP
