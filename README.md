@@ -35,8 +35,7 @@ back from the program. Upon receiving the packets back, SSLproxy re-encrypts
 and sends them to their original destination. The return traffic follows the
 same path back to the client in reverse order.
 
-![Mode of Operation 
-Diagram](https://drive.google.com/uc?id=1N_Yy5nMPDSvY8YaNFd4sHvipyLWq5zDy)
+![Mode of Operation Diagram](https://drive.google.com/uc?id=1N_Yy5nMPDSvY8YaNFd4sHvipyLWq5zDy)
 
 This is similar in principle to [divert 
 sockets](https://man.openbsd.org/divert.4), where the packet filter diverts the 
@@ -53,14 +52,17 @@ For example, given the following proxy specification:
 
 	https 127.0.0.1 8443 up:8080
 
-SSLproxy listens for HTTPS connections on 127.0.0.1:8443. Upon receiving a 
-connection from the Client, it decrypts and diverts the packets to a Program 
-listening on 127.0.0.1:8080. After processing the packets, the Program gives 
-them back to SSLproxy listening on a dynamically assigned address, which the 
-Program obtains from the SSLproxy line in the first packet in the connection. 
-Then SSLproxy re-encrypts and sends the packets to the Server. The response 
-from the Server follows the same path to the Client in reverse 
-order.
+- SSLproxy listens for HTTPS connections on 127.0.0.1:8443.
+- Upon receiving a connection from the Client, it decrypts and diverts the 
+packets to a Program listening on 127.0.0.1:8080. The default return address 
+is 127.0.0.1, which can be configured by the `ua` option.
+- After processing the packets, the Program gives them back to SSLproxy 
+listening on a dynamically assigned address, which the Program obtains from 
+the SSLproxy line in the first packet in the connection.
+- Then SSLproxy re-encrypts and sends the packets to the Server.
+
+The response from the Server follows the same path back to the Client in 
+reverse order.
 
 #### SSLproxy line
 
@@ -69,16 +71,17 @@ following:
 
 	SSLproxy: [127.0.0.1]:34649,[192.168.3.24]:47286,[192.168.111.130]:443,s
 
-The first IP:port pair is a dynamically assigned address that SSLproxy expects 
-the program send the packets back to it. The second and third IP:port pairs 
-are the actual source and destination addresses of the connection 
-respectively. Since the program receives the packets from SSLproxy, it cannot 
-determine the source and destination addresses of the packets by itself, hence 
-must rely on the information in this SSLproxy line. The last letter is either 
-s or p, for SSL/TLS encrypted or plain traffic respectively. This information 
-is also important for the program, because it cannot reliably determine if the 
-actual network traffic it is processing was encrypted or not 
-before being diverted to it.
+- The first IP:port pair is a dynamically assigned address that SSLproxy 
+expects the program send the packets back to it.
+- The second and third IP:port pairs are the actual source and destination 
+addresses of the connection respectively. Since the program receives the 
+packets from SSLproxy, it cannot determine the source and destination 
+addresses of the packets by itself, e.g by asking the NAT engine, hence must 
+rely on the information in the SSLproxy line.
+- The last letter is either s or p, for SSL/TLS encrypted or plain traffic 
+respectively. This information is also important for the program, because it 
+cannot reliably determine if the actual network traffic it is processing was 
+encrypted or not before being diverted to it.
 
 #### Listening program
 
@@ -99,11 +102,12 @@ specification:
 
 	https 127.0.0.1 8443 up:8080 ua:192.168.0.1 ra:192.168.1.1
 
-The `ua` option instructs SSLproxy to divert packets to 192.168.0.1:8080, 
-instead of 127.0.0.1:8080 as in the previous example. Also, the `ra` option 
-instructs SSLproxy to listen for returned packets from the program on 
-192.168.1.1. Accordingly, the line SSLproxy inserts into the first packet in 
-the connection now becomes:
+- The `ua` option instructs SSLproxy to divert packets to 192.168.0.1:8080, 
+instead of 127.0.0.1:8080 as in the previous proxyspec example.
+- The `ra` option instructs SSLproxy to listen for returned packets from the 
+program on 192.168.1.1, instead of 127.0.0.1 as in the previous SSLproxy line.
+
+Accordingly, the SSLproxy line now becomes:
 
 	SSLproxy: [192.168.1.1]:34649,[192.168.3.24]:47286,[192.168.111.130]:443,s
 
@@ -172,7 +176,8 @@ the connection is terminated immediately. This is in contrast to SSLsplit,
 because in order to maximize the chances that a connection can be successfully
 split, SSLsplit accepts all certificates by default, including self-signed
 ones. See [The Risks of SSL Inspection](https://insights.sei.cmu.edu/cert/2015/03/the-risks-of-ssl-inspection.html)
-for the reasons of this difference.
+for the reasons of this difference. You can disable this feature by the 
+VerifyPeer option.
 
 #### Client certificates
 
@@ -201,7 +206,7 @@ be created using the following SQL statement:
 	);
 
 SSLproxy does not create this users table or the database file by itself, nor 
-does it log users in or out. So the database file and this table should 
+does it log users in or out. So the database file and the users table should 
 already exist at the location pointed to by the UserDBPath option. An external 
 program should log users in and out on the users table. The external program 
 should fill out all the fields in user records, except perhaps for the DESC 
@@ -244,19 +249,22 @@ listening programs.
 - Connections from users in DivertUsers, if defined, are diverted to listening 
 programs.
 - Connections from users in PassUsers, if defined, are simply passed through 
-to their original destinations.
-- Users not listed in DivertUsers or PassUsers are blocked.
-- If no DivertUsers list is defined, only users *not* listed in PassUsers are 
-diverted to listening programs.
+to their original destinations. SSLproxy engages the Passthrough mode for that 
+purpose.
+- if both DivertUsers and PassUsers are defined, users not listed in either of 
+the lists are blocked. SSLproxy simply terminates their connections.
+- If *no* DivertUsers list is defined, only users *not* listed in PassUsers 
+are diverted to listening programs.
 
 These user control lists can be defined globally or per-proxyspec.
 
-### Servers excluded from SSL inspection
+### Excluding sites from SSL inspection
 
 PassSite option allows certain SSL sites to be excluded from SSL inspection. 
-If a PassSite matches SNI or common names in the SSL certificate, the 
-connection is passed through the proxy without being diverted to the listening 
-program. For example, sites requiring client authentication can be added as 
+If a PassSite matches the SNI or common names in the SSL certificate of a 
+connection, that connection is passed through the proxy without being diverted 
+to the listening program. SSLproxy engages the Passthrough mode for that 
+purpose. For example, sites requiring client authentication can be added as 
 PassSite.
 
 Per-site filters can be defined using client IP addresses, users, and 
@@ -306,7 +314,7 @@ LibreSSL.
 With the requirements above available, run:
 
     make
-    make test       # optional unit tests
+    make test       # optional unit and e2e tests
     make sudotest   # optional unit tests requiring privileges
     make install    # optional install
 
