@@ -54,7 +54,7 @@ For example, given the following proxy specification:
 
 - SSLproxy listens for HTTPS connections on 127.0.0.1:8443.
 - Upon receiving a connection from the Client, it decrypts and diverts the 
-packets to a Program listening on 127.0.0.1:8080. The default return address 
+packets to a Program listening on 127.0.0.1:8080. The default divert address 
 is 127.0.0.1, which can be configured by the `ua` option.
 - After processing the packets, the Program gives them back to SSLproxy 
 listening on a dynamically assigned address, which the Program obtains from 
