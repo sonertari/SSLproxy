@@ -10,7 +10,13 @@ $(TARGET):
 	$(MAKE) -C $(SRCDIR)
 
 test: $(TARGET)
+	$(MAKE) unittest
+	$(MAKE) e2etest
+
+unittest: $(TARGET)
 	$(MAKE) -C $(CHECKTESTSDIR)
+
+e2etest: $(TARGET)
 	$(MAKE) -C $(TESTPROXYTESTSDIR)
 
 clean:
@@ -18,12 +24,14 @@ clean:
 	$(MAKE) -C $(CHECKTESTSDIR) clean
 
 travis: $(TARGET)
+	$(MAKE) travisunittest
+	$(MAKE) travise2etest
+
+travisunittest: $(TARGET)
 	$(MAKE) -C $(CHECKTESTSDIR) travis
-ifneq ($(shell uname),Darwin)
+
+travise2etest: $(TARGET)
 	$(MAKE) -C $(TESTPROXYTESTSDIR) travis
-else
-	$(warning Not running travis $(TESTPROXYTESTSDIR) on $(shell uname))
-endif
 
 install:
 	$(MAKE) -C $(SRCDIR) install
