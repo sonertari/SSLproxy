@@ -1581,29 +1581,18 @@ pxy_conn_connect(pxy_conn_ctx_t *ctx)
 #ifndef WITHOUT_USERAUTH
 #if defined(__OpenBSD__) || defined(__linux__)
 int
-pxy_is_divertuser(pxy_conn_ctx_t *ctx)
+pxy_is_listuser(userlist_t *list, const char *user
+#ifdef DEBUG_PROXY
+	, pxy_conn_ctx_t *ctx, const char *listname
+#endif /* DEBUG_PROXY */
+	)
 {
-	userlist_t *divertuser = ctx->spec->opts->divertusers;
-	while (divertuser) {
-		if (equal(ctx->user, divertuser->user)) {
-			log_finest_va("User %s in DivertUsers", ctx->user);
+	while (list) {
+		if (equal(user, list->user)) {
+			log_finest_va("User %s in %s", user, listname);
 			return 1;
 		}
-		divertuser = divertuser->next;
-	}
-	return 0;
-}
-
-int
-pxy_is_passuser(pxy_conn_ctx_t *ctx)
-{
-	userlist_t *passuser = ctx->spec->opts->passusers;
-	while (passuser) {
-		if (equal(ctx->user, passuser->user)) {
-			log_finest_va("User %s in PassUsers", ctx->user);
-			return 1;
-		}
-		passuser = passuser->next;
+		list = list->next;
 	}
 	return 0;
 }
@@ -1611,10 +1600,18 @@ pxy_is_passuser(pxy_conn_ctx_t *ctx)
 void
 pxy_classify_user(pxy_conn_ctx_t *ctx)
 {
-	if (ctx->spec->opts->passusers && pxy_is_passuser(ctx)) {
+	if (ctx->spec->opts->passusers && pxy_is_listuser(ctx->spec->opts->passusers, ctx->user
+#ifdef DEBUG_PROXY
+			, ctx, "PassUsers"
+#endif /* DEBUG_PROXY */
+			)) {
 		log_fine_va("User %s in PassUsers; engaging passthrough mode", ctx->user);
 		protopassthrough_engage(ctx);
-	} else if (ctx->spec->opts->divertusers && !pxy_is_divertuser(ctx)) {
+	} else if (ctx->spec->opts->divertusers && !pxy_is_listuser(ctx->spec->opts->divertusers, ctx->user
+#ifdef DEBUG_PROXY
+			, ctx, "DivertUsers"
+#endif /* DEBUG_PROXY */
+			)) {
 		log_fine_va("User %s not in DivertUsers; terminating connection", ctx->user);
 		pxy_conn_term(ctx, 1);
 	}

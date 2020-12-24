@@ -285,7 +285,11 @@ static void NONNULL(1)
 protoautossl_classify_user(pxy_conn_ctx_t *ctx)
 {
 	// Do not engage passthrough mode in autossl
-	if (ctx->spec->opts->divertusers && !pxy_is_divertuser(ctx)) {
+	if (ctx->spec->opts->divertusers && !pxy_is_listuser(ctx->spec->opts->divertusers, ctx->user
+#ifdef DEBUG_PROXY
+			, ctx, "DivertUsers"
+#endif /* DEBUG_PROXY */
+			)) {
 		log_fine_va("User %s not in DivertUsers; terminating connection", ctx->user);
 		pxy_conn_term(ctx, 1);
 	}

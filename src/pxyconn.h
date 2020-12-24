@@ -416,8 +416,11 @@ void pxy_bev_eventcb_child(struct bufferevent *, short, void *);
 
 void pxy_conn_connect(pxy_conn_ctx_t *) NONNULL(1);
 #ifndef WITHOUT_USERAUTH
-int pxy_is_divertuser(pxy_conn_ctx_t *) NONNULL(1);
-int pxy_is_passuser(pxy_conn_ctx_t *) NONNULL(1);
+int pxy_is_listuser(userlist_t *, const char *
+#ifdef DEBUG_PROXY
+	, pxy_conn_ctx_t *, const char *
+#endif /* DEBUG_PROXY */
+	) NONNULL(1,2);
 void pxy_classify_user(pxy_conn_ctx_t *) NONNULL(1);
 void pxy_userauth(pxy_conn_ctx_t *) NONNULL(1);
 #endif /* !WITHOUT_USERAUTH */

@@ -219,9 +219,17 @@ static void NONNULL(1)
 protopassthrough_classify_user(pxy_conn_ctx_t *ctx)
 {
 	// Do not re-engage passthrough mode in passthrough mode
-	if (ctx->spec->opts->passusers && !pxy_is_passuser(ctx) &&
-			ctx->spec->opts->divertusers && !pxy_is_divertuser(ctx)) {
-		log_fine_va("User %s not in PassUsers and DivertUsers; terminating connection", ctx->user);
+	if (ctx->spec->opts->passusers && !pxy_is_listuser(ctx->spec->opts->passusers, ctx->user
+#ifdef DEBUG_PROXY
+			, ctx, "PassUsers"
+#endif /* DEBUG_PROXY */
+			) &&
+			ctx->spec->opts->divertusers && !pxy_is_listuser(ctx->spec->opts->divertusers, ctx->user
+#ifdef DEBUG_PROXY
+			, ctx, "DivertUsers"
+#endif /* DEBUG_PROXY */
+			)) {
+		log_fine_va("User %s not in PassUsers or DivertUsers; terminating connection", ctx->user);
 		pxy_conn_term(ctx, 1);
 	}
 }

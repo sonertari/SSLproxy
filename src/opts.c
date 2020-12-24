@@ -146,26 +146,13 @@ global_new(void)
 
 #ifndef WITHOUT_USERAUTH
 static void
-free_divertusers(opts_t *opts)
+free_userlist(userlist_t *ul)
 {
-	userlist_t *du = opts->divertusers;
-	while (du) {
-		userlist_t *next = du->next;
-		free(du->user);
-		free(du);
-		du = next;
-	}
-}
-
-static void
-free_passusers(opts_t *opts)
-{
-	userlist_t *pu = opts->passusers;
-	while (pu) {
-		userlist_t *next = pu->next;
-		free(pu->user);
-		free(pu);
-		pu = next;
+	while (ul) {
+		userlist_t *next = ul->next;
+		free(ul->user);
+		free(ul);
+		ul = next;
 	}
 }
 #endif /* !WITHOUT_USERAUTH */
@@ -208,8 +195,8 @@ opts_free(opts_t *opts)
 	if (opts->user_auth_url) {
 		free(opts->user_auth_url);
 	}
-	free_divertusers(opts);
-	free_passusers(opts);
+	free_userlist(opts->divertusers);
+	free_userlist(opts->passusers);
 #endif /* !WITHOUT_USERAUTH */
 	passsite_t *passsite = opts->passsites;
 	while (passsite) {
@@ -1937,8 +1924,8 @@ opts_set_pass_site(opts_t *opts, char *value, int line_num)
 // Limit the number of users to max 50
 #define MAX_USERS 50
 
-void
-opts_set_divertusers(opts_t *opts, char *value, int line_num)
+static void
+opts_set_userlist(char *value, int line_num, userlist_t **list, const char *listname)
 {
 	// user1[,user2[,user3]]
 	char *argv[sizeof(char *) * MAX_USERS];
@@ -1956,62 +1943,23 @@ opts_set_divertusers(opts_t *opts, char *value, int line_num)
 	}
 
 	if (!argc) {
-		fprintf(stderr, "DivertUsers requires at least one parameter on line %d\n", line_num);
+		fprintf(stderr, "%s requires at least one parameter on line %d\n", listname, line_num);
 		exit(EXIT_FAILURE);
 	}
 
 	// Override the cloned global list, if any
-	if (opts->divertusers) {
-		free_divertusers(opts);
-		opts->divertusers = NULL;
+	if (*list) {
+		free_userlist(*list);
+		*list = NULL;
 	}
 
 	while (argc--) {
-		userlist_t *du = malloc(sizeof(userlist_t));
-		memset(du, 0, sizeof(userlist_t));
+		userlist_t *ul = malloc(sizeof(userlist_t));
+		memset(ul, 0, sizeof(userlist_t));
 
-		du->user = strdup(argv[argc]);
-		du->next = opts->divertusers;
-		opts->divertusers = du;
-	}
-}
-
-void
-opts_set_passusers(opts_t *opts, char *value, int line_num)
-{
-	// user1[,user2[,user3]]
-	char *argv[sizeof(char *) * MAX_USERS];
-	int argc = 0;
-	char *p, *last = NULL;
-
-	for ((p = strtok_r(value, ",", &last));
-		 p;
-		 (p = strtok_r(NULL, ",", &last))) {
-		if (argc < MAX_USERS) {
-			argv[argc++] = p;
-		} else {
-			break;
-		}
-	}
-
-	if (!argc) {
-		fprintf(stderr, "PassUsers requires at least one parameter on line %d\n", line_num);
-		exit(EXIT_FAILURE);
-	}
-
-	// Override the cloned global list, if any
-	if (opts->passusers) {
-		free_passusers(opts);
-		opts->passusers = NULL;
-	}
-
-	while (argc--) {
-		userlist_t *pu = malloc(sizeof(userlist_t));
-		memset(pu, 0, sizeof(userlist_t));
-
-		pu->user = strdup(argv[argc]);
-		pu->next = opts->passusers;
-		opts->passusers = pu;
+		ul->user = strdup(argv[argc]);
+		ul->next = *list;
+		*list = ul;
 	}
 }
 #endif /* !WITHOUT_USERAUTH */
@@ -2644,9 +2592,9 @@ set_option(opts_t *opts, const char *argv0,
 		log_dbg_printf("UserTimeout: %u\n", opts->user_timeout);
 #endif /* DEBUG_OPTS */
 	} else if (equal(name, "DivertUsers")) {
-		opts_set_divertusers(opts, value, line_num);
+		opts_set_userlist(value, line_num, &opts->divertusers, "DivertUsers");
 	} else if (equal(name, "PassUsers")) {
-		opts_set_passusers(opts, value, line_num);
+		opts_set_userlist(value, line_num, &opts->passusers, "PassUsers");
 #endif /* !WITHOUT_USERAUTH */
 	} else if (equal(name, "ValidateProto")) {
 		yes = check_value_yesno(value, "ValidateProto", line_num);
