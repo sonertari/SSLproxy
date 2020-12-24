@@ -128,6 +128,13 @@ optionally SSL 2.0 as well. SSLproxy supports Server Name Indication (SNI),
 but not Encrypted SNI in TLS 1.3. It is able to work with RSA, DSA and ECDSA 
 keys and DHE and ECDHE cipher suites.
 
+The following features of SSLproxy are IPv4 only:
+- Divert addresses for listening programs in proxyspecs
+- SSLproxy return addresses dynamically assigned to connections
+- IP addresses in the ua and ra options
+- IP and ethernet addresses of clients in user authentication
+- Target IP and ethernet addresses in mirror logging
+
 #### OCSP, HPKP, HSTS, Upgrade et al.
 
 SSLproxy implements a number of defences against mechanisms which would
