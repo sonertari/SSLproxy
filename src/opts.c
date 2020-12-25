@@ -1927,14 +1927,17 @@ opts_set_pass_site(opts_t *opts, char *value, int line_num)
 static void
 opts_set_userlist(char *value, int line_num, userlist_t **list, const char *listname)
 {
+	// Delimiter can be either or all of ",", " ", and "\t"
+	// Using space as a delimiter disables spaces in user names too
 	// user1[,user2[,user3]]
 	char *argv[sizeof(char *) * MAX_USERS];
 	int argc = 0;
 	char *p, *last = NULL;
 
-	for ((p = strtok_r(value, ",", &last));
+	// strtok_r() removes all delimiters around user names, and does not return empty tokens
+	for ((p = strtok_r(value, ", \t", &last));
 		 p;
-		 (p = strtok_r(NULL, ",", &last))) {
+		 (p = strtok_r(NULL, ", \t", &last))) {
 		if (argc < MAX_USERS) {
 			argv[argc++] = p;
 		} else {
