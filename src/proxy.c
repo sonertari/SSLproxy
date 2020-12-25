@@ -477,14 +477,6 @@ proxy_new(global_t *global, int clisock)
 			goto leave2;
 		head->next = ctx->lctx;
 		ctx->lctx = head;
-
-		char *specstr = proxyspec_str(spec);
-		if (!specstr) {
-			fprintf(stderr, "out of memory\n");
-			exit(EXIT_FAILURE);
-		}
-		log_dbg_printf("proxy_listener_setup: %s\n", specstr);
-		free(specstr);
 	}
 
 	for (size_t i = 0; i < (sizeof(signals) / sizeof(int)); i++) {
