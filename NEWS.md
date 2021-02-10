@@ -1,4 +1,10 @@
 
+### SSLproxy 0.8.3 2021-02-11
+
+-   Improve UserAuth user control lists.
+-   Improve documentation.
+
+
 ### SSLproxy 0.8.2 2020-12-14
 
 -   Add DivertUsers and PassUsers options.

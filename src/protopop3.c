@@ -1,7 +1,7 @@
 /*-
  * SSLproxy - transparent SSL/TLS proxy
  *
- * Copyright (c) 2017-2020, Soner Tari <sonertari@gmail.com>.
+ * Copyright (c) 2017-2021, Soner Tari <sonertari@gmail.com>.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
