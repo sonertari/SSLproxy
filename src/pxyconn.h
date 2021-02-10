@@ -420,7 +420,7 @@ int pxy_is_listuser(userlist_t *, const char *
 #ifdef DEBUG_PROXY
 	, pxy_conn_ctx_t *, const char *
 #endif /* DEBUG_PROXY */
-	) NONNULL(1,2);
+	) NONNULL(2);
 void pxy_classify_user(pxy_conn_ctx_t *) NONNULL(1);
 void pxy_userauth(pxy_conn_ctx_t *) NONNULL(1);
 #endif /* !WITHOUT_USERAUTH */
