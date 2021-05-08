@@ -46,6 +46,13 @@ into the kernel, the connection is effectively blocked. In the case of
 SSLproxy, SSLproxy acts as both the packet filter and the kernel, and the 
 communication occurs over networking sockets.
 
+SSLproxy does not automagically redirect any network traffic.  To actually
+implement a proxy, you also need to redirect the traffic to the system running 
+sslproxy.  Your options include running sslproxy on a legitimate router, ARP 
+spoofing, ND spoofing, DNS poisoning, deploying a rogue access point (e.g. 
+using hostap mode), physical recabling, malicious VLAN reconfiguration or 
+route injection, /etc/hosts modification and so on.
+
 #### Proxy specification
 
 For example, given the following proxy specification:
@@ -258,7 +265,7 @@ programs.
 - Connections from users in PassUsers, if defined, are simply passed through 
 to their original destinations. SSLproxy engages the Passthrough mode for that 
 purpose.
-- if both DivertUsers and PassUsers are defined, users not listed in either of 
+- If both DivertUsers and PassUsers are defined, users not listed in either of 
 the lists are blocked. SSLproxy simply terminates their connections.
 - If *no* DivertUsers list is defined, only users *not* listed in PassUsers 
 are diverted to listening programs.
