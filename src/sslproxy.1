@@ -240,14 +240,23 @@ program should log users in and out on the users table. The external program
 should fill out all the fields in user records, except perhaps for the DESC 
 field, which can be left blank.
 .LP
-When SSLproxy accepts a connection, it obtains the ethernet address of the
-client IP address from the arp cache of the system, then compares it with
-the value in the users table. If the ethernet addresses do not match, the 
-connection is redirected to a login page configured by the UserAuthURL option.
+When SSLproxy accepts a connection,
 .LP
-SSLproxy also compares the atime value in the users table with the current 
-system time. If the difference is greater than the value configured by the 
-UserTimeout option, then the connection is redirected to the login page.
+ - It searches the client IP address of the connection in the users table. If 
+the client IP address is not in the users table, the connection is redirected 
+to a login page configured by the UserAuthURL option.
+ - If SSLproxy finds a user record for the client IP address in the users 
+table, it obtains the ethernet address of the client IP address from the arp 
+cache of the system, and compares it with the value in the user record for 
+that IP address. If the ethernet addresses do not match, the connection is 
+redirected to the login page.
+ - If the ethernet addresses match, SSLproxy compares the atime value in the 
+user record with the current system time. If the difference is greater than 
+the value configured by the UserTimeout option, the connection is redirected 
+to the login page.
+.LP
+If the connection passes all these checks, SSLproxy proceeds with establishing 
+the connection.
 .LP
 The atime of the IP address in the users table is updated with the system time 
 while the connection is being terminated. Since this atime update is executed 
