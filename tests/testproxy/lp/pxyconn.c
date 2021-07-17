@@ -159,9 +159,32 @@ out:
 	return;
 }
 
+static int
+pxy_prepare_logging(pxy_conn_ctx_t *ctx)
+{
+	/* prepare logging, part 2 */
+	// Make sure the content log file is not initialized yet
+	if (WANT_CONTENT_LOG(ctx) && !ctx->logctx.file) {
+		if (log_content_open(&ctx->logctx, ctx->opts,
+				STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str),
+				STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
+				NULL, NULL, NULL) == -1) {
+			if (errno == ENOMEM)
+				ctx->enomem = 1;
+			pxy_conn_term(ctx, 1);
+			return -1;
+		}
+	}
+	return 0;
+}
+
 int
 pxy_log_content_inbuf(pxy_conn_ctx_t *ctx, struct evbuffer *inbuf, int req)
 {
+	if (pxy_prepare_logging(ctx) == -1) {
+		return -1;
+	}
+
 	size_t sz = evbuffer_get_length(inbuf);
 	unsigned char *buf = malloc(sz);
 	if (!buf) {
@@ -184,25 +207,6 @@ pxy_log_content_inbuf(pxy_conn_ctx_t *ctx, struct evbuffer *inbuf, int req)
 		logbuf_free(lb);
 		log_err_level_printf(LOG_WARNING, "Content log submission failed\n");
 		return -1;
-	}
-	return 0;
-}
-
-static int
-pxy_prepare_logging(pxy_conn_ctx_t *ctx)
-{
-	/* prepare logging, part 2 */
-	if (WANT_CONTENT_LOG(ctx)) {
-		if (log_content_open(&ctx->logctx, ctx->opts,
-							 STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str),
-							 STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
-							 NULL, NULL, NULL
-							) == -1) {
-			if (errno == ENOMEM)
-				ctx->enomem = 1;
-			pxy_conn_term(ctx, 1);
-			return -1;
-		}
 	}
 	return 0;
 }
