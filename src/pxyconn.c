@@ -1865,12 +1865,11 @@ pxy_userauth(pxy_conn_ctx_t *ctx)
 {
 	if (ctx->spec->opts->user_auth && !ctx->user) {
 #if defined(__OpenBSD__) || defined(__linux__)
-		int ec;
+		int ec = get_client_ether(
 #if defined(__OpenBSD__)
-		ec = get_client_ether(((struct sockaddr_in *)&ctx->srcaddr)->sin_addr.s_addr, ctx);
-#else /* __linux__ */
-		ec = get_client_ether(ctx);
-#endif /* __linux__ */
+			((struct sockaddr_in *)&ctx->srcaddr)->sin_addr.s_addr,
+#endif /* __OpenBSD__ */
+			ctx);
 		if (ec == 1) {
 			identify_user(-1, 0, ctx);
 			return;
