@@ -1,4 +1,11 @@
 
+### SSLproxy 0.8.4 2021-08-29
+
+-   Add split mode of operation similar to SSLsplit. In split mode, packets 
+    are not diverted to listening programs, effectively making SSLproxy behave 
+    like SSLsplit. Split mode can be defined globally or per-proxyspec.
+
+
 ### SSLproxy 0.8.3 2021-02-11
 
 -   Improve UserAuth user control lists.

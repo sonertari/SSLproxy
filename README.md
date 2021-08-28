@@ -46,6 +46,16 @@ into the kernel, the connection is effectively blocked. In the case of
 SSLproxy, SSLproxy acts as both the packet filter and the kernel, and the 
 communication occurs over networking sockets.
 
+SSLproxy supports split mode of operation similar to SSLsplit as well. In 
+split mode, packets are not diverted to listening programs, effectively making 
+SSLproxy behave similar to SSLsplit, but not exactly like it, because SSLproxy 
+has certain features non-existent in SSLsplit, such as user authentication and 
+protocol validation. Also, note that the implementation of proxy core in 
+SSLproxy is different from the one in SSLsplit, for example the proxy core in 
+SSLproxy runs lockless, whereas SSLsplit implementation uses thread manager 
+level locks (which does not necessarily make sslproxy run faster than 
+sslsplit). In SSLproxy, split mode can be defined globally or per-proxyspec.
+
 SSLproxy does not automagically redirect any network traffic.  To actually
 implement a proxy, you also need to redirect the traffic to the system running 
 sslproxy.  Your options include running sslproxy on a legitimate router, ARP 
@@ -70,6 +80,8 @@ the SSLproxy line in the first packet in the connection.
 
 The response from the Server follows the same path back to the Client in 
 reverse order.
+
+See the SSLsplit documentation for split style proxyspecs.
 
 #### SSLproxy line
 

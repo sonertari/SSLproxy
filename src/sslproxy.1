@@ -27,7 +27,7 @@
 .\" ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 .\" POSSIBILITY OF SUCH DAMAGE.
 .\"
-.TH "sslproxy" "1" "11 February 2021" "v0.8.3" "SSLproxy"
+.TH "sslproxy" "1" "29 August 2021" "v0.8.4" "SSLproxy"
 .SH NAME
 sslproxy \-\- transparent SSL/TLS proxy for decrypting and diverting network 
 traffic to other programs for deep SSL inspection
@@ -84,6 +84,16 @@ packets into the kernel, the connection is effectively blocked. In the case of
 SSLproxy, SSLproxy acts as both the packet filter and the kernel, and the 
 communication occurs over networking sockets.
 .LP
+SSLproxy supports split mode of operation similar to SSLsplit as well. In 
+split mode, packets are not diverted to listening programs, effectively making 
+SSLproxy behave similar to SSLsplit, but not exactly like it, because SSLproxy 
+has certain features non-existent in SSLsplit, such as user authentication and 
+protocol validation. Also, note that the implementation of proxy core in 
+SSLproxy is different from the one in SSLsplit, for example the proxy core in 
+SSLproxy runs lockless, whereas SSLsplit implementation uses thread manager 
+level locks (which does not necessarily make sslproxy run faster than 
+sslsplit). In SSLproxy, split mode can be defined globally or per-proxyspec.
+.LP
 SSLproxy does not automagically redirect any network traffic.  To actually
 implement a proxy, you also need to redirect the traffic to the system 
 running \fBsslproxy\fP.  Your options include running \fBsslproxy\fP on a 
@@ -105,6 +115,8 @@ connection. Then SSLproxy re-encrypts and sends the packets to the Server.
 .LP
 The response from the Server follows the same path back to the Client in 
 reverse order.
+.LP
+See the SSLsplit documentation for split style proxyspecs.
 .SH 	SSLproxy line
 A sample line SSLproxy inserts into the first packet in the connection is the 
 following:
@@ -601,6 +613,10 @@ Log connection content to separate PCAP files with the given path specification
 (see LOG SPECIFICATIONS below).  For each connection, a separate PCAP file will
 be written.
 Only one of \fB-X\fP, \fB-Y\fP and \fB-y\fP may be used (last one wins).
+.TP
+.B \-n
+Enable split mode of operation for all proxyspecs, effectively making sslproxy 
+behave like sslsplit.
 .TP
 .B \-V
 Display version and compiled features information and exit.

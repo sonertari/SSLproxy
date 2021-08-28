@@ -106,6 +106,7 @@ opts_new(void)
 	opts = malloc(sizeof(opts_t));
 	memset(opts, 0, sizeof(opts_t));
 
+	opts->divert = 1;
 	opts->sslcomp = 1;
 	opts->chain = sk_X509_new_null();
 	opts->sslmethod = SSLv23_method;
@@ -578,6 +579,7 @@ clone_global_opts(global_t *global, const char *argv0, global_opts_str_t *global
 	opts_t *opts = opts_new();
 	opts->global = global;
 
+	opts->divert = global->opts->divert;
 	opts->sslcomp = global->opts->sslcomp;
 #ifdef HAVE_SSLV2
 	opts->no_ssl2 = global->opts->no_ssl2;
@@ -789,6 +791,21 @@ proxyspec_set_listen_addr(proxyspec_t *spec, char *addr, char *port, const char 
 }
 
 static void
+opts_set_divert(opts_t *opts)
+{
+	opts->divert = 1;
+}
+
+void
+opts_unset_divert(opts_t *opts)
+{
+	opts->divert = 0;
+#ifdef DEBUG_OPTS
+	log_dbg_printf("Divert: no\n");
+#endif /* DEBUG_OPTS */
+}
+
+static void
 proxyspec_set_divert_addr(proxyspec_t *spec, char *addr, char *port)
 {
 	if (sys_sockaddr_parse(&spec->conn_dst_addr,
@@ -876,6 +893,22 @@ proxyspec_set_natengine(proxyspec_t *spec, const char *natengine)
 #endif /* DEBUG_OPTS */
 }
 
+static void
+set_divert(global_t *global, proxyspec_t *spec, int orig_divert)
+{
+	// The global divert option -n has precedence over the proxyspec Divert option
+	// The proxyspec Divert option has precedence over divert address spec
+	// If the Divert option is not used, set it based on divert address specified
+	if (global->opts->divert && orig_divert == spec->opts->divert) {
+		spec->conn_dst_addrlen ? opts_set_divert(spec->opts) : opts_unset_divert(spec->opts);
+	}
+
+	// Use split mode if no divert address is specified
+	if (spec->opts->divert && !spec->conn_dst_addrlen) {
+		opts_unset_divert(spec->opts);
+	}
+}
+
 /*
  * Parse proxyspecs using a simple state machine.
  */
@@ -886,6 +919,7 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine, global_t *globa
 	char *addr = NULL;
 	int state = 0;
 	int af;
+	int orig_divert = global->opts->divert;
 
 	while ((*argc)--) {
 		switch (state) {
@@ -895,6 +929,8 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine, global_t *globa
 				spec = proxyspec_new(global, argv0, global_opts_str);
 				spec->next = global->spec;
 				global->spec = spec;
+
+				orig_divert = spec->opts->divert;
 
 				proxyspec_set_proto(spec, **argv);
 				state++;
@@ -910,7 +946,7 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine, global_t *globa
 				state++;
 				break;
 			case 3:
-				// Divert port is mandatory
+				state++;
 				if (strstr(**argv, "up:")) {
 					char *dp = **argv + 3;
 					// @todo IPv6?
@@ -931,9 +967,9 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine, global_t *globa
 
 					proxyspec_set_divert_addr(spec, da, dp);
 					proxyspec_set_return_addr(spec, ra);
-					state++;
+					break;
 				}
-				break;
+				/* fall-through */
 			case 4:
 				/* [ natengine | dstaddr ] */
 				if (!strcmp(**argv, "tcp") ||
@@ -979,6 +1015,10 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine, global_t *globa
 		fprintf(stderr, "Incomplete proxyspec!\n");
 		exit(EXIT_FAILURE);
 	}
+
+	// Empty line does not create new spec
+	if (spec)
+		set_divert(global, spec, orig_divert);
 }
 
 char *
@@ -1089,7 +1129,7 @@ opts_str(opts_t *opts)
 	if (!proto_dump)
 		goto out;
 
-	if (asprintf(&s, "opts=%s"
+	if (asprintf(&s, "opts=%s%s"
 #ifdef HAVE_SSLV2
 				 "%s"
 #endif /* HAVE_SSLV2 */
@@ -1117,7 +1157,8 @@ opts_str(opts_t *opts)
 				 "%s|%s|%d|%s|%s"
 #endif /* !WITHOUT_USERAUTH */
 				 "%s|%d\n%s%s%s",
-	             (!opts->sslcomp ? "no sslcomp" : ""),
+	             (opts->divert ? "divert" : "split"),
+	             (!opts->sslcomp ? "|no sslcomp" : ""),
 #ifdef HAVE_SSLV2
 	             (opts->no_ssl2 ? "|no_ssl2" : ""),
 #endif /* HAVE_SSLV2 */
@@ -1239,16 +1280,17 @@ proxyspec_str(proxyspec_t *spec)
 	if (!optsstr) {
 		return NULL;
 	}
-	if (asprintf(&s, "listen=[%s]:%s %s%s%s%s%s %s%s%s\n%s", lhbuf, lpbuf,
+	if (asprintf(&s, "listen=[%s]:%s %s%s%s%s%s %s%s%s\n%s%s", lhbuf, lpbuf,
 	             (spec->ssl ? "ssl" : "tcp"),
 	             (spec->upgrade ? "|autossl" : ""),
 	             (spec->http ? "|http" : ""),
 	             (spec->pop3 ? "|pop3" : ""),
 	             (spec->smtp ? "|smtp" : ""),
 	             (spec->natengine ? spec->natengine : cbuf),
-	             (pdstbuf),
-	             (csrcbuf),
-				 optsstr) < 0) {
+	             STRORNONE(pdstbuf),
+	             STRORNONE(csrcbuf),
+	             optsstr,
+	             !spec->opts->divert && spec->conn_dst_addrlen ? "\nWARNING: Divert address specified in split mode" : "") < 0) {
 		s = NULL;
 	}
 	free(optsstr);
@@ -2658,6 +2700,12 @@ set_option(opts_t *opts, const char *argv0,
 #endif /* DEBUG_OPTS */
 	} else if (equal(name, "PassSite")) {
 		opts_set_pass_site(opts, value, line_num);
+	} else if (equal(name, "Divert")) {
+		yes = check_value_yesno(value, "Divert", line_num);
+		if (yes == -1) {
+			goto leave;
+		}
+		yes ? opts_set_divert(opts) : opts_unset_divert(opts);
 	} else {
 		fprintf(stderr, "Error in conf: Unknown option "
 		                "'%s' on line %d\n", name, line_num);
@@ -2854,6 +2902,8 @@ load_proxyspec_struct(global_t *global, const char *argv0, char **natengine, int
 	spec_addrs_t *spec_addrs = malloc(sizeof(spec_addrs_t));
 	memset(spec_addrs, 0, sizeof(spec_addrs_t));
 
+	int orig_divert = spec->opts->divert;
+
 	while (!feof(f)) {
 		if (getline(&line, &line_len, f) == -1) {
 			break;
@@ -2885,6 +2935,9 @@ load_proxyspec_struct(global_t *global, const char *argv0, char **natengine, int
 		free(line);
 		line = NULL;
 	}
+
+	set_divert(global, spec, orig_divert);
+
 	retval = 0;
 leave:
 	if (line)

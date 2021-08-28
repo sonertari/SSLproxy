@@ -405,7 +405,7 @@ protohttp_filter_request_header(struct evbuffer *inbuf, struct evbuffer *outbuf,
 		}
 		free(line);
 
-		if ((type == CONN_TYPE_PARENT) && !ctx->sent_sslproxy_header) {
+		if ((type == CONN_TYPE_PARENT) && ctx->spec->opts->divert && !ctx->sent_sslproxy_header) {
 			ctx->sent_sslproxy_header = 1;
 			log_finer_va("INSERT= %s", ctx->sslproxy_header);
 			evbuffer_add_printf(outbuf, "%s\r\n", ctx->sslproxy_header);

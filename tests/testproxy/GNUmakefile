@@ -30,6 +30,19 @@ test: buildsslproxy buildlp
 	sudo pkill sslproxy
 	sudo pkill lp
 
+test_split: SSL_PROTOS=$(shell $(PROJECT_ROOT)/src/sslproxy -V 2>&1 | grep "SSL/TLS protocol availability")
+test_split: TLS11=$(findstring tls11,$(SSL_PROTOS))
+test_split: TLS13=$(findstring tls13,$(SSL_PROTOS))
+test_split: SSLPROXY_CONF=$(if $(TLS13),sslproxy.conf,sslproxy_no_tls13.conf)
+test_split: SSLPROXY_CONF:=$(if $(TLS11),$(SSLPROXY_CONF),sslproxy_no_tls11.conf)
+test_split: SSLPROXY_COMMAND=$(PROJECT_ROOT)/src/sslproxy -n -f $(SSLPROXY_CONF) -o Debug=no -o Daemon=yes -o User=nobody
+test_split: TESTHARNESS=$(if $(TLS13),testharness_split.json,testharness_split_no_tls13.json)
+test_split: TESTHARNESS:=$(if $(TLS11),$(TESTHARNESS),testharness_split_no_tls11.json)
+test_split: buildsslproxy
+	sudo LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) $(SSLPROXY_COMMAND)
+	$(TESTPROXY) -f $(TESTHARNESS) -l 4
+	sudo pkill sslproxy
+
 travis: test
 
 clean:
@@ -38,5 +51,5 @@ clean:
 
 FORCE:
 
-.PHONY: all clean buildsslproxy buildlp test travis
+.PHONY: all clean buildsslproxy buildlp test test_split travis
 

@@ -19,6 +19,9 @@ unittest: $(TARGET)
 e2etest: $(TARGET)
 	$(MAKE) -C $(TESTPROXYTESTSDIR)
 
+e2etest_split: $(TARGET)
+	$(MAKE) -C $(TESTPROXYTESTSDIR) test_split
+
 clean:
 	$(MAKE) -C $(SRCDIR) clean
 	$(MAKE) -C $(CHECKTESTSDIR) clean

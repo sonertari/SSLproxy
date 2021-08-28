@@ -58,6 +58,10 @@ typedef struct userlist {
 typedef struct global global_t;
 
 typedef struct opts {
+	// Set to 1 to divert to lp, set to 0 for split mode
+	// Defaults to 1
+	unsigned int divert : 1;
+
 	unsigned int sslcomp : 1;
 #ifdef HAVE_SSLV2
 	unsigned int no_ssl2 : 1;
@@ -237,6 +241,8 @@ typedef struct userdbkeys {
 
 void NORET oom_die(const char *) NONNULL(1);
 cert_t *opts_load_cert_chain_key(const char *) NONNULL(1);
+
+void opts_unset_divert(opts_t *) NONNULL(1);
 
 void proxyspec_free(proxyspec_t *);
 proxyspec_t *proxyspec_new(global_t *, const char *, global_opts_str_t *);

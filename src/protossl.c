@@ -1283,6 +1283,18 @@ out:
 }
 
 int
+protossl_setup_dst_ssl(pxy_conn_ctx_t *ctx)
+{
+	ctx->dst.ssl = protossl_dstssl_create(ctx);
+	if (!ctx->dst.ssl) {
+		log_err_level_printf(LOG_CRIT, "Error creating SSL for dst\n");
+		pxy_conn_term(ctx, 1);
+		return -1;
+	}
+	return 0;
+}
+
+static int NONNULL(1)
 protossl_setup_srvdst_ssl(pxy_conn_ctx_t *ctx)
 {
 	ctx->srvdst.ssl = protossl_dstssl_create(ctx);
@@ -1304,22 +1316,6 @@ protossl_setup_srvdst(pxy_conn_ctx_t *ctx)
 	ctx->srvdst.bev = protossl_bufferevent_setup(ctx, -1, ctx->srvdst.ssl);
 	if (!ctx->srvdst.bev) {
 		log_err_level_printf(LOG_CRIT, "Error creating srvdst\n");
-		SSL_free(ctx->srvdst.ssl);
-		ctx->srvdst.ssl = NULL;
-		pxy_conn_term(ctx, 1);
-		return -1;
-	}
-	ctx->srvdst.free = protossl_bufferevent_free_and_close_fd;
-	return 0;
-}
-
-int
-protossl_setup_srvdst_new_bev_ssl_connecting(pxy_conn_ctx_t *ctx)
-{
-	ctx->srvdst.bev = bufferevent_openssl_filter_new(ctx->thr->evbase, ctx->srvdst.bev, ctx->srvdst.ssl,
-			BUFFEREVENT_SSL_CONNECTING, BEV_OPT_DEFER_CALLBACKS);
-	if (!ctx->srvdst.bev) {
-		log_err_level_printf(LOG_CRIT, "Error creating srvdst bufferevent\n");
 		SSL_free(ctx->srvdst.ssl);
 		ctx->srvdst.ssl = NULL;
 		pxy_conn_term(ctx, 1);
@@ -1413,6 +1409,25 @@ protossl_setup_src_ssl(pxy_conn_ctx_t *ctx)
 }
 
 int
+protossl_setup_src_ssl_from_dst(pxy_conn_ctx_t *ctx)
+{
+	ctx->src.ssl = protossl_srcssl_create(ctx, ctx->dst.ssl);
+	if (!ctx->src.ssl) {
+		// @todo Enable autossl passthrough, this function is used by protoautossl only
+		// Autossl passthrough crashes with signal 10.
+		//if ((ctx->spec->opts->passthrough || ctx->passsite) && !ctx->enomem) {
+		//	log_err_level_printf(LOG_WARNING, "Falling back to passthrough\n");
+		//	protopassthrough_engage(ctx);
+		//	// report protocol change by returning 1
+		//	return 1;
+		//}
+		pxy_conn_term(ctx, 1);
+		return -1;
+	}
+	return 0;
+}
+
+int
 protossl_setup_src_ssl_from_child_dst(pxy_conn_child_ctx_t *ctx)
 {
 	// @todo Make srvdst.ssl the origssl param
@@ -1469,6 +1484,22 @@ protossl_setup_src_new_bev_ssl_accepting(pxy_conn_ctx_t *ctx)
 }
 
 int
+protossl_setup_dst_new_bev_ssl_connecting(pxy_conn_ctx_t *ctx)
+{
+	ctx->dst.bev = bufferevent_openssl_filter_new(ctx->thr->evbase, ctx->dst.bev, ctx->dst.ssl,
+			BUFFEREVENT_SSL_CONNECTING, BEV_OPT_DEFER_CALLBACKS);
+	if (!ctx->dst.bev) {
+		log_err_level_printf(LOG_CRIT, "Error creating dst bufferevent\n");
+		SSL_free(ctx->dst.ssl);
+		ctx->dst.ssl = NULL;
+		pxy_conn_term(ctx, 1);
+		return -1;
+	}
+	ctx->dst.free = protossl_bufferevent_free_and_close_fd;
+	return 0;
+}
+
+int
 protossl_setup_dst_new_bev_ssl_connecting_child(pxy_conn_child_ctx_t *ctx)
 {
 	ctx->dst.bev = bufferevent_openssl_filter_new(ctx->conn->thr->evbase, ctx->dst.bev, ctx->dst.ssl,
@@ -1502,8 +1533,7 @@ protossl_enable_src(pxy_conn_ctx_t *ctx)
 		return -1;
 	}
 
-	log_finer_va("Enabling src, %s", ctx->sslproxy_header);
-
+	log_finer("Enabling src");
 	// Now open the gates
 	bufferevent_enable(ctx->src.bev, EV_READ|EV_WRITE);
 	return 0;
@@ -1518,28 +1548,6 @@ protossl_bev_eventcb_connected_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	bufferevent_enable(bev, EV_READ|EV_WRITE);
 
 	protossl_enable_src(ctx);
-}
-
-static void NONNULL(1,2)
-protossl_bev_eventcb_connected_srvdst(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ctx)
-{
-	log_finest("ENTER");
-
-	if (prototcp_setup_dst(ctx) == -1) {
-		return;
-	}
-	bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
-	if (bufferevent_socket_connect(ctx->dst.bev, (struct sockaddr *)&ctx->spec->conn_dst_addr, ctx->spec->conn_dst_addrlen) == -1) {
-		log_fine("FAILED bufferevent_socket_connect for dst");
-		pxy_conn_term(ctx, 1);
-		return;
-	}
-
-#ifndef WITHOUT_USERAUTH
-	if (!ctx->term && !ctx->enomem) {
-		pxy_userauth(ctx);
-	}
-#endif /* !WITHOUT_USERAUTH */
 }
 
 static void NONNULL(1,2)
@@ -1582,7 +1590,7 @@ void
 protossl_bev_eventcb_srvdst(struct bufferevent *bev, short events, pxy_conn_ctx_t *ctx)
 {
 	if (events & BEV_EVENT_CONNECTED) {
-		protossl_bev_eventcb_connected_srvdst(bev, ctx);
+		prototcp_bev_eventcb_connected_srvdst(bev, ctx);
 	} else if (events & BEV_EVENT_EOF) {
 		prototcp_bev_eventcb_eof_srvdst(bev, ctx);
 	} else if (events & BEV_EVENT_ERROR) {

@@ -26,7 +26,7 @@
 .\" ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 .\" POSSIBILITY OF SUCH DAMAGE.
 .\"
-.TH "sslproxy.conf" "5" "11 February 2021" "v0.8.3" "SSLproxy"
+.TH "sslproxy.conf" "5" "29 August 2021" "v0.8.4" "SSLproxy"
 .SH "NAME"
 .LP 
 \fBsslproxy.conf\fR \- Configuration file for SSLproxy
@@ -300,6 +300,11 @@ Set open files limit, use 50-10000.
 .br
 Default: System-wide limit.
 .TP
+\fBDivert BOOL\fR
+Set divert or split mode of operation, globally or per-proxyspec.
+.br
+Default: yes
+.TP
 \fBProxySpec STRING\fR
 One line proxy specification: type listenaddr+port up:port ua:addr ra:addr. 
 The other options of one line proxyspecs are set to the global defaults. 
@@ -312,6 +317,8 @@ Proto
 Addr
 .br
 Port
+.br
+Divert
 .br
 DivertAddr
 .br

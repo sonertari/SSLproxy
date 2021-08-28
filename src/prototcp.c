@@ -114,14 +114,21 @@ prototcp_setup_src(pxy_conn_ctx_t *ctx)
 int
 prototcp_setup_dst(pxy_conn_ctx_t *ctx)
 {
-	ctx->dst.ssl = NULL;
-	ctx->dst.bev = prototcp_bufferevent_setup(ctx, -1);
-	if (!ctx->dst.bev) {
-		log_err_level_printf(LOG_CRIT, "Error creating parent dst\n");
-		pxy_conn_term(ctx, 1);
-		return -1;
+	if (ctx->spec->opts->divert) {
+		ctx->dst.ssl = NULL;
+		ctx->dst.bev = prototcp_bufferevent_setup(ctx, -1);
+		if (!ctx->dst.bev) {
+			log_err_level_printf(LOG_CRIT, "Error creating parent dst\n");
+			pxy_conn_term(ctx, 1);
+			return -1;
+		}
+		ctx->dst.free = prototcp_bufferevent_free_and_close_fd;
+	} else {
+		// split mode
+		ctx->dst = ctx->srvdst;
+		bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
+		ctx->protoctx->bev_eventcb(ctx->dst.bev, BEV_EVENT_CONNECTED, ctx);
 	}
-	ctx->dst.free = prototcp_bufferevent_free_and_close_fd;
 	return 0;
 }
 
@@ -281,7 +288,7 @@ prototcp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		return;
 	}
 
-	if (!ctx->sent_sslproxy_header) {
+	if (ctx->spec->opts->divert && !ctx->sent_sslproxy_header) {
 		size_t packet_size = evbuffer_get_length(inbuf);
 		// +2 for \r\n
 		unsigned char *packet = pxy_malloc_packet(packet_size + ctx->sslproxy_header_len + 2, ctx);
@@ -491,8 +498,7 @@ prototcp_enable_src(pxy_conn_ctx_t *ctx)
 		return -1;
 	}
 
-	log_finer_va("Enabling src, %s", ctx->sslproxy_header);
-
+	log_finer("Enabling src");
 	// Now open the gates
 	bufferevent_enable(ctx->src.bev, EV_READ|EV_WRITE);
 	return 0;
@@ -515,7 +521,7 @@ prototcp_bev_eventcb_connected_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	prototcp_enable_src(ctx);
 }
 
-static void NONNULL(1,2)
+void
 prototcp_bev_eventcb_connected_srvdst(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 	log_finest("ENTER");
@@ -523,11 +529,14 @@ prototcp_bev_eventcb_connected_srvdst(UNUSED struct bufferevent *bev, pxy_conn_c
 	if (prototcp_setup_dst(ctx) == -1) {
 		return;
 	}
-	bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
-	if (bufferevent_socket_connect(ctx->dst.bev, (struct sockaddr *)&ctx->spec->conn_dst_addr, ctx->spec->conn_dst_addrlen) == -1) {
-		log_fine("FAILED bufferevent_socket_connect for dst");
-		pxy_conn_term(ctx, 1);
-		return;
+
+	if (ctx->spec->opts->divert) {
+		bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
+		if (bufferevent_socket_connect(ctx->dst.bev, (struct sockaddr *)&ctx->spec->conn_dst_addr, ctx->spec->conn_dst_addrlen) == -1) {
+			log_fine("FAILED bufferevent_socket_connect for dst");
+			pxy_conn_term(ctx, 1);
+			return;
+		}
 	}
 
 #ifndef WITHOUT_USERAUTH

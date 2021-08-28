@@ -400,8 +400,9 @@ pxy_conn_free(pxy_conn_ctx_t *ctx, int by_requestor)
 		evutil_closesocket(ctx->fd);
 	}
 
+	// In split mode, srvdst is used as dst, so it should be freed as dst below
 	// If srvdst has been xferred to the first child conn, the child should free it, not the parent
-	if (!ctx->srvdst_xferred && ctx->srvdst.bev) {
+	if (ctx->spec->opts->divert && !ctx->srvdst_xferred && ctx->srvdst.bev) {
 		ctx->srvdst.free(ctx->srvdst.bev, ctx);
 		ctx->srvdst.bev = NULL;
 	}
@@ -1113,6 +1114,16 @@ pxy_opensock_child(pxy_conn_ctx_t *ctx)
 int
 pxy_setup_child_listener(pxy_conn_ctx_t *ctx)
 {
+	// Set dstaddr here for split mode, otherwise dstaddr cannot be displayed in the logs
+	if (pxy_set_dstaddr(ctx) == -1) {
+		return -1;
+	}
+
+	if (!ctx->spec->opts->divert) {
+		// split mode
+		return 0;
+	}
+
 	// @attention Defer child setup and evcl creation until after parent init is complete, otherwise (1) causes multithreading issues (proxy_listener_acceptcb is
 	// running on a different thread from the conn, and we only have thrmgr mutex), and (2) we need to clean up less upon errors.
 	// Child evcls use the evbase of the parent thread, otherwise we would get multithreading issues.
@@ -1165,10 +1176,6 @@ pxy_setup_child_listener(pxy_conn_ctx_t *ctx)
 	unsigned int port = ntohs(child_listener_addr.sin_port);
 	size_t port_len = port < 10000 ? 4 : 5;
 
-	if (pxy_set_dstaddr(ctx) == -1) {
-		return -1;
-	}
-
 #ifndef WITHOUT_USERAUTH
 	int user_len = 0;
 	if (ctx->spec->opts->user_auth && ctx->user) {
@@ -1210,6 +1217,7 @@ pxy_setup_child_listener(pxy_conn_ctx_t *ctx)
 		pxy_conn_term(ctx, 1);
 		return -1;
 	}
+	log_finer_va("sslproxy_header= %s", ctx->sslproxy_header);
 	return 0;
 }
 

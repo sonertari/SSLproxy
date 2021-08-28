@@ -250,6 +250,8 @@ main_usage(void)
 #endif /* HAVE_LOCAL_PROCINFO */
 "  -d          daemon mode: run in background, log error messages to syslog\n"
 "  -D          debug mode: run in foreground, log debug messages on stderr\n"
+"  -n          split mode: do not divert packets to listening programs\n"
+"              overrides the divert mode of all proxyspecs\n"
 "  -V          print version information and exit\n"
 "  -h          print usage information and exit\n";
 	const char *usagefmt2 =
@@ -268,6 +270,9 @@ main_usage(void)
 "                                                     # et al\n"
 "Example:\n"
 "  %s -k ca.key -c ca.pem -P  https 127.0.0.1 8443  up:8080\n"
+"\n"
+"SSLproxy supports split mode of operation as in SSLsplit.\n"
+"See the SSLsplit documentation for split style proxyspecs.\n"
 "%s";
 
 	if (!(dflt = nat_getdefaultname())) {
@@ -380,7 +385,7 @@ main(int argc, char *argv[])
 	while ((ch = getopt(argc, argv,
 	                    OPT_g OPT_G OPT_Z OPT_i OPT_x OPT_T OPT_I
 	                    "k:c:C:K:t:A:OPa:b:s:U:r:R:e:Eu:m:j:p:l:L:S:F:M:"
-	                    "dD::VhW:w:q:f:o:X:Y:y:J")) != -1) {
+	                    "dD::VhW:w:q:f:o:X:Y:y:Jn")) != -1) {
 		switch (ch) {
 			case 'f':
 				if (global->conffile)
@@ -542,6 +547,9 @@ main(int argc, char *argv[])
 				if (optarg) {
 					global_set_debug_level(optarg);
 				}
+				break;
+			case 'n':
+				opts_unset_divert(global->opts);
 				break;
 			case 'V':
 				main_version();
