@@ -464,7 +464,7 @@ pxy_log_connect_nonhttp(pxy_conn_ctx_t *ctx)
 		              " user:%s"
 #endif /* !WITHOUT_USERAUTH */
 		              "\n",
-		              ctx->proto == PROTO_PASSTHROUGH ? "passthrough" : (ctx->proto == PROTO_POP3 ? "pop3" : (ctx->proto == PROTO_SMTP ? "smtp" : "tcp")),
+		              ctx->proto == PROTO_AUTOSSL ? "autossl" : (ctx->proto == PROTO_PASSTHROUGH ? "passthrough" : (ctx->proto == PROTO_POP3 ? "pop3" : (ctx->proto == PROTO_SMTP ? "smtp" : "tcp"))),
 		              STRORDASH(ctx->srchost_str),
 		              STRORDASH(ctx->srcport_str),
 		              STRORDASH(ctx->dsthost_str),
