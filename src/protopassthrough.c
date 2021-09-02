@@ -77,7 +77,13 @@ protopassthrough_engage(pxy_conn_ctx_t *ctx)
 {
 	log_fine("ENTER");
 
-	ctx->srvdst.free(ctx->srvdst.bev, ctx);
+	// Free any children of the previous proto
+	pxy_conn_free_children(ctx);
+
+	// If srvdst is xferred, it is freed as the first child_dst
+	if (!ctx->srvdst_xferred) {
+		ctx->srvdst.free(ctx->srvdst.bev, ctx);
+	}
 	ctx->srvdst.bev = NULL;
 	ctx->srvdst.ssl = NULL;
 	ctx->connected = 0;
@@ -90,9 +96,6 @@ protopassthrough_engage(pxy_conn_ctx_t *ctx)
 		ctx->dst.bev = NULL;
 		ctx->dst_fd = 0;
 	}
-
-	// Free any children of the previous proto
-	pxy_conn_free_children(ctx);
 
 	// Free any/all data of the previous proto
 	if (ctx->protoctx->proto_free) {
@@ -123,7 +126,7 @@ protopassthrough_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 	log_finest_va("ENTER, size=%zu", evbuffer_get_length(bufferevent_get_input(bev)));
 
-	// Passthrough packets are transfered between src and srvdst
+	// Passthrough packets are transferred between src and srvdst
 	if (ctx->srvdst.closed) {
 		pxy_discard_inbuf(bev);
 		return;
@@ -144,7 +147,7 @@ protopassthrough_bev_readcb_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 	log_finest_va("ENTER, size=%zu", evbuffer_get_length(bufferevent_get_input(bev)));
 
-	// Passthrough packets are transfered between src and srvdst
+	// Passthrough packets are transferred between src and srvdst
 	if (ctx->src.closed) {
 		pxy_discard_inbuf(bev);
 		return;
@@ -243,7 +246,8 @@ protopassthrough_bev_eventcb_connected_srvdst(struct bufferevent *bev, pxy_conn_
 	ctx->connected = 1;
 	bufferevent_enable(bev, EV_READ|EV_WRITE);
 
-	if (protopassthrough_enable_src(ctx) == -1) {
+	// Do not re-enable src if it is already enabled, e.g. in autossl
+	if (!ctx->src.bev && protopassthrough_enable_src(ctx) == -1) {
 		return;
 	}
 
@@ -303,7 +307,7 @@ protopassthrough_bev_eventcb_error_src(UNUSED struct bufferevent *bev, pxy_conn_
 {
 	log_fine("ENTER");
 
-	// Passthrough packets are transfered between src and srvdst
+	// Passthrough packets are transferred between src and srvdst
 	if (!ctx->connected) {
 		ctx->srvdst.closed = 1;
 	} else if (!ctx->srvdst.closed) {
@@ -318,7 +322,7 @@ protopassthrough_bev_eventcb_error_srvdst(UNUSED struct bufferevent *bev, pxy_co
 {
 	log_fine("ENTER");
 
-	// Passthrough packets are transfered between src and srvdst
+	// Passthrough packets are transferred between src and srvdst
 	if (!ctx->connected) {
 		ctx->src.closed = 1;
 	} else if (!ctx->src.closed) {

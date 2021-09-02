@@ -349,6 +349,8 @@ struct pxy_conn_child_ctx {
 	/* status flags */
 	unsigned int connected : 1;       /* 0 until both ends are connected */
 	unsigned int term : 1;                     /* 0 until term requested */
+	// srvdst_xferred flag is important not to access the srvdst.bev of parent after the first child is freed
+	unsigned int srvdst_xferred : 1;  /* 1 if srvdst xferred from parent */
 
 	// For statistics only
 	evutil_socket_t dst_fd;

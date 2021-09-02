@@ -262,8 +262,22 @@ pxy_conn_free_child(pxy_conn_child_ctx_t *ctx)
 		ctx->dst.bev = NULL;
 	}
 
+	// Save conn and srvdst_xferred before freeing ctx
+	pxy_conn_ctx_t *conn = ctx->conn;
+	unsigned int srvdst_xferred = ctx->srvdst_xferred;
+
 	pxy_conn_detach_child(ctx);
 	pxy_conn_ctx_free_child(ctx);
+
+	// If there is no child left, free child_evcl asap by calling pxy_conn_free_children()
+	if (!conn->children) {
+		pxy_conn_free_children(conn);
+	}
+
+	// If this is the first child, NULL srvdst.bev, so we don't try to access it from this point on
+	if (srvdst_xferred) {
+		conn->srvdst.bev = NULL;
+	}
 }
 
 void
@@ -1550,20 +1564,27 @@ pxy_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 		ctx->conn->thr->errors++;
 	}
 
+	// All child conns including this one will be freed if this child engages passthrough mode
+	// So save the vars used after eventcb call
+	pxy_conn_ctx_t *conn = ctx->conn;
+	unsigned int term_requestor = bev == ctx->src.bev;
+
 	ctx->protoctx->bev_eventcb(bev, events, arg);
 
 	// EOF eventcb may call readcb possibly causing enomem
-	if (ctx->conn->term || ctx->conn->enomem) {
-		pxy_conn_free(ctx->conn, ctx->conn->term ? ctx->conn->term_requestor : (bev == ctx->src.bev));
+	if (conn->term || conn->enomem) {
+		pxy_conn_free(conn, conn->term ? conn->term_requestor : term_requestor);
 		return;
 	}
 
-	if (ctx->term) {
-		pxy_conn_free_child(ctx);
-		return;
-	}
+	if (conn->children) {
+		if (ctx->term) {
+			pxy_conn_free_child(ctx);
+			return;
+		}
 
-	pxy_bev_eventcb_postexec_stats_child(events, ctx);
+		pxy_bev_eventcb_postexec_stats_child(events, ctx);
+	}
 }
 
 /*

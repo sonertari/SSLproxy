@@ -1360,6 +1360,7 @@ protossl_setup_dst_child(pxy_conn_child_ctx_t *ctx)
 	if (!ctx->conn->srvdst_xferred) {
 		// Reuse srvdst of parent in the first child conn
 		ctx->conn->srvdst_xferred = 1;
+		ctx->srvdst_xferred = 1;
 		ctx->dst = ctx->conn->srvdst;
 		bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb_child, pxy_bev_writecb_child, pxy_bev_eventcb_child, ctx);
 		ctx->protoctx->bev_eventcb(ctx->dst.bev, BEV_EVENT_CONNECTED, ctx);
@@ -1413,9 +1414,9 @@ protossl_setup_src_ssl_from_dst(pxy_conn_ctx_t *ctx)
 {
 	ctx->src.ssl = protossl_srcssl_create(ctx, ctx->dst.ssl);
 	if (!ctx->src.ssl) {
-		// @todo Enable autossl passthrough, this function is used by protoautossl only
-		// Autossl passthrough crashes with signal 10.
-		//if ((ctx->spec->opts->passthrough || ctx->passsite) && !ctx->enomem) {
+		// @attention We cannot engage passthrough mode upon ssl errors on already enabled src
+		// This function is used by protoautossl only
+		//if ((ctx->spec->opts->passthrough || ctx->sslctx->passsite) && !ctx->enomem) {
 		//	log_err_level_printf(LOG_WARNING, "Falling back to passthrough\n");
 		//	protopassthrough_engage(ctx);
 		//	// report protocol change by returning 1
@@ -1433,9 +1434,9 @@ protossl_setup_src_ssl_from_child_dst(pxy_conn_child_ctx_t *ctx)
 	// @todo Make srvdst.ssl the origssl param
 	ctx->conn->src.ssl = protossl_srcssl_create(ctx->conn, ctx->dst.ssl);
 	if (!ctx->conn->src.ssl) {
-		// @todo Enable autossl passthrough, this function is used by protoautossl only
-		// Autossl passthrough crashes with signal 10.
-		//if ((ctx->conn->spec->opts->passthrough || ctx->conn->passsite) && !ctx->conn->enomem) {
+		// @attention We cannot engage passthrough mode upon ssl errors on already enabled src
+		// This function is used by protoautossl only
+		//if ((ctx->conn->spec->opts->passthrough || ctx->conn->sslctx->passsite) && !ctx->conn->enomem) {
 		//	log_err_level_printf(LOG_WARNING, "Falling back to passthrough\n");
 		//	protopassthrough_engage(ctx->conn);
 		//	// report protocol change by returning 1
