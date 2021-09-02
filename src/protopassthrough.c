@@ -80,9 +80,20 @@ protopassthrough_engage(pxy_conn_ctx_t *ctx)
 	// Free any children of the previous proto
 	pxy_conn_free_children(ctx);
 
-	// If srvdst is xferred, it is freed as the first child_dst
-	if (!ctx->srvdst_xferred) {
+	// In split mode, srvdst is used as dst, so it should be freed as dst below
+	// If srvdst has been xferred to the first child conn, the child should free it, not the parent
+	if (ctx->spec->opts->divert && !ctx->srvdst_xferred) {
 		ctx->srvdst.free(ctx->srvdst.bev, ctx);
+	} else /*if (!ctx->spec->opts->divert || ctx->srvdst_xferred)*/ {
+		struct bufferevent *ubev = bufferevent_get_underlying(ctx->srvdst.bev);
+
+		bufferevent_setcb(ctx->srvdst.bev, NULL, NULL, NULL, NULL);
+		bufferevent_disable(ctx->srvdst.bev, EV_READ|EV_WRITE);
+
+		if (ubev) {
+			bufferevent_setcb(ubev, NULL, NULL, NULL, NULL);
+			bufferevent_disable(ubev, EV_READ|EV_WRITE);
+		}
 	}
 	ctx->srvdst.bev = NULL;
 	ctx->srvdst.ssl = NULL;
