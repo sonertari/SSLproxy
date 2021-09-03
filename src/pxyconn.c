@@ -858,7 +858,8 @@ pxy_discard_inbuf(struct bufferevent *bev)
 	evbuffer_drain(inbuf, inbuf_size);
 }
 
-void
+#ifdef DEBUG_PROXY
+static void
 pxy_insert_sslproxy_header(pxy_conn_ctx_t *ctx, unsigned char *packet, size_t *packet_size)
 {
 	log_finer("ENTER");
@@ -869,6 +870,44 @@ pxy_insert_sslproxy_header(pxy_conn_ctx_t *ctx, unsigned char *packet, size_t *p
 	memcpy(packet + ctx->sslproxy_header_len, "\r\n", 2);
 	*packet_size += ctx->sslproxy_header_len + 2;
 	ctx->sent_sslproxy_header = 1;
+}
+#endif /* DEBUG_PROXY */
+
+int
+pxy_try_prepend_sslproxy_header(pxy_conn_ctx_t *ctx, struct evbuffer *inbuf, struct evbuffer *outbuf)
+{
+	log_finer("ENTER");
+
+	if (ctx->spec->opts->divert && !ctx->sent_sslproxy_header) {
+#ifdef DEBUG_PROXY
+		size_t packet_size = evbuffer_get_length(inbuf);
+		// +2 for \r\n
+		unsigned char *packet = pxy_malloc_packet(packet_size + ctx->sslproxy_header_len + 2, ctx);
+		if (!packet) {
+			return -1;
+		}
+
+		evbuffer_remove(inbuf, packet, packet_size);
+
+		log_finest_va("ORIG packet, size=%zu:\n%.*s", packet_size, (int)packet_size, packet);
+
+		pxy_insert_sslproxy_header(ctx, packet, &packet_size);
+		evbuffer_add(outbuf, packet, packet_size);
+
+		log_finest_va("NEW packet, size=%zu:\n%.*s", packet_size, (int)packet_size, packet);
+
+		free(packet);
+	}
+	else {
+		evbuffer_add_buffer(outbuf, inbuf);
+	}
+#else /* DEBUG_PROXY */
+		evbuffer_add_printf(outbuf, "%s\r\n", ctx->sslproxy_header);
+		ctx->sent_sslproxy_header = 1;
+	}
+	evbuffer_add_buffer(outbuf, inbuf);
+#endif /* !DEBUG_PROXY */
+	return 0;
 }
 
 void

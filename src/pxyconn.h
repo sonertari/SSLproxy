@@ -378,7 +378,7 @@ unsigned char *pxy_malloc_packet(size_t, pxy_conn_ctx_t *) MALLOC NONNULL(2) WUN
 
 int pxy_set_dstaddr(pxy_conn_ctx_t *) NONNULL(1);
 
-void pxy_insert_sslproxy_header(pxy_conn_ctx_t *, unsigned char *, size_t *) NONNULL(1,2,3);
+int pxy_try_prepend_sslproxy_header(pxy_conn_ctx_t *ctx, struct evbuffer *, struct evbuffer *) NONNULL(1,2,3);
 void pxy_try_remove_sslproxy_header(pxy_conn_child_ctx_t *, unsigned char *, size_t *) NONNULL(1,2,3);
 
 void pxy_try_set_watermark(struct bufferevent *, pxy_conn_ctx_t *, struct bufferevent *) NONNULL(1,2,3);

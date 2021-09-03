@@ -175,28 +175,10 @@ protoautossl_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 
 	// @todo Validate proto?
 
-	if (ctx->spec->opts->divert && !ctx->sent_sslproxy_header) {
-		size_t packet_size = evbuffer_get_length(inbuf);
-		// +2 for \r\n
-		unsigned char *packet = pxy_malloc_packet(packet_size + ctx->sslproxy_header_len + 2, ctx);
-		if (!packet) {
-			return;
-		}
-
-		evbuffer_remove(inbuf, packet, packet_size);
-
-		log_finest_va("ORIG packet, size=%zu:\n%.*s", packet_size, (int)packet_size, packet);
-
-		pxy_insert_sslproxy_header(ctx, packet, &packet_size);
-		evbuffer_add(outbuf, packet, packet_size);
-
-		log_finest_va("NEW packet, size=%zu:\n%.*s", packet_size, (int)packet_size, packet);
-
-		free(packet);
+	if (pxy_try_prepend_sslproxy_header(ctx, inbuf, outbuf) != 0) {
+		return;
 	}
-	else {
-		evbuffer_add_buffer(outbuf, inbuf);
-	}
+
 	pxy_try_set_watermark(bev, ctx, ctx->dst.bev);
 }
 
