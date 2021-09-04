@@ -1914,7 +1914,10 @@ opts_set_pass_site(opts_t *opts, char *value, int line_num)
 	passsite_t *ps = malloc(sizeof(passsite_t));
 	memset(ps, 0, sizeof(passsite_t));
 
+	// The for loop with strtok_r() above does not output empty strings
+	// So, no need to check if the length of argv[0] > 0
 	size_t len = strlen(argv[0]);
+
 	// Common names are separated by slashes
 	char s[len + 3];
 	memcpy(s + 1, argv[0], len);

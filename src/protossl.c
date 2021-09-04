@@ -624,35 +624,46 @@ protossl_pass_site(pxy_conn_ctx_t *ctx, char *site)
 	int rv = 0;
 
 	// site has surrounding slashes: "/example.com/"
+	// site is never empty or just "//", @see opts_set_pass_site(),
+	// so no need to check if the length of site > 0 or 2
 	size_t len = strlen(site);
 
+	// Avoid multithreading issues by duping the site arg as a local var
+	// site == ctx->spec->opts->passsites->site, which is used by all threads
+	// @todo Check if multithreaded read access causes any issues
+	char *_site = strdup(site);
+	if (!_site) {
+		ctx->enomem = 1;
+		return -1;
+	}
+
 	// Replace slash with null
-	site[len - 1] = '\0';
+	_site[len - 1] = '\0';
 	// Skip the first slash
-	char *s = site + 1;
+	char *s = _site + 1;
 
 	// @attention Make sure sni is not null
 	// SNI: "example.com"
 	if (ctx->sslctx->sni && !strcmp(ctx->sslctx->sni, s)) {
 		log_finest_va("Match with sni: %s", ctx->sslctx->sni);
 		rv = 1;
-		goto out2;
+		goto out;
 	}
 
 	// @attention Make sure ssl_names is not null
 	if (!ctx->sslctx->ssl_names) {
-		goto out2;
+		goto out;
 	}
 
 	// Single common name: "example.com"
 	if (!strcmp(ctx->sslctx->ssl_names, s)) {
 		log_finest_va("Match with single common name: %s", ctx->sslctx->ssl_names);
 		rv = 1;
-		goto out2;
+		goto out;
 	}
 
 	// Insert slash at the end
-	site[len - 1] = '/';
+	_site[len - 1] = '/';
 
 	// First common name: "example.com/"
 	if (strstr(ctx->sslctx->ssl_names, s) == ctx->sslctx->ssl_names) {
@@ -662,24 +673,22 @@ protossl_pass_site(pxy_conn_ctx_t *ctx, char *site)
 	}
 
 	// Middle common name: "/example.com/"
-	if (strstr(ctx->sslctx->ssl_names, site)) {
-		log_finest_va("Match with a middle common name: %s, %s", ctx->sslctx->ssl_names, site);
+	if (strstr(ctx->sslctx->ssl_names, _site)) {
+		log_finest_va("Match with a middle common name: %s, %s", ctx->sslctx->ssl_names, _site);
 		rv = 1;
 		goto out;
 	}
 
 	// Replace slash with null
-	site[len - 1] = '\0';
+	_site[len - 1] = '\0';
 
 	// Last common name: "/example.com"
-	if (strstr(ctx->sslctx->ssl_names, site) == ctx->sslctx->ssl_names + strlen(ctx->sslctx->ssl_names) - strlen(site)) {
-		log_finest_va("Match with the last common name: %s, %s", ctx->sslctx->ssl_names, site);
+	if (strstr(ctx->sslctx->ssl_names, _site) == ctx->sslctx->ssl_names + strlen(ctx->sslctx->ssl_names) - strlen(_site)) {
+		log_finest_va("Match with the last common name: %s, %s", ctx->sslctx->ssl_names, _site);
 		rv = 1;
 	}
-out2:
-	// Restore the last modification
-	site[len - 1] = '/';
 out:
+	free(_site);
 	return rv;
 }
 
@@ -728,18 +737,25 @@ protossl_srcssl_create(pxy_conn_ctx_t *ctx, SSL *origssl)
 
 	passsite_t *passsite = ctx->spec->opts->passsites;
 	while (passsite) {
-		if (protossl_pass_user(ctx, passsite) && protossl_pass_site(ctx, passsite->site)) {
-			// Do not print the surrounding slashes
+		if (protossl_pass_user(ctx, passsite)) {
+			int rv = protossl_pass_site(ctx, passsite->site);
+			if (rv == 1) {
+				// Do not print the surrounding slashes
 #ifndef WITHOUT_USERAUTH
-			log_err_level_printf(LOG_WARNING, "Found pass site: %.*s for user %s and keyword %s\n", (int)strlen(passsite->site) - 2, passsite->site + 1,
-					passsite->ip ? passsite->ip : (passsite->all ? "*" : STRORDASH(passsite->user)), STRORDASH(passsite->keyword));
+				log_err_level_printf(LOG_WARNING, "Found pass site: %.*s for user %s and keyword %s\n", (int)strlen(passsite->site) - 2, passsite->site + 1,
+						passsite->ip ? passsite->ip : (passsite->all ? "*" : STRORDASH(passsite->user)), STRORDASH(passsite->keyword));
 #else /* WITHOUT_USERAUTH */
-			log_err_level_printf(LOG_WARNING, "Found pass site: %.*s for ip %s\n", (int)strlen(passsite->site) - 2, passsite->site + 1, STRORDASH(passsite->ip));
+				log_err_level_printf(LOG_WARNING, "Found pass site: %.*s for ip %s\n", (int)strlen(passsite->site) - 2, passsite->site + 1, STRORDASH(passsite->ip));
 #endif /* WITHOUT_USERAUTH */
-			cert_free(cert);
-			// Differentiate passsite from passthrough option by raising the passsite flag
-			ctx->sslctx->passsite = 1;
-			return NULL;
+				// Differentiate passsite from passthrough option by raising the passsite flag
+				ctx->sslctx->passsite = 1;
+				cert_free(cert);
+				return NULL;
+			} else if (rv == -1) {
+				// enomem
+				cert_free(cert);
+				return NULL;
+			}
 		}
 		passsite = passsite->next;
 	}
