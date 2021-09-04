@@ -254,6 +254,13 @@ protopassthrough_bev_eventcb_connected_srvdst(struct bufferevent *bev, pxy_conn_
 {
 	log_finest("ENTER");
 
+#ifndef WITHOUT_USERAUTH
+	pxy_userauth(ctx);
+	if (ctx->term || ctx->enomem) {
+		return;
+	}
+#endif /* !WITHOUT_USERAUTH */
+
 	ctx->connected = 1;
 	bufferevent_enable(bev, EV_READ|EV_WRITE);
 
@@ -261,12 +268,6 @@ protopassthrough_bev_eventcb_connected_srvdst(struct bufferevent *bev, pxy_conn_
 	if (!ctx->src.bev && protopassthrough_enable_src(ctx) == -1) {
 		return;
 	}
-
-#ifndef WITHOUT_USERAUTH
-	if (!ctx->term && !ctx->enomem) {
-		pxy_userauth(ctx);
-	}
-#endif /* !WITHOUT_USERAUTH */
 }
 
 static void NONNULL(1,2)

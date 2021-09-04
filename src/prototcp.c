@@ -509,6 +509,13 @@ prototcp_bev_eventcb_connected_srvdst(UNUSED struct bufferevent *bev, pxy_conn_c
 {
 	log_finest("ENTER");
 
+#ifndef WITHOUT_USERAUTH
+	pxy_userauth(ctx);
+	if (ctx->term || ctx->enomem) {
+		return;
+	}
+#endif /* !WITHOUT_USERAUTH */
+
 	if (prototcp_setup_dst(ctx) == -1) {
 		return;
 	}
@@ -521,12 +528,6 @@ prototcp_bev_eventcb_connected_srvdst(UNUSED struct bufferevent *bev, pxy_conn_c
 			return;
 		}
 	}
-
-#ifndef WITHOUT_USERAUTH
-	if (!ctx->term && !ctx->enomem) {
-		pxy_userauth(ctx);
-	}
-#endif /* !WITHOUT_USERAUTH */
 }
 
 void
