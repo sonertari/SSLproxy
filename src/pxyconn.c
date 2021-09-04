@@ -1189,11 +1189,6 @@ pxy_opensock_child(pxy_conn_ctx_t *ctx)
 int
 pxy_setup_child_listener(pxy_conn_ctx_t *ctx)
 {
-	// Set dstaddr here for split mode, otherwise dstaddr cannot be displayed in the logs
-	if (pxy_set_dstaddr(ctx) == -1) {
-		return -1;
-	}
-
 	if (!ctx->spec->opts->divert) {
 		// split mode
 		return 0;
@@ -1372,7 +1367,7 @@ pxy_try_consume_last_input_child(struct bufferevent *bev, pxy_conn_child_ctx_t *
 	return 0;
 }
 
-int
+static int NONNULL(1)
 pxy_set_dstaddr(pxy_conn_ctx_t *ctx)
 {
 	if (sys_sockaddr_str((struct sockaddr *)&ctx->dstaddr, ctx->dstaddrlen, &ctx->dsthost_str, &ctx->dstport_str) != 0) {
@@ -1642,15 +1637,14 @@ pxy_conn_connect(pxy_conn_ctx_t *ctx)
 		return;
 	}
 
+	// This function may be called more than once for the same conn
+	// So, set the dstaddr only once
+	if (!ctx->dsthost_str && (pxy_set_dstaddr(ctx) == -1)) {
+		return;
+	}
+
 	if (OPTS_DEBUG(ctx->global)) {
-		char *host, *port;
-		if (sys_sockaddr_str((struct sockaddr *)&ctx->dstaddr, ctx->dstaddrlen, &host, &port) == 0) {
-			log_dbg_printf("Connecting to [%s]:%s\n", host, port);
-			free(host);
-			free(port);
-		} else {
-			log_dbg_printf("Connecting to [?]:?\n");
-		}
+		log_dbg_printf("Connecting to [%s]:%s\n", ctx->dsthost_str, ctx->dstport_str);
 	}
 
 	if (ctx->protoctx->connectcb(ctx) == -1) {

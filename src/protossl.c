@@ -96,6 +96,11 @@ protossl_log_ssl_error(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 						   ERR_GET_FUNC(sslerr), STRORDASH(ERR_func_error_string(sslerr)));
 		}
 	}
+	if (ctx->spec->opts->passsites && !ctx->sslctx->passsite) {
+		log_err_level_printf(LOG_WARNING, "Closing on ssl error without passsite match: %s:%s, %s:%s, %s, %s, %s, %s\n",
+				STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
+				STRORDASH(ctx->user), STRORDASH(ctx->desc), STRORDASH(ctx->sslctx->sni), STRORDASH(ctx->sslctx->ssl_names));
+	}
 }
 
 int
@@ -637,6 +642,13 @@ protossl_pass_site(pxy_conn_ctx_t *ctx, char *site)
 		return -1;
 	}
 
+	int any = 0;
+	if (_site[len - 2] == '*') {
+		any = 1;
+		_site[len - 2] = '/';
+		len--;
+	}
+
 	// Replace slash with null
 	_site[len - 1] = '\0';
 	// Skip the first slash
@@ -644,10 +656,18 @@ protossl_pass_site(pxy_conn_ctx_t *ctx, char *site)
 
 	// @attention Make sure sni is not null
 	// SNI: "example.com"
-	if (ctx->sslctx->sni && !strcmp(ctx->sslctx->sni, s)) {
-		log_finest_va("Match with sni: %s", ctx->sslctx->sni);
-		rv = 1;
-		goto out;
+	if (ctx->sslctx->sni) {
+		if (any) {
+			if (strstr(ctx->sslctx->sni, s)) {
+				log_finest_va("Match substring in sni: %s, %s", ctx->sslctx->sni, s);
+				rv = 1;
+				goto out;
+			}
+		} else if (!strcmp(ctx->sslctx->sni, s)) {
+			log_finest_va("Match exact with sni: %s", ctx->sslctx->sni);
+			rv = 1;
+			goto out;
+		}
 	}
 
 	// @attention Make sure ssl_names is not null
@@ -655,9 +675,17 @@ protossl_pass_site(pxy_conn_ctx_t *ctx, char *site)
 		goto out;
 	}
 
+	if (any) {
+		if (strstr(ctx->sslctx->ssl_names, s)) {
+			log_finest_va("Match substring in common names: %s, %s", ctx->sslctx->ssl_names, s);
+			rv = 1;
+		}
+		goto out;
+	}
+
 	// Single common name: "example.com"
 	if (!strcmp(ctx->sslctx->ssl_names, s)) {
-		log_finest_va("Match with single common name: %s", ctx->sslctx->ssl_names);
+		log_finest_va("Match exact with single common name: %s", ctx->sslctx->ssl_names);
 		rv = 1;
 		goto out;
 	}
@@ -667,14 +695,14 @@ protossl_pass_site(pxy_conn_ctx_t *ctx, char *site)
 
 	// First common name: "example.com/"
 	if (strstr(ctx->sslctx->ssl_names, s) == ctx->sslctx->ssl_names) {
-		log_finest_va("Match with the first common name: %s, %s", ctx->sslctx->ssl_names, s);
+		log_finest_va("Match exact with the first common name: %s, %s", ctx->sslctx->ssl_names, s);
 		rv = 1;
 		goto out;
 	}
 
 	// Middle common name: "/example.com/"
 	if (strstr(ctx->sslctx->ssl_names, _site)) {
-		log_finest_va("Match with a middle common name: %s, %s", ctx->sslctx->ssl_names, _site);
+		log_finest_va("Match exact with a middle common name: %s, %s", ctx->sslctx->ssl_names, _site);
 		rv = 1;
 		goto out;
 	}
@@ -684,7 +712,7 @@ protossl_pass_site(pxy_conn_ctx_t *ctx, char *site)
 
 	// Last common name: "/example.com"
 	if (strstr(ctx->sslctx->ssl_names, _site) == ctx->sslctx->ssl_names + strlen(ctx->sslctx->ssl_names) - strlen(_site)) {
-		log_finest_va("Match with the last common name: %s, %s", ctx->sslctx->ssl_names, _site);
+		log_finest_va("Match exact with the last common name: %s, %s", ctx->sslctx->ssl_names, _site);
 		rv = 1;
 	}
 out:
@@ -736,28 +764,31 @@ protossl_srcssl_create(pxy_conn_ctx_t *ctx, SSL *origssl)
 	}
 
 	passsite_t *passsite = ctx->spec->opts->passsites;
-	while (passsite) {
-		if (protossl_pass_user(ctx, passsite)) {
-			int rv = protossl_pass_site(ctx, passsite->site);
-			if (rv == 1) {
-				// Do not print the surrounding slashes
+	if (passsite) {
+		while (passsite) {
+			if (protossl_pass_user(ctx, passsite)) {
+				int rv = protossl_pass_site(ctx, passsite->site);
+				if (rv == 1) {
+					// Do not print the surrounding slashes
 #ifndef WITHOUT_USERAUTH
-				log_err_level_printf(LOG_WARNING, "Found pass site: %.*s for user %s and keyword %s\n", (int)strlen(passsite->site) - 2, passsite->site + 1,
-						passsite->ip ? passsite->ip : (passsite->all ? "*" : STRORDASH(passsite->user)), STRORDASH(passsite->keyword));
+					log_err_level_printf(LOG_WARNING, "Found pass site: %.*s for user %s and keyword %s\n", (int)strlen(passsite->site) - 2, passsite->site + 1,
+							passsite->ip ? passsite->ip : (passsite->all ? "*" : STRORDASH(passsite->user)), STRORDASH(passsite->keyword));
 #else /* WITHOUT_USERAUTH */
-				log_err_level_printf(LOG_WARNING, "Found pass site: %.*s for ip %s\n", (int)strlen(passsite->site) - 2, passsite->site + 1, STRORDASH(passsite->ip));
+					log_err_level_printf(LOG_WARNING, "Found pass site: %.*s for ip %s\n", (int)strlen(passsite->site) - 2, passsite->site + 1, STRORDASH(passsite->ip));
 #endif /* WITHOUT_USERAUTH */
-				// Differentiate passsite from passthrough option by raising the passsite flag
-				ctx->sslctx->passsite = 1;
-				cert_free(cert);
-				return NULL;
-			} else if (rv == -1) {
-				// enomem
-				cert_free(cert);
-				return NULL;
+					// Differentiate passsite from passthrough option by raising the passsite flag
+					ctx->sslctx->passsite = 1;
+					cert_free(cert);
+					return NULL;
+				} else if (rv == -1) {
+					// enomem
+					cert_free(cert);
+					return NULL;
+				}
 			}
+			passsite = passsite->next;
 		}
-		passsite = passsite->next;
+		log_finest_va("No passsite match with sni or common name: %s:%s, %s:%s, %s, %s, %s, %s", STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str), STRORDASH(ctx->user), STRORDASH(ctx->desc), STRORDASH(ctx->sslctx->sni), STRORDASH(ctx->sslctx->ssl_names));
 	}
 
 	SSL_CTX *sslctx = protossl_srcsslctx_create(ctx, cert->crt, cert->chain,

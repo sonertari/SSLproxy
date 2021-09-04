@@ -305,7 +305,7 @@ PassSite.
 Per-site filters can be defined using client IP addresses, users, and 
 description keywords. If the UserAuth option is disabled, only client IP 
 addresses can be used in PassSite filters. Multiple sites can be defined, one 
-on each line.
+on each line. PassSite rules can search for exact or substring matches.
 
 ### Logging
 

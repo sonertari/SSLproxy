@@ -417,10 +417,6 @@ protopassthrough_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 
 	if (events & BEV_EVENT_CONNECTED) {
 		if (ctx->connected) {
-			// @attention dstaddr may not have been set by the original proto.
-			if (pxy_set_dstaddr(ctx) == -1) {
-				return;
-			}
 #ifdef HAVE_LOCAL_PROCINFO
 			if (protopassthrough_prepare_logging(ctx) == -1) {
 				return;
