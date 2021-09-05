@@ -626,13 +626,6 @@ protossl_pass_site(pxy_conn_ctx_t *ctx, char *site)
 {
 	log_finest_va("ENTER, %s, %s, %s", site, STRORDASH(ctx->sslctx->sni), STRORDASH(ctx->sslctx->ssl_names));
 
-	int rv = 0;
-
-	// site has surrounding slashes: "/example.com/"
-	// site is never empty or just "//", @see opts_set_pass_site(),
-	// so no need to check if the length of site > 0 or 2
-	size_t len = strlen(site);
-
 	// Avoid multithreading issues by duping the site arg as a local var
 	// site == ctx->spec->opts->passsites->site, which is used by all threads
 	// @todo Check if multithreaded read access causes any issues
@@ -642,44 +635,43 @@ protossl_pass_site(pxy_conn_ctx_t *ctx, char *site)
 		return -1;
 	}
 
-	int any = 0;
-	if (_site[len - 2] == '*') {
-		any = 1;
-		_site[len - 2] = '/';
-		len--;
-	}
+	int rv = 0;
 
-	// Replace slash with null
-	_site[len - 1] = '\0';
+	// site has surrounding slashes: "/example.com/"
+	// site is never empty or just "//", @see opts_set_pass_site(),
+	// so no need to check if the length of site > 0 or 2
+	size_t len = strlen(_site);
+
 	// Skip the first slash
 	char *s = _site + 1;
 
+	if (_site[len - 2] == '*') {
+		_site[len - 2] = '\0';
+		if (ctx->sslctx->sni && strstr(ctx->sslctx->sni, s)) {
+			log_finest_va("Match substring in sni: %s, %s", ctx->sslctx->sni, s);
+			rv = 1;
+		} else if (ctx->sslctx->ssl_names && strstr(ctx->sslctx->ssl_names, s)) {
+			log_finest_va("Match substring in common names: %s, %s", ctx->sslctx->ssl_names, s);
+			rv = 1;
+		}
+		// The end of substring search
+		goto out;
+	}
+	// The start of exact search
+
+	// Replace the last slash with null
+	_site[len - 1] = '\0';
+
 	// @attention Make sure sni is not null
 	// SNI: "example.com"
-	if (ctx->sslctx->sni) {
-		if (any) {
-			if (strstr(ctx->sslctx->sni, s)) {
-				log_finest_va("Match substring in sni: %s, %s", ctx->sslctx->sni, s);
-				rv = 1;
-				goto out;
-			}
-		} else if (!strcmp(ctx->sslctx->sni, s)) {
-			log_finest_va("Match exact with sni: %s", ctx->sslctx->sni);
-			rv = 1;
-			goto out;
-		}
+	if (ctx->sslctx->sni && !strcmp(ctx->sslctx->sni, s)) {
+		log_finest_va("Match exact with sni: %s", ctx->sslctx->sni);
+		rv = 1;
+		goto out;
 	}
 
 	// @attention Make sure ssl_names is not null
 	if (!ctx->sslctx->ssl_names) {
-		goto out;
-	}
-
-	if (any) {
-		if (strstr(ctx->sslctx->ssl_names, s)) {
-			log_finest_va("Match substring in common names: %s, %s", ctx->sslctx->ssl_names, s);
-			rv = 1;
-		}
 		goto out;
 	}
 
@@ -690,7 +682,7 @@ protossl_pass_site(pxy_conn_ctx_t *ctx, char *site)
 		goto out;
 	}
 
-	// Insert slash at the end
+	// Restore the slash at the end
 	_site[len - 1] = '/';
 
 	// First common name: "example.com/"
@@ -707,7 +699,7 @@ protossl_pass_site(pxy_conn_ctx_t *ctx, char *site)
 		goto out;
 	}
 
-	// Replace slash with null
+	// Replace the last slash with null
 	_site[len - 1] = '\0';
 
 	// Last common name: "/example.com"
@@ -788,7 +780,9 @@ protossl_srcssl_create(pxy_conn_ctx_t *ctx, SSL *origssl)
 			}
 			passsite = passsite->next;
 		}
-		log_finest_va("No passsite match with sni or common name: %s:%s, %s:%s, %s, %s, %s, %s", STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str), STRORDASH(ctx->user), STRORDASH(ctx->desc), STRORDASH(ctx->sslctx->sni), STRORDASH(ctx->sslctx->ssl_names));
+		log_finest_va("No passsite match with sni or common name: %s:%s, %s:%s, %s, %s, %s, %s",
+				STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
+				STRORDASH(ctx->user), STRORDASH(ctx->desc), STRORDASH(ctx->sslctx->sni), STRORDASH(ctx->sslctx->ssl_names));
 	}
 
 	SSL_CTX *sslctx = protossl_srcsslctx_create(ctx, cert->crt, cert->chain,

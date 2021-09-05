@@ -1891,7 +1891,7 @@ opts_unset_validate_proto(opts_t *opts)
 void
 opts_set_pass_site(opts_t *opts, char *value, int line_num)
 {
-	// site [(clientaddr|(user|*) [description keyword])]
+	// site[*] [(clientaddr|(user|*) [description keyword])]
 	char *argv[sizeof(char *) * 3];
 	int argc = 0;
 	char *p, *last = NULL;
