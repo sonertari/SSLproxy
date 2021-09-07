@@ -572,6 +572,16 @@ main(int argc, char *argv[])
 	global_opts_str_free(global_opts_str);
 	global_opts_str = NULL;
 
+	for (proxyspec_t *spec = global->spec; spec; spec = spec->next) {
+		if (spec->opts->passsites) {
+			spec->opts->passsite_filter = opts_set_passsite_filter(spec->opts->passsites);
+			if (!spec->opts->passsite_filter) {
+				fprintf(stderr, "%s: out of memory\n", argv0);
+				exit(EXIT_FAILURE);
+			}
+		}
+	}
+
 	/* usage checks before defaults */
 	if (global->detach && OPTS_DEBUG(global)) {
 		fprintf(stderr, "%s: -d and -D are mutually exclusive.\n",
@@ -881,6 +891,13 @@ main(int argc, char *argv[])
 			log_dbg_printf("- Global connection drop\n");
 		}
 	}
+
+	// Free passsite linked lists, not needed anymore
+	// We use passsite_filters in conn handling, not passsite lists
+	for (proxyspec_t *spec = global->spec; spec; spec = spec->next) {
+		opts_free_passsite(spec->opts);
+	}
+	opts_free_passsite(global->opts);
 
 	/*
 	 * Initialize as much as possible before daemon() in order to be

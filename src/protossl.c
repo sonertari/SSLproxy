@@ -97,9 +97,16 @@ protossl_log_ssl_error(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		}
 	}
 	if (ctx->spec->opts->passsites && !ctx->sslctx->passsite) {
-		log_err_level_printf(LOG_WARNING, "Closing on ssl error without passsite match: %s:%s, %s:%s, %s, %s, %s, %s\n",
-				STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
-				STRORDASH(ctx->user), STRORDASH(ctx->desc), STRORDASH(ctx->sslctx->sni), STRORDASH(ctx->sslctx->ssl_names));
+		log_err_level_printf(LOG_WARNING, "Closing on ssl error without passsite match: %s:%s, %s:%s, "
+#ifndef WITHOUT_USERAUTH
+			"%s, %s, "
+#endif /* !WITHOUT_USERAUTH */
+			"%s, %s\n",
+			STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
+#ifndef WITHOUT_USERAUTH
+			STRORDASH(ctx->user), STRORDASH(ctx->desc),
+#endif /* !WITHOUT_USERAUTH */
+			STRORDASH(ctx->sslctx->sni), STRORDASH(ctx->sslctx->ssl_names));
 	}
 }
 
@@ -584,44 +591,6 @@ protossl_srccert_create(pxy_conn_ctx_t *ctx)
 }
 
 static int NONNULL(1,2)
-protossl_pass_user(pxy_conn_ctx_t *ctx, passsite_t *passsite)
-{
-#ifndef WITHOUT_USERAUTH
-	log_finest_va("ENTER, %s, %s, %s, %s", passsite->site, STRORDASH(passsite->ip), passsite->all ? "*" : STRORDASH(passsite->user), STRORDASH(passsite->keyword));
-#else /* WITHOUT_USERAUTH */
-	log_finest_va("ENTER, %s, %s", passsite->site, STRORDASH(passsite->ip));
-#endif /* WITHOUT_USERAUTH */
-
-	// No filter or * (all) without desc keyword defined
-	if (!passsite->ip
-#ifndef WITHOUT_USERAUTH
-			&& !passsite->user && !passsite->keyword
-#endif /* !WITHOUT_USERAUTH */
-			) {
-		return 1;
-	}
-
-	log_finest_va("Filter ip: %s", STRORDASH(ctx->srchost_str));
-
-	// Client ip filter defined
-	if (passsite->ip && ctx->srchost_str && !strcmp(ctx->srchost_str, passsite->ip)) {
-		return 1;
-	}
-
-#ifndef WITHOUT_USERAUTH
-	log_finest_va("Filter user: %s, %s", STRORDASH(ctx->user), STRORDASH(ctx->desc));
-
-	// Make sure ctx->user and ctx->desc are set, otherwise if the user has not logged in yet, they may be NULL
-	// User and/or description keyword filters defined
-	if (ctx->spec->opts->user_auth && (passsite->all || (passsite->user && ctx->user && !strcmp(ctx->user, passsite->user))) &&
-			(!passsite->keyword || (ctx->desc && strcasestr(ctx->desc, passsite->keyword)))) {
-		return 1;
-	}
-#endif /* !WITHOUT_USERAUTH */
-	return 0;
-}
-
-static int NONNULL(1,2)
 protossl_pass_site(pxy_conn_ctx_t *ctx, char *site)
 {
 	log_finest_va("ENTER, %s, %s, %s", site, STRORDASH(ctx->sslctx->sni), STRORDASH(ctx->sslctx->ssl_names));
@@ -638,7 +607,7 @@ protossl_pass_site(pxy_conn_ctx_t *ctx, char *site)
 	int rv = 0;
 
 	// site has surrounding slashes: "/example.com/"
-	// site is never empty or just "//", @see opts_set_pass_site(),
+	// site is never empty or just "//", @see opts_set_passsite(),
 	// so no need to check if the length of site > 0 or 2
 	size_t len = strlen(_site);
 
@@ -712,6 +681,36 @@ out:
 	return rv;
 }
 
+static int
+protossl_apply_passsite(pxy_conn_ctx_t *ctx, passsite_site_t *list)
+{
+	int rv = 0;
+	while (list) {
+		rv = protossl_pass_site(ctx, list->site);
+		if (rv == 1) {
+			// Do not print the surrounding slashes
+			log_err_level_printf(LOG_WARNING, "Found passsite: %.*s for %s:%s, %s:%s, "
+#ifndef WITHOUT_USERAUTH
+				"%s, %s, "
+#endif /* !WITHOUT_USERAUTH */
+				"%s, %s\n",
+				(int)strlen(list->site) - 2, list->site + 1,
+				STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
+#ifndef WITHOUT_USERAUTH
+				STRORDASH(ctx->user), STRORDASH(ctx->desc),
+#endif /* !WITHOUT_USERAUTH */
+				STRORDASH(ctx->sslctx->sni), STRORDASH(ctx->sslctx->ssl_names));
+			ctx->sslctx->passsite = 1;
+			break;
+		} else if (rv == -1) {
+			// enomem
+			break;
+		}
+		list = list->next;
+	}
+	return rv;
+}
+
 /*
  * Create new SSL context for the incoming connection, based on the original
  * destination SSL certificate.
@@ -755,34 +754,53 @@ protossl_srcssl_create(pxy_conn_ctx_t *ctx, SSL *origssl)
 			ctx->enomem = 1;
 	}
 
-	passsite_t *passsite = ctx->spec->opts->passsites;
-	if (passsite) {
-		while (passsite) {
-			if (protossl_pass_user(ctx, passsite)) {
-				int rv = protossl_pass_site(ctx, passsite->site);
-				if (rv == 1) {
-					// Do not print the surrounding slashes
+	passsite_filter_t *pf = ctx->spec->opts->passsite_filter;
+	if (pf) {
 #ifndef WITHOUT_USERAUTH
-					log_err_level_printf(LOG_WARNING, "Found pass site: %.*s for user %s and keyword %s\n", (int)strlen(passsite->site) - 2, passsite->site + 1,
-							passsite->ip ? passsite->ip : (passsite->all ? "*" : STRORDASH(passsite->user)), STRORDASH(passsite->keyword));
-#else /* WITHOUT_USERAUTH */
-					log_err_level_printf(LOG_WARNING, "Found pass site: %.*s for ip %s\n", (int)strlen(passsite->site) - 2, passsite->site + 1, STRORDASH(passsite->ip));
-#endif /* WITHOUT_USERAUTH */
-					// Differentiate passsite from passthrough option by raising the passsite flag
-					ctx->sslctx->passsite = 1;
-					cert_free(cert);
-					return NULL;
-				} else if (rv == -1) {
-					// enomem
-					cert_free(cert);
-					return NULL;
+		if (ctx->user) {
+			log_finest_va("Searching user: %s", ctx->user);
+			passsite_user_t *user = opts_find_user(pf->user, ctx->user);
+			if (user) {
+				if (ctx->desc) {
+					log_finest_va("Searching user keyword: %s, %s", ctx->user, ctx->desc);
+					passsite_keyword_t *keyword = opts_find_keyword(user->keyword, ctx->desc);
+					if (keyword && (protossl_apply_passsite(ctx, keyword->site) != 0)) {
+						goto out;
+					}
+				}
+				if (protossl_apply_passsite(ctx, user->site) != 0) {
+					goto out;
 				}
 			}
-			passsite = passsite->next;
+			if (ctx->desc) {
+				log_finest_va("Searching keyword: %s", ctx->desc);
+				passsite_keyword_t *keyword = opts_find_keyword(pf->keyword, ctx->desc);
+				if (keyword && (protossl_apply_passsite(ctx, keyword->site) != 0)) {
+					goto out;
+				}
+			}
 		}
-		log_finest_va("No passsite match with sni or common name: %s:%s, %s:%s, %s, %s, %s, %s",
-				STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
-				STRORDASH(ctx->user), STRORDASH(ctx->desc), STRORDASH(ctx->sslctx->sni), STRORDASH(ctx->sslctx->ssl_names));
+#endif /* !WITHOUT_USERAUTH */
+		if (ctx->srchost_str) {
+			log_finest_va("Searching ip: %s", ctx->srchost_str);
+			passsite_ip_t *ip = opts_find_ip(pf->ip, ctx->srchost_str);
+			if (ip && (protossl_apply_passsite(ctx, ip->site) != 0)) {
+				goto out;
+			}
+		}
+		log_finest("Searching all");
+		if (pf->all && (protossl_apply_passsite(ctx, pf->all) != 0)) {
+			goto out;
+		}
+#ifndef WITHOUT_USERAUTH
+		log_finest_va("No passsite filter match with sni or common name: %s:%s, %s:%s, %s, %s, %s, %s",
+			STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
+			STRORDASH(ctx->user), STRORDASH(ctx->desc), STRORDASH(ctx->sslctx->sni), STRORDASH(ctx->sslctx->ssl_names));
+#else /* WITHOUT_USERAUTH */
+		log_finest_va("No passsite filter match with sni or common name: %s:%s, %s:%s, %s, %s",
+			STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
+			STRORDASH(ctx->sslctx->sni), STRORDASH(ctx->sslctx->ssl_names));
+#endif /* !WITHOUT_USERAUTH */
 	}
 
 	SSL_CTX *sslctx = protossl_srcsslctx_create(ctx, cert->crt, cert->chain,
@@ -801,6 +819,9 @@ protossl_srcssl_create(pxy_conn_ctx_t *ctx, SSL *origssl)
 	SSL_set_mode(ssl, SSL_get_mode(ssl) | SSL_MODE_RELEASE_BUFFERS);
 #endif /* SSL_MODE_RELEASE_BUFFERS */
 	return ssl;
+out:
+	cert_free(cert);
+	return NULL;
 }
 
 #ifndef OPENSSL_NO_TLSEXT

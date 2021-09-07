@@ -608,29 +608,29 @@ START_TEST(opts_debug_01)
 }
 END_TEST
 
-START_TEST(opts_set_pass_site_01)
+START_TEST(opts_set_passsite_01)
 {
 	char *ps;
 	opts_t *opts = opts_new();
 
 	char *s = strdup("example.com");
-	opts_set_pass_site(opts, s, 0);
+	opts_set_passsite(opts, s, 0);
 	free(s);
 
 	fail_unless(!strcmp(opts->passsites->site, "/example.com/"), "site not /example.com/");
 	fail_unless(!opts->passsites->ip, "ip set");
 #ifndef WITHOUT_USERAUTH
 	fail_unless(!opts->passsites->user, "user set");
-	fail_unless(!opts->passsites->all, "all not 0");
+	fail_unless(opts->passsites->all, "all not 1");
 	fail_unless(!opts->passsites->keyword, "keyword set");
 #endif /* !WITHOUT_USERAUTH */
 	fail_unless(!opts->passsites->next, "next set");
 
 	ps = passsite_str(opts->passsites);
 #ifndef WITHOUT_USERAUTH
-	fail_unless(!strcmp(ps, "passsite 0: site=/example.com/,ip=,user=,keyword=,all=0"), "failed parsing passite example.com");
+	fail_unless(!strcmp(ps, "passsite 0: site=/example.com/,ip=,user=,keyword=,all=1"), "failed parsing passite example.com");
 #else /* WITHOUT_USERAUTH */
-	fail_unless(!strcmp(ps, "passsite 0: site=/example.com/,ip="), "failed parsing passite example.com");
+	fail_unless(!strcmp(ps, "passsite 0: site=/example.com/,ip=,all=1"), "failed parsing passite example.com");
 #endif /* WITHOUT_USERAUTH */
 	free(ps);
 
@@ -638,13 +638,13 @@ START_TEST(opts_set_pass_site_01)
 }
 END_TEST
 
-START_TEST(opts_set_pass_site_02)
+START_TEST(opts_set_passsite_02)
 {
 	char *ps;
 	opts_t *opts = opts_new();
 
 	char *s = strdup("example.com 192.168.0.1");
-	opts_set_pass_site(opts, s, 0);
+	opts_set_passsite(opts, s, 0);
 	free(s);
 
 	fail_unless(!strcmp(opts->passsites->site, "/example.com/"), "site not /example.com/");
@@ -660,7 +660,7 @@ START_TEST(opts_set_pass_site_02)
 #ifndef WITHOUT_USERAUTH
 	fail_unless(!strcmp(ps, "passsite 0: site=/example.com/,ip=192.168.0.1,user=,keyword=,all=0"), "failed parsing passite example.com 192.168.0.1");
 #else /* WITHOUT_USERAUTH */
-	fail_unless(!strcmp(ps, "passsite 0: site=/example.com/,ip=192.168.0.1"), "failed parsing passite example.com 192.168.0.1");
+	fail_unless(!strcmp(ps, "passsite 0: site=/example.com/,ip=192.168.0.1,all=0"), "failed parsing passite example.com 192.168.0.1");
 #endif /* !WITHOUT_USERAUTH */
 	free(ps);
 
@@ -669,7 +669,7 @@ START_TEST(opts_set_pass_site_02)
 END_TEST
 
 #ifndef WITHOUT_USERAUTH
-START_TEST(opts_set_pass_site_03)
+START_TEST(opts_set_passsite_03)
 {
 	char *ps;
 	opts_t *opts = opts_new();
@@ -677,7 +677,7 @@ START_TEST(opts_set_pass_site_03)
 	opts->user_auth = 1;
 
 	char *s = strdup("example.com root");
-	opts_set_pass_site(opts, s, 0);
+	opts_set_passsite(opts, s, 0);
 	free(s);
 
 	fail_unless(!strcmp(opts->passsites->site, "/example.com/"), "site not /example.com/");
@@ -695,13 +695,15 @@ START_TEST(opts_set_pass_site_03)
 }
 END_TEST
 
-START_TEST(opts_set_pass_site_04)
+START_TEST(opts_set_passsite_04)
 {
 	char *ps;
 	opts_t *opts = opts_new();
 
+	opts->user_auth = 1;
+
 	char *s = strdup("*.google.com * android");
-	opts_set_pass_site(opts, s, 0);
+	opts_set_passsite(opts, s, 0);
 	free(s);
 
 	fail_unless(!strcmp(opts->passsites->site, "/*.google.com/"), "site not /*.google.com/");
@@ -720,38 +722,38 @@ START_TEST(opts_set_pass_site_04)
 END_TEST
 #endif /* !WITHOUT_USERAUTH */
 
-START_TEST(opts_set_pass_site_05)
+START_TEST(opts_set_passsite_05)
 {
 	char *ps;
 	char *s;
 	opts_t *opts = opts_new();
 
-	// Dup string using strdup(), otherwise strtok_r() in opts_set_pass_site() will cause segmentation fault
+	// Dup string using strdup(), otherwise strtok_r() in opts_set_passsite() will cause segmentation fault
 	s = strdup("example.com");
-	opts_set_pass_site(opts, s, 0);
+	opts_set_passsite(opts, s, 0);
 	free(s);
 	fail_unless(!opts->passsites->next, "next set");
 
 	s = strdup("example.com 192.168.0.1");
-	opts_set_pass_site(opts, s, 1);
+	opts_set_passsite(opts, s, 1);
 	free(s);
 	fail_unless(opts->passsites->next, "next not set");
 	fail_unless(!opts->passsites->next->next, "next->next set");
 
 #ifndef WITHOUT_USERAUTH
 	opts->user_auth = 1;
-	// Use root user, opts_set_pass_site() calls sys_isuser() to validate the user
+	// Use root user, opts_set_passsite() calls sys_isuser() to validate the user
 	s = strdup("example.com root");
-	opts_set_pass_site(opts, s, 2);
+	opts_set_passsite(opts, s, 2);
 	free(s);
-	opts->user_auth = 0;
 	fail_unless(opts->passsites->next, "next not set");
 	fail_unless(opts->passsites->next->next, "next->next not set");
 	fail_unless(!opts->passsites->next->next->next, "next->next->next set");
 
 	s = strdup("*.google.com * android");
-	opts_set_pass_site(opts, s, 3);
+	opts_set_passsite(opts, s, 3);
 	free(s);
+	opts->user_auth = 0;
 #endif /* !WITHOUT_USERAUTH */
 	ps = passsite_str(opts->passsites);
 	fail_unless(opts->passsites->next, "next not set");
@@ -762,11 +764,11 @@ START_TEST(opts_set_pass_site_05)
 	fail_unless(!strcmp(ps, "passsite 0: site=/*.google.com/,ip=,user=,keyword=android,all=1\n"
 			"passsite 1: site=/example.com/,ip=,user=root,keyword=,all=0\n"
 			"passsite 2: site=/example.com/,ip=192.168.0.1,user=,keyword=,all=0\n"
-			"passsite 3: site=/example.com/,ip=,user=,keyword=,all=0"),
+			"passsite 3: site=/example.com/,ip=,user=,keyword=,all=1"),
 			"failed parsing multiple passites");
 #else /* WITHOUT_USERAUTH */
-	fail_unless(!strcmp(ps, "passsite 0: site=/example.com/,ip=192.168.0.1\n"
-			"passsite 1: site=/example.com/,ip="),
+	fail_unless(!strcmp(ps, "passsite 0: site=/example.com/,ip=192.168.0.1,all=0\n"
+			"passsite 1: site=/example.com/,ip=,all=1"),
 			"failed parsing multiple passites");
 #endif /* WITHOUT_USERAUTH */
 	free(ps);
@@ -950,13 +952,13 @@ opts_suite(void)
 
 	tc = tcase_create("opts_config");
 	tcase_add_test(tc, opts_debug_01);
-	tcase_add_test(tc, opts_set_pass_site_01);
-	tcase_add_test(tc, opts_set_pass_site_02);
+	tcase_add_test(tc, opts_set_passsite_01);
+	tcase_add_test(tc, opts_set_passsite_02);
 #ifndef WITHOUT_USERAUTH
-	tcase_add_test(tc, opts_set_pass_site_03);
-	tcase_add_test(tc, opts_set_pass_site_04);
+	tcase_add_test(tc, opts_set_passsite_03);
+	tcase_add_test(tc, opts_set_passsite_04);
 #endif /* !WITHOUT_USERAUTH */
-	tcase_add_test(tc, opts_set_pass_site_05);
+	tcase_add_test(tc, opts_set_passsite_05);
 	tcase_add_test(tc, opts_check_value_yes_01);
 	tcase_add_test(tc, opts_check_value_yes_02);
 	tcase_add_test(tc, opts_get_name_value_01);

@@ -6,6 +6,10 @@ ifneq ($(TESTPROXY_VERSION),testproxy 0.0.3)
 $(error Use Testproxy v0.0.3 with this version of SSLproxy, found $(TESTPROXY_VERSION))
 endif
 
+ifeq ($(findstring -DWITHOUT_USERAUTH,$(shell $(PROJECT_ROOT)/src/sslproxy -V 2>&1 | grep "Features: ")),-DWITHOUT_USERAUTH)
+$(error End-to-end tests need UserAuth enabled, disable WITHOUT_USERAUTH feature in main makefile and try again)
+endif
+
 all: test
 
 buildsslproxy:

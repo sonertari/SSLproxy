@@ -116,7 +116,10 @@ typedef struct opts {
 #endif /* !WITHOUT_USERAUTH */
 	unsigned int validate_proto : 1;
 	unsigned int max_http_header_size;
+	// Used to store passsite rules and to create passsite_filter
+	// Freed during startup after passsite_filter is created and debug printed
 	struct passsite *passsites;
+	struct passsite_filter *passsite_filter;
 	global_t *global;
 } opts_t;
 
@@ -154,13 +157,48 @@ typedef struct passsite {
 	char *site;
 	// Filter definition fields
 	char *ip;
+	unsigned int all : 1; /* 1 for all ips and users */
 #ifndef WITHOUT_USERAUTH
 	char *user;
-	unsigned int all : 1; /* 1 for all users */
 	char *keyword;
 #endif /* !WITHOUT_USERAUTH */
 	struct passsite *next;
 } passsite_t;
+
+typedef struct passsite_site {
+	char *site;
+	struct passsite_site *next;
+} passsite_site_t;
+
+typedef struct passsite_ip {
+	char *ip;
+	struct passsite_site *site;
+	struct passsite_ip *next;
+} passsite_ip_t;
+
+#ifndef WITHOUT_USERAUTH
+typedef struct passsite_keyword {
+	char *keyword;
+	struct passsite_site *site;
+	struct passsite_keyword *next;
+} passsite_keyword_t;
+
+typedef struct passsite_user {
+	char *user;
+	struct passsite_site *site;
+	struct passsite_keyword *keyword;
+	struct passsite_user *next;
+} passsite_user_t;
+#endif /* !WITHOUT_USERAUTH */
+
+typedef struct passsite_filter {
+#ifndef WITHOUT_USERAUTH
+	struct passsite_user *user;
+	struct passsite_keyword *keyword;
+#endif /* !WITHOUT_USERAUTH */
+	struct passsite_ip *ip;
+	struct passsite_site *all;
+} passsite_filter_t;
 
 // global opts strings used while cloning into proxyspec opts
 // A var of this type is passed around as a flag to indicate if these opts are
@@ -252,6 +290,7 @@ char *proxyspec_str(proxyspec_t *) NONNULL(1) MALLOC;
 
 opts_t *opts_new(void) MALLOC;
 void opts_free(opts_t *) NONNULL(1);
+void opts_free_passsite(opts_t *) NONNULL(1);
 char *passsite_str(passsite_t *);
 char *opts_proto_dbg_dump(opts_t *) NONNULL(1);
 void opts_set_cacrt(opts_t *, const char *, const char *, global_opts_str_t *) NONNULL(1,2,3);
@@ -273,7 +312,16 @@ void opts_force_proto(opts_t *, const char *, const char *) NONNULL(1,2,3);
 void opts_disable_proto(opts_t *, const char *, const char *) NONNULL(1,2,3);
 void opts_set_ciphers(opts_t *, const char *, const char *) NONNULL(1,2,3);
 void opts_set_ciphersuites(opts_t *, const char *, const char *) NONNULL(1,2,3);
-void opts_set_pass_site(opts_t *, char *, int);
+void opts_set_passsite(opts_t *, char *, int);
+
+passsite_site_t *opts_find_site(passsite_site_t *, char *) NONNULL(2);
+passsite_ip_t *opts_find_ip(passsite_ip_t *, char *) NONNULL(2);
+#ifndef WITHOUT_USERAUTH
+passsite_keyword_t *opts_find_keyword(passsite_keyword_t *, char *) NONNULL(2);
+passsite_user_t *opts_find_user(passsite_user_t *, char *) NONNULL(2);
+#endif /* !WITHOUT_USERAUTH */
+passsite_filter_t *opts_set_passsite_filter(passsite_t *);
+
 #define OPTS_DEBUG(global) unlikely((global)->debug)
 
 global_t * global_new(void) MALLOC;
