@@ -314,7 +314,6 @@ void opts_set_ciphers(opts_t *, const char *, const char *) NONNULL(1,2,3);
 void opts_set_ciphersuites(opts_t *, const char *, const char *) NONNULL(1,2,3);
 void opts_set_passsite(opts_t *, char *, int);
 
-passsite_site_t *opts_find_site(passsite_site_t *, char *) NONNULL(2);
 passsite_ip_t *opts_find_ip(passsite_ip_t *, char *) NONNULL(2);
 #ifndef WITHOUT_USERAUTH
 passsite_keyword_t *opts_find_keyword(passsite_keyword_t *, char *) NONNULL(2);

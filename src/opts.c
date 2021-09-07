@@ -1138,7 +1138,7 @@ out:
 	return ps;
 }
 
-char *
+static char *
 passsite_sites_str(passsite_site_t *site)
 {
 	char *s = NULL;
@@ -1165,7 +1165,7 @@ out:
 	return s;
 }
 
-char *
+static char *
 passsite_ips_str(passsite_ip_t *ip)
 {
 	char *s = NULL;
@@ -1200,7 +1200,7 @@ out:
 }
 
 #ifndef WITHOUT_USERAUTH
-char *
+static char *
 passsite_users_str(passsite_user_t *user)
 {
 	char *s = NULL;
@@ -1239,7 +1239,7 @@ out:
 	return s;
 }
 
-char *
+static char *
 passsite_keywords_str(passsite_keyword_t *keyword)
 {
 	char *s = NULL;
@@ -1273,7 +1273,7 @@ out:
 	return s;
 }
 
-char *
+static char *
 passsite_userkeywords_str(passsite_user_t *user)
 {
 	char *s = NULL;
@@ -1308,7 +1308,7 @@ out:
 }
 #endif /* !WITHOUT_USERAUTH */
 
-char *
+static char *
 passsite_filter_str(passsite_filter_t *pf)
 {
 	char *pfs = NULL;
@@ -1370,7 +1370,7 @@ out:
 }
 
 #ifndef WITHOUT_USERAUTH
-char *
+static char *
 users_str(userlist_t *u)
 {
 	char *us = NULL;
@@ -2283,7 +2283,7 @@ opts_set_passsite(opts_t *opts, char *value, int line_num)
 #endif /* DEBUG_OPTS */
 }
 
-passsite_site_t *
+static passsite_site_t *
 opts_find_site(passsite_site_t *list, char *s)
 {
 	while (list) {

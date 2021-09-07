@@ -734,41 +734,52 @@ START_TEST(opts_set_passsite_05)
 	free(s);
 	fail_unless(!opts->passsites->next, "next set");
 
-	s = strdup("example.com 192.168.0.1");
+	s = strdup("example.com *");
 	opts_set_passsite(opts, s, 1);
 	free(s);
 	fail_unless(opts->passsites->next, "next not set");
 	fail_unless(!opts->passsites->next->next, "next->next set");
 
-#ifndef WITHOUT_USERAUTH
-	opts->user_auth = 1;
-	// Use root user, opts_set_passsite() calls sys_isuser() to validate the user
-	s = strdup("example.com root");
+	s = strdup("example.com 192.168.0.1");
 	opts_set_passsite(opts, s, 2);
 	free(s);
 	fail_unless(opts->passsites->next, "next not set");
 	fail_unless(opts->passsites->next->next, "next->next not set");
 	fail_unless(!opts->passsites->next->next->next, "next->next->next set");
 
-	s = strdup("*.google.com * android");
+#ifndef WITHOUT_USERAUTH
+	opts->user_auth = 1;
+	// Use root user, opts_set_passsite() calls sys_isuser() to validate the user
+	s = strdup("example.com root");
 	opts_set_passsite(opts, s, 3);
 	free(s);
-	opts->user_auth = 0;
-#endif /* !WITHOUT_USERAUTH */
-	ps = passsite_str(opts->passsites);
 	fail_unless(opts->passsites->next, "next not set");
-#ifndef WITHOUT_USERAUTH
 	fail_unless(opts->passsites->next->next, "next->next not set");
 	fail_unless(opts->passsites->next->next->next, "next->next->next not set");
 	fail_unless(!opts->passsites->next->next->next->next, "next->next->next->next set");
+
+	s = strdup("*.google.com * android");
+	opts_set_passsite(opts, s, 4);
+	free(s);
+#endif /* !WITHOUT_USERAUTH */
+	ps = passsite_str(opts->passsites);
+	fail_unless(opts->passsites->next, "next not set");
+	fail_unless(opts->passsites->next->next, "next->next not set");
+#ifndef WITHOUT_USERAUTH
+	fail_unless(opts->passsites->next->next->next, "next->next->next not set");
+	fail_unless(opts->passsites->next->next->next->next, "next->next->next->next not set");
+	fail_unless(!opts->passsites->next->next->next->next->next, "next->next->next->next->next set");
 	fail_unless(!strcmp(ps, "passsite 0: site=/*.google.com/,ip=,user=,keyword=android,all=1\n"
 			"passsite 1: site=/example.com/,ip=,user=root,keyword=,all=0\n"
 			"passsite 2: site=/example.com/,ip=192.168.0.1,user=,keyword=,all=0\n"
-			"passsite 3: site=/example.com/,ip=,user=,keyword=,all=1"),
+			"passsite 3: site=/example.com/,ip=,user=,keyword=,all=1\n"
+			"passsite 4: site=/example.com/,ip=,user=,keyword=,all=1"),
 			"failed parsing multiple passites");
 #else /* WITHOUT_USERAUTH */
+	fail_unless(!opts->passsites->next->next->next, "next->next->next set");
 	fail_unless(!strcmp(ps, "passsite 0: site=/example.com/,ip=192.168.0.1,all=0\n"
-			"passsite 1: site=/example.com/,ip=,all=1"),
+			"passsite 1: site=/example.com/,ip=,all=1\n"
+			"passsite 2: site=/example.com/,ip=,all=1"),
 			"failed parsing multiple passites");
 #endif /* WITHOUT_USERAUTH */
 	free(ps);
