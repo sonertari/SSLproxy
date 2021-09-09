@@ -78,6 +78,8 @@ typedef void (*proto_classify_user_func_t)(pxy_conn_ctx_t *);
 typedef void (*child_connect_func_t)(pxy_conn_child_ctx_t *);
 typedef void (*child_proto_free_func_t)(pxy_conn_child_ctx_t *);
 
+typedef int (*proto_filter_func_t)(pxy_conn_ctx_t *, filter_list_t *);
+
 /*
  * Proxy connection context state, describes a proxy connection
  * with source and destination socket bufferevents, SSL context and
@@ -128,9 +130,6 @@ struct ssl_ctx {
 	unsigned int immutable_cert : 1;  /* 1 if the cert cannot be changed */
 	unsigned int generated_cert : 1;     /* 1 if we generated a new cert */
 	unsigned int have_sslerr : 1;           /* 1 if we have an ssl error */
-	// We should not switch to passthrough mode in error conditions unless Passthrough option is set,
-	// that is why PassSite option requires a flag of its own to differentiate it from Passthrough option
-	unsigned int passsite : 1;         /* 1 to pass the SSL site through */
 
 	/* server name indicated by client in SNI TLS extension */
 	char *sni;
@@ -318,6 +317,10 @@ struct pxy_conn_ctx {
 #endif /* !WITHOUT_USERAUTH */
 	unsigned int sent_protoerror_msg : 1;   /* 1 until error msg is sent */
 
+	unsigned int divert : 1;                         /* 1 to divert conn */
+	unsigned int split : 1;                           /* 1 to split conn */
+	unsigned int pass : 1;                     /* 1 to pass conn through */
+
 #ifdef HAVE_LOCAL_PROCINFO
 	/* local process information */
 	pxy_conn_lproc_desc_t lproc;
@@ -424,6 +427,8 @@ int pxy_is_listuser(userlist_t *, const char *
 void pxy_classify_user(pxy_conn_ctx_t *) NONNULL(1);
 void pxy_userauth(pxy_conn_ctx_t *) NONNULL(1);
 #endif /* !WITHOUT_USERAUTH */
+int pxyconn_dsthost_filter(pxy_conn_ctx_t *, filter_list_t *) NONNULL(1);
+int pxyconn_filter(pxy_conn_ctx_t *, proto_filter_func_t) NONNULL(1);
 void pxy_conn_setup(evutil_socket_t, struct sockaddr *, int,
                     pxy_thrmgr_ctx_t *, proxyspec_t *, global_t *,
 					evutil_socket_t)

@@ -573,9 +573,9 @@ main(int argc, char *argv[])
 	global_opts_str = NULL;
 
 	for (proxyspec_t *spec = global->spec; spec; spec = spec->next) {
-		if (spec->opts->passsites) {
-			spec->opts->passsite_filter = opts_set_passsite_filter(spec->opts->passsites);
-			if (!spec->opts->passsite_filter) {
+		if (spec->opts->filter_rules) {
+			spec->opts->filter = opts_set_filter(spec->opts->filter_rules);
+			if (!spec->opts->filter) {
 				fprintf(stderr, "%s: out of memory\n", argv0);
 				exit(EXIT_FAILURE);
 			}
@@ -892,12 +892,12 @@ main(int argc, char *argv[])
 		}
 	}
 
-	// Free passsite linked lists, not needed anymore
-	// We use passsite_filters in conn handling, not passsite lists
+	// Free filter rules in linked lists, not needed anymore
+	// We use filter in conn handling, not filter rule lists
 	for (proxyspec_t *spec = global->spec; spec; spec = spec->next) {
-		opts_free_passsite(spec->opts);
+		opts_free_filter_rules(spec->opts);
 	}
-	opts_free_passsite(global->opts);
+	opts_free_filter_rules(global->opts);
 
 	/*
 	 * Initialize as much as possible before daemon() in order to be

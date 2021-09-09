@@ -516,6 +516,12 @@ prototcp_bev_eventcb_connected_srvdst(UNUSED struct bufferevent *bev, pxy_conn_c
 	}
 #endif /* !WITHOUT_USERAUTH */
 
+	if (pxyconn_filter(ctx, pxyconn_dsthost_filter)) {
+		log_err_level_printf(LOG_WARNING, "dsthost filter matches; falling back to passthrough\n");
+		protopassthrough_engage(ctx);
+		return;
+	}
+
 	if (prototcp_setup_dst(ctx) == -1) {
 		return;
 	}

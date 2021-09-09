@@ -159,81 +159,87 @@ free_userlist(userlist_t *ul)
 #endif /* !WITHOUT_USERAUTH */
 
 void
-opts_free_passsite(opts_t *opts)
+opts_free_filter_rules(opts_t *opts)
 {
-	passsite_t *passsite = opts->passsites;
-	while (passsite) {
-		passsite_t *next = passsite->next;
-		free(passsite->site);
-		if (passsite->ip)
-			free(passsite->ip);
+	filter_rule_t *rule = opts->filter_rules;
+	while (rule) {
+		filter_rule_t *next = rule->next;
+		free(rule->site);
+		if (rule->ip)
+			free(rule->ip);
 #ifndef WITHOUT_USERAUTH
-		if (passsite->user)
-			free(passsite->user);
-		if (passsite->keyword)
-			free(passsite->keyword);
+		if (rule->user)
+			free(rule->user);
+		if (rule->keyword)
+			free(rule->keyword);
 #endif /* !WITHOUT_USERAUTH */
-		free(passsite);
-		passsite = next;
+		free(rule);
+		rule = next;
 	}
-	opts->passsites = NULL;
+	opts->filter_rules = NULL;
 }
 
-static passsite_site_t *
-opts_free_site(passsite_site_t *site)
+static filter_site_t *
+opts_free_filter_site(filter_site_t *site)
 {
-	passsite_site_t *s = site->next;
+	filter_site_t *s = site->next;
 	free(site->site);
 	free(site);
 	return s;
 }
 
-void
-opts_free_passsite_filter(opts_t *opts)
+static void
+opts_free_filter_list(filter_list_t *list)
 {
-	if (!opts->passsite_filter)
+	while (list->ip)
+		list->ip = opts_free_filter_site(list->ip);
+	while (list->sni)
+		list->sni = opts_free_filter_site(list->sni);
+	while (list->cn)
+		list->cn = opts_free_filter_site(list->cn);
+	while (list->host)
+		list->host = opts_free_filter_site(list->host);
+	while (list->uri)
+		list->uri = opts_free_filter_site(list->uri);
+	free(list);
+}
+
+void
+opts_free_filter(opts_t *opts)
+{
+	if (!opts->filter)
 		return;
 
-	passsite_filter_t *pf = opts->passsite_filter;
+	filter_t *pf = opts->filter;
 #ifndef WITHOUT_USERAUTH
 	while (pf->user) {
 		while (pf->user->keyword) {
-			while (pf->user->keyword->site) {
-				pf->user->keyword->site = opts_free_site(pf->user->keyword->site);
-			}
-			passsite_keyword_t *keyword = pf->user->keyword->next;
+			opts_free_filter_list(pf->user->keyword->list);
+			filter_keyword_t *keyword = pf->user->keyword->next;
 			free(pf->user->keyword);
 			pf->user->keyword = keyword;
 		}
-		while (pf->user->site) {
-			pf->user->site = opts_free_site(pf->user->site);
-		}
-		passsite_user_t *user = pf->user->next;
+		opts_free_filter_list(pf->user->list);
+		filter_user_t *user = pf->user->next;
 		free(pf->user);
 		pf->user = user;
 	}
 	while (pf->keyword) {
-		while (pf->keyword->site) {
-			pf->keyword->site = opts_free_site(pf->keyword->site);
-		}
-		passsite_keyword_t *keyword = pf->keyword->next;
+		opts_free_filter_list(pf->keyword->list);
+		filter_keyword_t *keyword = pf->keyword->next;
 		free(pf->keyword);
 		pf->keyword = keyword;
 	}
 #endif /* !WITHOUT_USERAUTH */
 	while (pf->ip) {
-		while (pf->ip->site) {
-			pf->ip->site = opts_free_site(pf->ip->site);
-		}
-		passsite_ip_t *ip = pf->ip->next;
+		opts_free_filter_list(pf->ip->list);
+		filter_ip_t *ip = pf->ip->next;
 		free(pf->ip);
 		pf->ip = ip;
 	}
-	while (pf->all) {
-		pf->all = opts_free_site(pf->all);
-	}
-	free(opts->passsite_filter);
-	opts->passsite_filter = NULL;
+	opts_free_filter_list(pf->all);
+	free(opts->filter);
+	opts->filter = NULL;
 }
 
 void
@@ -278,9 +284,9 @@ opts_free(opts_t *opts)
 	free_userlist(opts->passusers);
 #endif /* !WITHOUT_USERAUTH */
 
-	// No need to call opts_free_passsite() here, passsite is freed during startup
-	opts_free_passsite(opts);
-	opts_free_passsite_filter(opts);
+	// No need to call opts_free_filter_rules() here, filter rules are freed during startup
+	opts_free_filter_rules(opts);
+	opts_free_filter(opts);
 
 	memset(opts, 0, sizeof(opts_t));
 	free(opts);
@@ -750,27 +756,40 @@ clone_global_opts(global_t *global, const char *argv0, global_opts_str_t *global
 	}
 #endif /* !WITHOUT_USERAUTH */
 
-	passsite_t *passsite = global->opts->passsites;
-	while (passsite) {
-		passsite_t *ps = malloc(sizeof(passsite_t));
-		memset(ps, 0, sizeof(passsite_t));
+	filter_rule_t *rule = global->opts->filter_rules;
+	while (rule) {
+		filter_rule_t *fr = malloc(sizeof(filter_rule_t));
+		memset(fr, 0, sizeof(filter_rule_t));
 
-		if (passsite->site)
-			ps->site = strdup(passsite->site);
-		if (passsite->ip)
-			ps->ip = strdup(passsite->ip);
+		if (rule->site)
+			fr->site = strdup(rule->site);
+		fr->exact = rule->exact;
+
+		if (rule->ip)
+			fr->ip = strdup(rule->ip);
 #ifndef WITHOUT_USERAUTH
-		if (passsite->user)
-			ps->user = strdup(passsite->user);
-		if (passsite->keyword)
-			ps->keyword = strdup(passsite->keyword);
-		ps->all = passsite->all;
+		if (rule->user)
+			fr->user = strdup(rule->user);
+		if (rule->keyword)
+			fr->keyword = strdup(rule->keyword);
 #endif /* !WITHOUT_USERAUTH */
+		fr->all = rule->all;
 
-		ps->next = opts->passsites;
-		opts->passsites = ps;
+		fr->divert = rule->divert;
+		fr->split = rule->split;
+		fr->pass = rule->pass;
+		fr->block = rule->block;
 
-		passsite = passsite->next;
+		fr->dstip = rule->dstip;
+		fr->sni = rule->sni;
+		fr->cn = rule->cn;
+		fr->host = rule->host;
+		fr->uri = rule->uri;
+
+		fr->next = opts->filter_rules;
+		opts->filter_rules = fr;
+
+		rule = rule->next;
 	}
 	return opts;
 }
@@ -1090,56 +1109,58 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine, global_t *globa
 }
 
 char *
-passsite_str(passsite_t *passsite)
+filter_rule_str(filter_rule_t *rule)
 {
-	char *ps = NULL;
+	char *frs = NULL;
 
-	if (!passsite) {
-		ps = strdup("");
+	if (!rule) {
+		frs = strdup("");
 		goto out;
 	}
 
 	int count = 0;
-	while (passsite) {
+	while (rule) {
 		char *p;
-		if (asprintf(&p, "site=%s,ip=%s"
+		if (asprintf(&p, "site=%s, %s, ip=%s"
 #ifndef WITHOUT_USERAUTH
-				",user=%s,keyword=%s"
+				", user=%s, keyword=%s"
 #endif /* !WITHOUT_USERAUTH */
-				",all=%d"
-				, passsite->site, STRORNONE(passsite->ip)
+				", all=%d, action=%s|%s|%s|%s, , apply to=%s|%s|%s|%s|%s",
+				rule->site, rule->exact ? "exact" : "substring", STRORNONE(rule->ip),
 #ifndef WITHOUT_USERAUTH
-				, STRORNONE(passsite->user), STRORNONE(passsite->keyword)
+				STRORNONE(rule->user), STRORNONE(rule->keyword),
 #endif /* !WITHOUT_USERAUTH */
-				, passsite->all
+				rule->all,
+				rule->divert ? "divert" : "", rule->split ? "split" : "", rule->pass ? "pass" : "", rule->block ? "block" : "",
+				rule->dstip ? "dstip" : "", rule->sni ? "sni" : "", rule->cn ? "cn" : "", rule->host ? "host" : "", rule->uri ? "uri" : ""
 				) < 0) {
 			goto err;
 		}
-		char *nps;
-		if (asprintf(&nps, "%s%spasssite %d: %s", 
-					STRORNONE(ps), ps ? "\n" : "", count, p) < 0) {
+		char *nfrs;
+		if (asprintf(&nfrs, "%s%sfilter rule %d: %s", 
+					STRORNONE(frs), frs ? "\n" : "", count, p) < 0) {
 			free(p);
 			goto err;
 		}
 		free(p);
-		if (ps)
-			free(ps);
-		ps = nps;
-		passsite = passsite->next;
+		if (frs)
+			free(frs);
+		frs = nfrs;
+		rule = rule->next;
 		count++;
 	}
 	goto out;
 err:
-	if (ps) {
-		free(ps);
-		ps = NULL;
+	if (frs) {
+		free(frs);
+		frs = NULL;
 	}
 out:
-	return ps;
+	return frs;
 }
 
 static char *
-passsite_sites_str(passsite_site_t *site)
+filter_sites_str(filter_site_t *site)
 {
 	char *s = NULL;
 
@@ -1166,21 +1187,80 @@ out:
 }
 
 static char *
-passsite_ips_str(passsite_ip_t *ip)
+filter_list_str(filter_list_t *list)
+{
+	char *p = NULL;
+	char *op = NULL;
+
+	char *s = filter_sites_str(list->ip);
+	if (asprintf(&p, "    ip: %s", STRORNONE(s)) < 0) {
+		goto err;
+	}
+	if (s)
+		free(s);
+	op = p;
+
+	s = filter_sites_str(list->sni);
+	if (asprintf(&p, "%s\n    sni: %s", op, STRORNONE(s)) < 0) {
+		goto err;
+	}
+	if (s)
+		free(s);
+	free(op);
+	op = p;
+
+	s = filter_sites_str(list->cn);
+	if (asprintf(&p, "%s\n    cn: %s", op, STRORNONE(s)) < 0) {
+		goto err;
+	}
+	if (s)
+		free(s);
+	free(op);
+	op = p;
+
+	s = filter_sites_str(list->host);
+	if (asprintf(&p, "%s\n    host: %s", op, STRORNONE(s)) < 0) {
+		goto err;
+	}
+	if (s)
+		free(s);
+	free(op);
+	op = p;
+
+	s = filter_sites_str(list->uri);
+	if (asprintf(&p, "%s\n    uri: %s", op, STRORNONE(s)) < 0) {
+		goto err;
+	}
+	goto out;
+err:
+	if (p) {
+		free(p);
+		p = NULL;
+	}
+out:
+	if (s)
+		free(s);
+	if (op)
+		free(op);
+	return p;
+}
+
+static char *
+filter_ips_str(filter_ip_t *ip)
 {
 	char *s = NULL;
-	char *site = NULL;
+	char *list = NULL;
 
 	int count = 0;
 	while (ip) {
-		site = passsite_sites_str(ip->site);
+		list = filter_list_str(ip->list);
 
 		char *p;
-		if (asprintf(&p, "%s%sip %d %s= %s", STRORNONE(s), s ? "\n" : "", count, ip->ip, site) < 0) {
+		if (asprintf(&p, "%s%s  ip %d %s= \n%s", STRORNONE(s), s ? "\n" : "", count, ip->ip, list) < 0) {
 			goto err;
 		}
-		if (site)
-			free(site);
+		if (list)
+			free(list);
 		if (s)
 			free(s);
 		s = p;
@@ -1189,8 +1269,8 @@ passsite_ips_str(passsite_ip_t *ip)
 	}
 	goto out;
 err:
-	if (site)
-		free(site);
+	if (list)
+		free(list);
 	if (s) {
 		free(s);
 		s = NULL;
@@ -1201,26 +1281,26 @@ out:
 
 #ifndef WITHOUT_USERAUTH
 static char *
-passsite_users_str(passsite_user_t *user)
+filter_users_str(filter_user_t *user)
 {
 	char *s = NULL;
-	char *site = NULL;
+	char *list = NULL;
 
 	int count = 0;
 	while (user) {
-		site = passsite_sites_str(user->site);
-		// Make sure the user has a passsite filter
-		// It is possible to have users without any passsite filter,
+		list = filter_list_str(user->list);
+		// Make sure the user has a filter rule
+		// It is possible to have users without any filter rule,
 		// but the user exists because it has keyword filters
-		if (!site)
+		if (!list)
 			break;
 
 		char *p;
-		if (asprintf(&p, "%s%suser %d %s= %s", STRORNONE(s), s ? "\n" : "", count, user->user, site) < 0) {
+		if (asprintf(&p, "%s%s  user %d %s= \n%s", STRORNONE(s), s ? "\n" : "", count, user->user, list) < 0) {
 			goto err;
 		}
-		if (site)
-			free(site);
+		if (list)
+			free(list);
 		if (s)
 			free(s);
 		s = p;
@@ -1229,8 +1309,8 @@ passsite_users_str(passsite_user_t *user)
 	}
 	goto out;
 err:
-	if (site)
-		free(site);
+	if (list)
+		free(list);
 	if (s) {
 		free(s);
 		s = NULL;
@@ -1240,21 +1320,21 @@ out:
 }
 
 static char *
-passsite_keywords_str(passsite_keyword_t *keyword)
+filter_keywords_str(filter_keyword_t *keyword)
 {
 	char *s = NULL;
-	char *site = NULL;
+	char *list = NULL;
 
 	int count = 0;
 	while (keyword) {
-		site = passsite_sites_str(keyword->site);
+		list = filter_list_str(keyword->list);
 
 		char *p;
-		if (asprintf(&p, "%s%skeyword %d %s= %s", STRORNONE(s), s ? "\n" : "", count, keyword->keyword, site) < 0) {
+		if (asprintf(&p, "%s%s  keyword %d %s= \n%s", STRORNONE(s), s ? "\n" : "", count, keyword->keyword, list) < 0) {
 			goto err;
 		}
-		if (site)
-			free(site);
+		if (list)
+			free(list);
 		if (s)
 			free(s);
 		s = p;
@@ -1263,8 +1343,8 @@ passsite_keywords_str(passsite_keyword_t *keyword)
 	}
 	goto out;
 err:
-	if (site)
-		free(site);
+	if (list)
+		free(list);
 	if (s) {
 		free(s);
 		s = NULL;
@@ -1274,21 +1354,21 @@ out:
 }
 
 static char *
-passsite_userkeywords_str(passsite_user_t *user)
+filter_userkeywords_str(filter_user_t *user)
 {
 	char *s = NULL;
-	char *site = NULL;
+	char *list = NULL;
 
 	int count = 0;
 	while (user) {
-		site = passsite_keywords_str(user->keyword);
+		list = filter_keywords_str(user->keyword);
 
 		char *p;
-		if (asprintf(&p, "%s%suser %d %s=\n%s", STRORNONE(s), s ? "\n" : "", count, user->user, site) < 0) {
+		if (asprintf(&p, "%s%s user %d %s=\n%s", STRORNONE(s), s ? "\n" : "", count, user->user, list) < 0) {
 			goto err;
 		}
-		if (site)
-			free(site);
+		if (list)
+			free(list);
 		if (s)
 			free(s);
 		s = p;
@@ -1297,8 +1377,8 @@ passsite_userkeywords_str(passsite_user_t *user)
 	}
 	goto out;
 err:
-	if (site)
-		free(site);
+	if (list)
+		free(list);
 	if (s) {
 		free(s);
 		s = NULL;
@@ -1309,64 +1389,64 @@ out:
 #endif /* !WITHOUT_USERAUTH */
 
 static char *
-passsite_filter_str(passsite_filter_t *pf)
+filter_str(filter_t *filter)
 {
-	char *pfs = NULL;
+	char *fs = NULL;
 #ifndef WITHOUT_USERAUTH
-	char *userkeyword_sites = NULL;
-	char *user_sites = NULL;
-	char *keyword_sites = NULL;
+	char *userkeyword_filter = NULL;
+	char *user_filter = NULL;
+	char *keyword_filter = NULL;
 #endif /* !WITHOUT_USERAUTH */
-	char *ip_sites = NULL;
-	char *all_sites = NULL;
+	char *ip_filter = NULL;
+	char *all_filter = NULL;
 
-	if (!pf) {
-		pfs = strdup("");
+	if (!filter) {
+		fs = strdup("");
 		goto out;
 	}
 
 #ifndef WITHOUT_USERAUTH
-	userkeyword_sites = passsite_userkeywords_str(pf->user);
-	user_sites = passsite_users_str(pf->user);
-	keyword_sites = passsite_keywords_str(pf->keyword);
+	userkeyword_filter = filter_userkeywords_str(filter->user);
+	user_filter = filter_users_str(filter->user);
+	keyword_filter = filter_keywords_str(filter->keyword);
 #endif /* !WITHOUT_USERAUTH */
-	ip_sites = passsite_ips_str(pf->ip);
-	all_sites = passsite_sites_str(pf->all);
+	ip_filter = filter_ips_str(filter->ip);
+	all_filter = filter_list_str(filter->all);
 
-	if (asprintf(&pfs, "passsite_filter=>\n"
+	if (asprintf(&fs, "filter=>\n"
 #ifndef WITHOUT_USERAUTH
-			"userkeyword_sites->%s%s\nuser_sites->%s%s\nkeyword_sites->%s%s\n"
+			"userkeyword_filter->%s%s\nuser_filter->%s%s\nkeyword_filter->%s%s\n"
 #endif /* !WITHOUT_USERAUTH */
-			"ip_sites->%s%s\nall_sites->%s%s\n",
+			"ip_filter->%s%s\nall_filter->%s%s\n",
 #ifndef WITHOUT_USERAUTH
-			userkeyword_sites ? "\n" : "", STRORNONE(userkeyword_sites),
-			user_sites ? "\n" : "", STRORNONE(user_sites),
-			keyword_sites ? "\n" : "", STRORNONE(keyword_sites),
+			userkeyword_filter ? "\n" : "", STRORNONE(userkeyword_filter),
+			user_filter ? "\n" : "", STRORNONE(user_filter),
+			keyword_filter ? "\n" : "", STRORNONE(keyword_filter),
 #endif /* !WITHOUT_USERAUTH */
-			ip_sites ? "\n" : "", STRORNONE(ip_sites),
-			all_sites ? "\n" : "", STRORNONE(all_sites)) < 0) {
+			ip_filter ? "\n" : "", STRORNONE(ip_filter),
+			all_filter ? "\n" : "", STRORNONE(all_filter)) < 0) {
 		goto err;
 	}
 	goto out;
 err:
-	if (pfs) {
-		free(pfs);
-		pfs = NULL;
+	if (fs) {
+		free(fs);
+		fs = NULL;
 	}
 out:
 #ifndef WITHOUT_USERAUTH
-	if (userkeyword_sites)
-		free(userkeyword_sites);
-	if (user_sites)
-		free(user_sites);
-	if (keyword_sites)
-		free(keyword_sites);
+	if (userkeyword_filter)
+		free(userkeyword_filter);
+	if (user_filter)
+		free(user_filter);
+	if (keyword_filter)
+		free(keyword_filter);
 #endif /* !WITHOUT_USERAUTH */
-	if (ip_sites)
-		free(ip_sites);
-	if (all_sites)
-		free(all_sites);
-	return pfs;
+	if (ip_filter)
+		free(ip_filter);
+	if (all_filter)
+		free(all_filter);
+	return fs;
 }
 
 #ifndef WITHOUT_USERAUTH
@@ -1407,8 +1487,8 @@ opts_str(opts_t *opts)
 {
 	char *s = NULL;
 	char *proto_dump = NULL;
-	char *ps = NULL;
-	char *pfs = NULL;
+	char *frs = NULL;
+	char *fs = NULL;
 
 #ifndef WITHOUT_USERAUTH
 	char *du = NULL;
@@ -1423,12 +1503,12 @@ opts_str(opts_t *opts)
 		goto out;
 #endif /* !WITHOUT_USERAUTH */
 
-	ps = passsite_str(opts->passsites);
-	if (!ps)
+	frs = filter_rule_str(opts->filter_rules);
+	if (!frs)
 		goto out;
 
-	pfs = passsite_filter_str(opts->passsite_filter);
-	if (!pfs)
+	fs = filter_str(opts->filter);
+	if (!fs)
 		goto out;
 
 	proto_dump = opts_proto_dbg_dump(opts);
@@ -1505,8 +1585,8 @@ opts_str(opts_t *opts)
 	             (opts->validate_proto ? "|validate_proto" : ""),
 				 opts->max_http_header_size,
 				 proto_dump,
-				 strlen(ps) ? "\n" : "", ps,
-				 strlen(pfs) ? "\n" : "", pfs) < 0) {
+				 strlen(frs) ? "\n" : "", frs,
+				 strlen(fs) ? "\n" : "", fs) < 0) {
 		s = NULL;
 	}
 out:
@@ -1516,10 +1596,10 @@ out:
 	if (pu)
 		free(pu);
 #endif /* !WITHOUT_USERAUTH */
-	if (ps)
-		free(ps);
-	if (pfs)
-		free(pfs);
+	if (frs)
+		free(frs);
+	if (fs)
+		free(fs);
 	if (proto_dump)
 		free(proto_dump);
 	return s;
@@ -2216,12 +2296,12 @@ opts_set_passsite(opts_t *opts, char *value, int line_num)
 	}
 
 	if (!argc) {
-		fprintf(stderr, "PassSite requires at least one parameter on line %d\n", line_num);
+		fprintf(stderr, "Filter rule requires at least one parameter on line %d\n", line_num);
 		exit(EXIT_FAILURE);
 	}
 
-	passsite_t *ps = malloc(sizeof(passsite_t));
-	memset(ps, 0, sizeof(passsite_t));
+	filter_rule_t *fr = malloc(sizeof(filter_rule_t));
+	memset(fr, 0, sizeof(filter_rule_t));
 
 	// The for loop with strtok_r() above does not output empty strings
 	// So, no need to check if the length of argv[0] > 0
@@ -2233,87 +2313,140 @@ opts_set_passsite(opts_t *opts, char *value, int line_num)
 	s[0] = '/';
 	s[len + 1] = '/';
 	s[len + 2] = '\0';
-	ps->site = strdup(s);
+	fr->site = strdup(s);
+
+	if (fr->site[len] != '*') {
+		fr->exact = 1;
+	}
 
 	if (argc == 1) {
-		// Apply passsite to all conns
+		// Apply filter rule to all conns
 		// Equivalent to "site *" without keyword
-		ps->all = 1;
+		fr->all = 1;
 	}
 
 	if (argc > 1) {
 		if (!strcmp(argv[1], "*")) {
-			// Apply passsite to all ips or users perhaps with keyword
-			ps->all = 1;
+			// Apply filter rule to all ips or users perhaps with keyword
+			fr->all = 1;
 #ifndef WITHOUT_USERAUTH
 		} else if (sys_isuser(argv[1])) {
 			if (!opts->user_auth) {
-				fprintf(stderr, "PassSite user filter requires user auth on line %d\n", line_num);
+				fprintf(stderr, "User filter requires user auth on line %d\n", line_num);
 				exit(EXIT_FAILURE);
 			}
-			ps->user = strdup(argv[1]);
+			fr->user = strdup(argv[1]);
 #endif /* !WITHOUT_USERAUTH */
 		} else {
-			ps->ip = strdup(argv[1]);
+			fr->ip = strdup(argv[1]);
 		}
 	}
 
 	if (argc > 2) {
-		if (ps->ip) {
-			fprintf(stderr, "PassSite ip filter cannot define keyword filter, or user '%s' does not exist on line %d\n", ps->ip, line_num);
+		if (fr->ip) {
+			fprintf(stderr, "Ip filter cannot define keyword filter, or user '%s' does not exist on line %d\n", fr->ip, line_num);
 			exit(EXIT_FAILURE);
 		}
 #ifndef WITHOUT_USERAUTH
 		if (!opts->user_auth) {
-			fprintf(stderr, "PassSite keyword filter requires user auth on line %d\n", line_num);
+			fprintf(stderr, "Keyword filter requires user auth on line %d\n", line_num);
 			exit(EXIT_FAILURE);
 		}
-		ps->keyword = strdup(argv[2]);
+		fr->keyword = strdup(argv[2]);
 #endif /* !WITHOUT_USERAUTH */
 	}
 
-	ps->next = opts->passsites;
-	opts->passsites = ps;
+	fr->sni = 1;
+	fr->cn = 1;
+	fr->pass = 1;
+
+	fr->next = opts->filter_rules;
+	opts->filter_rules = fr;
 #ifdef DEBUG_OPTS
+	log_dbg_printf("Filter rule: %s, %s, %s"
 #ifndef WITHOUT_USERAUTH
-	log_dbg_printf("PassSite: %s, %s, %s, %s, %s\n", ps->site, ps->all ? "*" : "-", STRORDASH(ps->ip), STRORDASH(ps->user), STRORDASH(ps->keyword));
-#else /* WITHOUT_USERAUTH */
-	log_dbg_printf("PassSite: %s, %s, %s\n", ps->site, ps->all ? "*" : "-", STRORDASH(ps->ip));
-#endif /* WITHOUT_USERAUTH */
+		", %s, %s"
+#endif /* !WITHOUT_USERAUTH */
+		", all=%d, action=%s|%s|%s|%s, , apply to=%s|%s|%s|%s|%s\n",
+		fr->site, fr->exact ? "exact" : "substring", STRORNONE(fr->ip),
+#ifndef WITHOUT_USERAUTH
+		STRORNONE(fr->user), STRORNONE(fr->keyword),
+#endif /* !WITHOUT_USERAUTH */
+		fr->all,
+		fr->divert ? "divert" : "", fr->split ? "split" : "", fr->pass ? "pass" : "", fr->block ? "block" : "",
+		fr->dstip ? "dstip" : "", fr->sni ? "sni" : "", fr->cn ? "cn" : "", fr->host ? "host" : "", fr->uri ? "uri" : "");
 #endif /* DEBUG_OPTS */
 }
 
-static passsite_site_t *
-opts_find_site(passsite_site_t *list, char *s)
+static filter_site_t *
+opts_find_site(filter_site_t *site, char *s)
 {
-	while (list) {
-		if (!strcmp(list->site, s))
+	while (site) {
+		if (!strcmp(site->site, s))
 			break;
-		list = list->next;
+		site = site->next;
 	}
-	return list;
-}
-
-static passsite_site_t *
-opts_add_site(passsite_site_t *list, char *s)
-{
-	if (opts_find_site(list, s)) {
-		// XXX
-		log_err_level_printf(LOG_CRIT, "PassSite already exists (reported as out of memory)\n");
-		return NULL;
-	}
-
-	passsite_site_t *site = malloc(sizeof(passsite_site_t));
-	if (!site)
-		return NULL;
-	memset(site, 0, sizeof(passsite_site_t));
-	site->site = strdup(s);
-	site->next = list;
 	return site;
 }
 
-passsite_ip_t *
-opts_find_ip(passsite_ip_t *list, char *i)
+static filter_site_t *
+opts_add_site(filter_site_t *site, filter_rule_t *rule)
+{
+	filter_site_t *s = opts_find_site(site, rule->site);
+	if (!s) {
+		s = malloc(sizeof(filter_site_t));
+		if (!s)
+			return NULL;
+		memset(s, 0, sizeof(filter_site_t));
+		s->site = strdup(rule->site);
+	}
+
+	// Multiple rules can set the action for the same site
+	if (rule->divert)
+		s->divert = 1;
+	if (rule->split)
+		s->split = 1;
+	if (rule->pass)
+		s->pass = 1;
+	if (rule->block)
+		s->block = 1;
+	s->next = site;
+	return s;
+}
+
+static int
+opts_add_to_sitelist(filter_list_t *list, filter_rule_t *rule)
+{
+	if (rule->dstip) {
+		list->ip = opts_add_site(list->ip, rule);
+		if (!list->ip)
+			return -1;
+	}
+	if (rule->sni) {
+		list->sni = opts_add_site(list->sni, rule);
+		if (!list->sni)
+			return -1;
+	}
+	if (rule->cn) {
+		list->cn = opts_add_site(list->cn, rule);
+		if (!list->cn)
+			return -1;
+	}
+	if (rule->host) {
+		list->host = opts_add_site(list->host, rule);
+		if (!list->host)
+			return -1;
+	}
+	if (rule->uri) {
+		list->uri = opts_add_site(list->uri, rule);
+		if (!list->uri)
+			return -1;
+	}
+	return 0;
+}
+
+filter_ip_t *
+opts_find_ip(filter_ip_t *list, char *i)
 {
 	while (list) {
 		if (!strcmp(list->ip, i))
@@ -2323,15 +2456,21 @@ opts_find_ip(passsite_ip_t *list, char *i)
 	return list;
 }
 
-static passsite_ip_t *
-opts_get_ip(passsite_ip_t **list, char *i)
+static filter_ip_t *
+opts_get_ip(filter_ip_t **list, char *i)
 {
-	passsite_ip_t *ip = opts_find_ip(*list, i);
+	filter_ip_t *ip = opts_find_ip(*list, i);
 	if (!ip) {
-		ip = malloc(sizeof(passsite_ip_t));
+		ip = malloc(sizeof(filter_ip_t));
 		if (!ip)
 			return NULL;
-		memset(ip, 0, sizeof(passsite_ip_t));
+		memset(ip, 0, sizeof(filter_ip_t));
+
+		ip->list = malloc(sizeof(filter_list_t));
+		if (!ip->list)
+			return NULL;
+		memset(ip->list, 0, sizeof(filter_list_t));
+
 		ip->ip = strdup(i);
 		ip->next = *list;
 		*list = ip;
@@ -2340,8 +2479,8 @@ opts_get_ip(passsite_ip_t **list, char *i)
 }
 
 #ifndef WITHOUT_USERAUTH
-passsite_keyword_t *
-opts_find_keyword(passsite_keyword_t *list, char *k)
+filter_keyword_t *
+opts_find_keyword(filter_keyword_t *list, char *k)
 {
 	while (list) {
 		if (!strcmp(list->keyword, k))
@@ -2351,15 +2490,21 @@ opts_find_keyword(passsite_keyword_t *list, char *k)
 	return list;
 }
 
-static passsite_keyword_t *
-opts_get_keyword(passsite_keyword_t **list, char *k)
+static filter_keyword_t *
+opts_get_keyword(filter_keyword_t **list, char *k)
 {
-	passsite_keyword_t *keyword = opts_find_keyword(*list, k);
+	filter_keyword_t *keyword = opts_find_keyword(*list, k);
 	if (!keyword) {
-		keyword = malloc(sizeof(passsite_keyword_t));
+		keyword = malloc(sizeof(filter_keyword_t));
 		if (!keyword)
 			return NULL;
-		memset(keyword, 0, sizeof(passsite_keyword_t));
+		memset(keyword, 0, sizeof(filter_keyword_t));
+
+		keyword->list = malloc(sizeof(filter_list_t));
+		if (!keyword->list)
+			return NULL;
+		memset(keyword->list, 0, sizeof(filter_list_t));
+
 		keyword->keyword = strdup(k);
 		keyword->next = *list;
 		*list = keyword;
@@ -2367,8 +2512,8 @@ opts_get_keyword(passsite_keyword_t **list, char *k)
 	return keyword;
 }
 
-passsite_user_t *
-opts_find_user(passsite_user_t *list, char *u)
+filter_user_t *
+opts_find_user(filter_user_t *list, char *u)
 {
 	while (list) {
 		if (!strcmp(list->user, u))
@@ -2378,15 +2523,21 @@ opts_find_user(passsite_user_t *list, char *u)
 	return list;
 }
 
-static passsite_user_t *
-opts_get_user(passsite_user_t **list, char *u)
+static filter_user_t *
+opts_get_user(filter_user_t **list, char *u)
 {
-	passsite_user_t *user = opts_find_user(*list, u);
+	filter_user_t *user = opts_find_user(*list, u);
 	if (!user) {
-		user = malloc(sizeof(passsite_user_t));
+		user = malloc(sizeof(filter_user_t));
 		if (!user)
 			return NULL;
-		memset(user, 0, sizeof(passsite_user_t));
+		memset(user, 0, sizeof(filter_user_t));
+
+		user->list = malloc(sizeof(filter_list_t));
+		if (!user->list)
+			return NULL;
+		memset(user->list, 0, sizeof(filter_list_t));
+
 		user->user = strdup(u);
 		user->next = *list;
 		*list = user;
@@ -2395,65 +2546,65 @@ opts_get_user(passsite_user_t **list, char *u)
 }
 #endif /* WITHOUT_USERAUTH */
 
-passsite_filter_t *
-opts_set_passsite_filter(passsite_t *passsite)
+filter_t *
+opts_set_filter(filter_rule_t *rule)
 {
-	passsite_filter_t *pf = malloc(sizeof(passsite_filter_t));
-	if (!pf)
+	filter_t *filter = malloc(sizeof(filter_t));
+	if (!filter)
 		return NULL;
-	memset(pf, 0, sizeof(passsite_filter_t));
+	memset(filter, 0, sizeof(filter_t));
 
-	while (passsite) {
+	filter->all = malloc(sizeof(filter_list_t));
+	if (!filter->all)
+		return NULL;
+	memset(filter->all, 0, sizeof(filter_list_t));
+
+	while (rule) {
 #ifndef WITHOUT_USERAUTH
-		if (passsite->user) {
-			passsite_user_t *user = opts_get_user(&pf->user, passsite->user);
+		if (rule->user) {
+			filter_user_t *user = opts_get_user(&filter->user, rule->user);
 			if (!user)
 				return NULL;
-			if (passsite->keyword) {
-				passsite_keyword_t *keyword = opts_get_keyword(&user->keyword, passsite->keyword);
+			if (rule->keyword) {
+				filter_keyword_t *keyword = opts_get_keyword(&user->keyword, rule->keyword);
 				if (!keyword)
 					return NULL;
-				keyword->site = opts_add_site(keyword->site, passsite->site);
-				if (!keyword->site)
+				if (opts_add_to_sitelist(keyword->list, rule) < 0)
 					return NULL;
 			}
 			else {
-				user->site = opts_add_site(user->site, passsite->site);
-				if (!user->site)
+				if (opts_add_to_sitelist(user->list, rule) < 0)
 					return NULL;
 			}
 		}
 		else
 #endif /* WITHOUT_USERAUTH */
-		if (passsite->all) {
+		if (rule->all) {
 #ifndef WITHOUT_USERAUTH
-			if (passsite->keyword) {
-				passsite_keyword_t *keyword = opts_get_keyword(&pf->keyword, passsite->keyword);
+			if (rule->keyword) {
+				filter_keyword_t *keyword = opts_get_keyword(&filter->keyword, rule->keyword);
 				if (!keyword)
 					return NULL;
-				keyword->site = opts_add_site(keyword->site, passsite->site);
-				if (!keyword->site)
+				if (opts_add_to_sitelist(keyword->list, rule) < 0)
 					return NULL;
 			} else {
 #endif /* WITHOUT_USERAUTH */
-				pf->all = opts_add_site(pf->all, passsite->site);
-				if (!pf->all)
+				if (opts_add_to_sitelist(filter->all, rule) < 0)
 					return NULL;
 #ifndef WITHOUT_USERAUTH
 			}
 #endif /* WITHOUT_USERAUTH */
 		}
-		else if (passsite->ip) {
-			passsite_ip_t *ip = opts_get_ip(&pf->ip, passsite->ip);
+		else if (rule->ip) {
+			filter_ip_t *ip = opts_get_ip(&filter->ip, rule->ip);
 			if (!ip)
 				return NULL;
-			ip->site = opts_add_site(ip->site, passsite->site);
-			if (!ip->site)
+			if (opts_add_to_sitelist(ip->list, rule) < 0)
 				return NULL;
 		}
-		passsite = passsite->next;
+		rule = rule->next;
 	}
-	return pf;
+	return filter;
 }
 
 #ifndef WITHOUT_USERAUTH

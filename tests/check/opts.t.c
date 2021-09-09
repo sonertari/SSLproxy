@@ -617,20 +617,20 @@ START_TEST(opts_set_passsite_01)
 	opts_set_passsite(opts, s, 0);
 	free(s);
 
-	fail_unless(!strcmp(opts->passsites->site, "/example.com/"), "site not /example.com/");
-	fail_unless(!opts->passsites->ip, "ip set");
+	fail_unless(!strcmp(opts->filter_rules->site, "/example.com/"), "site not /example.com/");
+	fail_unless(!opts->filter_rules->ip, "ip set");
 #ifndef WITHOUT_USERAUTH
-	fail_unless(!opts->passsites->user, "user set");
-	fail_unless(opts->passsites->all, "all not 1");
-	fail_unless(!opts->passsites->keyword, "keyword set");
+	fail_unless(!opts->filter_rules->user, "user set");
+	fail_unless(opts->filter_rules->all, "all not 1");
+	fail_unless(!opts->filter_rules->keyword, "keyword set");
 #endif /* !WITHOUT_USERAUTH */
-	fail_unless(!opts->passsites->next, "next set");
+	fail_unless(!opts->filter_rules->next, "next set");
 
-	ps = passsite_str(opts->passsites);
+	ps = filter_rule_str(opts->filter_rules);
 #ifndef WITHOUT_USERAUTH
-	fail_unless(!strcmp(ps, "passsite 0: site=/example.com/,ip=,user=,keyword=,all=1"), "failed parsing passite example.com");
+	fail_unless(!strcmp(ps, "filter rule 0: site=/example.com/, exact, ip=, user=, keyword=, all=1, action=||pass|, , apply to=|sni|cn||"), "failed parsing passite example.com: %s", ps);
 #else /* WITHOUT_USERAUTH */
-	fail_unless(!strcmp(ps, "passsite 0: site=/example.com/,ip=,all=1"), "failed parsing passite example.com");
+	fail_unless(!strcmp(ps, "filter rule 0: site=/example.com/, exact, ip=, all=1, action=||pass|, , apply to=|sni|cn||"), "failed parsing passite example.com: %s", ps);
 #endif /* WITHOUT_USERAUTH */
 	free(ps);
 
@@ -647,20 +647,20 @@ START_TEST(opts_set_passsite_02)
 	opts_set_passsite(opts, s, 0);
 	free(s);
 
-	fail_unless(!strcmp(opts->passsites->site, "/example.com/"), "site not /example.com/");
-	fail_unless(!strcmp(opts->passsites->ip, "192.168.0.1"), "ip not 192.168.0.1");
+	fail_unless(!strcmp(opts->filter_rules->site, "/example.com/"), "site not /example.com/");
+	fail_unless(!strcmp(opts->filter_rules->ip, "192.168.0.1"), "ip not 192.168.0.1");
 #ifndef WITHOUT_USERAUTH
-	fail_unless(!opts->passsites->user, "user set");
-	fail_unless(!opts->passsites->all, "all not 0");
-	fail_unless(!opts->passsites->keyword, "keyword set");
+	fail_unless(!opts->filter_rules->user, "user set");
+	fail_unless(!opts->filter_rules->all, "all not 0");
+	fail_unless(!opts->filter_rules->keyword, "keyword set");
 #endif /* !WITHOUT_USERAUTH */
-	fail_unless(!opts->passsites->next, "next set");
+	fail_unless(!opts->filter_rules->next, "next set");
 
-	ps = passsite_str(opts->passsites);
+	ps = filter_rule_str(opts->filter_rules);
 #ifndef WITHOUT_USERAUTH
-	fail_unless(!strcmp(ps, "passsite 0: site=/example.com/,ip=192.168.0.1,user=,keyword=,all=0"), "failed parsing passite example.com 192.168.0.1");
+	fail_unless(!strcmp(ps, "filter rule 0: site=/example.com/, exact, ip=192.168.0.1, user=, keyword=, all=0, action=||pass|, , apply to=|sni|cn||"), "failed parsing passite example.com 192.168.0.1: %s", ps);
 #else /* WITHOUT_USERAUTH */
-	fail_unless(!strcmp(ps, "passsite 0: site=/example.com/,ip=192.168.0.1,all=0"), "failed parsing passite example.com 192.168.0.1");
+	fail_unless(!strcmp(ps, "filter rule 0: site=/example.com/, exact, ip=192.168.0.1, all=0, action=||pass|, , apply to=|sni|cn||"), "failed parsing passite example.com 192.168.0.1: %s", ps);
 #endif /* !WITHOUT_USERAUTH */
 	free(ps);
 
@@ -680,15 +680,15 @@ START_TEST(opts_set_passsite_03)
 	opts_set_passsite(opts, s, 0);
 	free(s);
 
-	fail_unless(!strcmp(opts->passsites->site, "/example.com/"), "site not /example.com/");
-	fail_unless(!opts->passsites->ip, "ip set");
-	fail_unless(!strcmp(opts->passsites->user, "root"), "user not root");
-	fail_unless(!opts->passsites->all, "all not 0");
-	fail_unless(!opts->passsites->keyword, "keyword set");
-	fail_unless(!opts->passsites->next, "next set");
+	fail_unless(!strcmp(opts->filter_rules->site, "/example.com/"), "site not /example.com/");
+	fail_unless(!opts->filter_rules->ip, "ip set");
+	fail_unless(!strcmp(opts->filter_rules->user, "root"), "user not root");
+	fail_unless(!opts->filter_rules->all, "all not 0");
+	fail_unless(!opts->filter_rules->keyword, "keyword set");
+	fail_unless(!opts->filter_rules->next, "next set");
 
-	ps = passsite_str(opts->passsites);
-	fail_unless(!strcmp(ps, "passsite 0: site=/example.com/,ip=,user=root,keyword=,all=0"), "failed parsing passite example.com root");
+	ps = filter_rule_str(opts->filter_rules);
+	fail_unless(!strcmp(ps, "filter rule 0: site=/example.com/, exact, ip=, user=root, keyword=, all=0, action=||pass|, , apply to=|sni|cn||"), "failed parsing passite example.com root: %s", ps);
 	free(ps);
 
 	opts_free(opts);
@@ -706,15 +706,15 @@ START_TEST(opts_set_passsite_04)
 	opts_set_passsite(opts, s, 0);
 	free(s);
 
-	fail_unless(!strcmp(opts->passsites->site, "/*.google.com/"), "site not /*.google.com/");
-	fail_unless(!opts->passsites->ip, "ip set");
-	fail_unless(!opts->passsites->user, "user set");
-	fail_unless(opts->passsites->all, "all not 1");
-	fail_unless(!strcmp(opts->passsites->keyword, "android"), "keyword not android");
-	fail_unless(!opts->passsites->next, "next set");
+	fail_unless(!strcmp(opts->filter_rules->site, "/*.google.com/"), "site not /*.google.com/");
+	fail_unless(!opts->filter_rules->ip, "ip set");
+	fail_unless(!opts->filter_rules->user, "user set");
+	fail_unless(opts->filter_rules->all, "all not 1");
+	fail_unless(!strcmp(opts->filter_rules->keyword, "android"), "keyword not android");
+	fail_unless(!opts->filter_rules->next, "next set");
 
-	ps = passsite_str(opts->passsites);
-	fail_unless(!strcmp(ps, "passsite 0: site=/*.google.com/,ip=,user=,keyword=android,all=1"), "failed parsing passite *.google.com * android");
+	ps = filter_rule_str(opts->filter_rules);
+	fail_unless(!strcmp(ps, "filter rule 0: site=/*.google.com/, exact, ip=, user=, keyword=android, all=1, action=||pass|, , apply to=|sni|cn||"), "failed parsing passite *.google.com * android: %s", ps);
 	free(ps);
 
 	opts_free(opts);
@@ -732,20 +732,20 @@ START_TEST(opts_set_passsite_05)
 	s = strdup("example.com");
 	opts_set_passsite(opts, s, 0);
 	free(s);
-	fail_unless(!opts->passsites->next, "next set");
+	fail_unless(!opts->filter_rules->next, "next set");
 
 	s = strdup("example.com *");
 	opts_set_passsite(opts, s, 1);
 	free(s);
-	fail_unless(opts->passsites->next, "next not set");
-	fail_unless(!opts->passsites->next->next, "next->next set");
+	fail_unless(opts->filter_rules->next, "next not set");
+	fail_unless(!opts->filter_rules->next->next, "next->next set");
 
 	s = strdup("example.com 192.168.0.1");
 	opts_set_passsite(opts, s, 2);
 	free(s);
-	fail_unless(opts->passsites->next, "next not set");
-	fail_unless(opts->passsites->next->next, "next->next not set");
-	fail_unless(!opts->passsites->next->next->next, "next->next->next set");
+	fail_unless(opts->filter_rules->next, "next not set");
+	fail_unless(opts->filter_rules->next->next, "next->next not set");
+	fail_unless(!opts->filter_rules->next->next->next, "next->next->next set");
 
 #ifndef WITHOUT_USERAUTH
 	opts->user_auth = 1;
@@ -753,34 +753,34 @@ START_TEST(opts_set_passsite_05)
 	s = strdup("example.com root");
 	opts_set_passsite(opts, s, 3);
 	free(s);
-	fail_unless(opts->passsites->next, "next not set");
-	fail_unless(opts->passsites->next->next, "next->next not set");
-	fail_unless(opts->passsites->next->next->next, "next->next->next not set");
-	fail_unless(!opts->passsites->next->next->next->next, "next->next->next->next set");
+	fail_unless(opts->filter_rules->next, "next not set");
+	fail_unless(opts->filter_rules->next->next, "next->next not set");
+	fail_unless(opts->filter_rules->next->next->next, "next->next->next not set");
+	fail_unless(!opts->filter_rules->next->next->next->next, "next->next->next->next set");
 
 	s = strdup("*.google.com * android");
 	opts_set_passsite(opts, s, 4);
 	free(s);
 #endif /* !WITHOUT_USERAUTH */
-	ps = passsite_str(opts->passsites);
-	fail_unless(opts->passsites->next, "next not set");
-	fail_unless(opts->passsites->next->next, "next->next not set");
+	ps = filter_rule_str(opts->filter_rules);
+	fail_unless(opts->filter_rules->next, "next not set");
+	fail_unless(opts->filter_rules->next->next, "next->next not set");
 #ifndef WITHOUT_USERAUTH
-	fail_unless(opts->passsites->next->next->next, "next->next->next not set");
-	fail_unless(opts->passsites->next->next->next->next, "next->next->next->next not set");
-	fail_unless(!opts->passsites->next->next->next->next->next, "next->next->next->next->next set");
-	fail_unless(!strcmp(ps, "passsite 0: site=/*.google.com/,ip=,user=,keyword=android,all=1\n"
-			"passsite 1: site=/example.com/,ip=,user=root,keyword=,all=0\n"
-			"passsite 2: site=/example.com/,ip=192.168.0.1,user=,keyword=,all=0\n"
-			"passsite 3: site=/example.com/,ip=,user=,keyword=,all=1\n"
-			"passsite 4: site=/example.com/,ip=,user=,keyword=,all=1"),
-			"failed parsing multiple passites");
+	fail_unless(opts->filter_rules->next->next->next, "next->next->next not set");
+	fail_unless(opts->filter_rules->next->next->next->next, "next->next->next->next not set");
+	fail_unless(!opts->filter_rules->next->next->next->next->next, "next->next->next->next->next set");
+	fail_unless(!strcmp(ps, "filter rule 0: site=/*.google.com/, exact, ip=, user=, keyword=android, all=1, action=||pass|, , apply to=|sni|cn||\n"
+		"filter rule 1: site=/example.com/, exact, ip=, user=root, keyword=, all=0, action=||pass|, , apply to=|sni|cn||\n"
+		"filter rule 2: site=/example.com/, exact, ip=192.168.0.1, user=, keyword=, all=0, action=||pass|, , apply to=|sni|cn||\n"
+		"filter rule 3: site=/example.com/, exact, ip=, user=, keyword=, all=1, action=||pass|, , apply to=|sni|cn||\n"
+		"filter rule 4: site=/example.com/, exact, ip=, user=, keyword=, all=1, action=||pass|, , apply to=|sni|cn||"),
+		"failed parsing multiple passites: %s", ps);
 #else /* WITHOUT_USERAUTH */
-	fail_unless(!opts->passsites->next->next->next, "next->next->next set");
-	fail_unless(!strcmp(ps, "passsite 0: site=/example.com/,ip=192.168.0.1,all=0\n"
-			"passsite 1: site=/example.com/,ip=,all=1\n"
-			"passsite 2: site=/example.com/,ip=,all=1"),
-			"failed parsing multiple passites");
+	fail_unless(!opts->filter_rules->next->next->next, "next->next->next set");
+	fail_unless(!strcmp(ps, "filter rule 0: site=/example.com/, exact, ip=192.168.0.1, all=0, action=||pass|, , apply to=|sni|cn||\n"
+		"filter rule 1: site=/example.com/, exact, ip=, all=1, action=||pass|, , apply to=|sni|cn||\n"
+		"filter rule 2: site=/example.com/, exact, ip=, all=1, action=||pass|, , apply to=|sni|cn||"),
+		"failed parsing multiple passites: %s", ps);
 #endif /* WITHOUT_USERAUTH */
 	free(ps);
 

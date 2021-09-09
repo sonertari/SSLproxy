@@ -1759,7 +1759,7 @@ identify_user(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 			log_finest_va("Passed timeout test, idletime=%u", ctx->idletime);
 
 			ctx->user = strdup((char *)sqlite3_column_text(ctx->thr->get_user, 0));
-			// Desc is needed for PassSite filtering
+			// Desc is needed for filtering
 			ctx->desc = strdup((char *)sqlite3_column_text(ctx->thr->get_user, 3));
 			if (!ctx->user || !ctx->desc) {
 				goto memout;
@@ -1972,6 +1972,102 @@ pxy_userauth(pxy_conn_ctx_t *ctx)
 	}
 }
 #endif /* !WITHOUT_USERAUTH */
+
+static int NONNULL(1,2)
+pxyconn_filter_match(pxy_conn_ctx_t *ctx, const char *site)
+{
+	//log_finest_va("ENTER, %s, %s", site, STRORDASH(ctx->dsthost_str));
+
+	size_t len = strlen(site);
+
+	char _site[len + 1];
+	memcpy(_site, site, sizeof _site);
+
+	// Skip the first slash
+	char *s = _site + 1;
+
+	if (_site[len - 2] == '*') {
+		_site[len - 2] = '\0';
+		if (ctx->dsthost_str && strstr(ctx->dsthost_str, s)) {
+			log_finest_va("Match substring in dst: %s, %s", ctx->dsthost_str, s);
+			return 1;
+		}
+		// The end of substring search
+		return 0;
+	}
+	// The start of exact search
+
+	if (ctx->dsthost_str && !strcmp(ctx->dsthost_str, s)) {
+		log_finest_va("Match exact with dst: %s", ctx->dsthost_str);
+		return 1;
+	}
+	return 0;
+}
+
+int
+pxyconn_dsthost_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
+{
+	filter_site_t *site = list->ip;
+	while (site) {
+		if (pxyconn_filter_match(ctx, site->site)) {
+			// Do not print the surrounding slashes
+			log_err_level_printf(LOG_WARNING, "Found site: %.*s for %s:%s, %s:%s\n",
+				(int)strlen(site->site) - 2, site->site + 1,
+				STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str));
+			ctx->pass = 1;
+			return 1;
+		}
+		site = site->next;
+	}
+	log_finest_va("No filter match with ip: %s:%s, %s:%s",
+		STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str));
+	return 0;
+}
+
+int
+pxyconn_filter(pxy_conn_ctx_t *ctx, proto_filter_func_t filtercb)
+{
+	filter_t *filter = ctx->spec->opts->filter;
+	if (filter) {
+#ifndef WITHOUT_USERAUTH
+		if (ctx->user) {
+			log_finest_va("Searching user: %s", ctx->user);
+			filter_user_t *user = opts_find_user(filter->user, ctx->user);
+			if (user) {
+				if (ctx->desc) {
+					log_finest_va("Searching user keyword: %s, %s", ctx->user, ctx->desc);
+					filter_keyword_t *keyword = opts_find_keyword(user->keyword, ctx->desc);
+					if (keyword && filtercb(ctx, keyword->list)) {
+						return 1;
+					}
+				}
+				if (filtercb(ctx, user->list)) {
+					return 1;
+				}
+			}
+			if (ctx->desc) {
+				log_finest_va("Searching keyword: %s", ctx->desc);
+				filter_keyword_t *keyword = opts_find_keyword(filter->keyword, ctx->desc);
+				if (keyword && filtercb(ctx, keyword->list)) {
+					return 1;
+				}
+			}
+		}
+#endif /* !WITHOUT_USERAUTH */
+		if (ctx->srchost_str) {
+			log_finest_va("Searching ip: %s", ctx->srchost_str);
+			filter_ip_t *ip = opts_find_ip(filter->ip, ctx->srchost_str);
+			if (ip && filtercb(ctx, ip->list)) {
+				return 1;
+			}
+		}
+		log_finest("Searching all");
+		if (filter->all && filtercb(ctx, filter->all)) {
+			return 1;
+		}
+	}
+	return 0;
+}
 
 int
 pxy_conn_init(pxy_conn_ctx_t *ctx)

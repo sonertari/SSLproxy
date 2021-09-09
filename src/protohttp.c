@@ -30,6 +30,7 @@
 #include "protohttp.h"
 #include "prototcp.h"
 #include "protossl.h"
+#include "protopassthrough.h"
 
 #include "util.h"
 #include "base64.h"
@@ -382,6 +383,129 @@ protohttp_filter_request_header_line(const char *line, protohttp_ctx_t *http_ctx
 	return (char*)line;
 }
 
+static int NONNULL(1,2)
+protossl_match_host(pxy_conn_ctx_t *ctx, const char *site)
+{
+	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
+	//log_finest_va("ENTER, %s, %s", site, STRORDASH(http_ctx->http_host));
+
+	size_t len = strlen(site);
+
+	char _site[len + 1];
+	memcpy(_site, site, sizeof _site);
+
+	// Skip the first slash
+	char *s = _site + 1;
+
+	if (_site[len - 2] == '*') {
+		_site[len - 2] = '\0';
+		if (http_ctx->http_host && strstr(http_ctx->http_host, s)) {
+			log_finest_va("Match substring in host: %s, %s", http_ctx->http_host, s);
+			return 1;
+		}
+		// The end of substring search
+		return 0;
+	}
+	// The start of exact search
+
+	if (http_ctx->http_host && !strcmp(http_ctx->http_host, s)) {
+		log_finest_va("Match exact with host: %s", http_ctx->http_host);
+		return 1;
+	}
+	return 0;
+}
+
+static int NONNULL(1,2)
+protossl_match_uri(pxy_conn_ctx_t *ctx, const char *site)
+{
+	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
+	//log_finest_va("ENTER, %s, %s", site, STRORDASH(http_ctx->http_uri));
+
+	size_t len = strlen(site);
+
+	char _site[len + 1];
+	memcpy(_site, site, sizeof _site);
+
+	// Skip the first slash
+	char *s = _site + 1;
+
+	if (_site[len - 2] == '*') {
+		_site[len - 2] = '\0';
+		if (strstr(http_ctx->http_uri, s)) {
+			log_finest_va("Match substring in uri: %s, %s", http_ctx->http_uri, s);
+			return 1;
+		}
+		// The end of substring search
+		return 0;
+	}
+	// The start of exact search
+
+	if (strcmp(http_ctx->http_uri, s)) {
+		log_finest_va("Match exact with uri: %s", http_ctx->http_uri);
+		return 1;
+	}
+	return 0;
+}
+
+static int
+protohttp_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
+{
+	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
+
+	filter_site_t *site = list->host;
+	while (site) {
+		if (protossl_match_host(ctx, site->site)) {
+			// Do not print the surrounding slashes
+			log_err_level_printf(LOG_WARNING, "Found site: %.*s for %s:%s, %s:%s"
+#ifndef WITHOUT_USERAUTH
+				", %s, %s"
+#endif /* !WITHOUT_USERAUTH */
+				", %s\n",
+				(int)strlen(site->site) - 2, site->site + 1,
+				STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
+#ifndef WITHOUT_USERAUTH
+				STRORDASH(ctx->user), STRORDASH(ctx->desc),
+#endif /* !WITHOUT_USERAUTH */
+				STRORDASH(http_ctx->http_host));
+			ctx->pass = 1;
+			return 1;
+		}
+		site = site->next;
+	}
+
+	site = list->uri;
+	while (site) {
+		if (protossl_match_uri(ctx, site->site)) {
+			// Do not print the surrounding slashes
+			log_err_level_printf(LOG_WARNING, "Found site: %.*s for %s:%s, %s:%s"
+#ifndef WITHOUT_USERAUTH
+				", %s, %s"
+#endif /* !WITHOUT_USERAUTH */
+				", %s\n",
+				(int)strlen(site->site) - 2, site->site + 1,
+				STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
+#ifndef WITHOUT_USERAUTH
+				STRORDASH(ctx->user), STRORDASH(ctx->desc),
+#endif /* !WITHOUT_USERAUTH */
+				STRORDASH(http_ctx->http_uri));
+			ctx->pass = 1;
+			return 1;
+		}
+		site = site->next;
+	}
+
+#ifndef WITHOUT_USERAUTH
+	log_finest_va("No filter match with host or uri: %s:%s, %s:%s, %s, %s, %s, %s",
+		STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
+		STRORDASH(ctx->user), STRORDASH(ctx->desc), STRORDASH(http_ctx->http_host), STRORDASH(http_ctx->http_uri));
+#else /* WITHOUT_USERAUTH */
+	log_finest_va("No filter match with host or uri: %s:%s, %s:%s, %s, %s",
+		STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
+		STRORDASH(http_ctx->http_host), STRORDASH(http_ctx->http_uri));
+#endif /* !WITHOUT_USERAUTH */
+	return 0;
+}
+
 static void NONNULL(1,2,3,5)
 protohttp_filter_request_header(struct evbuffer *inbuf, struct evbuffer *outbuf, protohttp_ctx_t *http_ctx, enum conn_type type, pxy_conn_ctx_t *ctx)
 {
@@ -413,6 +537,12 @@ protohttp_filter_request_header(struct evbuffer *inbuf, struct evbuffer *outbuf,
 	}
 
 	if (http_ctx->seen_req_header) {
+		if (pxyconn_filter(ctx, protohttp_filter)) {
+			log_err_level_printf(LOG_WARNING, "http filter matches; falling back to passthrough\n");
+			protopassthrough_engage(ctx);
+			return;
+		}
+
 		/* request header complete */
 		if ((type == CONN_TYPE_PARENT) && ctx->spec->opts->deny_ocsp) {
 			protohttp_ocsp_deny(ctx, http_ctx);
