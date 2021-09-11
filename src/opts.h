@@ -181,6 +181,7 @@ typedef struct filter_rule {
 
 typedef struct filter_site {
 	char *site;
+	unsigned int exact : 1;
 	unsigned int divert : 1;
 	unsigned int split : 1;
 	unsigned int pass : 1;

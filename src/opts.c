@@ -2280,6 +2280,8 @@ opts_unset_validate_proto(opts_t *opts)
 void
 opts_set_passsite(opts_t *opts, char *value, int line_num)
 {
+#define MAX_SITE_LEN 200
+
 	// site[*] [(clientaddr|user|*) [description keyword]]
 	char *argv[sizeof(char *) * 3];
 	int argc = 0;
@@ -2300,51 +2302,53 @@ opts_set_passsite(opts_t *opts, char *value, int line_num)
 		exit(EXIT_FAILURE);
 	}
 
-	filter_rule_t *fr = malloc(sizeof(filter_rule_t));
-	memset(fr, 0, sizeof(filter_rule_t));
+	filter_rule_t *rule = malloc(sizeof(filter_rule_t));
+	memset(rule, 0, sizeof(filter_rule_t));
 
 	// The for loop with strtok_r() above does not output empty strings
 	// So, no need to check if the length of argv[0] > 0
 	size_t len = strlen(argv[0]);
 
-	// Common names are separated by slashes
-	char s[len + 3];
-	memcpy(s + 1, argv[0], len);
-	s[0] = '/';
-	s[len + 1] = '/';
-	s[len + 2] = '\0';
-	fr->site = strdup(s);
-
-	if (fr->site[len] != '*') {
-		fr->exact = 1;
+	if (len > MAX_SITE_LEN) {
+		fprintf(stderr, "Filter site too long %zu > %d, on line %d\n", len, MAX_SITE_LEN, line_num);
+		exit(EXIT_FAILURE);
 	}
+
+	if (argv[0][len - 1] == '*') {
+		rule->exact = 0;
+		argv[0][len - 1] = '\0';
+	} else {
+		rule->exact = 1;
+	}
+
+	rule->site = strdup(argv[0]);
 
 	if (argc == 1) {
 		// Apply filter rule to all conns
 		// Equivalent to "site *" without keyword
-		fr->all = 1;
+		rule->all = 1;
 	}
 
 	if (argc > 1) {
 		if (!strcmp(argv[1], "*")) {
 			// Apply filter rule to all ips or users perhaps with keyword
-			fr->all = 1;
+			rule->all = 1;
 #ifndef WITHOUT_USERAUTH
 		} else if (sys_isuser(argv[1])) {
 			if (!opts->user_auth) {
 				fprintf(stderr, "User filter requires user auth on line %d\n", line_num);
 				exit(EXIT_FAILURE);
 			}
-			fr->user = strdup(argv[1]);
+			rule->user = strdup(argv[1]);
 #endif /* !WITHOUT_USERAUTH */
 		} else {
-			fr->ip = strdup(argv[1]);
+			rule->ip = strdup(argv[1]);
 		}
 	}
 
 	if (argc > 2) {
-		if (fr->ip) {
-			fprintf(stderr, "Ip filter cannot define keyword filter, or user '%s' does not exist on line %d\n", fr->ip, line_num);
+		if (rule->ip) {
+			fprintf(stderr, "Ip filter cannot define keyword filter, or user '%s' does not exist on line %d\n", rule->ip, line_num);
 			exit(EXIT_FAILURE);
 		}
 #ifndef WITHOUT_USERAUTH
@@ -2352,37 +2356,37 @@ opts_set_passsite(opts_t *opts, char *value, int line_num)
 			fprintf(stderr, "Keyword filter requires user auth on line %d\n", line_num);
 			exit(EXIT_FAILURE);
 		}
-		fr->keyword = strdup(argv[2]);
+		rule->keyword = strdup(argv[2]);
 #endif /* !WITHOUT_USERAUTH */
 	}
 
-	fr->sni = 1;
-	fr->cn = 1;
-	fr->pass = 1;
+	rule->sni = 1;
+	rule->cn = 1;
+	rule->pass = 1;
 
-	fr->next = opts->filter_rules;
-	opts->filter_rules = fr;
+	rule->next = opts->filter_rules;
+	opts->filter_rules = rule;
 #ifdef DEBUG_OPTS
 	log_dbg_printf("Filter rule: %s, %s, %s"
 #ifndef WITHOUT_USERAUTH
 		", %s, %s"
 #endif /* !WITHOUT_USERAUTH */
 		", all=%d, action=%s|%s|%s|%s, , apply to=%s|%s|%s|%s|%s\n",
-		fr->site, fr->exact ? "exact" : "substring", STRORNONE(fr->ip),
+		rule->site, rule->exact ? "exact" : "substring", STRORNONE(rule->ip),
 #ifndef WITHOUT_USERAUTH
-		STRORNONE(fr->user), STRORNONE(fr->keyword),
+		STRORNONE(rule->user), STRORNONE(rule->keyword),
 #endif /* !WITHOUT_USERAUTH */
-		fr->all,
-		fr->divert ? "divert" : "", fr->split ? "split" : "", fr->pass ? "pass" : "", fr->block ? "block" : "",
-		fr->dstip ? "dstip" : "", fr->sni ? "sni" : "", fr->cn ? "cn" : "", fr->host ? "host" : "", fr->uri ? "uri" : "");
+		rule->all,
+		rule->divert ? "divert" : "", rule->split ? "split" : "", rule->pass ? "pass" : "", rule->block ? "block" : "",
+		rule->dstip ? "dstip" : "", rule->sni ? "sni" : "", rule->cn ? "cn" : "", rule->host ? "host" : "", rule->uri ? "uri" : "");
 #endif /* DEBUG_OPTS */
 }
 
 static filter_site_t *
-opts_find_site(filter_site_t *site, char *s)
+opts_find_site(filter_site_t *site, filter_rule_t *rule)
 {
 	while (site) {
-		if (!strcmp(site->site, s))
+		if ((site->exact == rule->exact) && !strcmp(site->site, rule->site))
 			break;
 		site = site->next;
 	}
@@ -2392,7 +2396,7 @@ opts_find_site(filter_site_t *site, char *s)
 static filter_site_t *
 opts_add_site(filter_site_t *site, filter_rule_t *rule)
 {
-	filter_site_t *s = opts_find_site(site, rule->site);
+	filter_site_t *s = opts_find_site(site, rule);
 	if (!s) {
 		s = malloc(sizeof(filter_site_t));
 		if (!s)
@@ -2400,6 +2404,8 @@ opts_add_site(filter_site_t *site, filter_rule_t *rule)
 		memset(s, 0, sizeof(filter_site_t));
 		s->site = strdup(rule->site);
 	}
+
+	s->exact = rule->exact;
 
 	// Multiple rules can set the action for the same site
 	if (rule->divert)

@@ -591,111 +591,79 @@ protossl_srccert_create(pxy_conn_ctx_t *ctx)
 }
 
 static int NONNULL(1,2)
-protossl_match_sni(pxy_conn_ctx_t *ctx, const char *site)
+protossl_match_sni(pxy_conn_ctx_t *ctx, filter_site_t *site)
 {
-	//log_finest_va("ENTER, %s, %s", site, STRORDASH(ctx->sslctx->sni));
-
-	// @attention Make sure sni is not null
-	if (!ctx->sslctx->sni) {
-		return 0;
-	}
-
-	// site has surrounding slashes: "/example.com/"
-	// site is never empty or just "//", @see opts_set_filter_rule(),
-	// so no need to check if the length of site > 0 or 2
-	size_t len = strlen(site);
-
-	// Avoid multithreading issues by copying the site arg to a local var
-	// site arg is from the spec filter, which may be being used by other threads
-	// @todo Check if multithreaded read access causes any issues
-	char _site[len + 1];
-	memcpy(_site, site, sizeof _site);
-
-	// Skip the first slash
-	char *s = _site + 1;
-
-	if (_site[len - 2] == '*') {
-		_site[len - 2] = '\0';
-		if (strstr(ctx->sslctx->sni, s)) {
-			log_finest_va("Match substring in sni: %s, %s", ctx->sslctx->sni, s);
+	if (site->exact) {
+		if (!strcmp(ctx->sslctx->sni, site->site)) {
+			log_finest_va("Match exact with sni: %s, %s", site->site, ctx->sslctx->sni);
 			return 1;
 		}
-		// The end of substring search
-		return 0;
-	}
-	// The start of exact search
-
-	// Replace the last slash with null
-	_site[len - 1] = '\0';
-
-	// SNI: "example.com"
-	if (!strcmp(ctx->sslctx->sni, s)) {
-		log_finest_va("Match exact with sni: %s", ctx->sslctx->sni);
-		return 1;
+	} else {
+		if (strstr(ctx->sslctx->sni, site->site)) {
+			log_finest_va("Match substring in sni: %s, %s", site->site, ctx->sslctx->sni);
+			return 1;
+		}
 	}
 	return 0;
 }
 
 static int NONNULL(1,2)
-protossl_match_cn(pxy_conn_ctx_t *ctx, const char *site)
+protossl_match_cn(pxy_conn_ctx_t *ctx, filter_site_t *site)
 {
-	//log_finest_va("ENTER, %s, %s", site, STRORDASH(ctx->sslctx->ssl_names));
+	if (site->exact) {
+		// Avoid multithreading issues by copying the site arg to a local var
+		// site arg is from the spec filter, which may be being used by other threads
 
-	// @attention Make sure ssl_names is not null
-	if (!ctx->sslctx->ssl_names) {
-		return 0;
-	}
+		size_t len = strlen(site->site);
 
-	size_t len = strlen(site);
+		// Common names are separated by slashes
+		char _site[len + 3];
+		memcpy(_site + 1, site->site, len);
+		_site[0] = '/';
+		_site[len + 1] = '/';
+		_site[len + 2] = '\0';
+		len += 2;
 
-	char _site[len + 1];
-	memcpy(_site, site, sizeof _site);
+		// Skip the first slash
+		char *s = _site + 1;
 
-	// Skip the first slash
-	char *s = _site + 1;
+		// Replace the last slash with null
+		_site[len - 1] = '\0';
 
-	if (_site[len - 2] == '*') {
-		_site[len - 2] = '\0';
-		if (strstr(ctx->sslctx->ssl_names, s)) {
-			log_finest_va("Match substring in common names: %s, %s", ctx->sslctx->ssl_names, s);
+		// Single common name: "example.com"
+		if (!strcmp(ctx->sslctx->ssl_names, s)) {
+			log_finest_va("Match exact with single common name: %s", ctx->sslctx->ssl_names);
 			return 1;
 		}
-		// The end of substring search
-		return 0;
-	}
-	// The start of exact search
 
-	// Replace the last slash with null
-	_site[len - 1] = '\0';
+		// Restore the slash at the end
+		_site[len - 1] = '/';
 
-	// Single common name: "example.com"
-	if (!strcmp(ctx->sslctx->ssl_names, s)) {
-		log_finest_va("Match exact with single common name: %s", ctx->sslctx->ssl_names);
-		return 1;
-	}
+		// First common name: "example.com/"
+		if (strstr(ctx->sslctx->ssl_names, s) == ctx->sslctx->ssl_names) {
+			log_finest_va("Match exact with the first common name: %s, %s", ctx->sslctx->ssl_names, s);
+			return 1;
+		}
 
-	// Restore the slash at the end
-	_site[len - 1] = '/';
+		// Middle common name: "/example.com/"
+		if (strstr(ctx->sslctx->ssl_names, _site)) {
+			log_finest_va("Match exact with a middle common name: %s, %s", ctx->sslctx->ssl_names, _site);
+			return 1;
+		}
 
-	// First common name: "example.com/"
-	if (strstr(ctx->sslctx->ssl_names, s) == ctx->sslctx->ssl_names) {
-		log_finest_va("Match exact with the first common name: %s, %s", ctx->sslctx->ssl_names, s);
-		return 1;
-	}
+		// Replace the last slash with null
+		_site[len - 1] = '\0';
 
-	// Middle common name: "/example.com/"
-	if (strstr(ctx->sslctx->ssl_names, _site)) {
-		log_finest_va("Match exact with a middle common name: %s, %s", ctx->sslctx->ssl_names, _site);
-		return 1;
-	}
-
-	// Replace the last slash with null
-	_site[len - 1] = '\0';
-
-	// Last common name: "/example.com"
-	if (strstr(ctx->sslctx->ssl_names, _site) == ctx->sslctx->ssl_names + strlen(ctx->sslctx->ssl_names) - strlen(_site)) {
-		log_finest_va("Match exact with the last common name: %s, %s", ctx->sslctx->ssl_names, _site);
-		return 1;
+		// Last common name: "/example.com"
+		if (strstr(ctx->sslctx->ssl_names, _site) == ctx->sslctx->ssl_names + strlen(ctx->sslctx->ssl_names) - strlen(_site)) {
+			log_finest_va("Match exact with the last common name: %s, %s", ctx->sslctx->ssl_names, _site);
+			return 1;
+		}
+	} else {
+		if (strstr(ctx->sslctx->ssl_names, site->site)) {
+			log_finest_va("Match substring in common names: %s, %s", site->site, ctx->sslctx->ssl_names);
+			return 1;
+		}
 	}
 	return 0;
 }
@@ -703,46 +671,48 @@ protossl_match_cn(pxy_conn_ctx_t *ctx, const char *site)
 static int
 protossl_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
 {
-	filter_site_t *site = list->sni;
-	while (site) {
-		if (protossl_match_sni(ctx, site->site)) {
-			// Do not print the surrounding slashes
-			log_err_level_printf(LOG_WARNING, "Found site: %.*s for %s:%s, %s:%s"
+	if (ctx->sslctx->sni) {
+		filter_site_t *site = list->sni;
+		while (site) {
+			if (protossl_match_sni(ctx, site)) {
+				// Do not print the surrounding slashes
+				log_err_level_printf(LOG_WARNING, "Found site: %s for %s:%s, %s:%s"
 #ifndef WITHOUT_USERAUTH
-				", %s, %s"
+					", %s, %s"
 #endif /* !WITHOUT_USERAUTH */
-				", %s\n",
-				(int)strlen(site->site) - 2, site->site + 1,
-				STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
+					", %s\n", site->site,
+					STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
 #ifndef WITHOUT_USERAUTH
-				STRORDASH(ctx->user), STRORDASH(ctx->desc),
+					STRORDASH(ctx->user), STRORDASH(ctx->desc),
 #endif /* !WITHOUT_USERAUTH */
-				STRORDASH(ctx->sslctx->sni));
-			ctx->pass = 1;
-			return 1;
+					STRORDASH(ctx->sslctx->sni));
+				ctx->pass = 1;
+				return 1;
+			}
+			site = site->next;
 		}
-		site = site->next;
 	}
 
-	site = list->cn;
-	while (site) {
-		if (protossl_match_cn(ctx, site->site)) {
-			// Do not print the surrounding slashes
-			log_err_level_printf(LOG_WARNING, "Found site: %.*s for %s:%s, %s:%s"
+	if (ctx->sslctx->ssl_names) {
+		filter_site_t *site = list->cn;
+		while (site) {
+			if (protossl_match_cn(ctx, site)) {
+				// Do not print the surrounding slashes
+				log_err_level_printf(LOG_WARNING, "Found site: %s for %s:%s, %s:%s"
 #ifndef WITHOUT_USERAUTH
-				", %s, %s"
+					", %s, %s"
 #endif /* !WITHOUT_USERAUTH */
-				", %s\n",
-				(int)strlen(site->site) - 2, site->site + 1,
-				STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
+					", %s\n", site->site,
+					STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
 #ifndef WITHOUT_USERAUTH
-				STRORDASH(ctx->user), STRORDASH(ctx->desc),
+					STRORDASH(ctx->user), STRORDASH(ctx->desc),
 #endif /* !WITHOUT_USERAUTH */
-				STRORDASH(ctx->sslctx->ssl_names));
-			ctx->pass = 1;
-			return 1;
+					STRORDASH(ctx->sslctx->ssl_names));
+				ctx->pass = 1;
+				return 1;
+			}
+			site = site->next;
 		}
-		site = site->next;
 	}
 
 #ifndef WITHOUT_USERAUTH
