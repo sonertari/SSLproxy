@@ -38,7 +38,7 @@ size_t util_get_first_word_len(char *, size_t) NONNULL(1);
 
 #define util_max(a,b) ((a) > (b) ? (a) : (b))
 
-#define equal(s1, s2) strlen((s1)) == strlen((s2)) && !strcmp((s1), (s2))
+#define equal(s1, s2) (strlen((s1)) == strlen((s2)) && !strcmp((s1), (s2)))
 
 inline int INLINE WUNRES
 max(int a, int b)
