@@ -78,7 +78,7 @@ typedef void (*proto_classify_user_func_t)(pxy_conn_ctx_t *);
 typedef void (*child_connect_func_t)(pxy_conn_child_ctx_t *);
 typedef void (*child_proto_free_func_t)(pxy_conn_child_ctx_t *);
 
-typedef int (*proto_filter_func_t)(pxy_conn_ctx_t *, filter_list_t *);
+typedef enum filter_action (*proto_filter_func_t)(pxy_conn_ctx_t *, filter_list_t *);
 
 /*
  * Proxy connection context state, describes a proxy connection
@@ -318,7 +318,6 @@ struct pxy_conn_ctx {
 	unsigned int sent_protoerror_msg : 1;   /* 1 until error msg is sent */
 
 	unsigned int divert : 1;                         /* 1 to divert conn */
-	unsigned int split : 1;                           /* 1 to split conn */
 	unsigned int pass : 1;                     /* 1 to pass conn through */
 
 #ifdef HAVE_LOCAL_PROCINFO
@@ -427,8 +426,8 @@ int pxy_is_listuser(userlist_t *, const char *
 void pxy_classify_user(pxy_conn_ctx_t *) NONNULL(1);
 void pxy_userauth(pxy_conn_ctx_t *) NONNULL(1);
 #endif /* !WITHOUT_USERAUTH */
-int pxyconn_dsthost_filter(pxy_conn_ctx_t *, filter_list_t *) NONNULL(1);
-int pxyconn_filter(pxy_conn_ctx_t *, proto_filter_func_t) NONNULL(1);
+enum filter_action pxyconn_set_filter_action(pxy_conn_ctx_t *, filter_site_t *) NONNULL(1,2);
+enum filter_action pxyconn_filter(pxy_conn_ctx_t *, proto_filter_func_t) NONNULL(1);
 void pxy_conn_setup(evutil_socket_t, struct sockaddr *, int,
                     pxy_thrmgr_ctx_t *, proxyspec_t *, global_t *,
 					evutil_socket_t)

@@ -417,9 +417,9 @@ pxy_conn_free(pxy_conn_ctx_t *ctx, int by_requestor)
 	if (ctx->srvdst.bev) {
 		// In split mode, srvdst is used as dst, so it should be freed as dst below
 		// If srvdst has been xferred to the first child conn, the child should free it, not the parent
-		if (ctx->spec->opts->divert && !ctx->srvdst_xferred) {
+		if (ctx->divert && !ctx->srvdst_xferred) {
 			ctx->srvdst.free(ctx->srvdst.bev, ctx);
-		} else /*if (!ctx->spec->opts->divert || ctx->srvdst_xferred)*/ {
+		} else /*if (!ctx->divert || ctx->srvdst_xferred)*/ {
 			// We reuse srvdst as dst or child dst, so srvdst == dst or child_dst.
 			// But if we don't NULL the callbacks of srvdst in split mode,
 			// we randomly but rarely get a second eof event for srvdst during conn termination (especially on arm64),
@@ -878,7 +878,7 @@ pxy_try_prepend_sslproxy_header(pxy_conn_ctx_t *ctx, struct evbuffer *inbuf, str
 {
 	log_finer("ENTER");
 
-	if (ctx->spec->opts->divert && !ctx->sent_sslproxy_header) {
+	if (ctx->divert && !ctx->sent_sslproxy_header) {
 #ifdef DEBUG_PROXY
 		size_t packet_size = evbuffer_get_length(inbuf);
 		// +2 for \r\n
@@ -1189,7 +1189,7 @@ pxy_opensock_child(pxy_conn_ctx_t *ctx)
 int
 pxy_setup_child_listener(pxy_conn_ctx_t *ctx)
 {
-	if (!ctx->spec->opts->divert) {
+	if (!ctx->divert) {
 		// split mode
 		return 0;
 	}
@@ -1973,52 +1973,39 @@ pxy_userauth(pxy_conn_ctx_t *ctx)
 }
 #endif /* !WITHOUT_USERAUTH */
 
-static int NONNULL(1,2)
-pxyconn_filter_match(pxy_conn_ctx_t *ctx, filter_site_t *site)
+enum filter_action
+pxyconn_set_filter_action(pxy_conn_ctx_t *ctx, filter_site_t *site)
 {
-	if (site->all_sites) {
-		log_finest_va("Match all dst: %s, %s", site->site, ctx->dsthost_str);
-		return 1;
-	}
-	else if (site->exact) {
-		if (!strcmp(ctx->dsthost_str, site->site)) {
-			log_finest_va("Match exact with dst: %s, %s", site->site, ctx->dsthost_str);
-			return 1;
+	if (site->divert) {
+		if (!ctx->divert) {
+			log_err_level_printf(LOG_INFO, "Site filter divert action for %s\n", site->site);
+			return FILTER_ACTION_DIVERT;
 		}
 	}
-	else {
-		if (strstr(ctx->dsthost_str, site->site)) {
-			log_finest_va("Match substring in dst: %s, %s", site->site, ctx->dsthost_str);
-			return 1;
+	else if (site->split) {
+		if (ctx->divert) {
+			log_err_level_printf(LOG_INFO, "Site filter split action for %s\n", site->site);
+			return FILTER_ACTION_SPLIT;
 		}
 	}
-	return 0;
+	else if (site->pass) {
+		if (!ctx->pass) {
+			log_err_level_printf(LOG_INFO, "Site filter pass action for %s\n", site->site);
+			return FILTER_ACTION_PASS;
+		}
+	}
+	else if (site->block) {
+		log_err_level_printf(LOG_INFO, "Site filter block action for %s\n", site->site);
+		return FILTER_ACTION_BLOCK;
+	}
+	return FILTER_ACTION_NONE;
 }
 
-int
-pxyconn_dsthost_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
-{
-	if (ctx->dsthost_str) {
-		filter_site_t *site = list->ip;
-		while (site) {
-			if (pxyconn_filter_match(ctx, site)) {
-				// Do not print the surrounding slashes
-				log_err_level_printf(LOG_WARNING, "Found site: %s for %s:%s, %s:%s\n", site->site,
-					STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str));
-				ctx->pass = 1;
-				return 1;
-			}
-			site = site->next;
-		}
-	}
-	log_finest_va("No filter match with ip: %s:%s, %s:%s",
-		STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str));
-	return 0;
-}
-
-int
+enum filter_action
 pxyconn_filter(pxy_conn_ctx_t *ctx, proto_filter_func_t filtercb)
 {
+	enum filter_action action = FILTER_ACTION_NONE;
+
 	filter_t *filter = ctx->spec->opts->filter;
 	if (filter) {
 #ifndef WITHOUT_USERAUTH
@@ -2029,42 +2016,43 @@ pxyconn_filter(pxy_conn_ctx_t *ctx, proto_filter_func_t filtercb)
 				if (ctx->desc) {
 					log_finest_va("Searching user keyword: %s, %s", ctx->user, ctx->desc);
 					filter_keyword_t *keyword = opts_find_keyword(user->keyword, ctx->desc);
-					if (keyword && filtercb(ctx, keyword->list)) {
-						return 1;
+					if (keyword && (action = filtercb(ctx, keyword->list))) {
+						return action;
 					}
 				}
-				if (filtercb(ctx, user->list)) {
-					return 1;
+				if ((action = filtercb(ctx, user->list))) {
+					return action;
 				}
 			}
 
 			if (ctx->desc) {
 				log_finest_va("Searching keyword: %s", ctx->desc);
 				filter_keyword_t *keyword = opts_find_keyword(filter->keyword, ctx->desc);
-				if (keyword && filtercb(ctx, keyword->list)) {
-					return 1;
+				if (keyword && (action = filtercb(ctx, keyword->list))) {
+					return action;
 				}
 			}
 
 			log_finest("Searching all_user");
-			if (filter->all_user && filtercb(ctx, filter->all_user)) {
-				return 1;
+			if (filter->all_user && (action = filtercb(ctx, filter->all_user))) {
+				return action;
 			}
 		}
 #endif /* !WITHOUT_USERAUTH */
 		if (ctx->srchost_str) {
 			log_finest_va("Searching ip: %s", ctx->srchost_str);
 			filter_ip_t *ip = opts_find_ip(filter->ip, ctx->srchost_str);
-			if (ip && filtercb(ctx, ip->list)) {
-				return 1;
+			if (ip && (action = filtercb(ctx, ip->list))) {
+				return action;
 			}
 		}
+
 		log_finest("Searching all");
-		if (filter->all && filtercb(ctx, filter->all)) {
-			return 1;
+		if (filter->all && (action = filtercb(ctx, filter->all))) {
+			return action;
 		}
 	}
-	return 0;
+	return action;
 }
 
 int

@@ -48,6 +48,14 @@
 #define STRORDASH(x)	(((x)&&*(x))?(x):"-")
 #define STRORNONE(x)	(((x)&&*(x))?(x):"")
 
+enum filter_action {
+	FILTER_ACTION_NONE = 0,
+	FILTER_ACTION_DIVERT,
+	FILTER_ACTION_SPLIT,
+	FILTER_ACTION_PASS,
+	FILTER_ACTION_BLOCK,
+};
+
 #ifndef WITHOUT_USERAUTH
 typedef struct userlist {
 	char *user;

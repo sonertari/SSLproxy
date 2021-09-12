@@ -114,7 +114,7 @@ prototcp_setup_src(pxy_conn_ctx_t *ctx)
 int
 prototcp_setup_dst(pxy_conn_ctx_t *ctx)
 {
-	if (ctx->spec->opts->divert) {
+	if (ctx->divert) {
 		ctx->dst.ssl = NULL;
 		ctx->dst.bev = prototcp_bufferevent_setup(ctx, -1);
 		if (!ctx->dst.bev) {
@@ -504,7 +504,74 @@ prototcp_bev_eventcb_connected_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	prototcp_enable_src(ctx);
 }
 
-void
+static int NONNULL(1,2)
+prototcp_filter_match(pxy_conn_ctx_t *ctx, filter_site_t *site)
+{
+	if (site->all_sites) {
+		log_finest_va("Match all dst: %s, %s", site->site, ctx->dsthost_str);
+		return 1;
+	}
+	else if (site->exact) {
+		if (!strcmp(ctx->dsthost_str, site->site)) {
+			log_finest_va("Match exact with dst: %s, %s", site->site, ctx->dsthost_str);
+			return 1;
+		}
+	}
+	else {
+		if (strstr(ctx->dsthost_str, site->site)) {
+			log_finest_va("Match substring in dst: %s, %s", site->site, ctx->dsthost_str);
+			return 1;
+		}
+	}
+	return 0;
+}
+
+// The editor complains without this forward declaration for the NONNULL attribute
+static enum filter_action prototcp_dsthost_filter(pxy_conn_ctx_t *, filter_list_t *) NONNULL(1,2);
+static enum filter_action
+prototcp_dsthost_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
+{
+	if (ctx->dsthost_str) {
+		filter_site_t *site = list->ip;
+		while (site) {
+			if (prototcp_filter_match(ctx, site)) {
+				log_err_level_printf(LOG_INFO, "Found site: %s for %s:%s, %s:%s\n", site->site,
+					STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str));
+				return pxyconn_set_filter_action(ctx, site);
+			}
+			site = site->next;
+		}
+		log_finest_va("No filter match with ip: %s:%s, %s:%s",
+			STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str));
+	}
+	return FILTER_ACTION_NONE;
+}
+
+int
+prototcp_apply_filter(pxy_conn_ctx_t *ctx)
+{
+	enum filter_action action;
+	if ((action = pxyconn_filter(ctx, prototcp_dsthost_filter))) {
+		if (action == FILTER_ACTION_DIVERT) {
+			ctx->divert = 1;
+		}
+		else if (action == FILTER_ACTION_SPLIT) {
+			ctx->divert = 0;
+		}
+		else if (action == FILTER_ACTION_PASS) {
+			protopassthrough_engage(ctx);
+			ctx->pass = 1;
+			return 1;
+		}
+		else if (action == FILTER_ACTION_BLOCK) {
+			pxy_conn_term(ctx, 1);
+			return 1;
+		}
+	}
+	return 0;
+}
+
+static void NONNULL(1,2)
 prototcp_bev_eventcb_connected_srvdst(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 	log_finest("ENTER");
@@ -516,9 +583,7 @@ prototcp_bev_eventcb_connected_srvdst(UNUSED struct bufferevent *bev, pxy_conn_c
 	}
 #endif /* !WITHOUT_USERAUTH */
 
-	if (pxyconn_filter(ctx, pxyconn_dsthost_filter)) {
-		log_err_level_printf(LOG_WARNING, "dsthost filter matches; falling back to passthrough\n");
-		protopassthrough_engage(ctx);
+	if (prototcp_apply_filter(ctx)) {
 		return;
 	}
 
@@ -526,7 +591,7 @@ prototcp_bev_eventcb_connected_srvdst(UNUSED struct bufferevent *bev, pxy_conn_c
 		return;
 	}
 
-	if (ctx->spec->opts->divert) {
+	if (ctx->divert) {
 		bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
 		if (bufferevent_socket_connect(ctx->dst.bev, (struct sockaddr *)&ctx->spec->conn_dst_addr, ctx->spec->conn_dst_addrlen) == -1) {
 			log_fine("FAILED bufferevent_socket_connect for dst");

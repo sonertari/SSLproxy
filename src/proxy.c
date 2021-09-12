@@ -170,6 +170,7 @@ proxy_conn_ctx_new(evutil_socket_t fd,
 	ctx->fd = fd;
 	ctx->thrmgr = thrmgr;
 	ctx->spec = spec;
+	ctx->divert = spec->opts->divert;
 
 	ctx->proto = proxy_setup_proto(ctx);
 	if (ctx->proto == PROTO_ERROR) {

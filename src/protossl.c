@@ -676,7 +676,8 @@ protossl_match_cn(pxy_conn_ctx_t *ctx, filter_site_t *site)
 	return 0;
 }
 
-static int
+static enum filter_action protossl_filter(pxy_conn_ctx_t *, filter_list_t *) NONNULL(1,2);
+static enum filter_action
 protossl_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
 {
 	if (ctx->sslctx->sni) {
@@ -684,7 +685,7 @@ protossl_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
 		while (site) {
 			if (protossl_match_sni(ctx, site)) {
 				// Do not print the surrounding slashes
-				log_err_level_printf(LOG_WARNING, "Found site: %s for %s:%s, %s:%s"
+				log_err_level_printf(LOG_INFO, "Found site: %s for %s:%s, %s:%s"
 #ifndef WITHOUT_USERAUTH
 					", %s, %s"
 #endif /* !WITHOUT_USERAUTH */
@@ -694,11 +695,19 @@ protossl_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
 					STRORDASH(ctx->user), STRORDASH(ctx->desc),
 #endif /* !WITHOUT_USERAUTH */
 					STRORDASH(ctx->sslctx->sni));
-				ctx->pass = 1;
-				return 1;
+				return pxyconn_set_filter_action(ctx, site);
 			}
 			site = site->next;
 		}
+#ifndef WITHOUT_USERAUTH
+		log_finest_va("No filter match with sni: %s:%s, %s:%s, %s, %s, %s, %s",
+			STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
+			STRORDASH(ctx->user), STRORDASH(ctx->desc), STRORDASH(ctx->sslctx->sni), STRORDASH(ctx->sslctx->ssl_names));
+#else /* WITHOUT_USERAUTH */
+		log_finest_va("No filter match with sni: %s:%s, %s:%s, %s, %s",
+			STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
+			STRORDASH(ctx->sslctx->sni), STRORDASH(ctx->sslctx->ssl_names));
+#endif /* !WITHOUT_USERAUTH */
 	}
 
 	if (ctx->sslctx->ssl_names) {
@@ -706,7 +715,7 @@ protossl_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
 		while (site) {
 			if (protossl_match_cn(ctx, site)) {
 				// Do not print the surrounding slashes
-				log_err_level_printf(LOG_WARNING, "Found site: %s for %s:%s, %s:%s"
+				log_err_level_printf(LOG_INFO, "Found site: %s for %s:%s, %s:%s"
 #ifndef WITHOUT_USERAUTH
 					", %s, %s"
 #endif /* !WITHOUT_USERAUTH */
@@ -716,22 +725,43 @@ protossl_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
 					STRORDASH(ctx->user), STRORDASH(ctx->desc),
 #endif /* !WITHOUT_USERAUTH */
 					STRORDASH(ctx->sslctx->ssl_names));
-				ctx->pass = 1;
-				return 1;
+				return pxyconn_set_filter_action(ctx, site);
 			}
 			site = site->next;
 		}
-	}
-
 #ifndef WITHOUT_USERAUTH
-	log_finest_va("No filter match with sni or common names: %s:%s, %s:%s, %s, %s, %s, %s",
-		STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
-		STRORDASH(ctx->user), STRORDASH(ctx->desc), STRORDASH(ctx->sslctx->sni), STRORDASH(ctx->sslctx->ssl_names));
+		log_finest_va("No filter match with common names: %s:%s, %s:%s, %s, %s, %s, %s",
+			STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
+			STRORDASH(ctx->user), STRORDASH(ctx->desc), STRORDASH(ctx->sslctx->sni), STRORDASH(ctx->sslctx->ssl_names));
 #else /* WITHOUT_USERAUTH */
-	log_finest_va("No filter match with sni or common names: %s:%s, %s:%s, %s, %s",
-		STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
-		STRORDASH(ctx->sslctx->sni), STRORDASH(ctx->sslctx->ssl_names));
+		log_finest_va("No filter match with common names: %s:%s, %s:%s, %s, %s",
+			STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
+			STRORDASH(ctx->sslctx->sni), STRORDASH(ctx->sslctx->ssl_names));
 #endif /* !WITHOUT_USERAUTH */
+	}
+	return FILTER_ACTION_NONE;
+}
+
+static int
+protossl_apply_filter(pxy_conn_ctx_t *ctx)
+{
+	enum filter_action action;
+	if ((action = pxyconn_filter(ctx, protossl_filter))) {
+		if (action == FILTER_ACTION_DIVERT) {
+			ctx->divert = 1;
+		}
+		else if (action == FILTER_ACTION_SPLIT) {
+			ctx->divert = 0;
+		}
+		else if (action == FILTER_ACTION_PASS) {
+			ctx->pass = 1;
+			return 1;
+		}
+		else if (action == FILTER_ACTION_BLOCK) {
+			pxy_conn_term(ctx, 1);
+			return 1;
+		}
+	}
 	return 0;
 }
 
@@ -778,12 +808,10 @@ protossl_srcssl_create(pxy_conn_ctx_t *ctx, SSL *origssl)
 			ctx->enomem = 1;
 	}
 
-	if (pxyconn_filter(ctx, protossl_filter)) {
-		log_err_level_printf(LOG_WARNING, "ssl filter matches; falling back to passthrough\n");
-		protopassthrough_engage(ctx);
+	if (protossl_apply_filter(ctx)) {
 		cert_free(cert);
 		return NULL;
-	 }
+	}
 
 	SSL_CTX *sslctx = protossl_srcsslctx_create(ctx, cert->crt, cert->chain,
 	                                       cert->key);
@@ -1432,61 +1460,54 @@ protossl_connect_child(pxy_conn_child_ctx_t *ctx)
 	protossl_setup_dst_child(ctx);
 }
 
-int
+static int NONNULL(1)
 protossl_setup_src_ssl(pxy_conn_ctx_t *ctx)
 {
 	// @todo Make srvdst.ssl the origssl param
-	ctx->src.ssl = protossl_srcssl_create(ctx, ctx->srvdst.ssl);
-	if (!ctx->src.ssl) {
-		if ((ctx->spec->opts->passthrough || ctx->pass) && !ctx->enomem) {
-			log_err_level_printf(LOG_WARNING, "Falling back to passthrough\n");
-			protopassthrough_engage(ctx);
-			// report protocol change by returning 1
-			return 1;
-		}
-		pxy_conn_term(ctx, 1);
+	if (ctx->src.ssl || (ctx->src.ssl = protossl_srcssl_create(ctx, ctx->srvdst.ssl))) {
+		return 0;
+	}
+	else if (ctx->term) {
 		return -1;
 	}
-	return 0;
+	else if (!ctx->enomem && (ctx->pass || ctx->spec->opts->passthrough)) {
+		log_err_level_printf(LOG_WARNING, "Falling back to passthrough\n");
+		protopassthrough_engage(ctx);
+		// report protocol change by returning 1
+		return 1;
+	}
+	pxy_conn_term(ctx, 1);
+	return -1;
 }
 
 int
 protossl_setup_src_ssl_from_dst(pxy_conn_ctx_t *ctx)
 {
-	ctx->src.ssl = protossl_srcssl_create(ctx, ctx->dst.ssl);
-	if (!ctx->src.ssl) {
-		// @attention We cannot engage passthrough mode upon ssl errors on already enabled src
-		// This function is used by protoautossl only
-		//if ((ctx->spec->opts->passthrough || ctx->pass) && !ctx->enomem) {
-		//	log_err_level_printf(LOG_WARNING, "Falling back to passthrough\n");
-		//	protopassthrough_engage(ctx);
-		//	// report protocol change by returning 1
-		//	return 1;
-		//}
-		pxy_conn_term(ctx, 1);
+	// @attention We cannot engage passthrough mode upon ssl errors on already enabled src
+	// This function is used by protoautossl only
+	if (ctx->src.ssl || (ctx->src.ssl = protossl_srcssl_create(ctx, ctx->dst.ssl))) {
+		return 0;
+	}
+	else if (ctx->term) {
 		return -1;
 	}
-	return 0;
+	pxy_conn_term(ctx, 1);
+	return -1;
 }
 
 int
 protossl_setup_src_ssl_from_child_dst(pxy_conn_child_ctx_t *ctx)
 {
-	// @todo Make srvdst.ssl the origssl param
-	ctx->conn->src.ssl = protossl_srcssl_create(ctx->conn, ctx->dst.ssl);
-	if (!ctx->conn->src.ssl) {
-		// @attention We cannot engage passthrough mode upon ssl errors on already enabled src
-		// This function is used by protoautossl only
-		//if ((ctx->conn->spec->opts->passthrough || ctx->conn->pass) && !ctx->conn->enomem) {
-		//	log_err_level_printf(LOG_WARNING, "Falling back to passthrough\n");
-		//	protopassthrough_engage(ctx->conn);
-		//	// report protocol change by returning 1
-		//	return 1;
-		//}
-		pxy_conn_term(ctx->conn, 1);
+	// @attention We cannot engage passthrough mode upon ssl errors on already enabled src
+	// This function is used by protoautossl only
+	if (ctx->conn->src.ssl || (ctx->conn->src.ssl = protossl_srcssl_create(ctx->conn, ctx->dst.ssl))) {
+		return 0;
+	}
+	else if (ctx->conn->term) {
 		return -1;
 	}
-	return 0;
+	pxy_conn_term(ctx->conn, 1);
+	return -1;
 }
 
 static int NONNULL(1)
@@ -1560,6 +1581,7 @@ protossl_setup_dst_new_bev_ssl_connecting_child(pxy_conn_child_ctx_t *ctx)
 int
 protossl_enable_src(pxy_conn_ctx_t *ctx)
 {
+	// @todo The return value of protossl_enable_src() never used, just return?
 	int rv;
 	if ((rv = protossl_setup_src(ctx)) != 0) {
 		// Might have switched to passthrough mode
@@ -1590,6 +1612,41 @@ protossl_bev_eventcb_connected_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	bufferevent_enable(bev, EV_READ|EV_WRITE);
 
 	protossl_enable_src(ctx);
+}
+
+static void
+protossl_bev_eventcb_connected_srvdst(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ctx)
+{
+	log_finest("ENTER");
+
+#ifndef WITHOUT_USERAUTH
+	pxy_userauth(ctx);
+	if (ctx->term || ctx->enomem) {
+		return;
+	}
+#endif /* !WITHOUT_USERAUTH */
+
+	if (prototcp_apply_filter(ctx)) {
+		return;
+	}
+
+	// Set src ssl up early to apply protossl filter 
+	if (protossl_setup_src_ssl(ctx) != 0) {
+		return;
+	}
+
+	if (prototcp_setup_dst(ctx) == -1) {
+		return;
+	}
+
+	if (ctx->divert) {
+		bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
+		if (bufferevent_socket_connect(ctx->dst.bev, (struct sockaddr *)&ctx->spec->conn_dst_addr, ctx->spec->conn_dst_addrlen) == -1) {
+			log_fine("FAILED bufferevent_socket_connect for dst");
+			pxy_conn_term(ctx, 1);
+			return;
+		}
+	}
 }
 
 static void NONNULL(1,2)
@@ -1630,7 +1687,7 @@ void
 protossl_bev_eventcb_srvdst(struct bufferevent *bev, short events, pxy_conn_ctx_t *ctx)
 {
 	if (events & BEV_EVENT_CONNECTED) {
-		prototcp_bev_eventcb_connected_srvdst(bev, ctx);
+		protossl_bev_eventcb_connected_srvdst(bev, ctx);
 	} else if (events & BEV_EVENT_EOF) {
 		prototcp_bev_eventcb_eof_srvdst(bev, ctx);
 	} else if (events & BEV_EVENT_ERROR) {

@@ -429,7 +429,8 @@ protossl_match_uri(pxy_conn_ctx_t *ctx, filter_site_t *site)
 	return 0;
 }
 
-static int
+static enum filter_action protohttp_filter(pxy_conn_ctx_t *, filter_list_t *) NONNULL(1,2);
+static enum filter_action
 protohttp_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
 {
 	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
@@ -439,7 +440,7 @@ protohttp_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
 		while (site) {
 			if (protossl_match_host(ctx, site)) {
 				// Do not print the surrounding slashes
-				log_err_level_printf(LOG_WARNING, "Found site: %s for %s:%s, %s:%s"
+				log_err_level_printf(LOG_INFO, "Found site: %s for %s:%s, %s:%s"
 #ifndef WITHOUT_USERAUTH
 					", %s, %s"
 #endif /* !WITHOUT_USERAUTH */
@@ -449,11 +450,19 @@ protohttp_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
 					STRORDASH(ctx->user), STRORDASH(ctx->desc),
 #endif /* !WITHOUT_USERAUTH */
 					STRORDASH(http_ctx->http_host));
-				ctx->pass = 1;
-				return 1;
+				return pxyconn_set_filter_action(ctx, site);
 			}
 			site = site->next;
 		}
+#ifndef WITHOUT_USERAUTH
+		log_finest_va("No filter match with host: %s:%s, %s:%s, %s, %s, %s, %s",
+			STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
+			STRORDASH(ctx->user), STRORDASH(ctx->desc), STRORDASH(http_ctx->http_host), STRORDASH(http_ctx->http_uri));
+#else /* WITHOUT_USERAUTH */
+		log_finest_va("No filter match with host: %s:%s, %s:%s, %s, %s",
+			STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
+			STRORDASH(http_ctx->http_host), STRORDASH(http_ctx->http_uri));
+#endif /* !WITHOUT_USERAUTH */
 	}
 
 	if (http_ctx->http_uri) {
@@ -461,7 +470,7 @@ protohttp_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
 		while (site) {
 			if (protossl_match_uri(ctx, site)) {
 				// Do not print the surrounding slashes
-				log_err_level_printf(LOG_WARNING, "Found site: %s for %s:%s, %s:%s"
+				log_err_level_printf(LOG_INFO, "Found site: %s for %s:%s, %s:%s"
 #ifndef WITHOUT_USERAUTH
 					", %s, %s"
 #endif /* !WITHOUT_USERAUTH */
@@ -471,22 +480,36 @@ protohttp_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
 					STRORDASH(ctx->user), STRORDASH(ctx->desc),
 #endif /* !WITHOUT_USERAUTH */
 					STRORDASH(http_ctx->http_uri));
-				ctx->pass = 1;
-				return 1;
+				return pxyconn_set_filter_action(ctx, site);
 			}
 			site = site->next;
 		}
-	}
-
 #ifndef WITHOUT_USERAUTH
-	log_finest_va("No filter match with host or uri: %s:%s, %s:%s, %s, %s, %s, %s",
-		STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
-		STRORDASH(ctx->user), STRORDASH(ctx->desc), STRORDASH(http_ctx->http_host), STRORDASH(http_ctx->http_uri));
+		log_finest_va("No filter match with uri: %s:%s, %s:%s, %s, %s, %s, %s",
+			STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
+			STRORDASH(ctx->user), STRORDASH(ctx->desc), STRORDASH(http_ctx->http_host), STRORDASH(http_ctx->http_uri));
 #else /* WITHOUT_USERAUTH */
-	log_finest_va("No filter match with host or uri: %s:%s, %s:%s, %s, %s",
-		STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
-		STRORDASH(http_ctx->http_host), STRORDASH(http_ctx->http_uri));
+		log_finest_va("No filter match with uri: %s:%s, %s:%s, %s, %s",
+			STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
+			STRORDASH(http_ctx->http_host), STRORDASH(http_ctx->http_uri));
 #endif /* !WITHOUT_USERAUTH */
+	}
+	return FILTER_ACTION_NONE;
+}
+
+static int
+protohttp_apply_filter(pxy_conn_ctx_t *ctx)
+{
+	enum filter_action action;
+	if ((action = pxyconn_filter(ctx, protohttp_filter))) {
+		if (action == FILTER_ACTION_BLOCK) {
+			pxy_conn_term(ctx, 1);
+			return 1;
+		}
+		else if (action == FILTER_ACTION_DIVERT || action == FILTER_ACTION_SPLIT || action == FILTER_ACTION_PASS) {
+			log_err_level_printf(LOG_WARNING, "HTTP filter cannot take divert, split, or pass action\n");
+		}
+	}
 	return 0;
 }
 
@@ -513,7 +536,7 @@ protohttp_filter_request_header(struct evbuffer *inbuf, struct evbuffer *outbuf,
 		}
 		free(line);
 
-		if ((type == CONN_TYPE_PARENT) && ctx->spec->opts->divert && !ctx->sent_sslproxy_header) {
+		if ((type == CONN_TYPE_PARENT) && ctx->divert && !ctx->sent_sslproxy_header) {
 			ctx->sent_sslproxy_header = 1;
 			log_finer_va("INSERT= %s", ctx->sslproxy_header);
 			evbuffer_add_printf(outbuf, "%s\r\n", ctx->sslproxy_header);
@@ -521,9 +544,7 @@ protohttp_filter_request_header(struct evbuffer *inbuf, struct evbuffer *outbuf,
 	}
 
 	if (http_ctx->seen_req_header) {
-		if (pxyconn_filter(ctx, protohttp_filter)) {
-			log_err_level_printf(LOG_WARNING, "http filter matches; falling back to passthrough\n");
-			protopassthrough_engage(ctx);
+		if (protohttp_apply_filter(ctx)) {
 			return;
 		}
 

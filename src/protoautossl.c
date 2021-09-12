@@ -103,7 +103,7 @@ protoautossl_peek_and_upgrade(pxy_conn_ctx_t *ctx)
 				log_dbg_printf("Peek found ClientHello\n");
 			}
 
-			if (ctx->spec->opts->divert) {
+			if (ctx->divert) {
 				if (!ctx->children) {
 					// This means that there was no autossl handshake prior to ClientHello, e.g. no STARTTLS message
 					// This is perhaps the SSL handshake of a direct SSL connection, i.e. invalid protocol
