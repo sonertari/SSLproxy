@@ -388,7 +388,11 @@ protossl_match_host(pxy_conn_ctx_t *ctx, filter_site_t *site)
 {
 	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
 
-	if (site->exact) {
+	if (site->all_sites) {
+		log_finest_va("Match all host: %s, %s", site->site, http_ctx->http_host);
+		return 1;
+	}
+	else if (site->exact) {
 		if (http_ctx->http_host && !strcmp(http_ctx->http_host, site->site)) {
 			log_finest_va("Match exact with host: %s, %s", site->site, http_ctx->http_host);
 			return 1;
@@ -407,7 +411,11 @@ protossl_match_uri(pxy_conn_ctx_t *ctx, filter_site_t *site)
 {
 	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
 
-	if (site->exact) {
+	if (site->all_sites) {
+		log_finest_va("Match all uri: %s, %s", site->site, http_ctx->http_uri);
+		return 1;
+	}
+	else if (site->exact) {
 		if (!strcmp(http_ctx->http_uri, site->site)) {
 			log_finest_va("Match exact with uri: %s, %s", site->site, http_ctx->http_uri);
 			return 1;

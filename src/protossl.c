@@ -593,7 +593,11 @@ protossl_srccert_create(pxy_conn_ctx_t *ctx)
 static int NONNULL(1,2)
 protossl_match_sni(pxy_conn_ctx_t *ctx, filter_site_t *site)
 {
-	if (site->exact) {
+	if (site->all_sites) {
+		log_finest_va("Match all sni: %s, %s", site->site, ctx->sslctx->sni);
+		return 1;
+	}
+	else if (site->exact) {
 		if (!strcmp(ctx->sslctx->sni, site->site)) {
 			log_finest_va("Match exact with sni: %s, %s", site->site, ctx->sslctx->sni);
 			return 1;
@@ -610,7 +614,11 @@ protossl_match_sni(pxy_conn_ctx_t *ctx, filter_site_t *site)
 static int NONNULL(1,2)
 protossl_match_cn(pxy_conn_ctx_t *ctx, filter_site_t *site)
 {
-	if (site->exact) {
+	if (site->all_sites) {
+		log_finest_va("Match all common names: %s, %s", site->site, ctx->sslctx->ssl_names);
+		return 1;
+	}
+	else if (site->exact) {
 		// Avoid multithreading issues by copying the site arg to a local var
 		// site arg is from the spec filter, which may be being used by other threads
 

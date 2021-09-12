@@ -230,6 +230,7 @@ opts_free_filter(opts_t *opts)
 		free(pf->keyword);
 		pf->keyword = keyword;
 	}
+	opts_free_filter_list(pf->all_user);
 #endif /* !WITHOUT_USERAUTH */
 	while (pf->ip) {
 		opts_free_filter_list(pf->ip->list);
@@ -772,8 +773,11 @@ clone_global_opts(global_t *global, const char *argv0, global_opts_str_t *global
 			fr->user = strdup(rule->user);
 		if (rule->keyword)
 			fr->keyword = strdup(rule->keyword);
+
+		fr->all_users = rule->all_users;
 #endif /* !WITHOUT_USERAUTH */
-		fr->all = rule->all;
+		fr->all_conns = rule->all_conns;
+		fr->all_sites = rule->all_sites;
 
 		fr->divert = rule->divert;
 		fr->split = rule->split;
@@ -1125,12 +1129,20 @@ filter_rule_str(filter_rule_t *rule)
 #ifndef WITHOUT_USERAUTH
 				", user=%s, keyword=%s"
 #endif /* !WITHOUT_USERAUTH */
-				", all=%d, action=%s|%s|%s|%s, , apply to=%s|%s|%s|%s|%s",
+				", all=%s"
+#ifndef WITHOUT_USERAUTH
+				"|%s"
+#endif /* !WITHOUT_USERAUTH */
+				"|%s, action=%s|%s|%s|%s, apply to=%s|%s|%s|%s|%s",
 				rule->site, rule->exact ? "exact" : "substring", STRORNONE(rule->ip),
 #ifndef WITHOUT_USERAUTH
 				STRORNONE(rule->user), STRORNONE(rule->keyword),
 #endif /* !WITHOUT_USERAUTH */
-				rule->all,
+				rule->all_conns ? "conns" : "",
+#ifndef WITHOUT_USERAUTH
+				rule->all_users ? "users" : "",
+#endif /* !WITHOUT_USERAUTH */
+				rule->all_sites ? "sites" : "",
 				rule->divert ? "divert" : "", rule->split ? "split" : "", rule->pass ? "pass" : "", rule->block ? "block" : "",
 				rule->dstip ? "dstip" : "", rule->sni ? "sni" : "", rule->cn ? "cn" : "", rule->host ? "host" : "", rule->uri ? "uri" : ""
 				) < 0) {
@@ -1167,7 +1179,10 @@ filter_sites_str(filter_site_t *site)
 	int count = 0;
 	while (site) {
 		char *p;
-		if (asprintf(&p, "%s%s%d: %s", STRORNONE(s), s ? ", " : "", count, site->site) < 0) {
+		if (asprintf(&p, "%s\n      %d: %s (%s%s, action=%s|%s|%s|%s)", STRORNONE(s), count,
+				site->site, site->all_sites ? "all_sites, " : "", site->exact ? "exact" : "substring",
+				site->divert ? "divert" : "", site->split ? "split" : "", site->pass ? "pass" : "", site->block ? "block" : ""
+				) < 0) {
 			goto err;
 		}
 		if (s)
@@ -1289,18 +1304,18 @@ filter_users_str(filter_user_t *user)
 	int count = 0;
 	while (user) {
 		list = filter_list_str(user->list);
+
+		char *p = NULL;
+
 		// Make sure the user has a filter rule
 		// It is possible to have users without any filter rule,
 		// but the user exists because it has keyword filters
-		if (!list)
-			break;
-
-		char *p;
-		if (asprintf(&p, "%s%s  user %d %s= \n%s", STRORNONE(s), s ? "\n" : "", count, user->user, list) < 0) {
-			goto err;
-		}
-		if (list)
+		if (list) {
+			if (asprintf(&p, "%s%s  user %d %s= \n%s", STRORNONE(s), s ? "\n" : "", count, user->user, list) < 0) {
+				goto err;
+			}
 			free(list);
+		}
 		if (s)
 			free(s);
 		s = p;
@@ -1363,12 +1378,13 @@ filter_userkeywords_str(filter_user_t *user)
 	while (user) {
 		list = filter_keywords_str(user->keyword);
 
-		char *p;
-		if (asprintf(&p, "%s%s user %d %s=\n%s", STRORNONE(s), s ? "\n" : "", count, user->user, list) < 0) {
-			goto err;
-		}
-		if (list)
+		char *p = NULL;
+		if (list) {
+			if (asprintf(&p, "%s%s user %d %s=\n%s", STRORNONE(s), s ? "\n" : "", count, user->user, list) < 0) {
+				goto err;
+			}
 			free(list);
+		}
 		if (s)
 			free(s);
 		s = p;
@@ -1396,6 +1412,7 @@ filter_str(filter_t *filter)
 	char *userkeyword_filter = NULL;
 	char *user_filter = NULL;
 	char *keyword_filter = NULL;
+	char *all_user_filter = NULL;
 #endif /* !WITHOUT_USERAUTH */
 	char *ip_filter = NULL;
 	char *all_filter = NULL;
@@ -1409,19 +1426,21 @@ filter_str(filter_t *filter)
 	userkeyword_filter = filter_userkeywords_str(filter->user);
 	user_filter = filter_users_str(filter->user);
 	keyword_filter = filter_keywords_str(filter->keyword);
+	all_user_filter = filter_list_str(filter->all_user);
 #endif /* !WITHOUT_USERAUTH */
 	ip_filter = filter_ips_str(filter->ip);
 	all_filter = filter_list_str(filter->all);
 
 	if (asprintf(&fs, "filter=>\n"
 #ifndef WITHOUT_USERAUTH
-			"userkeyword_filter->%s%s\nuser_filter->%s%s\nkeyword_filter->%s%s\n"
+			"userkeyword_filter->%s%s\nuser_filter->%s%s\nkeyword_filter->%s%s\nall_user_filter->%s%s\n"
 #endif /* !WITHOUT_USERAUTH */
 			"ip_filter->%s%s\nall_filter->%s%s\n",
 #ifndef WITHOUT_USERAUTH
 			userkeyword_filter ? "\n" : "", STRORNONE(userkeyword_filter),
 			user_filter ? "\n" : "", STRORNONE(user_filter),
 			keyword_filter ? "\n" : "", STRORNONE(keyword_filter),
+			all_user_filter ? "\n" : "", STRORNONE(all_user_filter),
 #endif /* !WITHOUT_USERAUTH */
 			ip_filter ? "\n" : "", STRORNONE(ip_filter),
 			all_filter ? "\n" : "", STRORNONE(all_filter)) < 0) {
@@ -1441,6 +1460,8 @@ out:
 		free(user_filter);
 	if (keyword_filter)
 		free(keyword_filter);
+	if (all_user_filter)
+		free(all_user_filter);
 #endif /* !WITHOUT_USERAUTH */
 	if (ip_filter)
 		free(ip_filter);
@@ -2277,20 +2298,22 @@ opts_unset_validate_proto(opts_t *opts)
 	opts->validate_proto = 0;
 }
 
+#define MAX_SITE_LEN 200
+
 void
 opts_set_passsite(opts_t *opts, char *value, int line_num)
 {
-#define MAX_SITE_LEN 200
+#define MAX_PASSSITE_TOKENS 3
 
 	// site[*] [(clientaddr|user|*) [description keyword]]
-	char *argv[sizeof(char *) * 3];
+	char *argv[sizeof(char *) * MAX_PASSSITE_TOKENS];
 	int argc = 0;
 	char *p, *last = NULL;
 
 	for ((p = strtok_r(value, " ", &last));
 		 p;
 		 (p = strtok_r(NULL, " ", &last))) {
-		if (argc < 3) {
+		if (argc < MAX_PASSSITE_TOKENS) {
 			argv[argc++] = p;
 		} else {
 			break;
@@ -2310,13 +2333,17 @@ opts_set_passsite(opts_t *opts, char *value, int line_num)
 	size_t len = strlen(argv[0]);
 
 	if (len > MAX_SITE_LEN) {
-		fprintf(stderr, "Filter site too long %zu > %d, on line %d\n", len, MAX_SITE_LEN, line_num);
+		fprintf(stderr, "Filter site too long %zu > %d on line %d\n", len, MAX_SITE_LEN, line_num);
 		exit(EXIT_FAILURE);
 	}
 
 	if (argv[0][len - 1] == '*') {
 		rule->exact = 0;
-		argv[0][len - 1] = '\0';
+		len--;
+		argv[0][len] = '\0';
+		// site == "*" ?
+		if (len == 0)
+			rule->all_sites = 1;
 	} else {
 		rule->exact = 1;
 	}
@@ -2326,21 +2353,24 @@ opts_set_passsite(opts_t *opts, char *value, int line_num)
 	if (argc == 1) {
 		// Apply filter rule to all conns
 		// Equivalent to "site *" without keyword
-		rule->all = 1;
+		rule->all_conns = 1;
 	}
 
 	if (argc > 1) {
 		if (!strcmp(argv[1], "*")) {
-			// Apply filter rule to all ips or users perhaps with keyword
-			rule->all = 1;
 #ifndef WITHOUT_USERAUTH
+			// Apply filter rule to all users perhaps with keyword
+			rule->all_users = 1;
 		} else if (sys_isuser(argv[1])) {
 			if (!opts->user_auth) {
 				fprintf(stderr, "User filter requires user auth on line %d\n", line_num);
 				exit(EXIT_FAILURE);
 			}
 			rule->user = strdup(argv[1]);
-#endif /* !WITHOUT_USERAUTH */
+#else /* !WITHOUT_USERAUTH */
+			// Apply filter rule to all conns, if USERAUTH is disabled, ip == '*'
+			rule->all_conns = 1;
+#endif /* WITHOUT_USERAUTH */
 		} else {
 			rule->ip = strdup(argv[1]);
 		}
@@ -2348,7 +2378,15 @@ opts_set_passsite(opts_t *opts, char *value, int line_num)
 
 	if (argc > 2) {
 		if (rule->ip) {
-			fprintf(stderr, "Ip filter cannot define keyword filter, or user '%s' does not exist on line %d\n", rule->ip, line_num);
+			fprintf(stderr, "Ip filter cannot define keyword filter"
+#ifndef WITHOUT_USERAUTH
+					", or user '%s' does not exist"
+#endif /* !WITHOUT_USERAUTH */
+					" on line %d\n",
+#ifndef WITHOUT_USERAUTH
+					rule->ip,
+#endif /* !WITHOUT_USERAUTH */
+					line_num);
 			exit(EXIT_FAILURE);
 		}
 #ifndef WITHOUT_USERAUTH
@@ -2371,12 +2409,259 @@ opts_set_passsite(opts_t *opts, char *value, int line_num)
 #ifndef WITHOUT_USERAUTH
 		", %s, %s"
 #endif /* !WITHOUT_USERAUTH */
-		", all=%d, action=%s|%s|%s|%s, , apply to=%s|%s|%s|%s|%s\n",
+		", all=%s|"
+#ifndef WITHOUT_USERAUTH
+		"%s|"
+#endif /* !WITHOUT_USERAUTH */
+		"%s, action=%s|%s|%s|%s, , apply to=%s|%s|%s|%s|%s\n",
 		rule->site, rule->exact ? "exact" : "substring", STRORNONE(rule->ip),
 #ifndef WITHOUT_USERAUTH
 		STRORNONE(rule->user), STRORNONE(rule->keyword),
 #endif /* !WITHOUT_USERAUTH */
-		rule->all,
+		rule->all_conns ? "conns" : "",
+#ifndef WITHOUT_USERAUTH
+		rule->all_users ? "users" : "",
+#endif /* !WITHOUT_USERAUTH */
+		rule->all_sites ? "sites" : "",
+		rule->divert ? "divert" : "", rule->split ? "split" : "", rule->pass ? "pass" : "", rule->block ? "block" : "",
+		rule->dstip ? "dstip" : "", rule->sni ? "sni" : "", rule->cn ? "cn" : "", rule->host ? "host" : "", rule->uri ? "uri" : "");
+#endif /* DEBUG_OPTS */
+}
+
+static void
+opts_set_site(filter_rule_t *rule, char *site, int line_num)
+{
+	// The for loop with strtok_r() does not output empty strings
+	// So, no need to check if the length of argv[0] > 0
+	size_t len = strlen(site);
+
+	if (len > MAX_SITE_LEN) {
+		fprintf(stderr, "Filter site too long %zu > %d on line %d\n", len, MAX_SITE_LEN, line_num);
+		exit(EXIT_FAILURE);
+	}
+
+	if (site[len - 1] == '*') {
+		rule->exact = 0;
+		len--;
+		site[len] = '\0';
+		// site == "*" ?
+		if (len == 0)
+			rule->all_sites = 1;
+	} else {
+		rule->exact = 1;
+	}
+
+	rule->site = strdup(site);
+
+	if (equal(rule->site, "*"))
+		rule->all_sites = 1;
+}
+
+static int
+opts_inc_arg_index(int i, int argc, char *last, int line_num)
+{
+	if (i + 1 < argc) {
+		return i + 1;
+	} else {
+		fprintf(stderr, "Not enough arguments in filter rule after '%s' on line %d\n", last, line_num);
+		exit(EXIT_FAILURE);
+	}
+}
+
+void
+opts_set_filter_rule(opts_t *opts, const char *name, char *value, int line_num)
+{
+#define MAX_FILTER_RULE_TOKENS 10
+
+	//(Divert|Split|Pass|Block)
+	//  ([from (
+	//        user (username|*) [desc keyword]|
+	//        ip (clientaddr|*)|
+	//        *)]
+	//    [to (
+	//        sni (servername[*]|*)|
+	//        cn (commonname[*]|*)|
+	//        host (host[*]|*)|
+	//        uri (uri[*]|*)|
+	//        ip (serveraddr|*)|
+	//        *)]
+	//  |*)
+	//  [(log (connect|content|separate|dir))*]
+
+	char *argv[sizeof(char *) * MAX_FILTER_RULE_TOKENS];
+	int argc = 0;
+	char *p, *last = NULL;
+
+	for ((p = strtok_r(value, " ", &last));
+		 p;
+		 (p = strtok_r(NULL, " ", &last))) {
+		if (argc < MAX_FILTER_RULE_TOKENS) {
+			argv[argc++] = p;
+		} else {
+			break;
+		}
+	}
+
+	filter_rule_t *rule = malloc(sizeof(filter_rule_t));
+	memset(rule, 0, sizeof(filter_rule_t));
+
+	if (equal(name, "Divert"))
+		rule->divert = 1;
+	else if (equal(name, "Split"))
+		rule->split = 1;
+	else if (equal(name, "Pass"))
+		rule->pass = 1;
+	else if (equal(name, "Block"))
+		rule->block = 1;
+
+	int done_from = 0;
+	int done_to = 0;
+	int done_all = 0;
+	int i = 0;
+	while (i < argc) {
+		if (equal(argv[i], "*")) {
+			if (done_all) {
+				fprintf(stderr, "Only one '*' statement allowed on line %d\n", line_num);
+				exit(EXIT_FAILURE);
+			}
+			if (++i > argc) {
+				fprintf(stderr, "Too many arguments for '*' on line %d\n", line_num);
+				exit(EXIT_FAILURE);
+			}
+			done_all = 1;
+		}
+		else if (equal(argv[i], "from")) {
+			if (done_from) {
+				fprintf(stderr, "Only one 'from' statement allowed on line %d\n", line_num);
+				exit(EXIT_FAILURE);
+			}
+
+			i = opts_inc_arg_index(i, argc, argv[i], line_num);
+#ifndef WITHOUT_USERAUTH
+			if (equal(argv[i], "user") || equal(argv[i], "desc")) {
+				if (equal(argv[i], "user")) {
+					i = opts_inc_arg_index(i, argc, argv[i], line_num);
+
+					if (!opts->user_auth) {
+						fprintf(stderr, "User filter requires user auth on line %d\n", line_num);
+						exit(EXIT_FAILURE);
+					}
+
+					if (equal(argv[i], "*")) {
+						rule->all_users = 1;
+					} else {
+						if (!sys_isuser(argv[i])) {
+							fprintf(stderr, "No such user '%s' on line %d\n", argv[i], line_num);
+							exit(EXIT_FAILURE);
+						}
+						rule->user = strdup(argv[i]);
+					}
+					i++;
+				}
+
+				// It is possible to define desc without user (i.e. * or all_users), hence no 'else' here
+				if (i < argc && equal(argv[i], "desc")) {
+					if (!opts->user_auth) {
+						fprintf(stderr, "Desc filter requires user auth on line %d\n", line_num);
+						exit(EXIT_FAILURE);
+					}
+
+					i = opts_inc_arg_index(i, argc, argv[i], line_num);
+					rule->keyword = strdup(argv[i++]);
+				}
+
+				done_from = 1;
+			}
+			else
+#endif /* !WITHOUT_USERAUTH */
+			if (equal(argv[i], "ip")) {
+				i = opts_inc_arg_index(i, argc, argv[i], line_num);
+				if (equal(argv[i], "*")) {
+					rule->all_conns = 1;
+				} else {
+					rule->ip = strdup(argv[i]);
+				}
+				i++;
+				done_from = 1;
+			}
+			else if (equal(argv[i], "*")) {
+				i++;
+			}
+			else {
+				fprintf(stderr, "Unknown argument in filter rule at '%s' on line %d\n", argv[i], line_num);
+				exit(EXIT_FAILURE);
+			}
+		}
+		else if (equal(argv[i], "to")) {
+			if (done_to) {
+				fprintf(stderr, "Only one 'to' statement allowed on line %d\n", line_num);
+				exit(EXIT_FAILURE);
+			}
+
+			i = opts_inc_arg_index(i, argc, argv[i], line_num);
+			if (equal(argv[i], "sni") || equal(argv[i], "cn") || equal(argv[i], "host") || equal(argv[i], "uri") || equal(argv[i], "ip")) {
+				rule->sni = equal(argv[i], "sni") ? 1 : 0;
+				rule->cn = equal(argv[i], "cn") ? 1 : 0;
+				rule->host = equal(argv[i], "host") ? 1 : 0;
+				rule->uri = equal(argv[i], "uri") ? 1 : 0;
+				rule->dstip = equal(argv[i], "ip") ? 1 : 0;
+
+				i = opts_inc_arg_index(i, argc, argv[i], line_num);
+				opts_set_site(rule, argv[i++], line_num);
+
+				done_to = 1;
+			}
+			else if (equal(argv[i], "*")) {
+				i++;
+			}
+			else {
+				fprintf(stderr, "Not enough arguments in filter rule after '%s' on line %d\n", argv[i], line_num);
+				exit(EXIT_FAILURE);
+			}
+		}
+		// Not implemented yet
+		//else if (equal(argv[i], "log")) {
+		//}
+		else {
+			fprintf(stderr, "Unknown argument in filter rule at '%s' on line %d\n", argv[i], line_num);
+			exit(EXIT_FAILURE);
+		}
+	}
+
+	if (!done_from) {
+		rule->all_conns = 1;
+	}
+	if (!done_to) {
+		rule->site = strdup("");
+		rule->all_sites = 1;
+		rule->sni = 1;
+		rule->cn = 1;
+		rule->host = 1;
+		rule->uri = 1;
+		rule->dstip = 1;
+	}
+
+	rule->next = opts->filter_rules;
+	opts->filter_rules = rule;
+#ifdef DEBUG_OPTS
+	log_dbg_printf("Filter rule: %s, %s, %s"
+#ifndef WITHOUT_USERAUTH
+		", %s, %s"
+#endif /* !WITHOUT_USERAUTH */
+		", all=%s|"
+#ifndef WITHOUT_USERAUTH
+		"%s|"
+#endif /* !WITHOUT_USERAUTH */
+		"%s, action=%s|%s|%s|%s, , apply to=%s|%s|%s|%s|%s\n",
+		rule->site, rule->exact ? "exact" : "substring", STRORNONE(rule->ip),
+#ifndef WITHOUT_USERAUTH
+		STRORNONE(rule->user), STRORNONE(rule->keyword),
+#endif /* !WITHOUT_USERAUTH */
+		rule->all_conns ? "conns" : "",
+#ifndef WITHOUT_USERAUTH
+		rule->all_users ? "users" : "",
+#endif /* !WITHOUT_USERAUTH */
+		rule->all_sites ? "sites" : "",
 		rule->divert ? "divert" : "", rule->split ? "split" : "", rule->pass ? "pass" : "", rule->block ? "block" : "",
 		rule->dstip ? "dstip" : "", rule->sni ? "sni" : "", rule->cn ? "cn" : "", rule->host ? "host" : "", rule->uri ? "uri" : "");
 #endif /* DEBUG_OPTS */
@@ -2396,6 +2681,13 @@ opts_find_site(filter_site_t *site, filter_rule_t *rule)
 static filter_site_t *
 opts_add_site(filter_site_t *site, filter_rule_t *rule)
 {
+	int prepend = 1;
+	if (site && site->all_sites) {
+		// all_sites should be at the beginning of the site list for performance reasons
+		// it effectively disables the rest of the list, but we keep the rest for reporting
+		prepend = 0;
+	}
+
 	filter_site_t *s = opts_find_site(site, rule);
 	if (!s) {
 		s = malloc(sizeof(filter_site_t));
@@ -2403,11 +2695,25 @@ opts_add_site(filter_site_t *site, filter_rule_t *rule)
 			return NULL;
 		memset(s, 0, sizeof(filter_site_t));
 		s->site = strdup(rule->site);
+
+		if (prepend) {
+			s->next = site;
+		} else {
+			// Insert the new site after the head
+			// If prepend is 0, site is never NULL
+			s->next = site->next;
+			site->next = s;
+		}
+	} else {
+		// If the site exists, we should return the head of the site list
+		// i.e. we have not prepended anything
+		prepend = 0;
 	}
 
+	s->all_sites = rule->all_sites;
 	s->exact = rule->exact;
 
-	// Multiple rules can set the action for the same site
+	// Multiple rules can set the action for the same site, hence no 'else'
 	if (rule->divert)
 		s->divert = 1;
 	if (rule->split)
@@ -2416,8 +2722,8 @@ opts_add_site(filter_site_t *site, filter_rule_t *rule)
 		s->pass = 1;
 	if (rule->block)
 		s->block = 1;
-	s->next = site;
-	return s;
+
+	return prepend ? s : site;
 }
 
 static int
@@ -2560,6 +2866,13 @@ opts_set_filter(filter_rule_t *rule)
 		return NULL;
 	memset(filter, 0, sizeof(filter_t));
 
+#ifndef WITHOUT_USERAUTH
+	filter->all_user = malloc(sizeof(filter_list_t));
+	if (!filter->all_user)
+		return NULL;
+	memset(filter->all_user, 0, sizeof(filter_list_t));
+#endif /* WITHOUT_USERAUTH */
+
 	filter->all = malloc(sizeof(filter_list_t));
 	if (!filter->all)
 		return NULL;
@@ -2583,29 +2896,28 @@ opts_set_filter(filter_rule_t *rule)
 					return NULL;
 			}
 		}
+		else if (rule->keyword) {
+			filter_keyword_t *keyword = opts_get_keyword(&filter->keyword, rule->keyword);
+			if (!keyword)
+				return NULL;
+			if (opts_add_to_sitelist(keyword->list, rule) < 0)
+				return NULL;
+		}
+		else if (rule->all_users) {
+			if (opts_add_to_sitelist(filter->all_user, rule) < 0)
+				return NULL;
+		}
 		else
 #endif /* WITHOUT_USERAUTH */
-		if (rule->all) {
-#ifndef WITHOUT_USERAUTH
-			if (rule->keyword) {
-				filter_keyword_t *keyword = opts_get_keyword(&filter->keyword, rule->keyword);
-				if (!keyword)
-					return NULL;
-				if (opts_add_to_sitelist(keyword->list, rule) < 0)
-					return NULL;
-			} else {
-#endif /* WITHOUT_USERAUTH */
-				if (opts_add_to_sitelist(filter->all, rule) < 0)
-					return NULL;
-#ifndef WITHOUT_USERAUTH
-			}
-#endif /* WITHOUT_USERAUTH */
-		}
-		else if (rule->ip) {
+		if (rule->ip) {
 			filter_ip_t *ip = opts_get_ip(&filter->ip, rule->ip);
 			if (!ip)
 				return NULL;
 			if (opts_add_to_sitelist(ip->list, rule) < 0)
+				return NULL;
+		}
+		else if (rule->all_conns) {
+			if (opts_add_to_sitelist(filter->all, rule) < 0)
 				return NULL;
 		}
 		rule = rule->next;
@@ -3351,10 +3663,12 @@ set_option(opts_t *opts, const char *argv0,
 #endif /* DEBUG_OPTS */
 	} else if (equal(name, "PassSite")) {
 		opts_set_passsite(opts, value, line_num);
+	} else if (equal(name, "Split") || equal(name, "Pass") || equal(name, "Block")) {
+		opts_set_filter_rule(opts, name, value, line_num);
 	} else if (equal(name, "Divert")) {
 		yes = check_value_yesno(value, "Divert", line_num);
 		if (yes == -1) {
-			goto leave;
+			opts_set_filter_rule(opts, name, value, line_num);
 		}
 		yes ? opts_set_divert(opts) : opts_unset_divert(opts);
 	} else {

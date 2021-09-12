@@ -155,9 +155,13 @@ typedef struct proxyspec {
 
 typedef struct filter_rule {
 	char *site;
-	unsigned int exact : 1; /* 1 for exact, 0 for substring match */
+	unsigned int all_sites : 1;   /* 1 to match all sites == '*' */
+	unsigned int exact : 1;       /* 1 for exact, 0 for substring match */
 
-	unsigned int all : 1;   /* 1 to search in all src ips and users */
+	unsigned int all_conns : 1;   /* 1 to apply to all src ips and users */
+#ifndef WITHOUT_USERAUTH
+	unsigned int all_users : 1;   /* 1 to apply to all users */
+#endif /* !WITHOUT_USERAUTH */
 
 	// Filter action
 	unsigned int divert : 1;
@@ -181,6 +185,7 @@ typedef struct filter_rule {
 
 typedef struct filter_site {
 	char *site;
+	unsigned int all_sites : 1;
 	unsigned int exact : 1;
 	unsigned int divert : 1;
 	unsigned int split : 1;
@@ -196,11 +201,6 @@ typedef struct filter_list {
 	struct filter_site *host;
 	struct filter_site *uri;
 } filter_list_t;
-
-typedef struct filter_all {
-	struct filter_list *list;
-	struct filter_all *next;
-} filter_all_t;
 
 typedef struct filter_ip {
 	char *ip;
@@ -227,6 +227,7 @@ typedef struct filter {
 #ifndef WITHOUT_USERAUTH
 	struct filter_user *user;
 	struct filter_keyword *keyword;
+	struct filter_list *all_user;
 #endif /* !WITHOUT_USERAUTH */
 	struct filter_ip *ip;
 	struct filter_list *all;

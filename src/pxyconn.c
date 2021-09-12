@@ -1976,12 +1976,17 @@ pxy_userauth(pxy_conn_ctx_t *ctx)
 static int NONNULL(1,2)
 pxyconn_filter_match(pxy_conn_ctx_t *ctx, filter_site_t *site)
 {
-	if (site->exact) {
+	if (site->all_sites) {
+		log_finest_va("Match all dst: %s, %s", site->site, ctx->dsthost_str);
+		return 1;
+	}
+	else if (site->exact) {
 		if (!strcmp(ctx->dsthost_str, site->site)) {
 			log_finest_va("Match exact with dst: %s, %s", site->site, ctx->dsthost_str);
 			return 1;
 		}
-	} else {
+	}
+	else {
 		if (strstr(ctx->dsthost_str, site->site)) {
 			log_finest_va("Match substring in dst: %s, %s", site->site, ctx->dsthost_str);
 			return 1;
@@ -2032,12 +2037,18 @@ pxyconn_filter(pxy_conn_ctx_t *ctx, proto_filter_func_t filtercb)
 					return 1;
 				}
 			}
+
 			if (ctx->desc) {
 				log_finest_va("Searching keyword: %s", ctx->desc);
 				filter_keyword_t *keyword = opts_find_keyword(filter->keyword, ctx->desc);
 				if (keyword && filtercb(ctx, keyword->list)) {
 					return 1;
 				}
+			}
+
+			log_finest("Searching all_user");
+			if (filter->all_user && filtercb(ctx, filter->all_user)) {
+				return 1;
 			}
 		}
 #endif /* !WITHOUT_USERAUTH */
