@@ -27,7 +27,7 @@
 .\" ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 .\" POSSIBILITY OF SUCH DAMAGE.
 .\"
-.TH "sslproxy" "1" "29 August 2021" "v0.8.4" "SSLproxy"
+.TH "sslproxy" "1" "29 August 2021" "v0.8.7" "SSLproxy"
 .SH NAME
 sslproxy \-\- transparent SSL/TLS proxy for decrypting and diverting network 
 traffic to other programs for deep SSL inspection
@@ -65,7 +65,7 @@ indirectly into Virus Scanner and Spam Filter through those UTM software.
 Given that most of the Internet traffic is encrypted now, it wouldn't be 
 possible without SSLproxy to deeply inspect most of the network traffic 
 passing through UTMFW.
-.SH Mode of Operation
+.SH Mode of operation
 SSLproxy is designed to transparently terminate connections that are redirected
 to it using a network address translation engine. SSLproxy then terminates
 SSL/TLS and initiates a new SSL/TLS connection to the original destination
@@ -227,7 +227,7 @@ SSLproxy uses the certificate and key from the pemfiles configured by the
 ClientCert and ClientKey options when the destination requests client 
 certificates. These options can be defined globally and/or per-proxyspec.
 .LP
-Alternatively, you can use the PassSite option to pass through certain 
+Alternatively, you can use Pass filter rules to pass through certain 
 destinations requesting client certificates.
 .SH User authentication
 If the UserAuth option is enabled, SSLproxy requires network users to log in 
@@ -276,8 +276,8 @@ using a privsep command, it is expensive. So, to reduce the frequency of such
 updates, it is deferred until after the user idle time is more than half of 
 the timeout period.
 .LP
-If a description text is provided in the DESC field, it can be used with the 
-PassSite option to treat the user logged in from different locations, i.e. 
+If a description text is provided in the DESC field, it can be used with 
+filter rules to treat the user logged in from different locations, i.e. 
 from different client IP addresses, separately.
 .LP
 If the UserAuth option is enabled, the user owner of the connection is 
@@ -286,7 +286,8 @@ parse and use this information in its logic and/or logging:
 .LP
 SSLproxy: [127.0.0.1]:34649,[192.168.3.24]:47286,[192.168.111.130]:443,s,soner
 .LP
-The user authentication feature is currently available on OpenBSD and Linux only.
+The user authentication feature is currently available on OpenBSD and Linux 
+only.
 .SH 	User control lists
 DivertUsers and PassUsers options can be used to divert, pass through, or 
 block users.
@@ -304,7 +305,96 @@ the lists are blocked. SSLproxy simply terminates their connections.
 are diverted to listening programs.
 .LP
 These user control lists can be defined globally or per-proxyspec.
-.SH Excluding sites from SSL inspection
+.SH Filtering rules
+.LP
+SSLproxy can divert, split, pass, or block connections based on filtering 
+rules. Filtering rules can be defined globally or per-proxyspec.
+.LP
+ - Divert action diverts packets to listening program, allowing SSL inspection 
+by listening program and content logging of packets
+ - Split action splits the connection but does not divert packets to listening 
+program, effectively disabling SSL inspection by listening program, but 
+allowing content logging of packets
+ - Pass action passes the connection through by engaging passthrough mode, 
+effectively disabling SSL inspection and content logging of packets
+ - Block action terminates the connection
+.LP
+The syntax of filtering rules is as follows:
+
+(Divert|Split|Pass|Block)
+ ([from (
+    user (username|*) [desc keyword]|
+    ip (clientaddr|*)|
+    *)]
+  [to (
+    sni (servername[*]|*)|
+    cn (commonname[*]|*)|
+    host (host[*]|*)|
+    uri (uri[*]|*)|
+    ip (serveraddr|*)|
+    *)]
+  |*)
+.LP
+The definition of which connections the rule action will be applied to is 
+achieved by the from and to parts of a filtering rule and by the proxyspec 
+that the rule is defined for.
+.LP
+ - The from part of a rule defines source filter based on client IP address, 
+user or description keyword, or * for all.
+ - The to part defines destination filter based on server IP address, SNI or 
+Common Names of SSL connections, Host or URI fields in HTTP Request headers, or 
+* for all. Dst Host type of rules use ip, SSL type of rules use sni and 
+cn, and HTTP type of rules use host and uri site fields.
+ - The proxyspec handling the connection defines the protocol filter for the 
+connection.
+.LP
+For example, if the following rules are defined in a structured HTTPS proxyspec,
+.LP
+Split from user soner desc notebook to sni example.com
+Pass from user soner desc android to cn .fbcdn.net*
+.LP
+The first filtering rule above splits but does not divert HTTPS connections 
+from the user soner who has logged in with a description containing the keyword 
+notebook to SSL sites with the SNI of example.com. The second rule passes 
+through HTTPS connections from the user soner who has logged in with a 
+description containing the keyword android to SSL sites with the Common Names 
+containing the substring .fbcdn.net anywhere in it (notice the asterisk at the 
+end). Note that the second example is a filtering rule you can use to resolve 
+one of the certificate issues preventing the Facebook application on Android 
+smartphones to connect to the Internet behind sslproxy.
+.LP
+Filtering rules are applied based on certain precedence orders:
+.LP
+ - The precedence of filter types is as Dst Host > SSL > HTTP.
+ - The precedence of filter actions is as Divert > Split > Pass > Block. This is 
+only for the same type of filter rules.
+ - The precedence of site fields is as sni > cn for ssl filter and host > uri 
+for http filter.
+.LP
+For example, the pass action of a Dst Host filter rule is taken before the 
+split action of an SSL filter rule with the same from definition, due to the 
+precedence order of filter types. Or, the pass action of a rule with sni site 
+field is taken before the split action of the same rule with cn site field, due 
+to the precedence order of site fields.
+.LP
+In terms of possible filter actions,
+.LP
+ - Dst Host filter rules can take all of the actions.
+ - SSL filter rules can take all of the actions.
+ - HTTP filter rules can take the block action, but not divert, split, or pass 
+actions.
+.LP
+You can append an asterisk * to site field of filtering rules for substring 
+matching. Otherwise, the filter searches for an exact match with the site field 
+in the rule.
+.LP
+If the UserAuth option is disabled, only client IP addresses can be used in 
+the from part of filtering rules.
+.SH 	Excluding sites from SSL inspection
+PassSite option is a special form of Pass filtering rule. All PassSite rules 
+can be written as Pass filter rules. The PassSite option will be deprecated in 
+favor of filter rules in the future.
+.LP
 PassSite option allows certain SSL sites to be excluded from SSL inspection. 
 If a PassSite matches the SNI or common names in the SSL certificate of a 
 connection, that connection is passed through the proxy without being diverted 
