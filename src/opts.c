@@ -3669,8 +3669,9 @@ set_option(opts_t *opts, const char *argv0,
 		yes = check_value_yesno(value, "Divert", line_num);
 		if (yes == -1) {
 			opts_set_filter_rule(opts, name, value, line_num);
+		} else {
+			yes ? opts_set_divert(opts) : opts_unset_divert(opts);
 		}
-		yes ? opts_set_divert(opts) : opts_unset_divert(opts);
 	} else {
 		fprintf(stderr, "Error in conf: Unknown option "
 		                "'%s' on line %d\n", name, line_num);
