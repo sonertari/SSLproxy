@@ -67,6 +67,8 @@
 extern int daemon(int, int);
 #endif /* __APPLE__ */
 
+extern int split;
+
 /*
  * Print version information to stderr.
  */
@@ -550,6 +552,7 @@ main(int argc, char *argv[])
 				break;
 			case 'n':
 				opts_unset_divert(global->opts);
+				split = 1;
 				break;
 			case 'V':
 				main_version();

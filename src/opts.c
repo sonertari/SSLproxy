@@ -44,6 +44,9 @@
 #endif /* !OPENSSL_NO_DH */
 #include <openssl/x509.h>
 
+// Global split mode set by the -n option overrides the divert options of all proxyspecs
+int split = 0;
+
 /*
  * Temporary struct used while configuring proxyspec.
  * These vars are used while configuring proxyspecs,
@@ -987,15 +990,15 @@ proxyspec_set_natengine(proxyspec_t *spec, const char *natengine)
 static void
 set_divert(global_t *global, proxyspec_t *spec, int orig_divert)
 {
-	// The global divert option -n has precedence over the proxyspec Divert option
 	// The proxyspec Divert option has precedence over divert address spec
 	// If the Divert option is not used, set it based on divert address specified
 	if (global->opts->divert && orig_divert == spec->opts->divert) {
 		spec->conn_dst_addrlen ? opts_set_divert(spec->opts) : opts_unset_divert(spec->opts);
 	}
 
+	// The global divert option -n has precedence over the proxyspec Divert option
 	// Use split mode if no divert address is specified
-	if (spec->opts->divert && !spec->conn_dst_addrlen) {
+	if (split || (spec->opts->divert && !spec->conn_dst_addrlen)) {
 		opts_unset_divert(spec->opts);
 	}
 }
