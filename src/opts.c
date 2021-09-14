@@ -3755,76 +3755,46 @@ leave:
 /*
  * Separator param is needed for command line options only.
  * Conf file option separator is ' '.
+ * Do not modify the name param, the caller may try to free it causing signal 6 crash.
+ * Allows multiple separators between name and value.
  */
 int
 get_name_value(char **name, char **value, const char sep, int line_num)
 {
-	char *n, *v, *value_end;
-	int retval = -1;
+	size_t len = strlen(*name);
 
-	/* Skip to the end of option name and terminate it with '\0' */
-	for (n = *name;; n++) {
-		/* White spaces possible around separator,
-		 * if the command line option is passed between the quotes */
-		if (*n == ' ' || *n == '\t' || *n == sep) {
-			*n = '\0';
-			n++;
-			break;
-		}
-		if (*n == '\r' || *n == '\n') {
-			// No value, just name, e.g. "}"
-			*n = '\0';
-			*value = NULL;
-			goto leave2;
-		}
-		if (*n == '\0') {
-			n = NULL;
-			break;
-		}
-	}
-
-	/* No option name */
-	if (n == NULL) {
-		fprintf(stderr, "Error in option: No option name on line %d\n", line_num);
-		goto leave;
-	}
-
-	/* White spaces possible before value and around separator,
-	 * if the command line option is passed between the quotes */
-	while (*n == ' ' || *n == '\t' || *n == sep) {
+	// Find end of and null-terminate name
+	char *n = *name;
+	while (*n != ' ' && *n != '\t' && *n != '\r' && *n != '\n' && *n != sep)
 		n++;
+	*n = '\0';
+
+	if (!*name) {
+		fprintf(stderr, "Error in option: No option name on line %d\n", line_num);
+		return -1;
 	}
+
+	size_t name_len = strlen(*name);
+	if (len == name_len) {
+		fprintf(stderr, "Error in option: No option value on line %d\n", line_num);
+		// Return empty value
+		*value = *name + name_len;
+		return -1;
+	}
+
+	// Trim left of value (skip white space and sep until value)
+	do n++;
+	while (*n == ' ' || *n == '\t' || *n == '\r' || *n == '\n' || *n == sep);
 
 	*value = n;
 
-	/* Find end of value and terminate it with '\0'
-	 * Find first occurrence of trailing white space */
-	value_end = NULL;
-	for (v = *value;; v++) {
-		if (*v == '\0') {
-			break;
-		}
-		if (*v == '\r' || *v == '\n') {
-			*v = '\0';
-			break;
-		}
-		if (*v == ' ' || *v == '\t') {
-			if (!value_end) {
-				value_end = v;
-			}
-		} else {
-			value_end = NULL;
-		}
-	}
+	// Trim right of value
+	n = *value + strlen(*value) - 1;
+	while (*n == ' ' || *n == '\t' || *n == '\r' || *n == '\n' || *n == sep)
+		n--;
+	*(n + 1) = '\0';
 
-	if (value_end) {
-		*value_end = '\0';
-	}
-
-leave2:
-	retval = 0;
-leave:
-	return retval;
+	return 0;
 }
 
 #define MAX_TOKENS 10

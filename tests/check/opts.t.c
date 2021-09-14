@@ -914,7 +914,8 @@ START_TEST(opts_get_name_value_01)
 	fail_unless(retval == 0, "failed parsing name value");
 	free(name);
 
-	// Leading white space is handled elsewhere, so we don't have a test for " Name Value", and similar
+	// Leading white space must be handled by the caller,
+	// so we don't have a test for " Name Value", or similar
 	
 	name = strdup("Name Value ");
 	retval = get_name_value(&name, &value, ' ', 0);
