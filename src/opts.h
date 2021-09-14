@@ -405,7 +405,7 @@ void global_set_debug(global_t *) NONNULL(1);
 void global_set_debug_level(const char *) NONNULL(1);
 void global_set_statslog(global_t *) NONNULL(1);
 
-int check_value_yesno(const char *, const char *, int);
+int is_yesno(const char *);
 int get_name_value(char **, char **, const char, int);
 int global_set_option(global_t *, const char *, const char *, char **, tmp_global_opts_t *) NONNULL(1,2,3,5);
 void global_set_leafkey(global_t *, const char *, const char *) NONNULL(1,2,3);

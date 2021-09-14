@@ -3475,15 +3475,22 @@ global_set_userdb_path(global_t *global, const char *optarg)
 #endif /* !WITHOUT_USERAUTH */
 
 int
+is_yesno(const char *value)
+{
+	if (equal(value, "yes"))
+		return 1;
+	else if (equal(value, "no"))
+		return 0;
+	return -1;
+}
+
+static int
 check_value_yesno(const char *value, const char *name, int line_num)
 {
-	if (equal(value, "yes")) {
-		return 1;
-	} else if (equal(value, "no")) {
-		return 0;
-	}
-	fprintf(stderr, "Error in conf: Invalid '%s' value '%s' on line %d, use yes|no\n", name, value, line_num);
-	return -1;
+	int rv;
+	if ((rv = is_yesno(value)) == -1)
+		fprintf(stderr, "Error in conf: Invalid '%s' value '%s' on line %d, use yes|no\n", name, value, line_num);
+	return rv;
 }
 
 /*
@@ -3662,7 +3669,7 @@ set_option(opts_t *opts, const char *argv0,
 	} else if (equal(name, "Split") || equal(name, "Pass") || equal(name, "Block")) {
 		opts_set_filter_rule(opts, name, value, line_num);
 	} else if (equal(name, "Divert")) {
-		yes = check_value_yesno(value, "Divert", line_num);
+		yes = is_yesno(value);
 		if (yes == -1) {
 			opts_set_filter_rule(opts, name, value, line_num);
 		} else {

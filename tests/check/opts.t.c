@@ -861,35 +861,35 @@ START_TEST(opts_set_passsite_05)
 }
 END_TEST
 
-START_TEST(opts_check_value_yes_01)
+START_TEST(opts_is_yesno_01)
 {
 	int yes;
 
-	yes = check_value_yesno("yes", "", 0);
+	yes = is_yesno("yes");
 	fail_unless(yes == 1, "failed yes");
 
-	yes = check_value_yesno("ye", "", 0);
+	yes = is_yesno("ye");
 	fail_unless(yes == -1, "failed ye");
 
-	yes = check_value_yesno("yes1", "", 0);
+	yes = is_yesno("yes1");
 	fail_unless(yes == -1, "failed yes1");
 
-	yes = check_value_yesno("", "", 0);
+	yes = is_yesno("");
 	fail_unless(yes == -1, "failed empty string");
 }
 END_TEST
 
-START_TEST(opts_check_value_yes_02)
+START_TEST(opts_is_yesno_02)
 {
 	int yes;
 
-	yes = check_value_yesno("no", "", 0);
+	yes = is_yesno("no");
 	fail_unless(yes == 0, "failed no");
 
-	yes = check_value_yesno("n", "", 0);
+	yes = is_yesno("n");
 	fail_unless(yes == -1, "failed n");
 
-	yes = check_value_yesno("no1", "", 0);
+	yes = is_yesno("no1");
 	fail_unless(yes == -1, "failed no1");
 }
 END_TEST
@@ -1043,8 +1043,8 @@ opts_suite(void)
 	tcase_add_test(tc, opts_set_passsite_04);
 #endif /* !WITHOUT_USERAUTH */
 	tcase_add_test(tc, opts_set_passsite_05);
-	tcase_add_test(tc, opts_check_value_yes_01);
-	tcase_add_test(tc, opts_check_value_yes_02);
+	tcase_add_test(tc, opts_is_yesno_01);
+	tcase_add_test(tc, opts_is_yesno_02);
 	tcase_add_test(tc, opts_get_name_value_01);
 	suite_add_tcase(s, tc);
 
