@@ -1098,7 +1098,7 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine, global_t *globa
 		}
 		(*argv)++;
 	}
-	if (state != 0 && state != 4) {
+	if (state != 0 && state != 3 && state != 4) {
 		fprintf(stderr, "Incomplete proxyspec!\n");
 		exit(EXIT_FAILURE);
 	}
