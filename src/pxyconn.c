@@ -1977,18 +1977,15 @@ enum filter_action
 pxyconn_set_filter_action(pxy_conn_ctx_t *ctx, filter_site_t *site)
 {
 	if (site->divert) {
-		if (!ctx->divert) {
-			log_err_level_printf(LOG_INFO, "Site filter divert action for %s\n", site->site);
-			return FILTER_ACTION_DIVERT;
-		}
+		log_err_level_printf(LOG_INFO, "Site filter divert action for %s\n", site->site);
+		return FILTER_ACTION_DIVERT;
 	}
 	else if (site->split) {
-		if (ctx->divert) {
-			log_err_level_printf(LOG_INFO, "Site filter split action for %s\n", site->site);
-			return FILTER_ACTION_SPLIT;
-		}
+		log_err_level_printf(LOG_INFO, "Site filter split action for %s\n", site->site);
+		return FILTER_ACTION_SPLIT;
 	}
 	else if (site->pass) {
+		// Ignore pass action if already in passthrough mode
 		if (!ctx->pass) {
 			log_err_level_printf(LOG_INFO, "Site filter pass action for %s\n", site->site);
 			return FILTER_ACTION_PASS;
@@ -1998,7 +1995,7 @@ pxyconn_set_filter_action(pxy_conn_ctx_t *ctx, filter_site_t *site)
 		log_err_level_printf(LOG_INFO, "Site filter block action for %s\n", site->site);
 		return FILTER_ACTION_BLOCK;
 	}
-	return FILTER_ACTION_NONE;
+	return FILTER_ACTION_IGNORE;
 }
 
 enum filter_action
