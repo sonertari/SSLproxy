@@ -99,7 +99,10 @@ START_TEST(proxyspec_parse_01)
 	int argc = 6;
 	char **argv = argv01;
 
-	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", NULL);
+	tmp_global_opts_t *tmp_global_opts = malloc(sizeof(tmp_global_opts_t));
+	memset(tmp_global_opts, 0, sizeof(tmp_global_opts_t));
+
+	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
 	spec = global->spec;
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(spec->ssl, "not SSL");
@@ -115,6 +118,7 @@ START_TEST(proxyspec_parse_01)
 	fail_unless(!spec->natsocket, "natsocket() is set");
 	fail_unless(!spec->next, "next is set");
 	global_free(global);
+	tmp_global_opts_free(tmp_global_opts);
 }
 END_TEST
 
@@ -126,7 +130,10 @@ START_TEST(proxyspec_parse_02)
 	int argc = 6;
 	char **argv = argv02;
 
-	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", NULL);
+	tmp_global_opts_t *tmp_global_opts = malloc(sizeof(tmp_global_opts_t));
+	memset(tmp_global_opts, 0, sizeof(tmp_global_opts_t));
+
+	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
 	spec = global->spec;
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(spec->ssl, "not SSL");
@@ -142,6 +149,7 @@ START_TEST(proxyspec_parse_02)
 	fail_unless(!spec->natsocket, "natsocket() is set");
 	fail_unless(!spec->next, "next is set");
 	global_free(global);
+	tmp_global_opts_free(tmp_global_opts);
 }
 END_TEST
 #endif /* !TRAVIS */
@@ -152,9 +160,13 @@ START_TEST(proxyspec_parse_03)
 	int argc = 2;
 	char **argv = argv01;
 
+	tmp_global_opts_t *tmp_global_opts = malloc(sizeof(tmp_global_opts_t));
+	memset(tmp_global_opts, 0, sizeof(tmp_global_opts_t));
+
 	close(2);
-	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", NULL);
+	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
 	global_free(global);
+	tmp_global_opts_free(tmp_global_opts);
 }
 END_TEST
 
@@ -164,9 +176,13 @@ START_TEST(proxyspec_parse_04)
 	int argc = 5;
 	char **argv = argv01;
 
+	tmp_global_opts_t *tmp_global_opts = malloc(sizeof(tmp_global_opts_t));
+	memset(tmp_global_opts, 0, sizeof(tmp_global_opts_t));
+
 	close(2);
-	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", NULL);
+	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
 	global_free(global);
+	tmp_global_opts_free(tmp_global_opts);
 }
 END_TEST
 
@@ -177,7 +193,10 @@ START_TEST(proxyspec_parse_05)
 	int argc = 6;
 	char **argv = argv03;
 
-	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", NULL);
+	tmp_global_opts_t *tmp_global_opts = malloc(sizeof(tmp_global_opts_t));
+	memset(tmp_global_opts, 0, sizeof(tmp_global_opts_t));
+
+	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
 	spec = global->spec;
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(!spec->ssl, "SSL");
@@ -193,6 +212,7 @@ START_TEST(proxyspec_parse_05)
 	fail_unless(!spec->natsocket, "natsocket() is set");
 	fail_unless(!spec->next, "next is set");
 	global_free(global);
+	tmp_global_opts_free(tmp_global_opts);
 }
 END_TEST
 
@@ -203,7 +223,10 @@ START_TEST(proxyspec_parse_06)
 	int argc = 6;
 	char **argv = argv04;
 
-	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", NULL);
+	tmp_global_opts_t *tmp_global_opts = malloc(sizeof(tmp_global_opts_t));
+	memset(tmp_global_opts, 0, sizeof(tmp_global_opts_t));
+
+	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
 	spec = global->spec;
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(spec->ssl, "not SSL");
@@ -219,6 +242,7 @@ START_TEST(proxyspec_parse_06)
 	fail_unless(!spec->natsocket, "natsocket() is set");
 	fail_unless(!spec->next, "next is set");
 	global_free(global);
+	tmp_global_opts_free(tmp_global_opts);
 }
 END_TEST
 
@@ -229,7 +253,10 @@ START_TEST(proxyspec_parse_07)
 	int argc = 6;
 	char **argv = argv05;
 
-	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", NULL);
+	tmp_global_opts_t *tmp_global_opts = malloc(sizeof(tmp_global_opts_t));
+	memset(tmp_global_opts, 0, sizeof(tmp_global_opts_t));
+
+	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
 	spec = global->spec;
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(!spec->ssl, "SSL");
@@ -245,6 +272,7 @@ START_TEST(proxyspec_parse_07)
 	fail_unless(!spec->natsocket, "natsocket() is set");
 	fail_unless(!spec->next, "next is set");
 	global_free(global);
+	tmp_global_opts_free(tmp_global_opts);
 }
 END_TEST
 
@@ -255,7 +283,10 @@ START_TEST(proxyspec_parse_08)
 	int argc = 6;
 	char **argv = argv06;
 
-	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", NULL);
+	tmp_global_opts_t *tmp_global_opts = malloc(sizeof(tmp_global_opts_t));
+	memset(tmp_global_opts, 0, sizeof(tmp_global_opts_t));
+
+	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
 	spec = global->spec;
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(spec->ssl, "not SSL");
@@ -270,6 +301,7 @@ START_TEST(proxyspec_parse_08)
 	fail_unless(!spec->natsocket, "natsocket() is set");
 	fail_unless(!spec->next, "next is set");
 	global_free(global);
+	tmp_global_opts_free(tmp_global_opts);
 }
 END_TEST
 
@@ -279,9 +311,13 @@ START_TEST(proxyspec_parse_09)
 	int argc = 5;
 	char **argv = argv07;
 
+	tmp_global_opts_t *tmp_global_opts = malloc(sizeof(tmp_global_opts_t));
+	memset(tmp_global_opts, 0, sizeof(tmp_global_opts_t));
+
 	close(2);
-	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", NULL);
+	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
 	global_free(global);
+	tmp_global_opts_free(tmp_global_opts);
 }
 END_TEST
 
@@ -291,9 +327,13 @@ START_TEST(proxyspec_parse_10)
 	int argc = 5;
 	char **argv = argv06;
 
+	tmp_global_opts_t *tmp_global_opts = malloc(sizeof(tmp_global_opts_t));
+	memset(tmp_global_opts, 0, sizeof(tmp_global_opts_t));
+
 	close(2);
-	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", NULL);
+	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
 	global_free(global);
+	tmp_global_opts_free(tmp_global_opts);
 }
 END_TEST
 
@@ -304,7 +344,10 @@ START_TEST(proxyspec_parse_11)
 	int argc = 4;
 	char **argv = argv08;
 
-	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", NULL);
+	tmp_global_opts_t *tmp_global_opts = malloc(sizeof(tmp_global_opts_t));
+	memset(tmp_global_opts, 0, sizeof(tmp_global_opts_t));
+
+	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
 	spec = global->spec;
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(spec->ssl, "not SSL");
@@ -320,6 +363,7 @@ START_TEST(proxyspec_parse_11)
 	fail_unless(!spec->natsocket, "natsocket() is set");
 	fail_unless(!spec->next, "next is set");
 	global_free(global);
+	tmp_global_opts_free(tmp_global_opts);
 }
 END_TEST
 
@@ -329,9 +373,13 @@ START_TEST(proxyspec_parse_12)
 	int argc = 5;
 	char **argv = argv08;
 
+	tmp_global_opts_t *tmp_global_opts = malloc(sizeof(tmp_global_opts_t));
+	memset(tmp_global_opts, 0, sizeof(tmp_global_opts_t));
+
 	close(2);
-	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", NULL);
+	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
 	global_free(global);
+	tmp_global_opts_free(tmp_global_opts);
 }
 END_TEST
 
@@ -343,7 +391,10 @@ START_TEST(proxyspec_parse_13)
 	int argc = 12;
 	char **argv = argv09;
 
-	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", NULL);
+	tmp_global_opts_t *tmp_global_opts = malloc(sizeof(tmp_global_opts_t));
+	memset(tmp_global_opts, 0, sizeof(tmp_global_opts_t));
+
+	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
 	spec = global->spec;
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(spec->ssl, "not SSL");
@@ -370,6 +421,7 @@ START_TEST(proxyspec_parse_13)
 	fail_unless(!spec->next->natlookup, "natlookup() is set");
 	fail_unless(!spec->next->natsocket, "natsocket() is set");
 	global_free(global);
+	tmp_global_opts_free(tmp_global_opts);
 }
 END_TEST
 
@@ -380,7 +432,10 @@ START_TEST(proxyspec_parse_14)
 	int argc = 8;
 	char **argv = argv10;
 
-	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", NULL);
+	tmp_global_opts_t *tmp_global_opts = malloc(sizeof(tmp_global_opts_t));
+	memset(tmp_global_opts, 0, sizeof(tmp_global_opts_t));
+
+	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
 	spec = global->spec;
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(spec->ssl, "not SSL");
@@ -408,6 +463,7 @@ START_TEST(proxyspec_parse_14)
 	fail_unless(!spec->next->natlookup, "natlookup() is set");
 	fail_unless(!spec->next->natsocket, "natsocket() is set");
 	global_free(global);
+	tmp_global_opts_free(tmp_global_opts);
 }
 END_TEST
 #endif /* !TRAVIS */
@@ -419,7 +475,10 @@ START_TEST(proxyspec_parse_15)
 	int argc = 4;
 	char **argv = argv11;
 
-	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", NULL);
+	tmp_global_opts_t *tmp_global_opts = malloc(sizeof(tmp_global_opts_t));
+	memset(tmp_global_opts, 0, sizeof(tmp_global_opts_t));
+
+	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
 	spec = global->spec;
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(!spec->ssl, "SSL");
@@ -434,6 +493,7 @@ START_TEST(proxyspec_parse_15)
 	fail_unless(!spec->natsocket, "natsocket() is set");
 	fail_unless(!spec->next, "next is set");
 	global_free(global);
+	tmp_global_opts_free(tmp_global_opts);
 }
 END_TEST
 
@@ -444,7 +504,10 @@ START_TEST(proxyspec_parse_16)
 	int argc = 12;
 	char **argv = argv12;
 
-	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", NULL);
+	tmp_global_opts_t *tmp_global_opts = malloc(sizeof(tmp_global_opts_t));
+	memset(tmp_global_opts, 0, sizeof(tmp_global_opts_t));
+
+	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
 	spec = global->spec;
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(spec->ssl, "not SSL");
@@ -471,6 +534,7 @@ START_TEST(proxyspec_parse_16)
 	fail_unless(!spec->next->natlookup, "natlookup() is set");
 	fail_unless(!spec->next->natsocket, "natsocket() is set");
 	global_free(global);
+	tmp_global_opts_free(tmp_global_opts);
 }
 END_TEST
 
@@ -480,9 +544,13 @@ START_TEST(proxyspec_parse_17)
 	int argc = 6;
 	char **argv = argv13;
 
+	tmp_global_opts_t *tmp_global_opts = malloc(sizeof(tmp_global_opts_t));
+	memset(tmp_global_opts, 0, sizeof(tmp_global_opts_t));
+
 	close(2);
-	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", NULL);
+	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
 	global_free(global);
+	tmp_global_opts_free(tmp_global_opts);
 }
 END_TEST
 
@@ -493,7 +561,10 @@ START_TEST(proxyspec_parse_18)
 	int argc = 10;
 	char **argv = argv14;
 
-	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", NULL);
+	tmp_global_opts_t *tmp_global_opts = malloc(sizeof(tmp_global_opts_t));
+	memset(tmp_global_opts, 0, sizeof(tmp_global_opts_t));
+
+	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
 	spec = global->spec;
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(!spec->ssl, "SSL");
@@ -519,6 +590,7 @@ START_TEST(proxyspec_parse_18)
 	fail_unless(!spec->next->natlookup, "natlookup() is set");
 	fail_unless(!spec->next->natsocket, "natsocket() is set");
 	global_free(global);
+	tmp_global_opts_free(tmp_global_opts);
 }
 END_TEST
 
