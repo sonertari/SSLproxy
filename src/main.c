@@ -366,6 +366,7 @@ main(int argc, char *argv[])
 	global_t *global;
 	char *natengine;
 	int pidfd = -1;
+	int test_config = 0;
 	int rv = EXIT_FAILURE;
 
 	argv0 = argv[0];
@@ -385,7 +386,7 @@ main(int argc, char *argv[])
 	while ((ch = getopt(argc, argv,
 	                    OPT_g OPT_G OPT_Z OPT_i OPT_x OPT_T OPT_I
 	                    "k:c:C:K:t:A:OPa:b:s:U:r:R:e:Eu:m:j:p:l:L:S:F:M:"
-	                    "dD::VhW:w:q:f:o:X:Y:y:Jn")) != -1) {
+	                    "dD::VhW:w:q:f:o:X:Y:y:JnQ")) != -1) {
 		switch (ch) {
 			case 'f':
 				if (global->conffile)
@@ -552,6 +553,9 @@ main(int argc, char *argv[])
 				opts_unset_divert(global->opts);
 				tmp_global_opts->split = 1;
 				break;
+			case 'Q':
+				test_config = 1;
+				break;
 			case 'V':
 				main_version();
 				exit(EXIT_SUCCESS);
@@ -648,7 +652,7 @@ main(int argc, char *argv[])
 #endif /* __APPLE__ */
 
 	/* prevent multiple instances running */
-	if (global->pidfile) {
+	if (!test_config && global->pidfile) {
 		pidfd = sys_pidf_open(global->pidfile);
 		if (pidfd == -1) {
 			fprintf(stderr, "%s: cannot open PID file '%s' "
@@ -927,6 +931,11 @@ main(int argc, char *argv[])
 		}
 	}
 
+	if (test_config) {
+		rv = EXIT_SUCCESS;
+		goto out_test_config;
+	}
+
 	/* Detach from tty; from this point on, only canonicalized absolute
 	 * paths should be used (-j, -F, -S). */
 	if (global->detach) {
@@ -1039,6 +1048,7 @@ out_cachemgr_failed:
 out_sslreinit_failed:
 out_log_failed:
 out_parent:
+out_test_config:
 	global_free(global);
 	ssl_fini();
 	if (natengine)
