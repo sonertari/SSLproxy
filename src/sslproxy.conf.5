@@ -332,18 +332,19 @@ Block filtering rule terminates the connection.
 The syntax of filtering rules is as follows:
 .br
 
-(Divert|Split|Pass|Block)
-  ([from (
-        user (username|*) [desc keyword]|
-        ip (clientaddr|*)|
-        *)]
-    [to (
-        sni (servername[*]|*)|
-        cn (commonname[*]|*)|
-        host (host[*]|*)|
-        uri (uri[*]|*)|
-        ip (serveraddr|*)|
-        *)]
+(Divert|Split|Pass|Block|Match)
+ ([from (
+     user (username|*) [desc keyword]|
+     ip (clientaddr|*)|
+     *)]
+  [to (
+     sni (servername[*]|*)|
+     cn (commonname[*]|*)|
+     host (host[*]|*)|
+     uri (uri[*]|*)|
+     ip (serveraddr|*)|
+     *)]
+  [log ([connect] [content] [pcap] [mirror]|*)]
   |*)
 .br
 

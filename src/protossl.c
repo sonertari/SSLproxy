@@ -96,7 +96,7 @@ protossl_log_ssl_error(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 						   ERR_GET_FUNC(sslerr), STRORDASH(ERR_func_error_string(sslerr)));
 		}
 	}
-	if (ctx->spec->opts->filter_rules && !ctx->pass) {
+	if (ctx->spec->opts->filter && !ctx->pass) {
 		log_err_level_printf(LOG_WARNING, "Closing on ssl error without filter match: %s:%s, %s:%s, "
 #ifndef WITHOUT_USERAUTH
 			"%s, %s, "
@@ -676,8 +676,7 @@ protossl_match_cn(pxy_conn_ctx_t *ctx, filter_site_t *site)
 	return 0;
 }
 
-static enum filter_action protossl_filter(pxy_conn_ctx_t *, filter_list_t *) NONNULL(1,2);
-static enum filter_action
+static unsigned char NONNULL(1,2)
 protossl_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
 {
 	if (ctx->sslctx->sni) {
@@ -745,22 +744,23 @@ protossl_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
 static int
 protossl_apply_filter(pxy_conn_ctx_t *ctx)
 {
-	enum filter_action action;
+	unsigned char action;
 	if ((action = pxyconn_filter(ctx, protossl_filter))) {
-		if (action == FILTER_ACTION_DIVERT) {
+		if (action & FILTER_ACTION_DIVERT) {
 			ctx->divert = 1;
 		}
-		else if (action == FILTER_ACTION_SPLIT) {
+		else if (action & FILTER_ACTION_SPLIT) {
 			ctx->divert = 0;
 		}
-		else if (action == FILTER_ACTION_PASS) {
+		else if (action & FILTER_ACTION_PASS) {
 			ctx->pass = 1;
 			return 1;
 		}
-		else if (action == FILTER_ACTION_BLOCK) {
+		else if (action & FILTER_ACTION_BLOCK) {
 			pxy_conn_term(ctx, 1);
 			return 1;
 		}
+		//else { /* FILTER_ACTION_MATCH */ }
 	}
 	return 0;
 }
@@ -800,7 +800,7 @@ protossl_srcssl_create(pxy_conn_ctx_t *ctx, SSL *origssl)
 		protossl_debug_crt(cert->crt);
 	}
 
-	if (WANT_CONNECT_LOG(ctx) || ctx->spec->opts->filter_rules) {
+	if (WANT_CONNECT_LOG(ctx) || ctx->spec->opts->filter) {
 		ctx->sslctx->ssl_names = ssl_x509_names_to_str(ctx->sslctx->origcrt ?
 		                                       ctx->sslctx->origcrt :
 		                                       cert->crt);
@@ -906,7 +906,7 @@ protossl_ossl_servername_cb(SSL *ssl, UNUSED int *al, void *arg)
 			               "certificate:\n");
 			protossl_debug_crt(newcrt);
 		}
-		if (WANT_CONNECT_LOG(ctx) || ctx->spec->opts->filter_rules) {
+		if (WANT_CONNECT_LOG(ctx) || ctx->spec->opts->filter) {
 			if (ctx->sslctx->ssl_names) {
 				free(ctx->sslctx->ssl_names);
 			}

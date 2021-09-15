@@ -319,7 +319,11 @@ pxy_conn_ctx_free(pxy_conn_ctx_t *ctx, int by_requestor)
 	log_finest("ENTER");
 
 	if (WANT_CONTENT_LOG(ctx)) {
-		if (log_content_close(&ctx->logctx, by_requestor) == -1) {
+		if (log_content_close(&ctx->logctx, by_requestor, ctx->log_content, ctx->log_pcap
+#ifndef WITHOUT_MIRROR
+			, ctx->log_mirror
+#endif /* !WITHOUT_MIRROR */
+			) == -1) {
 			log_err_level_printf(LOG_WARNING, "Content log close failed\n");
 		}
 	}
@@ -463,6 +467,9 @@ pxy_conn_term(pxy_conn_ctx_t *ctx, int by_requestor)
 void
 pxy_log_connect_nonhttp(pxy_conn_ctx_t *ctx)
 {
+	if (!ctx->log_connect)
+		return;
+
 	char *msg;
 #ifdef HAVE_LOCAL_PROCINFO
 	char *lpi = NULL;
@@ -573,9 +580,17 @@ out:
 	return;
 }
 
-int
+static int NONNULL(1)
 pxy_log_content_inbuf(pxy_conn_ctx_t *ctx, struct evbuffer *inbuf, int req)
 {
+	if (!ctx->log_content && !ctx->log_pcap
+#ifndef WITHOUT_MIRROR
+		&& !ctx->log_mirror
+#endif /* !WITHOUT_MIRROR */
+		) {
+		return 0;
+	}
+
 	size_t sz = evbuffer_get_length(inbuf);
 	unsigned char *buf = malloc(sz);
 	if (!buf) {
@@ -594,7 +609,11 @@ pxy_log_content_inbuf(pxy_conn_ctx_t *ctx, struct evbuffer *inbuf, int req)
 	}
 	memcpy(lb->buf, buf, lb->sz);
 	free(buf);
-	if (log_content_submit(&ctx->logctx, lb, req) == -1) {
+	if (log_content_submit(&ctx->logctx, lb, req, ctx->log_content, ctx->log_pcap
+#ifndef WITHOUT_MIRROR
+		, ctx->log_mirror
+#endif /* !WITHOUT_MIRROR */
+		) == -1) {
 		logbuf_free(lb);
 		log_err_level_printf(LOG_WARNING, "Content log submission failed\n");
 		return -1;
@@ -1511,7 +1530,7 @@ pxy_bev_writecb_child(struct bufferevent *bev, void *arg)
 	}
 }
 
-int
+static int NONNULL(1,3)
 pxy_bev_eventcb_postexec_logging_and_stats(struct bufferevent *bev, short events, pxy_conn_ctx_t *ctx)
 {
 	if (ctx->term || ctx->enomem) {
@@ -1973,35 +1992,61 @@ pxy_userauth(pxy_conn_ctx_t *ctx)
 }
 #endif /* !WITHOUT_USERAUTH */
 
-enum filter_action
+unsigned char
 pxyconn_set_filter_action(pxy_conn_ctx_t *ctx, filter_site_t *site)
 {
+	unsigned char action = FILTER_ACTION_NONE;
 	if (site->divert) {
 		log_err_level_printf(LOG_INFO, "Site filter divert action for %s\n", site->site);
-		return FILTER_ACTION_DIVERT;
+		action = FILTER_ACTION_DIVERT;
 	}
 	else if (site->split) {
 		log_err_level_printf(LOG_INFO, "Site filter split action for %s\n", site->site);
-		return FILTER_ACTION_SPLIT;
+		action = FILTER_ACTION_SPLIT;
 	}
 	else if (site->pass) {
 		// Ignore pass action if already in passthrough mode
 		if (!ctx->pass) {
 			log_err_level_printf(LOG_INFO, "Site filter pass action for %s\n", site->site);
-			return FILTER_ACTION_PASS;
+			action = FILTER_ACTION_PASS;
 		}
 	}
 	else if (site->block) {
 		log_err_level_printf(LOG_INFO, "Site filter block action for %s\n", site->site);
-		return FILTER_ACTION_BLOCK;
+		action = FILTER_ACTION_BLOCK;
 	}
-	return FILTER_ACTION_MATCH;
+	else if (site->match) {
+		log_err_level_printf(LOG_INFO, "Site filter match action for %s\n", site->site);
+		action = FILTER_ACTION_MATCH;
+	}
+
+	// Multiple log actions can be defined, hence no 'else'
+	// Log actions can only enable logging not disable, hence set to 1
+	if (site->log_connect) {
+		log_err_level_printf(LOG_INFO, "Site filter connect log for %s\n", site->site);
+		ctx->log_connect = 1;
+	}
+	if (site->log_content) {
+		log_err_level_printf(LOG_INFO, "Site filter content log for %s\n", site->site);
+		ctx->log_content = 1;
+	}
+	if (site->log_pcap) {
+		log_err_level_printf(LOG_INFO, "Site filter pcap log for %s\n", site->site);
+		ctx->log_pcap = 1;
+	}
+#ifndef WITHOUT_MIRROR
+	if (site->log_mirror) {
+		log_err_level_printf(LOG_INFO, "Site filter mirror log for %s\n", site->site);
+		ctx->log_mirror = 1;
+	}
+#endif /* !WITHOUT_MIRROR */
+	return action;
 }
 
-enum filter_action
+unsigned char
 pxyconn_filter(pxy_conn_ctx_t *ctx, proto_filter_func_t filtercb)
 {
-	enum filter_action action = FILTER_ACTION_NONE;
+	unsigned char action = FILTER_ACTION_NONE;
 
 	filter_t *filter = ctx->spec->opts->filter;
 	if (filter) {

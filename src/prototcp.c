@@ -526,9 +526,7 @@ prototcp_filter_match(pxy_conn_ctx_t *ctx, filter_site_t *site)
 	return 0;
 }
 
-// The editor complains without this forward declaration for the NONNULL attribute
-static enum filter_action prototcp_dsthost_filter(pxy_conn_ctx_t *, filter_list_t *) NONNULL(1,2);
-static enum filter_action
+static unsigned char NONNULL(1,2)
 prototcp_dsthost_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
 {
 	if (ctx->dsthost_str) {
@@ -550,23 +548,24 @@ prototcp_dsthost_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
 int
 prototcp_apply_filter(pxy_conn_ctx_t *ctx)
 {
-	enum filter_action action;
+	unsigned char action;
 	if ((action = pxyconn_filter(ctx, prototcp_dsthost_filter))) {
-		if (action == FILTER_ACTION_DIVERT) {
+		if (action & FILTER_ACTION_DIVERT) {
 			ctx->divert = 1;
 		}
-		else if (action == FILTER_ACTION_SPLIT) {
+		else if (action & FILTER_ACTION_SPLIT) {
 			ctx->divert = 0;
 		}
-		else if (action == FILTER_ACTION_PASS) {
+		else if (action & FILTER_ACTION_PASS) {
 			protopassthrough_engage(ctx);
 			ctx->pass = 1;
 			return 1;
 		}
-		else if (action == FILTER_ACTION_BLOCK) {
+		else if (action & FILTER_ACTION_BLOCK) {
 			pxy_conn_term(ctx, 1);
 			return 1;
 		}
+		//else { /* FILTER_ACTION_MATCH */ }
 	}
 	return 0;
 }

@@ -1,4 +1,26 @@
 
+### SSLproxy 0.8.7
+
+-   Add filtering rules:
+
+    (Divert|Split|Pass|Block|Match)
+     ([from (
+         user (username|*) [desc keyword]|
+         ip (clientaddr|*)|
+         *)]
+      [to (
+         sni (servername[*]|*)|
+         cn (commonname[*]|*)|
+         host (host[*]|*)|
+         uri (uri[*]|*)|
+         ip (serveraddr|*)|
+         *)]
+      [log ([connect] [content] [pcap] [mirror]|*)]
+      |*)
+
+-   Add -Q test config option.
+
+
 ### SSLproxy 0.8.4 2021-08-29
 
 -   Add split mode of operation similar to SSLsplit. In split mode, packets 

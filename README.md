@@ -296,8 +296,8 @@ These user control lists can be defined globally or per-proxyspec.
 
 ### Filtering rules
 
-SSLproxy can divert, split, pass, or block connections based on filtering 
-rules. Filtering rules can be defined globally or per-proxyspec.
+SSLproxy can divert, split, pass, block, or match connections based on 
+filtering rules. Filtering rules can be defined globally or per-proxyspec.
 
 - Divert action diverts packets to listening program, allowing SSL inspection 
 by listening program and content logging of packets
@@ -307,21 +307,24 @@ allowing content logging of packets
 - Pass action passes the connection through by engaging passthrough mode, 
 effectively disabling SSL inspection and content logging of packets
 - Block action terminates the connection
+- Match action is used to specify log actions for matching connections without 
+changing their filter actions
 
 The syntax of filtering rules is as follows:
 
-	(Divert|Split|Pass|Block)
+	(Divert|Split|Pass|Block|Match)
 	 ([from (
-	    user (username|*) [desc keyword]|
-	    ip (clientaddr|*)|
-	    *)]
+	     user (username|*) [desc keyword]|
+	     ip (clientaddr|*)|
+	     *)]
 	  [to (
-	    sni (servername[*]|*)|
-	    cn (commonname[*]|*)|
-	    host (host[*]|*)|
-	    uri (uri[*]|*)|
-	    ip (serveraddr|*)|
-	    *)]
+	     sni (servername[*]|*)|
+	     cn (commonname[*]|*)|
+	     host (host[*]|*)|
+	     uri (uri[*]|*)|
+	     ip (serveraddr|*)|
+	     *)]
+	  [log ([connect] [content] [pcap] [mirror]|*)]
 	  |*)
 
 The definition of which connections the rule action will be applied to is 
@@ -337,18 +340,40 @@ Common Names of SSL connections, Host or URI fields in HTTP Request headers, or
 - The proxyspec handling the connection defines the protocol filter for the 
 connection.
 
+If and how a connection should be logged is specified using the `log` part of 
+filtering rules. `connect` enables logging connection information to connect 
+log file, `content` enables logging packet contents to content log file, 
+`pcap` enables writing packets to pcap files, and `mirror` enables mirroring 
+packets to mirror interfaces or targets.
+
 For example, if the following rules are defined in a structured HTTPS proxyspec,
 
-	Split from user soner desc notebook to sni example.com
+	Split from user soner desc notebook to sni example.com log content
 	Pass from user soner desc android to cn .fbcdn.net*
 
 The first filtering rule above splits but does not divert HTTPS connections 
 from the user soner who has logged in with a description containing the keyword 
-notebook to SSL sites with the SNI of example.com. The second rule passes 
-through HTTPS connections from the user soner who has logged in with a 
-description containing the keyword android to SSL sites with the Common Names 
-containing the substring .fbcdn.net anywhere in it (notice the asterisk at the 
-end). Note that the second example is a filtering rule you can use to resolve 
+notebook to SSL sites with the SNI of example.com. Also, the rule specifies 
+that the packet contents of the matching connection be written to content log 
+file configured globally.
+
+The second rule passes through HTTPS connections from the user soner who has 
+logged in with a description containing the keyword android to SSL sites with 
+the Common Names containing the substring .fbcdn.net anywhere in it (notice 
+the asterisk at the end). Since connection contents cannot be written to log 
+files in passthrough mode, the rule does not specify any log action.
+
+The default filter action is Divert. So, if those are the only filtering rules 
+in that proxyspec, the other connections are diverted to the listening program 
+specified in that proxyspec, without writing any logs.
+
+If you want to enable, say, connect logging for the other connections handled 
+by that proxyspec, without changing their default Divert filter action, you 
+can add a third filtering rule to that proxyspec:
+
+	Match * log connect
+
+Note that the second example above is a filtering rule you can use to resolve 
 one of the certificate issues preventing the Facebook application on Android 
 smartphones to connect to the Internet behind sslproxy.
 
@@ -373,9 +398,20 @@ In terms of possible filter actions,
 - HTTP filter rules can take the block action, but not divert, split, or pass 
 actions.
 
+Log actions do not configure any loggers. Global content loggers for 
+respective log actions should have been configured for those log actions to 
+have any effect.
+
+If no filter rules are defined for a proxyspec, all logging actions for that 
+proxyspec are enabled. Otherwise, all log actions are disabled, and filtering 
+rules should enable them specifically. Note that if logging is disabled by 
+filtering rules, the loggers create the log files, but they remain empty.
+
 You can append an asterisk `*` to site field of filtering rules for substring 
 matching. Otherwise, the filter searches for an exact match with the site field 
 in the rule.
+
+The order of `from`, `to`, and `log` parts is not important.
 
 If the UserAuth option is disabled, only client IP addresses can be used in 
 the from part of filtering rules.
@@ -403,7 +439,7 @@ on each line. PassSite rules can search for exact or substring matches.
 Logging options include traditional SSLproxy connect and content log files as
 well as PCAP files and mirroring decrypted traffic to a network interface.
 Additionally, certificates, master secrets and local process information can be
-logged.
+logged. Filtering rules can selectively modify connection logging.
 
 See the manual pages sslproxy(1) and sslproxy.conf(5) for details on using 
 SSLproxy, setting up the various NAT engines, and for examples.

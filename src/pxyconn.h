@@ -78,7 +78,7 @@ typedef void (*proto_classify_user_func_t)(pxy_conn_ctx_t *);
 typedef void (*child_connect_func_t)(pxy_conn_child_ctx_t *);
 typedef void (*child_proto_free_func_t)(pxy_conn_child_ctx_t *);
 
-typedef enum filter_action (*proto_filter_func_t)(pxy_conn_ctx_t *, filter_list_t *);
+typedef unsigned char (*proto_filter_func_t)(pxy_conn_ctx_t *, filter_list_t *);
 
 /*
  * Proxy connection context state, describes a proxy connection
@@ -320,6 +320,17 @@ struct pxy_conn_ctx {
 	unsigned int divert : 1;                         /* 1 to divert conn */
 	unsigned int pass : 1;                     /* 1 to pass conn through */
 
+	// Enable logging of conn for specific logger types
+	// Global logging options should be configured for these to write logs
+	// Default to all logging if no filter rules defined in proxyspec
+	// Otherwise, logging is disabled, so filter rules should enable each log action specifically
+	unsigned int log_connect : 1;
+	unsigned int log_content : 1;
+	unsigned int log_pcap : 1;
+#ifndef WITHOUT_MIRROR
+	unsigned int log_mirror : 1;
+#endif /* !WITHOUT_MIRROR */
+
 #ifdef HAVE_LOCAL_PROCINFO
 	/* local process information */
 	pxy_conn_lproc_desc_t lproc;
@@ -372,7 +383,6 @@ int pxy_prepare_logging_local_procinfo(pxy_conn_ctx_t *) NONNULL(1);
 void pxy_log_connect_src(pxy_conn_ctx_t *) NONNULL(1);
 void pxy_log_connect_srvdst(pxy_conn_ctx_t *) NONNULL(1);
 
-int pxy_log_content_inbuf(pxy_conn_ctx_t *, struct evbuffer *, int) NONNULL(1);
 void pxy_log_connect_nonhttp(pxy_conn_ctx_t *) NONNULL(1);
 void pxy_log_dbg_evbuf_info(pxy_conn_ctx_t *, pxy_conn_desc_t *, pxy_conn_desc_t *) NONNULL(1,2,3);
 
@@ -403,7 +413,6 @@ void pxy_conn_free_children(pxy_conn_ctx_t *) NONNULL(1);
 int pxy_setup_child_listener(pxy_conn_ctx_t *) NONNULL(1);
 
 int pxy_bev_readcb_preexec_logging_and_stats(struct bufferevent *, pxy_conn_ctx_t *) NONNULL(1,2);
-int pxy_bev_eventcb_postexec_logging_and_stats(struct bufferevent *, short , pxy_conn_ctx_t *) NONNULL(1,3);
 
 void pxy_bev_readcb(struct bufferevent *, void *);
 void pxy_bev_writecb(struct bufferevent *, void *);
@@ -426,8 +435,8 @@ int pxy_is_listuser(userlist_t *, const char *
 void pxy_classify_user(pxy_conn_ctx_t *) NONNULL(1);
 void pxy_userauth(pxy_conn_ctx_t *) NONNULL(1);
 #endif /* !WITHOUT_USERAUTH */
-enum filter_action pxyconn_set_filter_action(pxy_conn_ctx_t *, filter_site_t *) NONNULL(1,2);
-enum filter_action pxyconn_filter(pxy_conn_ctx_t *, proto_filter_func_t) NONNULL(1);
+unsigned char pxyconn_set_filter_action(pxy_conn_ctx_t *, filter_site_t *) NONNULL(1,2);
+unsigned char pxyconn_filter(pxy_conn_ctx_t *, proto_filter_func_t) NONNULL(1);
 void pxy_conn_setup(evutil_socket_t, struct sockaddr *, int,
                     pxy_thrmgr_ctx_t *, proxyspec_t *, global_t *,
 					evutil_socket_t)

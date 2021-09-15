@@ -42,6 +42,9 @@
 static void NONNULL(1)
 protohttp_log_connect(pxy_conn_ctx_t *ctx)
 {
+	if (!ctx->log_connect)
+		return;
+
 	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
 
 	char *msg;
@@ -429,8 +432,7 @@ protossl_match_uri(pxy_conn_ctx_t *ctx, filter_site_t *site)
 	return 0;
 }
 
-static enum filter_action protohttp_filter(pxy_conn_ctx_t *, filter_list_t *) NONNULL(1,2);
-static enum filter_action
+static unsigned char NONNULL(1,2)
 protohttp_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
 {
 	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
@@ -500,15 +502,16 @@ protohttp_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
 static int
 protohttp_apply_filter(pxy_conn_ctx_t *ctx)
 {
-	enum filter_action action;
+	unsigned char action;
 	if ((action = pxyconn_filter(ctx, protohttp_filter))) {
-		if (action == FILTER_ACTION_BLOCK) {
+		if (action & FILTER_ACTION_BLOCK) {
 			pxy_conn_term(ctx, 1);
 			return 1;
 		}
-		else if (action == FILTER_ACTION_DIVERT || action == FILTER_ACTION_SPLIT || action == FILTER_ACTION_PASS) {
+		else if (action & (FILTER_ACTION_DIVERT | FILTER_ACTION_SPLIT | FILTER_ACTION_PASS)) {
 			log_err_level_printf(LOG_WARNING, "HTTP filter cannot take divert, split, or pass action\n");
 		}
+		//else { /* FILTER_ACTION_MATCH */ }
 	}
 	return 0;
 }

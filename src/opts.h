@@ -48,14 +48,12 @@
 #define STRORDASH(x)	(((x)&&*(x))?(x):"-")
 #define STRORNONE(x)	(((x)&&*(x))?(x):"")
 
-enum filter_action {
-	FILTER_ACTION_MATCH = -1,
-	FILTER_ACTION_NONE = 0,
-	FILTER_ACTION_DIVERT,
-	FILTER_ACTION_SPLIT,
-	FILTER_ACTION_PASS,
-	FILTER_ACTION_BLOCK,
-};
+#define FILTER_ACTION_NONE   0x0
+#define FILTER_ACTION_MATCH  0x2
+#define FILTER_ACTION_DIVERT 0x4
+#define FILTER_ACTION_SPLIT  0x8
+#define FILTER_ACTION_PASS   0x10
+#define FILTER_ACTION_BLOCK  0x20
 
 #ifndef WITHOUT_USERAUTH
 typedef struct userlist {
@@ -177,6 +175,15 @@ typedef struct filter_rule {
 	unsigned int split : 1;
 	unsigned int pass : 1;
 	unsigned int block : 1;
+	unsigned int match : 1;
+
+	// Log action
+	unsigned int log_connect : 1;
+	unsigned int log_content : 1;
+	unsigned int log_pcap : 1;
+#ifndef WITHOUT_MIRROR
+	unsigned int log_mirror : 1;
+#endif /* !WITHOUT_MIRROR */
 
 	// Conn field to apply filter to
 	unsigned int dstip : 1; /* 1 to apply to dst ip */
@@ -200,6 +207,13 @@ typedef struct filter_site {
 	unsigned int split : 1;
 	unsigned int pass : 1;
 	unsigned int block : 1;
+	unsigned int match : 1;
+	unsigned int log_connect : 1;
+	unsigned int log_content : 1;
+	unsigned int log_pcap : 1;
+#ifndef WITHOUT_MIRROR
+	unsigned int log_mirror : 1;
+#endif /* !WITHOUT_MIRROR */
 	struct filter_site *next;
 } filter_site_t;
 

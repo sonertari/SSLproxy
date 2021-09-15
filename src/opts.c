@@ -783,6 +783,14 @@ clone_global_opts(global_t *global, const char *argv0, tmp_global_opts_t *tmp_gl
 		fr->split = rule->split;
 		fr->pass = rule->pass;
 		fr->block = rule->block;
+		fr->match = rule->match;
+
+		fr->log_connect = rule->log_connect;
+		fr->log_content = rule->log_content;
+		fr->log_pcap = rule->log_pcap;
+#ifndef WITHOUT_MIRROR
+		fr->log_mirror = rule->log_mirror;
+#endif /* !WITHOUT_MIRROR */
 
 		fr->dstip = rule->dstip;
 		fr->sni = rule->sni;
@@ -1129,7 +1137,11 @@ filter_rule_str(filter_rule_t *rule)
 #ifndef WITHOUT_USERAUTH
 				"|%s"
 #endif /* !WITHOUT_USERAUTH */
-				"|%s, action=%s|%s|%s|%s, apply to=%s|%s|%s|%s|%s",
+				"|%s, action=%s|%s|%s|%s|%s, log=%s|%s|%s"
+#ifndef WITHOUT_MIRROR
+				"|%s"
+#endif /* !WITHOUT_MIRROR */
+				", apply to=%s|%s|%s|%s|%s",
 				rule->site, rule->exact ? "exact" : "substring", STRORNONE(rule->ip),
 #ifndef WITHOUT_USERAUTH
 				STRORNONE(rule->user), STRORNONE(rule->keyword),
@@ -1139,7 +1151,11 @@ filter_rule_str(filter_rule_t *rule)
 				rule->all_users ? "users" : "",
 #endif /* !WITHOUT_USERAUTH */
 				rule->all_sites ? "sites" : "",
-				rule->divert ? "divert" : "", rule->split ? "split" : "", rule->pass ? "pass" : "", rule->block ? "block" : "",
+				rule->divert ? "divert" : "", rule->split ? "split" : "", rule->pass ? "pass" : "", rule->block ? "block" : "", rule->match ? "match" : "",
+				rule->log_connect ? "connect" : "", rule->log_content ? "content" : "", rule->log_pcap ? "pcap" : "",
+#ifndef WITHOUT_MIRROR
+				rule->log_mirror ? "mirror" : "",
+#endif /* !WITHOUT_MIRROR */
 				rule->dstip ? "dstip" : "", rule->sni ? "sni" : "", rule->cn ? "cn" : "", rule->host ? "host" : "", rule->uri ? "uri" : ""
 				) < 0) {
 			goto err;
@@ -1175,9 +1191,17 @@ filter_sites_str(filter_site_t *site)
 	int count = 0;
 	while (site) {
 		char *p;
-		if (asprintf(&p, "%s\n      %d: %s (%s%s, action=%s|%s|%s|%s)", STRORNONE(s), count,
+		if (asprintf(&p, "%s\n      %d: %s (%s%s, action=%s|%s|%s|%s|%s, log=%s|%s|%s"
+#ifndef WITHOUT_MIRROR
+				"|%s"
+#endif /* !WITHOUT_MIRROR */
+				")", STRORNONE(s), count,
 				site->site, site->all_sites ? "all_sites, " : "", site->exact ? "exact" : "substring",
-				site->divert ? "divert" : "", site->split ? "split" : "", site->pass ? "pass" : "", site->block ? "block" : ""
+				site->divert ? "divert" : "", site->split ? "split" : "", site->pass ? "pass" : "", site->block ? "block" : "", site->match ? "match" : "",
+				site->log_connect ? "connect" : "", site->log_content ? "content" : "", site->log_pcap ? "pcap" : ""
+#ifndef WITHOUT_MIRROR
+				, site->log_mirror ? "mirror" : ""
+#endif /* !WITHOUT_MIRROR */
 				) < 0) {
 			goto err;
 		}
@@ -2301,7 +2325,7 @@ opts_set_passsite(opts_t *opts, char *value, int line_num)
 {
 #define MAX_PASSSITE_TOKENS 3
 
-	// site[*] [(clientaddr|user|*) [description keyword]]
+	// site[*] [(clientaddr|user|*) [keyword]]
 	char *argv[sizeof(char *) * MAX_PASSSITE_TOKENS];
 	int argc = 0;
 	char *p, *last = NULL;
@@ -2312,7 +2336,8 @@ opts_set_passsite(opts_t *opts, char *value, int line_num)
 		if (argc < MAX_PASSSITE_TOKENS) {
 			argv[argc++] = p;
 		} else {
-			break;
+			fprintf(stderr, "Too many arguments in passsite option on line %d\n", line_num);
+			exit(EXIT_FAILURE);
 		}
 	}
 
@@ -2409,7 +2434,11 @@ opts_set_passsite(opts_t *opts, char *value, int line_num)
 #ifndef WITHOUT_USERAUTH
 		"%s|"
 #endif /* !WITHOUT_USERAUTH */
-		"%s, action=%s|%s|%s|%s, , apply to=%s|%s|%s|%s|%s\n",
+		"%s, action=%s|%s|%s|%s|%s, log=%s|%s|%s"
+#ifndef WITHOUT_MIRROR
+		"|%s"
+#endif /* !WITHOUT_MIRROR */
+		", apply to=%s|%s|%s|%s|%s\n",
 		rule->site, rule->exact ? "exact" : "substring", STRORNONE(rule->ip),
 #ifndef WITHOUT_USERAUTH
 		STRORNONE(rule->user), STRORNONE(rule->keyword),
@@ -2419,7 +2448,11 @@ opts_set_passsite(opts_t *opts, char *value, int line_num)
 		rule->all_users ? "users" : "",
 #endif /* !WITHOUT_USERAUTH */
 		rule->all_sites ? "sites" : "",
-		rule->divert ? "divert" : "", rule->split ? "split" : "", rule->pass ? "pass" : "", rule->block ? "block" : "",
+		rule->divert ? "divert" : "", rule->split ? "split" : "", rule->pass ? "pass" : "", rule->block ? "block" : "", rule->match ? "match" : "",
+		rule->log_connect ? "connect" : "", rule->log_content ? "content" : "", rule->log_pcap ? "pcap" : "",
+#ifndef WITHOUT_MIRROR
+		rule->log_mirror ? "mirror" : "",
+#endif /* !WITHOUT_MIRROR */
 		rule->dstip ? "dstip" : "", rule->sni ? "sni" : "", rule->cn ? "cn" : "", rule->host ? "host" : "", rule->uri ? "uri" : "");
 #endif /* DEBUG_OPTS */
 }
@@ -2464,25 +2497,25 @@ opts_inc_arg_index(int i, int argc, char *last, int line_num)
 	}
 }
 
-void
-opts_set_filter_rule(opts_t *opts, const char *name, char *value, int line_num)
+static void
+filter_rule_parse(opts_t *opts, const char *name, char *value, int line_num)
 {
-#define MAX_FILTER_RULE_TOKENS 10
+#define MAX_FILTER_RULE_TOKENS 13
 
-	//(Divert|Split|Pass|Block)
-	//  ([from (
-	//        user (username|*) [desc keyword]|
-	//        ip (clientaddr|*)|
-	//        *)]
-	//    [to (
-	//        sni (servername[*]|*)|
-	//        cn (commonname[*]|*)|
-	//        host (host[*]|*)|
-	//        uri (uri[*]|*)|
-	//        ip (serveraddr|*)|
-	//        *)]
+	//(Divert|Split|Pass|Block|Match)
+	// ([from (
+	//     user (username|*) [desc keyword]|
+	//     ip (clientaddr|*)|
+	//     *)]
+	//  [to (
+	//     sni (servername[*]|*)|
+	//     cn (commonname[*]|*)|
+	//     host (host[*]|*)|
+	//     uri (uri[*]|*)|
+	//     ip (serveraddr|*)|
+	//     *)]
+	//  [log ([connect] [content] [pcap] [mirror]|*)]
 	//  |*)
-	//  [(log (connect|content|separate|dir))*]
 
 	char *argv[sizeof(char *) * MAX_FILTER_RULE_TOKENS];
 	int argc = 0;
@@ -2494,7 +2527,8 @@ opts_set_filter_rule(opts_t *opts, const char *name, char *value, int line_num)
 		if (argc < MAX_FILTER_RULE_TOKENS) {
 			argv[argc++] = p;
 		} else {
-			break;
+			fprintf(stderr, "Too many arguments in filter rule on line %d\n", line_num);
+			exit(EXIT_FAILURE);
 		}
 	}
 
@@ -2509,10 +2543,13 @@ opts_set_filter_rule(opts_t *opts, const char *name, char *value, int line_num)
 		rule->pass = 1;
 	else if (equal(name, "Block"))
 		rule->block = 1;
+	else if (equal(name, "Match"))
+		rule->match = 1;
 
+	int done_all = 0;
 	int done_from = 0;
 	int done_to = 0;
-	int done_all = 0;
+	int done_log = 0;
 	int i = 0;
 	while (i < argc) {
 		if (equal(argv[i], "*")) {
@@ -2596,11 +2633,16 @@ opts_set_filter_rule(opts_t *opts, const char *name, char *value, int line_num)
 
 			i = opts_inc_arg_index(i, argc, argv[i], line_num);
 			if (equal(argv[i], "sni") || equal(argv[i], "cn") || equal(argv[i], "host") || equal(argv[i], "uri") || equal(argv[i], "ip")) {
-				rule->sni = equal(argv[i], "sni") ? 1 : 0;
-				rule->cn = equal(argv[i], "cn") ? 1 : 0;
-				rule->host = equal(argv[i], "host") ? 1 : 0;
-				rule->uri = equal(argv[i], "uri") ? 1 : 0;
-				rule->dstip = equal(argv[i], "ip") ? 1 : 0;
+				if (equal(argv[i], "sni"))
+					rule->sni = 1;
+				else if (equal(argv[i], "cn"))
+					rule->cn = 1;
+				else if (equal(argv[i], "host"))
+					rule->host = 1;
+				else if (equal(argv[i], "uri"))
+					rule->uri = 1;
+				else if (equal(argv[i], "ip"))
+					rule->dstip = 1;
 
 				i = opts_inc_arg_index(i, argc, argv[i], line_num);
 				opts_set_site(rule, argv[i++], line_num);
@@ -2611,13 +2653,59 @@ opts_set_filter_rule(opts_t *opts, const char *name, char *value, int line_num)
 				i++;
 			}
 			else {
-				fprintf(stderr, "Not enough arguments in filter rule after '%s' on line %d\n", argv[i], line_num);
+				fprintf(stderr, "Unknown argument in filter rule at '%s' on line %d\n", argv[i], line_num);
 				exit(EXIT_FAILURE);
 			}
 		}
-		// Not implemented yet
-		//else if (equal(argv[i], "log")) {
-		//}
+		else if (equal(argv[i], "log")) {
+			if (done_log) {
+				fprintf(stderr, "Only one 'log' statement allowed on line %d\n", line_num);
+				exit(EXIT_FAILURE);
+			}
+
+			i = opts_inc_arg_index(i, argc, argv[i], line_num);
+			if (equal(argv[i], "connect") || equal(argv[i], "content") || equal(argv[i], "pcap")
+#ifndef WITHOUT_MIRROR
+				|| equal(argv[i], "mirror")
+#endif /* !WITHOUT_MIRROR */
+				) {
+				do {
+					if (equal(argv[i], "connect"))
+						rule->log_connect = 1;
+					else if (equal(argv[i], "content"))
+						rule->log_content = 1;
+					else if (equal(argv[i], "pcap"))
+						rule->log_pcap = 1;
+#ifndef WITHOUT_MIRROR
+					else if (equal(argv[i], "mirror"))
+						rule->log_mirror = 1;
+#endif /* !WITHOUT_MIRROR */
+
+					if (++i == argc)
+						break;
+				} while (equal(argv[i], "connect") || equal(argv[i], "content") || equal(argv[i], "pcap")
+#ifndef WITHOUT_MIRROR
+					|| equal(argv[i], "mirror")
+#endif /* !WITHOUT_MIRROR */
+					);
+
+				done_log = 1;
+			}
+			else if (equal(argv[i], "*")) {
+				rule->log_connect = 1;
+				rule->log_content = 1;
+				rule->log_pcap = 1;
+#ifndef WITHOUT_MIRROR
+				rule->log_mirror = 1;
+#endif /* !WITHOUT_MIRROR */
+				i++;
+				done_log = 1;
+			}
+			else {
+				fprintf(stderr, "Unknown argument in filter rule at '%s' on line %d\n", argv[i], line_num);
+				exit(EXIT_FAILURE);
+			}
+		}
 		else {
 			fprintf(stderr, "Unknown argument in filter rule at '%s' on line %d\n", argv[i], line_num);
 			exit(EXIT_FAILURE);
@@ -2648,7 +2736,11 @@ opts_set_filter_rule(opts_t *opts, const char *name, char *value, int line_num)
 #ifndef WITHOUT_USERAUTH
 		"%s|"
 #endif /* !WITHOUT_USERAUTH */
-		"%s, action=%s|%s|%s|%s, , apply to=%s|%s|%s|%s|%s\n",
+		"%s, action=%s|%s|%s|%s|%s, log=%s|%s|%s"
+#ifndef WITHOUT_MIRROR
+		"|%s"
+#endif /* !WITHOUT_MIRROR */
+		", apply to=%s|%s|%s|%s|%s\n",
 		rule->site, rule->exact ? "exact" : "substring", STRORNONE(rule->ip),
 #ifndef WITHOUT_USERAUTH
 		STRORNONE(rule->user), STRORNONE(rule->keyword),
@@ -2658,7 +2750,11 @@ opts_set_filter_rule(opts_t *opts, const char *name, char *value, int line_num)
 		rule->all_users ? "users" : "",
 #endif /* !WITHOUT_USERAUTH */
 		rule->all_sites ? "sites" : "",
-		rule->divert ? "divert" : "", rule->split ? "split" : "", rule->pass ? "pass" : "", rule->block ? "block" : "",
+		rule->divert ? "divert" : "", rule->split ? "split" : "", rule->pass ? "pass" : "", rule->block ? "block" : "", rule->match ? "match" : "",
+		rule->log_connect ? "connect" : "", rule->log_content ? "content" : "", rule->log_pcap ? "pcap" : "",
+#ifndef WITHOUT_MIRROR
+		rule->log_mirror ? "mirror" : "",
+#endif /* !WITHOUT_MIRROR */
 		rule->dstip ? "dstip" : "", rule->sni ? "sni" : "", rule->cn ? "cn" : "", rule->host ? "host" : "", rule->uri ? "uri" : "");
 #endif /* DEBUG_OPTS */
 }
@@ -2709,15 +2805,20 @@ opts_add_site(filter_site_t *site, filter_rule_t *rule)
 	s->all_sites = rule->all_sites;
 	s->exact = rule->exact;
 
-	// Multiple rules can set the action for the same site, hence no 'else'
-	if (rule->divert)
-		s->divert = 1;
-	if (rule->split)
-		s->split = 1;
-	if (rule->pass)
-		s->pass = 1;
-	if (rule->block)
-		s->block = 1;
+	// Multiple rules can set an action for the same site, hence bit-wise OR
+	s->divert |= rule->divert;
+	s->split |= rule->split;
+	s->pass |= rule->pass;
+	s->block |= rule->block;
+	s->match |= rule->match;
+
+	// Multiple log actions can be set for the same site, hence bit-wise OR
+	s->log_connect |= rule->log_connect;
+	s->log_content |= rule->log_content;
+	s->log_pcap |= rule->log_pcap;
+#ifndef WITHOUT_MIRROR
+	s->log_mirror |= rule->log_mirror;
+#endif /* !WITHOUT_MIRROR */
 
 	return prepend ? s : site;
 }
@@ -2942,7 +3043,8 @@ opts_set_userlist(char *value, int line_num, userlist_t **list, const char *list
 		if (argc < MAX_USERS) {
 			argv[argc++] = p;
 		} else {
-			break;
+			fprintf(stderr, "Too many arguments in user list, max users allowed %d, on line %d\n", MAX_USERS, line_num);
+			exit(EXIT_FAILURE);
 		}
 	}
 
@@ -3666,12 +3768,12 @@ set_option(opts_t *opts, const char *argv0,
 #endif /* DEBUG_OPTS */
 	} else if (equal(name, "PassSite")) {
 		opts_set_passsite(opts, value, line_num);
-	} else if (equal(name, "Split") || equal(name, "Pass") || equal(name, "Block")) {
-		opts_set_filter_rule(opts, name, value, line_num);
+	} else if (equal(name, "Split") || equal(name, "Pass") || equal(name, "Block") || equal(name, "Match")) {
+		filter_rule_parse(opts, name, value, line_num);
 	} else if (equal(name, "Divert")) {
 		yes = is_yesno(value);
 		if (yes == -1) {
-			opts_set_filter_rule(opts, name, value, line_num);
+			filter_rule_parse(opts, name, value, line_num);
 		} else {
 			yes ? opts_set_divert(opts) : opts_unset_divert(opts);
 		}
@@ -3797,10 +3899,10 @@ get_name_value(char **name, char **value, const char sep, int line_num)
 	return 0;
 }
 
-#define MAX_TOKENS 10
+#define MAX_TOKENS 8
 
 static void
-load_proxyspec_line(global_t *global, const char *argv0, char *value, char **natengine, tmp_global_opts_t *tmp_global_opts)
+load_proxyspec_line(global_t *global, const char *argv0, char *value, char **natengine, int line_num, tmp_global_opts_t *tmp_global_opts)
 {
 	/* Use MAX_TOKENS instead of computing the actual number of tokens in value */
 	char **argv = malloc(sizeof(char *) * MAX_TOKENS);
@@ -3815,7 +3917,8 @@ load_proxyspec_line(global_t *global, const char *argv0, char *value, char **nat
 		if (argc < MAX_TOKENS) {
 			argv[argc++] = p;
 		} else {
-			break;
+			fprintf(stderr, "Too many arguments in proxyspec on line %d\n", line_num);
+			exit(EXIT_FAILURE);
 		}
 	}
 
@@ -4003,7 +4106,7 @@ set_global_option(global_t *global, const char *argv0,
 				goto leave;
 			}
 		} else {
-			load_proxyspec_line(global, argv0, value, natengine, tmp_global_opts);
+			load_proxyspec_line(global, argv0, value, natengine, *line_num, tmp_global_opts);
 		}
 	} else if (equal(name, "ConnIdleTimeout")) {
 		unsigned int i = atoi(value);

@@ -896,7 +896,11 @@ errout:
  * On failure, lb is not freed.
  */
 int
-log_content_submit(log_content_ctx_t *ctx, logbuf_t *lb, int is_request)
+log_content_submit(log_content_ctx_t *ctx, logbuf_t *lb, int is_request, int log_content, int log_pcap
+#ifndef WITHOUT_MIRROR
+	, int log_mirror
+#endif /* !WITHOUT_MIRROR */
+	)
 {
 	unsigned long prepflags = 0;
 	logbuf_t *lbpcap, *lbmirror;
@@ -909,26 +913,26 @@ log_content_submit(log_content_ctx_t *ctx, logbuf_t *lb, int is_request)
 		return -1;
 
 	lbpcap = lbmirror = lb;
-	if (content_file_log) {
-		if (content_pcap_log) {
+	if (log_content && content_file_log) {
+		if (log_pcap && content_pcap_log) {
 			lbpcap = logbuf_new_deepcopy(lb, 1);
 			if (!lbpcap)
 				goto errout;
 		}
 #ifndef WITHOUT_MIRROR
-		if (content_mirror_log) {
+		if (log_mirror && content_mirror_log) {
 			lbmirror = logbuf_new_deepcopy(lb, 1);
 			if (!lbmirror)
 				goto errout;
 		}
-	} else if (content_pcap_log && content_mirror_log) {
+	} else if (log_pcap && content_pcap_log && log_mirror && content_mirror_log) {
 		lbmirror = logbuf_new_deepcopy(lb, 1);
 		if (!lbmirror)
 			goto errout;
 #endif /* !WITHOUT_MIRROR */
 	}
 
-	if (content_pcap_log) {
+	if (log_pcap && content_pcap_log) {
 		if (logger_submit(content_pcap_log, ctx->pcap,
 		                  prepflags, lbpcap) == -1) {
 			goto errout;
@@ -936,7 +940,7 @@ log_content_submit(log_content_ctx_t *ctx, logbuf_t *lb, int is_request)
 		lbpcap = NULL;
 	}
 #ifndef WITHOUT_MIRROR
-	if (content_mirror_log) {
+	if (log_mirror && content_mirror_log) {
 		if (logger_submit(content_mirror_log, ctx->mirror,
 		                  prepflags, lbmirror) == -1) {
 			goto errout;
@@ -944,7 +948,7 @@ log_content_submit(log_content_ctx_t *ctx, logbuf_t *lb, int is_request)
 		lbmirror = NULL;
 	}
 #endif /* !WITHOUT_MIRROR */
-	if (content_file_log) {
+	if (log_content && content_file_log) {
 		if (logger_submit(content_file_log, ctx->file,
 		                  prepflags, lb) == -1) {
 			return -1;
@@ -960,7 +964,12 @@ errout:
 }
 
 int
-log_content_close(log_content_ctx_t *ctx, int by_requestor)
+log_content_close(log_content_ctx_t *ctx, int by_requestor, int log_content, int log_pcap
+#ifndef WITHOUT_MIRROR
+	, int log_mirror
+#endif /* !WITHOUT_MIRROR */
+	)
+
 {
 	unsigned long prepflags = PREPFLAG_EOF;
 	unsigned long ctl;
@@ -977,7 +986,7 @@ log_content_close(log_content_ctx_t *ctx, int by_requestor)
 	 * closing the file.  The logger_close() call will actually close the
 	 * log.  Some logs prefer to use the close callback for logging the
 	 * close event to the log. */
-	if (content_file_log && ctx->file) {
+	if (log_content && content_file_log && ctx->file) {
 		if (logger_submit(content_file_log, ctx->file,
 		                  prepflags, NULL) == -1) {
 			return -1;
@@ -987,7 +996,7 @@ log_content_close(log_content_ctx_t *ctx, int by_requestor)
 		}
 		ctx->file = NULL;
 	}
-	if (content_pcap_log && ctx->pcap) {
+	if (log_pcap && content_pcap_log && ctx->pcap) {
 		if (logger_submit(content_pcap_log, ctx->pcap,
 		                  prepflags, NULL) == -1) {
 			return -1;
@@ -998,7 +1007,7 @@ log_content_close(log_content_ctx_t *ctx, int by_requestor)
 		ctx->pcap = NULL;
 	}
 #ifndef WITHOUT_MIRROR
-	if (content_mirror_log && ctx->mirror) {
+	if (log_mirror && content_mirror_log && ctx->mirror) {
 		if (logger_submit(content_mirror_log, ctx->mirror,
 		                  prepflags, NULL) == -1) {
 			return -1;

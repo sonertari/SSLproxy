@@ -172,6 +172,16 @@ proxy_conn_ctx_new(evutil_socket_t fd,
 	ctx->spec = spec;
 	ctx->divert = spec->opts->divert;
 
+	// Enable all logging for conn if proxyspec does not have any filter
+	if (!spec->opts->filter) {
+		ctx->log_connect = 1;
+		ctx->log_content = 1;
+		ctx->log_pcap = 1;
+#ifndef WITHOUT_MIRROR
+		ctx->log_mirror = 1;
+#endif /* !WITHOUT_MIRROR */
+	}
+
 	ctx->proto = proxy_setup_proto(ctx);
 	if (ctx->proto == PROTO_ERROR) {
 		free(ctx);
