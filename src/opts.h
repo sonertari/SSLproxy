@@ -49,7 +49,7 @@
 #define STRORNONE(x)	(((x)&&*(x))?(x):"")
 
 enum filter_action {
-	FILTER_ACTION_IGNORE = -1,
+	FILTER_ACTION_MATCH = -1,
 	FILTER_ACTION_NONE = 0,
 	FILTER_ACTION_DIVERT,
 	FILTER_ACTION_SPLIT,

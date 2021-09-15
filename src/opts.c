@@ -3763,7 +3763,7 @@ get_name_value(char **name, char **value, const char sep, int line_num)
 {
 	size_t len = strlen(*name);
 
-	// Find end of and null-terminate name
+	// Find end of name and null-terminate
 	char *n = *name;
 	while (*n != ' ' && *n != '\t' && *n != '\r' && *n != '\n' && *n != sep)
 		n++;

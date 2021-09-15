@@ -1995,7 +1995,7 @@ pxyconn_set_filter_action(pxy_conn_ctx_t *ctx, filter_site_t *site)
 		log_err_level_printf(LOG_INFO, "Site filter block action for %s\n", site->site);
 		return FILTER_ACTION_BLOCK;
 	}
-	return FILTER_ACTION_IGNORE;
+	return FILTER_ACTION_MATCH;
 }
 
 enum filter_action
