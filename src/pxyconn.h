@@ -78,7 +78,7 @@ typedef void (*proto_classify_user_func_t)(pxy_conn_ctx_t *);
 typedef void (*child_connect_func_t)(pxy_conn_child_ctx_t *);
 typedef void (*child_proto_free_func_t)(pxy_conn_child_ctx_t *);
 
-typedef unsigned char (*proto_filter_func_t)(pxy_conn_ctx_t *, filter_list_t *);
+typedef unsigned int (*proto_filter_func_t)(pxy_conn_ctx_t *, filter_list_t *);
 
 /*
  * Proxy connection context state, describes a proxy connection
@@ -437,8 +437,8 @@ int pxy_is_listuser(userlist_t *, const char *
 void pxy_classify_user(pxy_conn_ctx_t *) NONNULL(1);
 void pxy_userauth(pxy_conn_ctx_t *) NONNULL(1);
 #endif /* !WITHOUT_USERAUTH */
-unsigned char pxyconn_set_filter_action(pxy_conn_ctx_t *, filter_site_t *) NONNULL(1,2);
-unsigned char pxyconn_filter(pxy_conn_ctx_t *, proto_filter_func_t) NONNULL(1);
+unsigned int pxyconn_set_filter_action(pxy_conn_ctx_t *, filter_site_t *) NONNULL(1,2);
+unsigned int pxyconn_filter(pxy_conn_ctx_t *, proto_filter_func_t) NONNULL(1);
 void pxy_conn_setup(evutil_socket_t, struct sockaddr *, int,
                     pxy_thrmgr_ctx_t *, proxyspec_t *, global_t *,
 					evutil_socket_t)

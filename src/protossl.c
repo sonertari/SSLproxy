@@ -676,7 +676,7 @@ protossl_match_cn(pxy_conn_ctx_t *ctx, filter_site_t *site)
 	return 0;
 }
 
-static unsigned char NONNULL(1,2)
+static unsigned int NONNULL(1,2)
 protossl_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
 {
 	if (ctx->sslctx->sni) {
@@ -744,7 +744,8 @@ protossl_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
 static int
 protossl_apply_filter(pxy_conn_ctx_t *ctx)
 {
-	unsigned char action;
+	int rv = 0;
+	unsigned int action;
 	if ((action = pxyconn_filter(ctx, protossl_filter))) {
 		if (action & FILTER_ACTION_DIVERT) {
 			ctx->divert = 1;
@@ -754,15 +755,24 @@ protossl_apply_filter(pxy_conn_ctx_t *ctx)
 		}
 		else if (action & FILTER_ACTION_PASS) {
 			ctx->pass = 1;
-			return 1;
+			rv = 1;
 		}
 		else if (action & FILTER_ACTION_BLOCK) {
 			pxy_conn_term(ctx, 1);
-			return 1;
+			rv = 1;
 		}
 		//else { /* FILTER_ACTION_MATCH */ }
+
+		ctx->log_connect |= !!(action & FILTER_LOG_CONNECT);
+		ctx->log_master |= !!(action & FILTER_LOG_MASTER);
+		ctx->log_cert |= !!(action & FILTER_LOG_CERT);
+		ctx->log_content |= !!(action & FILTER_LOG_CONTENT);
+		ctx->log_pcap |= !!(action & FILTER_LOG_PCAP);
+#ifndef WITHOUT_MIRROR
+		ctx->log_mirror |= !!(action & FILTER_LOG_MIRROR);
+#endif /* !WITHOUT_MIRROR */
 	}
-	return 0;
+	return rv;
 }
 
 /*

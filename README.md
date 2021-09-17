@@ -211,7 +211,7 @@ SSLproxy uses the certificate and key from the pemfiles configured by the
 ClientCert and ClientKey options when the destination requests client 
 certificates. These options can be defined globally and/or per-proxyspec.
 
-Alternatively, you can use Pass filter rules to pass through certain 
+Alternatively, you can use Pass filtering rules to pass through certain 
 destinations requesting client certificates.
 
 ### User authentication
@@ -263,7 +263,7 @@ updates, it is deferred until after the user idle time is more than half of
 the timeout period.
 
 If a description text is provided in the DESC field, it can be used with 
-filter rules to treat the user logged in from different locations, i.e. 
+filtering rules to treat the user logged in from different locations, i.e. 
 from different client IP addresses, separately.
 
 If the UserAuth option is enabled, the user owner of the connection is 
@@ -366,7 +366,7 @@ Filtering rules are applied based on certain precedence orders:
 
 - The precedence of filter types is as Dst Host > SSL > HTTP.
 - The precedence of filter actions is as Divert > Split > Pass > Block. This is 
-only for the same type of filter rules.
+only for the same type of filtering rules.
 - The precedence of site fields is as sni > cn for SSL filter and host > uri 
 for HTTP filter.
 
@@ -378,16 +378,16 @@ to the precedence order of site fields.
 
 In terms of possible filter actions,
 
-- Dst Host filter rules can take all of the filter and log actions.
-- SSL filter rules can take all of the filter and log actions.
-- HTTP filter rules can take the match and block filter actions, but not 
-the divert, split, or pass actions. Also, HTTP filter rules cannot take log 
+- Dst Host filtering rules can take all of the filter and log actions.
+- SSL filtering rules can take all of the filter and log actions.
+- HTTP filtering rules take the match and block filter actions, but not the 
+divert, split, or pass actions. Also, HTTP filtering rules do not take log 
 actions.
 
 Log actions do not configure any loggers. Global loggers for respective log 
 actions should have been configured for those log actions to have any effect.
 
-If no filter rules are defined for a proxyspec, all log actions for that 
+If no filtering rules are defined for a proxyspec, all log actions for that 
 proxyspec are enabled. Otherwise, all log actions are disabled, and filtering 
 rules should enable them specifically.
 

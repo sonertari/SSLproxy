@@ -55,6 +55,13 @@
 #define FILTER_ACTION_PASS   0x10
 #define FILTER_ACTION_BLOCK  0x20
 
+#define FILTER_LOG_CONNECT   0x40
+#define FILTER_LOG_MASTER    0x80
+#define FILTER_LOG_CERT      0x100
+#define FILTER_LOG_CONTENT   0x200
+#define FILTER_LOG_PCAP      0x400
+#define FILTER_LOG_MIRROR    0x800
+
 #ifndef WITHOUT_USERAUTH
 typedef struct userlist {
 	char *user;

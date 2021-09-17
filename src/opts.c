@@ -2813,14 +2813,14 @@ opts_add_site(filter_site_t *site, filter_rule_t *rule)
 	s->all_sites = rule->all_sites;
 	s->exact = rule->exact;
 
-	// Multiple rules can set an action for the same site, hence bit-wise OR
+	// Multiple rules can set an action for the same site, hence the bit-wise OR
 	s->divert |= rule->divert;
 	s->split |= rule->split;
 	s->pass |= rule->pass;
 	s->block |= rule->block;
 	s->match |= rule->match;
 
-	// Multiple log actions can be set for the same site, hence bit-wise OR
+	// Multiple log actions can be set for the same site, hence the bit-wise OR
 	s->log_connect |= rule->log_connect;
 	s->log_master |= rule->log_master;
 	s->log_cert |= rule->log_cert;

@@ -432,7 +432,7 @@ protossl_match_uri(pxy_conn_ctx_t *ctx, filter_site_t *site)
 	return 0;
 }
 
-static unsigned char NONNULL(1,2)
+static unsigned int NONNULL(1,2)
 protohttp_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
 {
 	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
@@ -502,18 +502,27 @@ protohttp_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
 static int
 protohttp_apply_filter(pxy_conn_ctx_t *ctx)
 {
-	unsigned char action;
+	int rv = 0;
+	unsigned int action;
 	if ((action = pxyconn_filter(ctx, protohttp_filter))) {
 		if (action & FILTER_ACTION_BLOCK) {
 			pxy_conn_term(ctx, 1);
-			return 1;
+			rv = 1;
 		}
 		else if (action & (FILTER_ACTION_DIVERT | FILTER_ACTION_SPLIT | FILTER_ACTION_PASS)) {
-			log_err_level_printf(LOG_WARNING, "HTTP filter cannot take divert, split, or pass action\n");
+			log_err_level_printf(LOG_WARNING, "HTTP filter cannot take divert, split, or pass actions, any log actions are ignored too\n");
 		}
 		//else { /* FILTER_ACTION_MATCH */ }
+
+		if (action & (FILTER_LOG_CONNECT | FILTER_LOG_MASTER | FILTER_LOG_CERT | FILTER_LOG_CONTENT | FILTER_LOG_PCAP
+#ifndef WITHOUT_MIRROR
+				| FILTER_LOG_MIRROR
+#endif /* !WITHOUT_MIRROR */
+				)) {
+			log_err_level_printf(LOG_WARNING, "HTTP filter cannot take log actions\n");
+		}
 	}
-	return 0;
+	return rv;
 }
 
 static void NONNULL(1,2,3,5)

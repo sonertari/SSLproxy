@@ -1996,10 +1996,10 @@ pxy_userauth(pxy_conn_ctx_t *ctx)
 }
 #endif /* !WITHOUT_USERAUTH */
 
-unsigned char
+unsigned int
 pxyconn_set_filter_action(pxy_conn_ctx_t *ctx, filter_site_t *site)
 {
-	unsigned char action = FILTER_ACTION_NONE;
+	unsigned int action = FILTER_ACTION_NONE;
 	if (site->divert) {
 		log_err_level_printf(LOG_INFO, "Site filter divert action for %s\n", site->site);
 		action = FILTER_ACTION_DIVERT;
@@ -2025,40 +2025,39 @@ pxyconn_set_filter_action(pxy_conn_ctx_t *ctx, filter_site_t *site)
 	}
 
 	// Multiple log actions can be defined, hence no 'else'
-	// Log actions can only enable logging not disable, hence set to 1
 	if (site->log_connect) {
 		log_err_level_printf(LOG_INFO, "Site filter connect log for %s\n", site->site);
-		ctx->log_connect = 1;
+		action |= FILTER_LOG_CONNECT;
 	}
 	if (site->log_master) {
 		log_err_level_printf(LOG_INFO, "Site filter master log for %s\n", site->site);
-		ctx->log_master = 1;
+		action |= FILTER_LOG_MASTER;
 	}
 	if (site->log_cert) {
 		log_err_level_printf(LOG_INFO, "Site filter cert log for %s\n", site->site);
-		ctx->log_cert = 1;
+		action |= FILTER_LOG_CERT;
 	}
 	if (site->log_content) {
 		log_err_level_printf(LOG_INFO, "Site filter content log for %s\n", site->site);
-		ctx->log_content = 1;
+		action |= FILTER_LOG_CONTENT;
 	}
 	if (site->log_pcap) {
 		log_err_level_printf(LOG_INFO, "Site filter pcap log for %s\n", site->site);
-		ctx->log_pcap = 1;
+		action |= FILTER_LOG_PCAP;
 	}
 #ifndef WITHOUT_MIRROR
 	if (site->log_mirror) {
 		log_err_level_printf(LOG_INFO, "Site filter mirror log for %s\n", site->site);
-		ctx->log_mirror = 1;
+		action |= FILTER_LOG_MIRROR;
 	}
 #endif /* !WITHOUT_MIRROR */
 	return action;
 }
 
-unsigned char
+unsigned int
 pxyconn_filter(pxy_conn_ctx_t *ctx, proto_filter_func_t filtercb)
 {
-	unsigned char action = FILTER_ACTION_NONE;
+	unsigned int action = FILTER_ACTION_NONE;
 
 	filter_t *filter = ctx->spec->opts->filter;
 	if (filter) {
