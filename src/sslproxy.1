@@ -288,23 +288,6 @@ SSLproxy: [127.0.0.1]:34649,[192.168.3.24]:47286,[192.168.111.130]:443,s,soner
 .LP
 The user authentication feature is currently available on OpenBSD and Linux 
 only.
-.SH 	User control lists
-DivertUsers and PassUsers options can be used to divert, pass through, or 
-block users.
-.LP
- - If neither DivertUsers nor PassUsers is defined, all users are diverted to 
-listening programs.
- - Connections from users in DivertUsers, if defined, are diverted to listening 
-programs.
- - Connections from users in PassUsers, if defined, are simply passed through 
-to their original destinations. SSLproxy engages the Passthrough mode for that 
-purpose.
- - If both DivertUsers and PassUsers are defined, users not listed in either of 
-the lists are blocked. SSLproxy simply terminates their connections.
- - If *no* DivertUsers list is defined, only users *not* listed in PassUsers 
-are diverted to listening programs.
-.LP
-These user control lists can be defined globally or per-proxyspec.
 .SH Filtering rules
 .LP
 SSLproxy can divert, split, pass, block, or match connections based on filtering 
@@ -318,8 +301,8 @@ allowing content logging of packets
  - Pass action passes the connection through by engaging passthrough mode, 
 effectively disabling SSL inspection and content logging of packets
  - Block action terminates the connection
- - Match action is used to specify log actions for matching connections without 
-changing their filter actions
+ - Match action specifies log actions for the connection without changing its 
+filter action
 .LP
 The syntax of filtering rules is as follows:
 
@@ -409,14 +392,12 @@ In terms of possible filter actions,
  - HTTP filter rules can take the block action, but not divert, split, or pass 
 actions.
 .LP
-Log actions do not configure any loggers. Global content loggers for 
-respective log actions should have been configured for those log actions to 
-have any effect.
+Log actions do not configure any loggers. Global loggers for respective log 
+actions should have been configured for those log actions to have any effect.
 .LP
-If no filter rules are defined for a proxyspec, all logging actions for that 
+If no filter rules are defined for a proxyspec, all log actions for that 
 proxyspec are enabled. Otherwise, all log actions are disabled, and filtering 
-rules should enable them specifically. Note that if logging is disabled by 
-filtering rules, the loggers create the log files, but they remain empty.
+rules should enable them specifically.
 .LP
 You can append an asterisk * to site field of filtering rules for substring 
 matching. Otherwise, the filter searches for an exact match with the site field 
@@ -427,9 +408,9 @@ The order of from, to, and log parts is not important.
 If the UserAuth option is disabled, only client IP addresses can be used in 
 the from part of filtering rules.
 .SH 	Excluding sites from SSL inspection
-PassSite option is a special form of Pass filtering rule. All PassSite rules 
-can be written as Pass filter rules. The PassSite option will be deprecated in 
-favor of filter rules in the future.
+PassSite option is a special form of Pass filtering rule. PassSite rules can 
+be written as Pass filtering rules. The PassSite option will be deprecated in 
+favor of filtering rules in the future.
 .LP
 PassSite option allows certain SSL sites to be excluded from SSL inspection. 
 If a PassSite matches the SNI or common names in the SSL certificate of a 
@@ -442,6 +423,27 @@ Per-site filters can be defined using client IP addresses, users, and
 description keywords. If the UserAuth option is disabled, only client IP 
 addresses can be used in PassSite filters. Multiple sites can be defined, one 
 on each line. PassSite rules can search for exact or substring matches.
+.SH 	User control lists
+User control lists can be implemented using filtering rules. The DivertUsers 
+and PassUsers options will be deprecated in favor of filtering rules in the 
+future.
+.LP
+DivertUsers and PassUsers options can be used to divert, pass through, or 
+block users.
+.LP
+ - If neither DivertUsers nor PassUsers is defined, all users are diverted to 
+listening programs.
+ - Connections from users in DivertUsers, if defined, are diverted to listening 
+programs.
+ - Connections from users in PassUsers, if defined, are simply passed through 
+to their original destinations. SSLproxy engages the Passthrough mode for that 
+purpose.
+ - If both DivertUsers and PassUsers are defined, users not listed in either of 
+the lists are blocked. SSLproxy simply terminates their connections.
+ - If *no* DivertUsers list is defined, only users *not* listed in PassUsers 
+are diverted to listening programs.
+.LP
+These user control lists can be defined globally or per-proxyspec.
 .SH Logging
 Logging options include traditional SSLproxy connect and content log files as
 well as PCAP files and mirroring decrypted traffic to a network interface.

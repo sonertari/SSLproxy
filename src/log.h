@@ -136,17 +136,25 @@ int log_conn(const char *);
 typedef struct log_content_ctx log_content_ctx_t;
 struct log_content_file_ctx;
 struct log_content_pcap_ctx;
+#ifndef WITHOUT_MIRROR
 struct log_content_mirror_ctx;
+#endif /* !WITHOUT_MIRROR */
 struct log_content_ctx {
 	struct log_content_file_ctx *file;
 	struct log_content_pcap_ctx *pcap;
+#ifndef WITHOUT_MIRROR
 	struct log_content_mirror_ctx *mirror;
+#endif /* !WITHOUT_MIRROR */
 };
 int log_content_open(log_content_ctx_t *, global_t *,
                      const struct sockaddr *, socklen_t,
                      const struct sockaddr *, socklen_t,
                      char *, char *, char *, char *,
-                     char *, char *, char *) NONNULL(1,2,3) WUNRES;
+                     char *, char *, char *, int, int
+#ifndef WITHOUT_MIRROR
+	, int
+#endif /* !WITHOUT_MIRROR */
+	) NONNULL(1,2,3) WUNRES;
 int log_content_submit(log_content_ctx_t *, logbuf_t *, int, int, int
 #ifndef WITHOUT_MIRROR
 	, int

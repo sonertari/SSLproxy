@@ -674,11 +674,15 @@ pxy_prepare_logging(pxy_conn_ctx_t *ctx)
 #ifdef HAVE_LOCAL_PROCINFO
 							 ctx->lproc.exec_path,
 							 ctx->lproc.user,
-							 ctx->lproc.group
+							 ctx->lproc.group,
 #else /* HAVE_LOCAL_PROCINFO */
-							 NULL, NULL, NULL
+							 NULL, NULL, NULL,
 #endif /* HAVE_LOCAL_PROCINFO */
-							 ) == -1) {
+							 ctx->log_content, ctx->log_pcap
+#ifndef WITHOUT_MIRROR
+							 , ctx->log_mirror
+#endif /* !WITHOUT_MIRROR */
+		) == -1) {
 			if (errno == ENOMEM)
 				ctx->enomem = 1;
 			pxy_conn_term(ctx, 1);

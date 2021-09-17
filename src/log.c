@@ -702,7 +702,12 @@ log_content_open(log_content_ctx_t *ctx, global_t *global,
                  const struct sockaddr *dstaddr, socklen_t dstaddrlen,
                  char *srchost, char *srcport,
                  char *dsthost, char *dstport,
-                 char *exec_path, char *user, char *group)
+                 char *exec_path, char *user, char *group,
+                 int log_content, int log_pcap
+#ifndef WITHOUT_MIRROR
+                 , int log_mirror
+#endif /* !WITHOUT_MIRROR */
+	)
 {
 	char timebuf[24];
 	time_t epoch;
@@ -717,8 +722,16 @@ log_content_open(log_content_ctx_t *ctx, global_t *global,
 	    )
 		return 0; /* does this actually happen? */
 
-	if (global->contentlog_isdir || global->contentlog_isspec ||
-	    global->pcaplog_isdir    || global->pcaplog_isspec) {
+	if (!log_content && !log_pcap
+#ifndef WITHOUT_MIRROR
+		&& !log_mirror
+#endif /* !WITHOUT_MIRROR */
+		) {
+		return 0;
+	}
+
+	if ((log_content && (global->contentlog_isdir || global->contentlog_isspec)) ||
+	    (log_pcap && (global->pcaplog_isdir || global->pcaplog_isspec))) {
 		if (global->contentlog_isdir || global->pcaplog_isdir) {
 			if (time(&epoch) == -1) {
 				log_err_level_printf(LOG_CRIT, "Failed to get time\n");
@@ -752,7 +765,7 @@ log_content_open(log_content_ctx_t *ctx, global_t *global,
 		}
 	}
 
-	if (global->contentlog) {
+	if (log_content && global->contentlog) {
 		ctx->file = malloc(sizeof(log_content_file_ctx_t));
 		if (!ctx->file)
 			goto errout;
@@ -799,7 +812,7 @@ log_content_open(log_content_ctx_t *ctx, global_t *global,
 		}
 	}
 
-	if (global->pcaplog) {
+	if (log_pcap && global->pcaplog) {
 		ctx->pcap = malloc(sizeof(log_content_pcap_ctx_t));
 		if (!ctx->pcap)
 			goto errout;
@@ -838,7 +851,7 @@ log_content_open(log_content_ctx_t *ctx, global_t *global,
 	}
 
 #ifndef WITHOUT_MIRROR
-	if (global->mirrorif) {
+	if (log_mirror && global->mirrorif) {
 		ctx->mirror = malloc(sizeof(log_content_mirror_ctx_t));
 		if (!ctx->mirror)
 			goto errout;
@@ -854,16 +867,16 @@ log_content_open(log_content_ctx_t *ctx, global_t *global,
 #endif /* !WITHOUT_MIRROR */
 
 	/* submit open events */
-	if (ctx->file) {
+	if (log_content && ctx->file) {
 		if (logger_open(content_file_log, ctx->file) == -1)
 			goto errout;
 	}
-	if (ctx->pcap) {
+	if (log_pcap && ctx->pcap) {
 		if (logger_open(content_pcap_log, ctx->pcap) == -1)
 			goto errout;
 	}
 #ifndef WITHOUT_MIRROR
-	if (ctx->mirror) {
+	if (log_mirror && ctx->mirror) {
 		if (logger_open(content_mirror_log, ctx->mirror) == -1)
 			goto errout;
 	}
@@ -885,9 +898,11 @@ errout:
 	if (ctx->pcap) {
 		free(ctx->pcap);
 	}
+#ifndef WITHOUT_MIRROR
 	if (ctx->mirror) {
 		free(ctx->mirror);
 	}
+#endif /* !WITHOUT_MIRROR */
 	memset(ctx, 0, sizeof(log_content_ctx_t));
 	return -1;
 }
