@@ -3,20 +3,20 @@
 
 -   Add filtering rules:
 
-    (Divert|Split|Pass|Block|Match)
-     ([from (
-         user (username|*) [desc keyword]|
-         ip (clientaddr|*)|
-         *)]
-      [to (
-         sni (servername[*]|*)|
-         cn (commonname[*]|*)|
-         host (host[*]|*)|
-         uri (uri[*]|*)|
-         ip (serveraddr|*)|
-         *)]
-      [log ([connect] [master] [cert] [content] [pcap] [mirror]|*)]
-      |*)
+	    (Divert|Split|Pass|Block|Match)
+	     ([from (
+	         user (username|*) [desc keyword]|
+	         ip (clientaddr|*)|
+	         *)]
+	      [to (
+	         sni (servername[*]|*)|
+	         cn (commonname[*]|*)|
+	         host (host[*]|*)|
+	         uri (uri[*]|*)|
+	         ip (serveraddr|*)|
+	         *)]
+	      [log ([connect] [master] [cert] [content] [pcap] [mirror]|*)]
+	      |*)
 
 -   Add -Q test config option.
 
