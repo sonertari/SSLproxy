@@ -786,6 +786,8 @@ clone_global_opts(global_t *global, const char *argv0, tmp_global_opts_t *tmp_gl
 		fr->match = rule->match;
 
 		fr->log_connect = rule->log_connect;
+		fr->log_master = rule->log_master;
+		fr->log_cert = rule->log_cert;
 		fr->log_content = rule->log_content;
 		fr->log_pcap = rule->log_pcap;
 #ifndef WITHOUT_MIRROR
@@ -1137,7 +1139,7 @@ filter_rule_str(filter_rule_t *rule)
 #ifndef WITHOUT_USERAUTH
 				"|%s"
 #endif /* !WITHOUT_USERAUTH */
-				"|%s, action=%s|%s|%s|%s|%s, log=%s|%s|%s"
+				"|%s, action=%s|%s|%s|%s|%s, log=%s|%s|%s|%s|%s"
 #ifndef WITHOUT_MIRROR
 				"|%s"
 #endif /* !WITHOUT_MIRROR */
@@ -1152,7 +1154,7 @@ filter_rule_str(filter_rule_t *rule)
 #endif /* !WITHOUT_USERAUTH */
 				rule->all_sites ? "sites" : "",
 				rule->divert ? "divert" : "", rule->split ? "split" : "", rule->pass ? "pass" : "", rule->block ? "block" : "", rule->match ? "match" : "",
-				rule->log_connect ? "connect" : "", rule->log_content ? "content" : "", rule->log_pcap ? "pcap" : "",
+				rule->log_connect ? "connect" : "", rule->log_master ? "master" : "", rule->log_cert ? "cert" : "", rule->log_content ? "content" : "", rule->log_pcap ? "pcap" : "",
 #ifndef WITHOUT_MIRROR
 				rule->log_mirror ? "mirror" : "",
 #endif /* !WITHOUT_MIRROR */
@@ -1191,14 +1193,14 @@ filter_sites_str(filter_site_t *site)
 	int count = 0;
 	while (site) {
 		char *p;
-		if (asprintf(&p, "%s\n      %d: %s (%s%s, action=%s|%s|%s|%s|%s, log=%s|%s|%s"
+		if (asprintf(&p, "%s\n      %d: %s (%s%s, action=%s|%s|%s|%s|%s, log=%s|%s|%s|%s|%s"
 #ifndef WITHOUT_MIRROR
 				"|%s"
 #endif /* !WITHOUT_MIRROR */
 				")", STRORNONE(s), count,
 				site->site, site->all_sites ? "all_sites, " : "", site->exact ? "exact" : "substring",
 				site->divert ? "divert" : "", site->split ? "split" : "", site->pass ? "pass" : "", site->block ? "block" : "", site->match ? "match" : "",
-				site->log_connect ? "connect" : "", site->log_content ? "content" : "", site->log_pcap ? "pcap" : ""
+				site->log_connect ? "connect" : "", site->log_master ? "master" : "", site->log_cert ? "cert" : "", site->log_content ? "content" : "", site->log_pcap ? "pcap" : ""
 #ifndef WITHOUT_MIRROR
 				, site->log_mirror ? "mirror" : ""
 #endif /* !WITHOUT_MIRROR */
@@ -2434,7 +2436,7 @@ opts_set_passsite(opts_t *opts, char *value, int line_num)
 #ifndef WITHOUT_USERAUTH
 		"%s|"
 #endif /* !WITHOUT_USERAUTH */
-		"%s, action=%s|%s|%s|%s|%s, log=%s|%s|%s"
+		"%s, action=%s|%s|%s|%s|%s, log=%s|%s|%s|%s|%s"
 #ifndef WITHOUT_MIRROR
 		"|%s"
 #endif /* !WITHOUT_MIRROR */
@@ -2449,7 +2451,7 @@ opts_set_passsite(opts_t *opts, char *value, int line_num)
 #endif /* !WITHOUT_USERAUTH */
 		rule->all_sites ? "sites" : "",
 		rule->divert ? "divert" : "", rule->split ? "split" : "", rule->pass ? "pass" : "", rule->block ? "block" : "", rule->match ? "match" : "",
-		rule->log_connect ? "connect" : "", rule->log_content ? "content" : "", rule->log_pcap ? "pcap" : "",
+		rule->log_connect ? "connect" : "", rule->log_master ? "master" : "", rule->log_cert ? "cert" : "", rule->log_content ? "content" : "", rule->log_pcap ? "pcap" : "",
 #ifndef WITHOUT_MIRROR
 		rule->log_mirror ? "mirror" : "",
 #endif /* !WITHOUT_MIRROR */
@@ -2514,7 +2516,7 @@ filter_rule_parse(opts_t *opts, const char *name, char *value, int line_num)
 	//     uri (uri[*]|*)|
 	//     ip (serveraddr|*)|
 	//     *)]
-	//  [log ([connect] [content] [pcap] [mirror]|*)]
+	//  [log ([connect] [master] [cert] [content] [pcap] [mirror]|*)]
 	//  |*)
 
 	char *argv[sizeof(char *) * MAX_FILTER_RULE_TOKENS];
@@ -2664,7 +2666,7 @@ filter_rule_parse(opts_t *opts, const char *name, char *value, int line_num)
 			}
 
 			i = opts_inc_arg_index(i, argc, argv[i], line_num);
-			if (equal(argv[i], "connect") || equal(argv[i], "content") || equal(argv[i], "pcap")
+			if (equal(argv[i], "connect") || equal(argv[i], "master") || equal(argv[i], "cert") || equal(argv[i], "content") || equal(argv[i], "pcap")
 #ifndef WITHOUT_MIRROR
 				|| equal(argv[i], "mirror")
 #endif /* !WITHOUT_MIRROR */
@@ -2672,6 +2674,10 @@ filter_rule_parse(opts_t *opts, const char *name, char *value, int line_num)
 				do {
 					if (equal(argv[i], "connect"))
 						rule->log_connect = 1;
+					else if (equal(argv[i], "master"))
+						rule->log_master = 1;
+					else if (equal(argv[i], "cert"))
+						rule->log_cert = 1;
 					else if (equal(argv[i], "content"))
 						rule->log_content = 1;
 					else if (equal(argv[i], "pcap"))
@@ -2683,7 +2689,7 @@ filter_rule_parse(opts_t *opts, const char *name, char *value, int line_num)
 
 					if (++i == argc)
 						break;
-				} while (equal(argv[i], "connect") || equal(argv[i], "content") || equal(argv[i], "pcap")
+				} while (equal(argv[i], "connect") || equal(argv[i], "master") || equal(argv[i], "cert") || equal(argv[i], "content") || equal(argv[i], "pcap")
 #ifndef WITHOUT_MIRROR
 					|| equal(argv[i], "mirror")
 #endif /* !WITHOUT_MIRROR */
@@ -2693,6 +2699,8 @@ filter_rule_parse(opts_t *opts, const char *name, char *value, int line_num)
 			}
 			else if (equal(argv[i], "*")) {
 				rule->log_connect = 1;
+				rule->log_master = 1;
+				rule->log_cert = 1;
 				rule->log_content = 1;
 				rule->log_pcap = 1;
 #ifndef WITHOUT_MIRROR
@@ -2736,7 +2744,7 @@ filter_rule_parse(opts_t *opts, const char *name, char *value, int line_num)
 #ifndef WITHOUT_USERAUTH
 		"%s|"
 #endif /* !WITHOUT_USERAUTH */
-		"%s, action=%s|%s|%s|%s|%s, log=%s|%s|%s"
+		"%s, action=%s|%s|%s|%s|%s, log=%s|%s|%s|%s|%s"
 #ifndef WITHOUT_MIRROR
 		"|%s"
 #endif /* !WITHOUT_MIRROR */
@@ -2751,7 +2759,7 @@ filter_rule_parse(opts_t *opts, const char *name, char *value, int line_num)
 #endif /* !WITHOUT_USERAUTH */
 		rule->all_sites ? "sites" : "",
 		rule->divert ? "divert" : "", rule->split ? "split" : "", rule->pass ? "pass" : "", rule->block ? "block" : "", rule->match ? "match" : "",
-		rule->log_connect ? "connect" : "", rule->log_content ? "content" : "", rule->log_pcap ? "pcap" : "",
+		rule->log_connect ? "connect" : "", rule->log_master ? "master" : "", rule->log_cert ? "cert" : "", rule->log_content ? "content" : "", rule->log_pcap ? "pcap" : "",
 #ifndef WITHOUT_MIRROR
 		rule->log_mirror ? "mirror" : "",
 #endif /* !WITHOUT_MIRROR */
@@ -2814,6 +2822,8 @@ opts_add_site(filter_site_t *site, filter_rule_t *rule)
 
 	// Multiple log actions can be set for the same site, hence bit-wise OR
 	s->log_connect |= rule->log_connect;
+	s->log_master |= rule->log_master;
+	s->log_cert |= rule->log_cert;
 	s->log_content |= rule->log_content;
 	s->log_pcap |= rule->log_pcap;
 #ifndef WITHOUT_MIRROR

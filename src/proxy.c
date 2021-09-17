@@ -175,6 +175,8 @@ proxy_conn_ctx_new(evutil_socket_t fd,
 	// Enable all logging for conn if proxyspec does not have any filter
 	if (!spec->opts->filter) {
 		ctx->log_connect = 1;
+		ctx->log_master = 1;
+		ctx->log_cert = 1;
 		ctx->log_content = 1;
 		ctx->log_pcap = 1;
 #ifndef WITHOUT_MIRROR

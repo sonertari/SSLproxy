@@ -731,7 +731,7 @@ pxy_log_connect_src(pxy_conn_ctx_t *ctx)
 		pxy_log_connect_nonhttp(ctx);
 	}
 
-	if (ctx->src.ssl && ctx->global->certgendir) {
+	if (ctx->src.ssl && ctx->log_cert && ctx->global->certgendir) {
 		/* write SSL certificates to gendir */
 		protossl_srccert_write(ctx);
 	}
@@ -2029,6 +2029,14 @@ pxyconn_set_filter_action(pxy_conn_ctx_t *ctx, filter_site_t *site)
 	if (site->log_connect) {
 		log_err_level_printf(LOG_INFO, "Site filter connect log for %s\n", site->site);
 		ctx->log_connect = 1;
+	}
+	if (site->log_master) {
+		log_err_level_printf(LOG_INFO, "Site filter master log for %s\n", site->site);
+		ctx->log_master = 1;
+	}
+	if (site->log_cert) {
+		log_err_level_printf(LOG_INFO, "Site filter cert log for %s\n", site->site);
+		ctx->log_cert = 1;
 	}
 	if (site->log_content) {
 		log_err_level_printf(LOG_INFO, "Site filter content log for %s\n", site->site);

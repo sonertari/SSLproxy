@@ -179,6 +179,8 @@ typedef struct filter_rule {
 
 	// Log action
 	unsigned int log_connect : 1;
+	unsigned int log_master : 1;
+	unsigned int log_cert : 1;
 	unsigned int log_content : 1;
 	unsigned int log_pcap : 1;
 #ifndef WITHOUT_MIRROR
@@ -209,6 +211,8 @@ typedef struct filter_site {
 	unsigned int block : 1;
 	unsigned int match : 1;
 	unsigned int log_connect : 1;
+	unsigned int log_master : 1;
+	unsigned int log_cert : 1;
 	unsigned int log_content : 1;
 	unsigned int log_pcap : 1;
 #ifndef WITHOUT_MIRROR

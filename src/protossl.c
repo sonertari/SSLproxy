@@ -116,7 +116,7 @@ protossl_log_masterkey(pxy_conn_ctx_t *ctx, pxy_conn_desc_t *this)
 	// XXX: Remove ssl check? But the caller function is called by non-ssl protos.
 	if (this->ssl) {
 		/* log master key */
-		if (ctx->global->masterkeylog) {
+		if (ctx->log_master && ctx->global->masterkeylog) {
 			char *keystr;
 			keystr = ssl_ssl_masterkey_to_str(this->ssl);
 			if ((keystr == NULL) ||

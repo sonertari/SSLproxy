@@ -344,7 +344,7 @@ The syntax of filtering rules is as follows:
      uri (uri[*]|*)|
      ip (serveraddr|*)|
      *)]
-  [log ([connect] [content] [pcap] [mirror]|*)]
+  [log ([connect] [master] [cert] [content] [pcap] [mirror]|*)]
   |*)
 .br
 
@@ -427,13 +427,7 @@ ValidateProto
 .br
 PassSite
 .br
-Divert filtering rules
-.br
-Split filtering rules
-.br
-Pass filtering rules
-.br
-Block filtering rules
+Divert|Split|Pass|Block|Match filtering rules
 .br
 \fB}\fR
 .br

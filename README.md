@@ -280,15 +280,15 @@ only.
 SSLproxy can divert, split, pass, block, or match connections based on 
 filtering rules. Filtering rules can be defined globally or per-proxyspec.
 
-- Divert action diverts packets to listening program, allowing SSL inspection 
+- `Divert` action diverts packets to listening program, allowing SSL inspection 
 by listening program and content logging of packets
-- Split action splits the connection but does not divert packets to listening 
+- `Split` action splits the connection but does not divert packets to listening 
 program, effectively disabling SSL inspection by listening program, but 
 allowing content logging of packets
-- Pass action passes the connection through by engaging passthrough mode, 
+- `Pass` action passes the connection through by engaging passthrough mode, 
 effectively disabling SSL inspection and content logging of packets
-- Block action terminates the connection
-- Match action specifies log actions for the connection without changing its 
+- `Block` action terminates the connection
+- `Match` action specifies log actions for the connection without changing its 
 filter action
 
 The syntax of filtering rules is as follows:
@@ -305,7 +305,7 @@ The syntax of filtering rules is as follows:
 	     uri (uri[*]|*)|
 	     ip (serveraddr|*)|
 	     *)]
-	  [log ([connect] [content] [pcap] [mirror]|*)]
+	  [log ([connect] [master] [cert] [content] [pcap] [mirror]|*)]
 	  |*)
 
 The definition of which connections the rule action will be applied to is 
@@ -322,10 +322,14 @@ Common Names of SSL connections, Host or URI fields in HTTP Request headers, or
 connection.
 
 If and how a connection should be logged is specified using the `log` part of 
-filtering rules. `connect` enables logging connection information to connect 
-log file, `content` enables logging packet contents to content log file, 
-`pcap` enables writing packets to pcap files, and `mirror` enables mirroring 
-packets to mirror interfaces or targets.
+filtering rules:
+
+- `connect` enables logging connection information to connect log file
+- `master` enables logging of master keys
+- `cert` enables logging of generated certificates
+- `content` enables logging packet contents to content log file
+- `pcap` enables writing packets to pcap files
+- `mirror` enables mirroring packets to mirror interfaces or targets
 
 For example, if the following rules are defined in a structured HTTPS proxyspec,
 
@@ -363,8 +367,8 @@ Filtering rules are applied based on certain precedence orders:
 - The precedence of filter types is as Dst Host > SSL > HTTP.
 - The precedence of filter actions is as Divert > Split > Pass > Block. This is 
 only for the same type of filter rules.
-- The precedence of site fields is as sni > cn for ssl filter and host > uri 
-for http filter.
+- The precedence of site fields is as sni > cn for SSL filter and host > uri 
+for HTTP filter.
 
 For example, the pass action of a Dst Host filter rule is taken before the 
 split action of an SSL filter rule with the same from definition, due to the 
@@ -374,9 +378,10 @@ to the precedence order of site fields.
 
 In terms of possible filter actions,
 
-- Dst Host filter rules can take all of the actions.
-- SSL filter rules can take all of the actions.
-- HTTP filter rules can take the block action, but not divert, split, or pass 
+- Dst Host filter rules can take all of the filter and log actions.
+- SSL filter rules can take all of the filter and log actions.
+- HTTP filter rules can take the match and block filter actions, but not 
+the divert, split, or pass actions. Also, HTTP filter rules cannot take log 
 actions.
 
 Log actions do not configure any loggers. Global loggers for respective log 
@@ -390,7 +395,8 @@ You can append an asterisk `*` to site field of filtering rules for substring
 matching. Otherwise, the filter searches for an exact match with the site field 
 in the rule.
 
-The order of `from`, `to`, and `log` parts is not important.
+The order of from, to, and log parts is not important. The order of log 
+actions is not important.
 
 If the UserAuth option is disabled, only client IP addresses can be used in 
 the from part of filtering rules.
