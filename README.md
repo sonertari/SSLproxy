@@ -305,7 +305,7 @@ The syntax of filtering rules is as follows:
 	     uri (uri[*]|*)|
 	     ip (serveraddr|*)|
 	     *)]
-	  [log ([connect] [master] [cert] [content] [pcap] [mirror]|*)]
+	  [log ([[!]connect] [[!]master] [[!]cert] [[!]content] [[!]pcap] [[!]mirror]|*)]
 	  |*)
 
 The definition of which connections the rule action will be applied to is 
@@ -330,6 +330,8 @@ filtering rules:
 - `content` enables logging packet contents to content log file
 - `pcap` enables writing packets to pcap files
 - `mirror` enables mirroring packets to mirror interfaces or targets
+
+You can add a negation prefix `!` to a log action to disable that logging.
 
 For example, if the following rules are defined in a structured HTTPS proxyspec,
 
@@ -382,8 +384,8 @@ In terms of possible filter actions,
 - Dst Host filtering rules can take all of the filter and log actions.
 - SSL filtering rules can take all of the filter and log actions.
 - HTTP filtering rules take the match and block filter actions, but not the 
-divert, split, or pass actions. Also, HTTP filtering rules do not take log 
-actions.
+divert, split, or pass actions. Also, HTTP filtering rules can only disable 
+logging.
 
 Log actions do not configure any loggers. Global loggers for respective log 
 actions should have been configured for those log actions to have any effect.

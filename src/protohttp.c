@@ -522,17 +522,40 @@ protohttp_apply_filter(pxy_conn_ctx_t *ctx)
 		}
 		else if (action & (FILTER_ACTION_DIVERT | FILTER_ACTION_SPLIT | FILTER_ACTION_PASS)) {
 			log_err_level_printf(LOG_WARNING, "HTTP filter cannot take divert, split, or pass actions, any log actions are ignored too\n");
+			goto out;
 		}
 		//else { /* FILTER_ACTION_MATCH */ }
 
-		if (action & (FILTER_LOG_CONNECT | FILTER_LOG_MASTER | FILTER_LOG_CERT | FILTER_LOG_CONTENT | FILTER_LOG_PCAP
+		if (action & (FILTER_LOG_CONTENT | FILTER_LOG_PCAP
 #ifndef WITHOUT_MIRROR
 				| FILTER_LOG_MIRROR
 #endif /* !WITHOUT_MIRROR */
 				)) {
-			log_err_level_printf(LOG_WARNING, "HTTP filter cannot take log actions\n");
+#ifndef WITHOUT_MIRROR
+			log_err_level_printf(LOG_WARNING, "HTTP filter cannot enable content, pcap, and mirror logging\n");
+#else /* !WITHOUT_MIRROR */
+			log_err_level_printf(LOG_WARNING, "HTTP filter cannot enable content and pcap logging\n");
+#endif /* WITHOUT_MIRROR */
 		}
+
+		// Note that connect, master, and cert logs have already been written by now
+		// so disabling those logs here will not have any effect
+		ctx->log_connect = !!(action & FILTER_LOG_CONNECT);
+		ctx->log_master = !!(action & FILTER_LOG_MASTER);
+		ctx->log_cert = !!(action & FILTER_LOG_CERT);
+
+		// content, pcap, and mirror logging can be disabled only
+		// loggers will stop writing further contents
+		if (!(action & FILTER_LOG_CONTENT))
+			ctx->log_content = 0;
+		if (!(action & FILTER_LOG_PCAP))
+			ctx->log_pcap = 0;
+#ifndef WITHOUT_MIRROR
+		if (!(action & FILTER_LOG_MIRROR))
+			ctx->log_mirror = 0;
+#endif /* !WITHOUT_MIRROR */
 	}
+out:
 	return rv;
 }
 

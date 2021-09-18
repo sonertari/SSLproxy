@@ -160,11 +160,7 @@ int log_content_submit(log_content_ctx_t *, logbuf_t *, int, int, int
 	, int
 #endif /* !WITHOUT_MIRROR */
 	) NONNULL(1,2) WUNRES;
-int log_content_close(log_content_ctx_t *, int, int, int
-#ifndef WITHOUT_MIRROR
-	, int
-#endif /* !WITHOUT_MIRROR */
-	) NONNULL(1) WUNRES;
+int log_content_close(log_content_ctx_t *, int) NONNULL(1) WUNRES;
 int log_content_split_pathspec(const char *, char **,
                                char **) NONNULL(1,2,3) WUNRES;
 

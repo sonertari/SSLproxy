@@ -15,7 +15,7 @@
 	         uri (uri[*]|*)|
 	         ip (serveraddr|*)|
 	         *)]
-	      [log ([connect] [master] [cert] [content] [pcap] [mirror]|*)]
+	      [log ([[!]connect] [[!]master] [[!]cert] [[!]content] [[!]pcap] [[!]mirror]|*)]
 	      |*)
 
 -   Add -Q test config option.

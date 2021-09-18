@@ -319,11 +319,10 @@ pxy_conn_ctx_free(pxy_conn_ctx_t *ctx, int by_requestor)
 	log_finest("ENTER");
 
 	if (WANT_CONTENT_LOG(ctx)) {
-		if (log_content_close(&ctx->logctx, by_requestor, ctx->log_content, ctx->log_pcap
-#ifndef WITHOUT_MIRROR
-			, ctx->log_mirror
-#endif /* !WITHOUT_MIRROR */
-			) == -1) {
+		// Always try to close log files, even if content, pcap, or mirror logging is disabled by filter rules
+		// The log files may have been initialized and opened
+		// so, do not pass down the log_content, log_pcap, and log_mirror fields of ctx
+		if (log_content_close(&ctx->logctx, by_requestor) == -1) {
 			log_err_level_printf(LOG_WARNING, "Content log close failed\n");
 		}
 	}
@@ -2025,29 +2024,29 @@ pxyconn_set_filter_action(pxy_conn_ctx_t *ctx, filter_site_t *site)
 	}
 
 	// Multiple log actions can be defined, hence no 'else'
+	log_err_level_printf(LOG_INFO, "Site filter %s connect log for %s, precedence %d\n", site->log_connect ? "enable" : "disable", site->site, site->precedence);
 	if (site->log_connect) {
-		log_err_level_printf(LOG_INFO, "Site filter connect log for %s, precedence %d\n", site->site, site->precedence);
 		action |= FILTER_LOG_CONNECT;
 	}
+	log_err_level_printf(LOG_INFO, "Site filter %s master log for %s, precedence %d\n", site->log_master ? "enable" : "disable", site->site, site->precedence);
 	if (site->log_master) {
-		log_err_level_printf(LOG_INFO, "Site filter master log for %s, precedence %d\n", site->site, site->precedence);
 		action |= FILTER_LOG_MASTER;
 	}
+	log_err_level_printf(LOG_INFO, "Site filter %s cert log for %s, precedence %d\n", site->log_cert ? "enable" : "disable", site->site, site->precedence);
 	if (site->log_cert) {
-		log_err_level_printf(LOG_INFO, "Site filter cert log for %s, precedence %d\n", site->site, site->precedence);
 		action |= FILTER_LOG_CERT;
 	}
+	log_err_level_printf(LOG_INFO, "Site filter %s content log for %s, precedence %d\n", site->log_content ? "enable" : "disable", site->site, site->precedence);
 	if (site->log_content) {
-		log_err_level_printf(LOG_INFO, "Site filter content log for %s, precedence %d\n", site->site, site->precedence);
 		action |= FILTER_LOG_CONTENT;
 	}
+	log_err_level_printf(LOG_INFO, "Site filter %s pcap log for %s, precedence %d\n", site->log_pcap ? "enable" : "disable", site->site, site->precedence);
 	if (site->log_pcap) {
-		log_err_level_printf(LOG_INFO, "Site filter pcap log for %s, precedence %d\n", site->site, site->precedence);
 		action |= FILTER_LOG_PCAP;
 	}
 #ifndef WITHOUT_MIRROR
+	log_err_level_printf(LOG_INFO, "Site filter %s mirror log for %s, precedence %d\n", site->log_mirror ? "enable" : "disable", site->site, site->precedence);
 	if (site->log_mirror) {
-		log_err_level_printf(LOG_INFO, "Site filter mirror log for %s, precedence %d\n", site->site, site->precedence);
 		action |= FILTER_LOG_MIRROR;
 	}
 #endif /* !WITHOUT_MIRROR */

@@ -2527,7 +2527,7 @@ filter_rule_parse(opts_t *opts, const char *name, char *value, int line_num)
 	//     uri (uri[*]|*)|
 	//     ip (serveraddr|*)|
 	//     *)]
-	//  [log ([connect] [master] [cert] [content] [pcap] [mirror]|*)]
+	//  [log ([[!]connect] [[!]master] [[!]cert] [[!]content] [[!]pcap] [[!]mirror]|*)]
 	//  |*)
 
 	char *argv[sizeof(char *) * MAX_FILTER_RULE_TOKENS];
@@ -2688,9 +2688,10 @@ filter_rule_parse(opts_t *opts, const char *name, char *value, int line_num)
 			rule->precedence++;
 
 			i = opts_inc_arg_index(i, argc, argv[i], line_num);
-			if (equal(argv[i], "connect") || equal(argv[i], "master") || equal(argv[i], "cert") || equal(argv[i], "content") || equal(argv[i], "pcap")
+			if (equal(argv[i], "connect") || equal(argv[i], "master") || equal(argv[i], "cert") || equal(argv[i], "content") || equal(argv[i], "pcap") ||
+				equal(argv[i], "!connect") || equal(argv[i], "!master") || equal(argv[i], "!cert") || equal(argv[i], "!content") || equal(argv[i], "!pcap")
 #ifndef WITHOUT_MIRROR
-				|| equal(argv[i], "mirror")
+				|| equal(argv[i], "mirror") || equal(argv[i], "!mirror")
 #endif /* !WITHOUT_MIRROR */
 				) {
 				do {
@@ -2704,16 +2705,29 @@ filter_rule_parse(opts_t *opts, const char *name, char *value, int line_num)
 						rule->log_content = 1;
 					else if (equal(argv[i], "pcap"))
 						rule->log_pcap = 1;
+					else if (equal(argv[i], "!connect"))
+						rule->log_connect = 0;
+					else if (equal(argv[i], "!master"))
+						rule->log_master = 0;
+					else if (equal(argv[i], "!cert"))
+						rule->log_cert = 0;
+					else if (equal(argv[i], "!content"))
+						rule->log_content = 0;
+					else if (equal(argv[i], "!pcap"))
+						rule->log_pcap = 0;
 #ifndef WITHOUT_MIRROR
 					else if (equal(argv[i], "mirror"))
 						rule->log_mirror = 1;
+					else if (equal(argv[i], "!mirror"))
+						rule->log_mirror = 0;
 #endif /* !WITHOUT_MIRROR */
 
 					if (++i == argc)
 						break;
-				} while (equal(argv[i], "connect") || equal(argv[i], "master") || equal(argv[i], "cert") || equal(argv[i], "content") || equal(argv[i], "pcap")
+				} while (equal(argv[i], "connect") || equal(argv[i], "master") || equal(argv[i], "cert") || equal(argv[i], "content") || equal(argv[i], "pcap") ||
+						 equal(argv[i], "!connect") || equal(argv[i], "!master") || equal(argv[i], "!cert") || equal(argv[i], "!content") || equal(argv[i], "!pcap")
 #ifndef WITHOUT_MIRROR
-					|| equal(argv[i], "mirror")
+					|| equal(argv[i], "mirror") || equal(argv[i], "!mirror")
 #endif /* !WITHOUT_MIRROR */
 					);
 
@@ -2728,6 +2742,10 @@ filter_rule_parse(opts_t *opts, const char *name, char *value, int line_num)
 #ifndef WITHOUT_MIRROR
 				rule->log_mirror = 1;
 #endif /* !WITHOUT_MIRROR */
+				i++;
+				done_log = 1;
+			}
+			else if (equal(argv[i], "!*")) {
 				i++;
 				done_log = 1;
 			}
@@ -2833,29 +2851,32 @@ opts_add_site(filter_site_t *site, filter_rule_t *rule)
 		prepend = 0;
 	}
 
-	s->all_sites = rule->all_sites;
-	s->exact = rule->exact;
+	// Do not override the specs of site rules at higher precedence
+	// precedence can only go up not down
+	if (rule->precedence >= s->precedence) {
+		s->all_sites = rule->all_sites;
+		s->exact = rule->exact;
 
-	// Multiple rules can set an action for the same site, hence the bit-wise OR
-	s->divert |= rule->divert;
-	s->split |= rule->split;
-	s->pass |= rule->pass;
-	s->block |= rule->block;
-	s->match |= rule->match;
+		// Multiple rules can set an action for the same site, hence the bit-wise OR
+		s->divert |= rule->divert;
+		s->split |= rule->split;
+		s->pass |= rule->pass;
+		s->block |= rule->block;
+		s->match |= rule->match;
 
-	// Multiple log actions can be set for the same site, hence the bit-wise OR
-	s->log_connect |= rule->log_connect;
-	s->log_master |= rule->log_master;
-	s->log_cert |= rule->log_cert;
-	s->log_content |= rule->log_content;
-	s->log_pcap |= rule->log_pcap;
+		// Multiple log actions can be set for the same site
+		// Multiple rules can enable/disable a log action for the same site, hence the direct assignment
+		s->log_connect = rule->log_connect;
+		s->log_master = rule->log_master;
+		s->log_cert = rule->log_cert;
+		s->log_content = rule->log_content;
+		s->log_pcap = rule->log_pcap;
 #ifndef WITHOUT_MIRROR
-	s->log_mirror |= rule->log_mirror;
+		s->log_mirror = rule->log_mirror;
 #endif /* !WITHOUT_MIRROR */
 
-	// precedence can only go up not down
-	if (rule->precedence > s->precedence)
 		s->precedence = rule->precedence;
+	}
 
 	return prepend ? s : site;
 }

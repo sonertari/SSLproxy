@@ -575,17 +575,18 @@ prototcp_apply_filter(pxy_conn_ctx_t *ctx)
 		}
 		//else { /* FILTER_ACTION_MATCH */ }
 
+		// Filtering rules at higher precedence can enable/disable logging
 		// The presence of a log action enables that logging
-		// The absence does nothing
-		// hence the bit-wise OR
+		// The absence disables it
+		// hence the direct assignment
 		// And note the signum function '!!'
-		ctx->log_connect |= !!(action & FILTER_LOG_CONNECT);
-		ctx->log_master |= !!(action & FILTER_LOG_MASTER);
-		ctx->log_cert |= !!(action & FILTER_LOG_CERT);
-		ctx->log_content |= !!(action & FILTER_LOG_CONTENT);
-		ctx->log_pcap |= !!(action & FILTER_LOG_PCAP);
+		ctx->log_connect = !!(action & FILTER_LOG_CONNECT);
+		ctx->log_master = !!(action & FILTER_LOG_MASTER);
+		ctx->log_cert = !!(action & FILTER_LOG_CERT);
+		ctx->log_content = !!(action & FILTER_LOG_CONTENT);
+		ctx->log_pcap = !!(action & FILTER_LOG_PCAP);
 #ifndef WITHOUT_MIRROR
-		ctx->log_mirror |= !!(action & FILTER_LOG_MIRROR);
+		ctx->log_mirror = !!(action & FILTER_LOG_MIRROR);
 #endif /* !WITHOUT_MIRROR */
 	}
 	return rv;

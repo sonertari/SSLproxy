@@ -775,13 +775,13 @@ protossl_apply_filter(pxy_conn_ctx_t *ctx)
 		}
 		//else { /* FILTER_ACTION_MATCH */ }
 
-		ctx->log_connect |= !!(action & FILTER_LOG_CONNECT);
-		ctx->log_master |= !!(action & FILTER_LOG_MASTER);
-		ctx->log_cert |= !!(action & FILTER_LOG_CERT);
-		ctx->log_content |= !!(action & FILTER_LOG_CONTENT);
-		ctx->log_pcap |= !!(action & FILTER_LOG_PCAP);
+		ctx->log_connect = !!(action & FILTER_LOG_CONNECT);
+		ctx->log_master = !!(action & FILTER_LOG_MASTER);
+		ctx->log_cert = !!(action & FILTER_LOG_CERT);
+		ctx->log_content = !!(action & FILTER_LOG_CONTENT);
+		ctx->log_pcap = !!(action & FILTER_LOG_PCAP);
 #ifndef WITHOUT_MIRROR
-		ctx->log_mirror |= !!(action & FILTER_LOG_MIRROR);
+		ctx->log_mirror = !!(action & FILTER_LOG_MIRROR);
 #endif /* !WITHOUT_MIRROR */
 	}
 	return rv;
