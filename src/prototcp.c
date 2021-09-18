@@ -282,6 +282,10 @@ prototcp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	}
 #endif /* !WITHOUT_USERAUTH */
 
+	if (pxyconn_apply_deferred_block_action(ctx)) {
+		return;
+	}
+
 	struct evbuffer *inbuf = bufferevent_get_input(bev);
 	struct evbuffer *outbuf = bufferevent_get_output(ctx->dst.bev);
 		
@@ -551,27 +555,48 @@ prototcp_dsthost_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
 }
 
 int
-prototcp_apply_filter(pxy_conn_ctx_t *ctx)
+prototcp_apply_filter(pxy_conn_ctx_t *ctx, unsigned int defer_action)
 {
 	int rv = 0;
 	unsigned int action;
 	if ((action = pxyconn_filter(ctx, prototcp_dsthost_filter))) {
 		ctx->filter_precedence = action & FILTER_PRECEDENCE;
 
+		// If we reach here, the matching filtering rule must have a higher precedence
+		// Override any deferred action, if the current rule action is not match
+		// Match action cannot override other filter actions
+
 		if (action & FILTER_ACTION_DIVERT) {
+			ctx->deferred_action = FILTER_ACTION_NONE;
 			ctx->divert = 1;
 		}
 		else if (action & FILTER_ACTION_SPLIT) {
+			ctx->deferred_action = FILTER_ACTION_NONE;
 			ctx->divert = 0;
 		}
 		else if (action & FILTER_ACTION_PASS) {
-			protopassthrough_engage(ctx);
-			ctx->pass = 1;
-			rv = 1;
+			if (defer_action & FILTER_ACTION_PASS) {
+				log_fine("Deferring pass action");
+				ctx->deferred_action = FILTER_ACTION_PASS;
+			}
+			else {
+				ctx->deferred_action = FILTER_ACTION_NONE;
+				protopassthrough_engage(ctx);
+				ctx->pass = 1;
+				rv = 1;
+			}
 		}
 		else if (action & FILTER_ACTION_BLOCK) {
-			pxy_conn_term(ctx, 1);
-			rv = 1;
+			if (defer_action & FILTER_ACTION_BLOCK) {
+				// This block action should override any deferred pass action,
+				// because the current rule must have a higher precedence
+				log_fine("Deferring block action");
+				ctx->deferred_action = FILTER_ACTION_BLOCK;
+			}
+			else {
+				pxy_conn_term(ctx, 1);
+				rv = 1;
+			}
 		}
 		//else { /* FILTER_ACTION_MATCH */ }
 
@@ -604,7 +629,9 @@ prototcp_bev_eventcb_connected_srvdst(UNUSED struct bufferevent *bev, pxy_conn_c
 	}
 #endif /* !WITHOUT_USERAUTH */
 
-	if (prototcp_apply_filter(ctx)) {
+	// Defer any block action until HTTP filter application or the first src readcb of non-http proto
+	// We cannot defer pass actions from this point on
+	if (prototcp_apply_filter(ctx, FILTER_ACTION_BLOCK)) {
 		return;
 	}
 

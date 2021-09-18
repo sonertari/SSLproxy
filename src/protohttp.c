@@ -387,7 +387,7 @@ protohttp_filter_request_header_line(const char *line, protohttp_ctx_t *http_ctx
 }
 
 static int NONNULL(1,2)
-protossl_match_host(pxy_conn_ctx_t *ctx, filter_site_t *site)
+protohttp_match_host(pxy_conn_ctx_t *ctx, filter_site_t *site)
 {
 	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
 
@@ -415,7 +415,7 @@ protossl_match_host(pxy_conn_ctx_t *ctx, filter_site_t *site)
 }
 
 static int NONNULL(1,2)
-protossl_match_uri(pxy_conn_ctx_t *ctx, filter_site_t *site)
+protohttp_match_uri(pxy_conn_ctx_t *ctx, filter_site_t *site)
 {
 	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
 
@@ -450,7 +450,7 @@ protohttp_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
 	if (http_ctx->http_host) {
 		filter_site_t *site = list->host;
 		while (site) {
-			if (protossl_match_host(ctx, site)) {
+			if (protohttp_match_host(ctx, site)) {
 				// Do not print the surrounding slashes
 				log_err_level_printf(LOG_INFO, "Found site: %s for %s:%s, %s:%s"
 #ifndef WITHOUT_USERAUTH
@@ -480,7 +480,7 @@ protohttp_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
 	if (http_ctx->http_uri) {
 		filter_site_t *site = list->uri;
 		while (site) {
-			if (protossl_match_uri(ctx, site)) {
+			if (protohttp_match_uri(ctx, site)) {
 				// Do not print the surrounding slashes
 				log_err_level_printf(LOG_INFO, "Found site: %s for %s:%s, %s:%s"
 #ifndef WITHOUT_USERAUTH
@@ -515,14 +515,31 @@ protohttp_apply_filter(pxy_conn_ctx_t *ctx)
 	int rv = 0;
 	unsigned int action;
 	if ((action = pxyconn_filter(ctx, protohttp_filter))) {
-		if (action & FILTER_ACTION_BLOCK) {
-			ctx->filter_precedence = action & FILTER_PRECEDENCE;
+		ctx->filter_precedence = action & FILTER_PRECEDENCE;
+
+		if (action & FILTER_ACTION_DIVERT) {
+			if (ctx->divert) {
+				// Override any deferred block action, if already in divert mode (keep divert mode)
+				ctx->deferred_action = FILTER_ACTION_NONE;
+			} else {
+				log_err_level_printf(LOG_WARNING, "HTTP filter cannot enable divert mode\n");
+			}
+		}
+		else if (action & FILTER_ACTION_SPLIT) {
+			if (!ctx->divert) {
+				// Override any deferred block action, if already in split mode (keep split mode)
+				ctx->deferred_action = FILTER_ACTION_NONE;
+			} else {
+				log_err_level_printf(LOG_WARNING, "HTTP filter cannot enable split mode\n");
+			}
+		}
+		else if (action & FILTER_ACTION_PASS) {
+			log_err_level_printf(LOG_WARNING, "HTTP filter cannot take pass action\n");
+		}
+		else if (action & FILTER_ACTION_BLOCK) {
+			ctx->deferred_action = FILTER_ACTION_NONE;
 			pxy_conn_term(ctx, 1);
 			rv = 1;
-		}
-		else if (action & (FILTER_ACTION_DIVERT | FILTER_ACTION_SPLIT | FILTER_ACTION_PASS)) {
-			log_err_level_printf(LOG_WARNING, "HTTP filter cannot take divert, split, or pass actions, any log actions are ignored too\n");
-			goto out;
 		}
 		//else { /* FILTER_ACTION_MATCH */ }
 
@@ -532,9 +549,9 @@ protohttp_apply_filter(pxy_conn_ctx_t *ctx)
 #endif /* !WITHOUT_MIRROR */
 				)) {
 #ifndef WITHOUT_MIRROR
-			log_err_level_printf(LOG_WARNING, "HTTP filter cannot enable content, pcap, and mirror logging\n");
+			log_err_level_printf(LOG_WARNING, "HTTP filter cannot enable content, pcap, or mirror logging\n");
 #else /* !WITHOUT_MIRROR */
-			log_err_level_printf(LOG_WARNING, "HTTP filter cannot enable content and pcap logging\n");
+			log_err_level_printf(LOG_WARNING, "HTTP filter cannot enable content or pcap logging\n");
 #endif /* WITHOUT_MIRROR */
 		}
 
@@ -555,11 +572,16 @@ protohttp_apply_filter(pxy_conn_ctx_t *ctx)
 			ctx->log_mirror = 0;
 #endif /* !WITHOUT_MIRROR */
 	}
-out:
+
+	// Cannot defer block action any longer
+	// Match action should not override any deferred action, hence no 'else if'
+	if (pxyconn_apply_deferred_block_action(ctx))
+		rv = 1;
+
 	return rv;
 }
 
-static void NONNULL(1,2,3,5)
+static int WUNRES NONNULL(1,2,3,5)
 protohttp_filter_request_header(struct evbuffer *inbuf, struct evbuffer *outbuf, protohttp_ctx_t *http_ctx, enum conn_type type, pxy_conn_ctx_t *ctx)
 {
 	char *line;
@@ -577,7 +599,7 @@ protohttp_filter_request_header(struct evbuffer *inbuf, struct evbuffer *outbuf,
 		} else {
 			log_finer_va("REMOVE= %s", line);
 			if (ctx->enomem) {
-				return;
+				return -1;
 			}
 		}
 		free(line);
@@ -590,25 +612,28 @@ protohttp_filter_request_header(struct evbuffer *inbuf, struct evbuffer *outbuf,
 	}
 
 	if (http_ctx->seen_req_header) {
-		if (protohttp_apply_filter(ctx)) {
-			return;
-		}
+		if (type == CONN_TYPE_PARENT) {
+			if (protohttp_apply_filter(ctx)) {
+				return -1;
+			}
 
-		/* request header complete */
-		if ((type == CONN_TYPE_PARENT) && ctx->spec->opts->deny_ocsp) {
-			protohttp_ocsp_deny(ctx, http_ctx);
+			/* request header complete */
+			if (ctx->spec->opts->deny_ocsp) {
+				protohttp_ocsp_deny(ctx, http_ctx);
+			}
 		}
 
 		if (ctx->enomem) {
-			return;
+			return -1;
 		}
 
 		/* no data left after parsing headers? */
 		if (evbuffer_get_length(inbuf) == 0) {
-			return;
+			return 0;
 		}
 		evbuffer_add_buffer(outbuf, inbuf);
 	}
+	return 0;
 }
 
 #ifndef WITHOUT_USERAUTH
@@ -798,8 +823,7 @@ protohttp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	/* request header munging */
 	if (!http_ctx->seen_req_header) {
 		log_finest_va("HTTP Request Header, size=%zu", evbuffer_get_length(inbuf));
-		protohttp_filter_request_header(inbuf, outbuf, http_ctx, ctx->type, ctx);
-		if (ctx->enomem) {
+		if (protohttp_filter_request_header(inbuf, outbuf, http_ctx, ctx->type, ctx) == -1) {
 			return;
 		}
 	} else {
@@ -986,8 +1010,7 @@ protohttp_bev_readcb_src_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ct
 	if (!http_ctx->seen_req_header) {
 		log_finest_va("HTTP Request Header, size=%zu", evbuffer_get_length(inbuf));
 		// @todo Just remove SSLproxy line, do not filter request on the server side?
-		protohttp_filter_request_header(inbuf, outbuf, http_ctx, ctx->type, ctx->conn);
-		if (ctx->conn->enomem) {
+		if (protohttp_filter_request_header(inbuf, outbuf, http_ctx, ctx->type, ctx->conn) == -1) {
 			return;
 		}
 	} else {

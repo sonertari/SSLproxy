@@ -760,18 +760,24 @@ protossl_apply_filter(pxy_conn_ctx_t *ctx)
 		ctx->filter_precedence = action & FILTER_PRECEDENCE;
 
 		if (action & FILTER_ACTION_DIVERT) {
+			ctx->deferred_action = FILTER_ACTION_NONE;
 			ctx->divert = 1;
 		}
 		else if (action & FILTER_ACTION_SPLIT) {
+			ctx->deferred_action = FILTER_ACTION_NONE;
 			ctx->divert = 0;
 		}
 		else if (action & FILTER_ACTION_PASS) {
+			ctx->deferred_action = FILTER_ACTION_NONE;
 			ctx->pass = 1;
 			rv = 1;
 		}
 		else if (action & FILTER_ACTION_BLOCK) {
-			pxy_conn_term(ctx, 1);
-			rv = 1;
+			// Always defer block action, the only action we can defer from this point on
+			// This block action should override any deferred pass action,
+			// because the current rule must have a higher precedence
+			log_fine("Deferring block action");
+			ctx->deferred_action = FILTER_ACTION_BLOCK;
 		}
 		//else { /* FILTER_ACTION_MATCH */ }
 
@@ -784,6 +790,12 @@ protossl_apply_filter(pxy_conn_ctx_t *ctx)
 		ctx->log_mirror = !!(action & FILTER_LOG_MIRROR);
 #endif /* !WITHOUT_MIRROR */
 	}
+
+	// Cannot defer pass action any longer
+	// Match action should not override pass action, hence no 'else if'
+	if (pxyconn_apply_deferred_pass_action(ctx))
+		rv = 1;
+
 	return rv;
 }
 
@@ -830,6 +842,8 @@ protossl_srcssl_create(pxy_conn_ctx_t *ctx, SSL *origssl)
 			ctx->enomem = 1;
 	}
 
+	// Defers any block action until HTTP filter application
+	// or until the first src readcb of non-http protos
 	if (protossl_apply_filter(ctx)) {
 		cert_free(cert);
 		return NULL;
@@ -1648,7 +1662,8 @@ protossl_bev_eventcb_connected_srvdst(UNUSED struct bufferevent *bev, pxy_conn_c
 	}
 #endif /* !WITHOUT_USERAUTH */
 
-	if (prototcp_apply_filter(ctx)) {
+	// Defer any pass or block action until SSL filter application below
+	if (prototcp_apply_filter(ctx, FILTER_ACTION_PASS | FILTER_ACTION_BLOCK)) {
 		return;
 	}
 

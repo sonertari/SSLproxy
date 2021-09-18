@@ -383,9 +383,9 @@ In terms of possible filter actions,
 
 - Dst Host filtering rules can take all of the filter and log actions.
 - SSL filtering rules can take all of the filter and log actions.
-- HTTP filtering rules take the match and block filter actions, but not the 
-divert, split, or pass actions. Also, HTTP filtering rules can only disable 
-logging.
+- HTTP filtering rules can take match and block filter actions, can keep 
+enabled divert and split modes, but cannot take pass action. Also, HTTP 
+filtering rules can only disable logging.
 
 Log actions do not configure any loggers. Global loggers for respective log 
 actions should have been configured for those log actions to have any effect.

@@ -149,6 +149,10 @@ protopassthrough_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	}
 #endif /* !WITHOUT_USERAUTH */
 
+	if (pxyconn_apply_deferred_block_action(ctx)) {
+		return;
+	}
+
 	evbuffer_add_buffer(bufferevent_get_output(ctx->srvdst.bev), bufferevent_get_input(bev));
 	pxy_try_set_watermark(bev, ctx, ctx->srvdst.bev);
 }

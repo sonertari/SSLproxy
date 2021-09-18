@@ -333,9 +333,12 @@ struct pxy_conn_ctx {
 	unsigned int log_mirror : 1;
 #endif /* !WITHOUT_MIRROR */
 
-	// Highest precedence applied by filtering rules
+	// The precedence of filtering rule applied
 	// precedence can only go up not down
 	unsigned int filter_precedence;
+
+	// Deferred filter action from an earlier filter application
+	unsigned int deferred_action;
 
 #ifdef HAVE_LOCAL_PROCINFO
 	/* local process information */
@@ -441,6 +444,8 @@ int pxy_is_listuser(userlist_t *, const char *
 void pxy_classify_user(pxy_conn_ctx_t *) NONNULL(1);
 void pxy_userauth(pxy_conn_ctx_t *) NONNULL(1);
 #endif /* !WITHOUT_USERAUTH */
+int pxyconn_apply_deferred_pass_action(pxy_conn_ctx_t *) NONNULL(1);
+int pxyconn_apply_deferred_block_action(pxy_conn_ctx_t *) NONNULL(1);
 unsigned int pxyconn_set_filter_action(pxy_conn_ctx_t *, filter_site_t *) NONNULL(1,2);
 unsigned int pxyconn_filter(pxy_conn_ctx_t *, proto_filter_func_t) NONNULL(1);
 void pxy_conn_setup(evutil_socket_t, struct sockaddr *, int,
