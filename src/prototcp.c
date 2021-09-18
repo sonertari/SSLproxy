@@ -507,6 +507,11 @@ prototcp_bev_eventcb_connected_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 static int NONNULL(1,2)
 prototcp_filter_match(pxy_conn_ctx_t *ctx, filter_site_t *site)
 {
+	if (site->precedence < ctx->filter_precedence) {
+		log_finest_va("Rule precedence lower than conn filter precedence %d < %d: %s, %s", site->precedence, ctx->filter_precedence, site->site, ctx->dsthost_str);
+		return 0;
+	}
+
 	if (site->all_sites) {
 		log_finest_va("Match all dst: %s, %s", site->site, ctx->dsthost_str);
 		return 1;
@@ -551,6 +556,8 @@ prototcp_apply_filter(pxy_conn_ctx_t *ctx)
 	int rv = 0;
 	unsigned int action;
 	if ((action = pxyconn_filter(ctx, prototcp_dsthost_filter))) {
+		ctx->filter_precedence = action & FILTER_PRECEDENCE;
+
 		if (action & FILTER_ACTION_DIVERT) {
 			ctx->divert = 1;
 		}

@@ -2001,56 +2001,59 @@ pxyconn_set_filter_action(pxy_conn_ctx_t *ctx, filter_site_t *site)
 {
 	unsigned int action = FILTER_ACTION_NONE;
 	if (site->divert) {
-		log_err_level_printf(LOG_INFO, "Site filter divert action for %s\n", site->site);
+		log_err_level_printf(LOG_INFO, "Site filter divert action for %s, precedence %d\n", site->site, site->precedence);
 		action = FILTER_ACTION_DIVERT;
 	}
 	else if (site->split) {
-		log_err_level_printf(LOG_INFO, "Site filter split action for %s\n", site->site);
+		log_err_level_printf(LOG_INFO, "Site filter split action for %s, precedence %d\n", site->site, site->precedence);
 		action = FILTER_ACTION_SPLIT;
 	}
 	else if (site->pass) {
 		// Ignore pass action if already in passthrough mode
 		if (!ctx->pass) {
-			log_err_level_printf(LOG_INFO, "Site filter pass action for %s\n", site->site);
+			log_err_level_printf(LOG_INFO, "Site filter pass action for %s, precedence %d\n", site->site, site->precedence);
 			action = FILTER_ACTION_PASS;
 		}
 	}
 	else if (site->block) {
-		log_err_level_printf(LOG_INFO, "Site filter block action for %s\n", site->site);
+		log_err_level_printf(LOG_INFO, "Site filter block action for %s, precedence %d\n", site->site, site->precedence);
 		action = FILTER_ACTION_BLOCK;
 	}
 	else if (site->match) {
-		log_err_level_printf(LOG_INFO, "Site filter match action for %s\n", site->site);
+		log_err_level_printf(LOG_INFO, "Site filter match action for %s, precedence %d\n", site->site, site->precedence);
 		action = FILTER_ACTION_MATCH;
 	}
 
 	// Multiple log actions can be defined, hence no 'else'
 	if (site->log_connect) {
-		log_err_level_printf(LOG_INFO, "Site filter connect log for %s\n", site->site);
+		log_err_level_printf(LOG_INFO, "Site filter connect log for %s, precedence %d\n", site->site, site->precedence);
 		action |= FILTER_LOG_CONNECT;
 	}
 	if (site->log_master) {
-		log_err_level_printf(LOG_INFO, "Site filter master log for %s\n", site->site);
+		log_err_level_printf(LOG_INFO, "Site filter master log for %s, precedence %d\n", site->site, site->precedence);
 		action |= FILTER_LOG_MASTER;
 	}
 	if (site->log_cert) {
-		log_err_level_printf(LOG_INFO, "Site filter cert log for %s\n", site->site);
+		log_err_level_printf(LOG_INFO, "Site filter cert log for %s, precedence %d\n", site->site, site->precedence);
 		action |= FILTER_LOG_CERT;
 	}
 	if (site->log_content) {
-		log_err_level_printf(LOG_INFO, "Site filter content log for %s\n", site->site);
+		log_err_level_printf(LOG_INFO, "Site filter content log for %s, precedence %d\n", site->site, site->precedence);
 		action |= FILTER_LOG_CONTENT;
 	}
 	if (site->log_pcap) {
-		log_err_level_printf(LOG_INFO, "Site filter pcap log for %s\n", site->site);
+		log_err_level_printf(LOG_INFO, "Site filter pcap log for %s, precedence %d\n", site->site, site->precedence);
 		action |= FILTER_LOG_PCAP;
 	}
 #ifndef WITHOUT_MIRROR
 	if (site->log_mirror) {
-		log_err_level_printf(LOG_INFO, "Site filter mirror log for %s\n", site->site);
+		log_err_level_printf(LOG_INFO, "Site filter mirror log for %s, precedence %d\n", site->site, site->precedence);
 		action |= FILTER_LOG_MIRROR;
 	}
 #endif /* !WITHOUT_MIRROR */
+
+	action |= site->precedence;
+
 	return action;
 }
 

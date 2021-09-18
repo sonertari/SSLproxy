@@ -391,6 +391,11 @@ protossl_match_host(pxy_conn_ctx_t *ctx, filter_site_t *site)
 {
 	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
 
+	if (site->precedence < ctx->filter_precedence) {
+		log_finest_va("Rule precedence lower than conn filter precedence %d < %d: %s, %s", site->precedence, ctx->filter_precedence, site->site, http_ctx->http_host);
+		return 0;
+	}
+
 	if (site->all_sites) {
 		log_finest_va("Match all host: %s, %s", site->site, http_ctx->http_host);
 		return 1;
@@ -413,6 +418,11 @@ static int NONNULL(1,2)
 protossl_match_uri(pxy_conn_ctx_t *ctx, filter_site_t *site)
 {
 	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
+
+	if (site->precedence < ctx->filter_precedence) {
+		log_finest_va("Rule precedence lower than conn filter precedence %d < %d: %s, %s", site->precedence, ctx->filter_precedence, site->site, http_ctx->http_uri);
+		return 0;
+	}
 
 	if (site->all_sites) {
 		log_finest_va("Match all uri: %s, %s", site->site, http_ctx->http_uri);
@@ -506,6 +516,7 @@ protohttp_apply_filter(pxy_conn_ctx_t *ctx)
 	unsigned int action;
 	if ((action = pxyconn_filter(ctx, protohttp_filter))) {
 		if (action & FILTER_ACTION_BLOCK) {
+			ctx->filter_precedence = action & FILTER_PRECEDENCE;
 			pxy_conn_term(ctx, 1);
 			rv = 1;
 		}

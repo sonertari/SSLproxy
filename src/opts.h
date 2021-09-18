@@ -49,18 +49,20 @@
 #define STRORNONE(x)	(((x)&&*(x))?(x):"")
 
 #define FILTER_ACTION_NONE   0x0
-#define FILTER_ACTION_MATCH  0x2
-#define FILTER_ACTION_DIVERT 0x4
-#define FILTER_ACTION_SPLIT  0x8
-#define FILTER_ACTION_PASS   0x10
-#define FILTER_ACTION_BLOCK  0x20
+#define FILTER_ACTION_MATCH  0x200
+#define FILTER_ACTION_DIVERT 0x400
+#define FILTER_ACTION_SPLIT  0x800
+#define FILTER_ACTION_PASS   0x1000
+#define FILTER_ACTION_BLOCK  0x2000
 
-#define FILTER_LOG_CONNECT   0x40
-#define FILTER_LOG_MASTER    0x80
-#define FILTER_LOG_CERT      0x100
-#define FILTER_LOG_CONTENT   0x200
-#define FILTER_LOG_PCAP      0x400
-#define FILTER_LOG_MIRROR    0x800
+#define FILTER_LOG_CONNECT   0x4000
+#define FILTER_LOG_MASTER    0x8000
+#define FILTER_LOG_CERT      0x10000
+#define FILTER_LOG_CONTENT   0x20000
+#define FILTER_LOG_PCAP      0x40000
+#define FILTER_LOG_MIRROR    0x80000
+
+#define FILTER_PRECEDENCE    0x0000FF
 
 #ifndef WITHOUT_USERAUTH
 typedef struct userlist {
@@ -205,6 +207,9 @@ typedef struct filter_rule {
 	char *keyword;
 #endif /* !WITHOUT_USERAUTH */
 	char *ip;
+	// Precedence is used in rule application
+	// More specific rules have higher precedence
+	unsigned int precedence;
 	struct filter_rule *next;
 } filter_rule_t;
 
@@ -225,6 +230,7 @@ typedef struct filter_site {
 #ifndef WITHOUT_MIRROR
 	unsigned int log_mirror : 1;
 #endif /* !WITHOUT_MIRROR */
+	unsigned int precedence;
 	struct filter_site *next;
 } filter_site_t;
 

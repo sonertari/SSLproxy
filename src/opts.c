@@ -800,6 +800,8 @@ clone_global_opts(global_t *global, const char *argv0, tmp_global_opts_t *tmp_gl
 		fr->host = rule->host;
 		fr->uri = rule->uri;
 
+		fr->precedence = rule->precedence;
+
 		fr->next = opts->filter_rules;
 		opts->filter_rules = fr;
 
@@ -1143,7 +1145,7 @@ filter_rule_str(filter_rule_t *rule)
 #ifndef WITHOUT_MIRROR
 				"|%s"
 #endif /* !WITHOUT_MIRROR */
-				", apply to=%s|%s|%s|%s|%s",
+				", apply to=%s|%s|%s|%s|%s, precedence=%d",
 				rule->site, rule->exact ? "exact" : "substring", STRORNONE(rule->ip),
 #ifndef WITHOUT_USERAUTH
 				STRORNONE(rule->user), STRORNONE(rule->keyword),
@@ -1158,8 +1160,8 @@ filter_rule_str(filter_rule_t *rule)
 #ifndef WITHOUT_MIRROR
 				rule->log_mirror ? "mirror" : "",
 #endif /* !WITHOUT_MIRROR */
-				rule->dstip ? "dstip" : "", rule->sni ? "sni" : "", rule->cn ? "cn" : "", rule->host ? "host" : "", rule->uri ? "uri" : ""
-				) < 0) {
+				rule->dstip ? "dstip" : "", rule->sni ? "sni" : "", rule->cn ? "cn" : "", rule->host ? "host" : "", rule->uri ? "uri" : "",
+				rule->precedence) < 0) {
 			goto err;
 		}
 		char *nfrs;
@@ -1197,14 +1199,14 @@ filter_sites_str(filter_site_t *site)
 #ifndef WITHOUT_MIRROR
 				"|%s"
 #endif /* !WITHOUT_MIRROR */
-				")", STRORNONE(s), count,
+				", precedence=%d)", STRORNONE(s), count,
 				site->site, site->all_sites ? "all_sites, " : "", site->exact ? "exact" : "substring",
 				site->divert ? "divert" : "", site->split ? "split" : "", site->pass ? "pass" : "", site->block ? "block" : "", site->match ? "match" : "",
 				site->log_connect ? "connect" : "", site->log_master ? "master" : "", site->log_cert ? "cert" : "", site->log_content ? "content" : "", site->log_pcap ? "pcap" : ""
 #ifndef WITHOUT_MIRROR
 				, site->log_mirror ? "mirror" : ""
 #endif /* !WITHOUT_MIRROR */
-				) < 0) {
+				, site->precedence) < 0) {
 			goto err;
 		}
 		if (s)
@@ -2373,9 +2375,12 @@ opts_set_passsite(opts_t *opts, char *value, int line_num)
 
 	rule->site = strdup(argv[0]);
 
+	// precedence can only go up not down
+	rule->precedence = 0;
+
 	if (argc == 1) {
 		// Apply filter rule to all conns
-		// Equivalent to "site *" without keyword
+		// Equivalent to "site *" without user auth
 		rule->all_conns = 1;
 	}
 
@@ -2383,18 +2388,21 @@ opts_set_passsite(opts_t *opts, char *value, int line_num)
 		if (!strcmp(argv[1], "*")) {
 #ifndef WITHOUT_USERAUTH
 			// Apply filter rule to all users perhaps with keyword
+			rule->precedence++;
 			rule->all_users = 1;
 		} else if (sys_isuser(argv[1])) {
 			if (!opts->user_auth) {
 				fprintf(stderr, "User filter requires user auth on line %d\n", line_num);
 				exit(EXIT_FAILURE);
 			}
+			rule->precedence += 2;
 			rule->user = strdup(argv[1]);
 #else /* !WITHOUT_USERAUTH */
 			// Apply filter rule to all conns, if USERAUTH is disabled, ip == '*'
 			rule->all_conns = 1;
 #endif /* WITHOUT_USERAUTH */
 		} else {
+			rule->precedence++;
 			rule->ip = strdup(argv[1]);
 		}
 	}
@@ -2417,10 +2425,12 @@ opts_set_passsite(opts_t *opts, char *value, int line_num)
 			fprintf(stderr, "Keyword filter requires user auth on line %d\n", line_num);
 			exit(EXIT_FAILURE);
 		}
+		rule->precedence++;
 		rule->keyword = strdup(argv[2]);
 #endif /* !WITHOUT_USERAUTH */
 	}
 
+	rule->precedence++;
 	rule->sni = 1;
 	rule->cn = 1;
 	rule->pass = 1;
@@ -2440,7 +2450,7 @@ opts_set_passsite(opts_t *opts, char *value, int line_num)
 #ifndef WITHOUT_MIRROR
 		"|%s"
 #endif /* !WITHOUT_MIRROR */
-		", apply to=%s|%s|%s|%s|%s\n",
+		", apply to=%s|%s|%s|%s|%s, precedence=%d\n",
 		rule->site, rule->exact ? "exact" : "substring", STRORNONE(rule->ip),
 #ifndef WITHOUT_USERAUTH
 		STRORNONE(rule->user), STRORNONE(rule->keyword),
@@ -2455,7 +2465,8 @@ opts_set_passsite(opts_t *opts, char *value, int line_num)
 #ifndef WITHOUT_MIRROR
 		rule->log_mirror ? "mirror" : "",
 #endif /* !WITHOUT_MIRROR */
-		rule->dstip ? "dstip" : "", rule->sni ? "sni" : "", rule->cn ? "cn" : "", rule->host ? "host" : "", rule->uri ? "uri" : "");
+		rule->dstip ? "dstip" : "", rule->sni ? "sni" : "", rule->cn ? "cn" : "", rule->host ? "host" : "", rule->uri ? "uri" : "",
+		rule->precedence);
 #endif /* DEBUG_OPTS */
 }
 
@@ -2548,6 +2559,9 @@ filter_rule_parse(opts_t *opts, const char *name, char *value, int line_num)
 	else if (equal(name, "Match"))
 		rule->match = 1;
 
+	// precedence can only go up not down
+	rule->precedence = 0;
+
 	int done_all = 0;
 	int done_from = 0;
 	int done_to = 0;
@@ -2582,6 +2596,8 @@ filter_rule_parse(opts_t *opts, const char *name, char *value, int line_num)
 						exit(EXIT_FAILURE);
 					}
 
+					rule->precedence++;
+
 					if (equal(argv[i], "*")) {
 						rule->all_users = 1;
 					} else {
@@ -2589,6 +2605,7 @@ filter_rule_parse(opts_t *opts, const char *name, char *value, int line_num)
 							fprintf(stderr, "No such user '%s' on line %d\n", argv[i], line_num);
 							exit(EXIT_FAILURE);
 						}
+						rule->precedence++;
 						rule->user = strdup(argv[i]);
 					}
 					i++;
@@ -2602,6 +2619,7 @@ filter_rule_parse(opts_t *opts, const char *name, char *value, int line_num)
 					}
 
 					i = opts_inc_arg_index(i, argc, argv[i], line_num);
+					rule->precedence++;
 					rule->keyword = strdup(argv[i++]);
 				}
 
@@ -2614,6 +2632,7 @@ filter_rule_parse(opts_t *opts, const char *name, char *value, int line_num)
 				if (equal(argv[i], "*")) {
 					rule->all_conns = 1;
 				} else {
+					rule->precedence++;
 					rule->ip = strdup(argv[i]);
 				}
 				i++;
@@ -2635,6 +2654,7 @@ filter_rule_parse(opts_t *opts, const char *name, char *value, int line_num)
 
 			i = opts_inc_arg_index(i, argc, argv[i], line_num);
 			if (equal(argv[i], "sni") || equal(argv[i], "cn") || equal(argv[i], "host") || equal(argv[i], "uri") || equal(argv[i], "ip")) {
+				rule->precedence++;
 				if (equal(argv[i], "sni"))
 					rule->sni = 1;
 				else if (equal(argv[i], "cn"))
@@ -2664,6 +2684,8 @@ filter_rule_parse(opts_t *opts, const char *name, char *value, int line_num)
 				fprintf(stderr, "Only one 'log' statement allowed on line %d\n", line_num);
 				exit(EXIT_FAILURE);
 			}
+
+			rule->precedence++;
 
 			i = opts_inc_arg_index(i, argc, argv[i], line_num);
 			if (equal(argv[i], "connect") || equal(argv[i], "master") || equal(argv[i], "cert") || equal(argv[i], "content") || equal(argv[i], "pcap")
@@ -2748,7 +2770,7 @@ filter_rule_parse(opts_t *opts, const char *name, char *value, int line_num)
 #ifndef WITHOUT_MIRROR
 		"|%s"
 #endif /* !WITHOUT_MIRROR */
-		", apply to=%s|%s|%s|%s|%s\n",
+		", apply to=%s|%s|%s|%s|%s, precedence=%d\n",
 		rule->site, rule->exact ? "exact" : "substring", STRORNONE(rule->ip),
 #ifndef WITHOUT_USERAUTH
 		STRORNONE(rule->user), STRORNONE(rule->keyword),
@@ -2763,7 +2785,8 @@ filter_rule_parse(opts_t *opts, const char *name, char *value, int line_num)
 #ifndef WITHOUT_MIRROR
 		rule->log_mirror ? "mirror" : "",
 #endif /* !WITHOUT_MIRROR */
-		rule->dstip ? "dstip" : "", rule->sni ? "sni" : "", rule->cn ? "cn" : "", rule->host ? "host" : "", rule->uri ? "uri" : "");
+		rule->dstip ? "dstip" : "", rule->sni ? "sni" : "", rule->cn ? "cn" : "", rule->host ? "host" : "", rule->uri ? "uri" : "",
+		rule->precedence);
 #endif /* DEBUG_OPTS */
 }
 
@@ -2829,6 +2852,10 @@ opts_add_site(filter_site_t *site, filter_rule_t *rule)
 #ifndef WITHOUT_MIRROR
 	s->log_mirror |= rule->log_mirror;
 #endif /* !WITHOUT_MIRROR */
+
+	// precedence can only go up not down
+	if (rule->precedence > s->precedence)
+		s->precedence = rule->precedence;
 
 	return prepend ? s : site;
 }

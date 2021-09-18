@@ -333,6 +333,10 @@ struct pxy_conn_ctx {
 	unsigned int log_mirror : 1;
 #endif /* !WITHOUT_MIRROR */
 
+	// Highest precedence applied by filtering rules
+	// precedence can only go up not down
+	unsigned int filter_precedence;
+
 #ifdef HAVE_LOCAL_PROCINFO
 	/* local process information */
 	pxy_conn_lproc_desc_t lproc;
