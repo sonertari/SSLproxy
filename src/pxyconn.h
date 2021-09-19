@@ -323,7 +323,7 @@ struct pxy_conn_ctx {
 	// Enable logging of conn for specific logger types
 	// Global logging options should be configured for these to write logs
 	// Default to all logging if no filter rules defined in proxyspec
-	// Otherwise, logging is disabled, so filter rules should enable each log action specifically
+	// Otherwise, logging is disabled, so filter rules should enable/disable each log action specifically
 	unsigned int log_connect : 1;
 	unsigned int log_master : 1;
 	unsigned int log_cert : 1;

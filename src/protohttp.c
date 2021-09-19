@@ -556,19 +556,28 @@ protohttp_apply_filter(pxy_conn_ctx_t *ctx)
 		}
 
 		// Note that connect, master, and cert logs have already been written by now
-		// so disabling those logs here will not have any effect
-		ctx->log_connect = !!(action & FILTER_LOG_CONNECT);
-		ctx->log_master = !!(action & FILTER_LOG_MASTER);
-		ctx->log_cert = !!(action & FILTER_LOG_CERT);
+		// so enabling or disabling those logs here will not have any effect
+		if (action & FILTER_LOG_CONNECT)
+			ctx->log_connect = 1;
+		else if (action & FILTER_LOG_NOCONNECT)
+			ctx->log_connect = 0;
+		if (action & FILTER_LOG_MASTER)
+			ctx->log_master = 1;
+		else if (action & FILTER_LOG_NOMASTER)
+			ctx->log_master = 0;
+		if (action & FILTER_LOG_CERT)
+			ctx->log_cert = 1;
+		else if (action & FILTER_LOG_NOCERT)
+			ctx->log_cert = 0;
 
 		// content, pcap, and mirror logging can be disabled only
 		// loggers will stop writing further contents
-		if (!(action & FILTER_LOG_CONTENT))
+		if (action & FILTER_LOG_NOCONTENT)
 			ctx->log_content = 0;
-		if (!(action & FILTER_LOG_PCAP))
+		if (action & FILTER_LOG_NOPCAP)
 			ctx->log_pcap = 0;
 #ifndef WITHOUT_MIRROR
-		if (!(action & FILTER_LOG_MIRROR))
+		if (action & FILTER_LOG_NOMIRROR)
 			ctx->log_mirror = 0;
 #endif /* !WITHOUT_MIRROR */
 	}

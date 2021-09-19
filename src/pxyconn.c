@@ -2048,30 +2048,31 @@ pxyconn_set_filter_action(pxy_conn_ctx_t *ctx, filter_site_t *site)
 	}
 
 	// Multiple log actions can be defined, hence no 'else'
-	log_err_level_printf(LOG_INFO, "Site filter %s connect log for %s, precedence %d\n", site->log_connect ? "enable" : "disable", site->site, site->precedence);
+	// 0: don't change, 1: disable, 2: enable
 	if (site->log_connect) {
-		action |= FILTER_LOG_CONNECT;
+		log_err_level_printf(LOG_INFO, "Site filter %s connect log for %s, precedence %d\n", site->log_connect % 2 ? "disable" : "enable", site->site, site->precedence);
+		action |= (site->log_connect % 2) ? FILTER_LOG_NOCONNECT : FILTER_LOG_CONNECT;
 	}
-	log_err_level_printf(LOG_INFO, "Site filter %s master log for %s, precedence %d\n", site->log_master ? "enable" : "disable", site->site, site->precedence);
 	if (site->log_master) {
-		action |= FILTER_LOG_MASTER;
+		log_err_level_printf(LOG_INFO, "Site filter %s master log for %s, precedence %d\n", site->log_master % 2 ? "disable" : "enable", site->site, site->precedence);
+		action |= (site->log_master % 2) ? FILTER_LOG_NOMASTER : FILTER_LOG_MASTER;
 	}
-	log_err_level_printf(LOG_INFO, "Site filter %s cert log for %s, precedence %d\n", site->log_cert ? "enable" : "disable", site->site, site->precedence);
 	if (site->log_cert) {
-		action |= FILTER_LOG_CERT;
+		log_err_level_printf(LOG_INFO, "Site filter %s cert log for %s, precedence %d\n", site->log_cert % 2 ? "disable" : "enable", site->site, site->precedence);
+		action |= (site->log_cert % 2) ? FILTER_LOG_NOCERT : FILTER_LOG_CERT;
 	}
-	log_err_level_printf(LOG_INFO, "Site filter %s content log for %s, precedence %d\n", site->log_content ? "enable" : "disable", site->site, site->precedence);
 	if (site->log_content) {
-		action |= FILTER_LOG_CONTENT;
+		log_err_level_printf(LOG_INFO, "Site filter %s content log for %s, precedence %d\n", site->log_content % 2 ? "disable" : "enable", site->site, site->precedence);
+		action |= (site->log_content % 2) ? FILTER_LOG_NOCONTENT : FILTER_LOG_CONTENT;
 	}
-	log_err_level_printf(LOG_INFO, "Site filter %s pcap log for %s, precedence %d\n", site->log_pcap ? "enable" : "disable", site->site, site->precedence);
 	if (site->log_pcap) {
-		action |= FILTER_LOG_PCAP;
+		log_err_level_printf(LOG_INFO, "Site filter %s pcap log for %s, precedence %d\n", site->log_pcap % 2 ? "disable" : "enable", site->site, site->precedence);
+		action |= (site->log_pcap % 2) ? FILTER_LOG_NOPCAP : FILTER_LOG_PCAP;
 	}
 #ifndef WITHOUT_MIRROR
-	log_err_level_printf(LOG_INFO, "Site filter %s mirror log for %s, precedence %d\n", site->log_mirror ? "enable" : "disable", site->site, site->precedence);
 	if (site->log_mirror) {
-		action |= FILTER_LOG_MIRROR;
+		log_err_level_printf(LOG_INFO, "Site filter %s mirror log for %s, precedence %d\n", site->log_mirror % 2 ? "disable" : "enable", site->site, site->precedence);
+		action |= (site->log_mirror % 2) ? FILTER_LOG_NOMIRROR : FILTER_LOG_MIRROR;
 	}
 #endif /* !WITHOUT_MIRROR */
 

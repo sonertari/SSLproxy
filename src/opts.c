@@ -631,6 +631,22 @@ opts_proto_dbg_dump(opts_t *opts)
 	return s;
 }
 
+static void
+opts_append_to_list(filter_rule_t **list, filter_rule_t *rule)
+{
+	filter_rule_t *l = *list;
+	while (l) {
+		if (!l->next)
+			break;
+		l = l->next;
+	}
+
+	if (l)
+		l->next = rule;
+	else
+		*list = rule;
+}
+
 #ifndef WITHOUT_USERAUTH
 static void
 opts_set_user_auth_url(opts_t *opts, const char *optarg)
@@ -802,8 +818,7 @@ clone_global_opts(global_t *global, const char *argv0, tmp_global_opts_t *tmp_gl
 
 		fr->precedence = rule->precedence;
 
-		fr->next = opts->filter_rules;
-		opts->filter_rules = fr;
+		opts_append_to_list(&opts->filter_rules, fr);
 
 		rule = rule->next;
 	}
@@ -1156,9 +1171,11 @@ filter_rule_str(filter_rule_t *rule)
 #endif /* !WITHOUT_USERAUTH */
 				rule->all_sites ? "sites" : "",
 				rule->divert ? "divert" : "", rule->split ? "split" : "", rule->pass ? "pass" : "", rule->block ? "block" : "", rule->match ? "match" : "",
-				rule->log_connect ? "connect" : "", rule->log_master ? "master" : "", rule->log_cert ? "cert" : "", rule->log_content ? "content" : "", rule->log_pcap ? "pcap" : "",
+				rule->log_connect ? (rule->log_connect == 1 ? "!connect" : "connect") : "", rule->log_master ? (rule->log_master == 1 ? "!master" : "master") : "",
+				rule->log_cert ? (rule->log_cert == 1 ? "!cert" : "cert") : "", rule->log_content ? (rule->log_content == 1 ? "!content" : "content") : "",
+				rule->log_pcap ? (rule->log_pcap == 1 ? "!pcap" : "pcap") : "",
 #ifndef WITHOUT_MIRROR
-				rule->log_mirror ? "mirror" : "",
+				rule->log_mirror ? (rule->log_mirror == 1 ? "!mirror" : "mirror") : "",
 #endif /* !WITHOUT_MIRROR */
 				rule->dstip ? "dstip" : "", rule->sni ? "sni" : "", rule->cn ? "cn" : "", rule->host ? "host" : "", rule->uri ? "uri" : "",
 				rule->precedence) < 0) {
@@ -1202,11 +1219,13 @@ filter_sites_str(filter_site_t *site)
 				", precedence=%d)", STRORNONE(s), count,
 				site->site, site->all_sites ? "all_sites, " : "", site->exact ? "exact" : "substring",
 				site->divert ? "divert" : "", site->split ? "split" : "", site->pass ? "pass" : "", site->block ? "block" : "", site->match ? "match" : "",
-				site->log_connect ? "connect" : "", site->log_master ? "master" : "", site->log_cert ? "cert" : "", site->log_content ? "content" : "", site->log_pcap ? "pcap" : ""
+				site->log_connect ? (site->log_connect == 1 ? "!connect" : "connect") : "", site->log_master ? (site->log_master == 1 ? "!master" : "master") : "",
+				site->log_cert ? (site->log_cert == 1 ? "!cert" : "cert") : "", site->log_content ? (site->log_content == 1 ? "!content" : "content") : "",
+				site->log_pcap ? (site->log_pcap == 1 ? "!pcap" : "pcap") : "",
 #ifndef WITHOUT_MIRROR
-				, site->log_mirror ? "mirror" : ""
+				site->log_mirror ? (site->log_mirror == 1 ? "!mirror" : "mirror") : "",
 #endif /* !WITHOUT_MIRROR */
-				, site->precedence) < 0) {
+				site->precedence) < 0) {
 			goto err;
 		}
 		if (s)
@@ -2435,8 +2454,8 @@ opts_set_passsite(opts_t *opts, char *value, int line_num)
 	rule->cn = 1;
 	rule->pass = 1;
 
-	rule->next = opts->filter_rules;
-	opts->filter_rules = rule;
+	opts_append_to_list(&opts->filter_rules, rule);
+
 #ifdef DEBUG_OPTS
 	log_dbg_printf("Filter rule: %s, %s, %s"
 #ifndef WITHOUT_USERAUTH
@@ -2461,9 +2480,11 @@ opts_set_passsite(opts_t *opts, char *value, int line_num)
 #endif /* !WITHOUT_USERAUTH */
 		rule->all_sites ? "sites" : "",
 		rule->divert ? "divert" : "", rule->split ? "split" : "", rule->pass ? "pass" : "", rule->block ? "block" : "", rule->match ? "match" : "",
-		rule->log_connect ? "connect" : "", rule->log_master ? "master" : "", rule->log_cert ? "cert" : "", rule->log_content ? "content" : "", rule->log_pcap ? "pcap" : "",
+		rule->log_connect ? (rule->log_connect == 1 ? "!connect" : "connect") : "", rule->log_master ? (rule->log_master == 1 ? "!master" : "master") : "",
+		rule->log_cert ? (rule->log_cert == 1 ? "!cert" : "cert") : "", rule->log_content ? (rule->log_content == 1 ? "!content" : "content") : "",
+		rule->log_pcap ? (rule->log_pcap == 1 ? "!pcap" : "pcap") : "",
 #ifndef WITHOUT_MIRROR
-		rule->log_mirror ? "mirror" : "",
+		rule->log_mirror ? (rule->log_mirror == 1 ? "!mirror" : "mirror") : "",
 #endif /* !WITHOUT_MIRROR */
 		rule->dstip ? "dstip" : "", rule->sni ? "sni" : "", rule->cn ? "cn" : "", rule->host ? "host" : "", rule->uri ? "uri" : "",
 		rule->precedence);
@@ -2696,30 +2717,30 @@ filter_rule_parse(opts_t *opts, const char *name, char *value, int line_num)
 				) {
 				do {
 					if (equal(argv[i], "connect"))
-						rule->log_connect = 1;
+						rule->log_connect = 2;
 					else if (equal(argv[i], "master"))
-						rule->log_master = 1;
+						rule->log_master = 2;
 					else if (equal(argv[i], "cert"))
-						rule->log_cert = 1;
+						rule->log_cert = 2;
 					else if (equal(argv[i], "content"))
-						rule->log_content = 1;
+						rule->log_content = 2;
 					else if (equal(argv[i], "pcap"))
-						rule->log_pcap = 1;
+						rule->log_pcap = 2;
 					else if (equal(argv[i], "!connect"))
-						rule->log_connect = 0;
+						rule->log_connect = 1;
 					else if (equal(argv[i], "!master"))
-						rule->log_master = 0;
+						rule->log_master = 1;
 					else if (equal(argv[i], "!cert"))
-						rule->log_cert = 0;
+						rule->log_cert = 1;
 					else if (equal(argv[i], "!content"))
-						rule->log_content = 0;
+						rule->log_content = 1;
 					else if (equal(argv[i], "!pcap"))
-						rule->log_pcap = 0;
+						rule->log_pcap = 1;
 #ifndef WITHOUT_MIRROR
 					else if (equal(argv[i], "mirror"))
-						rule->log_mirror = 1;
+						rule->log_mirror = 2;
 					else if (equal(argv[i], "!mirror"))
-						rule->log_mirror = 0;
+						rule->log_mirror = 1;
 #endif /* !WITHOUT_MIRROR */
 
 					if (++i == argc)
@@ -2734,6 +2755,18 @@ filter_rule_parse(opts_t *opts, const char *name, char *value, int line_num)
 				done_log = 1;
 			}
 			else if (equal(argv[i], "*")) {
+				rule->log_connect = 2;
+				rule->log_master = 2;
+				rule->log_cert = 2;
+				rule->log_content = 2;
+				rule->log_pcap = 2;
+#ifndef WITHOUT_MIRROR
+				rule->log_mirror = 2;
+#endif /* !WITHOUT_MIRROR */
+				i++;
+				done_log = 1;
+			}
+			else if (equal(argv[i], "!*")) {
 				rule->log_connect = 1;
 				rule->log_master = 1;
 				rule->log_cert = 1;
@@ -2742,10 +2775,6 @@ filter_rule_parse(opts_t *opts, const char *name, char *value, int line_num)
 #ifndef WITHOUT_MIRROR
 				rule->log_mirror = 1;
 #endif /* !WITHOUT_MIRROR */
-				i++;
-				done_log = 1;
-			}
-			else if (equal(argv[i], "!*")) {
 				i++;
 				done_log = 1;
 			}
@@ -2773,8 +2802,8 @@ filter_rule_parse(opts_t *opts, const char *name, char *value, int line_num)
 		rule->dstip = 1;
 	}
 
-	rule->next = opts->filter_rules;
-	opts->filter_rules = rule;
+	opts_append_to_list(&opts->filter_rules, rule);
+
 #ifdef DEBUG_OPTS
 	log_dbg_printf("Filter rule: %s, %s, %s"
 #ifndef WITHOUT_USERAUTH
@@ -2799,9 +2828,11 @@ filter_rule_parse(opts_t *opts, const char *name, char *value, int line_num)
 #endif /* !WITHOUT_USERAUTH */
 		rule->all_sites ? "sites" : "",
 		rule->divert ? "divert" : "", rule->split ? "split" : "", rule->pass ? "pass" : "", rule->block ? "block" : "", rule->match ? "match" : "",
-		rule->log_connect ? "connect" : "", rule->log_master ? "master" : "", rule->log_cert ? "cert" : "", rule->log_content ? "content" : "", rule->log_pcap ? "pcap" : "",
+		rule->log_connect ? (rule->log_connect == 1 ? "!connect" : "connect") : "", rule->log_master ? (rule->log_master == 1 ? "!master" : "master") : "",
+		rule->log_cert ? (rule->log_cert == 1 ? "!cert" : "cert") : "", rule->log_content ? (rule->log_content == 1 ? "!content" : "content") : "",
+		rule->log_pcap ? (rule->log_pcap == 1 ? "!pcap" : "pcap") : "",
 #ifndef WITHOUT_MIRROR
-		rule->log_mirror ? "mirror" : "",
+		rule->log_mirror ? (rule->log_mirror == 1 ? "!mirror" : "mirror") : "",
 #endif /* !WITHOUT_MIRROR */
 		rule->dstip ? "dstip" : "", rule->sni ? "sni" : "", rule->cn ? "cn" : "", rule->host ? "host" : "", rule->uri ? "uri" : "",
 		rule->precedence);
@@ -2865,14 +2896,21 @@ opts_add_site(filter_site_t *site, filter_rule_t *rule)
 		s->match |= rule->match;
 
 		// Multiple log actions can be set for the same site
-		// Multiple rules can enable/disable a log action for the same site, hence the direct assignment
-		s->log_connect = rule->log_connect;
-		s->log_master = rule->log_master;
-		s->log_cert = rule->log_cert;
-		s->log_content = rule->log_content;
-		s->log_pcap = rule->log_pcap;
+		// Multiple rules can enable/disable or don't change a log action for the same site
+		// 0: don't change, 1: disable, 2: enable
+		if (rule->log_connect)
+			s->log_connect = rule->log_connect;
+		if (rule->log_master)
+			s->log_master = rule->log_master;
+		if (rule->log_cert)
+			s->log_cert = rule->log_cert;
+		if (rule->log_content)
+			s->log_content = rule->log_content;
+		if (rule->log_pcap)
+			s->log_pcap = rule->log_pcap;
 #ifndef WITHOUT_MIRROR
-		s->log_mirror = rule->log_mirror;
+		if (rule->log_mirror)
+			s->log_mirror = rule->log_mirror;
 #endif /* !WITHOUT_MIRROR */
 
 		s->precedence = rule->precedence;

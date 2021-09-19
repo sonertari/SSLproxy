@@ -48,21 +48,28 @@
 #define STRORDASH(x)	(((x)&&*(x))?(x):"-")
 #define STRORNONE(x)	(((x)&&*(x))?(x):"")
 
-#define FILTER_ACTION_NONE   0x0
-#define FILTER_ACTION_MATCH  0x200
-#define FILTER_ACTION_DIVERT 0x400
-#define FILTER_ACTION_SPLIT  0x800
-#define FILTER_ACTION_PASS   0x1000
-#define FILTER_ACTION_BLOCK  0x2000
+#define FILTER_ACTION_NONE   0x00000000U
+#define FILTER_ACTION_MATCH  0x00000200U
+#define FILTER_ACTION_DIVERT 0x00000400U
+#define FILTER_ACTION_SPLIT  0x00000800U
+#define FILTER_ACTION_PASS   0x00001000U
+#define FILTER_ACTION_BLOCK  0x00002000U
 
-#define FILTER_LOG_CONNECT   0x4000
-#define FILTER_LOG_MASTER    0x8000
-#define FILTER_LOG_CERT      0x10000
-#define FILTER_LOG_CONTENT   0x20000
-#define FILTER_LOG_PCAP      0x40000
-#define FILTER_LOG_MIRROR    0x80000
+#define FILTER_LOG_CONNECT   0x00004000U
+#define FILTER_LOG_MASTER    0x00008000U
+#define FILTER_LOG_CERT      0x00010000U
+#define FILTER_LOG_CONTENT   0x00020000U
+#define FILTER_LOG_PCAP      0x00040000U
+#define FILTER_LOG_MIRROR    0x00080000U
 
-#define FILTER_PRECEDENCE    0x0000FF
+#define FILTER_LOG_NOCONNECT 0x00100000U
+#define FILTER_LOG_NOMASTER  0x00200000U
+#define FILTER_LOG_NOCERT    0x00400000U
+#define FILTER_LOG_NOCONTENT 0x00800000U
+#define FILTER_LOG_NOPCAP    0x01000000U
+#define FILTER_LOG_NOMIRROR  0x02000000U
+
+#define FILTER_PRECEDENCE    0x000000FFU
 
 #ifndef WITHOUT_USERAUTH
 typedef struct userlist {
@@ -186,14 +193,15 @@ typedef struct filter_rule {
 	unsigned int block : 1;
 	unsigned int match : 1;
 
-	// Log action
-	unsigned int log_connect : 1;
-	unsigned int log_master : 1;
-	unsigned int log_cert : 1;
-	unsigned int log_content : 1;
-	unsigned int log_pcap : 1;
+	// Log action, two bits
+	// 0: don't change, 1: disable, 2: enable
+	unsigned int log_connect : 2;
+	unsigned int log_master : 2;
+	unsigned int log_cert : 2;
+	unsigned int log_content : 2;
+	unsigned int log_pcap : 2;
 #ifndef WITHOUT_MIRROR
-	unsigned int log_mirror : 1;
+	unsigned int log_mirror : 2;
 #endif /* !WITHOUT_MIRROR */
 
 	// Conn field to apply filter to
@@ -217,19 +225,22 @@ typedef struct filter_site {
 	char *site;
 	unsigned int all_sites : 1;
 	unsigned int exact : 1;
+
 	unsigned int divert : 1;
 	unsigned int split : 1;
 	unsigned int pass : 1;
 	unsigned int block : 1;
 	unsigned int match : 1;
-	unsigned int log_connect : 1;
-	unsigned int log_master : 1;
-	unsigned int log_cert : 1;
-	unsigned int log_content : 1;
-	unsigned int log_pcap : 1;
+
+	unsigned int log_connect : 2;
+	unsigned int log_master : 2;
+	unsigned int log_cert : 2;
+	unsigned int log_content : 2;
+	unsigned int log_pcap : 2;
 #ifndef WITHOUT_MIRROR
-	unsigned int log_mirror : 1;
+	unsigned int log_mirror : 2;
 #endif /* !WITHOUT_MIRROR */
+
 	unsigned int precedence;
 	struct filter_site *next;
 } filter_site_t;

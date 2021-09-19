@@ -842,17 +842,17 @@ START_TEST(opts_set_passsite_05)
 	fail_unless(opts->filter_rules->next->next->next, "next->next->next not set");
 	fail_unless(opts->filter_rules->next->next->next->next, "next->next->next->next not set");
 	fail_unless(!opts->filter_rules->next->next->next->next->next, "next->next->next->next->next set");
-	fail_unless(!strcmp(ps, "filter rule 0: site=*.google.com, exact, ip=, user=, keyword=android, all=|users|, action=||pass||, log=|||||, apply to=|sni|cn||, precedence=3\n"
-		"filter rule 1: site=example.com, exact, ip=, user=root, keyword=, all=||, action=||pass||, log=|||||, apply to=|sni|cn||, precedence=3\n"
+	fail_unless(!strcmp(ps, "filter rule 0: site=example.com, exact, ip=, user=, keyword=, all=conns||, action=||pass||, log=|||||, apply to=|sni|cn||, precedence=1\n"
+		"filter rule 1: site=example.com, exact, ip=, user=, keyword=, all=|users|, action=||pass||, log=|||||, apply to=|sni|cn||, precedence=2\n"
 		"filter rule 2: site=example.com, exact, ip=192.168.0.1, user=, keyword=, all=||, action=||pass||, log=|||||, apply to=|sni|cn||, precedence=2\n"
-		"filter rule 3: site=example.com, exact, ip=, user=, keyword=, all=|users|, action=||pass||, log=|||||, apply to=|sni|cn||, precedence=2\n"
-		"filter rule 4: site=example.com, exact, ip=, user=, keyword=, all=conns||, action=||pass||, log=|||||, apply to=|sni|cn||, precedence=1"),
+		"filter rule 3: site=example.com, exact, ip=, user=root, keyword=, all=||, action=||pass||, log=|||||, apply to=|sni|cn||, precedence=3\n"
+		"filter rule 4: site=*.google.com, exact, ip=, user=, keyword=android, all=|users|, action=||pass||, log=|||||, apply to=|sni|cn||, precedence=3"),
 		"failed parsing multiple passites: %s", ps);
 #else /* WITHOUT_USERAUTH */
 	fail_unless(!opts->filter_rules->next->next->next, "next->next->next set");
-	fail_unless(!strcmp(ps, "filter rule 0: site=example.com, exact, ip=192.168.0.1, all=|, action=||pass||, log=|||||, apply to=|sni|cn||, precedence=2\n"
+	fail_unless(!strcmp(ps, "filter rule 0: site=example.com, exact, ip=, all=conns|, action=||pass||, log=|||||, apply to=|sni|cn||, precedence=1\n"
 		"filter rule 1: site=example.com, exact, ip=, all=conns|, action=||pass||, log=|||||, apply to=|sni|cn||, precedence=1\n"
-		"filter rule 2: site=example.com, exact, ip=, all=conns|, action=||pass||, log=|||||, apply to=|sni|cn||, precedence=1"),
+		"filter rule 2: site=example.com, exact, ip=192.168.0.1, all=|, action=||pass||, log=|||||, apply to=|sni|cn||, precedence=2"),
 		"failed parsing multiple passites: %s", ps);
 #endif /* WITHOUT_USERAUTH */
 	free(ps);

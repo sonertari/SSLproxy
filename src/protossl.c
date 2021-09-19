@@ -781,13 +781,32 @@ protossl_apply_filter(pxy_conn_ctx_t *ctx)
 		}
 		//else { /* FILTER_ACTION_MATCH */ }
 
-		ctx->log_connect = !!(action & FILTER_LOG_CONNECT);
-		ctx->log_master = !!(action & FILTER_LOG_MASTER);
-		ctx->log_cert = !!(action & FILTER_LOG_CERT);
-		ctx->log_content = !!(action & FILTER_LOG_CONTENT);
-		ctx->log_pcap = !!(action & FILTER_LOG_PCAP);
+		// Filtering rules at higher precedence can enable/disable logging
+		if (action & FILTER_LOG_CONNECT)
+			ctx->log_connect = 1;
+		else if (action & FILTER_LOG_NOCONNECT)
+			ctx->log_connect = 0;
+		if (action & FILTER_LOG_MASTER)
+			ctx->log_master = 1;
+		else if (action & FILTER_LOG_NOMASTER)
+			ctx->log_master = 0;
+		if (action & FILTER_LOG_CERT)
+			ctx->log_cert = 1;
+		else if (action & FILTER_LOG_NOCERT)
+			ctx->log_cert = 0;
+		if (action & FILTER_LOG_CONTENT)
+			ctx->log_content = 1;
+		else if (action & FILTER_LOG_NOCONTENT)
+			ctx->log_content = 0;
+		if (action & FILTER_LOG_PCAP)
+			ctx->log_pcap = 1;
+		else if (action & FILTER_LOG_NOPCAP)
+			ctx->log_pcap = 0;
 #ifndef WITHOUT_MIRROR
-		ctx->log_mirror = !!(action & FILTER_LOG_MIRROR);
+		if (action & FILTER_LOG_MIRROR)
+			ctx->log_mirror = 1;
+		else if (action & FILTER_LOG_NOMIRROR)
+			ctx->log_mirror = 0;
 #endif /* !WITHOUT_MIRROR */
 	}
 
