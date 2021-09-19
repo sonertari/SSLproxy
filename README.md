@@ -295,17 +295,18 @@ The syntax of filtering rules is as follows:
 
 	(Divert|Split|Pass|Block|Match)
 	 ([from (
-	     user (username|*) [desc keyword]|
-	     ip (clientaddr|*)|
+	     user (username|$macro|*) [desc keyword]|
+	     ip (clientaddr|$macro|*)|
 	     *)]
 	  [to (
-	     sni (servername[*]|*)|
-	     cn (commonname[*]|*)|
-	     host (host[*]|*)|
-	     uri (uri[*]|*)|
-	     ip (serveraddr|*)|
+	     sni (servername[*]|$macro|*)|
+	     cn (commonname[*]|$macro|*)|
+	     host (host[*]|$macro|*)|
+	     uri (uri[*]|$macro|*)|
+	     ip (serveraddr|$macro|*)|
 	     *)]
-	  [log ([[!]connect] [[!]master] [[!]cert] [[!]content] [[!]pcap] [[!]mirror]|*)]
+	  [log ([[!]connect] [[!]master] [[!]cert]
+	        [[!]content] [[!]pcap] [[!]mirror] [$macro]|*|!*)]
 	  |*)
 
 The definition of which connections the rule action will be applied to is 
@@ -316,8 +317,10 @@ that the rule is defined for.
 user or description keyword, or `*` for all.
 - The `to` part defines destination filter based on server IP address, SNI or 
 Common Names of SSL connections, Host or URI fields in HTTP Request headers, or 
-`*` for all. Dst Host type of rules use `ip`, SSL type of rules use `sni` and 
-`cn`, and HTTP type of rules use `host` and `uri` site fields.
+`*` for all.
+	+ Dst Host type of rules use `ip` site field
+	+ SSL type of rules use `sni` and `cn` site fields
+	+ HTTP type of rules use `host` and `uri` site fields
 - The proxyspec handling the connection defines the protocol filter for the 
 connection.
 
@@ -394,12 +397,16 @@ If no filtering rules are defined for a proxyspec, all log actions for that
 proxyspec are enabled. Otherwise, all log actions are disabled, and filtering 
 rules should enable them specifically.
 
-You can append an asterisk `*` to site field of filtering rules for substring 
-matching. Otherwise, the filter searches for an exact match with the site field 
-in the rule.
+Macro expansion is supported. The `Define` option can be used for defining 
+macros to be used in filtering rules. Macro names must start with a `$` char. 
+The macro name must be followed by words separated with spaces.
 
-The order of from, to, and log parts is not important. The order of log 
-actions is not important.
+You can append an asterisk `*` to the site field of filtering rules for 
+substring matching. Otherwise, the filter searches for an exact match with the 
+site field in the rule.
+
+The order of filtering rules is important. The order of from, to, and log 
+parts is not important. The order of log actions is not important.
 
 If the UserAuth option is disabled, only client IP addresses can be used in 
 the from part of filtering rules.

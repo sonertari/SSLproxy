@@ -143,6 +143,7 @@ typedef struct opts {
 	// Freed during startup after filter is created and debug printed
 	struct filter_rule *filter_rules;
 	struct filter *filter;
+	struct macro *macro;
 	global_t *global;
 } opts_t;
 
@@ -175,6 +176,17 @@ typedef struct proxyspec {
 	// Each proxyspec has its own opts
 	opts_t *opts;
 } proxyspec_t;
+
+typedef struct value {
+	char *value;
+	struct value *next;
+} value_t;
+
+typedef struct macro {
+	char *name;
+	struct value *value;
+	struct macro *next;
+} macro_t;
 
 typedef struct filter_rule {
 	char *site;

@@ -158,6 +158,31 @@ free_userlist(userlist_t *ul)
 }
 #endif /* !WITHOUT_USERAUTH */
 
+static void
+opts_free_values(value_t *value)
+{
+	while (value) {
+		value_t *next = value->next;
+		free(value->value);
+		free(value);
+		value = next;
+	}
+}
+
+static void
+opts_free_macros(opts_t *opts)
+{
+	macro_t *macro = opts->macro;
+	while (macro) {
+		macro_t *next = macro->next;
+		free(macro->name);
+		opts_free_values(macro->value);
+		free(macro);
+		macro = next;
+	}
+	opts->macro = NULL;
+}
+
 void
 opts_free_filter_rules(opts_t *opts)
 {
@@ -284,6 +309,8 @@ opts_free(opts_t *opts)
 	free_userlist(opts->divertusers);
 	free_userlist(opts->passusers);
 #endif /* !WITHOUT_USERAUTH */
+
+	opts_free_macros(opts);
 
 	// No need to call opts_free_filter_rules() here, filter rules are freed during startup
 	opts_free_filter_rules(opts);
@@ -632,7 +659,7 @@ opts_proto_dbg_dump(opts_t *opts)
 }
 
 static void
-opts_append_to_list(filter_rule_t **list, filter_rule_t *rule)
+opts_append_to_filter_rules(filter_rule_t **list, filter_rule_t *rule)
 {
 	filter_rule_t *l = *list;
 	while (l) {
@@ -773,6 +800,32 @@ clone_global_opts(global_t *global, const char *argv0, tmp_global_opts_t *tmp_gl
 	}
 #endif /* !WITHOUT_USERAUTH */
 
+	macro_t *macro = global->opts->macro;
+	while (macro) {
+		macro_t *m = malloc(sizeof(macro_t));
+		memset(m, 0, sizeof(macro_t));
+
+		m->name = strdup(macro->name);
+
+		value_t *value = macro->value;
+		while (value) {
+			value_t *v = malloc(sizeof(value_t));
+			memset(v, 0, sizeof(value_t));
+
+			v->value = strdup(value->value);
+
+			v->next = m->value;
+			m->value = v;
+
+			value = value->next;
+		}
+
+		m->next = opts->macro;
+		opts->macro = m;
+
+		macro = macro->next;
+	}
+
 	filter_rule_t *rule = global->opts->filter_rules;
 	while (rule) {
 		filter_rule_t *fr = malloc(sizeof(filter_rule_t));
@@ -818,7 +871,7 @@ clone_global_opts(global_t *global, const char *argv0, tmp_global_opts_t *tmp_gl
 
 		fr->precedence = rule->precedence;
 
-		opts_append_to_list(&opts->filter_rules, fr);
+		opts_append_to_filter_rules(&opts->filter_rules, fr);
 
 		rule = rule->next;
 	}
@@ -1133,6 +1186,61 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine, global_t *globa
 	// Empty line does not create new spec
 	if (spec)
 		set_divert(spec, tmp_global_opts->split);
+}
+
+static char *
+value_str(value_t *value)
+{
+	char *s = NULL;
+
+	while (value) {
+		char *p;
+		if (asprintf(&p, "%s%s%s", STRORNONE(s), s ? ", " : "", value->value) < 0) {
+			goto err;
+		}
+		if (s)
+			free(s);
+		s = p;
+		value = value->next;
+	}
+	goto out;
+err:
+	if (s) {
+		free(s);
+		s = NULL;
+	}
+out:
+	return s;
+}
+
+static char *
+macro_str(macro_t *macro)
+{
+	char *s = NULL;
+
+	if (!macro) {
+		s = strdup("");
+		goto out;
+	}
+
+	while (macro) {
+		char *p;
+		if (asprintf(&p, "%s%smacro %s = %s", STRORNONE(s), s ? "\n" : "", macro->name, value_str(macro->value)) < 0) {
+			goto err;
+		}
+		if (s)
+			free(s);
+		s = p;
+		macro = macro->next;
+	}
+	goto out;
+err:
+	if (s) {
+		free(s);
+		s = NULL;
+	}
+out:
+	return s;
 }
 
 char *
@@ -1551,6 +1659,7 @@ opts_str(opts_t *opts)
 {
 	char *s = NULL;
 	char *proto_dump = NULL;
+	char *ms = NULL;
 	char *frs = NULL;
 	char *fs = NULL;
 
@@ -1566,6 +1675,10 @@ opts_str(opts_t *opts)
 	if (!pu)
 		goto out;
 #endif /* !WITHOUT_USERAUTH */
+
+	ms = macro_str(opts->macro);
+	if (!ms)
+		goto out;
 
 	frs = filter_rule_str(opts->filter_rules);
 	if (!frs)
@@ -1606,7 +1719,7 @@ opts_str(opts_t *opts)
 #ifndef WITHOUT_USERAUTH
 				 "%s|%s|%d|%s|%s"
 #endif /* !WITHOUT_USERAUTH */
-				 "%s|%d\n%s%s%s%s%s",
+				 "%s|%d\n%s%s%s%s%s%s%s",
 	             (opts->divert ? "divert" : "split"),
 	             (!opts->sslcomp ? "|no sslcomp" : ""),
 #ifdef HAVE_SSLV2
@@ -1649,6 +1762,7 @@ opts_str(opts_t *opts)
 	             (opts->validate_proto ? "|validate_proto" : ""),
 				 opts->max_http_header_size,
 				 proto_dump,
+				 strlen(ms) ? "\n" : "", ms,
 				 strlen(frs) ? "\n" : "", frs,
 				 strlen(fs) ? "\n" : "", fs) < 0) {
 		s = NULL;
@@ -1660,6 +1774,8 @@ out:
 	if (pu)
 		free(pu);
 #endif /* !WITHOUT_USERAUTH */
+	if (ms)
+		free(ms);
 	if (frs)
 		free(frs);
 	if (fs)
@@ -2454,7 +2570,7 @@ opts_set_passsite(opts_t *opts, char *value, int line_num)
 	rule->cn = 1;
 	rule->pass = 1;
 
-	opts_append_to_list(&opts->filter_rules, rule);
+	opts_append_to_filter_rules(&opts->filter_rules, rule);
 
 #ifdef DEBUG_OPTS
 	log_dbg_printf("Filter rule: %s, %s, %s"
@@ -2491,8 +2607,79 @@ opts_set_passsite(opts_t *opts, char *value, int line_num)
 #endif /* DEBUG_OPTS */
 }
 
+static macro_t *
+opts_find_macro(macro_t *macro, char *name)
+{
+	while (macro) {
+		if (equal(macro->name, name)) {
+			return macro;
+		}
+		macro = macro->next;
+	}
+	return NULL;
+}
+
 static void
-opts_set_site(filter_rule_t *rule, char *site, int line_num)
+opts_set_macro(opts_t *opts, char *value, int line_num)
+{
+#define MAX_MACRO_TOKENS 50
+
+	// $name value1 [value2 [value3] ...]
+	char *argv[sizeof(char *) * MAX_MACRO_TOKENS];
+	int argc = 0;
+	char *p, *last = NULL;
+
+	for ((p = strtok_r(value, " ", &last));
+		 p;
+		 (p = strtok_r(NULL, " ", &last))) {
+		if (argc < MAX_MACRO_TOKENS) {
+			argv[argc++] = p;
+		} else {
+			fprintf(stderr, "Too many arguments in macro definition on line %d\n", line_num);
+			exit(EXIT_FAILURE);
+		}
+	}
+
+	if (argc < 2) {
+		fprintf(stderr, "Macro definition requires at least two arguments on line %d\n", line_num);
+		exit(EXIT_FAILURE);
+	}
+
+	if (argv[0][0] != '$') {
+		fprintf(stderr, "Macro name should start with '$' on line %d\n", line_num);
+		exit(EXIT_FAILURE);
+	}
+
+	if (opts_find_macro(opts->macro, argv[0])) {
+		fprintf(stderr, "Macro name '%s' already exists on line %d\n", argv[0], line_num);
+		exit(EXIT_FAILURE);
+	}
+
+	macro_t *macro = malloc(sizeof(macro_t));
+	memset(macro, 0, sizeof(macro_t));
+
+	macro->name = strdup(argv[0]);
+
+	int i = 1;
+	while (i < argc) {
+		value_t *v = malloc(sizeof(value_t));
+		memset(v, 0, sizeof(value_t));
+
+		v->value = strdup(argv[i++]);
+		v->next = macro->value;
+		macro->value = v;
+	}
+
+	macro->next = opts->macro;
+	opts->macro = macro;
+
+#ifdef DEBUG_OPTS
+	log_dbg_printf("Macro: %s = %s\n", macro->name, value_str(macro->value));
+#endif /* DEBUG_OPTS */
+}
+
+static void
+opts_set_site(filter_rule_t *rule, const char *site, int line_num)
 {
 	// The for loop with strtok_r() does not output empty strings
 	// So, no need to check if the length of argv[0] > 0
@@ -2503,10 +2690,13 @@ opts_set_site(filter_rule_t *rule, char *site, int line_num)
 		exit(EXIT_FAILURE);
 	}
 
-	if (site[len - 1] == '*') {
+	// Don't modify site, site is reused in macro expansion
+	rule->site = strdup(site);
+
+	if (rule->site[len - 1] == '*') {
 		rule->exact = 0;
 		len--;
-		site[len] = '\0';
+		rule->site[len] = '\0';
 		// site == "*" ?
 		if (len == 0)
 			rule->all_sites = 1;
@@ -2514,8 +2704,7 @@ opts_set_site(filter_rule_t *rule, char *site, int line_num)
 		rule->exact = 1;
 	}
 
-	rule->site = strdup(site);
-
+	// redundant?
 	if (equal(rule->site, "*"))
 		rule->all_sites = 1;
 }
@@ -2532,39 +2721,23 @@ opts_inc_arg_index(int i, int argc, char *last, int line_num)
 }
 
 static void
-filter_rule_parse(opts_t *opts, const char *name, char *value, int line_num)
+filter_rule_translate(opts_t *opts, const char *name, int argc, char **argv, int line_num)
 {
-#define MAX_FILTER_RULE_TOKENS 13
-
 	//(Divert|Split|Pass|Block|Match)
 	// ([from (
-	//     user (username|*) [desc keyword]|
-	//     ip (clientaddr|*)|
+	//     user (username|$macro|*) [desc keyword]|
+	//     ip (clientaddr|$macro|*)|
 	//     *)]
 	//  [to (
-	//     sni (servername[*]|*)|
-	//     cn (commonname[*]|*)|
-	//     host (host[*]|*)|
-	//     uri (uri[*]|*)|
-	//     ip (serveraddr|*)|
+	//     sni (servername[*]|$macro|*)|
+	//     cn (commonname[*]|$macro|*)|
+	//     host (host[*]|$macro|*)|
+	//     uri (uri[*]|$macro|*)|
+	//     ip (serveraddr|$macro|*)|
 	//     *)]
-	//  [log ([[!]connect] [[!]master] [[!]cert] [[!]content] [[!]pcap] [[!]mirror]|*)]
+	//  [log ([[!]connect] [[!]master] [[!]cert]
+	//        [[!]content] [[!]pcap] [[!]mirror] [$macro]|*|!*)]
 	//  |*)
-
-	char *argv[sizeof(char *) * MAX_FILTER_RULE_TOKENS];
-	int argc = 0;
-	char *p, *last = NULL;
-
-	for ((p = strtok_r(value, " ", &last));
-		 p;
-		 (p = strtok_r(NULL, " ", &last))) {
-		if (argc < MAX_FILTER_RULE_TOKENS) {
-			argv[argc++] = p;
-		} else {
-			fprintf(stderr, "Too many arguments in filter rule on line %d\n", line_num);
-			exit(EXIT_FAILURE);
-		}
-	}
 
 	filter_rule_t *rule = malloc(sizeof(filter_rule_t));
 	memset(rule, 0, sizeof(filter_rule_t));
@@ -2583,62 +2756,32 @@ filter_rule_parse(opts_t *opts, const char *name, char *value, int line_num)
 	// precedence can only go up not down
 	rule->precedence = 0;
 
-	int done_all = 0;
 	int done_from = 0;
 	int done_to = 0;
-	int done_log = 0;
 	int i = 0;
 	while (i < argc) {
 		if (equal(argv[i], "*")) {
-			if (done_all) {
-				fprintf(stderr, "Only one '*' statement allowed on line %d\n", line_num);
-				exit(EXIT_FAILURE);
-			}
-			if (++i > argc) {
-				fprintf(stderr, "Too many arguments for '*' on line %d\n", line_num);
-				exit(EXIT_FAILURE);
-			}
-			done_all = 1;
+			i++;
 		}
 		else if (equal(argv[i], "from")) {
-			if (done_from) {
-				fprintf(stderr, "Only one 'from' statement allowed on line %d\n", line_num);
-				exit(EXIT_FAILURE);
-			}
-
 			i = opts_inc_arg_index(i, argc, argv[i], line_num);
 #ifndef WITHOUT_USERAUTH
 			if (equal(argv[i], "user") || equal(argv[i], "desc")) {
 				if (equal(argv[i], "user")) {
 					i = opts_inc_arg_index(i, argc, argv[i], line_num);
 
-					if (!opts->user_auth) {
-						fprintf(stderr, "User filter requires user auth on line %d\n", line_num);
-						exit(EXIT_FAILURE);
-					}
-
 					rule->precedence++;
 
 					if (equal(argv[i], "*")) {
 						rule->all_users = 1;
 					} else {
-						if (!sys_isuser(argv[i])) {
-							fprintf(stderr, "No such user '%s' on line %d\n", argv[i], line_num);
-							exit(EXIT_FAILURE);
-						}
 						rule->precedence++;
 						rule->user = strdup(argv[i]);
 					}
 					i++;
 				}
 
-				// It is possible to define desc without user (i.e. * or all_users), hence no 'else' here
 				if (i < argc && equal(argv[i], "desc")) {
-					if (!opts->user_auth) {
-						fprintf(stderr, "Desc filter requires user auth on line %d\n", line_num);
-						exit(EXIT_FAILURE);
-					}
-
 					i = opts_inc_arg_index(i, argc, argv[i], line_num);
 					rule->precedence++;
 					rule->keyword = strdup(argv[i++]);
@@ -2662,17 +2805,8 @@ filter_rule_parse(opts_t *opts, const char *name, char *value, int line_num)
 			else if (equal(argv[i], "*")) {
 				i++;
 			}
-			else {
-				fprintf(stderr, "Unknown argument in filter rule at '%s' on line %d\n", argv[i], line_num);
-				exit(EXIT_FAILURE);
-			}
 		}
 		else if (equal(argv[i], "to")) {
-			if (done_to) {
-				fprintf(stderr, "Only one 'to' statement allowed on line %d\n", line_num);
-				exit(EXIT_FAILURE);
-			}
-
 			i = opts_inc_arg_index(i, argc, argv[i], line_num);
 			if (equal(argv[i], "sni") || equal(argv[i], "cn") || equal(argv[i], "host") || equal(argv[i], "uri") || equal(argv[i], "ip")) {
 				rule->precedence++;
@@ -2695,17 +2829,8 @@ filter_rule_parse(opts_t *opts, const char *name, char *value, int line_num)
 			else if (equal(argv[i], "*")) {
 				i++;
 			}
-			else {
-				fprintf(stderr, "Unknown argument in filter rule at '%s' on line %d\n", argv[i], line_num);
-				exit(EXIT_FAILURE);
-			}
 		}
 		else if (equal(argv[i], "log")) {
-			if (done_log) {
-				fprintf(stderr, "Only one 'log' statement allowed on line %d\n", line_num);
-				exit(EXIT_FAILURE);
-			}
-
 			rule->precedence++;
 
 			i = opts_inc_arg_index(i, argc, argv[i], line_num);
@@ -2751,8 +2876,6 @@ filter_rule_parse(opts_t *opts, const char *name, char *value, int line_num)
 					|| equal(argv[i], "mirror") || equal(argv[i], "!mirror")
 #endif /* !WITHOUT_MIRROR */
 					);
-
-				done_log = 1;
 			}
 			else if (equal(argv[i], "*")) {
 				rule->log_connect = 2;
@@ -2764,7 +2887,6 @@ filter_rule_parse(opts_t *opts, const char *name, char *value, int line_num)
 				rule->log_mirror = 2;
 #endif /* !WITHOUT_MIRROR */
 				i++;
-				done_log = 1;
 			}
 			else if (equal(argv[i], "!*")) {
 				rule->log_connect = 1;
@@ -2776,16 +2898,7 @@ filter_rule_parse(opts_t *opts, const char *name, char *value, int line_num)
 				rule->log_mirror = 1;
 #endif /* !WITHOUT_MIRROR */
 				i++;
-				done_log = 1;
 			}
-			else {
-				fprintf(stderr, "Unknown argument in filter rule at '%s' on line %d\n", argv[i], line_num);
-				exit(EXIT_FAILURE);
-			}
-		}
-		else {
-			fprintf(stderr, "Unknown argument in filter rule at '%s' on line %d\n", argv[i], line_num);
-			exit(EXIT_FAILURE);
 		}
 	}
 
@@ -2802,7 +2915,7 @@ filter_rule_parse(opts_t *opts, const char *name, char *value, int line_num)
 		rule->dstip = 1;
 	}
 
-	opts_append_to_list(&opts->filter_rules, rule);
+	opts_append_to_filter_rules(&opts->filter_rules, rule);
 
 #ifdef DEBUG_OPTS
 	log_dbg_printf("Filter rule: %s, %s, %s"
@@ -2837,6 +2950,226 @@ filter_rule_parse(opts_t *opts, const char *name, char *value, int line_num)
 		rule->dstip ? "dstip" : "", rule->sni ? "sni" : "", rule->cn ? "cn" : "", rule->host ? "host" : "", rule->uri ? "uri" : "",
 		rule->precedence);
 #endif /* DEBUG_OPTS */
+}
+
+static void
+filter_rule_parse(opts_t *opts, const char *name, int argc, char **argv, int line_num);
+
+#define MAX_FILTER_RULE_TOKENS 13
+
+static int
+filter_rule_expand_macro(opts_t *opts, const char *name, int argc, char **argv, int i, int line_num)
+{
+	if (argv[i][0] == '$') {
+		macro_t *macro;
+		if ((macro = opts_find_macro(opts->macro, argv[i]))) {
+			value_t *value = macro->value;
+			while (value) {
+				char *expanded_argv[sizeof(char *) * MAX_FILTER_RULE_TOKENS];
+				memcpy(expanded_argv, argv, sizeof expanded_argv);
+
+				expanded_argv[i] = value->value;
+
+				filter_rule_parse(opts, name, argc, expanded_argv, line_num);
+
+				value = value->next;
+			}
+			// End of macro expansion, the caller must stop processing the rule
+			return 1;
+		}
+		else {
+			fprintf(stderr, "No such macro '%s' on line %d\n", argv[i], line_num);
+			exit(EXIT_FAILURE);
+		}
+	}
+	return 0;
+}
+
+static void
+filter_rule_parse(opts_t *opts, const char *name, int argc, char **argv, int line_num)
+{
+	int done_all = 0;
+	int done_from = 0;
+	int done_to = 0;
+	int done_log = 0;
+	int i = 0;
+	while (i < argc) {
+		if (equal(argv[i], "*")) {
+			if (done_all) {
+				fprintf(stderr, "Only one '*' statement allowed on line %d\n", line_num);
+				exit(EXIT_FAILURE);
+			}
+			if (++i > argc) {
+				fprintf(stderr, "Too many arguments for '*' on line %d\n", line_num);
+				exit(EXIT_FAILURE);
+			}
+			done_all = 1;
+		}
+		else if (equal(argv[i], "from")) {
+			if (done_from) {
+				fprintf(stderr, "Only one 'from' statement allowed on line %d\n", line_num);
+				exit(EXIT_FAILURE);
+			}
+
+			i = opts_inc_arg_index(i, argc, argv[i], line_num);
+#ifndef WITHOUT_USERAUTH
+			if (equal(argv[i], "user") || equal(argv[i], "desc")) {
+				if (equal(argv[i], "user")) {
+					i = opts_inc_arg_index(i, argc, argv[i], line_num);
+
+					if (!opts->user_auth) {
+						fprintf(stderr, "User filter requires user auth on line %d\n", line_num);
+						exit(EXIT_FAILURE);
+					}
+
+					if (equal(argv[i], "*")) {
+						// Nothing to do
+					}
+					else if (filter_rule_expand_macro(opts, name, argc, argv, i, line_num)) {
+						return;
+					}
+					else if (!sys_isuser(argv[i])) {
+						fprintf(stderr, "No such user '%s' on line %d\n", argv[i], line_num);
+						exit(EXIT_FAILURE);
+					}
+					i++;
+				}
+
+				// It is possible to define desc without user (i.e. * or all_users), hence no 'else' here
+				if (i < argc && equal(argv[i], "desc")) {
+					if (!opts->user_auth) {
+						fprintf(stderr, "Desc filter requires user auth on line %d\n", line_num);
+						exit(EXIT_FAILURE);
+					}
+
+					i = opts_inc_arg_index(i, argc, argv[i], line_num);
+					if (filter_rule_expand_macro(opts, name, argc, argv, i, line_num)) {
+						return;
+					}
+					i++;
+				}
+
+				done_from = 1;
+			}
+			else
+#endif /* !WITHOUT_USERAUTH */
+			if (equal(argv[i], "ip")) {
+				i = opts_inc_arg_index(i, argc, argv[i], line_num);
+				if (equal(argv[i], "*")) {
+					// Nothing to do
+				}
+				else if (filter_rule_expand_macro(opts, name, argc, argv, i, line_num)) {
+					return;
+				}
+				i++;
+				done_from = 1;
+			}
+			else if (equal(argv[i], "*")) {
+				i++;
+			}
+			else {
+				fprintf(stderr, "Unknown argument in filter rule at '%s' on line %d\n", argv[i], line_num);
+				exit(EXIT_FAILURE);
+			}
+		}
+		else if (equal(argv[i], "to")) {
+			if (done_to) {
+				fprintf(stderr, "Only one 'to' statement allowed on line %d\n", line_num);
+				exit(EXIT_FAILURE);
+			}
+
+			i = opts_inc_arg_index(i, argc, argv[i], line_num);
+			if (equal(argv[i], "sni") || equal(argv[i], "cn") || equal(argv[i], "host") || equal(argv[i], "uri") || equal(argv[i], "ip")) {
+
+				i = opts_inc_arg_index(i, argc, argv[i], line_num);
+				if (filter_rule_expand_macro(opts, name, argc, argv, i, line_num)) {
+					return;
+				}
+				i++;
+
+				done_to = 1;
+			}
+			else if (equal(argv[i], "*")) {
+				i++;
+			}
+			else {
+				fprintf(stderr, "Unknown argument in filter rule at '%s' on line %d\n", argv[i], line_num);
+				exit(EXIT_FAILURE);
+			}
+		}
+		else if (equal(argv[i], "log")) {
+			if (done_log) {
+				fprintf(stderr, "Only one 'log' statement allowed on line %d\n", line_num);
+				exit(EXIT_FAILURE);
+			}
+
+			i = opts_inc_arg_index(i, argc, argv[i], line_num);
+			if (equal(argv[i], "connect") || equal(argv[i], "master") || equal(argv[i], "cert") || equal(argv[i], "content") || equal(argv[i], "pcap") ||
+				equal(argv[i], "!connect") || equal(argv[i], "!master") || equal(argv[i], "!cert") || equal(argv[i], "!content") || equal(argv[i], "!pcap")
+#ifndef WITHOUT_MIRROR
+				|| equal(argv[i], "mirror") || equal(argv[i], "!mirror")
+#endif /* !WITHOUT_MIRROR */
+				|| argv[i][0] == '$') {
+				do {
+					if (filter_rule_expand_macro(opts, name, argc, argv, i, line_num)) {
+						return;
+					}
+					if (++i == argc)
+						break;
+				} while (equal(argv[i], "connect") || equal(argv[i], "master") || equal(argv[i], "cert") || equal(argv[i], "content") || equal(argv[i], "pcap") ||
+						 equal(argv[i], "!connect") || equal(argv[i], "!master") || equal(argv[i], "!cert") || equal(argv[i], "!content") || equal(argv[i], "!pcap")
+#ifndef WITHOUT_MIRROR
+					|| equal(argv[i], "mirror") || equal(argv[i], "!mirror")
+#endif /* !WITHOUT_MIRROR */
+					|| argv[i][0] == '$');
+
+				done_log = 1;
+			}
+			else if (equal(argv[i], "*")) {
+				i++;
+				done_log = 1;
+			}
+			else if (equal(argv[i], "!*")) {
+				i++;
+				done_log = 1;
+			}
+			else if (filter_rule_expand_macro(opts, name, argc, argv, i, line_num)) {
+				return;
+			}
+			else {
+				fprintf(stderr, "Unknown argument in filter rule at '%s' on line %d\n", argv[i], line_num);
+				exit(EXIT_FAILURE);
+			}
+		}
+		else {
+			fprintf(stderr, "Unknown argument in filter rule at '%s' on line %d\n", argv[i], line_num);
+			exit(EXIT_FAILURE);
+		}
+	}
+
+	// All checks passed and all macros expanded, if any
+	filter_rule_translate(opts, name, argc, argv, line_num);
+}
+
+static void
+opts_set_filter_rule(opts_t *opts, const char *name, char *value, int line_num)
+{
+	char *argv[sizeof(char *) * MAX_FILTER_RULE_TOKENS];
+	int argc = 0;
+	char *p, *last = NULL;
+
+	for ((p = strtok_r(value, " ", &last));
+		 p;
+		 (p = strtok_r(NULL, " ", &last))) {
+		if (argc < MAX_FILTER_RULE_TOKENS) {
+			argv[argc++] = p;
+		} else {
+			fprintf(stderr, "Too many arguments in filter rule on line %d\n", line_num);
+			exit(EXIT_FAILURE);
+		}
+	}
+
+	filter_rule_parse(opts, name, argc, argv, line_num);
 }
 
 static filter_site_t *
@@ -3864,12 +4197,14 @@ set_option(opts_t *opts, const char *argv0,
 #endif /* DEBUG_OPTS */
 	} else if (equal(name, "PassSite")) {
 		opts_set_passsite(opts, value, line_num);
+	} else if (equal(name, "Define")) {
+		opts_set_macro(opts, value, line_num);
 	} else if (equal(name, "Split") || equal(name, "Pass") || equal(name, "Block") || equal(name, "Match")) {
-		filter_rule_parse(opts, name, value, line_num);
+		opts_set_filter_rule(opts, name, value, line_num);
 	} else if (equal(name, "Divert")) {
 		yes = is_yesno(value);
 		if (yes == -1) {
-			filter_rule_parse(opts, name, value, line_num);
+			opts_set_filter_rule(opts, name, value, line_num);
 		} else {
 			yes ? opts_set_divert(opts) : opts_unset_divert(opts);
 		}

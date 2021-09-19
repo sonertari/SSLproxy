@@ -5,19 +5,21 @@
 
 	    (Divert|Split|Pass|Block|Match)
 	     ([from (
-	         user (username|*) [desc keyword]|
-	         ip (clientaddr|*)|
+	         user (username|$macro|*) [desc keyword]|
+	         ip (clientaddr|$macro|*)|
 	         *)]
 	      [to (
-	         sni (servername[*]|*)|
-	         cn (commonname[*]|*)|
-	         host (host[*]|*)|
-	         uri (uri[*]|*)|
-	         ip (serveraddr|*)|
+	         sni (servername[*]|$macro|*)|
+	         cn (commonname[*]|$macro|*)|
+	         host (host[*]|$macro|*)|
+	         uri (uri[*]|$macro|*)|
+	         ip (serveraddr|$macro|*)|
 	         *)]
-	      [log ([[!]connect] [[!]master] [[!]cert] [[!]content] [[!]pcap] [[!]mirror]|*)]
+	      [log ([[!]connect] [[!]master] [[!]cert]
+	            [[!]content] [[!]pcap] [[!]mirror] [$macro]|*|!*)]
 	      |*)
 
+-   Add Define config option for defining macros to be used in filtering rules.
 -   Add -Q test config option.
 
 

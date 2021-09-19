@@ -312,6 +312,13 @@ asterisk to the site field to search for substring match. Note that the
 substring search is not a regex or wildcard search, and that the asterisk at 
 the end is removed before search.
 .TP
+\fBDefine STRING\fR
+Define macro to be used in filtering rules. Macro names must start with a $ 
+char. The macro name must be followed by words separated with spaces. For 
+example,
+
+Define $macro value1 value2
+.TP
 \fBDivert STRING\fR
 Divert filtering rule diverts packets to listening program, allowing SSL 
 inspection by listening program and content logging of packets.
@@ -334,17 +341,18 @@ The syntax of filtering rules is as follows:
 
 (Divert|Split|Pass|Block|Match)
  ([from (
-     user (username|*) [desc keyword]|
-     ip (clientaddr|*)|
+     user (username|$macro|*) [desc keyword]|
+     ip (clientaddr|$macro|*)|
      *)]
   [to (
-     sni (servername[*]|*)|
-     cn (commonname[*]|*)|
-     host (host[*]|*)|
-     uri (uri[*]|*)|
-     ip (serveraddr|*)|
+     sni (servername[*]|$macro|*)|
+     cn (commonname[*]|$macro|*)|
+     host (host[*]|$macro|*)|
+     uri (uri[*]|$macro|*)|
+     ip (serveraddr|$macro|*)|
      *)]
-  [log ([[!]connect] [[!]master] [[!]cert] [[!]content] [[!]pcap] [[!]mirror]|*)]
+  [log ([[!]connect] [[!]master] [[!]cert]
+        [[!]content] [[!]pcap] [[!]mirror] [$macro]|*|!*)]
   |*)
 .br
 
@@ -352,8 +360,8 @@ See sslproxy(1) for the details.
 .TP
 \fBProxySpec STRING\fR
 One line proxy specification: type listenaddr+port up:port ua:addr ra:addr. 
-The other options of one line proxyspecs are set to the global defaults. 
-Multiple specs are allowed, one on each line.
+The other options of one line proxyspecs are set to the global configuration 
+preceding them. Multiple specs are allowed, one on each line.
 .TP
 \fBProxySpec {\fR
 .br
@@ -427,15 +435,17 @@ ValidateProto
 .br
 PassSite
 .br
+Define
+.br
 Divert|Split|Pass|Block|Match filtering rules
 .br
 \fB}\fR
 .br
 
 Structured proxy specifications may consist of the options listed above. The 
-Proto, Addr, Port, and DivertPort options are mandatory, and equivalent to 
-type, listenaddr, port, and up options in one line proxyspecs, respectively. 
-If an option is not specified, the global default value is used.
+Proto, Addr, and Port options are mandatory, and equivalent to type, 
+listenaddr, and port options in one line proxyspecs, respectively. If an 
+option is not specified, the global default value is used.
 .SH "FILES"
 .LP 
 /etc/sslproxy/sslproxy.conf
