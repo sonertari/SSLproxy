@@ -394,9 +394,6 @@ main(int argc, char *argv[])
 				global->conffile = strdup(optarg);
 				if (!global->conffile)
 					oom_die(argv0);
-#ifdef DEBUG_OPTS
-				log_dbg_printf("Conf file: %s\n", global->conffile);
-#endif /* DEBUG_OPTS */
 				if (global_load_conffile(global, argv0, &natengine, tmp_global_opts) == -1) {
 					exit(EXIT_FAILURE);
 				}

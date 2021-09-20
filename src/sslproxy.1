@@ -384,7 +384,9 @@ smartphones to connect to the Internet behind sslproxy.
 Filtering rules are applied based on certain precedence orders:
 .LP
  - More specific rules have higher precedence.
- - The precedence of filter types is as Dst Host > SSL > HTTP.
+ - The precedence of filter types is as HTTP > SSL > Dst Host. Because, the 
+application order of filter types is as Dst Host > SSL > HTTP, and a filter 
+type can override the actions of a preceding filter type.
  - The precedence of filter actions is as Divert > Split > Pass > Block. This is 
 only for the same type of filtering rules.
  - The precedence of site fields is as sni > cn for SSL filter and host > uri 
@@ -523,7 +525,8 @@ List all supported NAT engines available on the system and exit.  See
 NAT ENGINES for a list of NAT engines currently supported by SSLproxy.
 .TP
 .B \-f \fIconffile\fP
-Read configuration from \fIconffile\fP.
+Read configuration from \fIconffile\fP. Configuration files can use the 
+Include option for loading configuration from an include file too.
 .TP
 .B \-F \fIlogspec\fP
 Log connection content to separate log files with the given path specification

@@ -20,6 +20,7 @@
 	      |*)
 
 -   Add Define config option for defining macros to be used in filtering rules.
+-   Add Include config option for loading configuration from an include file.
 -   Add -Q test config option.
 
 

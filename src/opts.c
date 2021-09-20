@@ -3133,9 +3133,6 @@ filter_rule_parse(opts_t *opts, const char *name, int argc, char **argv, int lin
 				i++;
 				done_log = 1;
 			}
-			else if (filter_rule_expand_macro(opts, name, argc, argv, i, line_num)) {
-				return;
-			}
 			else {
 				fprintf(stderr, "Unknown argument in filter rule at '%s' on line %d\n", argv[i], line_num);
 				exit(EXIT_FAILURE);
@@ -4443,6 +4440,10 @@ global_set_open_files_limit(const char *value, int line_num)
 #endif /* DEBUG_OPTS */
 }
 
+
+static int
+opts_load_conffile(global_t *global, const char *argv0, char *conffile, char **natengine, tmp_global_opts_t *tmp_global_opts);
+
 static int
 set_global_option(global_t *global, const char *argv0,
            const char *name, char *value, char **natengine, int *line_num, FILE *f, tmp_global_opts_t *tmp_global_opts)
@@ -4600,6 +4601,12 @@ set_global_option(global_t *global, const char *argv0,
 	} else if (equal(name, "OpenSSLEngine")) {
 		global_set_openssl_engine(global, argv0, value);
 #endif /* !OPENSSL_NO_ENGINE */
+	} else if (equal(name, "Include")) {
+		retval = opts_load_conffile(global, argv0, value, natengine, tmp_global_opts);
+		if (retval == -1) {
+			fprintf(stderr, "Error in include file '%s'\n", value);
+		}
+		goto leave;
 	} else {
 		retval = set_option(global->opts, argv0, name, value, natengine, *line_num, tmp_global_opts);
 		goto leave;
@@ -4635,17 +4642,21 @@ global_set_option(global_t *global, const char *argv0, const char *optarg,
 	return retval;
 }
 
-int
-global_load_conffile(global_t *global, const char *argv0, char **natengine, tmp_global_opts_t *tmp_global_opts)
+static int
+opts_load_conffile(global_t *global, const char *argv0, char *conffile, char **natengine, tmp_global_opts_t *tmp_global_opts)
 {
 	int retval, line_num;
 	char *line, *name, *value;
 	size_t line_len;
 	FILE *f;
 	
-	f = fopen(global->conffile, "r");
+#ifdef DEBUG_OPTS
+	log_dbg_printf("Conf file: %s\n", conffile);
+#endif /* DEBUG_OPTS */
+
+	f = fopen(conffile, "r");
 	if (!f) {
-		fprintf(stderr, "Error opening conf file '%s': %s\n", global->conffile, strerror(errno));
+		fprintf(stderr, "Error opening conf file '%s': %s\n", conffile, strerror(errno));
 		return -1;
 	}
 
@@ -4687,6 +4698,15 @@ leave:
 	fclose(f);
 	if (line)
 		free(line);
+	return retval;
+}
+
+int
+global_load_conffile(global_t *global, const char *argv0, char **natengine, tmp_global_opts_t *tmp_global_opts)
+{
+	int retval = opts_load_conffile(global, argv0, global->conffile, natengine, tmp_global_opts);
+	if (retval == -1)
+		fprintf(stderr, "Error in conf file '%s'\n", global->conffile);
 	return retval;
 }
 

@@ -370,7 +370,9 @@ smartphones to connect to the Internet behind sslproxy.
 Filtering rules are applied based on certain precedence orders:
 
 - More specific rules have higher precedence.
-- The precedence of filter types is as Dst Host > SSL > HTTP.
+- The precedence of filter types is as HTTP > SSL > Dst Host. Because, the 
+application order of filter types is as Dst Host > SSL > HTTP, and a filter 
+type can override the actions of a preceding filter type.
 - The precedence of filter actions is as Divert > Split > Pass > Block. This is 
 only for the same type of filtering rules.
 - The precedence of site fields is as sni > cn for SSL filter and host > uri 
