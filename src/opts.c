@@ -2805,6 +2805,12 @@ opts_set_macro(opts_t *opts, char *value, int line_num)
 
 	int i = 1;
 	while (i < argc) {
+		// Do not allow macro within macro, no recursive macro definitions
+		if (argv[i][0] == '$') {
+			fprintf(stderr, "Invalid macro value '%s' on line %d\n", argv[i], line_num);
+			return -1;
+		}
+
 		value_t *v = malloc(sizeof(value_t));
 		if (!v)
 			return oom_return_na();
@@ -3139,6 +3145,12 @@ filter_rule_expand_macro(opts_t *opts, const char *name, int argc, char **argv, 
 		if ((macro = opts_find_macro(opts->macro, argv[i]))) {
 			value_t *value = macro->value;
 			while (value) {
+				// Prevent infinite macro expansion
+				if (value->value[0] == '$') {
+					fprintf(stderr, "Invalid macro value '%s' on line %d\n", value->value, line_num);
+					return -1;
+				}
+
 				char *expanded_argv[sizeof(char *) * MAX_FILTER_RULE_TOKENS];
 				memcpy(expanded_argv, argv, sizeof expanded_argv);
 
