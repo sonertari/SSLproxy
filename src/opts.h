@@ -313,6 +313,8 @@ typedef struct tmp_global_opts {
 	// Overrides the divert options of all proxyspecs
 	// Not equivalent to the conf file Divert option
 	unsigned int split : 1;
+	// Prevents Include option in include files
+	unsigned int include : 1;
 } tmp_global_opts_t;
 
 struct global {

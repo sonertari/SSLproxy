@@ -4836,7 +4836,16 @@ set_global_option(global_t *global, const char *argv0,
 		return global_set_openssl_engine(global, argv0, value);
 #endif /* !OPENSSL_NO_ENGINE */
 	} else if (equal(name, "Include")) {
+		// Prevent infinitely recursive include files
+		if (tmp_global_opts->include) {
+			fprintf(stderr, "Include option not allowed in include files '%s' on line %d\n", value, *line_num);
+			return -1;
+		}
+
+		tmp_global_opts->include = 1;
 		int retval = opts_load_conffile(global, argv0, value, natengine, tmp_global_opts);
+		tmp_global_opts->include = 0;
+
 		if (retval == -1) {
 			fprintf(stderr, "Error in include file '%s' on line %d\n", value, *line_num);
 		}
