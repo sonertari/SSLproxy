@@ -356,6 +356,18 @@ main_check_opts(opts_t *opts, const char *argv0)
 }
 
 /*
+ * Handle out of memory conditions in early stages of main().
+ * Print error message and exit with failure status code.
+ * Does not return.
+ */
+static void NONNULL(1) NORET
+oom_die(const char *argv0)
+{
+	fprintf(stderr, "%s: out of memory\n", argv0);
+	exit(EXIT_FAILURE);
+}
+
+/*
  * Main entry point.
  */
 int
@@ -389,40 +401,40 @@ main(int argc, char *argv[])
 	                    "dD::VhW:w:q:f:o:X:Y:y:JnQ")) != -1) {
 		switch (ch) {
 			case 'f':
-				if (global->conffile)
-					free(global->conffile);
-				global->conffile = strdup(optarg);
-				if (!global->conffile)
-					oom_die(argv0);
-				if (global_load_conffile(global, argv0, &natengine, tmp_global_opts) == -1) {
+				if (global_load_conffile(global, argv0, optarg, &natengine, tmp_global_opts) == -1)
 					exit(EXIT_FAILURE);
-				}
 				break;
 			case 'o':
-				if (global_set_option(global, argv0, optarg, &natengine, tmp_global_opts) == -1) {
+				if (global_set_option(global, argv0, optarg, &natengine, tmp_global_opts) == -1)
 					exit(EXIT_FAILURE);
-				}
 				break;
 			case 'c':
-				opts_set_cacrt(global->opts, argv0, optarg, tmp_global_opts);
+				if (opts_set_cacrt(global->opts, argv0, optarg, tmp_global_opts) == -1)
+					exit(EXIT_FAILURE);
 				break;
 			case 'k':
-				opts_set_cakey(global->opts, argv0, optarg, tmp_global_opts);
+				if (opts_set_cakey(global->opts, argv0, optarg, tmp_global_opts) == -1)
+					exit(EXIT_FAILURE);
 				break;
 			case 'C':
-				opts_set_chain(global->opts, argv0, optarg, tmp_global_opts);
+				if (opts_set_chain(global->opts, argv0, optarg, tmp_global_opts) == -1)
+					exit(EXIT_FAILURE);
 				break;
 			case 'K':
-				global_set_leafkey(global, argv0, optarg);
+				if (global_set_leafkey(global, argv0, optarg) == -1)
+					exit(EXIT_FAILURE);
 				break;
 			case 't':
-				global_set_leafcertdir(global, argv0, optarg);
+				if (global_set_leafcertdir(global, argv0, optarg) == -1)
+					exit(EXIT_FAILURE);
 				break;
 			case 'A':
-				global_set_defaultleafcert(global, argv0, optarg);
+				if (global_set_defaultleafcert(global, argv0, optarg) == -1)
+					exit(EXIT_FAILURE);
 				break;
 			case 'q':
-				opts_set_leafcrlurl(global->opts, optarg, tmp_global_opts);
+				if (opts_set_leafcrlurl(global->opts, argv0, optarg, tmp_global_opts) == -1)
+					exit(EXIT_FAILURE);
 				break;
 			case 'O':
 				opts_set_deny_ocsp(global->opts);
@@ -431,19 +443,23 @@ main(int argc, char *argv[])
 				opts_set_passthrough(global->opts);
 				break;
 			case 'a':
-				opts_set_clientcrt(global->opts, argv0, optarg, tmp_global_opts);
+				if (opts_set_clientcrt(global->opts, argv0, optarg, tmp_global_opts) == -1)
+					exit(EXIT_FAILURE);
 				break;
 			case 'b':
-				opts_set_clientkey(global->opts, argv0, optarg, tmp_global_opts);
+				if (opts_set_clientkey(global->opts, argv0, optarg, tmp_global_opts) == -1)
+					exit(EXIT_FAILURE);
 				break;
 #ifndef OPENSSL_NO_DH
 			case 'g':
-				opts_set_dh(global->opts, argv0, optarg, tmp_global_opts);
+				if (opts_set_dh(global->opts, argv0, optarg, tmp_global_opts) == -1)
+					exit(EXIT_FAILURE);
 				break;
 #endif /* !OPENSSL_NO_DH */
 #ifndef OPENSSL_NO_ECDH
 			case 'G':
-				opts_set_ecdhcurve(global->opts, argv0, optarg);
+				if (opts_set_ecdhcurve(global->opts, argv0, optarg) == -1)
+					exit(EXIT_FAILURE);
 				break;
 #endif /* !OPENSSL_NO_ECDH */
 #ifdef SSL_OP_NO_COMPRESSION
@@ -452,20 +468,25 @@ main(int argc, char *argv[])
 				break;
 #endif /* SSL_OP_NO_COMPRESSION */
 			case 's':
-				opts_set_ciphers(global->opts, argv0, optarg);
+				if (opts_set_ciphers(global->opts, argv0, optarg) == -1)
+					exit(EXIT_FAILURE);
 				break;
 			case 'U':
-				opts_set_ciphersuites(global->opts, argv0, optarg);
+				if (opts_set_ciphersuites(global->opts, argv0, optarg) == -1)
+					exit(EXIT_FAILURE);
 				break;
 			case 'r':
-				opts_force_proto(global->opts, argv0, optarg);
+				if (opts_force_proto(global->opts, argv0, optarg) == -1)
+					exit(EXIT_FAILURE);
 				break;
 			case 'R':
-				opts_disable_proto(global->opts, argv0, optarg);
+				if (opts_disable_proto(global->opts, argv0, optarg) == -1)
+					exit(EXIT_FAILURE);
 				break;
 #ifndef OPENSSL_NO_ENGINE
 			case 'x':
-				global_set_openssl_engine(global, argv0, optarg);
+				if (global_set_openssl_engine(global, argv0, optarg) == -1)
+					exit(EXIT_FAILURE);
 				break;
 #endif /* !OPENSSL_NO_ENGINE */
 			case 'e':
@@ -480,54 +501,69 @@ main(int argc, char *argv[])
 				exit(EXIT_SUCCESS);
 				break;
 			case 'u':
-				global_set_user(global, argv0, optarg);
+				if (global_set_user(global, argv0, optarg) == -1)
+					exit(EXIT_FAILURE);
 				break;
 			case 'm':
-				global_set_group(global, argv0, optarg);
+				if (global_set_group(global, argv0, optarg) == -1)
+					exit(EXIT_FAILURE);
 				break;
 			case 'p':
-				global_set_pidfile(global, argv0, optarg);
+				if (global_set_pidfile(global, argv0, optarg) == -1)
+					exit(EXIT_FAILURE);
 				break;
 			case 'j':
-				global_set_jaildir(global, argv0, optarg);
+				if (global_set_jaildir(global, argv0, optarg) == -1)
+					exit(EXIT_FAILURE);
 				break;
 			case 'l':
-				global_set_connectlog(global, argv0, optarg);
+				if (global_set_connectlog(global, argv0, optarg) == -1)
+					exit(EXIT_FAILURE);
 				break;
 			case 'J':
 				global_set_statslog(global);
 				break;
 			case 'L':
-				global_set_contentlog(global, argv0, optarg);
+				if (global_set_contentlog(global, argv0, optarg) == -1)
+					exit(EXIT_FAILURE);
 				break;
 			case 'S':
-				global_set_contentlogdir(global, argv0, optarg);
+				if (global_set_contentlogdir(global, argv0, optarg) == -1)
+					exit(EXIT_FAILURE);
 				break;
 			case 'F':
-				global_set_contentlogpathspec(global, argv0, optarg);
+				if (global_set_contentlogpathspec(global, argv0, optarg) == -1)
+					exit(EXIT_FAILURE);
 				break;
 			case 'X':
-				global_set_pcaplog(global, argv0, optarg);
+				if (global_set_pcaplog(global, argv0, optarg) == -1)
+					exit(EXIT_FAILURE);
 				break;
 			case 'Y':
-				global_set_pcaplogdir(global, argv0, optarg);
+				if (global_set_pcaplogdir(global, argv0, optarg) == -1)
+					exit(EXIT_FAILURE);
 				break;
 			case 'y':
-				global_set_pcaplogpathspec(global, argv0, optarg);
+				if (global_set_pcaplogpathspec(global, argv0, optarg) == -1)
+					exit(EXIT_FAILURE);
 				break;
 #ifndef WITHOUT_MIRROR
 			case 'I':
-				global_set_mirrorif(global, argv0, optarg);
+				if (global_set_mirrorif(global, argv0, optarg) == -1)
+					exit(EXIT_FAILURE);
 				break;
 			case 'T':
-				global_set_mirrortarget(global, argv0, optarg);
+				if (global_set_mirrortarget(global, argv0, optarg) == -1)
+					exit(EXIT_FAILURE);
 				break;
 #endif /* !WITHOUT_MIRROR */
 			case 'W':
-				global_set_certgendir_writeall(global, argv0, optarg);
+				if (global_set_certgendir_writeall(global, argv0, optarg) == -1)
+					exit(EXIT_FAILURE);
 				break;
 			case 'w':
-				global_set_certgendir_writegencerts(global, argv0, optarg);
+				if (global_set_certgendir_writegencerts(global, argv0, optarg) == -1)
+					exit(EXIT_FAILURE);
 				break;
 #ifdef HAVE_LOCAL_PROCINFO
 			case 'i':
@@ -535,7 +571,8 @@ main(int argc, char *argv[])
 				break;
 #endif /* HAVE_LOCAL_PROCINFO */
 			case 'M':
-				global_set_masterkeylog(global, argv0, optarg);
+				if (global_set_masterkeylog(global, argv0, optarg) == -1)
+					exit(EXIT_FAILURE);
 				break;
 			case 'd':
 				global_set_daemon(global);
@@ -543,7 +580,8 @@ main(int argc, char *argv[])
 			case 'D':
 				global_set_debug(global);
 				if (optarg) {
-					global_set_debug_level(optarg);
+					if (global_set_debug_level(optarg) == -1)
+						exit(EXIT_FAILURE);
 				}
 				break;
 			case 'n':
@@ -568,7 +606,8 @@ main(int argc, char *argv[])
 	}
 	argc -= optind;
 	argv += optind;
-	proxyspec_parse(&argc, &argv, natengine, global, argv0, tmp_global_opts);
+	if (proxyspec_parse(&argc, &argv, natengine, global, argv0, tmp_global_opts) == -1)
+		exit(EXIT_FAILURE);
 
 	// We don't need the tmp opts used to clone global opts into proxyspecs anymore
 	tmp_global_opts_free(tmp_global_opts);
@@ -577,10 +616,8 @@ main(int argc, char *argv[])
 	for (proxyspec_t *spec = global->spec; spec; spec = spec->next) {
 		if (spec->opts->filter_rules) {
 			spec->opts->filter = opts_set_filter(spec->opts->filter_rules);
-			if (!spec->opts->filter) {
-				fprintf(stderr, "%s: out of memory\n", argv0);
-				exit(EXIT_FAILURE);
-			}
+			if (!spec->opts->filter)
+				oom_die(argv0);
 		}
 	}
 
@@ -830,20 +867,18 @@ main(int argc, char *argv[])
 	/* debug log, part 2 */
 	if (OPTS_DEBUG(global)) {
 		char *s = opts_proto_dbg_dump(global->opts);
-		if (!s) {
-			fprintf(stderr, "%s: out of memory\n", argv0);
-			exit(EXIT_FAILURE);
-		}
+		if (!s)
+			oom_die(argv0);
+
 		log_dbg_printf("Global %s\n", s);
 		free(s);
 
 		log_dbg_printf("proxyspecs:\n");
 		for (proxyspec_t *spec = global->spec; spec; spec = spec->next) {
 			char *specstr = proxyspec_str(spec);
-			if (!specstr) {
-				fprintf(stderr, "%s: out of memory\n", argv0);
-				exit(EXIT_FAILURE);
-			}
+			if (!specstr)
+				oom_die(argv0);
+
 			log_dbg_printf("- %s\n", specstr);
 			free(specstr);
 		}

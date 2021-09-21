@@ -102,7 +102,7 @@ START_TEST(proxyspec_parse_01)
 	tmp_global_opts_t *tmp_global_opts = malloc(sizeof(tmp_global_opts_t));
 	memset(tmp_global_opts, 0, sizeof(tmp_global_opts_t));
 
-	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
+	UNUSED int rv = proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
 	spec = global->spec;
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(spec->ssl, "not SSL");
@@ -133,7 +133,7 @@ START_TEST(proxyspec_parse_02)
 	tmp_global_opts_t *tmp_global_opts = malloc(sizeof(tmp_global_opts_t));
 	memset(tmp_global_opts, 0, sizeof(tmp_global_opts_t));
 
-	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
+	UNUSED int rv = proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
 	spec = global->spec;
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(spec->ssl, "not SSL");
@@ -164,9 +164,11 @@ START_TEST(proxyspec_parse_03)
 	memset(tmp_global_opts, 0, sizeof(tmp_global_opts_t));
 
 	close(2);
-	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
+	int rv = proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
 	global_free(global);
 	tmp_global_opts_free(tmp_global_opts);
+	if (rv == -1)
+		exit(EXIT_FAILURE);
 }
 END_TEST
 
@@ -180,9 +182,11 @@ START_TEST(proxyspec_parse_04)
 	memset(tmp_global_opts, 0, sizeof(tmp_global_opts_t));
 
 	close(2);
-	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
+	int rv = proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
 	global_free(global);
 	tmp_global_opts_free(tmp_global_opts);
+	if (rv == -1)
+		exit(EXIT_FAILURE);
 }
 END_TEST
 
@@ -196,7 +200,7 @@ START_TEST(proxyspec_parse_05)
 	tmp_global_opts_t *tmp_global_opts = malloc(sizeof(tmp_global_opts_t));
 	memset(tmp_global_opts, 0, sizeof(tmp_global_opts_t));
 
-	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
+	UNUSED int rv = proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
 	spec = global->spec;
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(!spec->ssl, "SSL");
@@ -226,7 +230,7 @@ START_TEST(proxyspec_parse_06)
 	tmp_global_opts_t *tmp_global_opts = malloc(sizeof(tmp_global_opts_t));
 	memset(tmp_global_opts, 0, sizeof(tmp_global_opts_t));
 
-	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
+	UNUSED int rv = proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
 	spec = global->spec;
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(spec->ssl, "not SSL");
@@ -256,7 +260,7 @@ START_TEST(proxyspec_parse_07)
 	tmp_global_opts_t *tmp_global_opts = malloc(sizeof(tmp_global_opts_t));
 	memset(tmp_global_opts, 0, sizeof(tmp_global_opts_t));
 
-	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
+	UNUSED int rv = proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
 	spec = global->spec;
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(!spec->ssl, "SSL");
@@ -286,7 +290,7 @@ START_TEST(proxyspec_parse_08)
 	tmp_global_opts_t *tmp_global_opts = malloc(sizeof(tmp_global_opts_t));
 	memset(tmp_global_opts, 0, sizeof(tmp_global_opts_t));
 
-	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
+	UNUSED int rv = proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
 	spec = global->spec;
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(spec->ssl, "not SSL");
@@ -315,9 +319,11 @@ START_TEST(proxyspec_parse_09)
 	memset(tmp_global_opts, 0, sizeof(tmp_global_opts_t));
 
 	close(2);
-	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
+	int rv = proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
 	global_free(global);
 	tmp_global_opts_free(tmp_global_opts);
+	if (rv == -1)
+		exit(EXIT_FAILURE);
 }
 END_TEST
 
@@ -331,9 +337,11 @@ START_TEST(proxyspec_parse_10)
 	memset(tmp_global_opts, 0, sizeof(tmp_global_opts_t));
 
 	close(2);
-	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
+	int rv = proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
 	global_free(global);
 	tmp_global_opts_free(tmp_global_opts);
+	if (rv == -1)
+		exit(EXIT_FAILURE);
 }
 END_TEST
 
@@ -347,7 +355,7 @@ START_TEST(proxyspec_parse_11)
 	tmp_global_opts_t *tmp_global_opts = malloc(sizeof(tmp_global_opts_t));
 	memset(tmp_global_opts, 0, sizeof(tmp_global_opts_t));
 
-	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
+	UNUSED int rv = proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
 	spec = global->spec;
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(spec->ssl, "not SSL");
@@ -377,9 +385,11 @@ START_TEST(proxyspec_parse_12)
 	memset(tmp_global_opts, 0, sizeof(tmp_global_opts_t));
 
 	close(2);
-	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
+	int rv = proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
 	global_free(global);
 	tmp_global_opts_free(tmp_global_opts);
+	if (rv == -1)
+		exit(EXIT_FAILURE);
 }
 END_TEST
 
@@ -394,7 +404,7 @@ START_TEST(proxyspec_parse_13)
 	tmp_global_opts_t *tmp_global_opts = malloc(sizeof(tmp_global_opts_t));
 	memset(tmp_global_opts, 0, sizeof(tmp_global_opts_t));
 
-	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
+	UNUSED int rv = proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
 	spec = global->spec;
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(spec->ssl, "not SSL");
@@ -435,7 +445,7 @@ START_TEST(proxyspec_parse_14)
 	tmp_global_opts_t *tmp_global_opts = malloc(sizeof(tmp_global_opts_t));
 	memset(tmp_global_opts, 0, sizeof(tmp_global_opts_t));
 
-	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
+	UNUSED int rv = proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
 	spec = global->spec;
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(spec->ssl, "not SSL");
@@ -478,7 +488,7 @@ START_TEST(proxyspec_parse_15)
 	tmp_global_opts_t *tmp_global_opts = malloc(sizeof(tmp_global_opts_t));
 	memset(tmp_global_opts, 0, sizeof(tmp_global_opts_t));
 
-	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
+	UNUSED int rv = proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
 	spec = global->spec;
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(!spec->ssl, "SSL");
@@ -507,7 +517,7 @@ START_TEST(proxyspec_parse_16)
 	tmp_global_opts_t *tmp_global_opts = malloc(sizeof(tmp_global_opts_t));
 	memset(tmp_global_opts, 0, sizeof(tmp_global_opts_t));
 
-	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
+	UNUSED int rv = proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
 	spec = global->spec;
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(spec->ssl, "not SSL");
@@ -548,9 +558,11 @@ START_TEST(proxyspec_parse_17)
 	memset(tmp_global_opts, 0, sizeof(tmp_global_opts_t));
 
 	close(2);
-	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
+	int rv = proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
 	global_free(global);
 	tmp_global_opts_free(tmp_global_opts);
+	if (rv == -1)
+		exit(EXIT_FAILURE);
 }
 END_TEST
 
@@ -564,7 +576,7 @@ START_TEST(proxyspec_parse_18)
 	tmp_global_opts_t *tmp_global_opts = malloc(sizeof(tmp_global_opts_t));
 	memset(tmp_global_opts, 0, sizeof(tmp_global_opts_t));
 
-	proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
+	UNUSED int rv = proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
 	spec = global->spec;
 	fail_unless(!!spec, "failed to parse spec");
 	fail_unless(!spec->ssl, "SSL");
@@ -599,63 +611,63 @@ START_TEST(proxyspec_set_proto_01)
 	global_t *global = global_new();
 	proxyspec_t *spec  = proxyspec_new(global, "sslproxy", NULL);
 
-	proxyspec_set_proto(spec, "tcp");
+	UNUSED int rv = proxyspec_set_proto(spec, "tcp");
 	fail_unless(!spec->ssl, "ssl set in tcp spec");
 	fail_unless(!spec->http, "http set in tcp spec");
 	fail_unless(!spec->upgrade, "upgrade set in tcp spec");
 	fail_unless(!spec->pop3, "pop3 set in tcp spec");
 	fail_unless(!spec->smtp, "smtp set in tcp spec");
 
-	proxyspec_set_proto(spec, "ssl");
+	rv = proxyspec_set_proto(spec, "ssl");
 	fail_unless(spec->ssl, "ssl not set in ssl spec");
 	fail_unless(!spec->http, "http set in ssl spec");
 	fail_unless(!spec->upgrade, "upgrade set in ssl spec");
 	fail_unless(!spec->pop3, "pop3 set in ssl spec");
 	fail_unless(!spec->smtp, "smtp set in ssl spec");
 
-	proxyspec_set_proto(spec, "http");
+	rv = proxyspec_set_proto(spec, "http");
 	fail_unless(!spec->ssl, "ssl set in http spec");
 	fail_unless(spec->http, "http not set in http spec");
 	fail_unless(!spec->upgrade, "upgrade set in http spec");
 	fail_unless(!spec->pop3, "pop3 set in http spec");
 	fail_unless(!spec->smtp, "smtp set in http spec");
 
-	proxyspec_set_proto(spec, "https");
+	rv = proxyspec_set_proto(spec, "https");
 	fail_unless(spec->ssl, "ssl not set in https spec");
 	fail_unless(spec->http, "http not set in https spec");
 	fail_unless(!spec->upgrade, "upgrade set in https spec");
 	fail_unless(!spec->pop3, "pop3 set in https spec");
 	fail_unless(!spec->smtp, "smtp set in https spec");
 
-	proxyspec_set_proto(spec, "autossl");
+	rv = proxyspec_set_proto(spec, "autossl");
 	fail_unless(!spec->ssl, "ssl set in autossl spec");
 	fail_unless(!spec->http, "http set in autossl spec");
 	fail_unless(spec->upgrade, "upgrade not set in autossl spec");
 	fail_unless(!spec->pop3, "pop3 set in autossl spec");
 	fail_unless(!spec->smtp, "smtp set in autossl spec");
 
-	proxyspec_set_proto(spec, "pop3");
+	rv = proxyspec_set_proto(spec, "pop3");
 	fail_unless(!spec->ssl, "ssl set in pop3 spec");
 	fail_unless(!spec->http, "http set in pop3 spec");
 	fail_unless(!spec->upgrade, "upgrade set in pop3 spec");
 	fail_unless(spec->pop3, "pop3 not set in pop3 spec");
 	fail_unless(!spec->smtp, "smtp set in pop3 spec");
 
-	proxyspec_set_proto(spec, "pop3s");
+	rv = proxyspec_set_proto(spec, "pop3s");
 	fail_unless(spec->ssl, "ssl not set in pop3s spec");
 	fail_unless(!spec->http, "http set in pop3s spec");
 	fail_unless(!spec->upgrade, "upgrade set in pop3s spec");
 	fail_unless(spec->pop3, "pop3 not set in pop3s spec");
 	fail_unless(!spec->smtp, "smtp set in pop3s spec");
 
-	proxyspec_set_proto(spec, "smtp");
+	rv = proxyspec_set_proto(spec, "smtp");
 	fail_unless(!spec->ssl, "ssl set in smtp spec");
 	fail_unless(!spec->http, "http set in smtp spec");
 	fail_unless(!spec->upgrade, "upgrade set in smtp spec");
 	fail_unless(!spec->pop3, "pop3 set in smtp spec");
 	fail_unless(spec->smtp, "smtp not set in smtp spec");
 
-	proxyspec_set_proto(spec, "smtps");
+	rv = proxyspec_set_proto(spec, "smtps");
 	fail_unless(spec->ssl, "ssl not set in smtps spec");
 	fail_unless(!spec->http, "http set in smtps spec");
 	fail_unless(!spec->upgrade, "upgrade set in smtps spec");
@@ -686,7 +698,7 @@ START_TEST(opts_set_passsite_01)
 	opts_t *opts = opts_new();
 
 	char *s = strdup("example.com");
-	opts_set_passsite(opts, s, 0);
+	UNUSED int rv = opts_set_passsite(opts, s, 0);
 	free(s);
 
 	fail_unless(!strcmp(opts->filter_rules->site, "example.com"), "site not example.com");
@@ -716,7 +728,7 @@ START_TEST(opts_set_passsite_02)
 	opts_t *opts = opts_new();
 
 	char *s = strdup("example.com 192.168.0.1");
-	opts_set_passsite(opts, s, 0);
+	UNUSED int rv = opts_set_passsite(opts, s, 0);
 	free(s);
 
 	fail_unless(!strcmp(opts->filter_rules->site, "example.com"), "site not example.com");
@@ -749,7 +761,7 @@ START_TEST(opts_set_passsite_03)
 	opts->user_auth = 1;
 
 	char *s = strdup("example.com root");
-	opts_set_passsite(opts, s, 0);
+	UNUSED int rv = opts_set_passsite(opts, s, 0);
 	free(s);
 
 	fail_unless(!strcmp(opts->filter_rules->site, "example.com"), "site not example.com");
@@ -775,7 +787,7 @@ START_TEST(opts_set_passsite_04)
 	opts->user_auth = 1;
 
 	char *s = strdup("*.google.com * android");
-	opts_set_passsite(opts, s, 0);
+	UNUSED int rv = opts_set_passsite(opts, s, 0);
 	free(s);
 
 	fail_unless(!strcmp(opts->filter_rules->site, "*.google.com"), "site not *.google.com");
@@ -803,18 +815,18 @@ START_TEST(opts_set_passsite_05)
 
 	// Dup string using strdup(), otherwise strtok_r() in opts_set_passsite() will cause segmentation fault
 	s = strdup("example.com");
-	opts_set_passsite(opts, s, 0);
+	UNUSED int rv = opts_set_passsite(opts, s, 0);
 	free(s);
 	fail_unless(!opts->filter_rules->next, "next set");
 
 	s = strdup("example.com *");
-	opts_set_passsite(opts, s, 1);
+	rv = opts_set_passsite(opts, s, 1);
 	free(s);
 	fail_unless(opts->filter_rules->next, "next not set");
 	fail_unless(!opts->filter_rules->next->next, "next->next set");
 
 	s = strdup("example.com 192.168.0.1");
-	opts_set_passsite(opts, s, 2);
+	rv = opts_set_passsite(opts, s, 2);
 	free(s);
 	fail_unless(opts->filter_rules->next, "next not set");
 	fail_unless(opts->filter_rules->next->next, "next->next not set");
@@ -824,7 +836,7 @@ START_TEST(opts_set_passsite_05)
 	opts->user_auth = 1;
 	// Use root user, opts_set_passsite() calls sys_isuser() to validate the user
 	s = strdup("example.com root");
-	opts_set_passsite(opts, s, 3);
+	rv = opts_set_passsite(opts, s, 3);
 	free(s);
 	fail_unless(opts->filter_rules->next, "next not set");
 	fail_unless(opts->filter_rules->next->next, "next->next not set");
@@ -832,7 +844,7 @@ START_TEST(opts_set_passsite_05)
 	fail_unless(!opts->filter_rules->next->next->next->next, "next->next->next->next set");
 
 	s = strdup("*.google.com * android");
-	opts_set_passsite(opts, s, 4);
+	rv = opts_set_passsite(opts, s, 4);
 	free(s);
 #endif /* !WITHOUT_USERAUTH */
 	ps = filter_rule_str(opts->filter_rules);

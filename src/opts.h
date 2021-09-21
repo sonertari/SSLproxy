@@ -378,42 +378,41 @@ typedef struct userdbkeys {
 } userdbkeys_t;
 #endif /* !WITHOUT_USERAUTH */
 
-void NORET oom_die(const char *) NONNULL(1);
 cert_t *opts_load_cert_chain_key(const char *) NONNULL(1);
 
 void opts_unset_divert(opts_t *) NONNULL(1);
 
 void proxyspec_free(proxyspec_t *);
-proxyspec_t *proxyspec_new(global_t *, const char *, tmp_global_opts_t *);
-void proxyspec_set_proto(proxyspec_t *, const char *);
-void proxyspec_parse(int *, char **[], const char *, global_t *, const char *, tmp_global_opts_t *);
-char *proxyspec_str(proxyspec_t *) NONNULL(1) MALLOC;
+proxyspec_t *proxyspec_new(global_t *, const char *, tmp_global_opts_t *) MALLOC WUNRES;
+int proxyspec_set_proto(proxyspec_t *, const char *) NONNULL(1,2) WUNRES;
+int proxyspec_parse(int *, char **[], const char *, global_t *, const char *, tmp_global_opts_t *) WUNRES;
+char *proxyspec_str(proxyspec_t *) NONNULL(1) MALLOC WUNRES;
 
-opts_t *opts_new(void) MALLOC;
+opts_t *opts_new(void) MALLOC WUNRES;
 void opts_free(opts_t *) NONNULL(1);
 void opts_free_filter_rules(opts_t *) NONNULL(1);
 char *filter_rule_str(filter_rule_t *);
 char *opts_proto_dbg_dump(opts_t *) NONNULL(1);
-void opts_set_cacrt(opts_t *, const char *, const char *, tmp_global_opts_t *) NONNULL(1,2,3);
-void opts_set_cakey(opts_t *, const char *, const char *, tmp_global_opts_t *) NONNULL(1,2,3);
-void opts_set_chain(opts_t *, const char *, const char *, tmp_global_opts_t *) NONNULL(1,2,3);
-void opts_set_leafcrlurl(opts_t *, const char *, tmp_global_opts_t *) NONNULL(1,2);
+int opts_set_cacrt(opts_t *, const char *, const char *, tmp_global_opts_t *) NONNULL(1,2,3) WUNRES;
+int opts_set_cakey(opts_t *, const char *, const char *, tmp_global_opts_t *) NONNULL(1,2,3) WUNRES;
+int opts_set_chain(opts_t *, const char *, const char *, tmp_global_opts_t *) NONNULL(1,2,3) WUNRES;
+int opts_set_leafcrlurl(opts_t *, const char *, const char *, tmp_global_opts_t *) NONNULL(1,2,3) WUNRES;
 void opts_set_deny_ocsp(opts_t *) NONNULL(1);
 void opts_set_passthrough(opts_t *) NONNULL(1);
-void opts_set_clientcrt(opts_t *, const char *, const char *, tmp_global_opts_t *) NONNULL(1,2,3);
-void opts_set_clientkey(opts_t *, const char *, const char *, tmp_global_opts_t *) NONNULL(1,2,3);
+int opts_set_clientcrt(opts_t *, const char *, const char *, tmp_global_opts_t *) NONNULL(1,2,3) WUNRES;
+int opts_set_clientkey(opts_t *, const char *, const char *, tmp_global_opts_t *) NONNULL(1,2,3) WUNRES;
 #ifndef OPENSSL_NO_DH
-void opts_set_dh(opts_t *, const char *, const char *, tmp_global_opts_t *) NONNULL(1,2,3);
+int opts_set_dh(opts_t *, const char *, const char *, tmp_global_opts_t *) NONNULL(1,2,3) WUNRES;
 #endif /* !OPENSSL_NO_DH */
 #ifndef OPENSSL_NO_ECDH
-void opts_set_ecdhcurve(opts_t *, const char *, const char *) NONNULL(1,2,3);
+int opts_set_ecdhcurve(opts_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;
 #endif /* !OPENSSL_NO_ECDH */
 void opts_unset_sslcomp(opts_t *) NONNULL(1);
-void opts_force_proto(opts_t *, const char *, const char *) NONNULL(1,2,3);
-void opts_disable_proto(opts_t *, const char *, const char *) NONNULL(1,2,3);
-void opts_set_ciphers(opts_t *, const char *, const char *) NONNULL(1,2,3);
-void opts_set_ciphersuites(opts_t *, const char *, const char *) NONNULL(1,2,3);
-void opts_set_passsite(opts_t *, char *, int);
+int opts_force_proto(opts_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;
+int opts_disable_proto(opts_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;
+int opts_set_ciphers(opts_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;
+int opts_set_ciphersuites(opts_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;
+int opts_set_passsite(opts_t *, char *, int) WUNRES;
 
 filter_ip_t *opts_find_ip(filter_ip_t *, char *) NONNULL(2);
 #ifndef WITHOUT_USERAUTH
@@ -431,47 +430,40 @@ int global_has_ssl_spec(global_t *) NONNULL(1) WUNRES;
 int global_has_dns_spec(global_t *) NONNULL(1) WUNRES;
 int global_has_userauth_spec(global_t *) NONNULL(1) WUNRES;
 int global_has_cakey_spec(global_t *) NONNULL(1) WUNRES;
-void global_set_user(global_t *, const char *, const char *) NONNULL(1,2,3);
-void global_set_group(global_t *, const char *, const char *) NONNULL(1,2,3);
-void global_set_jaildir(global_t *, const char *, const char *) NONNULL(1,2,3);
-void global_set_pidfile(global_t *, const char *, const char *) NONNULL(1,2,3);
-void global_set_connectlog(global_t *, const char *, const char *) NONNULL(1,2,3);
-void global_set_contentlog(global_t *, const char *, const char *) NONNULL(1,2,3);
-void global_set_contentlogdir(global_t *, const char *, const char *)
-     NONNULL(1,2,3);
-void global_set_contentlogpathspec(global_t *, const char *, const char *)
-     NONNULL(1,2,3);
+int global_set_user(global_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;
+int global_set_group(global_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;
+int global_set_jaildir(global_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;
+int global_set_pidfile(global_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;
+int global_set_connectlog(global_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;
+int global_set_contentlog(global_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;
+int global_set_contentlogdir(global_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;
+int global_set_contentlogpathspec(global_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;
 #ifdef HAVE_LOCAL_PROCINFO
 void global_set_lprocinfo(global_t *) NONNULL(1);
 #endif /* HAVE_LOCAL_PROCINFO */
-void global_set_masterkeylog(global_t *, const char *, const char *) NONNULL(1,2,3);
-void global_set_pcaplog(global_t *, const char *, const char *) NONNULL(1,2,3);
-void global_set_pcaplogdir(global_t *, const char *, const char *)
-     NONNULL(1,2,3);
-void global_set_pcaplogpathspec(global_t *, const char *, const char *)
-     NONNULL(1,2,3);
+int global_set_masterkeylog(global_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;
+int global_set_pcaplog(global_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;
+int global_set_pcaplogdir(global_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;
+int global_set_pcaplogpathspec(global_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;
 #ifndef WITHOUT_MIRROR
-void global_set_mirrorif(global_t *, const char *, const char *) NONNULL(1,2,3);
-void global_set_mirrortarget(global_t *, const char *, const char *) NONNULL(1,2,3);
+int global_set_mirrorif(global_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;
+int global_set_mirrortarget(global_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;
 #endif /* !WITHOUT_MIRROR */
 void global_set_daemon(global_t *) NONNULL(1);
 void global_set_debug(global_t *) NONNULL(1);
-void global_set_debug_level(const char *) NONNULL(1);
+int global_set_debug_level(const char *) NONNULL(1) WUNRES;
 void global_set_statslog(global_t *) NONNULL(1);
 
-int is_yesno(const char *);
-int get_name_value(char **, char **, const char, int);
-int global_set_option(global_t *, const char *, const char *, char **, tmp_global_opts_t *) NONNULL(1,2,3,5);
-void global_set_leafkey(global_t *, const char *, const char *) NONNULL(1,2,3);
-void global_set_leafcertdir(global_t *, const char *, const char *) NONNULL(1,2,3);
-void global_set_defaultleafcert(global_t *, const char *, const char *) NONNULL(1,2,3);
-void global_set_certgendir_writeall(global_t *, const char *, const char *)
-     NONNULL(1,2,3);
-void global_set_certgendir_writegencerts(global_t *, const char *, const char *)
-     NONNULL(1,2,3);
-void global_set_openssl_engine(global_t *, const char *, const char *)
-     NONNULL(1,2,3);
-int global_load_conffile(global_t *, const char *, char **, tmp_global_opts_t *) NONNULL(1,2,4);
+int is_yesno(const char *) WUNRES;
+int get_name_value(char **, char **, const char, int) WUNRES;
+int global_set_option(global_t *, const char *, const char *, char **, tmp_global_opts_t *) NONNULL(1,2,3,5) WUNRES;
+int global_set_leafkey(global_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;
+int global_set_leafcertdir(global_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;
+int global_set_defaultleafcert(global_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;
+int global_set_certgendir_writeall(global_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;
+int global_set_certgendir_writegencerts(global_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;
+int global_set_openssl_engine(global_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;
+int global_load_conffile(global_t *, const char *, const char *, char **, tmp_global_opts_t *) NONNULL(1,2,4) WUNRES;
 #endif /* !OPTS_H */
 
 /* vim: set noet ft=c: */

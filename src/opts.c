@@ -57,15 +57,36 @@ typedef struct spec_addrs {
 } spec_addrs_t;
 
 /*
- * Handle out of memory conditions in early stages of main().
- * Print error message and exit with failure status code.
- * Does not return.
+ * The topmost caller must exit with EXIT_FAILURE.
+ * Returning -1 instead of calling exit() is necessary for reporting the 
+ * include file the error has occurred in.
  */
-void NORET
-oom_die(const char *argv0)
+static int WUNRES
+oom_return(const char *argv0)
 {
 	fprintf(stderr, "%s: out of memory\n", argv0);
-	exit(EXIT_FAILURE);
+	return -1;
+}
+
+static void * WUNRES
+oom_return_null(const char *argv0)
+{
+	fprintf(stderr, "%s: out of memory\n", argv0);
+	return NULL;
+}
+
+static int WUNRES
+oom_return_na()
+{
+	fprintf(stderr, "Out of memory\n");
+	return -1;
+}
+
+static void * WUNRES
+oom_return_na_null()
+{
+	fprintf(stderr, "Out of memory\n");
+	return NULL;
 }
 
 /*
@@ -104,6 +125,8 @@ opts_new(void)
 	opts_t *opts;
 
 	opts = malloc(sizeof(opts_t));
+	if (!opts)
+		return oom_return_na_null();
 	memset(opts, 0, sizeof(opts_t));
 
 	opts->divert = 1;
@@ -133,6 +156,8 @@ global_new(void)
 	global_t *global;
 
 	global = malloc(sizeof(global_t));
+	if (!global)
+		return oom_return_na_null();
 	memset(global, 0, sizeof(global_t));
 
 	global->leafkey_rsabits = DFLT_LEAFKEY_RSABITS;
@@ -141,6 +166,8 @@ global_new(void)
 	global->stats_period = 1;
 
 	global->opts = opts_new();
+	if (!global->opts)
+		return NULL;
 	global->opts->global = global;
 	return global;
 }
@@ -485,13 +512,11 @@ int
 global_has_ssl_spec(global_t *global)
 {
 	proxyspec_t *p = global->spec;
-
 	while (p) {
 		if (p->ssl || p->upgrade)
 			return 1;
 		p = p->next;
 	}
-
 	return 0;
 }
 
@@ -502,13 +527,11 @@ int
 global_has_dns_spec(global_t *global)
 {
 	proxyspec_t *p = global->spec;
-
 	while (p) {
 		if (p->dns)
 			return 1;
 		p = p->next;
 	}
-
 	return 0;
 }
 
@@ -520,13 +543,11 @@ int
 global_has_userauth_spec(global_t *global)
 {
 	proxyspec_t *p = global->spec;
-
 	while (p) {
 		if (p->opts->user_auth)
 			return 1;
 		p = p->next;
 	}
-
 	return 0;
 }
 #endif /* !WITHOUT_USERAUTH */
@@ -538,13 +559,11 @@ int
 global_has_cakey_spec(global_t *global)
 {
 	proxyspec_t *p = global->spec;
-
 	while (p) {
 		if (p->opts->cakey)
 			return 1;
 		p = p->next;
 	}
-
 	return 0;
 }
 
@@ -675,19 +694,22 @@ opts_append_to_filter_rules(filter_rule_t **list, filter_rule_t *rule)
 }
 
 #ifndef WITHOUT_USERAUTH
-static void
-opts_set_user_auth_url(opts_t *opts, const char *optarg)
+static int WUNRES
+opts_set_user_auth_url(opts_t *opts, const char * argv0, const char *optarg)
 {
 	if (opts->user_auth_url)
 		free(opts->user_auth_url);
 	opts->user_auth_url = strdup(optarg);
+	if (!opts->user_auth_url)
+		return oom_return(argv0);
 #ifdef DEBUG_OPTS
 	log_dbg_printf("UserAuthURL: %s\n", opts->user_auth_url);
 #endif /* DEBUG_OPTS */
+	return 0;
 }
 #endif /* !WITHOUT_USERAUTH */
 
-static opts_t *
+static opts_t * WUNRES
 clone_global_opts(global_t *global, const char *argv0, tmp_global_opts_t *tmp_global_opts)
 {
 #ifdef DEBUG_OPTS
@@ -695,6 +717,8 @@ clone_global_opts(global_t *global, const char *argv0, tmp_global_opts_t *tmp_gl
 #endif /* DEBUG_OPTS */
 
 	opts_t *opts = opts_new();
+	if (!opts)
+		return NULL;
 	opts->global = global;
 
 	opts->divert = global->opts->divert;
@@ -739,49 +763,64 @@ clone_global_opts(global_t *global, const char *argv0, tmp_global_opts_t *tmp_gl
 	// Pass NULL as tmp_global_opts param, so we don't reassign the var to itself
 	// That would be harmless but incorrect
 	if (tmp_global_opts && tmp_global_opts->chain_str) {
-		opts_set_chain(opts, argv0, tmp_global_opts->chain_str, NULL);
+		if (opts_set_chain(opts, argv0, tmp_global_opts->chain_str, NULL) == -1)
+			return NULL;
 	}
 	if (tmp_global_opts && tmp_global_opts->leafcrlurl_str) {
-		opts_set_leafcrlurl(opts, tmp_global_opts->leafcrlurl_str, NULL);
+		if (opts_set_leafcrlurl(opts, argv0, tmp_global_opts->leafcrlurl_str, NULL) == -1)
+			return NULL;
 	}
 	if (tmp_global_opts && tmp_global_opts->cacrt_str) {
-		opts_set_cacrt(opts, argv0, tmp_global_opts->cacrt_str, NULL);
+		if (opts_set_cacrt(opts, argv0, tmp_global_opts->cacrt_str, NULL) == -1)
+			return NULL;
 	}
 	if (tmp_global_opts && tmp_global_opts->cakey_str) {
-		opts_set_cakey(opts, argv0, tmp_global_opts->cakey_str, NULL);
+		if (opts_set_cakey(opts, argv0, tmp_global_opts->cakey_str, NULL) == -1)
+			return NULL;
 	}
 	if (tmp_global_opts && tmp_global_opts->clientcrt_str) {
-		opts_set_clientcrt(opts, argv0, tmp_global_opts->clientcrt_str, NULL);
+		if (opts_set_clientcrt(opts, argv0, tmp_global_opts->clientcrt_str, NULL) == -1)
+			return NULL;
 	}
 	if (tmp_global_opts && tmp_global_opts->clientkey_str) {
-		opts_set_clientkey(opts, argv0, tmp_global_opts->clientkey_str, NULL);
+		if (opts_set_clientkey(opts, argv0, tmp_global_opts->clientkey_str, NULL) == -1)
+			return NULL;
 	}
 #ifndef OPENSSL_NO_DH
 	if (tmp_global_opts && tmp_global_opts->dh_str) {
-		opts_set_dh(opts, argv0, tmp_global_opts->dh_str, NULL);
+		if (opts_set_dh(opts, argv0, tmp_global_opts->dh_str, NULL) == -1)
+			return NULL;
 	}
 #endif /* !OPENSSL_NO_DH */
 #ifndef OPENSSL_NO_ECDH
 	if (global->opts->ecdhcurve) {
-		opts_set_ecdhcurve(opts, argv0, global->opts->ecdhcurve);
+		if (opts_set_ecdhcurve(opts, argv0, global->opts->ecdhcurve) == -1)
+			return NULL;
 	}
 #endif /* !OPENSSL_NO_ECDH */
 	if (global->opts->ciphers) {
-		opts_set_ciphers(opts, argv0, global->opts->ciphers);
+		if (opts_set_ciphers(opts, argv0, global->opts->ciphers) == -1)
+			return NULL;
 	}
 	if (global->opts->ciphersuites) {
-		opts_set_ciphersuites(opts, argv0, global->opts->ciphersuites);
+		if (opts_set_ciphersuites(opts, argv0, global->opts->ciphersuites) == -1)
+			return NULL;
 	}
 #ifndef WITHOUT_USERAUTH
 	if (global->opts->user_auth_url) {
-		opts_set_user_auth_url(opts, global->opts->user_auth_url);
+		if (opts_set_user_auth_url(opts, argv0, global->opts->user_auth_url) == -1)
+			return NULL;
 	}
 	userlist_t *divertusers = global->opts->divertusers;
 	while (divertusers) {
 		userlist_t *du = malloc(sizeof(userlist_t));
+		if (!du)
+			return oom_return_null(argv0);
 		memset(du, 0, sizeof(userlist_t));
 
 		du->user = strdup(divertusers->user);
+		if (!du->user)
+			return oom_return_null(argv0);
 		du->next = opts->divertusers;
 		opts->divertusers = du;
 
@@ -790,9 +829,13 @@ clone_global_opts(global_t *global, const char *argv0, tmp_global_opts_t *tmp_gl
 	userlist_t *passusers = global->opts->passusers;
 	while (passusers) {
 		userlist_t *pu = malloc(sizeof(userlist_t));
+		if (!pu)
+			return oom_return_null(argv0);
 		memset(pu, 0, sizeof(userlist_t));
 
 		pu->user = strdup(passusers->user);
+		if (!pu->user)
+			return oom_return_null(argv0);
 		pu->next = opts->passusers;
 		opts->passusers = pu;
 
@@ -803,16 +846,24 @@ clone_global_opts(global_t *global, const char *argv0, tmp_global_opts_t *tmp_gl
 	macro_t *macro = global->opts->macro;
 	while (macro) {
 		macro_t *m = malloc(sizeof(macro_t));
+		if (!m)
+			return oom_return_null(argv0);
 		memset(m, 0, sizeof(macro_t));
 
 		m->name = strdup(macro->name);
+		if (!m->name)
+			return oom_return_null(argv0);
 
 		value_t *value = macro->value;
 		while (value) {
 			value_t *v = malloc(sizeof(value_t));
+			if (!v)
+				return oom_return_null(argv0);
 			memset(v, 0, sizeof(value_t));
 
 			v->value = strdup(value->value);
+			if (!v->value)
+				return oom_return_null(argv0);
 
 			v->next = m->value;
 			m->value = v;
@@ -829,19 +880,33 @@ clone_global_opts(global_t *global, const char *argv0, tmp_global_opts_t *tmp_gl
 	filter_rule_t *rule = global->opts->filter_rules;
 	while (rule) {
 		filter_rule_t *fr = malloc(sizeof(filter_rule_t));
+		if (!fr)
+			return oom_return_null(argv0);
 		memset(fr, 0, sizeof(filter_rule_t));
 
-		if (rule->site)
+		if (rule->site) {
 			fr->site = strdup(rule->site);
+			if (!fr->site)
+				return oom_return_null(argv0);
+		}
 		fr->exact = rule->exact;
 
-		if (rule->ip)
+		if (rule->ip) {
 			fr->ip = strdup(rule->ip);
+			if (!fr->ip)
+				return oom_return_null(argv0);
+		}
 #ifndef WITHOUT_USERAUTH
-		if (rule->user)
+		if (rule->user) {
 			fr->user = strdup(rule->user);
-		if (rule->keyword)
+			if (!fr->user)
+				return oom_return_null(argv0);
+		}
+		if (rule->keyword) {
 			fr->keyword = strdup(rule->keyword);
+			if (!fr->keyword)
+				return oom_return_null(argv0);
+		}
 
 		fr->all_users = rule->all_users;
 #endif /* !WITHOUT_USERAUTH */
@@ -882,12 +947,16 @@ proxyspec_t *
 proxyspec_new(global_t *global, const char *argv0, tmp_global_opts_t *tmp_global_opts)
 {
 	proxyspec_t *spec = malloc(sizeof(proxyspec_t));
+	if (!spec)
+		return oom_return_null(argv0);
 	memset(spec, 0, sizeof(proxyspec_t));
 	spec->opts = clone_global_opts(global, argv0, tmp_global_opts);
+	if (!spec->opts)
+		return NULL;
 	return spec;
 }
 
-void
+int
 proxyspec_set_proto(proxyspec_t *spec, const char *value)
 {
 	/* Defaults */
@@ -928,11 +997,12 @@ proxyspec_set_proto(proxyspec_t *spec, const char *value)
 	} else {
 		fprintf(stderr, "Unknown connection "
 						"type '%s'\n", value);
-		exit(EXIT_FAILURE);
+		return -1;
 	}
 #ifdef DEBUG_OPTS
 	log_dbg_printf("Proto: %s\n", value);
 #endif /* DEBUG_OPTS */
+	return 0;
 }
 
 static int WUNRES
@@ -944,14 +1014,12 @@ proxyspec_set_listen_addr(proxyspec_t *spec, char *addr, char *port, const char 
 							sys_get_af(addr),
 							EVUTIL_AI_PASSIVE);
 	if (af == -1) {
-		exit(EXIT_FAILURE);
+		return -1;
 	}
 	if (natengine) {
 		spec->natengine = strdup(natengine);
-		if (!spec->natengine) {
-			fprintf(stderr, "Out of memory\n");
-			exit(EXIT_FAILURE);
-		}
+		if (!spec->natengine)
+			return oom_return_na();
 	} else {
 		spec->natengine = NULL;
 	}
@@ -979,39 +1047,41 @@ opts_unset_divert(opts_t *opts)
 #endif /* DEBUG_OPTS */
 }
 
-static void
+static int WUNRES
 proxyspec_set_divert_addr(proxyspec_t *spec, char *addr, char *port)
 {
 	if (sys_sockaddr_parse(&spec->conn_dst_addr,
 						&spec->conn_dst_addrlen,
 						addr, port, AF_INET, EVUTIL_AI_PASSIVE) == -1) {
-		exit(EXIT_FAILURE);
+		return -1;
 	}
 #ifdef DEBUG_OPTS
 	log_dbg_printf("DivertAddr: [%s]:%s\n", addr, port);
 #endif /* DEBUG_OPTS */
+	return 0;
 }
 					
-static void
+static int WUNRES
 proxyspec_set_return_addr(proxyspec_t *spec, char *addr)
 {
 	if (sys_sockaddr_parse(&spec->child_src_addr,
 						&spec->child_src_addrlen,
 						addr, "0", AF_INET, EVUTIL_AI_PASSIVE) == -1) {
-		exit(EXIT_FAILURE);
+		return -1;
 	}
 #ifdef DEBUG_OPTS
 	log_dbg_printf("ReturnAddr: [%s]\n", addr);
 #endif /* DEBUG_OPTS */
+	return 0;
 }
 					
-static void
+static int WUNRES
 proxyspec_set_target_addr(proxyspec_t *spec, char *addr, char *port, int af)
 {
 	if (sys_sockaddr_parse(&spec->connect_addr,
 							&spec->connect_addrlen,
 							addr, port, af, 0) == -1) {
-		exit(EXIT_FAILURE);
+		return -1;
 	}
 	/* explicit target address */
 	free(spec->natengine);
@@ -1019,9 +1089,10 @@ proxyspec_set_target_addr(proxyspec_t *spec, char *addr, char *port, int af)
 #ifdef DEBUG_OPTS
 	log_dbg_printf("TargetAddr: [%s]:%s\n", addr, port);
 #endif /* DEBUG_OPTS */
+	return 0;
 }
 
-static void
+static int WUNRES
 proxyspec_set_sni_port(proxyspec_t *spec, char *port)
 {
 	if (!spec->ssl) {
@@ -1030,13 +1101,13 @@ proxyspec_set_sni_port(proxyspec_t *spec, char *port)
 				"only works for ssl "
 				"and https proxyspecs"
 				"\n");
-		exit(EXIT_FAILURE);
+		return -1;
 	}
 	/* SNI dstport */
 	spec->sni_port = atoi(port);
 	if (!spec->sni_port) {
 		fprintf(stderr, "Invalid port '%s'\n", port);
-		exit(EXIT_FAILURE);
+		return -1;
 	}
 	spec->dns = 1;
 	free(spec->natengine);
@@ -1044,9 +1115,10 @@ proxyspec_set_sni_port(proxyspec_t *spec, char *port)
 #ifdef DEBUG_OPTS
 	log_dbg_printf("SNIPort: %u\n", spec->sni_port);
 #endif /* DEBUG_OPTS */
+	return 0;
 }
 
-static void
+static int WUNRES
 proxyspec_set_natengine(proxyspec_t *spec, const char *natengine)
 {
 	// Double checks if called by proxyspec_parse()
@@ -1056,15 +1128,16 @@ proxyspec_set_natengine(proxyspec_t *spec, const char *natengine)
 		spec->natengine = strdup(natengine);
 		if (!spec->natengine) {
 			fprintf(stderr, "Out of memory\n");
-			exit(EXIT_FAILURE);
+			return -1;
 		}
 	} else {
 		fprintf(stderr, "No such nat engine '%s'\n", natengine);
-		exit(EXIT_FAILURE);
+		return -1;
 	}
 #ifdef DEBUG_OPTS
 	log_dbg_printf("NatEngine: %s\n", spec->natengine);
 #endif /* DEBUG_OPTS */
+	return 0;
 }
 
 static void
@@ -1082,7 +1155,7 @@ set_divert(proxyspec_t *spec, int split)
 /*
  * Parse proxyspecs using a simple state machine.
  */
-void
+int
 proxyspec_parse(int *argc, char **argv[], const char *natengine, global_t *global, const char *argv0, tmp_global_opts_t *tmp_global_opts)
 {
 	proxyspec_t *spec = NULL;
@@ -1096,10 +1169,13 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine, global_t *globa
 			case 0:
 				/* tcp | ssl | http | https | autossl | pop3 | pop3s | smtp | smtps */
 				spec = proxyspec_new(global, argv0, tmp_global_opts);
+				if (!spec)
+					return -1;
 				spec->next = global->spec;
 				global->spec = spec;
 
-				proxyspec_set_proto(spec, **argv);
+				if (proxyspec_set_proto(spec, **argv) == -1)
+					return -1;
 				state++;
 				break;
 			case 1:
@@ -1109,7 +1185,8 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine, global_t *globa
 				break;
 			case 2:
 				/* listenport */
-				af = proxyspec_set_listen_addr(spec, addr, **argv, natengine);
+				if ((af = proxyspec_set_listen_addr(spec, addr, **argv, natengine)) == -1)
+					return -1;
 				state++;
 				break;
 			case 3:
@@ -1132,8 +1209,10 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine, global_t *globa
 						ra = **argv + 3;
 					}
 
-					proxyspec_set_divert_addr(spec, da, dp);
-					proxyspec_set_return_addr(spec, ra);
+					if (proxyspec_set_divert_addr(spec, da, dp) == -1)
+						return -1;
+					if (proxyspec_set_return_addr(spec, ra) == -1)
+						return -1;
 					break;
 				}
 				/* fall-through */
@@ -1157,7 +1236,8 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine, global_t *globa
 				} else
 				if (nat_exist(**argv)) {
 					/* natengine */
-					proxyspec_set_natengine(spec, natengine);
+					if (proxyspec_set_natengine(spec, natengine) == -1)
+						return -1;
 					state = 0;
 				} else {
 					/* explicit target address */
@@ -1167,12 +1247,14 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine, global_t *globa
 				break;
 			case 5:
 				/* explicit target port */
-				proxyspec_set_target_addr(spec, addr, **argv, af);
+				if (proxyspec_set_target_addr(spec, addr, **argv, af) == -1)
+					return -1;
 				state = 0;
 				break;
 			case 6:
 				/* SNI dstport */
-				proxyspec_set_sni_port(spec, **argv);
+				if (proxyspec_set_sni_port(spec, **argv) == -1)
+					return -1;
 				state = 0;
 				break;
 		}
@@ -1180,12 +1262,14 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine, global_t *globa
 	}
 	if (state != 0 && state != 3 && state != 4) {
 		fprintf(stderr, "Incomplete proxyspec!\n");
-		exit(EXIT_FAILURE);
+		return -1;
 	}
 
 	// Empty line does not create new spec
 	if (spec)
 		set_divert(spec, tmp_global_opts->split);
+
+	return 0;
 }
 
 static char *
@@ -1220,6 +1304,8 @@ macro_str(macro_t *macro)
 
 	if (!macro) {
 		s = strdup("");
+		if (!s)
+			return oom_return_na_null();
 		goto out;
 	}
 
@@ -1250,6 +1336,8 @@ filter_rule_str(filter_rule_t *rule)
 
 	if (!rule) {
 		frs = strdup("");
+		if (!frs)
+			return oom_return_na_null();
 		goto out;
 	}
 
@@ -1570,6 +1658,8 @@ filter_str(filter_t *filter)
 
 	if (!filter) {
 		fs = strdup("");
+		if (!fs)
+			return oom_return_na_null();
 		goto out;
 	}
 
@@ -1629,6 +1719,8 @@ users_str(userlist_t *u)
 
 	if (!u) {
 		us = strdup("");
+		if (!us)
+			return oom_return_na_null();
 		goto out;
 	}
 
@@ -1792,62 +1884,65 @@ out:
 char *
 proxyspec_str(proxyspec_t *spec)
 {
-	char *s;
-	char *lhbuf, *lpbuf;
+	char *s = NULL;
+	char *lhbuf = NULL;
+	char *lpbuf = NULL;
 	char *cbuf = NULL;
 	char *pdstbuf = NULL;
 	char *csrcbuf = NULL;
+	char *optsstr = NULL;
+
 	if (sys_sockaddr_str((struct sockaddr *)&spec->listen_addr,
 	                     spec->listen_addrlen, &lhbuf, &lpbuf) != 0) {
-		return NULL;
+		goto out;
 	}
 	if (spec->connect_addrlen) {
 		char *chbuf, *cpbuf;
 		if (sys_sockaddr_str((struct sockaddr *)&spec->connect_addr,
 		                     spec->connect_addrlen,
 		                     &chbuf, &cpbuf) != 0) {
-			return NULL;
+			goto out;
 		}
-		if (asprintf(&cbuf, "\nconnect= [%s]:%s", chbuf, cpbuf) < 0) {
-			return NULL;
-		}
+		int rv = asprintf(&cbuf, "\nconnect= [%s]:%s", chbuf, cpbuf);
 		free(chbuf);
 		free(cpbuf);
+		if (rv < 0)
+			goto out;
 	}
 	if (spec->conn_dst_addrlen) {
 		char *chbuf, *cpbuf;
 		if (sys_sockaddr_str((struct sockaddr *)&spec->conn_dst_addr,
 		                     spec->conn_dst_addrlen,
 		                     &chbuf, &cpbuf) != 0) {
-			return NULL;
+			goto out;
 		}
-		if (asprintf(&pdstbuf, "\nparent dst addr= [%s]:%s", chbuf, cpbuf) < 0) {
-			return NULL;
-		}
+		int rv = asprintf(&pdstbuf, "\nparent dst addr= [%s]:%s", chbuf, cpbuf);
 		free(chbuf);
 		free(cpbuf);
+		if (rv < 0)
+			goto out;
 	}
 	if (spec->child_src_addrlen) {
 		char *chbuf, *cpbuf;
 		if (sys_sockaddr_str((struct sockaddr *)&spec->child_src_addr,
 		                     spec->child_src_addrlen,
 		                     &chbuf, &cpbuf) != 0) {
-			return NULL;
+			goto out;
 		}
-		if (asprintf(&csrcbuf, "\nchild src addr= [%s]:%s", chbuf, cpbuf) < 0) {
-			return NULL;
-		}
+		int rv = asprintf(&csrcbuf, "\nchild src addr= [%s]:%s", chbuf, cpbuf);
 		free(chbuf);
 		free(cpbuf);
+		if (rv < 0)
+			goto out;
 	}
 	if (spec->sni_port) {
 		if (asprintf(&cbuf, "\nsni %i", spec->sni_port) < 0) {
-			return NULL;
+			goto out;
 		}
 	}
-	char *optsstr = opts_str(spec->opts);
+	optsstr = opts_str(spec->opts);
 	if (!optsstr) {
-		return NULL;
+		goto out;
 	}
 	if (asprintf(&s, "listen=[%s]:%s %s%s%s%s%s %s%s%s\n%s%s", lhbuf, lpbuf,
 	             (spec->ssl ? "ssl" : "tcp"),
@@ -1862,9 +1957,13 @@ proxyspec_str(proxyspec_t *spec)
 	             !spec->opts->divert && spec->conn_dst_addrlen ? "\nWARNING: Divert address specified in split mode" : "") < 0) {
 		s = NULL;
 	}
-	free(optsstr);
-	free(lhbuf);
-	free(lpbuf);
+out:
+	if (optsstr)
+		free(optsstr);
+	if (lhbuf)
+		free(lhbuf);
+	if (lpbuf)
+		free(lpbuf);
 	if (cbuf)
 		free(cbuf);
 	if (pdstbuf)
@@ -1874,13 +1973,15 @@ proxyspec_str(proxyspec_t *spec)
 	return s;
 }
 
-void
+int
 opts_set_cacrt(opts_t *opts, const char *argv0, const char *optarg, tmp_global_opts_t *tmp_global_opts)
 {
 	if (tmp_global_opts) {
 		if (tmp_global_opts->cacrt_str)
 			free(tmp_global_opts->cacrt_str);
 		tmp_global_opts->cacrt_str = strdup(optarg);
+		if (!tmp_global_opts->cacrt_str)
+			return oom_return(argv0);
 	}
 
 	if (opts->cacrt)
@@ -1894,7 +1995,7 @@ opts_set_cacrt(opts_t *opts, const char *argv0, const char *optarg, tmp_global_o
 		} else {
 			ERR_print_errors_fp(stderr);
 		}
-		exit(EXIT_FAILURE);
+		return -1;
 	}
 	ssl_x509_refcount_inc(opts->cacrt);
 	sk_X509_insert(opts->chain, opts->cacrt, 0);
@@ -1909,15 +2010,18 @@ opts_set_cacrt(opts_t *opts, const char *argv0, const char *optarg, tmp_global_o
 #ifdef DEBUG_OPTS
 	log_dbg_printf("CACert: %s\n", optarg);
 #endif /* DEBUG_OPTS */
+	return 0;
 }
 
-void
+int
 opts_set_cakey(opts_t *opts, const char *argv0, const char *optarg, tmp_global_opts_t *tmp_global_opts)
 {
 	if (tmp_global_opts) {
 		if (tmp_global_opts->cakey_str)
 			free(tmp_global_opts->cakey_str);
 		tmp_global_opts->cakey_str = strdup(optarg);
+		if (!tmp_global_opts->cakey_str)
+			return oom_return(argv0);
 	}
 
 	if (opts->cakey)
@@ -1931,7 +2035,7 @@ opts_set_cakey(opts_t *opts, const char *argv0, const char *optarg, tmp_global_o
 		} else {
 			ERR_print_errors_fp(stderr);
 		}
-		exit(EXIT_FAILURE);
+		return -1;
 	}
 	if (!opts->cacrt) {
 		opts->cacrt = ssl_x509_load(optarg);
@@ -1948,15 +2052,18 @@ opts_set_cakey(opts_t *opts, const char *argv0, const char *optarg, tmp_global_o
 #ifdef DEBUG_OPTS
 	log_dbg_printf("CAKey: %s\n", optarg);
 #endif /* DEBUG_OPTS */
+	return 0;
 }
 
-void
+int
 opts_set_chain(opts_t *opts, const char *argv0, const char *optarg, tmp_global_opts_t *tmp_global_opts)
 {
 	if (tmp_global_opts) {
 		if (tmp_global_opts->chain_str)
 			free(tmp_global_opts->chain_str);
 		tmp_global_opts->chain_str = strdup(optarg);
+		if (!tmp_global_opts->chain_str)
+			return oom_return(argv0);
 	}
 
 	if (ssl_x509chain_load(NULL, &opts->chain, optarg) == -1) {
@@ -1967,38 +2074,45 @@ opts_set_chain(opts_t *opts, const char *argv0, const char *optarg, tmp_global_o
 		} else {
 			ERR_print_errors_fp(stderr);
 		}
-		exit(EXIT_FAILURE);
+		return -1;
 	}
 #ifdef DEBUG_OPTS
 	log_dbg_printf("CAChain: %s\n", optarg);
 #endif /* DEBUG_OPTS */
+	return 0;
 }
 
-void
-opts_set_leafcrlurl(opts_t *opts, const char *optarg, tmp_global_opts_t *tmp_global_opts)
+int
+opts_set_leafcrlurl(opts_t *opts, const char *argv0, const char *optarg, tmp_global_opts_t *tmp_global_opts)
 {
 	if (tmp_global_opts) {
 		if (tmp_global_opts->leafcrlurl_str)
 			free(tmp_global_opts->leafcrlurl_str);
 		tmp_global_opts->leafcrlurl_str = strdup(optarg);
+		if (!tmp_global_opts->leafcrlurl_str)
+			return oom_return(argv0);
 	}
 
 	if (opts->leafcrlurl)
 		free(opts->leafcrlurl);
 	opts->leafcrlurl = strdup(optarg);
+	if (!opts->leafcrlurl)
+		return oom_return(argv0);
 #ifdef DEBUG_OPTS
 	log_dbg_printf("LeafCRLURL: %s\n", opts->leafcrlurl);
 #endif /* DEBUG_OPTS */
+	return 0;
 }
 
-static void
+static int WUNRES
 set_certgendir(global_t *global, const char *argv0, const char *optarg)
 {
 	if (global->certgendir)
 		free(global->certgendir);
 	global->certgendir = strdup(optarg);
 	if (!global->certgendir)
-		oom_die(argv0);
+		return oom_return(argv0);
+	return 0;
 }
 
 void
@@ -2025,13 +2139,15 @@ opts_unset_passthrough(opts_t *opts)
 	opts->passthrough = 0;
 }
 
-void
+int
 opts_set_clientcrt(opts_t *opts, const char *argv0, const char *optarg, tmp_global_opts_t *tmp_global_opts)
 {
 	if (tmp_global_opts) {
 		if (tmp_global_opts->clientcrt_str)
 			free(tmp_global_opts->clientcrt_str);
 		tmp_global_opts->clientcrt_str = strdup(optarg);
+		if (!tmp_global_opts->clientcrt_str)
+			return oom_return(argv0);
 	}
 
 	if (opts->clientcrt)
@@ -2045,20 +2161,23 @@ opts_set_clientcrt(opts_t *opts, const char *argv0, const char *optarg, tmp_glob
 		} else {
 			ERR_print_errors_fp(stderr);
 		}
-		exit(EXIT_FAILURE);
+		return -1;
 	}
 #ifdef DEBUG_OPTS
 	log_dbg_printf("ClientCert: %s\n", optarg);
 #endif /* DEBUG_OPTS */
+	return 0;
 }
 
-void
+int
 opts_set_clientkey(opts_t *opts, const char *argv0, const char *optarg, tmp_global_opts_t *tmp_global_opts)
 {
 	if (tmp_global_opts) {
 		if (tmp_global_opts->clientkey_str)
 			free(tmp_global_opts->clientkey_str);
 		tmp_global_opts->clientkey_str = strdup(optarg);
+		if (!tmp_global_opts->clientkey_str)
+			return oom_return(argv0);
 	}
 
 	if (opts->clientkey)
@@ -2072,21 +2191,24 @@ opts_set_clientkey(opts_t *opts, const char *argv0, const char *optarg, tmp_glob
 		} else {
 			ERR_print_errors_fp(stderr);
 		}
-		exit(EXIT_FAILURE);
+		return -1;
 	}
 #ifdef DEBUG_OPTS
 	log_dbg_printf("ClientKey: %s\n", optarg);
 #endif /* DEBUG_OPTS */
+	return 0;
 }
 
 #ifndef OPENSSL_NO_DH
-void
+int
 opts_set_dh(opts_t *opts, const char *argv0, const char *optarg, tmp_global_opts_t *tmp_global_opts)
 {
 	if (tmp_global_opts) {
 		if (tmp_global_opts->dh_str)
 			free(tmp_global_opts->dh_str);
 		tmp_global_opts->dh_str = strdup(optarg);
+		if (!tmp_global_opts->dh_str)
+			return oom_return(argv0);
 	}
 
 	if (opts->dh)
@@ -2100,16 +2222,17 @@ opts_set_dh(opts_t *opts, const char *argv0, const char *optarg, tmp_global_opts
 		} else {
 			ERR_print_errors_fp(stderr);
 		}
-		exit(EXIT_FAILURE);
+		return -1;
 	}
 #ifdef DEBUG_OPTS
 	log_dbg_printf("DHGroupParams: %s\n", optarg);
 #endif /* DEBUG_OPTS */
+	return 0;
 }
 #endif /* !OPENSSL_NO_DH */
 
 #ifndef OPENSSL_NO_ECDH
-void
+int
 opts_set_ecdhcurve(opts_t *opts, const char *argv0, const char *optarg)
 {
 	EC_KEY *ec;
@@ -2117,15 +2240,16 @@ opts_set_ecdhcurve(opts_t *opts, const char *argv0, const char *optarg)
 		free(opts->ecdhcurve);
 	if (!(ec = ssl_ec_by_name(optarg))) {
 		fprintf(stderr, "%s: unknown curve '%s'\n", argv0, optarg);
-		exit(EXIT_FAILURE);
+		return -1;
 	}
 	EC_KEY_free(ec);
 	opts->ecdhcurve = strdup(optarg);
 	if (!opts->ecdhcurve)
-		oom_die(argv0);
+		return oom_return(argv0);
 #ifdef DEBUG_OPTS
 	log_dbg_printf("ECDHCurve: %s\n", opts->ecdhcurve);
 #endif /* DEBUG_OPTS */
+	return 0;
 }
 #endif /* !OPENSSL_NO_ECDH */
 
@@ -2141,37 +2265,38 @@ opts_unset_sslcomp(opts_t *opts)
 	opts->sslcomp = 0;
 }
 
-void
+int
 opts_set_ciphers(opts_t *opts, const char *argv0, const char *optarg)
 {
 	if (opts->ciphers)
 		free(opts->ciphers);
 	opts->ciphers = strdup(optarg);
 	if (!opts->ciphers)
-		oom_die(argv0);
+		return oom_return(argv0);
 #ifdef DEBUG_OPTS
 	log_dbg_printf("Ciphers: %s\n", opts->ciphers);
 #endif /* DEBUG_OPTS */
+	return 0;
 }
 
-void
+int
 opts_set_ciphersuites(opts_t *opts, const char *argv0, const char *optarg)
 {
 	if (opts->ciphersuites)
 		free(opts->ciphersuites);
 	opts->ciphersuites = strdup(optarg);
 	if (!opts->ciphersuites)
-		oom_die(argv0);
+		return oom_return(argv0);
 #ifdef DEBUG_OPTS
 	log_dbg_printf("CipherSuites: %s\n", opts->ciphersuites);
 #endif /* DEBUG_OPTS */
+	return 0;
 }
 
 /*
  * Parse SSL proto string in optarg and look up the corresponding SSL method.
- * Calls exit() on failure.
  */
-void
+int
 opts_force_proto(opts_t *opts, const char *argv0, const char *optarg)
 {
 #if (OPENSSL_VERSION_NUMBER < 0x10100000L) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER < 0x20702000L)
@@ -2180,7 +2305,7 @@ opts_force_proto(opts_t *opts, const char *argv0, const char *optarg)
 	if (opts->sslversion) {
 #endif /* OPENSSL_VERSION_NUMBER >= 0x10100000L */
 		fprintf(stderr, "%s: cannot use -r multiple times\n", argv0);
-		exit(EXIT_FAILURE);
+		return -1;
 	}
 
 #if (OPENSSL_VERSION_NUMBER < 0x10100000L) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER < 0x20702000L)
@@ -2246,18 +2371,18 @@ opts_force_proto(opts_t *opts, const char *argv0, const char *optarg)
 	{
 		fprintf(stderr, "%s: Unsupported SSL/TLS protocol '%s'\n",
 		                argv0, optarg);
-		exit(EXIT_FAILURE);
+		return -1;
 	}
 #ifdef DEBUG_OPTS
 	log_dbg_printf("ForceSSLProto: %s\n", optarg);
 #endif /* DEBUG_OPTS */
+	return 0;
 }
 
 /*
  * Parse SSL proto string in optarg and set the corresponding no_foo bit.
- * Calls exit() on failure.
  */
-void
+int
 opts_disable_proto(opts_t *opts, const char *argv0, const char *optarg)
 {
 #ifdef HAVE_SSLV2
@@ -2293,14 +2418,15 @@ opts_disable_proto(opts_t *opts, const char *argv0, const char *optarg)
 	{
 		fprintf(stderr, "%s: Unsupported SSL/TLS protocol '%s'\n",
 		                argv0, optarg);
-		exit(EXIT_FAILURE);
+		return -1;
 	}
 #ifdef DEBUG_OPTS
 	log_dbg_printf("DisableSSLProto: %s\n", optarg);
 #endif /* DEBUG_OPTS */
+	return 0;
 }
 
-void
+static int WUNRES
 opts_set_min_proto(UNUSED opts_t *opts, const char *argv0, const char *optarg)
 {
 #if (OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER >= 0x20702000L)
@@ -2333,14 +2459,15 @@ opts_set_min_proto(UNUSED opts_t *opts, const char *argv0, const char *optarg)
 	{
 		fprintf(stderr, "%s: Unsupported SSL/TLS protocol '%s'\n",
 		                argv0, optarg);
-		exit(EXIT_FAILURE);
+		return -1;
 	}
 #ifdef DEBUG_OPTS
 	log_dbg_printf("MinSSLProto: %s\n", optarg);
 #endif /* DEBUG_OPTS */
+	return 0;
 }
 
-void
+static int WUNRES
 opts_set_max_proto(UNUSED opts_t *opts, const char *argv0, const char *optarg)
 {
 #if (OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER >= 0x20702000L)
@@ -2373,11 +2500,12 @@ opts_set_max_proto(UNUSED opts_t *opts, const char *argv0, const char *optarg)
 	{
 		fprintf(stderr, "%s: Unsupported SSL/TLS protocol '%s'\n",
 		                argv0, optarg);
-		exit(EXIT_FAILURE);
+		return -1;
 	}
 #ifdef DEBUG_OPTS
 	log_dbg_printf("MaxSSLProto: %s\n", optarg);
 #endif /* DEBUG_OPTS */
+	return 0;
 }
 
 static void
@@ -2459,7 +2587,7 @@ opts_unset_validate_proto(opts_t *opts)
 
 #define MAX_SITE_LEN 200
 
-void
+int
 opts_set_passsite(opts_t *opts, char *value, int line_num)
 {
 #define MAX_PASSSITE_TOKENS 3
@@ -2476,16 +2604,18 @@ opts_set_passsite(opts_t *opts, char *value, int line_num)
 			argv[argc++] = p;
 		} else {
 			fprintf(stderr, "Too many arguments in passsite option on line %d\n", line_num);
-			exit(EXIT_FAILURE);
+			return -1;
 		}
 	}
 
 	if (!argc) {
 		fprintf(stderr, "Filter rule requires at least one parameter on line %d\n", line_num);
-		exit(EXIT_FAILURE);
+		return -1;
 	}
 
 	filter_rule_t *rule = malloc(sizeof(filter_rule_t));
+	if (!rule)
+		return oom_return_na();
 	memset(rule, 0, sizeof(filter_rule_t));
 
 	// The for loop with strtok_r() above does not output empty strings
@@ -2494,7 +2624,7 @@ opts_set_passsite(opts_t *opts, char *value, int line_num)
 
 	if (len > MAX_SITE_LEN) {
 		fprintf(stderr, "Filter site too long %zu > %d on line %d\n", len, MAX_SITE_LEN, line_num);
-		exit(EXIT_FAILURE);
+		return -1;
 	}
 
 	if (argv[0][len - 1] == '*') {
@@ -2509,6 +2639,8 @@ opts_set_passsite(opts_t *opts, char *value, int line_num)
 	}
 
 	rule->site = strdup(argv[0]);
+	if (!rule->site)
+		return oom_return_na();
 
 	// precedence can only go up not down
 	rule->precedence = 0;
@@ -2528,10 +2660,12 @@ opts_set_passsite(opts_t *opts, char *value, int line_num)
 		} else if (sys_isuser(argv[1])) {
 			if (!opts->user_auth) {
 				fprintf(stderr, "User filter requires user auth on line %d\n", line_num);
-				exit(EXIT_FAILURE);
+				return -1;
 			}
 			rule->precedence += 2;
 			rule->user = strdup(argv[1]);
+			if (!rule->user)
+				return oom_return_na();
 #else /* !WITHOUT_USERAUTH */
 			// Apply filter rule to all conns, if USERAUTH is disabled, ip == '*'
 			rule->all_conns = 1;
@@ -2539,6 +2673,8 @@ opts_set_passsite(opts_t *opts, char *value, int line_num)
 		} else {
 			rule->precedence++;
 			rule->ip = strdup(argv[1]);
+			if (!rule->ip)
+				return oom_return_na();
 		}
 	}
 
@@ -2553,15 +2689,17 @@ opts_set_passsite(opts_t *opts, char *value, int line_num)
 					rule->ip,
 #endif /* !WITHOUT_USERAUTH */
 					line_num);
-			exit(EXIT_FAILURE);
+			return -1;
 		}
 #ifndef WITHOUT_USERAUTH
 		if (!opts->user_auth) {
 			fprintf(stderr, "Keyword filter requires user auth on line %d\n", line_num);
-			exit(EXIT_FAILURE);
+			return -1;
 		}
 		rule->precedence++;
 		rule->keyword = strdup(argv[2]);
+		if (!rule->keyword)
+			return oom_return_na();
 #endif /* !WITHOUT_USERAUTH */
 	}
 
@@ -2605,6 +2743,7 @@ opts_set_passsite(opts_t *opts, char *value, int line_num)
 		rule->dstip ? "dstip" : "", rule->sni ? "sni" : "", rule->cn ? "cn" : "", rule->host ? "host" : "", rule->uri ? "uri" : "",
 		rule->precedence);
 #endif /* DEBUG_OPTS */
+	return 0;
 }
 
 static macro_t *
@@ -2619,7 +2758,7 @@ opts_find_macro(macro_t *macro, char *name)
 	return NULL;
 }
 
-static void
+static int WUNRES
 opts_set_macro(opts_t *opts, char *value, int line_num)
 {
 #define MAX_MACRO_TOKENS 50
@@ -2636,36 +2775,44 @@ opts_set_macro(opts_t *opts, char *value, int line_num)
 			argv[argc++] = p;
 		} else {
 			fprintf(stderr, "Too many arguments in macro definition on line %d\n", line_num);
-			exit(EXIT_FAILURE);
+			return -1;
 		}
 	}
 
 	if (argc < 2) {
 		fprintf(stderr, "Macro definition requires at least two arguments on line %d\n", line_num);
-		exit(EXIT_FAILURE);
+		return -1;
 	}
 
 	if (argv[0][0] != '$') {
 		fprintf(stderr, "Macro name should start with '$' on line %d\n", line_num);
-		exit(EXIT_FAILURE);
+		return -1;
 	}
 
 	if (opts_find_macro(opts->macro, argv[0])) {
 		fprintf(stderr, "Macro name '%s' already exists on line %d\n", argv[0], line_num);
-		exit(EXIT_FAILURE);
+		return -1;
 	}
 
 	macro_t *macro = malloc(sizeof(macro_t));
+	if (!macro)
+		return oom_return_na();
 	memset(macro, 0, sizeof(macro_t));
 
 	macro->name = strdup(argv[0]);
+	if (!macro->name)
+		return oom_return_na();
 
 	int i = 1;
 	while (i < argc) {
 		value_t *v = malloc(sizeof(value_t));
+		if (!v)
+			return oom_return_na();
 		memset(v, 0, sizeof(value_t));
 
 		v->value = strdup(argv[i++]);
+		if (!v->value)
+			return oom_return_na();
 		v->next = macro->value;
 		macro->value = v;
 	}
@@ -2676,9 +2823,10 @@ opts_set_macro(opts_t *opts, char *value, int line_num)
 #ifdef DEBUG_OPTS
 	log_dbg_printf("Macro: %s = %s\n", macro->name, value_str(macro->value));
 #endif /* DEBUG_OPTS */
+	return 0;
 }
 
-static void
+static int WUNRES
 opts_set_site(filter_rule_t *rule, const char *site, int line_num)
 {
 	// The for loop with strtok_r() does not output empty strings
@@ -2687,11 +2835,13 @@ opts_set_site(filter_rule_t *rule, const char *site, int line_num)
 
 	if (len > MAX_SITE_LEN) {
 		fprintf(stderr, "Filter site too long %zu > %d on line %d\n", len, MAX_SITE_LEN, line_num);
-		exit(EXIT_FAILURE);
+		return -1;
 	}
 
 	// Don't modify site, site is reused in macro expansion
 	rule->site = strdup(site);
+	if (!rule->site)
+		return oom_return_na();
 
 	if (rule->site[len - 1] == '*') {
 		rule->exact = 0;
@@ -2707,20 +2857,21 @@ opts_set_site(filter_rule_t *rule, const char *site, int line_num)
 	// redundant?
 	if (equal(rule->site, "*"))
 		rule->all_sites = 1;
+	return 0;
 }
 
-static int
+static int WUNRES
 opts_inc_arg_index(int i, int argc, char *last, int line_num)
 {
 	if (i + 1 < argc) {
 		return i + 1;
 	} else {
 		fprintf(stderr, "Not enough arguments in filter rule after '%s' on line %d\n", last, line_num);
-		exit(EXIT_FAILURE);
+		return -1;
 	}
 }
 
-static void
+static int WUNRES
 filter_rule_translate(opts_t *opts, const char *name, int argc, char **argv, int line_num)
 {
 	//(Divert|Split|Pass|Block|Match)
@@ -2740,6 +2891,8 @@ filter_rule_translate(opts_t *opts, const char *name, int argc, char **argv, int
 	//  |*)
 
 	filter_rule_t *rule = malloc(sizeof(filter_rule_t));
+	if (!rule)
+		return oom_return_na();
 	memset(rule, 0, sizeof(filter_rule_t));
 
 	if (equal(name, "Divert"))
@@ -2764,11 +2917,13 @@ filter_rule_translate(opts_t *opts, const char *name, int argc, char **argv, int
 			i++;
 		}
 		else if (equal(argv[i], "from")) {
-			i = opts_inc_arg_index(i, argc, argv[i], line_num);
+			if ((i = opts_inc_arg_index(i, argc, argv[i], line_num)) == -1)
+				return -1;
 #ifndef WITHOUT_USERAUTH
 			if (equal(argv[i], "user") || equal(argv[i], "desc")) {
 				if (equal(argv[i], "user")) {
-					i = opts_inc_arg_index(i, argc, argv[i], line_num);
+					if ((i = opts_inc_arg_index(i, argc, argv[i], line_num)) == -1)
+						return -1;
 
 					rule->precedence++;
 
@@ -2777,14 +2932,19 @@ filter_rule_translate(opts_t *opts, const char *name, int argc, char **argv, int
 					} else {
 						rule->precedence++;
 						rule->user = strdup(argv[i]);
+						if (!rule->user)
+							return oom_return_na();
 					}
 					i++;
 				}
 
 				if (i < argc && equal(argv[i], "desc")) {
-					i = opts_inc_arg_index(i, argc, argv[i], line_num);
+					if ((i = opts_inc_arg_index(i, argc, argv[i], line_num)) == -1)
+						return -1;
 					rule->precedence++;
 					rule->keyword = strdup(argv[i++]);
+					if (!rule->keyword)
+						return oom_return_na();
 				}
 
 				done_from = 1;
@@ -2792,12 +2952,16 @@ filter_rule_translate(opts_t *opts, const char *name, int argc, char **argv, int
 			else
 #endif /* !WITHOUT_USERAUTH */
 			if (equal(argv[i], "ip")) {
-				i = opts_inc_arg_index(i, argc, argv[i], line_num);
+				if ((i = opts_inc_arg_index(i, argc, argv[i], line_num)) == -1)
+					return -1;
+
 				if (equal(argv[i], "*")) {
 					rule->all_conns = 1;
 				} else {
 					rule->precedence++;
 					rule->ip = strdup(argv[i]);
+					if (!rule->ip)
+						return oom_return_na();
 				}
 				i++;
 				done_from = 1;
@@ -2807,7 +2971,9 @@ filter_rule_translate(opts_t *opts, const char *name, int argc, char **argv, int
 			}
 		}
 		else if (equal(argv[i], "to")) {
-			i = opts_inc_arg_index(i, argc, argv[i], line_num);
+			if ((i = opts_inc_arg_index(i, argc, argv[i], line_num)) == -1)
+				return -1;
+
 			if (equal(argv[i], "sni") || equal(argv[i], "cn") || equal(argv[i], "host") || equal(argv[i], "uri") || equal(argv[i], "ip")) {
 				rule->precedence++;
 				if (equal(argv[i], "sni"))
@@ -2821,8 +2987,11 @@ filter_rule_translate(opts_t *opts, const char *name, int argc, char **argv, int
 				else if (equal(argv[i], "ip"))
 					rule->dstip = 1;
 
-				i = opts_inc_arg_index(i, argc, argv[i], line_num);
-				opts_set_site(rule, argv[i++], line_num);
+				if ((i = opts_inc_arg_index(i, argc, argv[i], line_num)) == -1)
+					return -1;
+
+				if (opts_set_site(rule, argv[i++], line_num) == -1)
+					return -1;
 
 				done_to = 1;
 			}
@@ -2831,9 +3000,11 @@ filter_rule_translate(opts_t *opts, const char *name, int argc, char **argv, int
 			}
 		}
 		else if (equal(argv[i], "log")) {
+			if ((i = opts_inc_arg_index(i, argc, argv[i], line_num)) == -1)
+				return -1;
+
 			rule->precedence++;
 
-			i = opts_inc_arg_index(i, argc, argv[i], line_num);
 			if (equal(argv[i], "connect") || equal(argv[i], "master") || equal(argv[i], "cert") || equal(argv[i], "content") || equal(argv[i], "pcap") ||
 				equal(argv[i], "!connect") || equal(argv[i], "!master") || equal(argv[i], "!cert") || equal(argv[i], "!content") || equal(argv[i], "!pcap")
 #ifndef WITHOUT_MIRROR
@@ -2907,6 +3078,8 @@ filter_rule_translate(opts_t *opts, const char *name, int argc, char **argv, int
 	}
 	if (!done_to) {
 		rule->site = strdup("");
+		if (!rule->site)
+			return oom_return_na();
 		rule->all_sites = 1;
 		rule->sni = 1;
 		rule->cn = 1;
@@ -2950,14 +3123,15 @@ filter_rule_translate(opts_t *opts, const char *name, int argc, char **argv, int
 		rule->dstip ? "dstip" : "", rule->sni ? "sni" : "", rule->cn ? "cn" : "", rule->host ? "host" : "", rule->uri ? "uri" : "",
 		rule->precedence);
 #endif /* DEBUG_OPTS */
+	return 0;
 }
 
-static void
+static int WUNRES
 filter_rule_parse(opts_t *opts, const char *name, int argc, char **argv, int line_num);
 
 #define MAX_FILTER_RULE_TOKENS 13
 
-static int
+static int WUNRES
 filter_rule_expand_macro(opts_t *opts, const char *name, int argc, char **argv, int i, int line_num)
 {
 	if (argv[i][0] == '$') {
@@ -2970,7 +3144,8 @@ filter_rule_expand_macro(opts_t *opts, const char *name, int argc, char **argv, 
 
 				expanded_argv[i] = value->value;
 
-				filter_rule_parse(opts, name, argc, expanded_argv, line_num);
+				if (filter_rule_parse(opts, name, argc, expanded_argv, line_num) == -1)
+					return -1;
 
 				value = value->next;
 			}
@@ -2979,58 +3154,61 @@ filter_rule_expand_macro(opts_t *opts, const char *name, int argc, char **argv, 
 		}
 		else {
 			fprintf(stderr, "No such macro '%s' on line %d\n", argv[i], line_num);
-			exit(EXIT_FAILURE);
+			return -1;
 		}
 	}
 	return 0;
 }
 
-static void
+static int WUNRES
 filter_rule_parse(opts_t *opts, const char *name, int argc, char **argv, int line_num)
 {
 	int done_all = 0;
 	int done_from = 0;
 	int done_to = 0;
 	int done_log = 0;
+	int rv = 0;
 	int i = 0;
 	while (i < argc) {
 		if (equal(argv[i], "*")) {
 			if (done_all) {
 				fprintf(stderr, "Only one '*' statement allowed on line %d\n", line_num);
-				exit(EXIT_FAILURE);
+				return -1;
 			}
 			if (++i > argc) {
 				fprintf(stderr, "Too many arguments for '*' on line %d\n", line_num);
-				exit(EXIT_FAILURE);
+				return -1;
 			}
 			done_all = 1;
 		}
 		else if (equal(argv[i], "from")) {
 			if (done_from) {
 				fprintf(stderr, "Only one 'from' statement allowed on line %d\n", line_num);
-				exit(EXIT_FAILURE);
+				return -1;
 			}
 
-			i = opts_inc_arg_index(i, argc, argv[i], line_num);
+			if ((i = opts_inc_arg_index(i, argc, argv[i], line_num)) == -1)
+				return -1;
 #ifndef WITHOUT_USERAUTH
 			if (equal(argv[i], "user") || equal(argv[i], "desc")) {
 				if (equal(argv[i], "user")) {
-					i = opts_inc_arg_index(i, argc, argv[i], line_num);
-
 					if (!opts->user_auth) {
 						fprintf(stderr, "User filter requires user auth on line %d\n", line_num);
-						exit(EXIT_FAILURE);
+						return -1;
 					}
+
+					if ((i = opts_inc_arg_index(i, argc, argv[i], line_num)) == -1)
+						return -1;
 
 					if (equal(argv[i], "*")) {
 						// Nothing to do
 					}
-					else if (filter_rule_expand_macro(opts, name, argc, argv, i, line_num)) {
-						return;
+					else if ((rv = filter_rule_expand_macro(opts, name, argc, argv, i, line_num)) != 0) {
+						return rv;
 					}
 					else if (!sys_isuser(argv[i])) {
 						fprintf(stderr, "No such user '%s' on line %d\n", argv[i], line_num);
-						exit(EXIT_FAILURE);
+						return -1;
 					}
 					i++;
 				}
@@ -3039,12 +3217,14 @@ filter_rule_parse(opts_t *opts, const char *name, int argc, char **argv, int lin
 				if (i < argc && equal(argv[i], "desc")) {
 					if (!opts->user_auth) {
 						fprintf(stderr, "Desc filter requires user auth on line %d\n", line_num);
-						exit(EXIT_FAILURE);
+						return -1;
 					}
 
-					i = opts_inc_arg_index(i, argc, argv[i], line_num);
-					if (filter_rule_expand_macro(opts, name, argc, argv, i, line_num)) {
-						return;
+					if ((i = opts_inc_arg_index(i, argc, argv[i], line_num)) == -1)
+						return -1;
+
+					if ((rv = filter_rule_expand_macro(opts, name, argc, argv, i, line_num)) != 0) {
+						return rv;
 					}
 					i++;
 				}
@@ -3054,12 +3234,14 @@ filter_rule_parse(opts_t *opts, const char *name, int argc, char **argv, int lin
 			else
 #endif /* !WITHOUT_USERAUTH */
 			if (equal(argv[i], "ip")) {
-				i = opts_inc_arg_index(i, argc, argv[i], line_num);
+				if ((i = opts_inc_arg_index(i, argc, argv[i], line_num)) == -1)
+					return -1;
+
 				if (equal(argv[i], "*")) {
 					// Nothing to do
 				}
-				else if (filter_rule_expand_macro(opts, name, argc, argv, i, line_num)) {
-					return;
+				else if ((rv = filter_rule_expand_macro(opts, name, argc, argv, i, line_num)) != 0) {
+					return rv;
 				}
 				i++;
 				done_from = 1;
@@ -3069,21 +3251,24 @@ filter_rule_parse(opts_t *opts, const char *name, int argc, char **argv, int lin
 			}
 			else {
 				fprintf(stderr, "Unknown argument in filter rule at '%s' on line %d\n", argv[i], line_num);
-				exit(EXIT_FAILURE);
+				return -1;
 			}
 		}
 		else if (equal(argv[i], "to")) {
 			if (done_to) {
 				fprintf(stderr, "Only one 'to' statement allowed on line %d\n", line_num);
-				exit(EXIT_FAILURE);
+				return -1;
 			}
 
-			i = opts_inc_arg_index(i, argc, argv[i], line_num);
-			if (equal(argv[i], "sni") || equal(argv[i], "cn") || equal(argv[i], "host") || equal(argv[i], "uri") || equal(argv[i], "ip")) {
+			if ((i = opts_inc_arg_index(i, argc, argv[i], line_num)) == -1)
+				return -1;
 
-				i = opts_inc_arg_index(i, argc, argv[i], line_num);
-				if (filter_rule_expand_macro(opts, name, argc, argv, i, line_num)) {
-					return;
+			if (equal(argv[i], "sni") || equal(argv[i], "cn") || equal(argv[i], "host") || equal(argv[i], "uri") || equal(argv[i], "ip")) {
+				if ((i = opts_inc_arg_index(i, argc, argv[i], line_num)) == -1)
+					return -1;
+
+				if ((rv = filter_rule_expand_macro(opts, name, argc, argv, i, line_num)) != 0) {
+					return rv;
 				}
 				i++;
 
@@ -3094,16 +3279,18 @@ filter_rule_parse(opts_t *opts, const char *name, int argc, char **argv, int lin
 			}
 			else {
 				fprintf(stderr, "Unknown argument in filter rule at '%s' on line %d\n", argv[i], line_num);
-				exit(EXIT_FAILURE);
+				return -1;
 			}
 		}
 		else if (equal(argv[i], "log")) {
 			if (done_log) {
 				fprintf(stderr, "Only one 'log' statement allowed on line %d\n", line_num);
-				exit(EXIT_FAILURE);
+				return -1;
 			}
 
-			i = opts_inc_arg_index(i, argc, argv[i], line_num);
+			if ((i = opts_inc_arg_index(i, argc, argv[i], line_num)) == -1)
+				return -1;
+
 			if (equal(argv[i], "connect") || equal(argv[i], "master") || equal(argv[i], "cert") || equal(argv[i], "content") || equal(argv[i], "pcap") ||
 				equal(argv[i], "!connect") || equal(argv[i], "!master") || equal(argv[i], "!cert") || equal(argv[i], "!content") || equal(argv[i], "!pcap")
 #ifndef WITHOUT_MIRROR
@@ -3111,8 +3298,8 @@ filter_rule_parse(opts_t *opts, const char *name, int argc, char **argv, int lin
 #endif /* !WITHOUT_MIRROR */
 				|| argv[i][0] == '$') {
 				do {
-					if (filter_rule_expand_macro(opts, name, argc, argv, i, line_num)) {
-						return;
+					if ((rv = filter_rule_expand_macro(opts, name, argc, argv, i, line_num)) != 0) {
+						return rv;
 					}
 					if (++i == argc)
 						break;
@@ -3135,20 +3322,20 @@ filter_rule_parse(opts_t *opts, const char *name, int argc, char **argv, int lin
 			}
 			else {
 				fprintf(stderr, "Unknown argument in filter rule at '%s' on line %d\n", argv[i], line_num);
-				exit(EXIT_FAILURE);
+				return -1;
 			}
 		}
 		else {
 			fprintf(stderr, "Unknown argument in filter rule at '%s' on line %d\n", argv[i], line_num);
-			exit(EXIT_FAILURE);
+				return -1;
 		}
 	}
 
 	// All checks passed and all macros expanded, if any
-	filter_rule_translate(opts, name, argc, argv, line_num);
+	return filter_rule_translate(opts, name, argc, argv, line_num);
 }
 
-static void
+static int WUNRES
 opts_set_filter_rule(opts_t *opts, const char *name, char *value, int line_num)
 {
 	char *argv[sizeof(char *) * MAX_FILTER_RULE_TOKENS];
@@ -3162,11 +3349,11 @@ opts_set_filter_rule(opts_t *opts, const char *name, char *value, int line_num)
 			argv[argc++] = p;
 		} else {
 			fprintf(stderr, "Too many arguments in filter rule on line %d\n", line_num);
-			exit(EXIT_FAILURE);
+			return -1;
 		}
 	}
 
-	filter_rule_parse(opts, name, argc, argv, line_num);
+	return filter_rule_parse(opts, name, argc, argv, line_num);
 }
 
 static filter_site_t *
@@ -3194,9 +3381,11 @@ opts_add_site(filter_site_t *site, filter_rule_t *rule)
 	if (!s) {
 		s = malloc(sizeof(filter_site_t));
 		if (!s)
-			return NULL;
+			return oom_return_na_null();
 		memset(s, 0, sizeof(filter_site_t));
 		s->site = strdup(rule->site);
+		if (!s->site)
+			return oom_return_na_null();
 
 		if (prepend) {
 			s->next = site;
@@ -3298,15 +3487,17 @@ opts_get_ip(filter_ip_t **list, char *i)
 	if (!ip) {
 		ip = malloc(sizeof(filter_ip_t));
 		if (!ip)
-			return NULL;
+			return oom_return_na_null();
 		memset(ip, 0, sizeof(filter_ip_t));
 
 		ip->list = malloc(sizeof(filter_list_t));
 		if (!ip->list)
-			return NULL;
+			return oom_return_na_null();
 		memset(ip->list, 0, sizeof(filter_list_t));
 
 		ip->ip = strdup(i);
+		if (!ip->ip)
+			return oom_return_na_null();
 		ip->next = *list;
 		*list = ip;
 	}
@@ -3332,15 +3523,17 @@ opts_get_keyword(filter_keyword_t **list, char *k)
 	if (!keyword) {
 		keyword = malloc(sizeof(filter_keyword_t));
 		if (!keyword)
-			return NULL;
+			return oom_return_na_null();
 		memset(keyword, 0, sizeof(filter_keyword_t));
 
 		keyword->list = malloc(sizeof(filter_list_t));
 		if (!keyword->list)
-			return NULL;
+			return oom_return_na_null();
 		memset(keyword->list, 0, sizeof(filter_list_t));
 
 		keyword->keyword = strdup(k);
+		if (!keyword->keyword)
+			return oom_return_na_null();
 		keyword->next = *list;
 		*list = keyword;
 	}
@@ -3365,15 +3558,17 @@ opts_get_user(filter_user_t **list, char *u)
 	if (!user) {
 		user = malloc(sizeof(filter_user_t));
 		if (!user)
-			return NULL;
+			return oom_return_na_null();
 		memset(user, 0, sizeof(filter_user_t));
 
 		user->list = malloc(sizeof(filter_list_t));
 		if (!user->list)
-			return NULL;
+			return oom_return_na_null();
 		memset(user->list, 0, sizeof(filter_list_t));
 
 		user->user = strdup(u);
+		if (!user->user)
+			return oom_return_na_null();
 		user->next = *list;
 		*list = user;
 	}
@@ -3386,19 +3581,19 @@ opts_set_filter(filter_rule_t *rule)
 {
 	filter_t *filter = malloc(sizeof(filter_t));
 	if (!filter)
-		return NULL;
+		return oom_return_na_null();
 	memset(filter, 0, sizeof(filter_t));
 
 #ifndef WITHOUT_USERAUTH
 	filter->all_user = malloc(sizeof(filter_list_t));
 	if (!filter->all_user)
-		return NULL;
+		return oom_return_na_null();
 	memset(filter->all_user, 0, sizeof(filter_list_t));
 #endif /* WITHOUT_USERAUTH */
 
 	filter->all = malloc(sizeof(filter_list_t));
 	if (!filter->all)
-		return NULL;
+		return oom_return_na_null();
 	memset(filter->all, 0, sizeof(filter_list_t));
 
 	while (rule) {
@@ -3411,11 +3606,11 @@ opts_set_filter(filter_rule_t *rule)
 				filter_keyword_t *keyword = opts_get_keyword(&user->keyword, rule->keyword);
 				if (!keyword)
 					return NULL;
-				if (opts_add_to_sitelist(keyword->list, rule) < 0)
+				if (opts_add_to_sitelist(keyword->list, rule) == -1)
 					return NULL;
 			}
 			else {
-				if (opts_add_to_sitelist(user->list, rule) < 0)
+				if (opts_add_to_sitelist(user->list, rule) == -1)
 					return NULL;
 			}
 		}
@@ -3423,11 +3618,11 @@ opts_set_filter(filter_rule_t *rule)
 			filter_keyword_t *keyword = opts_get_keyword(&filter->keyword, rule->keyword);
 			if (!keyword)
 				return NULL;
-			if (opts_add_to_sitelist(keyword->list, rule) < 0)
+			if (opts_add_to_sitelist(keyword->list, rule) == -1)
 				return NULL;
 		}
 		else if (rule->all_users) {
-			if (opts_add_to_sitelist(filter->all_user, rule) < 0)
+			if (opts_add_to_sitelist(filter->all_user, rule) == -1)
 				return NULL;
 		}
 		else
@@ -3436,11 +3631,11 @@ opts_set_filter(filter_rule_t *rule)
 			filter_ip_t *ip = opts_get_ip(&filter->ip, rule->ip);
 			if (!ip)
 				return NULL;
-			if (opts_add_to_sitelist(ip->list, rule) < 0)
+			if (opts_add_to_sitelist(ip->list, rule) == -1)
 				return NULL;
 		}
 		else if (rule->all_conns) {
-			if (opts_add_to_sitelist(filter->all, rule) < 0)
+			if (opts_add_to_sitelist(filter->all, rule) == -1)
 				return NULL;
 		}
 		rule = rule->next;
@@ -3452,7 +3647,7 @@ opts_set_filter(filter_rule_t *rule)
 // Limit the number of users to max 50
 #define MAX_USERS 50
 
-static void
+static int WUNRES
 opts_set_userlist(char *value, int line_num, userlist_t **list, const char *listname)
 {
 	// Delimiter can be either or all of ",", " ", and "\t"
@@ -3470,13 +3665,13 @@ opts_set_userlist(char *value, int line_num, userlist_t **list, const char *list
 			argv[argc++] = p;
 		} else {
 			fprintf(stderr, "Too many arguments in user list, max users allowed %d, on line %d\n", MAX_USERS, line_num);
-			exit(EXIT_FAILURE);
+			return -1;
 		}
 	}
 
 	if (!argc) {
 		fprintf(stderr, "%s requires at least one parameter on line %d\n", listname, line_num);
-		exit(EXIT_FAILURE);
+		return -1;
 	}
 
 	// Override the cloned global list, if any
@@ -3487,16 +3682,21 @@ opts_set_userlist(char *value, int line_num, userlist_t **list, const char *list
 
 	while (argc--) {
 		userlist_t *ul = malloc(sizeof(userlist_t));
+		if (!ul)
+			return oom_return_na();
 		memset(ul, 0, sizeof(userlist_t));
 
 		ul->user = strdup(argv[argc]);
+		if (!ul->user)
+			return oom_return_na();
 		ul->next = *list;
 		*list = ul;
 	}
+	return 0;
 }
 #endif /* !WITHOUT_USERAUTH */
 
-void
+int
 global_set_leafkey(global_t *global, const char *argv0, const char *optarg)
 {
 	if (global->leafkey)
@@ -3510,7 +3710,7 @@ global_set_leafkey(global_t *global, const char *argv0, const char *optarg)
 		} else {
 			ERR_print_errors_fp(stderr);
 		}
-		exit(EXIT_FAILURE);
+		return -1;
 	}
 #ifndef OPENSSL_NO_DH
 	if (!global->opts->dh) {
@@ -3520,42 +3720,45 @@ global_set_leafkey(global_t *global, const char *argv0, const char *optarg)
 #ifdef DEBUG_OPTS
 	log_dbg_printf("LeafKey: %s\n", optarg);
 #endif /* DEBUG_OPTS */
+	return 0;
 }
 
 #ifndef OPENSSL_NO_ENGINE
-void
+int
 global_set_openssl_engine(global_t *global, const char *argv0, const char *optarg)
 {
 	if (global->openssl_engine)
 		free(global->openssl_engine);
 	global->openssl_engine = strdup(optarg);
 	if (!global->openssl_engine)
-		oom_die(argv0);
+		return oom_return(argv0);
 #ifdef DEBUG_OPTS
 	log_dbg_printf("OpenSSLEngine: %s\n", global->openssl_engine);
 #endif /* DEBUG_OPTS */
+	return 0;
 }
 #endif /* !OPENSSL_NO_ENGINE */
 
-void
+int
 global_set_leafcertdir(global_t *global, const char *argv0, const char *optarg)
 {
 	if (!sys_isdir(optarg)) {
 		fprintf(stderr, "%s: '%s' is not a directory\n",
 		        argv0, optarg);
-		exit(EXIT_FAILURE);
+		return -1;
 	}
 	if (global->leafcertdir)
 		free(global->leafcertdir);
 	global->leafcertdir = strdup(optarg);
 	if (!global->leafcertdir)
-		oom_die(argv0);
+		return oom_return(argv0);
 #ifdef DEBUG_OPTS
 	log_dbg_printf("LeafCertDir: %s\n", global->leafcertdir);
 #endif /* DEBUG_OPTS */
+	return 0;
 }
 
-void
+int
 global_set_defaultleafcert(global_t *global, const char *argv0, const char *optarg)
 {
 	if (global->defaultleafcert)
@@ -3569,80 +3772,86 @@ global_set_defaultleafcert(global_t *global, const char *argv0, const char *opta
 		} else {
 			ERR_print_errors_fp(stderr);
 		}
-		exit(EXIT_FAILURE);
+		return -1;
 	}
 #ifdef DEBUG_OPTS
 	log_dbg_printf("DefaultLeafCert: %s\n", optarg);
 #endif /* DEBUG_OPTS */
+	return 0;
 }
 
-void
+int
 global_set_certgendir_writegencerts(global_t *global, const char *argv0,
                                   const char *optarg)
 {
 	global->certgen_writeall = 0;
-	set_certgendir(global, argv0, optarg);
+	if (set_certgendir(global, argv0, optarg) == -1)
+		return -1;
 #ifdef DEBUG_OPTS
 	log_dbg_printf("WriteGenCertsDir: certgendir=%s, writeall=%u\n",
 	               global->certgendir, global->certgen_writeall);
 #endif /* DEBUG_OPTS */
+	return 0;
 }
 
-void
+int
 global_set_certgendir_writeall(global_t *global, const char *argv0,
                              const char *optarg)
 {
 	global->certgen_writeall = 1;
-	set_certgendir(global, argv0, optarg);
+	if (set_certgendir(global, argv0, optarg) == -1)
+		return -1;
 #ifdef DEBUG_OPTS
 	log_dbg_printf("WriteAllCertsDir: certgendir=%s, writeall=%u\n",
 	               global->certgendir, global->certgen_writeall);
 #endif /* DEBUG_OPTS */
+	return 0;
 }
 
-void
+int
 global_set_user(global_t *global, const char *argv0, const char *optarg)
 {
 	if (!sys_isuser(optarg)) {
 		fprintf(stderr, "%s: '%s' is not an existing user\n",
 		        argv0, optarg);
-		exit(EXIT_FAILURE);
+		return -1;
 	}
 	if (global->dropuser)
 		free(global->dropuser);
 	global->dropuser = strdup(optarg);
 	if (!global->dropuser)
-		oom_die(argv0);
+		return oom_return(argv0);
 #ifdef DEBUG_OPTS
 	log_dbg_printf("User: %s\n", global->dropuser);
 #endif /* DEBUG_OPTS */
+	return 0;
 }
 
-void
+int
 global_set_group(global_t *global, const char *argv0, const char *optarg)
 {
-
 	if (!sys_isgroup(optarg)) {
 		fprintf(stderr, "%s: '%s' is not an existing group\n",
 		        argv0, optarg);
-		exit(EXIT_FAILURE);
+		return -1;
 	}
 	if (global->dropgroup)
 		free(global->dropgroup);
 	global->dropgroup = strdup(optarg);
 	if (!global->dropgroup)
-		oom_die(argv0);
+		return oom_return(argv0);
 #ifdef DEBUG_OPTS
 	log_dbg_printf("Group: %s\n", global->dropgroup);
 #endif /* DEBUG_OPTS */
+	return 0;
 }
 
-void
+int
 global_set_jaildir(global_t *global, const char *argv0, const char *optarg)
 {
 	if (!sys_isdir(optarg)) {
 		fprintf(stderr, "%s: '%s' is not a directory\n", argv0, optarg);
-		exit(EXIT_FAILURE);
+		return -1;
 	}
 	if (global->jaildir)
 		free(global->jaildir);
@@ -3650,27 +3859,29 @@ global_set_jaildir(global_t *global, const char *argv0, const char *optarg)
 	if (!global->jaildir) {
 		fprintf(stderr, "%s: Failed to realpath '%s': %s (%i)\n",
 		        argv0, optarg, strerror(errno), errno);
-		exit(EXIT_FAILURE);
+		return -1;
 	}
 #ifdef DEBUG_OPTS
 	log_dbg_printf("Chroot: %s\n", global->jaildir);
 #endif /* DEBUG_OPTS */
+	return 0;
 }
 
-void
+int
 global_set_pidfile(global_t *global, const char *argv0, const char *optarg)
 {
 	if (global->pidfile)
 		free(global->pidfile);
 	global->pidfile = strdup(optarg);
 	if (!global->pidfile)
-		oom_die(argv0);
+		return oom_return(argv0);
 #ifdef DEBUG_OPTS
 	log_dbg_printf("PidFile: %s\n", global->pidfile);
 #endif /* DEBUG_OPTS */
+	return 0;
 }
 
-void
+int
 global_set_connectlog(global_t *global, const char *argv0, const char *optarg)
 {
 	if (global->connectlog)
@@ -3679,19 +3890,20 @@ global_set_connectlog(global_t *global, const char *argv0, const char *optarg)
 		if (errno == ENOENT) {
 			fprintf(stderr, "Directory part of '%s' does not "
 			                "exist\n", optarg);
-			exit(EXIT_FAILURE);
+			return -1;
 		} else {
 			fprintf(stderr, "Failed to realpath '%s': %s (%i)\n",
 			              optarg, strerror(errno), errno);
-			oom_die(argv0);
+			return oom_return(argv0);
 		}
 	}
 #ifdef DEBUG_OPTS
 	log_dbg_printf("ConnectLog: %s\n", global->connectlog);
 #endif /* DEBUG_OPTS */
+	return 0;
 }
 
-void
+int
 global_set_contentlog(global_t *global, const char *argv0, const char *optarg)
 {
 	if (global->contentlog)
@@ -3700,11 +3912,11 @@ global_set_contentlog(global_t *global, const char *argv0, const char *optarg)
 		if (errno == ENOENT) {
 			fprintf(stderr, "Directory part of '%s' does not "
 			                "exist\n", optarg);
-			exit(EXIT_FAILURE);
+			return -1;
 		} else {
 			fprintf(stderr, "Failed to realpath '%s': %s (%i)\n",
 			              optarg, strerror(errno), errno);
-			oom_die(argv0);
+			return oom_return(argv0);
 		}
 	}
 	global->contentlog_isdir = 0;
@@ -3712,14 +3924,15 @@ global_set_contentlog(global_t *global, const char *argv0, const char *optarg)
 #ifdef DEBUG_OPTS
 	log_dbg_printf("ContentLog: %s\n", global->contentlog);
 #endif /* DEBUG_OPTS */
+	return 0;
 }
 
-void
+int
 global_set_contentlogdir(global_t *global, const char *argv0, const char *optarg)
 {
 	if (!sys_isdir(optarg)) {
 		fprintf(stderr, "%s: '%s' is not a directory\n", argv0, optarg);
-		exit(EXIT_FAILURE);
+		return -1;
 	}
 	if (global->contentlog)
 		free(global->contentlog);
@@ -3727,16 +3940,17 @@ global_set_contentlogdir(global_t *global, const char *argv0, const char *optarg
 	if (!global->contentlog) {
 		fprintf(stderr, "%s: Failed to realpath '%s': %s (%i)\n",
 		        argv0, optarg, strerror(errno), errno);
-		exit(EXIT_FAILURE);
+		return -1;
 	}
 	global->contentlog_isdir = 1;
 	global->contentlog_isspec = 0;
 #ifdef DEBUG_OPTS
 	log_dbg_printf("ContentLogDir: %s\n", global->contentlog);
 #endif /* DEBUG_OPTS */
+	return 0;
 }
 
-static void
+static int
 global_set_logbasedir(const char *argv0, const char *optarg,
                     char **basedir, char **log)
 {
@@ -3750,7 +3964,7 @@ global_set_logbasedir(const char *argv0, const char *optarg,
 		fprintf(stderr, "%s: Failed to split '%s' in lhs/rhs:"
 		                " %s (%i)\n", argv0, optarg,
 		                strerror(errno), errno);
-		exit(EXIT_FAILURE);
+		return -1;
 	}
 	/* eliminate %% from lhs */
 	for (p = q = lhs; *p; p++, q++) {
@@ -3764,13 +3978,13 @@ global_set_logbasedir(const char *argv0, const char *optarg,
 	if (sys_mkpath(lhs, 0777) == -1) {
 		fprintf(stderr, "%s: Failed to create '%s': %s (%i)\n",
 		        argv0, lhs, strerror(errno), errno);
-		exit(EXIT_FAILURE);
+		return -1;
 	}
 	*basedir = realpath(lhs, NULL);
 	if (!*basedir) {
 		fprintf(stderr, "%s: Failed to realpath '%s': %s (%i)\n",
 		        argv0, lhs, strerror(errno), errno);
-		exit(EXIT_FAILURE);
+		return -1;
 	}
 	/* count '%' in basedir */
 	for (n = 0, p = *basedir;
@@ -3782,7 +3996,7 @@ global_set_logbasedir(const char *argv0, const char *optarg,
 	free(lhs);
 	n += strlen(*basedir);
 	if (!(lhs = malloc(n + 1)))
-		oom_die(argv0);
+		return oom_return(argv0);
 	/* re-encoding % to %%, copying basedir to lhs */
 	for (p = *basedir, q = lhs;
 		 *p;
@@ -3794,22 +4008,24 @@ global_set_logbasedir(const char *argv0, const char *optarg,
 	*q = '\0';
 	/* lhs contains encoded realpathed basedir */
 	if (asprintf(log, "%s/%s", lhs, rhs) < 0)
-		oom_die(argv0);
+		return oom_return(argv0);
 	free(lhs);
 	free(rhs);
+	return 0;
 }
 
-void
+int
 global_set_contentlogpathspec(global_t *global, const char *argv0, const char *optarg)
 {
-	global_set_logbasedir(argv0, optarg, &global->contentlog_basedir,
-	                    &global->contentlog);
+	if (global_set_logbasedir(argv0, optarg, &global->contentlog_basedir, &global->contentlog) == -1)
+		return -1;
 	global->contentlog_isdir = 0;
 	global->contentlog_isspec = 1;
 #ifdef DEBUG_OPTS
 	log_dbg_printf("ContentLogPathSpec: basedir=%s, %s\n",
 	               global->contentlog_basedir, global->contentlog);
 #endif /* DEBUG_OPTS */
+	return 0;
 }
 
 #ifdef HAVE_LOCAL_PROCINFO
@@ -3826,7 +4042,7 @@ global_unset_lprocinfo(global_t *global)
 }
 #endif /* HAVE_LOCAL_PROCINFO */
 
-void
+int
 global_set_masterkeylog(global_t *global, const char *argv0, const char *optarg)
 {
 	if (global->masterkeylog)
@@ -3835,19 +4051,20 @@ global_set_masterkeylog(global_t *global, const char *argv0, const char *optarg)
 		if (errno == ENOENT) {
 			fprintf(stderr, "Directory part of '%s' does not "
 			                "exist\n", optarg);
-			exit(EXIT_FAILURE);
+			return -1;
 		} else {
 			fprintf(stderr, "Failed to realpath '%s': %s (%i)\n",
 			              optarg, strerror(errno), errno);
-			oom_die(argv0);
+			return oom_return(argv0);
 		}
 	}
 #ifdef DEBUG_OPTS
 	log_dbg_printf("MasterKeyLog: %s\n", global->masterkeylog);
 #endif /* DEBUG_OPTS */
+	return 0;
 }
 
-void
+int
 global_set_pcaplog(global_t *global, const char *argv0, const char *optarg)
 {
 	if (global->pcaplog)
@@ -3856,11 +4073,11 @@ global_set_pcaplog(global_t *global, const char *argv0, const char *optarg)
 		if (errno == ENOENT) {
 			fprintf(stderr, "Directory part of '%s' does not "
 			                "exist\n", optarg);
-			exit(EXIT_FAILURE);
+			return -1;
 		} else {
 			fprintf(stderr, "Failed to realpath '%s': %s (%i)\n",
 			              optarg, strerror(errno), errno);
-			oom_die(argv0);
+			return oom_return(argv0);
 		}
 	}
 	global->pcaplog_isdir = 0;
@@ -3868,14 +4085,15 @@ global_set_pcaplog(global_t *global, const char *argv0, const char *optarg)
 #ifdef DEBUG_OPTS
 	log_dbg_printf("PcapLog: %s\n", global->pcaplog);
 #endif /* DEBUG_OPTS */
+	return 0;
 }
 
-void
+int
 global_set_pcaplogdir(global_t *global, const char *argv0, const char *optarg)
 {
 	if (!sys_isdir(optarg)) {
 		fprintf(stderr, "%s: '%s' is not a directory\n", argv0, optarg);
-		exit(EXIT_FAILURE);
+		return -1;
 	}
 	if (global->pcaplog)
 		free(global->pcaplog);
@@ -3883,53 +4101,57 @@ global_set_pcaplogdir(global_t *global, const char *argv0, const char *optarg)
 	if (!global->pcaplog) {
 		fprintf(stderr, "%s: Failed to realpath '%s': %s (%i)\n",
 		        argv0, optarg, strerror(errno), errno);
-		exit(EXIT_FAILURE);
+		return -1;
 	}
 	global->pcaplog_isdir = 1;
 	global->pcaplog_isspec = 0;
 #ifdef DEBUG_OPTS
 	log_dbg_printf("PcapLogDir: %s\n", global->pcaplog);
 #endif /* DEBUG_OPTS */
+	return 0;
 }
 
-void
+int
 global_set_pcaplogpathspec(global_t *global, const char *argv0, const char *optarg)
 {
-	global_set_logbasedir(argv0, optarg, &global->pcaplog_basedir,
-	                    &global->pcaplog);
+	if (global_set_logbasedir(argv0, optarg, &global->pcaplog_basedir, &global->pcaplog) == -1)
+		return -1;
 	global->pcaplog_isdir = 0;
 	global->pcaplog_isspec = 1;
 #ifdef DEBUG_OPTS
 	log_dbg_printf("PcapLogPathSpec: basedir=%s, %s\n",
 	               global->pcaplog_basedir, global->pcaplog);
 #endif /* DEBUG_OPTS */
+	return 0;
 }
 
 #ifndef WITHOUT_MIRROR
-void
+int
 global_set_mirrorif(global_t *global, const char *argv0, const char *optarg)
 {
 	if (global->mirrorif)
 		free(global->mirrorif);
 	global->mirrorif = strdup(optarg);
 	if (!global->mirrorif)
-		oom_die(argv0);
+		return oom_return(argv0);
 #ifdef DEBUG_OPTS
 	log_dbg_printf("MirrorIf: %s\n", global->mirrorif);
 #endif /* DEBUG_OPTS */
+	return 0;
 }
 
-void
+int
 global_set_mirrortarget(global_t *global, const char *argv0, const char *optarg)
 {
 	if (global->mirrortarget)
 		free(global->mirrortarget);
 	global->mirrortarget = strdup(optarg);
 	if (!global->mirrortarget)
-		oom_die(argv0);
+		return oom_return(argv0);
 #ifdef DEBUG_OPTS
 	log_dbg_printf("MirrorTarget: %s\n", global->mirrortarget);
 #endif /* DEBUG_OPTS */
+	return 0;
 }
 #endif /* !WITHOUT_MIRROR */
 
@@ -3959,7 +4181,7 @@ global_unset_debug(global_t *global)
 	global->debug = 0;
 }
 
-void
+int
 global_set_debug_level(const char *optarg)
 {
 	if (equal(optarg, "2")) {
@@ -3970,11 +4192,12 @@ global_set_debug_level(const char *optarg)
 		log_dbg_mode(LOG_DBG_MODE_FINEST);
 	} else {
 		fprintf(stderr, "Invalid DebugLevel '%s', use 2-4\n", optarg);
-		exit(EXIT_FAILURE);
+		return -1;
 	}
 #ifdef DEBUG_OPTS
 	log_dbg_printf("DebugLevel: %s\n", optarg);
 #endif /* DEBUG_OPTS */
+	return 0;
 }
 
 void
@@ -3990,15 +4213,18 @@ global_unset_statslog(global_t *global)
 }
 
 #ifndef WITHOUT_USERAUTH
-static void
-global_set_userdb_path(global_t *global, const char *optarg)
+static int WUNRES
+global_set_userdb_path(global_t *global, const char *argv0, const char *optarg)
 {
 	if (global->userdb_path)
 		free(global->userdb_path);
 	global->userdb_path = strdup(optarg);
+	if (!global->userdb_path)
+		return oom_return(argv0);
 #ifdef DEBUG_OPTS
 	log_dbg_printf("UserDBPath: %s\n", global->userdb_path);
 #endif /* DEBUG_OPTS */
+	return 0;
 }
 #endif /* !WITHOUT_USERAUTH */
 
@@ -4030,116 +4256,110 @@ set_option(opts_t *opts, const char *argv0,
 		const char *name, char *value, char **natengine, int line_num, tmp_global_opts_t *tmp_global_opts)
 {
 	int yes;
-	int retval = -1;
 
 	if (!value) {
 		fprintf(stderr, "Error in conf: No value assigned for %s on line %d\n", name, line_num);
-		goto leave;
+		return -1;
 	}
 
 	if (equal(name, "CACert")) {
-		opts_set_cacrt(opts, argv0, value, tmp_global_opts);
+		return opts_set_cacrt(opts, argv0, value, tmp_global_opts);
 	} else if (equal(name, "CAKey")) {
-		opts_set_cakey(opts, argv0, value, tmp_global_opts);
+		return opts_set_cakey(opts, argv0, value, tmp_global_opts);
 	} else if (equal(name, "ClientCert")) {
-		opts_set_clientcrt(opts, argv0, value, tmp_global_opts);
+		return opts_set_clientcrt(opts, argv0, value, tmp_global_opts);
 	} else if (equal(name, "ClientKey")) {
-		opts_set_clientkey(opts, argv0, value, tmp_global_opts);
+		return opts_set_clientkey(opts, argv0, value, tmp_global_opts);
 	} else if (equal(name, "CAChain")) {
-		opts_set_chain(opts, argv0, value, tmp_global_opts);
+		return opts_set_chain(opts, argv0, value, tmp_global_opts);
 	} else if (equal(name, "LeafCRLURL")) {
-		opts_set_leafcrlurl(opts, value, tmp_global_opts);
+		return opts_set_leafcrlurl(opts, argv0, value, tmp_global_opts);
 	} else if (equal(name, "DenyOCSP")) {
 		yes = check_value_yesno(value, "DenyOCSP", line_num);
-		if (yes == -1) {
-			goto leave;
-		}
+		if (yes == -1)
+			return -1;
 		yes ? opts_set_deny_ocsp(opts) : opts_unset_deny_ocsp(opts);
 #ifdef DEBUG_OPTS
 		log_dbg_printf("DenyOCSP: %u\n", opts->deny_ocsp);
 #endif /* DEBUG_OPTS */
 	} else if (equal(name, "Passthrough")) {
 		yes = check_value_yesno(value, "Passthrough", line_num);
-		if (yes == -1) {
-			goto leave;
-		}
+		if (yes == -1)
+			return -1;
 		yes ? opts_set_passthrough(opts) : opts_unset_passthrough(opts);
 #ifdef DEBUG_OPTS
 		log_dbg_printf("Passthrough: %u\n", opts->passthrough);
 #endif /* DEBUG_OPTS */
 #ifndef OPENSSL_NO_DH
 	} else if (equal(name, "DHGroupParams")) {
-		opts_set_dh(opts, argv0, value, tmp_global_opts);
+		return opts_set_dh(opts, argv0, value, tmp_global_opts);
 #endif /* !OPENSSL_NO_DH */
 #ifndef OPENSSL_NO_ECDH
 	} else if (equal(name, "ECDHCurve")) {
-		opts_set_ecdhcurve(opts, argv0, value);
+		return opts_set_ecdhcurve(opts, argv0, value);
 #endif /* !OPENSSL_NO_ECDH */
 #ifdef SSL_OP_NO_COMPRESSION
 	} else if (equal(name, "SSLCompression")) {
 		yes = check_value_yesno(value, "SSLCompression", line_num);
-		if (yes == -1) {
-			goto leave;
-		}
+		if (yes == -1)
+			return -1;
 		yes ? opts_set_sslcomp(opts) : opts_unset_sslcomp(opts);
 #ifdef DEBUG_OPTS
 		log_dbg_printf("SSLCompression: %u\n", opts->sslcomp);
 #endif /* DEBUG_OPTS */
 #endif /* SSL_OP_NO_COMPRESSION */
 	} else if (equal(name, "ForceSSLProto")) {
-		opts_force_proto(opts, argv0, value);
+		return opts_force_proto(opts, argv0, value);
 	} else if (equal(name, "DisableSSLProto")) {
-		opts_disable_proto(opts, argv0, value);
+		return opts_disable_proto(opts, argv0, value);
 	} else if (equal(name, "MinSSLProto")) {
-		opts_set_min_proto(opts, argv0, value);
+		return opts_set_min_proto(opts, argv0, value);
 	} else if (equal(name, "MaxSSLProto")) {
-		opts_set_max_proto(opts, argv0, value);
+		return opts_set_max_proto(opts, argv0, value);
 	} else if (equal(name, "Ciphers")) {
-		opts_set_ciphers(opts, argv0, value);
+		return opts_set_ciphers(opts, argv0, value);
 	} else if (equal(name, "CipherSuites")) {
-		opts_set_ciphersuites(opts, argv0, value);
+		return opts_set_ciphersuites(opts, argv0, value);
 	} else if (equal(name, "NATEngine")) {
 		if (*natengine)
 			free(*natengine);
 		*natengine = strdup(value);
 		if (!*natengine)
-			goto leave;
+			return oom_return(argv0);
 #ifdef DEBUG_OPTS
 		log_dbg_printf("NATEngine: %s\n", *natengine);
 #endif /* DEBUG_OPTS */
 #ifndef WITHOUT_USERAUTH
 	} else if (equal(name, "UserAuth")) {
 		yes = check_value_yesno(value, "UserAuth", line_num);
-		if (yes == -1) {
-			goto leave;
-		}
+		if (yes == -1)
+			return -1;
 		yes ? opts_set_user_auth(opts) : opts_unset_user_auth(opts);
 #ifdef DEBUG_OPTS
 		log_dbg_printf("UserAuth: %u\n", opts->user_auth);
 #endif /* DEBUG_OPTS */
 	} else if (equal(name, "UserAuthURL")) {
-		opts_set_user_auth_url(opts, value);
+		return opts_set_user_auth_url(opts, argv0, value);
 	} else if (equal(name, "UserTimeout")) {
 		unsigned int i = atoi(value);
 		if (i <= 86400) {
 			opts->user_timeout = i;
 		} else {
 			fprintf(stderr, "Invalid UserTimeout %s on line %d, use 0-86400\n", value, line_num);
-			goto leave;
+			return -1;
 		}
 #ifdef DEBUG_OPTS
 		log_dbg_printf("UserTimeout: %u\n", opts->user_timeout);
 #endif /* DEBUG_OPTS */
 	} else if (equal(name, "DivertUsers")) {
-		opts_set_userlist(value, line_num, &opts->divertusers, "DivertUsers");
+		return opts_set_userlist(value, line_num, &opts->divertusers, "DivertUsers");
 	} else if (equal(name, "PassUsers")) {
-		opts_set_userlist(value, line_num, &opts->passusers, "PassUsers");
+		return opts_set_userlist(value, line_num, &opts->passusers, "PassUsers");
 #endif /* !WITHOUT_USERAUTH */
 	} else if (equal(name, "ValidateProto")) {
 		yes = check_value_yesno(value, "ValidateProto", line_num);
-		if (yes == -1) {
-			goto leave;
-		}
+		if (yes == -1)
+			return -1;
 		yes ? opts_set_validate_proto(opts) : opts_unset_validate_proto(opts);
 #ifdef DEBUG_OPTS
 		log_dbg_printf("ValidateProto: %u\n", opts->validate_proto);
@@ -4150,136 +4370,135 @@ set_option(opts_t *opts, const char *argv0,
 			opts->max_http_header_size = i;
 		} else {
 			fprintf(stderr, "Invalid MaxHTTPHeaderSize %s on line %d, use 1024-65536\n", value, line_num);
-			goto leave;
+			return -1;
 		}
 #ifdef DEBUG_OPTS
 		log_dbg_printf("MaxHTTPHeaderSize: %u\n", opts->max_http_header_size);
 #endif /* DEBUG_OPTS */
 	} else if (equal(name, "VerifyPeer")) {
 		yes = check_value_yesno(value, "VerifyPeer", line_num);
-		if (yes == -1) {
-			goto leave;
-		}
+		if (yes == -1)
+			return -1;
 		yes ? opts_set_verify_peer(opts) : opts_unset_verify_peer(opts);
 #ifdef DEBUG_OPTS
 		log_dbg_printf("VerifyPeer: %u\n", opts->verify_peer);
 #endif /* DEBUG_OPTS */
 	} else if (equal(name, "AllowWrongHost")) {
 		yes = check_value_yesno(value, "AllowWrongHost", line_num);
-		if (yes == -1) {
-			goto leave;
-		}
-		yes ? opts_set_allow_wrong_host(opts)
-		    : opts_unset_allow_wrong_host(opts);
+		if (yes == -1)
+			return -1;
+		yes ? opts_set_allow_wrong_host(opts) : opts_unset_allow_wrong_host(opts);
 #ifdef DEBUG_OPTS
 		log_dbg_printf("AllowWrongHost: %u\n", opts->allow_wrong_host);
 #endif /* DEBUG_OPTS */
 	} else if (equal(name, "RemoveHTTPAcceptEncoding")) {
 		yes = check_value_yesno(value, "RemoveHTTPAcceptEncoding", line_num);
-		if (yes == -1) {
-			goto leave;
-		}
+		if (yes == -1)
+			return -1;
 		yes ? opts_set_remove_http_accept_encoding(opts) : opts_unset_remove_http_accept_encoding(opts);
 #ifdef DEBUG_OPTS
 		log_dbg_printf("RemoveHTTPAcceptEncoding: %u\n", opts->remove_http_accept_encoding);
 #endif /* DEBUG_OPTS */
 	} else if (equal(name, "RemoveHTTPReferer")) {
 		yes = check_value_yesno(value, "RemoveHTTPReferer", line_num);
-		if (yes == -1) {
-			goto leave;
-		}
+		if (yes == -1)
+			return -1;
 		yes ? opts_set_remove_http_referer(opts) : opts_unset_remove_http_referer(opts);
 #ifdef DEBUG_OPTS
 		log_dbg_printf("RemoveHTTPReferer: %u\n", opts->remove_http_referer);
 #endif /* DEBUG_OPTS */
 	} else if (equal(name, "PassSite")) {
-		opts_set_passsite(opts, value, line_num);
+		return opts_set_passsite(opts, value, line_num);
 	} else if (equal(name, "Define")) {
-		opts_set_macro(opts, value, line_num);
+		return opts_set_macro(opts, value, line_num);
 	} else if (equal(name, "Split") || equal(name, "Pass") || equal(name, "Block") || equal(name, "Match")) {
-		opts_set_filter_rule(opts, name, value, line_num);
+		return opts_set_filter_rule(opts, name, value, line_num);
 	} else if (equal(name, "Divert")) {
 		yes = is_yesno(value);
-		if (yes == -1) {
-			opts_set_filter_rule(opts, name, value, line_num);
-		} else {
+		if (yes == -1)
+			return opts_set_filter_rule(opts, name, value, line_num);
+		else
 			yes ? opts_set_divert(opts) : opts_unset_divert(opts);
-		}
 	} else {
 		fprintf(stderr, "Error in conf: Unknown option "
 		                "'%s' on line %d\n", name, line_num);
-		goto leave;
+		return -1;
 	}
-
-	retval = 0;
-leave:
-	return retval;
+	return 0;
 }
 
-static int
+static int WUNRES
 set_proxyspec_option(proxyspec_t *spec, const char *argv0,
 		const char *name, char *value, char **natengine, spec_addrs_t *spec_addrs, int line_num)
 {
-	int retval = -1;
-
 	if (equal(name, "Proto")) {
-		proxyspec_set_proto(spec, value);
+		if (proxyspec_set_proto(spec, value) == -1)
+			return -1;
 	}
 	else if (equal(name, "Addr")) {
 		spec_addrs->addr = strdup(value);
+		if (!spec_addrs->addr)
+			return oom_return(argv0);
 	}
 	else if (equal(name, "Port")) {
 		if (spec_addrs->addr) {
 			spec_addrs->af = proxyspec_set_listen_addr(spec, spec_addrs->addr, value, *natengine);
 		} else {
 			fprintf(stderr, "ProxySpec Port without Addr on line %d\n", line_num);
-			exit(EXIT_FAILURE);
+			return -1;
 		}
 	}
 	else if (equal(name, "DivertAddr")) {
 		spec_addrs->divert_addr = strdup(value);
+		if (!spec_addrs->divert_addr)
+			return oom_return(argv0);
 	}
 	else if (equal(name, "DivertPort")) {
 		if (spec_addrs->divert_addr) {
-			proxyspec_set_divert_addr(spec, spec_addrs->divert_addr, value);
+			if (proxyspec_set_divert_addr(spec, spec_addrs->divert_addr, value) == -1)
+				return -1;
 		} else {
-			proxyspec_set_divert_addr(spec, "127.0.0.1", value);
+			if (proxyspec_set_divert_addr(spec, "127.0.0.1", value) == -1)
+				return -1;
 		}
 	}
 	else if (equal(name, "ReturnAddr")) {
-		proxyspec_set_return_addr(spec, value);
+		if (proxyspec_set_return_addr(spec, value) == -1)
+			return -1;
 	}
 	else if (equal(name, "TargetAddr")) {
 		spec_addrs->target_addr = strdup(value);
+		if (!spec_addrs->target_addr)
+			return oom_return(argv0);
 	}
 	else if (equal(name, "TargetPort")) {
 		if (spec_addrs->target_addr) {
-			proxyspec_set_target_addr(spec, spec_addrs->target_addr, value, spec_addrs->af);
+			if (proxyspec_set_target_addr(spec, spec_addrs->target_addr, value, spec_addrs->af) == -1)
+				return -1;
 		} else {
 			fprintf(stderr, "ProxySpec TargetPort without TargetAddr on line %d\n", line_num);
-			exit(EXIT_FAILURE);
+			return -1;
 		}
 	}
 	else if (equal(name, "SNIPort")) {
-		proxyspec_set_sni_port(spec, value);
+		if (proxyspec_set_sni_port(spec, value) == -1)
+			return -1;
 	}
 	else if (equal(name, "NatEngine")) {
-		proxyspec_set_natengine(spec, value);
+		if (proxyspec_set_natengine(spec, value) == -1)
+			return -1;
 	}
 	else if (equal(name, "}")) {
 #ifdef DEBUG_OPTS
 		log_dbg_printf("ProxySpec } on line %d\n", line_num);
 #endif /* DEBUG_OPTS */
-		retval = 1;
-		goto leave;
+		// Return 1 to indicate the end of structured proxyspec
+		return 1;
 	}
 	else {
-		retval = set_option(spec->opts, argv0, name, value, natengine, line_num, NULL);
-		goto leave;
+		return set_option(spec->opts, argv0, name, value, natengine, line_num, NULL);
 	}
-	retval = 0;
-leave:
-	return retval;
+	return 0;
 }
 
 /*
@@ -4329,11 +4548,13 @@ get_name_value(char **name, char **value, const char sep, int line_num)
 
 #define MAX_TOKENS 8
 
-static void
+static int WUNRES
 load_proxyspec_line(global_t *global, const char *argv0, char *value, char **natengine, int line_num, tmp_global_opts_t *tmp_global_opts)
 {
 	/* Use MAX_TOKENS instead of computing the actual number of tokens in value */
 	char **argv = malloc(sizeof(char *) * MAX_TOKENS);
+	if (!argv)
+		return oom_return(argv0);
 	char **save_argv = argv;
 	int argc = 0;
 	char *p, *last = NULL;
@@ -4346,12 +4567,14 @@ load_proxyspec_line(global_t *global, const char *argv0, char *value, char **nat
 			argv[argc++] = p;
 		} else {
 			fprintf(stderr, "Too many arguments in proxyspec on line %d\n", line_num);
-			exit(EXIT_FAILURE);
+			return -1;
 		}
 	}
 
-	proxyspec_parse(&argc, &argv, *natengine, global, argv0, tmp_global_opts);
+	if (proxyspec_parse(&argc, &argv, *natengine, global, argv0, tmp_global_opts) == -1)
+		return -1;
 	free(save_argv);
+	return 0;
 }
 
 static int WUNRES
@@ -4363,13 +4586,18 @@ load_proxyspec_struct(global_t *global, const char *argv0, char **natengine, int
 	size_t line_len;
 
 	proxyspec_t *spec = proxyspec_new(global, argv0, tmp_global_opts);
+	if (!spec)
+		return -1;
 	spec->next = global->spec;
 	global->spec = spec;
 
 	// Set the default return addr
-	proxyspec_set_return_addr(spec, "127.0.0.1");
+	if (proxyspec_set_return_addr(spec, "127.0.0.1") == -1)
+		return  -1;
 
 	spec_addrs_t *spec_addrs = malloc(sizeof(spec_addrs_t));
+	if (!spec_addrs)
+		return oom_return(argv0);
 	memset(spec_addrs, 0, sizeof(spec_addrs_t));
 
 	while (!feof(f)) {
@@ -4414,7 +4642,7 @@ leave:
 	return retval;
 }
 
-static void
+static int WUNRES
 global_set_open_files_limit(const char *value, int line_num)
 {
 	unsigned int i = atoi(value);
@@ -4429,116 +4657,111 @@ global_set_open_files_limit(const char *value, int line_num)
 			} else {
 				ERR_print_errors_fp(stderr);
 			}
-			exit(EXIT_FAILURE);
+			return -1;
 		}
 	} else {
 		fprintf(stderr, "Invalid OpenFilesLimit %s on line %d, use 50-10000\n", value, line_num);
-		exit(EXIT_FAILURE);
+		return -1;
 	}
 #ifdef DEBUG_OPTS
 	log_dbg_printf("OpenFilesLimit: %u\n", i);
 #endif /* DEBUG_OPTS */
+	return 0;
 }
 
 
 static int
 opts_load_conffile(global_t *global, const char *argv0, char *conffile, char **natengine, tmp_global_opts_t *tmp_global_opts);
 
-static int
+static int WUNRES
 set_global_option(global_t *global, const char *argv0,
            const char *name, char *value, char **natengine, int *line_num, FILE *f, tmp_global_opts_t *tmp_global_opts)
 {
 	int yes;
-	int retval = -1;
 
 	if (!value) {
 		fprintf(stderr, "Error in conf: No value assigned for %s on line %d\n", name, *line_num);
-		goto leave;
+		return -1;
 	}
 
 	if (equal(name, "LeafCertDir")) {
-		global_set_leafcertdir(global, argv0, value);
+		return global_set_leafcertdir(global, argv0, value);
 	} else if (equal(name, "DefaultLeafCert")) {
-		global_set_defaultleafcert(global, argv0, value);
+		return global_set_defaultleafcert(global, argv0, value);
 	} else if (equal(name, "WriteGenCertsDir")) {
-		global_set_certgendir_writegencerts(global, argv0, value);
+		return global_set_certgendir_writegencerts(global, argv0, value);
 	} else if (equal(name, "WriteAllCertsDir")) {
-		global_set_certgendir_writeall(global, argv0, value);
+		return global_set_certgendir_writeall(global, argv0, value);
 	} else if (equal(name, "User")) {
-		global_set_user(global, argv0, value);
+		return global_set_user(global, argv0, value);
 	} else if (equal(name, "Group")) {
-		global_set_group(global, argv0, value);
+		return global_set_group(global, argv0, value);
 	} else if (equal(name, "Chroot")) {
-		global_set_jaildir(global, argv0, value);
+		return global_set_jaildir(global, argv0, value);
 	} else if (equal(name, "PidFile")) {
-		global_set_pidfile(global, argv0, value);
+		return global_set_pidfile(global, argv0, value);
 	} else if (equal(name, "ConnectLog")) {
-		global_set_connectlog(global, argv0, value);
+		return global_set_connectlog(global, argv0, value);
 	} else if (equal(name, "ContentLog")) {
-		global_set_contentlog(global, argv0, value);
+		return global_set_contentlog(global, argv0, value);
 	} else if (equal(name, "ContentLogDir")) {
-		global_set_contentlogdir(global, argv0, value);
+		return global_set_contentlogdir(global, argv0, value);
 	} else if (equal(name, "ContentLogPathSpec")) {
-		global_set_contentlogpathspec(global, argv0, value);
+		return global_set_contentlogpathspec(global, argv0, value);
 #ifdef HAVE_LOCAL_PROCINFO
 	} else if (equal(name, "LogProcInfo")) {
 		yes = check_value_yesno(value, "LogProcInfo", *line_num);
-		if (yes == -1) {
-			goto leave;
-		}
+		if (yes == -1)
+			return -1;
 		yes ? global_set_lprocinfo(global) : global_unset_lprocinfo(global);
 #ifdef DEBUG_OPTS
 		log_dbg_printf("LogProcInfo: %u\n", global->lprocinfo);
 #endif /* DEBUG_OPTS */
 #endif /* HAVE_LOCAL_PROCINFO */
 	} else if (equal(name, "MasterKeyLog")) {
-		global_set_masterkeylog(global, argv0, value);
+		return global_set_masterkeylog(global, argv0, value);
 	} else if (equal(name, "PcapLog")) {
-		global_set_pcaplog(global, argv0, value);
+		return global_set_pcaplog(global, argv0, value);
 	} else if (equal(name, "PcapLogDir")) {
-		global_set_pcaplogdir(global, argv0, value);
+		return global_set_pcaplogdir(global, argv0, value);
 	} else if (equal(name, "PcapLogPathSpec")) {
-		global_set_pcaplogpathspec(global, argv0, value);
+		return global_set_pcaplogpathspec(global, argv0, value);
 #ifndef WITHOUT_MIRROR
 	} else if (equal(name, "MirrorIf")) {
-		global_set_mirrorif(global, argv0, value);
+		return global_set_mirrorif(global, argv0, value);
 	} else if (equal(name, "MirrorTarget")) {
-		global_set_mirrortarget(global, argv0, value);
+		return global_set_mirrortarget(global, argv0, value);
 #endif /* !WITHOUT_MIRROR */
 	} else if (equal(name, "Daemon")) {
 		yes = check_value_yesno(value, "Daemon", *line_num);
-		if (yes == -1) {
-			goto leave;
-		}
+		if (yes == -1)
+			return -1;
 		yes ? global_set_daemon(global) : global_unset_daemon(global);
 #ifdef DEBUG_OPTS
 		log_dbg_printf("Daemon: %u\n", global->detach);
 #endif /* DEBUG_OPTS */
 	} else if (equal(name, "Debug")) {
 		yes = check_value_yesno(value, "Debug", *line_num);
-		if (yes == -1) {
-			goto leave;
-		}
+		if (yes == -1)
+			return -1;
 		yes ? global_set_debug(global) : global_unset_debug(global);
 #ifdef DEBUG_OPTS
 		log_dbg_printf("Debug: %u\n", global->debug);
 #endif /* DEBUG_OPTS */
 	} else if (equal(name, "DebugLevel")) {
-		global_set_debug_level(value);
+		return global_set_debug_level(value);
 #ifndef WITHOUT_USERAUTH
 	} else if (equal(name, "UserDBPath")) {
-		global_set_userdb_path(global, value);
+		return global_set_userdb_path(global, argv0, value);
 #endif /* !WITHOUT_USERAUTH */
 	} else if (equal(name, "ProxySpec")) {
 		if (equal(value, "{")) {
 #ifdef DEBUG_OPTS
 			log_dbg_printf("ProxySpec { on line %d\n", *line_num);
 #endif /* DEBUG_OPTS */
-			if (load_proxyspec_struct(global, argv0, natengine, line_num, f, tmp_global_opts) == -1) {
-				goto leave;
-			}
+			return load_proxyspec_struct(global, argv0, natengine, line_num, f, tmp_global_opts);
 		} else {
-			load_proxyspec_line(global, argv0, value, natengine, *line_num, tmp_global_opts);
+			return load_proxyspec_line(global, argv0, value, natengine, *line_num, tmp_global_opts);
 		}
 	} else if (equal(name, "ConnIdleTimeout")) {
 		unsigned int i = atoi(value);
@@ -4546,7 +4769,7 @@ set_global_option(global_t *global, const char *argv0,
 			global->conn_idle_timeout = i;
 		} else {
 			fprintf(stderr, "Invalid ConnIdleTimeout %s on line %d, use 10-3600\n", value, *line_num);
-			goto leave;
+			return -1;
 		}
 #ifdef DEBUG_OPTS
 		log_dbg_printf("ConnIdleTimeout: %u\n", global->conn_idle_timeout);
@@ -4557,16 +4780,15 @@ set_global_option(global_t *global, const char *argv0,
 			global->expired_conn_check_period = i;
 		} else {
 			fprintf(stderr, "Invalid ExpiredConnCheckPeriod %s on line %d, use 10-60\n", value, *line_num);
-			goto leave;
+			return -1;
 		}
 #ifdef DEBUG_OPTS
 		log_dbg_printf("ExpiredConnCheckPeriod: %u\n", global->expired_conn_check_period);
 #endif /* DEBUG_OPTS */
 	} else if (equal(name, "LogStats")) {
 		yes = check_value_yesno(value, "LogStats", *line_num);
-		if (yes == -1) {
-			goto leave;
-		}
+		if (yes == -1)
+			return -1;
 		yes ? global_set_statslog(global) : global_unset_statslog(global);
 #ifdef DEBUG_OPTS
 		log_dbg_printf("LogStats: %u\n", global->statslog);
@@ -4577,44 +4799,40 @@ set_global_option(global_t *global, const char *argv0,
 			global->stats_period = i;
 		} else {
 			fprintf(stderr, "Invalid StatsPeriod %s on line %d, use 1-10\n", value, *line_num);
-			goto leave;
+			return -1;
 		}
 #ifdef DEBUG_OPTS
 		log_dbg_printf("StatsPeriod: %u\n", global->stats_period);
 #endif /* DEBUG_OPTS */
 	} else if (equal(name, "OpenFilesLimit")) {
-		global_set_open_files_limit(value, *line_num);
+		return global_set_open_files_limit(value, *line_num);
 	} else if (equal(name, "LeafKey")) {
-		global_set_leafkey(global, argv0, value);
+		return global_set_leafkey(global, argv0, value);
 	} else if (equal(name, "LeafKeyRSABits")) {
 		unsigned int i = atoi(value);
 		if (i == 1024 || i == 2048 || i == 3072 || i == 4096) {
 			global->leafkey_rsabits = i;
 		} else {
 			fprintf(stderr, "Invalid LeafKeyRSABits %s on line %d, use 1024|2048|3072|4096\n", value, *line_num);
-			goto leave;
+			return -1;
 		}
 #ifdef DEBUG_OPTS
 		log_dbg_printf("LeafKeyRSABits: %u\n", global->leafkey_rsabits);
 #endif /* DEBUG_OPTS */
 #ifndef OPENSSL_NO_ENGINE
 	} else if (equal(name, "OpenSSLEngine")) {
-		global_set_openssl_engine(global, argv0, value);
+		return global_set_openssl_engine(global, argv0, value);
 #endif /* !OPENSSL_NO_ENGINE */
 	} else if (equal(name, "Include")) {
-		retval = opts_load_conffile(global, argv0, value, natengine, tmp_global_opts);
+		int retval = opts_load_conffile(global, argv0, value, natengine, tmp_global_opts);
 		if (retval == -1) {
-			fprintf(stderr, "Error in include file '%s'\n", value);
+			fprintf(stderr, "Error in include file '%s' on line %d\n", value, *line_num);
 		}
-		goto leave;
+		return retval;
 	} else {
-		retval = set_option(global->opts, argv0, name, value, natengine, *line_num, tmp_global_opts);
-		goto leave;
+		return set_option(global->opts, argv0, name, value, natengine, *line_num, tmp_global_opts);
 	}
-
-	retval = 0;
-leave:
-	return retval;
+	return 0;
 }
 
 int
@@ -4624,6 +4842,8 @@ global_set_option(global_t *global, const char *argv0, const char *optarg,
 	char *name, *value;
 	int retval = -1;
 	char *line = strdup(optarg);
+	if (!line)
+		return oom_return(argv0);
 
 	/* White spaces possible before option name,
 	 * if the command line option is passed between the quotes */
@@ -4642,7 +4862,7 @@ global_set_option(global_t *global, const char *argv0, const char *optarg,
 	return retval;
 }
 
-static int
+static int WUNRES
 opts_load_conffile(global_t *global, const char *argv0, char *conffile, char **natengine, tmp_global_opts_t *tmp_global_opts)
 {
 	int retval, line_num;
@@ -4702,8 +4922,13 @@ leave:
 }
 
 int
-global_load_conffile(global_t *global, const char *argv0, char **natengine, tmp_global_opts_t *tmp_global_opts)
+global_load_conffile(global_t *global, const char *argv0, const char *optarg, char **natengine, tmp_global_opts_t *tmp_global_opts)
 {
+	if (global->conffile)
+		free(global->conffile);
+	global->conffile = strdup(optarg);
+	if (!global->conffile)
+		return oom_return(argv0);
 	int retval = opts_load_conffile(global, argv0, global->conffile, natengine, tmp_global_opts);
 	if (retval == -1)
 		fprintf(stderr, "Error in conf file '%s'\n", global->conffile);
