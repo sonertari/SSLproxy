@@ -4512,6 +4512,10 @@ set_proxyspec_option(proxyspec_t *spec, const char *argv0,
 #ifdef DEBUG_OPTS
 		log_dbg_printf("ProxySpec } on line %d\n", line_num);
 #endif /* DEBUG_OPTS */
+		if (!spec_addrs->addr || !spec_addrs->af) {
+			fprintf(stderr, "Incomplete ProxySpec on line %d\n", line_num);
+			return -1;
+		}
 		// Return 1 to indicate the end of structured proxyspec
 		return 1;
 	}
