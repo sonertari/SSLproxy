@@ -4515,32 +4515,36 @@ set_proxyspec_option(proxyspec_t *spec, const char *argv0,
 
 /*
  * Separator param is needed for command line options only.
- * Conf file option separator is ' '.
- * Do not modify the name param, the caller may try to free it causing signal 6 crash.
+ * Conf file option separator is ' ', on the command line is '='.
  * Allows multiple separators between name and value.
  */
 int
-get_name_value(char **name, char **value, const char sep, int line_num)
+get_name_value(char *name, char **value, const char sep, int line_num)
 {
-	size_t len = strlen(*name);
+	size_t len = strlen(name);
 
 	// Find end of name and null-terminate
-	char *n = *name;
-	while (*n != ' ' && *n != '\t' && *n != '\r' && *n != '\n' && *n != sep)
+	char *n = name;
+	while (*n != '\0' && *n != ' ' && *n != '\t' && *n != '\r' && *n != '\n' && *n != sep)
 		n++;
 	*n = '\0';
 
-	if (!*name) {
+	size_t name_len = strlen(name);
+
+	if (!name_len) {
 		fprintf(stderr, "Error in option: No option name on line %d\n", line_num);
+		// Return empty value
+		*value = name;
 		return -1;
 	}
 
-	size_t name_len = strlen(*name);
 	if (len == name_len) {
-		fprintf(stderr, "Error in option: No option value on line %d\n", line_num);
+#ifdef DEBUG_OPTS
+		log_dbg_printf("Warning in option: No option separator on line %d\n", line_num);
+#endif /* DEBUG_OPTS */
 		// Return empty value
-		*value = *name + name_len;
-		return -1;
+		*value = name + name_len;
+		return 0;
 	}
 
 	// Trim left of value (skip white space and sep until value)
@@ -4549,8 +4553,17 @@ get_name_value(char **name, char **value, const char sep, int line_num)
 
 	*value = n;
 
+	size_t value_len = strlen(*value);
+
+	if (!value_len) {
+#ifdef DEBUG_OPTS
+		log_dbg_printf("Warning in option: No option value on line %d\n", line_num);
+#endif /* DEBUG_OPTS */
+		return 0;
+	}
+
 	// Trim right of value
-	n = *value + strlen(*value) - 1;
+	n = *value + value_len - 1;
 	while (*n == ' ' || *n == '\t' || *n == '\r' || *n == '\n' || *n == sep)
 		n--;
 	*(n + 1) = '\0';
@@ -4631,7 +4644,7 @@ load_proxyspec_struct(global_t *global, const char *argv0, char **natengine, int
 			continue;
 		}
 
-		retval = get_name_value(&name, &value, ' ', *line_num);
+		retval = get_name_value(name, &value, ' ', *line_num);
 		if (retval == 0) {
 			retval = set_proxyspec_option(spec, argv0, name, value, natengine, spec_addrs, *line_num);
 		}
@@ -4871,7 +4884,7 @@ global_set_option(global_t *global, const char *argv0, const char *optarg,
 	for (name = line; *name == ' ' || *name == '\t'; name++); 
 
 	/* Command line option separator is '=' */
-	retval = get_name_value(&name, &value, '=', 0);
+	retval = get_name_value(name, &value, '=', 0);
 	if (retval == 0) {
 		/* Line number param is for conf file, pass 0 for command line options */
 		int line_num = 0;
@@ -4923,7 +4936,7 @@ opts_load_conffile(global_t *global, const char *argv0, char *conffile, char **n
 			continue;
 		}
 
-		retval = get_name_value(&name, &value, ' ', line_num);
+		retval = get_name_value(name, &value, ' ', line_num);
 		if (retval == 0) {
 			retval = set_global_option(global, argv0, name, value, natengine, &line_num, f, tmp_global_opts);
 		}

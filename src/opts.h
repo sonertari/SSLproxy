@@ -457,7 +457,7 @@ int global_set_debug_level(const char *) NONNULL(1) WUNRES;
 void global_set_statslog(global_t *) NONNULL(1);
 
 int is_yesno(const char *) WUNRES;
-int get_name_value(char **, char **, const char, int) WUNRES;
+int get_name_value(char *, char **, const char, int) WUNRES;
 int global_set_option(global_t *, const char *, const char *, char **, tmp_global_opts_t *) NONNULL(1,2,3,5) WUNRES;
 int global_set_leafkey(global_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;
 int global_set_leafcertdir(global_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;

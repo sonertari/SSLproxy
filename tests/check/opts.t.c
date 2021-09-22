@@ -163,34 +163,42 @@ START_TEST(proxyspec_parse_03)
 	tmp_global_opts_t *tmp_global_opts = malloc(sizeof(tmp_global_opts_t));
 	memset(tmp_global_opts, 0, sizeof(tmp_global_opts_t));
 
+	// Disable error messages
 	close(2);
+
 	int rv = proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
+	fail_unless(rv == -1, "failed to reject spec");
+
+	argc = 5;
+	rv = proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
+	fail_unless(rv == -1, "failed to reject spec");
+
+	argc = 5;
+	argv = argv07;
+	rv = proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
+	fail_unless(rv == -1, "failed to reject spec");
+
+	argc = 5;
+	argv = argv06;
+	rv = proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
+	fail_unless(rv == -1, "failed to reject spec");
+
+	argc = 5;
+	argv = argv08;
+	rv = proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
+	fail_unless(rv == -1, "failed to reject spec");
+
+	argc = 6;
+	argv = argv13;
+	rv = proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
+	fail_unless(rv == -1, "failed to reject spec");
+
 	global_free(global);
 	tmp_global_opts_free(tmp_global_opts);
-	if (rv == -1)
-		exit(EXIT_FAILURE);
 }
 END_TEST
 
 START_TEST(proxyspec_parse_04)
-{
-	global_t *global = global_new();
-	int argc = 5;
-	char **argv = argv01;
-
-	tmp_global_opts_t *tmp_global_opts = malloc(sizeof(tmp_global_opts_t));
-	memset(tmp_global_opts, 0, sizeof(tmp_global_opts_t));
-
-	close(2);
-	int rv = proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
-	global_free(global);
-	tmp_global_opts_free(tmp_global_opts);
-	if (rv == -1)
-		exit(EXIT_FAILURE);
-}
-END_TEST
-
-START_TEST(proxyspec_parse_05)
 {
 	global_t *global = global_new();
 	proxyspec_t *spec = NULL;
@@ -220,7 +228,7 @@ START_TEST(proxyspec_parse_05)
 }
 END_TEST
 
-START_TEST(proxyspec_parse_06)
+START_TEST(proxyspec_parse_05)
 {
 	global_t *global = global_new();
 	proxyspec_t *spec = NULL;
@@ -250,7 +258,7 @@ START_TEST(proxyspec_parse_06)
 }
 END_TEST
 
-START_TEST(proxyspec_parse_07)
+START_TEST(proxyspec_parse_06)
 {
 	global_t *global = global_new();
 	proxyspec_t *spec = NULL;
@@ -280,7 +288,7 @@ START_TEST(proxyspec_parse_07)
 }
 END_TEST
 
-START_TEST(proxyspec_parse_08)
+START_TEST(proxyspec_parse_07)
 {
 	global_t *global = global_new();
 	proxyspec_t *spec = NULL;
@@ -309,43 +317,7 @@ START_TEST(proxyspec_parse_08)
 }
 END_TEST
 
-START_TEST(proxyspec_parse_09)
-{
-	global_t *global = global_new();
-	int argc = 5;
-	char **argv = argv07;
-
-	tmp_global_opts_t *tmp_global_opts = malloc(sizeof(tmp_global_opts_t));
-	memset(tmp_global_opts, 0, sizeof(tmp_global_opts_t));
-
-	close(2);
-	int rv = proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
-	global_free(global);
-	tmp_global_opts_free(tmp_global_opts);
-	if (rv == -1)
-		exit(EXIT_FAILURE);
-}
-END_TEST
-
-START_TEST(proxyspec_parse_10)
-{
-	global_t *global = global_new();
-	int argc = 5;
-	char **argv = argv06;
-
-	tmp_global_opts_t *tmp_global_opts = malloc(sizeof(tmp_global_opts_t));
-	memset(tmp_global_opts, 0, sizeof(tmp_global_opts_t));
-
-	close(2);
-	int rv = proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
-	global_free(global);
-	tmp_global_opts_free(tmp_global_opts);
-	if (rv == -1)
-		exit(EXIT_FAILURE);
-}
-END_TEST
-
-START_TEST(proxyspec_parse_11)
+START_TEST(proxyspec_parse_08)
 {
 	global_t *global = global_new();
 	proxyspec_t *spec = NULL;
@@ -375,26 +347,8 @@ START_TEST(proxyspec_parse_11)
 }
 END_TEST
 
-START_TEST(proxyspec_parse_12)
-{
-	global_t *global = global_new();
-	int argc = 5;
-	char **argv = argv08;
-
-	tmp_global_opts_t *tmp_global_opts = malloc(sizeof(tmp_global_opts_t));
-	memset(tmp_global_opts, 0, sizeof(tmp_global_opts_t));
-
-	close(2);
-	int rv = proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
-	global_free(global);
-	tmp_global_opts_free(tmp_global_opts);
-	if (rv == -1)
-		exit(EXIT_FAILURE);
-}
-END_TEST
-
 #ifndef TRAVIS
-START_TEST(proxyspec_parse_13)
+START_TEST(proxyspec_parse_09)
 {
 	global_t *global = global_new();
 	proxyspec_t *spec = NULL;
@@ -435,7 +389,7 @@ START_TEST(proxyspec_parse_13)
 }
 END_TEST
 
-START_TEST(proxyspec_parse_14)
+START_TEST(proxyspec_parse_10)
 {
 	global_t *global = global_new();
 	proxyspec_t *spec = NULL;
@@ -478,7 +432,7 @@ START_TEST(proxyspec_parse_14)
 END_TEST
 #endif /* !TRAVIS */
 
-START_TEST(proxyspec_parse_15)
+START_TEST(proxyspec_parse_11)
 {
 	global_t *global = global_new();
 	proxyspec_t *spec = NULL;
@@ -507,7 +461,7 @@ START_TEST(proxyspec_parse_15)
 }
 END_TEST
 
-START_TEST(proxyspec_parse_16)
+START_TEST(proxyspec_parse_12)
 {
 	global_t *global = global_new();
 	proxyspec_t *spec = NULL;
@@ -548,25 +502,7 @@ START_TEST(proxyspec_parse_16)
 }
 END_TEST
 
-START_TEST(proxyspec_parse_17)
-{
-	global_t *global = global_new();
-	int argc = 6;
-	char **argv = argv13;
-
-	tmp_global_opts_t *tmp_global_opts = malloc(sizeof(tmp_global_opts_t));
-	memset(tmp_global_opts, 0, sizeof(tmp_global_opts_t));
-
-	close(2);
-	int rv = proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_global_opts);
-	global_free(global);
-	tmp_global_opts_free(tmp_global_opts);
-	if (rv == -1)
-		exit(EXIT_FAILURE);
-}
-END_TEST
-
-START_TEST(proxyspec_parse_18)
+START_TEST(proxyspec_parse_13)
 {
 	global_t *global = global_new();
 	proxyspec_t *spec = NULL;
@@ -913,100 +849,127 @@ START_TEST(opts_get_name_value_01)
 	char *value;
 	
 	name = strdup("Name Value");
-	retval = get_name_value(&name, &value, ' ', 0);
+	retval = get_name_value(name, &value, ' ', 0);
 	fail_unless(!strcmp(name, "Name"), "failed parsing name");
 	fail_unless(!strcmp(value, "Value"), "failed parsing value");
 	fail_unless(retval == 0, "failed parsing name value");
 	free(name);
 	
 	name = strdup("Name  Value");
-	retval = get_name_value(&name, &value, ' ', 0);
+	retval = get_name_value(name, &value, ' ', 0);
 	fail_unless(!strcmp(name, "Name"), "failed parsing name");
 	fail_unless(!strcmp(value, "Value"), "failed parsing value");
 	fail_unless(retval == 0, "failed parsing name value");
 	free(name);
 
-	// Leading white space must be handled by the caller,
-	// so we don't have a test for " Name Value", or similar
+	// Leading white space must be handled by the caller
+	// We cannot modify the name pointer, so we return -1
+	// So we don't actually need a test for " Name Value", or similar
+	name = strdup(" Name Value");
+	retval = get_name_value(name, &value, ' ', 0);
+	fail_unless(!strcmp(name, ""), "failed parsing name");
+	fail_unless(!strcmp(value, ""), "failed parsing value");
+	fail_unless(retval == -1, "failed rejecting leading white space, empty name");
+	free(name);
 	
 	name = strdup("Name Value ");
-	retval = get_name_value(&name, &value, ' ', 0);
+	retval = get_name_value(name, &value, ' ', 0);
 	fail_unless(!strcmp(name, "Name"), "failed parsing name");
 	fail_unless(!strcmp(value, "Value"), "failed parsing value");
 	fail_unless(retval == 0, "failed parsing name value");
 	free(name);
 	
 	name = strdup("Name=Value");
-	retval = get_name_value(&name, &value, '=', 0);
+	retval = get_name_value(name, &value, '=', 0);
 	fail_unless(!strcmp(name, "Name"), "failed parsing name");
 	fail_unless(!strcmp(value, "Value"), "failed parsing value");
 	fail_unless(retval == 0, "failed parsing name value");
 	free(name);
 	
+	// Leading white space must be handled by the caller
+	// We cannot modify the name pointer, so we return -1
+	// So we don't actually need a test for " Name Value", or similar
+	name = strdup(" Name=Value");
+	retval = get_name_value(name, &value, ' ', 0);
+	fail_unless(!strcmp(name, ""), "failed parsing name");
+	fail_unless(!strcmp(value, ""), "failed parsing value");
+	fail_unless(retval == -1, "failed rejecting leading white space, empty name");
+	free(name);
+	
 	name = strdup("Name=Value ");
-	retval = get_name_value(&name, &value, '=', 0);
+	retval = get_name_value(name, &value, '=', 0);
 	fail_unless(!strcmp(name, "Name"), "failed parsing name");
 	fail_unless(!strcmp(value, "Value"), "failed parsing value");
 	fail_unless(retval == 0, "failed parsing name value");
 	free(name);
 	
 	name = strdup("Name = Value");
-	retval = get_name_value(&name, &value, '=', 0);
+	retval = get_name_value(name, &value, '=', 0);
 	fail_unless(!strcmp(name, "Name"), "failed parsing name");
 	fail_unless(!strcmp(value, "Value"), "failed parsing value");
 	fail_unless(retval == 0, "failed parsing name value");
 	free(name);
 	
 	name = strdup("Name = Value ");
-	retval = get_name_value(&name, &value, '=', 0);
+	retval = get_name_value(name, &value, '=', 0);
 	fail_unless(!strcmp(name, "Name"), "failed parsing name");
 	fail_unless(!strcmp(value, "Value"), "failed parsing value");
 	fail_unless(retval == 0, "failed parsing name value");
 	free(name);
 	
+	// Name without value, e.g. '}' char is used for marking the end of structured proxyspecs
+	// so do not reject any form of just name, return success
 	name = strdup("Name");
-	retval = get_name_value(&name, &value, ' ', 0);
+	retval = get_name_value(name, &value, ' ', 0);
 	fail_unless(!strcmp(name, "Name"), "failed parsing name");
-	fail_unless(retval == -1, "failed rejecting just name");
+	fail_unless(!strcmp(value, ""), "failed parsing value");
+	fail_unless(retval == 0, "failed parsing just name");
 	free(name);
 
 	name = strdup("Name ");
-	retval = get_name_value(&name, &value, ' ', 0);
+	retval = get_name_value(name, &value, ' ', 0);
 	fail_unless(!strcmp(name, "Name"), "failed parsing name");
 	fail_unless(!strcmp(value, ""), "failed parsing value");
 	fail_unless(retval == 0, "failed parsing name empty value");
 	free(name);
 
 	name = strdup("Name  ");
-	retval = get_name_value(&name, &value, ' ', 0);
+	retval = get_name_value(name, &value, ' ', 0);
+	fail_unless(!strcmp(name, "Name"), "failed parsing name");
+	fail_unless(!strcmp(value, ""), "failed parsing value");
+	fail_unless(retval == 0, "failed parsing name empty value");
+	free(name);
+
+	name = strdup("Name");
+	retval = get_name_value(name, &value, '=', 0);
 	fail_unless(!strcmp(name, "Name"), "failed parsing name");
 	fail_unless(!strcmp(value, ""), "failed parsing value");
 	fail_unless(retval == 0, "failed parsing name empty value");
 	free(name);
 
 	name = strdup("Name=");
-	retval = get_name_value(&name, &value, '=', 0);
+	retval = get_name_value(name, &value, '=', 0);
 	fail_unless(!strcmp(name, "Name"), "failed parsing name");
 	fail_unless(!strcmp(value, ""), "failed parsing value");
 	fail_unless(retval == 0, "failed parsing name empty value");
 	free(name);
 
 	name = strdup("Name= ");
-	retval = get_name_value(&name, &value, '=', 0);
+	retval = get_name_value(name, &value, '=', 0);
 	fail_unless(!strcmp(name, "Name"), "failed parsing name");
 	fail_unless(!strcmp(value, ""), "failed parsing value");
 	fail_unless(retval == 0, "failed parsing name empty value");
 	free(name);
 
 	name = strdup("Name =");
-	retval = get_name_value(&name, &value, '=', 0);
+	retval = get_name_value(name, &value, '=', 0);
 	fail_unless(!strcmp(name, "Name"), "failed parsing name");
 	fail_unless(!strcmp(value, ""), "failed parsing value");
 	fail_unless(retval == 0, "failed parsing name empty value");
 	free(name);
 
 	name = strdup("Name = ");
-	retval = get_name_value(&name, &value, '=', 0);
+	retval = get_name_value(name, &value, '=', 0);
 	fail_unless(!strcmp(name, "Name"), "failed parsing name");
 	fail_unless(!strcmp(value, ""), "failed parsing value");
 	fail_unless(retval == 0, "failed parsing name empty value");
@@ -1026,24 +989,19 @@ opts_suite(void)
 #ifndef TRAVIS
 	tcase_add_test(tc, proxyspec_parse_02); /* IPv6 */
 #endif /* !TRAVIS */
-	tcase_add_exit_test(tc, proxyspec_parse_03, EXIT_FAILURE);
-	tcase_add_exit_test(tc, proxyspec_parse_04, EXIT_FAILURE);
+	tcase_add_test(tc, proxyspec_parse_03);
+	tcase_add_test(tc, proxyspec_parse_04);
 	tcase_add_test(tc, proxyspec_parse_05);
 	tcase_add_test(tc, proxyspec_parse_06);
 	tcase_add_test(tc, proxyspec_parse_07);
 	tcase_add_test(tc, proxyspec_parse_08);
-	tcase_add_exit_test(tc, proxyspec_parse_09, EXIT_FAILURE);
-	tcase_add_exit_test(tc, proxyspec_parse_10, EXIT_FAILURE);
-	tcase_add_test(tc, proxyspec_parse_11);
-	tcase_add_exit_test(tc, proxyspec_parse_12, EXIT_FAILURE);
 #ifndef TRAVIS
-	tcase_add_test(tc, proxyspec_parse_13); /* IPv6 */
-	tcase_add_test(tc, proxyspec_parse_14); /* IPv6 */
+	tcase_add_test(tc, proxyspec_parse_09); /* IPv6 */
+	tcase_add_test(tc, proxyspec_parse_10); /* IPv6 */
 #endif /* !TRAVIS */
-	tcase_add_test(tc, proxyspec_parse_15);
-	tcase_add_test(tc, proxyspec_parse_16);
-	tcase_add_exit_test(tc, proxyspec_parse_17, EXIT_FAILURE);
-	tcase_add_test(tc, proxyspec_parse_18);
+	tcase_add_test(tc, proxyspec_parse_11);
+	tcase_add_test(tc, proxyspec_parse_12);
+	tcase_add_test(tc, proxyspec_parse_13);
 	tcase_add_test(tc, proxyspec_set_proto_01);
 	suite_add_tcase(s, tc);
 
