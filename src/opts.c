@@ -1260,6 +1260,7 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine, global_t *globa
 		}
 		(*argv)++;
 	}
+
 	if (state != 0 && state != 3 && state != 4) {
 		fprintf(stderr, "Incomplete proxyspec!\n");
 		return -1;
@@ -4596,8 +4597,11 @@ load_proxyspec_line(global_t *global, const char *argv0, char *value, char **nat
 		}
 	}
 
-	if (proxyspec_parse(&argc, &argv, *natengine, global, argv0, tmp_global_opts) == -1)
+	if (proxyspec_parse(&argc, &argv, *natengine, global, argv0, tmp_global_opts) == -1) {
+		fprintf(stderr, "Error in proxyspec on line %d\n", line_num);
 		return -1;
+	}
+
 	free(save_argv);
 	return 0;
 }
@@ -4625,7 +4629,9 @@ load_proxyspec_struct(global_t *global, const char *argv0, char **natengine, int
 		return oom_return(argv0);
 	memset(spec_addrs, 0, sizeof(spec_addrs_t));
 
-	while (!feof(f)) {
+	int closing_brace = 0;
+
+	while (!feof(f) && !closing_brace) {
 		if (getline(&line, &line_len, f) == -1) {
 			break;
 		}
@@ -4651,10 +4657,16 @@ load_proxyspec_struct(global_t *global, const char *argv0, char **natengine, int
 		if (retval == -1) {
 			goto leave;
 		} else if (retval == 1) {
-			break;
+			closing_brace = 1;
 		}
 		free(line);
 		line = NULL;
+	}
+
+	if (!closing_brace) {
+		fprintf(stderr, "Error in conf file: struct ProxySpec has no closing brace '}' after line %d\n", *line_num);
+		retval = -1;
+		goto leave;
 	}
 
 	set_divert(spec, tmp_global_opts->split);
@@ -4785,8 +4797,11 @@ set_global_option(global_t *global, const char *argv0,
 			log_dbg_printf("ProxySpec { on line %d\n", *line_num);
 #endif /* DEBUG_OPTS */
 			return load_proxyspec_struct(global, argv0, natengine, line_num, f, tmp_global_opts);
-		} else {
+		} else if (strlen(value)) {
 			return load_proxyspec_line(global, argv0, value, natengine, *line_num, tmp_global_opts);
+		} else {
+			fprintf(stderr, "Incomplete ProxySpec on line %d\n", *line_num);
+			return -1;
 		}
 	} else if (equal(name, "ConnIdleTimeout")) {
 		unsigned int i = atoi(value);
