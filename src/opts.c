@@ -4270,7 +4270,7 @@ set_option(opts_t *opts, const char *argv0,
 {
 	int yes;
 
-	if (!value) {
+	if (!value || !strlen(value)) {
 		fprintf(stderr, "Error in conf: No value assigned for %s on line %d\n", name, line_num);
 		return -1;
 	}
@@ -4444,6 +4444,13 @@ static int WUNRES
 set_proxyspec_option(proxyspec_t *spec, const char *argv0,
 		const char *name, char *value, char **natengine, spec_addrs_t *spec_addrs, int line_num)
 {
+	// Closing brace '}' is the only option without a value
+	// and only allowed in structured proxyspecs
+	if ((!value || !strlen(value)) && !equal(name, "}")) {
+		fprintf(stderr, "Error in conf: No value assigned for %s on line %d\n", name, line_num);
+		return -1;
+	}
+
 	if (equal(name, "Proto")) {
 		if (proxyspec_set_proto(spec, value) == -1)
 			return -1;
@@ -4716,7 +4723,7 @@ set_global_option(global_t *global, const char *argv0,
 {
 	int yes;
 
-	if (!value) {
+	if (!value || !strlen(value)) {
 		fprintf(stderr, "Error in conf: No value assigned for %s on line %d\n", name, *line_num);
 		return -1;
 	}
@@ -4797,11 +4804,8 @@ set_global_option(global_t *global, const char *argv0,
 			log_dbg_printf("ProxySpec { on line %d\n", *line_num);
 #endif /* DEBUG_OPTS */
 			return load_proxyspec_struct(global, argv0, natengine, line_num, f, tmp_global_opts);
-		} else if (strlen(value)) {
-			return load_proxyspec_line(global, argv0, value, natengine, *line_num, tmp_global_opts);
 		} else {
-			fprintf(stderr, "Incomplete ProxySpec on line %d\n", *line_num);
-			return -1;
+			return load_proxyspec_line(global, argv0, value, natengine, *line_num, tmp_global_opts);
 		}
 	} else if (equal(name, "ConnIdleTimeout")) {
 		unsigned int i = atoi(value);
