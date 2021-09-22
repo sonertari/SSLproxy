@@ -4516,8 +4516,8 @@ set_proxyspec_option(proxyspec_t *spec, const char *argv0,
 			fprintf(stderr, "Incomplete ProxySpec on line %d\n", line_num);
 			return -1;
 		}
-		// Return 1 to indicate the end of structured proxyspec
-		return 1;
+		// Return 2 to indicate the end of structured proxyspec
+		return 2;
 	}
 	else {
 		return set_option(spec->opts, argv0, name, value, natengine, line_num, NULL);
@@ -4667,7 +4667,7 @@ load_proxyspec_struct(global_t *global, const char *argv0, char **natengine, int
 		}
 		if (retval == -1) {
 			goto leave;
-		} else if (retval == 1) {
+		} else if (retval == 2) {
 			closing_brace = 1;
 		}
 		free(line);
