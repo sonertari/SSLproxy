@@ -3,6 +3,7 @@
  * https://www.roe.ch/SSLsplit
  *
  * Copyright (c) 2009-2019, Daniel Roethlisberger <daniel@roe.ch>.
+ * Copyright (c) 2017-2021, Soner Tari <sonertari@gmail.com>.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -862,6 +863,8 @@ START_TEST(opts_get_name_value_01)
 	fail_unless(retval == 0, "failed parsing name value");
 	free(name);
 
+	close(2);
+	
 	// Leading white space must be handled by the caller
 	// We cannot modify the name pointer, so we return -1
 	// So we don't actually need a test for " Name Value", or similar

@@ -1644,7 +1644,7 @@ out:
 }
 #endif /* !WITHOUT_USERAUTH */
 
-static char *
+char *
 filter_str(filter_t *filter)
 {
 	char *fs = NULL;
@@ -2759,7 +2759,7 @@ opts_find_macro(macro_t *macro, char *name)
 	return NULL;
 }
 
-static int WUNRES
+int
 opts_set_macro(opts_t *opts, char *value, int line_num)
 {
 #define MAX_MACRO_TOKENS 50
@@ -3348,7 +3348,7 @@ filter_rule_parse(opts_t *opts, const char *name, int argc, char **argv, int lin
 	return filter_rule_translate(opts, name, argc, argv, line_num);
 }
 
-static int WUNRES
+int
 opts_set_filter_rule(opts_t *opts, const char *name, char *value, int line_num)
 {
 	char *argv[sizeof(char *) * MAX_FILTER_RULE_TOKENS];

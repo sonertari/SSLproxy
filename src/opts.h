@@ -394,6 +394,7 @@ opts_t *opts_new(void) MALLOC WUNRES;
 void opts_free(opts_t *) NONNULL(1);
 void opts_free_filter_rules(opts_t *) NONNULL(1);
 char *filter_rule_str(filter_rule_t *);
+char *filter_str(filter_t *filter);
 char *opts_proto_dbg_dump(opts_t *) NONNULL(1);
 int opts_set_cacrt(opts_t *, const char *, const char *, tmp_global_opts_t *) NONNULL(1,2,3) WUNRES;
 int opts_set_cakey(opts_t *, const char *, const char *, tmp_global_opts_t *) NONNULL(1,2,3) WUNRES;
@@ -416,11 +417,13 @@ int opts_set_ciphers(opts_t *, const char *, const char *) NONNULL(1,2,3) WUNRES
 int opts_set_ciphersuites(opts_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;
 int opts_set_passsite(opts_t *, char *, int) WUNRES;
 
+int opts_set_macro(opts_t *, char *, int) WUNRES;
 filter_ip_t *opts_find_ip(filter_ip_t *, char *) NONNULL(2);
 #ifndef WITHOUT_USERAUTH
 filter_keyword_t *opts_find_keyword(filter_keyword_t *, char *) NONNULL(2);
 filter_user_t *opts_find_user(filter_user_t *, char *) NONNULL(2);
 #endif /* !WITHOUT_USERAUTH */
+int opts_set_filter_rule(opts_t *, const char *, char *, int) WUNRES;
 filter_t *opts_set_filter(filter_rule_t *);
 
 #define OPTS_DEBUG(global) unlikely((global)->debug)
