@@ -421,8 +421,8 @@ You can append an asterisk * to the site field of filtering rules for
 substring matching. Otherwise, the filter searches for an exact match with the 
 site field in the rule.
 .LP
-The order of filtering rules is important. The order of from, to, and log 
-parts is not important. The order of log actions is not important.
+The ordering of filtering rules is important. The ordering of from, to, and 
+log parts is not important. The ordering of log actions is not important.
 .LP
 If the UserAuth option is disabled, only client IP addresses can be used in 
 the from part of filtering rules.
@@ -526,7 +526,10 @@ NAT ENGINES for a list of NAT engines currently supported by SSLproxy.
 .TP
 .B \-f \fIconffile\fP
 Read configuration from \fIconffile\fP. Configuration files can use the 
-Include option for loading configuration from an include file too.
+Include option for loading configuration from an include file too. Note that 
+the ordering of options, rules, and proxyspecs in configuration files (and on 
+the command line) is important. For example, rules and proxyspecs can only 
+make use of the options defined earlier.
 .TP
 .B \-F \fIlogspec\fP
 Log connection content to separate log files with the given path specification

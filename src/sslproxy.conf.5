@@ -59,6 +59,10 @@ sslproxy takes a default action. If an option is defined outside any
 structured proxyspec, then it is used as a global default. If an option does 
 not have a command line equivalent, -o opt=val option can be used to override 
 it on the command line.
+.LP 
+Note that the ordering of options, rules, and proxyspecs in configuration 
+files (and on the command line) is important. For example, rules and 
+proxyspecs can only make use of the options defined earlier.
 .TP 
 \fBCACert STRING\fR
 Use CA cert (and key) to sign forged certs. Equivalent to -c command line option.
@@ -311,13 +315,21 @@ line. PassSite rules can search for exact or substring matches. Append an
 asterisk to the site field to search for substring match. Note that the 
 substring search is not a regex or wildcard search, and that the asterisk at 
 the end is removed before search.
+.TP 
+\fBInclude STRING\fR
+Load configuration from an include file.
+
+Recursive include files are not allowed. The Include option cannot be used in 
+include files.
 .TP
 \fBDefine STRING\fR
 Define macro to be used in filtering rules. Macro names must start with a $ 
 char. The macro name must be followed by words separated with spaces. For 
 example,
 
-Define $macro value1 value2
+	Define $macro value1 value2
+
+Recursive macro definitions are not allowed.
 .TP
 \fBDivert STRING\fR
 Divert filtering rule diverts packets to listening program, allowing SSL 
@@ -443,9 +455,9 @@ Divert|Split|Pass|Block|Match filtering rules
 .br
 
 Structured proxy specifications may consist of the options listed above. The 
-Proto, Addr, and Port options are mandatory, and equivalent to type, 
-listenaddr, and port options in one line proxyspecs, respectively. If an 
-option is not specified, the global default value is used.
+Addr and Port options are mandatory, and equivalent to listenaddr and port 
+options in one line proxyspecs, respectively. If an option is not specified, 
+the global default value is used.
 .SH "FILES"
 .LP 
 /etc/sslproxy/sslproxy.conf

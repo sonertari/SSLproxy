@@ -407,8 +407,8 @@ You can append an asterisk `*` to the site field of filtering rules for
 substring matching. Otherwise, the filter searches for an exact match with the 
 site field in the rule.
 
-The order of filtering rules is important. The order of from, to, and log 
-parts is not important. The order of log actions is not important.
+The ordering of filtering rules is important. The ordering of from, to, and 
+log parts is not important. The ordering of log actions is not important.
 
 If the UserAuth option is disabled, only client IP addresses can be used in 
 the from part of filtering rules.
