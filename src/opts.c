@@ -2586,6 +2586,44 @@ opts_unset_validate_proto(opts_t *opts)
 	opts->validate_proto = 0;
 }
 
+static void
+opts_dbg_print_filter_rule(filter_rule_t *rule)
+{
+#ifdef DEBUG_OPTS
+	log_dbg_printf("Filter rule: %s, %s, %s"
+#ifndef WITHOUT_USERAUTH
+		", %s, %s"
+#endif /* !WITHOUT_USERAUTH */
+		", all=%s|"
+#ifndef WITHOUT_USERAUTH
+		"%s|"
+#endif /* !WITHOUT_USERAUTH */
+		"%s, action=%s|%s|%s|%s|%s, log=%s|%s|%s|%s|%s"
+#ifndef WITHOUT_MIRROR
+		"|%s"
+#endif /* !WITHOUT_MIRROR */
+		", apply to=%s|%s|%s|%s|%s, precedence=%d\n",
+		rule->site, rule->exact ? "exact" : "substring", STRORNONE(rule->ip),
+#ifndef WITHOUT_USERAUTH
+		STRORNONE(rule->user), STRORNONE(rule->keyword),
+#endif /* !WITHOUT_USERAUTH */
+		rule->all_conns ? "conns" : "",
+#ifndef WITHOUT_USERAUTH
+		rule->all_users ? "users" : "",
+#endif /* !WITHOUT_USERAUTH */
+		rule->all_sites ? "sites" : "",
+		rule->divert ? "divert" : "", rule->split ? "split" : "", rule->pass ? "pass" : "", rule->block ? "block" : "", rule->match ? "match" : "",
+		rule->log_connect ? (rule->log_connect == 1 ? "!connect" : "connect") : "", rule->log_master ? (rule->log_master == 1 ? "!master" : "master") : "",
+		rule->log_cert ? (rule->log_cert == 1 ? "!cert" : "cert") : "", rule->log_content ? (rule->log_content == 1 ? "!content" : "content") : "",
+		rule->log_pcap ? (rule->log_pcap == 1 ? "!pcap" : "pcap") : "",
+#ifndef WITHOUT_MIRROR
+		rule->log_mirror ? (rule->log_mirror == 1 ? "!mirror" : "mirror") : "",
+#endif /* !WITHOUT_MIRROR */
+		rule->dstip ? "dstip" : "", rule->sni ? "sni" : "", rule->cn ? "cn" : "", rule->host ? "host" : "", rule->uri ? "uri" : "",
+		rule->precedence);
+#endif /* DEBUG_OPTS */
+}
+
 #define MAX_SITE_LEN 200
 
 int
@@ -2711,39 +2749,7 @@ opts_set_passsite(opts_t *opts, char *value, int line_num)
 
 	opts_append_to_filter_rules(&opts->filter_rules, rule);
 
-#ifdef DEBUG_OPTS
-	log_dbg_printf("Filter rule: %s, %s, %s"
-#ifndef WITHOUT_USERAUTH
-		", %s, %s"
-#endif /* !WITHOUT_USERAUTH */
-		", all=%s|"
-#ifndef WITHOUT_USERAUTH
-		"%s|"
-#endif /* !WITHOUT_USERAUTH */
-		"%s, action=%s|%s|%s|%s|%s, log=%s|%s|%s|%s|%s"
-#ifndef WITHOUT_MIRROR
-		"|%s"
-#endif /* !WITHOUT_MIRROR */
-		", apply to=%s|%s|%s|%s|%s, precedence=%d\n",
-		rule->site, rule->exact ? "exact" : "substring", STRORNONE(rule->ip),
-#ifndef WITHOUT_USERAUTH
-		STRORNONE(rule->user), STRORNONE(rule->keyword),
-#endif /* !WITHOUT_USERAUTH */
-		rule->all_conns ? "conns" : "",
-#ifndef WITHOUT_USERAUTH
-		rule->all_users ? "users" : "",
-#endif /* !WITHOUT_USERAUTH */
-		rule->all_sites ? "sites" : "",
-		rule->divert ? "divert" : "", rule->split ? "split" : "", rule->pass ? "pass" : "", rule->block ? "block" : "", rule->match ? "match" : "",
-		rule->log_connect ? (rule->log_connect == 1 ? "!connect" : "connect") : "", rule->log_master ? (rule->log_master == 1 ? "!master" : "master") : "",
-		rule->log_cert ? (rule->log_cert == 1 ? "!cert" : "cert") : "", rule->log_content ? (rule->log_content == 1 ? "!content" : "content") : "",
-		rule->log_pcap ? (rule->log_pcap == 1 ? "!pcap" : "pcap") : "",
-#ifndef WITHOUT_MIRROR
-		rule->log_mirror ? (rule->log_mirror == 1 ? "!mirror" : "mirror") : "",
-#endif /* !WITHOUT_MIRROR */
-		rule->dstip ? "dstip" : "", rule->sni ? "sni" : "", rule->cn ? "cn" : "", rule->host ? "host" : "", rule->uri ? "uri" : "",
-		rule->precedence);
-#endif /* DEBUG_OPTS */
+	opts_dbg_print_filter_rule(rule);
 	return 0;
 }
 
@@ -3097,39 +3103,7 @@ filter_rule_translate(opts_t *opts, const char *name, int argc, char **argv, int
 
 	opts_append_to_filter_rules(&opts->filter_rules, rule);
 
-#ifdef DEBUG_OPTS
-	log_dbg_printf("Filter rule: %s, %s, %s"
-#ifndef WITHOUT_USERAUTH
-		", %s, %s"
-#endif /* !WITHOUT_USERAUTH */
-		", all=%s|"
-#ifndef WITHOUT_USERAUTH
-		"%s|"
-#endif /* !WITHOUT_USERAUTH */
-		"%s, action=%s|%s|%s|%s|%s, log=%s|%s|%s|%s|%s"
-#ifndef WITHOUT_MIRROR
-		"|%s"
-#endif /* !WITHOUT_MIRROR */
-		", apply to=%s|%s|%s|%s|%s, precedence=%d\n",
-		rule->site, rule->exact ? "exact" : "substring", STRORNONE(rule->ip),
-#ifndef WITHOUT_USERAUTH
-		STRORNONE(rule->user), STRORNONE(rule->keyword),
-#endif /* !WITHOUT_USERAUTH */
-		rule->all_conns ? "conns" : "",
-#ifndef WITHOUT_USERAUTH
-		rule->all_users ? "users" : "",
-#endif /* !WITHOUT_USERAUTH */
-		rule->all_sites ? "sites" : "",
-		rule->divert ? "divert" : "", rule->split ? "split" : "", rule->pass ? "pass" : "", rule->block ? "block" : "", rule->match ? "match" : "",
-		rule->log_connect ? (rule->log_connect == 1 ? "!connect" : "connect") : "", rule->log_master ? (rule->log_master == 1 ? "!master" : "master") : "",
-		rule->log_cert ? (rule->log_cert == 1 ? "!cert" : "cert") : "", rule->log_content ? (rule->log_content == 1 ? "!content" : "content") : "",
-		rule->log_pcap ? (rule->log_pcap == 1 ? "!pcap" : "pcap") : "",
-#ifndef WITHOUT_MIRROR
-		rule->log_mirror ? (rule->log_mirror == 1 ? "!mirror" : "mirror") : "",
-#endif /* !WITHOUT_MIRROR */
-		rule->dstip ? "dstip" : "", rule->sni ? "sni" : "", rule->cn ? "cn" : "", rule->host ? "host" : "", rule->uri ? "uri" : "",
-		rule->precedence);
-#endif /* DEBUG_OPTS */
+	opts_dbg_print_filter_rule(rule);
 	return 0;
 }
 
