@@ -812,8 +812,12 @@ protossl_apply_filter(pxy_conn_ctx_t *ctx)
 
 	// Cannot defer pass action any longer
 	// Match action should not override pass action, hence no 'else if'
-	if (pxyconn_apply_deferred_pass_action(ctx))
+	if (ctx->deferred_action & FILTER_ACTION_PASS) {
+		log_fine("Applying deferred pass action");
+		ctx->deferred_action = FILTER_ACTION_NONE;
+		ctx->pass = 1;
 		rv = 1;
+	}
 
 	return rv;
 }
