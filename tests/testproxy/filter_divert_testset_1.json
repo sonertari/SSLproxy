@@ -1,5 +1,5 @@
 {
-  "comment": "Split mode tests for HTTP request headers: SSLproxy, Connection, Upgrade, Keep-Alive, Accept-Encoding, Via, X-Forwarded-For, and Referer",
+  "comment": "Tests for Divert filtering rules, HTTP request headers: SSLproxy, Connection, Upgrade, Keep-Alive, Accept-Encoding, Via, X-Forwarded-For, and Referer",
   "configs": {
     "1": {
       "proto": {
@@ -7,11 +7,11 @@
       },
       "client": {
         "ip": "127.0.0.1",
-        "port": "8190"
+        "port": "8191"
       },
       "server": {
         "ip": "127.0.0.1",
-        "port": "9190"
+        "port": "9191"
       }
     },
     "2": {
@@ -22,17 +22,17 @@
       },
       "client": {
         "ip": "127.0.0.1",
-        "port": "8463"
+        "port": "8192"
       },
       "server": {
         "ip": "127.0.0.1",
-        "port": "9463"
+        "port": "9192"
       }
     }
   },
   "tests": {
     "1": {
-      "comment": "Removes any extra SSLproxy line, and appends Connection: close",
+      "comment": "Divert filtering rule removes any extra SSLproxy line, and appends Connection: close",
       "states": {
         "1": {
           "testend": "client",
@@ -47,7 +47,7 @@
       }
     },
     "2": {
-      "comment": "Removes all extra SSLproxy lines",
+      "comment": "Divert filtering rule removes all extra SSLproxy lines",
       "states": {
         "1": {
           "testend": "client",
@@ -62,7 +62,7 @@
       }
     },
     "3": {
-      "comment": "Changes Connection header to close",
+      "comment": "Divert filtering rule changes Connection header to close",
       "states": {
         "1": {
           "testend": "client",
@@ -77,7 +77,7 @@
       }
     },
     "4": {
-      "comment": "Suppresses upgrading to SSL/TLS, WebSockets or HTTP/2",
+      "comment": "Divert filtering rule suppresses upgrading to SSL/TLS, WebSockets or HTTP/2",
       "states": {
         "1": {
           "testend": "client",
@@ -92,7 +92,7 @@
       }
     },
     "5": {
-      "comment": "Removes Keep-Alive",
+      "comment": "Divert filtering rule removes Keep-Alive",
       "states": {
         "1": {
           "testend": "client",
@@ -107,7 +107,7 @@
       }
     },
     "6": {
-      "comment": "Does not remove Accept-Encoding by default (it's a config option)",
+      "comment": "Divert filtering rule does not remove Accept-Encoding by default (it's a config option)",
       "states": {
         "1": {
           "testend": "client",
@@ -122,7 +122,7 @@
       }
     },
     "7": {
-      "comment": "Split mode does not remove Via (it is removed by child conns)",
+      "comment": "Divert filtering rule removes Via",
       "states": {
         "1": {
           "testend": "client",
@@ -132,12 +132,12 @@
         "2": {
           "testend": "server",
           "cmd": "recv",
-          "payload": "GET / HTTP/1.1\r\nHost: example.com\r\nVia: via\r\nConnection: close\r\n\r\n"
+          "payload": "GET / HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n"
         }
       }
     },
     "8": {
-      "comment": "Split mode does not remove X-Forwarded-For (it is removed by child conns)",
+      "comment": "Divert filtering rule removes X-Forwarded-For",
       "states": {
         "1": {
           "testend": "client",
@@ -147,12 +147,12 @@
         "2": {
           "testend": "server",
           "cmd": "recv",
-          "payload": "GET / HTTP/1.1\r\nHost: example.com\r\nX-Forwarded-For: x-forwarded-for\r\nConnection: close\r\n\r\n"
+          "payload": "GET / HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n"
         }
       }
     },
     "9": {
-      "comment": "Removes Referer",
+      "comment": "Divert filtering rule removes Referer",
       "states": {
         "1": {
           "testend": "client",

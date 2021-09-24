@@ -1,5 +1,5 @@
 {
-  "comment": "Tests for SMTP",
+  "comment": "Split mode tests for SMTP",
   "configs": {
     "1": {
       "proto": {
