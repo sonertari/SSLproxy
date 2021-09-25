@@ -5,15 +5,17 @@
 
 	    (Divert|Split|Pass|Block|Match)
 	     ([from (
-	         user (username|$macro|*) [desc keyword]|
-	         ip (clientaddr|$macro|*)|
+	         user (username|$macro|*) [desc (keyword|$macro|*)]|
+	         desc (keyword|$macro|*)|
+	         ip (clientip|$macro|*)|
 	         *)]
 	      [to (
 	         sni (servername[*]|$macro|*)|
 	         cn (commonname[*]|$macro|*)|
 	         host (host[*]|$macro|*)|
 	         uri (uri[*]|$macro|*)|
-	         ip (serveraddr|$macro|*)|
+	         ip (serverip[*]|$macro|*) [port (serverport[*]|$macro|*)]|
+	         port (serverport[*]|$macro|*)|
 	         *)]
 	      [log ([[!]connect] [[!]master] [[!]cert]
 	            [[!]content] [[!]pcap] [[!]mirror] [$macro]|*|!*)]

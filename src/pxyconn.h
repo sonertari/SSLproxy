@@ -444,9 +444,9 @@ int pxy_is_listuser(userlist_t *, const char *
 void pxy_classify_user(pxy_conn_ctx_t *) NONNULL(1);
 void pxy_userauth(pxy_conn_ctx_t *) NONNULL(1);
 #endif /* !WITHOUT_USERAUTH */
-int pxyconn_apply_deferred_block_action(pxy_conn_ctx_t *) NONNULL(1);
-unsigned int pxyconn_set_filter_action(pxy_conn_ctx_t *, filter_site_t *) NONNULL(1,2);
-unsigned int pxyconn_filter(pxy_conn_ctx_t *, proto_filter_func_t) NONNULL(1);
+int pxyconn_apply_deferred_block_action(pxy_conn_ctx_t *) NONNULL(1) WUNRES;
+unsigned int pxyconn_set_filter_action(pxy_conn_ctx_t *, filter_action_t, char *) NONNULL(1,3) WUNRES;
+unsigned int pxyconn_filter(pxy_conn_ctx_t *, proto_filter_func_t) NONNULL(1) WUNRES;
 void pxy_conn_setup(evutil_socket_t, struct sockaddr *, int,
                     pxy_thrmgr_ctx_t *, proxyspec_t *, global_t *,
 					evutil_socket_t)

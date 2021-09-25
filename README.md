@@ -295,15 +295,17 @@ The syntax of filtering rules is as follows:
 
 	(Divert|Split|Pass|Block|Match)
 	 ([from (
-	     user (username|$macro|*) [desc keyword]|
-	     ip (clientaddr|$macro|*)|
+	     user (username|$macro|*) [desc (keyword|$macro|*)]|
+	     desc (keyword|$macro|*)|
+	     ip (clientip|$macro|*)|
 	     *)]
 	  [to (
 	     sni (servername[*]|$macro|*)|
 	     cn (commonname[*]|$macro|*)|
 	     host (host[*]|$macro|*)|
 	     uri (uri[*]|$macro|*)|
-	     ip (serveraddr|$macro|*)|
+	     ip (serverip[*]|$macro|*) [port (serverport[*]|$macro|*)]|
+	     port (serverport[*]|$macro|*)|
 	     *)]
 	  [log ([[!]connect] [[!]master] [[!]cert]
 	        [[!]content] [[!]pcap] [[!]mirror] [$macro]|*|!*)]
@@ -318,7 +320,7 @@ user or description keyword, or `*` for all.
 - The `to` part defines destination filter based on server IP address, SNI or 
 Common Names of SSL connections, Host or URI fields in HTTP Request headers, or 
 `*` for all.
-	+ Dst Host type of rules use `ip` site field
+	+ Dst Host type of rules use `ip` and `port` site fields
 	+ SSL type of rules use `sni` and `cn` site fields
 	+ HTTP type of rules use `host` and `uri` site fields
 - The proxyspec handling the connection defines the protocol filter for the 

@@ -217,6 +217,8 @@ opts_free_filter_rules(opts_t *opts)
 	while (rule) {
 		filter_rule_t *next = rule->next;
 		free(rule->site);
+		if (rule->port)
+			free(rule->port);
 		if (rule->ip)
 			free(rule->ip);
 #ifndef WITHOUT_USERAUTH
@@ -231,11 +233,23 @@ opts_free_filter_rules(opts_t *opts)
 	opts->filter_rules = NULL;
 }
 
+static void
+opts_free_filter_port(filter_port_t *port)
+{
+	while (port) {
+		filter_port_t *p = port->next;
+		free(port->port);
+		free(port);
+		port = p;
+	}
+}
+
 static filter_site_t *
 opts_free_filter_site(filter_site_t *site)
 {
 	filter_site_t *s = site->next;
 	free(site->site);
+	opts_free_filter_port(site->port);
 	free(site);
 	return s;
 }
@@ -879,64 +893,60 @@ clone_global_opts(global_t *global, const char *argv0, tmp_global_opts_t *tmp_gl
 
 	filter_rule_t *rule = global->opts->filter_rules;
 	while (rule) {
-		filter_rule_t *fr = malloc(sizeof(filter_rule_t));
-		if (!fr)
+		filter_rule_t *r = malloc(sizeof(filter_rule_t));
+		if (!r)
 			return oom_return_null(argv0);
-		memset(fr, 0, sizeof(filter_rule_t));
+		memset(r, 0, sizeof(filter_rule_t));
 
-		if (rule->site) {
-			fr->site = strdup(rule->site);
-			if (!fr->site)
+		r->all_conns = rule->all_conns;
+
+#ifndef WITHOUT_USERAUTH
+		r->all_users = rule->all_users;
+
+		if (rule->user) {
+			r->user = strdup(rule->user);
+			if (!r->user)
 				return oom_return_null(argv0);
 		}
-		fr->exact = rule->exact;
+
+		if (rule->keyword) {
+			r->keyword = strdup(rule->keyword);
+			if (!r->keyword)
+				return oom_return_null(argv0);
+		}
+#endif /* !WITHOUT_USERAUTH */
 
 		if (rule->ip) {
-			fr->ip = strdup(rule->ip);
-			if (!fr->ip)
-				return oom_return_null(argv0);
-		}
-#ifndef WITHOUT_USERAUTH
-		if (rule->user) {
-			fr->user = strdup(rule->user);
-			if (!fr->user)
-				return oom_return_null(argv0);
-		}
-		if (rule->keyword) {
-			fr->keyword = strdup(rule->keyword);
-			if (!fr->keyword)
+			r->ip = strdup(rule->ip);
+			if (!r->ip)
 				return oom_return_null(argv0);
 		}
 
-		fr->all_users = rule->all_users;
-#endif /* !WITHOUT_USERAUTH */
-		fr->all_conns = rule->all_conns;
-		fr->all_sites = rule->all_sites;
+		if (rule->site) {
+			r->site = strdup(rule->site);
+			if (!r->site)
+				return oom_return_null(argv0);
+		}
+		r->all_sites = rule->all_sites;
+		r->exact = rule->exact;
 
-		fr->divert = rule->divert;
-		fr->split = rule->split;
-		fr->pass = rule->pass;
-		fr->block = rule->block;
-		fr->match = rule->match;
+		if (rule->port) {
+			r->port = strdup(rule->port);
+			if (!r->port)
+				return oom_return_null(argv0);
+		}
+		r->all_ports = rule->all_ports;
+		r->exact_port = rule->exact_port;
 
-		fr->log_connect = rule->log_connect;
-		fr->log_master = rule->log_master;
-		fr->log_cert = rule->log_cert;
-		fr->log_content = rule->log_content;
-		fr->log_pcap = rule->log_pcap;
-#ifndef WITHOUT_MIRROR
-		fr->log_mirror = rule->log_mirror;
-#endif /* !WITHOUT_MIRROR */
+		r->dstip = rule->dstip;
+		r->sni = rule->sni;
+		r->cn = rule->cn;
+		r->host = rule->host;
+		r->uri = rule->uri;
 
-		fr->dstip = rule->dstip;
-		fr->sni = rule->sni;
-		fr->cn = rule->cn;
-		fr->host = rule->host;
-		fr->uri = rule->uri;
+		r->action = rule->action;
 
-		fr->precedence = rule->precedence;
-
-		opts_append_to_filter_rules(&opts->filter_rules, fr);
+		opts_append_to_filter_rules(&opts->filter_rules, r);
 
 		rule = rule->next;
 	}
@@ -1345,7 +1355,7 @@ filter_rule_str(filter_rule_t *rule)
 	int count = 0;
 	while (rule) {
 		char *p;
-		if (asprintf(&p, "site=%s, %s, ip=%s"
+		if (asprintf(&p, "site=%s, %s, port=%s, %s, ip=%s"
 #ifndef WITHOUT_USERAUTH
 				", user=%s, keyword=%s"
 #endif /* !WITHOUT_USERAUTH */
@@ -1353,12 +1363,14 @@ filter_rule_str(filter_rule_t *rule)
 #ifndef WITHOUT_USERAUTH
 				"|%s"
 #endif /* !WITHOUT_USERAUTH */
-				"|%s, action=%s|%s|%s|%s|%s, log=%s|%s|%s|%s|%s"
+				"|%s|%s, action=%s|%s|%s|%s|%s, log=%s|%s|%s|%s|%s"
 #ifndef WITHOUT_MIRROR
 				"|%s"
 #endif /* !WITHOUT_MIRROR */
 				", apply to=%s|%s|%s|%s|%s, precedence=%d",
-				rule->site, rule->exact ? "exact" : "substring", STRORNONE(rule->ip),
+				rule->site, rule->exact ? "exact" : "substring",
+				STRORNONE(rule->port), rule->port ? (rule->exact_port ? "exact_port" : "substring_port") : "",
+				STRORNONE(rule->ip),
 #ifndef WITHOUT_USERAUTH
 				STRORNONE(rule->user), STRORNONE(rule->keyword),
 #endif /* !WITHOUT_USERAUTH */
@@ -1366,16 +1378,16 @@ filter_rule_str(filter_rule_t *rule)
 #ifndef WITHOUT_USERAUTH
 				rule->all_users ? "users" : "",
 #endif /* !WITHOUT_USERAUTH */
-				rule->all_sites ? "sites" : "",
-				rule->divert ? "divert" : "", rule->split ? "split" : "", rule->pass ? "pass" : "", rule->block ? "block" : "", rule->match ? "match" : "",
-				rule->log_connect ? (rule->log_connect == 1 ? "!connect" : "connect") : "", rule->log_master ? (rule->log_master == 1 ? "!master" : "master") : "",
-				rule->log_cert ? (rule->log_cert == 1 ? "!cert" : "cert") : "", rule->log_content ? (rule->log_content == 1 ? "!content" : "content") : "",
-				rule->log_pcap ? (rule->log_pcap == 1 ? "!pcap" : "pcap") : "",
+				rule->all_sites ? "sites" : "", rule->all_ports ? "ports" : "",
+				rule->action.divert ? "divert" : "", rule->action.split ? "split" : "", rule->action.pass ? "pass" : "", rule->action.block ? "block" : "", rule->action.match ? "match" : "",
+				rule->action.log_connect ? (rule->action.log_connect == 1 ? "!connect" : "connect") : "", rule->action.log_master ? (rule->action.log_master == 1 ? "!master" : "master") : "",
+				rule->action.log_cert ? (rule->action.log_cert == 1 ? "!cert" : "cert") : "", rule->action.log_content ? (rule->action.log_content == 1 ? "!content" : "content") : "",
+				rule->action.log_pcap ? (rule->action.log_pcap == 1 ? "!pcap" : "pcap") : "",
 #ifndef WITHOUT_MIRROR
-				rule->log_mirror ? (rule->log_mirror == 1 ? "!mirror" : "mirror") : "",
+				rule->action.log_mirror ? (rule->action.log_mirror == 1 ? "!mirror" : "mirror") : "",
 #endif /* !WITHOUT_MIRROR */
 				rule->dstip ? "dstip" : "", rule->sni ? "sni" : "", rule->cn ? "cn" : "", rule->host ? "host" : "", rule->uri ? "uri" : "",
-				rule->precedence) < 0) {
+				rule->action.precedence) < 0) {
 			goto err;
 		}
 		char *nfrs;
@@ -1402,27 +1414,71 @@ out:
 }
 
 static char *
-filter_sites_str(filter_site_t *site)
+filter_port_str(filter_port_t *port)
 {
 	char *s = NULL;
 
 	int count = 0;
+	while (port) {
+		char *p;
+		if (asprintf(&p, "%s\n          %d: %s (%s%s, action=%s|%s|%s|%s|%s, log=%s|%s|%s|%s|%s"
+#ifndef WITHOUT_MIRROR
+				"|%s"
+#endif /* !WITHOUT_MIRROR */
+				", precedence=%d)", STRORNONE(s), count,
+				port->port, port->all_ports ? "all_ports, " : "", port->exact ? "exact" : "substring",
+				port->action.divert ? "divert" : "", port->action.split ? "split" : "", port->action.pass ? "pass" : "", port->action.block ? "block" : "", port->action.match ? "match" : "",
+				port->action.log_connect ? (port->action.log_connect == 1 ? "!connect" : "connect") : "", port->action.log_master ? (port->action.log_master == 1 ? "!master" : "master") : "",
+				port->action.log_cert ? (port->action.log_cert == 1 ? "!cert" : "cert") : "", port->action.log_content ? (port->action.log_content == 1 ? "!content" : "content") : "",
+				port->action.log_pcap ? (port->action.log_pcap == 1 ? "!pcap" : "pcap") : "",
+#ifndef WITHOUT_MIRROR
+				port->action.log_mirror ? (port->action.log_mirror == 1 ? "!mirror" : "mirror") : "",
+#endif /* !WITHOUT_MIRROR */
+				port->action.precedence) < 0) {
+			goto err;
+		}
+		if (s)
+			free(s);
+		s = p;
+		port = port->next;
+		count++;
+	}
+	goto out;
+err:
+	if (s) {
+		free(s);
+		s = NULL;
+	}
+out:
+	return s;
+}
+
+static char *
+filter_sites_str(filter_site_t *site)
+{
+	char *s = NULL;
+	char *ports = NULL;
+
+	int count = 0;
 	while (site) {
+		ports = filter_port_str(site->port);
+
 		char *p;
 		if (asprintf(&p, "%s\n      %d: %s (%s%s, action=%s|%s|%s|%s|%s, log=%s|%s|%s|%s|%s"
 #ifndef WITHOUT_MIRROR
 				"|%s"
 #endif /* !WITHOUT_MIRROR */
-				", precedence=%d)", STRORNONE(s), count,
+				", precedence=%d)%s%s", STRORNONE(s), count,
 				site->site, site->all_sites ? "all_sites, " : "", site->exact ? "exact" : "substring",
-				site->divert ? "divert" : "", site->split ? "split" : "", site->pass ? "pass" : "", site->block ? "block" : "", site->match ? "match" : "",
-				site->log_connect ? (site->log_connect == 1 ? "!connect" : "connect") : "", site->log_master ? (site->log_master == 1 ? "!master" : "master") : "",
-				site->log_cert ? (site->log_cert == 1 ? "!cert" : "cert") : "", site->log_content ? (site->log_content == 1 ? "!content" : "content") : "",
-				site->log_pcap ? (site->log_pcap == 1 ? "!pcap" : "pcap") : "",
+				site->action.divert ? "divert" : "", site->action.split ? "split" : "", site->action.pass ? "pass" : "", site->action.block ? "block" : "", site->action.match ? "match" : "",
+				site->action.log_connect ? (site->action.log_connect == 1 ? "!connect" : "connect") : "", site->action.log_master ? (site->action.log_master == 1 ? "!master" : "master") : "",
+				site->action.log_cert ? (site->action.log_cert == 1 ? "!cert" : "cert") : "", site->action.log_content ? (site->action.log_content == 1 ? "!content" : "content") : "",
+				site->action.log_pcap ? (site->action.log_pcap == 1 ? "!pcap" : "pcap") : "",
 #ifndef WITHOUT_MIRROR
-				site->log_mirror ? (site->log_mirror == 1 ? "!mirror" : "mirror") : "",
+				site->action.log_mirror ? (site->action.log_mirror == 1 ? "!mirror" : "mirror") : "",
 #endif /* !WITHOUT_MIRROR */
-				site->precedence) < 0) {
+				site->action.precedence,
+				ports ? "\n        port:" : "", STRORNONE(ports)) < 0) {
 			goto err;
 		}
 		if (s)
@@ -1543,6 +1599,10 @@ filter_users_str(filter_user_t *user)
 
 	int count = 0;
 	while (user) {
+		// Make sure the current user does not have any keyword
+		if (user->keyword)
+			goto skip;
+
 		list = filter_list_str(user->list);
 
 		char *p = NULL;
@@ -1559,8 +1619,9 @@ filter_users_str(filter_user_t *user)
 		if (s)
 			free(s);
 		s = p;
-		user = user->next;
 		count++;
+skip:
+		user = user->next;
 	}
 	goto out;
 err:
@@ -1616,6 +1677,10 @@ filter_userkeywords_str(filter_user_t *user)
 
 	int count = 0;
 	while (user) {
+		// Make sure the current user has a keyword
+		if (!user->keyword)
+			goto skip;
+
 		list = filter_keywords_str(user->keyword);
 
 		char *p = NULL;
@@ -1628,8 +1693,9 @@ filter_userkeywords_str(filter_user_t *user)
 		if (s)
 			free(s);
 		s = p;
-		user = user->next;
 		count++;
+skip:
+		user = user->next;
 	}
 	goto out;
 err:
@@ -2586,11 +2652,11 @@ opts_unset_validate_proto(opts_t *opts)
 	opts->validate_proto = 0;
 }
 
+#ifdef DEBUG_OPTS
 static void
 opts_dbg_print_filter_rule(filter_rule_t *rule)
 {
-#ifdef DEBUG_OPTS
-	log_dbg_printf("Filter rule: %s, %s, %s"
+	log_dbg_printf("Filter rule: %s, %s, %s, %s, %s"
 #ifndef WITHOUT_USERAUTH
 		", %s, %s"
 #endif /* !WITHOUT_USERAUTH */
@@ -2598,12 +2664,14 @@ opts_dbg_print_filter_rule(filter_rule_t *rule)
 #ifndef WITHOUT_USERAUTH
 		"%s|"
 #endif /* !WITHOUT_USERAUTH */
-		"%s, action=%s|%s|%s|%s|%s, log=%s|%s|%s|%s|%s"
+		"%s|%s, action=%s|%s|%s|%s|%s, log=%s|%s|%s|%s|%s"
 #ifndef WITHOUT_MIRROR
 		"|%s"
 #endif /* !WITHOUT_MIRROR */
 		", apply to=%s|%s|%s|%s|%s, precedence=%d\n",
-		rule->site, rule->exact ? "exact" : "substring", STRORNONE(rule->ip),
+		rule->site, rule->exact ? "exact" : "substring",
+		STRORNONE(rule->port), rule->port ? (rule->exact_port ? "exact_port" : "substring_port") : "",
+		STRORNONE(rule->ip),
 #ifndef WITHOUT_USERAUTH
 		STRORNONE(rule->user), STRORNONE(rule->keyword),
 #endif /* !WITHOUT_USERAUTH */
@@ -2611,18 +2679,18 @@ opts_dbg_print_filter_rule(filter_rule_t *rule)
 #ifndef WITHOUT_USERAUTH
 		rule->all_users ? "users" : "",
 #endif /* !WITHOUT_USERAUTH */
-		rule->all_sites ? "sites" : "",
-		rule->divert ? "divert" : "", rule->split ? "split" : "", rule->pass ? "pass" : "", rule->block ? "block" : "", rule->match ? "match" : "",
-		rule->log_connect ? (rule->log_connect == 1 ? "!connect" : "connect") : "", rule->log_master ? (rule->log_master == 1 ? "!master" : "master") : "",
-		rule->log_cert ? (rule->log_cert == 1 ? "!cert" : "cert") : "", rule->log_content ? (rule->log_content == 1 ? "!content" : "content") : "",
-		rule->log_pcap ? (rule->log_pcap == 1 ? "!pcap" : "pcap") : "",
+		rule->all_sites ? "sites" : "", rule->all_ports ? "ports" : "",
+		rule->action.divert ? "divert" : "", rule->action.split ? "split" : "", rule->action.pass ? "pass" : "", rule->action.block ? "block" : "", rule->action.match ? "match" : "",
+		rule->action.log_connect ? (rule->action.log_connect == 1 ? "!connect" : "connect") : "", rule->action.log_master ? (rule->action.log_master == 1 ? "!master" : "master") : "",
+		rule->action.log_cert ? (rule->action.log_cert == 1 ? "!cert" : "cert") : "", rule->action.log_content ? (rule->action.log_content == 1 ? "!content" : "content") : "",
+		rule->action.log_pcap ? (rule->action.log_pcap == 1 ? "!pcap" : "pcap") : "",
 #ifndef WITHOUT_MIRROR
-		rule->log_mirror ? (rule->log_mirror == 1 ? "!mirror" : "mirror") : "",
+		rule->action.log_mirror ? (rule->action.log_mirror == 1 ? "!mirror" : "mirror") : "",
 #endif /* !WITHOUT_MIRROR */
 		rule->dstip ? "dstip" : "", rule->sni ? "sni" : "", rule->cn ? "cn" : "", rule->host ? "host" : "", rule->uri ? "uri" : "",
-		rule->precedence);
-#endif /* DEBUG_OPTS */
+		rule->action.precedence);
 }
+#endif /* DEBUG_OPTS */
 
 #define MAX_SITE_LEN 200
 
@@ -2682,7 +2750,7 @@ opts_set_passsite(opts_t *opts, char *value, int line_num)
 		return oom_return_na();
 
 	// precedence can only go up not down
-	rule->precedence = 0;
+	rule->action.precedence = 0;
 
 	if (argc == 1) {
 		// Apply filter rule to all conns
@@ -2694,14 +2762,14 @@ opts_set_passsite(opts_t *opts, char *value, int line_num)
 		if (!strcmp(argv[1], "*")) {
 #ifndef WITHOUT_USERAUTH
 			// Apply filter rule to all users perhaps with keyword
-			rule->precedence++;
+			rule->action.precedence++;
 			rule->all_users = 1;
 		} else if (sys_isuser(argv[1])) {
 			if (!opts->user_auth) {
 				fprintf(stderr, "User filter requires user auth on line %d\n", line_num);
 				return -1;
 			}
-			rule->precedence += 2;
+			rule->action.precedence += 2;
 			rule->user = strdup(argv[1]);
 			if (!rule->user)
 				return oom_return_na();
@@ -2710,7 +2778,7 @@ opts_set_passsite(opts_t *opts, char *value, int line_num)
 			rule->all_conns = 1;
 #endif /* WITHOUT_USERAUTH */
 		} else {
-			rule->precedence++;
+			rule->action.precedence++;
 			rule->ip = strdup(argv[1]);
 			if (!rule->ip)
 				return oom_return_na();
@@ -2735,21 +2803,23 @@ opts_set_passsite(opts_t *opts, char *value, int line_num)
 			fprintf(stderr, "Keyword filter requires user auth on line %d\n", line_num);
 			return -1;
 		}
-		rule->precedence++;
+		rule->action.precedence++;
 		rule->keyword = strdup(argv[2]);
 		if (!rule->keyword)
 			return oom_return_na();
 #endif /* !WITHOUT_USERAUTH */
 	}
 
-	rule->precedence++;
+	rule->action.precedence++;
 	rule->sni = 1;
 	rule->cn = 1;
-	rule->pass = 1;
+	rule->action.pass = 1;
 
 	opts_append_to_filter_rules(&opts->filter_rules, rule);
 
+#ifdef DEBUG_OPTS
 	opts_dbg_print_filter_rule(rule);
+#endif /* DEBUG_OPTS */
 	return 0;
 }
 
@@ -2874,6 +2944,45 @@ opts_set_site(filter_rule_t *rule, const char *site, int line_num)
 }
 
 static int WUNRES
+opts_set_port(filter_rule_t *rule, const char *port, int line_num)
+{
+#define MAX_PORT_LEN 6
+
+	size_t len = strlen(port);
+
+	if (len > MAX_PORT_LEN) {
+		fprintf(stderr, "Filter port too long %zu > %d on line %d\n", len, MAX_PORT_LEN, line_num);
+		return -1;
+	}
+
+	rule->port = strdup(port);
+	if (!rule->port)
+		return oom_return_na();
+
+	if (rule->port[len - 1] == '*') {
+		rule->exact_port = 0;
+		len--;
+		rule->port[len] = '\0';
+		// site == "*" ?
+		if (len == 0)
+			rule->all_ports = 1;
+	} else {
+		rule->exact_port = 1;
+	}
+
+	// redundant?
+	if (equal(rule->port, "*"))
+		rule->all_ports = 1;
+
+	if (!rule->site) {
+		rule->site = strdup("");
+		if (!rule->site)
+			return oom_return_na();
+	}
+	return 0;
+}
+
+static int WUNRES
 opts_inc_arg_index(int i, int argc, char *last, int line_num)
 {
 	if (i + 1 < argc) {
@@ -2889,15 +2998,17 @@ filter_rule_translate(opts_t *opts, const char *name, int argc, char **argv, int
 {
 	//(Divert|Split|Pass|Block|Match)
 	// ([from (
-	//     user (username|$macro|*) [desc keyword]|
-	//     ip (clientaddr|$macro|*)|
+	//     user (username|$macro|*) [desc (keyword|$macro|*)]|
+	//     desc (keyword|$macro|*)|
+	//     ip (clientip|$macro|*)|
 	//     *)]
 	//  [to (
 	//     sni (servername[*]|$macro|*)|
 	//     cn (commonname[*]|$macro|*)|
 	//     host (host[*]|$macro|*)|
 	//     uri (uri[*]|$macro|*)|
-	//     ip (serveraddr|$macro|*)|
+	//     ip (serverip[*]|$macro|*) [port (serverport[*]|$macro|*)]|
+	//     port (serverport[*]|$macro|*)|
 	//     *)]
 	//  [log ([[!]connect] [[!]master] [[!]cert]
 	//        [[!]content] [[!]pcap] [[!]mirror] [$macro]|*|!*)]
@@ -2909,18 +3020,18 @@ filter_rule_translate(opts_t *opts, const char *name, int argc, char **argv, int
 	memset(rule, 0, sizeof(filter_rule_t));
 
 	if (equal(name, "Divert"))
-		rule->divert = 1;
+		rule->action.divert = 1;
 	else if (equal(name, "Split"))
-		rule->split = 1;
+		rule->action.split = 1;
 	else if (equal(name, "Pass"))
-		rule->pass = 1;
+		rule->action.pass = 1;
 	else if (equal(name, "Block"))
-		rule->block = 1;
+		rule->action.block = 1;
 	else if (equal(name, "Match"))
-		rule->match = 1;
+		rule->action.match = 1;
 
 	// precedence can only go up not down
-	rule->precedence = 0;
+	rule->action.precedence = 0;
 
 	int done_from = 0;
 	int done_to = 0;
@@ -2938,12 +3049,12 @@ filter_rule_translate(opts_t *opts, const char *name, int argc, char **argv, int
 					if ((i = opts_inc_arg_index(i, argc, argv[i], line_num)) == -1)
 						return -1;
 
-					rule->precedence++;
+					rule->action.precedence++;
 
 					if (equal(argv[i], "*")) {
 						rule->all_users = 1;
 					} else {
-						rule->precedence++;
+						rule->action.precedence++;
 						rule->user = strdup(argv[i]);
 						if (!rule->user)
 							return oom_return_na();
@@ -2954,7 +3065,7 @@ filter_rule_translate(opts_t *opts, const char *name, int argc, char **argv, int
 				if (i < argc && equal(argv[i], "desc")) {
 					if ((i = opts_inc_arg_index(i, argc, argv[i], line_num)) == -1)
 						return -1;
-					rule->precedence++;
+					rule->action.precedence++;
 					rule->keyword = strdup(argv[i++]);
 					if (!rule->keyword)
 						return oom_return_na();
@@ -2971,7 +3082,7 @@ filter_rule_translate(opts_t *opts, const char *name, int argc, char **argv, int
 				if (equal(argv[i], "*")) {
 					rule->all_conns = 1;
 				} else {
-					rule->precedence++;
+					rule->action.precedence++;
 					rule->ip = strdup(argv[i]);
 					if (!rule->ip)
 						return oom_return_na();
@@ -2987,8 +3098,8 @@ filter_rule_translate(opts_t *opts, const char *name, int argc, char **argv, int
 			if ((i = opts_inc_arg_index(i, argc, argv[i], line_num)) == -1)
 				return -1;
 
-			if (equal(argv[i], "sni") || equal(argv[i], "cn") || equal(argv[i], "host") || equal(argv[i], "uri") || equal(argv[i], "ip")) {
-				rule->precedence++;
+			if (equal(argv[i], "sni") || equal(argv[i], "cn") || equal(argv[i], "host") || equal(argv[i], "uri")) {
+				rule->action.precedence++;
 				if (equal(argv[i], "sni"))
 					rule->sni = 1;
 				else if (equal(argv[i], "cn"))
@@ -2997,14 +3108,37 @@ filter_rule_translate(opts_t *opts, const char *name, int argc, char **argv, int
 					rule->host = 1;
 				else if (equal(argv[i], "uri"))
 					rule->uri = 1;
-				else if (equal(argv[i], "ip"))
-					rule->dstip = 1;
 
 				if ((i = opts_inc_arg_index(i, argc, argv[i], line_num)) == -1)
 					return -1;
 
 				if (opts_set_site(rule, argv[i++], line_num) == -1)
 					return -1;
+
+				done_to = 1;
+			}
+			else if (equal(argv[i], "ip") || equal(argv[i], "port")) {
+				rule->dstip = 1;
+
+				if (equal(argv[i], "ip")) {
+					if ((i = opts_inc_arg_index(i, argc, argv[i], line_num)) == -1)
+						return -1;
+
+					// Just ip spec should not increase rule precedence
+
+					if (opts_set_site(rule, argv[i++], line_num) == -1)
+						return -1;
+				}
+
+				if (i < argc && equal(argv[i], "port")) {
+					if ((i = opts_inc_arg_index(i, argc, argv[i], line_num)) == -1)
+						return -1;
+
+					rule->action.precedence++;
+
+					if (opts_set_port(rule, argv[i++], line_num) == -1)
+						return -1;
+				}
 
 				done_to = 1;
 			}
@@ -3016,7 +3150,7 @@ filter_rule_translate(opts_t *opts, const char *name, int argc, char **argv, int
 			if ((i = opts_inc_arg_index(i, argc, argv[i], line_num)) == -1)
 				return -1;
 
-			rule->precedence++;
+			rule->action.precedence++;
 
 			if (equal(argv[i], "connect") || equal(argv[i], "master") || equal(argv[i], "cert") || equal(argv[i], "content") || equal(argv[i], "pcap") ||
 				equal(argv[i], "!connect") || equal(argv[i], "!master") || equal(argv[i], "!cert") || equal(argv[i], "!content") || equal(argv[i], "!pcap")
@@ -3026,30 +3160,30 @@ filter_rule_translate(opts_t *opts, const char *name, int argc, char **argv, int
 				) {
 				do {
 					if (equal(argv[i], "connect"))
-						rule->log_connect = 2;
+						rule->action.log_connect = 2;
 					else if (equal(argv[i], "master"))
-						rule->log_master = 2;
+						rule->action.log_master = 2;
 					else if (equal(argv[i], "cert"))
-						rule->log_cert = 2;
+						rule->action.log_cert = 2;
 					else if (equal(argv[i], "content"))
-						rule->log_content = 2;
+						rule->action.log_content = 2;
 					else if (equal(argv[i], "pcap"))
-						rule->log_pcap = 2;
+						rule->action.log_pcap = 2;
 					else if (equal(argv[i], "!connect"))
-						rule->log_connect = 1;
+						rule->action.log_connect = 1;
 					else if (equal(argv[i], "!master"))
-						rule->log_master = 1;
+						rule->action.log_master = 1;
 					else if (equal(argv[i], "!cert"))
-						rule->log_cert = 1;
+						rule->action.log_cert = 1;
 					else if (equal(argv[i], "!content"))
-						rule->log_content = 1;
+						rule->action.log_content = 1;
 					else if (equal(argv[i], "!pcap"))
-						rule->log_pcap = 1;
+						rule->action.log_pcap = 1;
 #ifndef WITHOUT_MIRROR
 					else if (equal(argv[i], "mirror"))
-						rule->log_mirror = 2;
+						rule->action.log_mirror = 2;
 					else if (equal(argv[i], "!mirror"))
-						rule->log_mirror = 1;
+						rule->action.log_mirror = 1;
 #endif /* !WITHOUT_MIRROR */
 
 					if (++i == argc)
@@ -3062,24 +3196,24 @@ filter_rule_translate(opts_t *opts, const char *name, int argc, char **argv, int
 					);
 			}
 			else if (equal(argv[i], "*")) {
-				rule->log_connect = 2;
-				rule->log_master = 2;
-				rule->log_cert = 2;
-				rule->log_content = 2;
-				rule->log_pcap = 2;
+				rule->action.log_connect = 2;
+				rule->action.log_master = 2;
+				rule->action.log_cert = 2;
+				rule->action.log_content = 2;
+				rule->action.log_pcap = 2;
 #ifndef WITHOUT_MIRROR
-				rule->log_mirror = 2;
+				rule->action.log_mirror = 2;
 #endif /* !WITHOUT_MIRROR */
 				i++;
 			}
 			else if (equal(argv[i], "!*")) {
-				rule->log_connect = 1;
-				rule->log_master = 1;
-				rule->log_cert = 1;
-				rule->log_content = 1;
-				rule->log_pcap = 1;
+				rule->action.log_connect = 1;
+				rule->action.log_master = 1;
+				rule->action.log_cert = 1;
+				rule->action.log_content = 1;
+				rule->action.log_pcap = 1;
 #ifndef WITHOUT_MIRROR
-				rule->log_mirror = 1;
+				rule->action.log_mirror = 1;
 #endif /* !WITHOUT_MIRROR */
 				i++;
 			}
@@ -3103,7 +3237,9 @@ filter_rule_translate(opts_t *opts, const char *name, int argc, char **argv, int
 
 	opts_append_to_filter_rules(&opts->filter_rules, rule);
 
+#ifdef DEBUG_OPTS
 	opts_dbg_print_filter_rule(rule);
+#endif /* DEBUG_OPTS */
 	return 0;
 }
 
@@ -3120,7 +3256,7 @@ filter_rule_expand_macro(opts_t *opts, const char *name, int argc, char **argv, 
 		if ((macro = opts_find_macro(opts->macro, argv[i]))) {
 			value_t *value = macro->value;
 			while (value) {
-				// Prevent infinite macro expansion
+				// Prevent infinite macro expansion, macros do not allow it, but macro expansion should detect it too
 				if (value->value[0] == '$') {
 					fprintf(stderr, "Invalid macro value '%s' on line %d\n", value->value, line_num);
 					return -1;
@@ -3250,7 +3386,7 @@ filter_rule_parse(opts_t *opts, const char *name, int argc, char **argv, int lin
 			if ((i = opts_inc_arg_index(i, argc, argv[i], line_num)) == -1)
 				return -1;
 
-			if (equal(argv[i], "sni") || equal(argv[i], "cn") || equal(argv[i], "host") || equal(argv[i], "uri") || equal(argv[i], "ip")) {
+			if (equal(argv[i], "sni") || equal(argv[i], "cn") || equal(argv[i], "host") || equal(argv[i], "uri")) {
 				if ((i = opts_inc_arg_index(i, argc, argv[i], line_num)) == -1)
 					return -1;
 
@@ -3258,6 +3394,30 @@ filter_rule_parse(opts_t *opts, const char *name, int argc, char **argv, int lin
 					return rv;
 				}
 				i++;
+
+				done_to = 1;
+			}
+			else if (equal(argv[i], "ip") || equal(argv[i], "port")) {
+				if (equal(argv[i], "ip")) {
+					if ((i = opts_inc_arg_index(i, argc, argv[i], line_num)) == -1)
+						return -1;
+
+					if ((rv = filter_rule_expand_macro(opts, name, argc, argv, i, line_num)) != 0) {
+						return rv;
+					}
+					i++;
+				}
+
+				// It is possible to define port without ip (i.e. * or all_sites), hence no 'else' here
+				if (i < argc && equal(argv[i], "port")) {
+					if ((i = opts_inc_arg_index(i, argc, argv[i], line_num)) == -1)
+						return -1;
+
+					if ((rv = filter_rule_expand_macro(opts, name, argc, argv, i, line_num)) != 0) {
+						return rv;
+					}
+					i++;
+				}
 
 				done_to = 1;
 			}
@@ -3343,6 +3503,88 @@ opts_set_filter_rule(opts_t *opts, const char *name, char *value, int line_num)
 	return filter_rule_parse(opts, name, argc, argv, line_num);
 }
 
+static filter_port_t *
+opts_find_port(filter_port_t *port, filter_rule_t *rule)
+{
+	while (port) {
+		if ((port->exact == rule->exact_port) && !strcmp(port->port, rule->port))
+			break;
+		port = port->next;
+	}
+	return port;
+}
+
+static filter_port_t *
+opts_add_port(filter_port_t *port, filter_rule_t *rule)
+{
+	int prepend = 1;
+	if (port && port->all_ports) {
+		// all_ports should be at the beginning of the port list for performance reasons
+		// it effectively disables the rest of the list, but we keep the rest for reporting
+		prepend = 0;
+	}
+
+	filter_port_t *p = opts_find_port(port, rule);
+	if (!p) {
+		p = malloc(sizeof(filter_port_t));
+		if (!p)
+			return oom_return_na_null();
+		memset(p, 0, sizeof(filter_port_t));
+		p->port = strdup(rule->port);
+		if (!p->port)
+			return oom_return_na_null();
+
+		if (prepend) {
+			p->next = port;
+		} else {
+			// Insert the new port after the head
+			// If prepend is 0, port is never NULL
+			p->next = port->next;
+			port->next = p;
+		}
+	} else {
+		// If the port exists, we should return the head of the port list
+		// i.e. we have not prepended anything
+		prepend = 0;
+	}
+
+	// Do not override the specs of port rules at higher precedence
+	// precedence can only go up not down
+	if (rule->action.precedence >= p->action.precedence) {
+		p->all_ports = rule->all_ports;
+		p->exact = rule->exact_port;
+
+		// Multiple rules can set an action for the same port, hence the bit-wise OR
+		p->action.divert |= rule->action.divert;
+		p->action.split |= rule->action.split;
+		p->action.pass |= rule->action.pass;
+		p->action.block |= rule->action.block;
+		p->action.match |= rule->action.match;
+
+		// Multiple log actions can be set for the same port
+		// Multiple rules can enable/disable or don't change a log action for the same port
+		// 0: don't change, 1: disable, 2: enable
+		if (rule->action.log_connect)
+			p->action.log_connect = rule->action.log_connect;
+		if (rule->action.log_master)
+			p->action.log_master = rule->action.log_master;
+		if (rule->action.log_cert)
+			p->action.log_cert = rule->action.log_cert;
+		if (rule->action.log_content)
+			p->action.log_content = rule->action.log_content;
+		if (rule->action.log_pcap)
+			p->action.log_pcap = rule->action.log_pcap;
+#ifndef WITHOUT_MIRROR
+		if (rule->action.log_mirror)
+			p->action.log_mirror = rule->action.log_mirror;
+#endif /* !WITHOUT_MIRROR */
+
+		p->action.precedence = rule->action.precedence;
+	}
+
+	return prepend ? p : port;
+}
+
 static filter_site_t *
 opts_find_site(filter_site_t *site, filter_rule_t *rule)
 {
@@ -3388,38 +3630,44 @@ opts_add_site(filter_site_t *site, filter_rule_t *rule)
 		prepend = 0;
 	}
 
+	s->all_sites = rule->all_sites;
+	s->exact = rule->exact;
+
+	// Do not override the specs of a site with a port rule
+	// Port rule is added as a new port under the same site
+	// hence 'if else', not just 'if'
+	if (rule->port) {
+		s->port = opts_add_port(s->port, rule);
+	}
 	// Do not override the specs of site rules at higher precedence
 	// precedence can only go up not down
-	if (rule->precedence >= s->precedence) {
-		s->all_sites = rule->all_sites;
-		s->exact = rule->exact;
-
+	else if (rule->action.precedence >= s->action.precedence) {
 		// Multiple rules can set an action for the same site, hence the bit-wise OR
-		s->divert |= rule->divert;
-		s->split |= rule->split;
-		s->pass |= rule->pass;
-		s->block |= rule->block;
-		s->match |= rule->match;
+		s->action.divert |= rule->action.divert;
+		s->action.split |= rule->action.split;
+		s->action.pass |= rule->action.pass;
+		s->action.block |= rule->action.block;
+		s->action.match |= rule->action.match;
 
 		// Multiple log actions can be set for the same site
 		// Multiple rules can enable/disable or don't change a log action for the same site
 		// 0: don't change, 1: disable, 2: enable
-		if (rule->log_connect)
-			s->log_connect = rule->log_connect;
-		if (rule->log_master)
-			s->log_master = rule->log_master;
-		if (rule->log_cert)
-			s->log_cert = rule->log_cert;
-		if (rule->log_content)
-			s->log_content = rule->log_content;
-		if (rule->log_pcap)
-			s->log_pcap = rule->log_pcap;
+		if (rule->action.log_connect)
+			s->action.log_connect = rule->action.log_connect;
+		if (rule->action.log_master)
+			s->action.log_master = rule->action.log_master;
+		if (rule->action.log_cert)
+			s->action.log_cert = rule->action.log_cert;
+		if (rule->action.log_content)
+			s->action.log_content = rule->action.log_content;
+		if (rule->action.log_pcap)
+			s->action.log_pcap = rule->action.log_pcap;
 #ifndef WITHOUT_MIRROR
-		if (rule->log_mirror)
-			s->log_mirror = rule->log_mirror;
+		if (rule->action.log_mirror)
+			s->action.log_mirror = rule->action.log_mirror;
 #endif /* !WITHOUT_MIRROR */
 
-		s->precedence = rule->precedence;
+		s->action.precedence = rule->action.precedence;
 	}
 
 	return prepend ? s : site;

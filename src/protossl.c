@@ -591,10 +591,10 @@ protossl_srccert_create(pxy_conn_ctx_t *ctx)
 }
 
 static int NONNULL(1,2)
-protossl_match_sni(pxy_conn_ctx_t *ctx, filter_site_t *site)
+protossl_filter_match_sni(pxy_conn_ctx_t *ctx, filter_site_t *site)
 {
-	if (site->precedence < ctx->filter_precedence) {
-		log_finest_va("Rule precedence lower than conn filter precedence %d < %d: %s, %s", site->precedence, ctx->filter_precedence, site->site, ctx->sslctx->sni);
+	if (site->action.precedence < ctx->filter_precedence) {
+		log_finest_va("Rule precedence lower than conn filter precedence %d < %d: %s, %s", site->action.precedence, ctx->filter_precedence, site->site, ctx->sslctx->sni);
 		return 0;
 	}
 
@@ -617,10 +617,10 @@ protossl_match_sni(pxy_conn_ctx_t *ctx, filter_site_t *site)
 }
 
 static int NONNULL(1,2)
-protossl_match_cn(pxy_conn_ctx_t *ctx, filter_site_t *site)
+protossl_filter_match_cn(pxy_conn_ctx_t *ctx, filter_site_t *site)
 {
-	if (site->precedence < ctx->filter_precedence) {
-		log_finest_va("Rule precedence lower than conn filter precedence %d < %d: %s, %s", site->precedence, ctx->filter_precedence, site->site, ctx->sslctx->ssl_names);
+	if (site->action.precedence < ctx->filter_precedence) {
+		log_finest_va("Rule precedence lower than conn filter precedence %d < %d: %s, %s", site->action.precedence, ctx->filter_precedence, site->site, ctx->sslctx->ssl_names);
 		return 0;
 	}
 
@@ -692,8 +692,7 @@ protossl_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
 	if (ctx->sslctx->sni) {
 		filter_site_t *site = list->sni;
 		while (site) {
-			if (protossl_match_sni(ctx, site)) {
-				// Do not print the surrounding slashes
+			if (protossl_filter_match_sni(ctx, site)) {
 				log_err_level_printf(LOG_INFO, "Found site: %s for %s:%s, %s:%s"
 #ifndef WITHOUT_USERAUTH
 					", %s, %s"
@@ -704,7 +703,7 @@ protossl_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
 					STRORDASH(ctx->user), STRORDASH(ctx->desc),
 #endif /* !WITHOUT_USERAUTH */
 					STRORDASH(ctx->sslctx->sni));
-				return pxyconn_set_filter_action(ctx, site);
+				return pxyconn_set_filter_action(ctx, site->action, site->site);
 			}
 			site = site->next;
 		}
@@ -722,8 +721,7 @@ protossl_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
 	if (ctx->sslctx->ssl_names) {
 		filter_site_t *site = list->cn;
 		while (site) {
-			if (protossl_match_cn(ctx, site)) {
-				// Do not print the surrounding slashes
+			if (protossl_filter_match_cn(ctx, site)) {
 				log_err_level_printf(LOG_INFO, "Found site: %s for %s:%s, %s:%s"
 #ifndef WITHOUT_USERAUTH
 					", %s, %s"
@@ -734,7 +732,7 @@ protossl_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
 					STRORDASH(ctx->user), STRORDASH(ctx->desc),
 #endif /* !WITHOUT_USERAUTH */
 					STRORDASH(ctx->sslctx->ssl_names));
-				return pxyconn_set_filter_action(ctx, site);
+				return pxyconn_set_filter_action(ctx, site->action, site->site);
 			}
 			site = site->next;
 		}

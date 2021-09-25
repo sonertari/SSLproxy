@@ -387,12 +387,12 @@ protohttp_filter_request_header_line(const char *line, protohttp_ctx_t *http_ctx
 }
 
 static int NONNULL(1,2)
-protohttp_match_host(pxy_conn_ctx_t *ctx, filter_site_t *site)
+protohttp_filter_match_host(pxy_conn_ctx_t *ctx, filter_site_t *site)
 {
 	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
 
-	if (site->precedence < ctx->filter_precedence) {
-		log_finest_va("Rule precedence lower than conn filter precedence %d < %d: %s, %s", site->precedence, ctx->filter_precedence, site->site, http_ctx->http_host);
+	if (site->action.precedence < ctx->filter_precedence) {
+		log_finest_va("Rule precedence lower than conn filter precedence %d < %d: %s, %s", site->action.precedence, ctx->filter_precedence, site->site, http_ctx->http_host);
 		return 0;
 	}
 
@@ -415,12 +415,12 @@ protohttp_match_host(pxy_conn_ctx_t *ctx, filter_site_t *site)
 }
 
 static int NONNULL(1,2)
-protohttp_match_uri(pxy_conn_ctx_t *ctx, filter_site_t *site)
+protohttp_filter_match_uri(pxy_conn_ctx_t *ctx, filter_site_t *site)
 {
 	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
 
-	if (site->precedence < ctx->filter_precedence) {
-		log_finest_va("Rule precedence lower than conn filter precedence %d < %d: %s, %s", site->precedence, ctx->filter_precedence, site->site, http_ctx->http_uri);
+	if (site->action.precedence < ctx->filter_precedence) {
+		log_finest_va("Rule precedence lower than conn filter precedence %d < %d: %s, %s", site->action.precedence, ctx->filter_precedence, site->site, http_ctx->http_uri);
 		return 0;
 	}
 
@@ -450,7 +450,7 @@ protohttp_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
 	if (http_ctx->http_host) {
 		filter_site_t *site = list->host;
 		while (site) {
-			if (protohttp_match_host(ctx, site)) {
+			if (protohttp_filter_match_host(ctx, site)) {
 				// Do not print the surrounding slashes
 				log_err_level_printf(LOG_INFO, "Found site: %s for %s:%s, %s:%s"
 #ifndef WITHOUT_USERAUTH
@@ -462,7 +462,7 @@ protohttp_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
 					STRORDASH(ctx->user), STRORDASH(ctx->desc),
 #endif /* !WITHOUT_USERAUTH */
 					STRORDASH(http_ctx->http_host));
-				return pxyconn_set_filter_action(ctx, site);
+				return pxyconn_set_filter_action(ctx, site->action, site->site);
 			}
 			site = site->next;
 		}
@@ -480,7 +480,7 @@ protohttp_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
 	if (http_ctx->http_uri) {
 		filter_site_t *site = list->uri;
 		while (site) {
-			if (protohttp_match_uri(ctx, site)) {
+			if (protohttp_filter_match_uri(ctx, site)) {
 				// Do not print the surrounding slashes
 				log_err_level_printf(LOG_INFO, "Found site: %s for %s:%s, %s:%s"
 #ifndef WITHOUT_USERAUTH
@@ -492,7 +492,7 @@ protohttp_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
 					STRORDASH(ctx->user), STRORDASH(ctx->desc),
 #endif /* !WITHOUT_USERAUTH */
 					STRORDASH(http_ctx->http_uri));
-				return pxyconn_set_filter_action(ctx, site);
+				return pxyconn_set_filter_action(ctx, site->action, site->site);
 			}
 			site = site->next;
 		}
