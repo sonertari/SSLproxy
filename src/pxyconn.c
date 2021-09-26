@@ -2078,11 +2078,11 @@ pxyconn_filter(pxy_conn_ctx_t *ctx, proto_filter_func_t filtercb)
 #ifndef WITHOUT_USERAUTH
 		if (ctx->user) {
 			log_finest_va("Searching user: %s", ctx->user);
-			filter_user_t *user = opts_find_user(filter->user, ctx->user);
+			filter_user_t *user = filter_user_find(filter->user, ctx->user);
 			if (user) {
 				if (ctx->desc) {
 					log_finest_va("Searching user keyword: %s, %s", ctx->user, ctx->desc);
-					filter_keyword_t *keyword = opts_find_keyword(user->keyword, ctx->desc);
+					filter_keyword_t *keyword = filter_keyword_find(user->keyword, ctx->desc);
 					if (keyword && (action = filtercb(ctx, keyword->list))) {
 						return action;
 					}
@@ -2094,7 +2094,7 @@ pxyconn_filter(pxy_conn_ctx_t *ctx, proto_filter_func_t filtercb)
 
 			if (ctx->desc) {
 				log_finest_va("Searching keyword: %s", ctx->desc);
-				filter_keyword_t *keyword = opts_find_keyword(filter->keyword, ctx->desc);
+				filter_keyword_t *keyword = filter_keyword_find(filter->keyword, ctx->desc);
 				if (keyword && (action = filtercb(ctx, keyword->list))) {
 					return action;
 				}
@@ -2108,7 +2108,7 @@ pxyconn_filter(pxy_conn_ctx_t *ctx, proto_filter_func_t filtercb)
 #endif /* !WITHOUT_USERAUTH */
 		if (ctx->srchost_str) {
 			log_finest_va("Searching ip: %s", ctx->srchost_str);
-			filter_ip_t *ip = opts_find_ip(filter->ip, ctx->srchost_str);
+			filter_ip_t *ip = filter_ip_find(filter->ip, ctx->srchost_str);
 			if (ip && (action = filtercb(ctx, ip->list))) {
 				return action;
 			}

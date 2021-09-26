@@ -33,6 +33,7 @@
 #endif /* __APPLE__ */
 
 #include "opts.h"
+#include "filter.h"
 #include "proxy.h"
 #include "privsep.h"
 #include "ssl.h"
@@ -615,7 +616,7 @@ main(int argc, char *argv[])
 
 	for (proxyspec_t *spec = global->spec; spec; spec = spec->next) {
 		if (spec->opts->filter_rules) {
-			spec->opts->filter = opts_set_filter(spec->opts->filter_rules);
+			spec->opts->filter = filter_set(spec->opts->filter_rules);
 			if (!spec->opts->filter)
 				oom_die(argv0);
 		}
@@ -932,9 +933,9 @@ main(int argc, char *argv[])
 	// Free filter rules in linked lists, not needed anymore
 	// We use filter in conn handling, not filter rule lists
 	for (proxyspec_t *spec = global->spec; spec; spec = spec->next) {
-		opts_free_filter_rules(spec->opts);
+		filter_rules_free(spec->opts);
 	}
-	opts_free_filter_rules(global->opts);
+	filter_rules_free(global->opts);
 
 	/*
 	 * Initialize as much as possible before daemon() in order to be

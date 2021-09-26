@@ -36,6 +36,7 @@
 
 #include "proxy.h"
 #include "opts.h"
+#include "filter.h"
 #include "attrib.h"
 #include "pxythrmgr.h"
 #include "log.h"

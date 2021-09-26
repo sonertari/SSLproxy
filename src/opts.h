@@ -177,138 +177,6 @@ typedef struct proxyspec {
 	opts_t *opts;
 } proxyspec_t;
 
-typedef struct value {
-	char *value;
-	struct value *next;
-} value_t;
-
-typedef struct macro {
-	char *name;
-	struct value *value;
-	struct macro *next;
-} macro_t;
-
-typedef struct filter_action {
-	// Filter action
-	unsigned int divert : 1;
-	unsigned int split : 1;
-	unsigned int pass : 1;
-	unsigned int block : 1;
-	unsigned int match : 1;
-
-	// Log action, two bits
-	// 0: don't change, 1: disable, 2: enable
-	unsigned int log_connect : 2;
-	unsigned int log_master : 2;
-	unsigned int log_cert : 2;
-	unsigned int log_content : 2;
-	unsigned int log_pcap : 2;
-#ifndef WITHOUT_MIRROR
-	unsigned int log_mirror : 2;
-#endif /* !WITHOUT_MIRROR */
-
-	// Precedence is used in rule application
-	// More specific rules have higher precedence
-	unsigned int precedence;
-} filter_action_t;
-
-typedef struct filter_rule {
-	// from: source filter
-	unsigned int all_conns : 1;   /* 1 to apply to all src ips and users */
-
-#ifndef WITHOUT_USERAUTH
-	unsigned int all_users : 1;   /* 1 to apply to all users */
-
-	char *user;
-	char *keyword;
-#endif /* !WITHOUT_USERAUTH */
-	char *ip;
-	
-	// to: target filter
-	char *site;
-	unsigned int all_sites : 1;   /* 1 to match all sites == '*' */
-	unsigned int exact : 1;       /* 1 for exact, 0 for substring match */
-
-	// Used with dstip filters only, i.e. if the site is an ip address
-	// This is not for the src ip in the 'from' part of rules
-	char *port;
-	unsigned int all_ports : 1;   /* 1 to match all ports == '*' */
-	unsigned int exact_port : 1;  /* 1 for exact, 0 for substring match */
-
-	// Conn field to apply filter to
-	unsigned int dstip : 1;       /* 1 to apply to dst ip */
-	unsigned int host : 1;        /* 1 to apply to http host */
-	unsigned int uri : 1;         /* 1 to apply to http uri */
-	unsigned int sni : 1;         /* 1 to apply to sni */
-	unsigned int cn : 1;          /* 1 to apply to common names */
-
-	struct filter_action action;
-
-	struct filter_rule *next;
-} filter_rule_t;
-
-typedef struct filter_port {
-	char *port;
-	unsigned int all_ports : 1;
-	unsigned int exact : 1;
-
-	struct filter_action action;
-
-	struct filter_port *next;
-} filter_port_t;
-
-typedef struct filter_site {
-	char *site;
-	unsigned int all_sites : 1;
-	unsigned int exact : 1;
-
-	// Used with dstip filters only, i.e. if the site is an ip address
-	struct filter_port *port;
-
-	struct filter_action action;
-
-	struct filter_site *next;
-} filter_site_t;
-
-typedef struct filter_list {
-	struct filter_site *ip;
-	struct filter_site *sni;
-	struct filter_site *cn;
-	struct filter_site *host;
-	struct filter_site *uri;
-} filter_list_t;
-
-typedef struct filter_ip {
-	char *ip;
-	struct filter_list *list;
-	struct filter_ip *next;
-} filter_ip_t;
-
-#ifndef WITHOUT_USERAUTH
-typedef struct filter_keyword {
-	char *keyword;
-	struct filter_list *list;
-	struct filter_keyword *next;
-} filter_keyword_t;
-
-typedef struct filter_user {
-	char *user;
-	struct filter_list *list;
-	struct filter_keyword *keyword;
-	struct filter_user *next;
-} filter_user_t;
-#endif /* !WITHOUT_USERAUTH */
-
-typedef struct filter {
-#ifndef WITHOUT_USERAUTH
-	struct filter_user *user;
-	struct filter_keyword *keyword;
-	struct filter_list *all_user;
-#endif /* !WITHOUT_USERAUTH */
-	struct filter_ip *ip;
-	struct filter_list *all;
-} filter_t;
-
 // Temporary global options
 // global opts strings used while cloning into proxyspec opts
 // A var of this type is passed around as a flag to indicate if these opts are
@@ -393,6 +261,11 @@ typedef struct userdbkeys {
 } userdbkeys_t;
 #endif /* !WITHOUT_USERAUTH */
 
+int oom_return(const char *) WUNRES;
+void *oom_return_null(const char *) WUNRES;
+int oom_return_na() WUNRES;
+void *oom_return_na_null() WUNRES;
+
 cert_t *opts_load_cert_chain_key(const char *) NONNULL(1);
 
 void opts_unset_divert(opts_t *) NONNULL(1);
@@ -405,9 +278,6 @@ char *proxyspec_str(proxyspec_t *) NONNULL(1) MALLOC WUNRES;
 
 opts_t *opts_new(void) MALLOC WUNRES;
 void opts_free(opts_t *) NONNULL(1);
-void opts_free_filter_rules(opts_t *) NONNULL(1);
-char *filter_rule_str(filter_rule_t *);
-char *filter_str(filter_t *filter);
 char *opts_proto_dbg_dump(opts_t *) NONNULL(1);
 int opts_set_cacrt(opts_t *, const char *, const char *, tmp_global_opts_t *) NONNULL(1,2,3) WUNRES;
 int opts_set_cakey(opts_t *, const char *, const char *, tmp_global_opts_t *) NONNULL(1,2,3) WUNRES;
@@ -428,16 +298,6 @@ int opts_force_proto(opts_t *, const char *, const char *) NONNULL(1,2,3) WUNRES
 int opts_disable_proto(opts_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;
 int opts_set_ciphers(opts_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;
 int opts_set_ciphersuites(opts_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;
-int opts_set_passsite(opts_t *, char *, int) WUNRES;
-
-int opts_set_macro(opts_t *, char *, int) WUNRES;
-filter_ip_t *opts_find_ip(filter_ip_t *, char *) NONNULL(2);
-#ifndef WITHOUT_USERAUTH
-filter_keyword_t *opts_find_keyword(filter_keyword_t *, char *) NONNULL(2);
-filter_user_t *opts_find_user(filter_user_t *, char *) NONNULL(2);
-#endif /* !WITHOUT_USERAUTH */
-int opts_set_filter_rule(opts_t *, const char *, char *, int) WUNRES;
-filter_t *opts_set_filter(filter_rule_t *);
 
 #define OPTS_DEBUG(global) unlikely((global)->debug)
 
