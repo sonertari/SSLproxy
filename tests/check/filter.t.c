@@ -1454,8 +1454,7 @@ START_TEST(set_filter_rule_08)
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
-	// The order of sites does not match the order of rules, it is the reverse 
-	// But all_sites should always be the first element
+	// all_sites should always be the last element
 	s = strdup("from ip 192.168.0.2 to ip *");
 	rv = opts_set_filter_rule(opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
@@ -1503,18 +1502,18 @@ START_TEST(set_filter_rule_08)
 "ip_filter->\n"
 "  ip 0 192.168.0.2= \n"
 "    ip: \n"
-"      0:  (all_sites, substring, action=||||match, log=|||||, precedence=1)\n"
-"      1: 192.168.0.3 (exact, action=||||match, log=|||||, precedence=1)\n"
-"      2: 192.168.0. (substring, action=||||match, log=|||||, precedence=1)\n"
-"      3: 192.168.0.1 (exact, action=||||match, log=|||||, precedence=1)\n"
+"      0: 192.168.0.1 (exact, action=||||match, log=|||||, precedence=1)\n"
+"      1: 192.168.0. (substring, action=||||match, log=|||||, precedence=1)\n"
+"      2: 192.168.0.3 (exact, action=||||match, log=|||||, precedence=1)\n"
+"      3:  (all_sites, substring, action=||||match, log=|||||, precedence=1)\n"
 "    sni: \n"
 "    cn: \n"
 "    host: \n"
 "    uri: \n"
 "  ip 1 192.168.0.1= \n"
 "    ip: \n"
-"      0: 192.168.0.3 (exact, action=||||match, log=|||||, precedence=1)\n"
-"      1: 192.168.0.2 (exact, action=divert|split|pass||, log=!connect|master|!cert|content|!pcap|mirror, precedence=2)\n"
+"      0: 192.168.0.2 (exact, action=divert|split|pass||, log=!connect|master|!cert|content|!pcap|mirror, precedence=2)\n"
+"      1: 192.168.0.3 (exact, action=||||match, log=|||||, precedence=1)\n"
 "    sni: \n"
 "    cn: \n"
 "    host: \n"
@@ -1582,8 +1581,7 @@ START_TEST(set_filter_rule_09)
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
-	// The order of sites does not match the order of rules, it is the reverse 
-	// But all_sites should always be the first element
+	// all_sites should always be the last element
 	s = strdup("from ip 192.168.0.2 to ip 192.168.0.1 port *");
 	rv = opts_set_filter_rule(opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
@@ -1628,22 +1626,22 @@ START_TEST(set_filter_rule_09)
 "    ip: \n"
 "      0: 192.168.0.1 (exact, action=||||, log=|||||, precedence=0)\n"
 "        port:\n"
-"          0:  (all_ports, substring, action=||||match, log=|||||, precedence=2)\n"
+"          0: 443 (exact, action=||||match, log=|||||, precedence=2)\n"
 "          1: 80 (substring, action=||||match, log=|||||, precedence=2)\n"
-"          2: 443 (exact, action=||||match, log=|||||, precedence=2)\n"
+"          2:  (all_ports, substring, action=||||match, log=|||||, precedence=2)\n"
 "    sni: \n"
 "    cn: \n"
 "    host: \n"
 "    uri: \n"
 "  ip 1 192.168.0.1= \n"
 "    ip: \n"
-"      0: 192.168.0.3 (exact, action=||||match, log=|||||!mirror, precedence=2)\n"
-"        port:\n"
-"          0: 80 (exact, action=||||match, log=|||||, precedence=2)\n"
-"          1: 443 (exact, action=||||match, log=|||||, precedence=2)\n"
-"      1: 192.168.0.2 (exact, action=||||, log=|||||, precedence=0)\n"
+"      0: 192.168.0.2 (exact, action=||||, log=|||||, precedence=0)\n"
 "        port:\n"
 "          0: 443 (exact, action=divert|split|pass||, log=!connect|master|!cert|content|!pcap|mirror, precedence=3)\n"
+"      1: 192.168.0.3 (exact, action=||||match, log=|||||!mirror, precedence=2)\n"
+"        port:\n"
+"          0: 443 (exact, action=||||match, log=|||||, precedence=2)\n"
+"          1: 80 (exact, action=||||match, log=|||||, precedence=2)\n"
 "    sni: \n"
 "    cn: \n"
 "    host: \n"
@@ -1701,8 +1699,7 @@ START_TEST(set_filter_rule_10)
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
-	// The order of sites does not match the order of rules, it is the reverse 
-	// But all_sites should always be the first element
+	// all_sites should always be the last element
 	s = strdup("from user daemon to sni *");
 	rv = opts_set_filter_rule(opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
@@ -1743,18 +1740,18 @@ START_TEST(set_filter_rule_10)
 "  user 0 daemon= \n"
 "    ip: \n"
 "    sni: \n"
-"      0:  (all_sites, substring, action=||||match, log=|||||, precedence=3)\n"
-"      1: example3.com (exact, action=||||match, log=|||||, precedence=3)\n"
-"      2: .example.com (substring, action=||||match, log=|||||, precedence=3)\n"
-"      3: example.com (exact, action=||||match, log=|||||, precedence=3)\n"
+"      0: example.com (exact, action=||||match, log=|||||, precedence=3)\n"
+"      1: .example.com (substring, action=||||match, log=|||||, precedence=3)\n"
+"      2: example3.com (exact, action=||||match, log=|||||, precedence=3)\n"
+"      3:  (all_sites, substring, action=||||match, log=|||||, precedence=3)\n"
 "    cn: \n"
 "    host: \n"
 "    uri: \n"
 "  user 1 root= \n"
 "    ip: \n"
 "    sni: \n"
-"      0: example2.com (exact, action=||||match, log=|||||, precedence=3)\n"
-"      1: example.com (exact, action=divert|split|pass||, log=!connect|master|!cert|content|!pcap|mirror, precedence=4)\n"
+"      0: example.com (exact, action=divert|split|pass||, log=!connect|master|!cert|content|!pcap|mirror, precedence=4)\n"
+"      1: example2.com (exact, action=||||match, log=|||||, precedence=3)\n"
 "    cn: \n"
 "    host: \n"
 "    uri: \n"
@@ -1819,8 +1816,7 @@ START_TEST(set_filter_rule_11)
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
-	// The order of sites does not match the order of rules, it is the reverse 
-	// But all_sites should always be the first element
+	// all_sites should always be the last element
 	s = strdup("from user daemon desc desc to cn *");
 	rv = opts_set_filter_rule(opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
@@ -1897,10 +1893,10 @@ START_TEST(set_filter_rule_11)
 "    ip: \n"
 "    sni: \n"
 "    cn: \n"
-"      0:  (all_sites, substring, action=||||match, log=|||||, precedence=4)\n"
-"      1: example3.com (exact, action=||||match, log=|||||, precedence=4)\n"
-"      2: .example.com (substring, action=||||match, log=|||||, precedence=4)\n"
-"      3: example.com (exact, action=||||match, log=|||||, precedence=4)\n"
+"      0: example.com (exact, action=||||match, log=|||||, precedence=4)\n"
+"      1: .example.com (substring, action=||||match, log=|||||, precedence=4)\n"
+"      2: example3.com (exact, action=||||match, log=|||||, precedence=4)\n"
+"      3:  (all_sites, substring, action=||||match, log=|||||, precedence=4)\n"
 "    host: \n"
 "    uri: \n"
 " user 1 root=\n"
@@ -1908,8 +1904,8 @@ START_TEST(set_filter_rule_11)
 "    ip: \n"
 "    sni: \n"
 "    cn: \n"
-"      0: example2.com (exact, action=||||match, log=|||||, precedence=4)\n"
-"      1: example.com (exact, action=divert|split|pass||, log=!connect|master|!cert|content|!pcap|mirror, precedence=5)\n"
+"      0: example.com (exact, action=divert|split|pass||, log=!connect|master|!cert|content|!pcap|mirror, precedence=5)\n"
+"      1: example2.com (exact, action=||||match, log=|||||, precedence=4)\n"
 "    host: \n"
 "    uri: \n"
 "user_filter->\n"
@@ -1981,22 +1977,22 @@ START_TEST(set_filter_rule_12)
 
 	s = filter_rule_str(opts->filter_rules);
 	fail_unless(!strcmp(s,
-		"filter rule 0: site=192.168.0.4, exact, port=443, exact_port, ip=192.168.0.2, user=, keyword=, all=|||, action=||||match, log=||||!pcap|, apply to=dstip||||, precedence=3\n"
-		"filter rule 1: site=192.168.0.4, exact, port=443, exact_port, ip=192.168.0.2, user=, keyword=, all=|||, action=||||match, log=|!master||||, apply to=dstip||||, precedence=3\n"
-		"filter rule 2: site=192.168.0.4, exact, port=80, exact_port, ip=192.168.0.2, user=, keyword=, all=|||, action=||||match, log=||||!pcap|, apply to=dstip||||, precedence=3\n"
-		"filter rule 3: site=192.168.0.4, exact, port=80, exact_port, ip=192.168.0.2, user=, keyword=, all=|||, action=||||match, log=|!master||||, apply to=dstip||||, precedence=3\n"
-		"filter rule 4: site=192.168.0.3, exact, port=443, exact_port, ip=192.168.0.2, user=, keyword=, all=|||, action=||||match, log=||||!pcap|, apply to=dstip||||, precedence=3\n"
-		"filter rule 5: site=192.168.0.3, exact, port=443, exact_port, ip=192.168.0.2, user=, keyword=, all=|||, action=||||match, log=|!master||||, apply to=dstip||||, precedence=3\n"
-		"filter rule 6: site=192.168.0.3, exact, port=80, exact_port, ip=192.168.0.2, user=, keyword=, all=|||, action=||||match, log=||||!pcap|, apply to=dstip||||, precedence=3\n"
-		"filter rule 7: site=192.168.0.3, exact, port=80, exact_port, ip=192.168.0.2, user=, keyword=, all=|||, action=||||match, log=|!master||||, apply to=dstip||||, precedence=3\n"
-		"filter rule 8: site=192.168.0.4, exact, port=443, exact_port, ip=192.168.0.1, user=, keyword=, all=|||, action=||||match, log=||||!pcap|, apply to=dstip||||, precedence=3\n"
-		"filter rule 9: site=192.168.0.4, exact, port=443, exact_port, ip=192.168.0.1, user=, keyword=, all=|||, action=||||match, log=|!master||||, apply to=dstip||||, precedence=3\n"
-		"filter rule 10: site=192.168.0.4, exact, port=80, exact_port, ip=192.168.0.1, user=, keyword=, all=|||, action=||||match, log=||||!pcap|, apply to=dstip||||, precedence=3\n"
-		"filter rule 11: site=192.168.0.4, exact, port=80, exact_port, ip=192.168.0.1, user=, keyword=, all=|||, action=||||match, log=|!master||||, apply to=dstip||||, precedence=3\n"
-		"filter rule 12: site=192.168.0.3, exact, port=443, exact_port, ip=192.168.0.1, user=, keyword=, all=|||, action=||||match, log=||||!pcap|, apply to=dstip||||, precedence=3\n"
-		"filter rule 13: site=192.168.0.3, exact, port=443, exact_port, ip=192.168.0.1, user=, keyword=, all=|||, action=||||match, log=|!master||||, apply to=dstip||||, precedence=3\n"
-		"filter rule 14: site=192.168.0.3, exact, port=80, exact_port, ip=192.168.0.1, user=, keyword=, all=|||, action=||||match, log=||||!pcap|, apply to=dstip||||, precedence=3\n"
-		"filter rule 15: site=192.168.0.3, exact, port=80, exact_port, ip=192.168.0.1, user=, keyword=, all=|||, action=||||match, log=|!master||||, apply to=dstip||||, precedence=3"),
+		"filter rule 0: site=192.168.0.3, exact, port=80, exact_port, ip=192.168.0.1, user=, keyword=, all=|||, action=||||match, log=|!master||||, apply to=dstip||||, precedence=3\n"
+		"filter rule 1: site=192.168.0.3, exact, port=80, exact_port, ip=192.168.0.1, user=, keyword=, all=|||, action=||||match, log=||||!pcap|, apply to=dstip||||, precedence=3\n"
+		"filter rule 2: site=192.168.0.3, exact, port=443, exact_port, ip=192.168.0.1, user=, keyword=, all=|||, action=||||match, log=|!master||||, apply to=dstip||||, precedence=3\n"
+		"filter rule 3: site=192.168.0.3, exact, port=443, exact_port, ip=192.168.0.1, user=, keyword=, all=|||, action=||||match, log=||||!pcap|, apply to=dstip||||, precedence=3\n"
+		"filter rule 4: site=192.168.0.4, exact, port=80, exact_port, ip=192.168.0.1, user=, keyword=, all=|||, action=||||match, log=|!master||||, apply to=dstip||||, precedence=3\n"
+		"filter rule 5: site=192.168.0.4, exact, port=80, exact_port, ip=192.168.0.1, user=, keyword=, all=|||, action=||||match, log=||||!pcap|, apply to=dstip||||, precedence=3\n"
+		"filter rule 6: site=192.168.0.4, exact, port=443, exact_port, ip=192.168.0.1, user=, keyword=, all=|||, action=||||match, log=|!master||||, apply to=dstip||||, precedence=3\n"
+		"filter rule 7: site=192.168.0.4, exact, port=443, exact_port, ip=192.168.0.1, user=, keyword=, all=|||, action=||||match, log=||||!pcap|, apply to=dstip||||, precedence=3\n"
+		"filter rule 8: site=192.168.0.3, exact, port=80, exact_port, ip=192.168.0.2, user=, keyword=, all=|||, action=||||match, log=|!master||||, apply to=dstip||||, precedence=3\n"
+		"filter rule 9: site=192.168.0.3, exact, port=80, exact_port, ip=192.168.0.2, user=, keyword=, all=|||, action=||||match, log=||||!pcap|, apply to=dstip||||, precedence=3\n"
+		"filter rule 10: site=192.168.0.3, exact, port=443, exact_port, ip=192.168.0.2, user=, keyword=, all=|||, action=||||match, log=|!master||||, apply to=dstip||||, precedence=3\n"
+		"filter rule 11: site=192.168.0.3, exact, port=443, exact_port, ip=192.168.0.2, user=, keyword=, all=|||, action=||||match, log=||||!pcap|, apply to=dstip||||, precedence=3\n"
+		"filter rule 12: site=192.168.0.4, exact, port=80, exact_port, ip=192.168.0.2, user=, keyword=, all=|||, action=||||match, log=|!master||||, apply to=dstip||||, precedence=3\n"
+		"filter rule 13: site=192.168.0.4, exact, port=80, exact_port, ip=192.168.0.2, user=, keyword=, all=|||, action=||||match, log=||||!pcap|, apply to=dstip||||, precedence=3\n"
+		"filter rule 14: site=192.168.0.4, exact, port=443, exact_port, ip=192.168.0.2, user=, keyword=, all=|||, action=||||match, log=|!master||||, apply to=dstip||||, precedence=3\n"
+		"filter rule 15: site=192.168.0.4, exact, port=443, exact_port, ip=192.168.0.2, user=, keyword=, all=|||, action=||||match, log=||||!pcap|, apply to=dstip||||, precedence=3"),
 		"failed to parse rule: %s", s);	
 	free(s);
 
@@ -2014,7 +2010,7 @@ START_TEST(set_filter_rule_12)
 "    host: \n"
 "    uri: \n"
 "ip_filter->\n"
-"  ip 0 192.168.0.1= \n"
+"  ip 0 192.168.0.2= \n"
 "    ip: \n"
 "      0: 192.168.0.3 (exact, action=||||, log=|||||, precedence=0)\n"
 "        port:\n"
@@ -2028,7 +2024,7 @@ START_TEST(set_filter_rule_12)
 "    cn: \n"
 "    host: \n"
 "    uri: \n"
-"  ip 1 192.168.0.2= \n"
+"  ip 1 192.168.0.1= \n"
 "    ip: \n"
 "      0: 192.168.0.3 (exact, action=||||, log=|||||, precedence=0)\n"
 "        port:\n"
@@ -2092,30 +2088,30 @@ START_TEST(set_filter_rule_13)
 
 	s = filter_rule_str(opts->filter_rules);
 	fail_unless(!strcmp(s,
-		"filter rule 0: site=site2, exact, port=, , ip=, user=daemon, keyword=desc2, all=|||, action=||||match, log=|||||mirror, apply to=|sni|||, precedence=5\n"
-		"filter rule 1: site=site2, exact, port=, , ip=, user=daemon, keyword=desc2, all=|||, action=||||match, log=|||content||, apply to=|sni|||, precedence=5\n"
-		"filter rule 2: site=site2, exact, port=, , ip=, user=daemon, keyword=desc2, all=|||, action=||||match, log=connect|||||, apply to=|sni|||, precedence=5\n"
-		"filter rule 3: site=site1, exact, port=, , ip=, user=daemon, keyword=desc2, all=|||, action=||||match, log=|||||mirror, apply to=|sni|||, precedence=5\n"
-		"filter rule 4: site=site1, exact, port=, , ip=, user=daemon, keyword=desc2, all=|||, action=||||match, log=|||content||, apply to=|sni|||, precedence=5\n"
-		"filter rule 5: site=site1, exact, port=, , ip=, user=daemon, keyword=desc2, all=|||, action=||||match, log=connect|||||, apply to=|sni|||, precedence=5\n"
-		"filter rule 6: site=site2, exact, port=, , ip=, user=daemon, keyword=desc1, all=|||, action=||||match, log=|||||mirror, apply to=|sni|||, precedence=5\n"
-		"filter rule 7: site=site2, exact, port=, , ip=, user=daemon, keyword=desc1, all=|||, action=||||match, log=|||content||, apply to=|sni|||, precedence=5\n"
-		"filter rule 8: site=site2, exact, port=, , ip=, user=daemon, keyword=desc1, all=|||, action=||||match, log=connect|||||, apply to=|sni|||, precedence=5\n"
-		"filter rule 9: site=site1, exact, port=, , ip=, user=daemon, keyword=desc1, all=|||, action=||||match, log=|||||mirror, apply to=|sni|||, precedence=5\n"
-		"filter rule 10: site=site1, exact, port=, , ip=, user=daemon, keyword=desc1, all=|||, action=||||match, log=|||content||, apply to=|sni|||, precedence=5\n"
-		"filter rule 11: site=site1, exact, port=, , ip=, user=daemon, keyword=desc1, all=|||, action=||||match, log=connect|||||, apply to=|sni|||, precedence=5\n"
-		"filter rule 12: site=site2, exact, port=, , ip=, user=root, keyword=desc2, all=|||, action=||||match, log=|||||mirror, apply to=|sni|||, precedence=5\n"
-		"filter rule 13: site=site2, exact, port=, , ip=, user=root, keyword=desc2, all=|||, action=||||match, log=|||content||, apply to=|sni|||, precedence=5\n"
-		"filter rule 14: site=site2, exact, port=, , ip=, user=root, keyword=desc2, all=|||, action=||||match, log=connect|||||, apply to=|sni|||, precedence=5\n"
-		"filter rule 15: site=site1, exact, port=, , ip=, user=root, keyword=desc2, all=|||, action=||||match, log=|||||mirror, apply to=|sni|||, precedence=5\n"
-		"filter rule 16: site=site1, exact, port=, , ip=, user=root, keyword=desc2, all=|||, action=||||match, log=|||content||, apply to=|sni|||, precedence=5\n"
-		"filter rule 17: site=site1, exact, port=, , ip=, user=root, keyword=desc2, all=|||, action=||||match, log=connect|||||, apply to=|sni|||, precedence=5\n"
-		"filter rule 18: site=site2, exact, port=, , ip=, user=root, keyword=desc1, all=|||, action=||||match, log=|||||mirror, apply to=|sni|||, precedence=5\n"
-		"filter rule 19: site=site2, exact, port=, , ip=, user=root, keyword=desc1, all=|||, action=||||match, log=|||content||, apply to=|sni|||, precedence=5\n"
-		"filter rule 20: site=site2, exact, port=, , ip=, user=root, keyword=desc1, all=|||, action=||||match, log=connect|||||, apply to=|sni|||, precedence=5\n"
-		"filter rule 21: site=site1, exact, port=, , ip=, user=root, keyword=desc1, all=|||, action=||||match, log=|||||mirror, apply to=|sni|||, precedence=5\n"
-		"filter rule 22: site=site1, exact, port=, , ip=, user=root, keyword=desc1, all=|||, action=||||match, log=|||content||, apply to=|sni|||, precedence=5\n"
-		"filter rule 23: site=site1, exact, port=, , ip=, user=root, keyword=desc1, all=|||, action=||||match, log=connect|||||, apply to=|sni|||, precedence=5"),
+		"filter rule 0: site=site1, exact, port=, , ip=, user=root, keyword=desc1, all=|||, action=||||match, log=connect|||||, apply to=|sni|||, precedence=5\n"
+		"filter rule 1: site=site1, exact, port=, , ip=, user=root, keyword=desc1, all=|||, action=||||match, log=|||content||, apply to=|sni|||, precedence=5\n"
+		"filter rule 2: site=site1, exact, port=, , ip=, user=root, keyword=desc1, all=|||, action=||||match, log=|||||mirror, apply to=|sni|||, precedence=5\n"
+		"filter rule 3: site=site2, exact, port=, , ip=, user=root, keyword=desc1, all=|||, action=||||match, log=connect|||||, apply to=|sni|||, precedence=5\n"
+		"filter rule 4: site=site2, exact, port=, , ip=, user=root, keyword=desc1, all=|||, action=||||match, log=|||content||, apply to=|sni|||, precedence=5\n"
+		"filter rule 5: site=site2, exact, port=, , ip=, user=root, keyword=desc1, all=|||, action=||||match, log=|||||mirror, apply to=|sni|||, precedence=5\n"
+		"filter rule 6: site=site1, exact, port=, , ip=, user=root, keyword=desc2, all=|||, action=||||match, log=connect|||||, apply to=|sni|||, precedence=5\n"
+		"filter rule 7: site=site1, exact, port=, , ip=, user=root, keyword=desc2, all=|||, action=||||match, log=|||content||, apply to=|sni|||, precedence=5\n"
+		"filter rule 8: site=site1, exact, port=, , ip=, user=root, keyword=desc2, all=|||, action=||||match, log=|||||mirror, apply to=|sni|||, precedence=5\n"
+		"filter rule 9: site=site2, exact, port=, , ip=, user=root, keyword=desc2, all=|||, action=||||match, log=connect|||||, apply to=|sni|||, precedence=5\n"
+		"filter rule 10: site=site2, exact, port=, , ip=, user=root, keyword=desc2, all=|||, action=||||match, log=|||content||, apply to=|sni|||, precedence=5\n"
+		"filter rule 11: site=site2, exact, port=, , ip=, user=root, keyword=desc2, all=|||, action=||||match, log=|||||mirror, apply to=|sni|||, precedence=5\n"
+		"filter rule 12: site=site1, exact, port=, , ip=, user=daemon, keyword=desc1, all=|||, action=||||match, log=connect|||||, apply to=|sni|||, precedence=5\n"
+		"filter rule 13: site=site1, exact, port=, , ip=, user=daemon, keyword=desc1, all=|||, action=||||match, log=|||content||, apply to=|sni|||, precedence=5\n"
+		"filter rule 14: site=site1, exact, port=, , ip=, user=daemon, keyword=desc1, all=|||, action=||||match, log=|||||mirror, apply to=|sni|||, precedence=5\n"
+		"filter rule 15: site=site2, exact, port=, , ip=, user=daemon, keyword=desc1, all=|||, action=||||match, log=connect|||||, apply to=|sni|||, precedence=5\n"
+		"filter rule 16: site=site2, exact, port=, , ip=, user=daemon, keyword=desc1, all=|||, action=||||match, log=|||content||, apply to=|sni|||, precedence=5\n"
+		"filter rule 17: site=site2, exact, port=, , ip=, user=daemon, keyword=desc1, all=|||, action=||||match, log=|||||mirror, apply to=|sni|||, precedence=5\n"
+		"filter rule 18: site=site1, exact, port=, , ip=, user=daemon, keyword=desc2, all=|||, action=||||match, log=connect|||||, apply to=|sni|||, precedence=5\n"
+		"filter rule 19: site=site1, exact, port=, , ip=, user=daemon, keyword=desc2, all=|||, action=||||match, log=|||content||, apply to=|sni|||, precedence=5\n"
+		"filter rule 20: site=site1, exact, port=, , ip=, user=daemon, keyword=desc2, all=|||, action=||||match, log=|||||mirror, apply to=|sni|||, precedence=5\n"
+		"filter rule 21: site=site2, exact, port=, , ip=, user=daemon, keyword=desc2, all=|||, action=||||match, log=connect|||||, apply to=|sni|||, precedence=5\n"
+		"filter rule 22: site=site2, exact, port=, , ip=, user=daemon, keyword=desc2, all=|||, action=||||match, log=|||content||, apply to=|sni|||, precedence=5\n"
+		"filter rule 23: site=site2, exact, port=, , ip=, user=daemon, keyword=desc2, all=|||, action=||||match, log=|||||mirror, apply to=|sni|||, precedence=5"),
 		"failed to parse rule: %s", s);	
 	free(s);
 
@@ -2124,8 +2120,8 @@ START_TEST(set_filter_rule_13)
 	s = filter_str(opts->filter);
 	fail_unless(!strcmp(s, "filter=>\n"
 "userkeyword_filter->\n"
-" user 0 root=\n"
-"  keyword 0 desc1= \n"
+" user 0 daemon=\n"
+"  keyword 0 desc2= \n"
 "    ip: \n"
 "    sni: \n"
 "      0: site1 (exact, action=||||match, log=connect|||content||mirror, precedence=5)\n"
@@ -2133,7 +2129,7 @@ START_TEST(set_filter_rule_13)
 "    cn: \n"
 "    host: \n"
 "    uri: \n"
-"  keyword 1 desc2= \n"
+"  keyword 1 desc1= \n"
 "    ip: \n"
 "    sni: \n"
 "      0: site1 (exact, action=||||match, log=connect|||content||mirror, precedence=5)\n"
@@ -2141,8 +2137,8 @@ START_TEST(set_filter_rule_13)
 "    cn: \n"
 "    host: \n"
 "    uri: \n"
-" user 1 daemon=\n"
-"  keyword 0 desc1= \n"
+" user 1 root=\n"
+"  keyword 0 desc2= \n"
 "    ip: \n"
 "    sni: \n"
 "      0: site1 (exact, action=||||match, log=connect|||content||mirror, precedence=5)\n"
@@ -2150,7 +2146,7 @@ START_TEST(set_filter_rule_13)
 "    cn: \n"
 "    host: \n"
 "    uri: \n"
-"  keyword 1 desc2= \n"
+"  keyword 1 desc1= \n"
 "    ip: \n"
 "    sni: \n"
 "      0: site1 (exact, action=||||match, log=connect|||content||mirror, precedence=5)\n"

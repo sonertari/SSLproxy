@@ -707,6 +707,22 @@ opts_append_to_filter_rules(filter_rule_t **list, filter_rule_t *rule)
 		*list = rule;
 }
 
+static void
+opts_append_to_macro_values(value_t **list, value_t *value)
+{
+	value_t *l = *list;
+	while (l) {
+		if (!l->next)
+			break;
+		l = l->next;
+	}
+
+	if (l)
+		l->next = value;
+	else
+		*list = value;
+}
+
 #ifndef WITHOUT_USERAUTH
 static int WUNRES
 opts_set_user_auth_url(opts_t *opts, const char * argv0, const char *optarg)
@@ -879,8 +895,7 @@ clone_global_opts(global_t *global, const char *argv0, tmp_global_opts_t *tmp_gl
 			if (!v->value)
 				return oom_return_null(argv0);
 
-			v->next = m->value;
-			m->value = v;
+			opts_append_to_macro_values(&m->value, v);
 
 			value = value->next;
 		}
@@ -2896,8 +2911,8 @@ opts_set_macro(opts_t *opts, char *value, int line_num)
 		v->value = strdup(argv[i++]);
 		if (!v->value)
 			return oom_return_na();
-		v->next = macro->value;
-		macro->value = v;
+
+		opts_append_to_macro_values(&macro->value, v);
 	}
 
 	macro->next = opts->macro;
@@ -3514,38 +3529,38 @@ opts_find_port(filter_port_t *port, filter_rule_t *rule)
 	return port;
 }
 
-static filter_port_t *
-opts_add_port(filter_port_t *port, filter_rule_t *rule)
+static int NONNULL(1,2) WUNRES
+opts_add_port(filter_port_t **port, filter_rule_t *rule)
 {
-	int prepend = 1;
-	if (port && port->all_ports) {
-		// all_ports should be at the beginning of the port list for performance reasons
-		// it effectively disables the rest of the list, but we keep the rest for reporting
-		prepend = 0;
-	}
-
-	filter_port_t *p = opts_find_port(port, rule);
+	filter_port_t *p = opts_find_port(*port, rule);
 	if (!p) {
 		p = malloc(sizeof(filter_port_t));
 		if (!p)
-			return oom_return_na_null();
+			return oom_return_na();
 		memset(p, 0, sizeof(filter_port_t));
 		p->port = strdup(rule->port);
 		if (!p->port)
-			return oom_return_na_null();
+			return oom_return_na();
 
-		if (prepend) {
-			p->next = port;
-		} else {
-			// Insert the new port after the head
-			// If prepend is 0, port is never NULL
-			p->next = port->next;
-			port->next = p;
+		// all_ports should be at the end of the port list, it has the lowest precedence
+		filter_port_t *prev = NULL;
+		filter_port_t *l = *port;
+		while (l) {
+			if (l->all_ports)
+				break;
+			prev = l;
+			l = l->next;
 		}
-	} else {
-		// If the port exists, we should return the head of the port list
-		// i.e. we have not prepended anything
-		prepend = 0;
+
+		if (prev) {
+			p->next = prev->next;
+			prev->next = p;
+		}
+		else {
+			if (*port)
+				p->next = *port;
+			*port = p;
+		}
 	}
 
 	// Do not override the specs of port rules at higher precedence
@@ -3581,8 +3596,7 @@ opts_add_port(filter_port_t *port, filter_rule_t *rule)
 
 		p->action.precedence = rule->action.precedence;
 	}
-
-	return prepend ? p : port;
+	return 0;
 }
 
 static filter_site_t *
@@ -3596,38 +3610,38 @@ opts_find_site(filter_site_t *site, filter_rule_t *rule)
 	return site;
 }
 
-static filter_site_t *
-opts_add_site(filter_site_t *site, filter_rule_t *rule)
+static int NONNULL(1,2) WUNRES
+opts_add_site(filter_site_t **site, filter_rule_t *rule)
 {
-	int prepend = 1;
-	if (site && site->all_sites) {
-		// all_sites should be at the beginning of the site list for performance reasons
-		// it effectively disables the rest of the list, but we keep the rest for reporting
-		prepend = 0;
-	}
-
-	filter_site_t *s = opts_find_site(site, rule);
+	filter_site_t *s = opts_find_site(*site, rule);
 	if (!s) {
 		s = malloc(sizeof(filter_site_t));
 		if (!s)
-			return oom_return_na_null();
+			return oom_return_na();
 		memset(s, 0, sizeof(filter_site_t));
 		s->site = strdup(rule->site);
 		if (!s->site)
-			return oom_return_na_null();
+			return oom_return_na();
 
-		if (prepend) {
-			s->next = site;
-		} else {
-			// Insert the new site after the head
-			// If prepend is 0, site is never NULL
-			s->next = site->next;
-			site->next = s;
+		// all_sites should be at the end of the site list, it has the lowest precedence
+		filter_site_t *prev = NULL;
+		filter_site_t *l = *site;
+		while (l) {
+			if (l->all_sites)
+				break;
+			prev = l;
+			l = l->next;
 		}
-	} else {
-		// If the site exists, we should return the head of the site list
-		// i.e. we have not prepended anything
-		prepend = 0;
+
+		if (prev) {
+			s->next = prev->next;
+			prev->next = s;
+		}
+		else {
+			if (*site)
+				s->next = *site;
+			*site = s;
+		}
 	}
 
 	s->all_sites = rule->all_sites;
@@ -3637,7 +3651,8 @@ opts_add_site(filter_site_t *site, filter_rule_t *rule)
 	// Port rule is added as a new port under the same site
 	// hence 'if else', not just 'if'
 	if (rule->port) {
-		s->port = opts_add_port(s->port, rule);
+		if (opts_add_port(&s->port, rule) == -1)
+			return -1;
 	}
 	// Do not override the specs of site rules at higher precedence
 	// precedence can only go up not down
@@ -3669,36 +3684,30 @@ opts_add_site(filter_site_t *site, filter_rule_t *rule)
 
 		s->action.precedence = rule->action.precedence;
 	}
-
-	return prepend ? s : site;
+	return 0;
 }
 
 static int
 opts_add_to_sitelist(filter_list_t *list, filter_rule_t *rule)
 {
 	if (rule->dstip) {
-		list->ip = opts_add_site(list->ip, rule);
-		if (!list->ip)
+		if (opts_add_site(&list->ip, rule) == -1)
 			return -1;
 	}
 	if (rule->sni) {
-		list->sni = opts_add_site(list->sni, rule);
-		if (!list->sni)
+		if (opts_add_site(&list->sni, rule) == -1)
 			return -1;
 	}
 	if (rule->cn) {
-		list->cn = opts_add_site(list->cn, rule);
-		if (!list->cn)
+		if (opts_add_site(&list->cn, rule) == -1)
 			return -1;
 	}
 	if (rule->host) {
-		list->host = opts_add_site(list->host, rule);
-		if (!list->host)
+		if (opts_add_site(&list->host, rule) == -1)
 			return -1;
 	}
 	if (rule->uri) {
-		list->uri = opts_add_site(list->uri, rule);
-		if (!list->uri)
+		if (opts_add_site(&list->uri, rule) == -1)
 			return -1;
 	}
 	return 0;
