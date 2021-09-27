@@ -451,17 +451,15 @@ protohttp_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
 		filter_site_t *site = list->host;
 		while (site) {
 			if (protohttp_filter_match_host(ctx, site)) {
-				// Do not print the surrounding slashes
-				log_err_level_printf(LOG_INFO, "Found site: %s for %s:%s, %s:%s"
 #ifndef WITHOUT_USERAUTH
-					", %s, %s"
-#endif /* !WITHOUT_USERAUTH */
-					", %s\n", site->site,
+				log_fine_va("Found site: %s for %s:%s, %s:%s, %s, %s, %s", site->site,
 					STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
-#ifndef WITHOUT_USERAUTH
-					STRORDASH(ctx->user), STRORDASH(ctx->desc),
-#endif /* !WITHOUT_USERAUTH */
+					STRORDASH(ctx->user), STRORDASH(ctx->desc), STRORDASH(http_ctx->http_host));
+#else /* WITHOUT_USERAUTH */
+				log_fine_va("Found site: %s for %s:%s, %s:%s, %s", site->site,
+					STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
 					STRORDASH(http_ctx->http_host));
+#endif /* WITHOUT_USERAUTH */
 				return pxyconn_set_filter_action(ctx, site->action, site->site);
 			}
 			site = site->next;
@@ -481,17 +479,15 @@ protohttp_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
 		filter_site_t *site = list->uri;
 		while (site) {
 			if (protohttp_filter_match_uri(ctx, site)) {
-				// Do not print the surrounding slashes
-				log_err_level_printf(LOG_INFO, "Found site: %s for %s:%s, %s:%s"
 #ifndef WITHOUT_USERAUTH
-					", %s, %s"
-#endif /* !WITHOUT_USERAUTH */
-					", %s\n", site->site,
+				log_fine_va("Found site: %s for %s:%s, %s:%s, %s, %s, %s", site->site,
 					STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
-#ifndef WITHOUT_USERAUTH
-					STRORDASH(ctx->user), STRORDASH(ctx->desc),
-#endif /* !WITHOUT_USERAUTH */
+					STRORDASH(ctx->user), STRORDASH(ctx->desc), STRORDASH(http_ctx->http_uri));
+#else /* WITHOUT_USERAUTH */
+				log_fine_va("Found site: %s for %s:%s, %s:%s, %s", site->site,
+					STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
 					STRORDASH(http_ctx->http_uri));
+#endif /* WITHOUT_USERAUTH */
 				return pxyconn_set_filter_action(ctx, site->action, site->site);
 			}
 			site = site->next;
@@ -522,7 +518,7 @@ protohttp_apply_filter(pxy_conn_ctx_t *ctx)
 				// Override any deferred block action, if already in divert mode (keep divert mode)
 				ctx->deferred_action = FILTER_ACTION_NONE;
 			} else {
-				log_err_level_printf(LOG_WARNING, "HTTP filter cannot enable divert mode\n");
+				log_fine("HTTP filter cannot enable divert mode");
 			}
 		}
 		else if (action & FILTER_ACTION_SPLIT) {
@@ -530,11 +526,11 @@ protohttp_apply_filter(pxy_conn_ctx_t *ctx)
 				// Override any deferred block action, if already in split mode (keep split mode)
 				ctx->deferred_action = FILTER_ACTION_NONE;
 			} else {
-				log_err_level_printf(LOG_WARNING, "HTTP filter cannot enable split mode\n");
+				log_fine("HTTP filter cannot enable split mode");
 			}
 		}
 		else if (action & FILTER_ACTION_PASS) {
-			log_err_level_printf(LOG_WARNING, "HTTP filter cannot take pass action\n");
+			log_fine("HTTP filter cannot take pass action");
 		}
 		else if (action & FILTER_ACTION_BLOCK) {
 			ctx->deferred_action = FILTER_ACTION_NONE;
@@ -549,9 +545,9 @@ protohttp_apply_filter(pxy_conn_ctx_t *ctx)
 #endif /* !WITHOUT_MIRROR */
 				)) {
 #ifndef WITHOUT_MIRROR
-			log_err_level_printf(LOG_WARNING, "HTTP filter cannot enable content, pcap, or mirror logging\n");
+			log_fine("HTTP filter cannot enable content, pcap, or mirror logging");
 #else /* !WITHOUT_MIRROR */
-			log_err_level_printf(LOG_WARNING, "HTTP filter cannot enable content or pcap logging\n");
+			log_fine("HTTP filter cannot enable content or pcap logging");
 #endif /* WITHOUT_MIRROR */
 		}
 

@@ -693,16 +693,15 @@ protossl_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
 		filter_site_t *site = list->sni;
 		while (site) {
 			if (protossl_filter_match_sni(ctx, site)) {
-				log_err_level_printf(LOG_INFO, "Found site: %s for %s:%s, %s:%s"
 #ifndef WITHOUT_USERAUTH
-					", %s, %s"
-#endif /* !WITHOUT_USERAUTH */
-					", %s\n", site->site,
+				log_fine_va("Found site: %s for %s:%s, %s:%s, %s, %s, %s", site->site,
 					STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
-#ifndef WITHOUT_USERAUTH
-					STRORDASH(ctx->user), STRORDASH(ctx->desc),
-#endif /* !WITHOUT_USERAUTH */
+					STRORDASH(ctx->user), STRORDASH(ctx->desc), STRORDASH(ctx->sslctx->sni));
+#else /* WITHOUT_USERAUTH */
+				log_fine_va("Found site: %s for %s:%s, %s:%s, %s", site->site,
+					STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
 					STRORDASH(ctx->sslctx->sni));
+#endif /* WITHOUT_USERAUTH */
 				return pxyconn_set_filter_action(ctx, site->action, site->site);
 			}
 			site = site->next;
@@ -722,16 +721,15 @@ protossl_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
 		filter_site_t *site = list->cn;
 		while (site) {
 			if (protossl_filter_match_cn(ctx, site)) {
-				log_err_level_printf(LOG_INFO, "Found site: %s for %s:%s, %s:%s"
 #ifndef WITHOUT_USERAUTH
-					", %s, %s"
-#endif /* !WITHOUT_USERAUTH */
-					", %s\n", site->site,
+				log_fine_va("Found site: %s for %s:%s, %s:%s, %s, %s, %s", site->site,
 					STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
-#ifndef WITHOUT_USERAUTH
-					STRORDASH(ctx->user), STRORDASH(ctx->desc),
-#endif /* !WITHOUT_USERAUTH */
+					STRORDASH(ctx->user), STRORDASH(ctx->desc), STRORDASH(ctx->sslctx->ssl_names));
+#else /* WITHOUT_USERAUTH */
+				log_fine_va("Found site: %s for %s:%s, %s:%s, %s", site->site,
+					STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
 					STRORDASH(ctx->sslctx->ssl_names));
+#endif /* WITHOUT_USERAUTH */
 				return pxyconn_set_filter_action(ctx, site->action, site->site);
 			}
 			site = site->next;

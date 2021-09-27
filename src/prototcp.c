@@ -564,14 +564,14 @@ prototcp_filter_match_ip(pxy_conn_ctx_t *ctx, filter_site_t *site)
 	}
 
 	if (action) {
-		log_err_level_printf(LOG_INFO, "Found site: %s for %s:%s, %s:%s\n", site->site,
+		log_fine_va("Found site: %s for %s:%s, %s:%s", site->site,
 			STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str));
 
 		if (site->port) {
 			filter_port_t *port = site->port;
 			while (port) {
 				if (prototcp_filter_match_port(ctx, port)) {
-					log_err_level_printf(LOG_INFO, "Found port: %s for %s:%s, %s:%s\n", port->port,
+					log_fine_va("Found port: %s for %s:%s, %s:%s", port->port,
 						STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str));
 					return &port->action;
 				}
