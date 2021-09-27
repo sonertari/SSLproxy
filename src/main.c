@@ -393,8 +393,8 @@ main(int argc, char *argv[])
 	}
 
 	// This var is temporary, hence freed immediately after configuration is complete.
-	tmp_global_opts_t *tmp_global_opts = malloc(sizeof(tmp_global_opts_t));
-	memset(tmp_global_opts, 0, sizeof(tmp_global_opts_t));
+	global_tmp_opts_t *global_tmp_opts = malloc(sizeof(global_tmp_opts_t));
+	memset(global_tmp_opts, 0, sizeof(global_tmp_opts_t));
 
 	while ((ch = getopt(argc, argv,
 	                    OPT_g OPT_G OPT_Z OPT_i OPT_x OPT_T OPT_I
@@ -402,23 +402,23 @@ main(int argc, char *argv[])
 	                    "dD::VhW:w:q:f:o:X:Y:y:JnQ")) != -1) {
 		switch (ch) {
 			case 'f':
-				if (global_load_conffile(global, argv0, optarg, &natengine, tmp_global_opts) == -1)
+				if (global_load_conffile(global, argv0, optarg, &natengine, global_tmp_opts) == -1)
 					exit(EXIT_FAILURE);
 				break;
 			case 'o':
-				if (global_set_option(global, argv0, optarg, &natengine, tmp_global_opts) == -1)
+				if (global_set_option(global, argv0, optarg, &natengine, global_tmp_opts) == -1)
 					exit(EXIT_FAILURE);
 				break;
 			case 'c':
-				if (opts_set_cacrt(global->opts, argv0, optarg, tmp_global_opts) == -1)
+				if (opts_set_cacrt(global->opts, argv0, optarg, global_tmp_opts) == -1)
 					exit(EXIT_FAILURE);
 				break;
 			case 'k':
-				if (opts_set_cakey(global->opts, argv0, optarg, tmp_global_opts) == -1)
+				if (opts_set_cakey(global->opts, argv0, optarg, global_tmp_opts) == -1)
 					exit(EXIT_FAILURE);
 				break;
 			case 'C':
-				if (opts_set_chain(global->opts, argv0, optarg, tmp_global_opts) == -1)
+				if (opts_set_chain(global->opts, argv0, optarg, global_tmp_opts) == -1)
 					exit(EXIT_FAILURE);
 				break;
 			case 'K':
@@ -434,7 +434,7 @@ main(int argc, char *argv[])
 					exit(EXIT_FAILURE);
 				break;
 			case 'q':
-				if (opts_set_leafcrlurl(global->opts, argv0, optarg, tmp_global_opts) == -1)
+				if (opts_set_leafcrlurl(global->opts, argv0, optarg, global_tmp_opts) == -1)
 					exit(EXIT_FAILURE);
 				break;
 			case 'O':
@@ -444,16 +444,16 @@ main(int argc, char *argv[])
 				opts_set_passthrough(global->opts);
 				break;
 			case 'a':
-				if (opts_set_clientcrt(global->opts, argv0, optarg, tmp_global_opts) == -1)
+				if (opts_set_clientcrt(global->opts, argv0, optarg, global_tmp_opts) == -1)
 					exit(EXIT_FAILURE);
 				break;
 			case 'b':
-				if (opts_set_clientkey(global->opts, argv0, optarg, tmp_global_opts) == -1)
+				if (opts_set_clientkey(global->opts, argv0, optarg, global_tmp_opts) == -1)
 					exit(EXIT_FAILURE);
 				break;
 #ifndef OPENSSL_NO_DH
 			case 'g':
-				if (opts_set_dh(global->opts, argv0, optarg, tmp_global_opts) == -1)
+				if (opts_set_dh(global->opts, argv0, optarg, global_tmp_opts) == -1)
 					exit(EXIT_FAILURE);
 				break;
 #endif /* !OPENSSL_NO_DH */
@@ -587,7 +587,7 @@ main(int argc, char *argv[])
 				break;
 			case 'n':
 				opts_unset_divert(global->opts);
-				tmp_global_opts->split = 1;
+				global_tmp_opts->split = 1;
 				break;
 			case 'Q':
 				test_config = 1;
@@ -607,12 +607,12 @@ main(int argc, char *argv[])
 	}
 	argc -= optind;
 	argv += optind;
-	if (proxyspec_parse(&argc, &argv, natengine, global, argv0, tmp_global_opts) == -1)
+	if (proxyspec_parse(&argc, &argv, natengine, global, argv0, global_tmp_opts) == -1)
 		exit(EXIT_FAILURE);
 
 	// We don't need the tmp opts used to clone global opts into proxyspecs anymore
-	tmp_global_opts_free(tmp_global_opts);
-	tmp_global_opts = NULL;
+	global_tmp_opts_free(global_tmp_opts);
+	global_tmp_opts = NULL;
 
 	for (proxyspec_t *spec = global->spec; spec; spec = spec->next) {
 		if (spec->opts->filter_rules) {

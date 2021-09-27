@@ -182,7 +182,7 @@ typedef struct proxyspec {
 // A var of this type is passed around as a flag to indicate if these opts are
 // global (if non-NULL), so should be stored here and used as such, or
 // proxyspec specific (if NULL), so should not be used as global.
-typedef struct tmp_global_opts {
+typedef struct global_tmp_opts {
 	char *cacrt_str;
 	char *cakey_str;
 	char *chain_str;
@@ -196,7 +196,7 @@ typedef struct tmp_global_opts {
 	unsigned int split : 1;
 	// Prevents Include option in include files
 	unsigned int include : 1;
-} tmp_global_opts_t;
+} global_tmp_opts_t;
 
 struct global {
 	unsigned int debug : 1;
@@ -271,24 +271,24 @@ cert_t *opts_load_cert_chain_key(const char *) NONNULL(1);
 void opts_unset_divert(opts_t *) NONNULL(1);
 
 void proxyspec_free(proxyspec_t *);
-proxyspec_t *proxyspec_new(global_t *, const char *, tmp_global_opts_t *) MALLOC WUNRES;
+proxyspec_t *proxyspec_new(global_t *, const char *, global_tmp_opts_t *) MALLOC WUNRES;
 int proxyspec_set_proto(proxyspec_t *, const char *) NONNULL(1,2) WUNRES;
-int proxyspec_parse(int *, char **[], const char *, global_t *, const char *, tmp_global_opts_t *) WUNRES;
+int proxyspec_parse(int *, char **[], const char *, global_t *, const char *, global_tmp_opts_t *) WUNRES;
 char *proxyspec_str(proxyspec_t *) NONNULL(1) MALLOC WUNRES;
 
 opts_t *opts_new(void) MALLOC WUNRES;
 void opts_free(opts_t *) NONNULL(1);
 char *opts_proto_dbg_dump(opts_t *) NONNULL(1);
-int opts_set_cacrt(opts_t *, const char *, const char *, tmp_global_opts_t *) NONNULL(1,2,3) WUNRES;
-int opts_set_cakey(opts_t *, const char *, const char *, tmp_global_opts_t *) NONNULL(1,2,3) WUNRES;
-int opts_set_chain(opts_t *, const char *, const char *, tmp_global_opts_t *) NONNULL(1,2,3) WUNRES;
-int opts_set_leafcrlurl(opts_t *, const char *, const char *, tmp_global_opts_t *) NONNULL(1,2,3) WUNRES;
+int opts_set_cacrt(opts_t *, const char *, const char *, global_tmp_opts_t *) NONNULL(1,2,3) WUNRES;
+int opts_set_cakey(opts_t *, const char *, const char *, global_tmp_opts_t *) NONNULL(1,2,3) WUNRES;
+int opts_set_chain(opts_t *, const char *, const char *, global_tmp_opts_t *) NONNULL(1,2,3) WUNRES;
+int opts_set_leafcrlurl(opts_t *, const char *, const char *, global_tmp_opts_t *) NONNULL(1,2,3) WUNRES;
 void opts_set_deny_ocsp(opts_t *) NONNULL(1);
 void opts_set_passthrough(opts_t *) NONNULL(1);
-int opts_set_clientcrt(opts_t *, const char *, const char *, tmp_global_opts_t *) NONNULL(1,2,3) WUNRES;
-int opts_set_clientkey(opts_t *, const char *, const char *, tmp_global_opts_t *) NONNULL(1,2,3) WUNRES;
+int opts_set_clientcrt(opts_t *, const char *, const char *, global_tmp_opts_t *) NONNULL(1,2,3) WUNRES;
+int opts_set_clientkey(opts_t *, const char *, const char *, global_tmp_opts_t *) NONNULL(1,2,3) WUNRES;
 #ifndef OPENSSL_NO_DH
-int opts_set_dh(opts_t *, const char *, const char *, tmp_global_opts_t *) NONNULL(1,2,3) WUNRES;
+int opts_set_dh(opts_t *, const char *, const char *, global_tmp_opts_t *) NONNULL(1,2,3) WUNRES;
 #endif /* !OPENSSL_NO_DH */
 #ifndef OPENSSL_NO_ECDH
 int opts_set_ecdhcurve(opts_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;
@@ -302,7 +302,7 @@ int opts_set_ciphersuites(opts_t *, const char *, const char *) NONNULL(1,2,3) W
 #define OPTS_DEBUG(global) unlikely((global)->debug)
 
 global_t * global_new(void) MALLOC;
-void tmp_global_opts_free(tmp_global_opts_t *) NONNULL(1);
+void global_tmp_opts_free(global_tmp_opts_t *) NONNULL(1);
 void global_free(global_t *) NONNULL(1);
 int global_has_ssl_spec(global_t *) NONNULL(1) WUNRES;
 int global_has_dns_spec(global_t *) NONNULL(1) WUNRES;
@@ -334,14 +334,14 @@ void global_set_statslog(global_t *) NONNULL(1);
 
 int is_yesno(const char *) WUNRES;
 int get_name_value(char *, char **, const char, int) WUNRES;
-int global_set_option(global_t *, const char *, const char *, char **, tmp_global_opts_t *) NONNULL(1,2,3,5) WUNRES;
+int global_set_option(global_t *, const char *, const char *, char **, global_tmp_opts_t *) NONNULL(1,2,3,5) WUNRES;
 int global_set_leafkey(global_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;
 int global_set_leafcertdir(global_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;
 int global_set_defaultleafcert(global_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;
 int global_set_certgendir_writeall(global_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;
 int global_set_certgendir_writegencerts(global_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;
 int global_set_openssl_engine(global_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;
-int global_load_conffile(global_t *, const char *, const char *, char **, tmp_global_opts_t *) NONNULL(1,2,4) WUNRES;
+int global_load_conffile(global_t *, const char *, const char *, char **, global_tmp_opts_t *) NONNULL(1,2,4) WUNRES;
 #endif /* !OPTS_H */
 
 /* vim: set noet ft=c: */
