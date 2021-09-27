@@ -185,6 +185,13 @@ typedef struct filter {
 	struct filter_list *all;
 } filter_t;
 
+#ifndef WITHOUT_USERAUTH
+void filter_userlist_free(userlist_t *);
+int filter_userlist_copy(userlist_t *, const char *, userlist_t **) NONNULL(2) WUNRES;
+char *filter_userlist_str(userlist_t *);
+int filter_userlist_set(char *, int, userlist_t **, const char *) WUNRES;
+#endif /* !WITHOUT_USERAUTH */
+
 void filter_macro_free(opts_t *);
 void filter_rules_free(opts_t *) NONNULL(1);
 void filter_free(opts_t *);

@@ -32,6 +32,123 @@
 #include "log.h"
 #include "util.h"
 
+#ifndef WITHOUT_USERAUTH
+void
+filter_userlist_free(userlist_t *ul)
+{
+	while (ul) {
+		userlist_t *next = ul->next;
+		free(ul->user);
+		free(ul);
+		ul = next;
+	}
+}
+
+int
+filter_userlist_copy(userlist_t *userlist, const char *argv0, userlist_t **ul)
+{
+	while (userlist) {
+		userlist_t *du = malloc(sizeof(userlist_t));
+		if (!du)
+			return oom_return(argv0);
+		memset(du, 0, sizeof(userlist_t));
+
+		du->user = strdup(userlist->user);
+		if (!du->user)
+			return oom_return(argv0);
+		du->next = *ul;
+		*ul = du;
+
+		userlist = userlist->next;
+	}
+	return 0;
+}
+
+char *
+filter_userlist_str(userlist_t *u)
+{
+	char *us = NULL;
+
+	if (!u) {
+		us = strdup("");
+		if (!us)
+			return oom_return_na_null();
+		goto out;
+	}
+
+	while (u) {
+		char *nus;
+		if (asprintf(&nus, "%s%s%s", STRORNONE(us), us ? "," : "", u->user) < 0) {
+			goto err;
+		}
+
+		if (us)
+			free(us);
+		us = nus;
+		u = u->next;
+	}
+	goto out;
+err:
+	if (us) {
+		free(us);
+		us = NULL;
+	}
+out:
+	return us;
+}
+
+// Limit the number of users to max 50
+#define MAX_USERS 50
+
+int
+filter_userlist_set(char *value, int line_num, userlist_t **list, const char *listname)
+{
+	// Delimiter can be either or all of ",", " ", and "\t"
+	// Using space as a delimiter disables spaces in user names too
+	// user1[,user2[,user3]]
+	char *argv[sizeof(char *) * MAX_USERS];
+	int argc = 0;
+	char *p, *last = NULL;
+
+	// strtok_r() removes all delimiters around user names, and does not return empty tokens
+	for ((p = strtok_r(value, ", \t", &last));
+		 p;
+		 (p = strtok_r(NULL, ", \t", &last))) {
+		if (argc < MAX_USERS) {
+			argv[argc++] = p;
+		} else {
+			fprintf(stderr, "Too many arguments in user list, max users allowed %d, on line %d\n", MAX_USERS, line_num);
+			return -1;
+		}
+	}
+
+	if (!argc) {
+		fprintf(stderr, "%s requires at least one parameter on line %d\n", listname, line_num);
+		return -1;
+	}
+
+	// Override the copied global list, if any
+	if (*list) {
+		filter_userlist_free(*list);
+		*list = NULL;
+	}
+
+	while (argc--) {
+		userlist_t *ul = malloc(sizeof(userlist_t));
+		if (!ul)
+			return oom_return_na();
+		memset(ul, 0, sizeof(userlist_t));
+
+		ul->user = strdup(argv[argc]);
+		if (!ul->user)
+			return oom_return_na();
+		ul->next = *list;
+		*list = ul;
+	}
+	return 0;
+}
+#endif /* !WITHOUT_USERAUTH */
+
 static void
 filter_value_free(value_t *value)
 {

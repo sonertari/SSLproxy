@@ -173,19 +173,6 @@ global_new(void)
 	return global;
 }
 
-#ifndef WITHOUT_USERAUTH
-static void
-free_userlist(userlist_t *ul)
-{
-	while (ul) {
-		userlist_t *next = ul->next;
-		free(ul->user);
-		free(ul);
-		ul = next;
-	}
-}
-#endif /* !WITHOUT_USERAUTH */
-
 void
 opts_free(opts_t *opts)
 {
@@ -224,8 +211,8 @@ opts_free(opts_t *opts)
 	if (opts->user_auth_url) {
 		free(opts->user_auth_url);
 	}
-	free_userlist(opts->divertusers);
-	free_userlist(opts->passusers);
+	filter_userlist_free(opts->divertusers);
+	filter_userlist_free(opts->passusers);
 #endif /* !WITHOUT_USERAUTH */
 
 	filter_macro_free(opts);
@@ -686,36 +673,12 @@ global_opts_copy(global_t *global, const char *argv0, global_tmp_opts_t *global_
 		if (opts_set_user_auth_url(opts, argv0, global->opts->user_auth_url) == -1)
 			return NULL;
 	}
-	userlist_t *divertusers = global->opts->divertusers;
-	while (divertusers) {
-		userlist_t *du = malloc(sizeof(userlist_t));
-		if (!du)
-			return oom_return_null(argv0);
-		memset(du, 0, sizeof(userlist_t));
 
-		du->user = strdup(divertusers->user);
-		if (!du->user)
-			return oom_return_null(argv0);
-		du->next = opts->divertusers;
-		opts->divertusers = du;
+	if (filter_userlist_copy(global->opts->divertusers, argv0, &opts->divertusers) == -1)
+		return oom_return_null(argv0);
 
-		divertusers = divertusers->next;
-	}
-	userlist_t *passusers = global->opts->passusers;
-	while (passusers) {
-		userlist_t *pu = malloc(sizeof(userlist_t));
-		if (!pu)
-			return oom_return_null(argv0);
-		memset(pu, 0, sizeof(userlist_t));
-
-		pu->user = strdup(passusers->user);
-		if (!pu->user)
-			return oom_return_null(argv0);
-		pu->next = opts->passusers;
-		opts->passusers = pu;
-
-		passusers = passusers->next;
-	}
+	if (filter_userlist_copy(global->opts->passusers, argv0, &opts->passusers) == -1)
+		return oom_return_null(argv0);
 #endif /* !WITHOUT_USERAUTH */
 
 	if (filter_macro_copy(global->opts->macro, argv0, opts) == -1)
@@ -1057,41 +1020,6 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine, global_t *globa
 	return 0;
 }
 
-#ifndef WITHOUT_USERAUTH
-static char *
-users_str(userlist_t *u)
-{
-	char *us = NULL;
-
-	if (!u) {
-		us = strdup("");
-		if (!us)
-			return oom_return_na_null();
-		goto out;
-	}
-
-	while (u) {
-		char *nus;
-		if (asprintf(&nus, "%s%s%s", STRORNONE(us), us ? "," : "", u->user) < 0) {
-			goto err;
-		}
-
-		if (us)
-			free(us);
-		us = nus;
-		u = u->next;
-	}
-	goto out;
-err:
-	if (us) {
-		free(us);
-		us = NULL;
-	}
-out:
-	return us;
-}
-#endif /* !WITHOUT_USERAUTH */
-
 static char *
 opts_str(opts_t *opts)
 {
@@ -1105,11 +1033,11 @@ opts_str(opts_t *opts)
 	char *du = NULL;
 	char *pu = NULL;
 
-	du = users_str(opts->divertusers);
+	du = filter_userlist_str(opts->divertusers);
 	if (!du)
 		goto out;
 
-	pu = users_str(opts->passusers);
+	pu = filter_userlist_str(opts->passusers);
 	if (!pu)
 		goto out;
 #endif /* !WITHOUT_USERAUTH */
@@ -1931,59 +1859,6 @@ opts_unset_validate_proto(opts_t *opts)
 	opts->validate_proto = 0;
 }
 
-#ifndef WITHOUT_USERAUTH
-// Limit the number of users to max 50
-#define MAX_USERS 50
-
-static int WUNRES
-opts_set_userlist(char *value, int line_num, userlist_t **list, const char *listname)
-{
-	// Delimiter can be either or all of ",", " ", and "\t"
-	// Using space as a delimiter disables spaces in user names too
-	// user1[,user2[,user3]]
-	char *argv[sizeof(char *) * MAX_USERS];
-	int argc = 0;
-	char *p, *last = NULL;
-
-	// strtok_r() removes all delimiters around user names, and does not return empty tokens
-	for ((p = strtok_r(value, ", \t", &last));
-		 p;
-		 (p = strtok_r(NULL, ", \t", &last))) {
-		if (argc < MAX_USERS) {
-			argv[argc++] = p;
-		} else {
-			fprintf(stderr, "Too many arguments in user list, max users allowed %d, on line %d\n", MAX_USERS, line_num);
-			return -1;
-		}
-	}
-
-	if (!argc) {
-		fprintf(stderr, "%s requires at least one parameter on line %d\n", listname, line_num);
-		return -1;
-	}
-
-	// Override the copied global list, if any
-	if (*list) {
-		free_userlist(*list);
-		*list = NULL;
-	}
-
-	while (argc--) {
-		userlist_t *ul = malloc(sizeof(userlist_t));
-		if (!ul)
-			return oom_return_na();
-		memset(ul, 0, sizeof(userlist_t));
-
-		ul->user = strdup(argv[argc]);
-		if (!ul->user)
-			return oom_return_na();
-		ul->next = *list;
-		*list = ul;
-	}
-	return 0;
-}
-#endif /* !WITHOUT_USERAUTH */
-
 int
 global_set_leafkey(global_t *global, const char *argv0, const char *optarg)
 {
@@ -2640,9 +2515,9 @@ set_option(opts_t *opts, const char *argv0,
 		log_dbg_printf("UserTimeout: %u\n", opts->user_timeout);
 #endif /* DEBUG_OPTS */
 	} else if (equal(name, "DivertUsers")) {
-		return opts_set_userlist(value, line_num, &opts->divertusers, "DivertUsers");
+		return filter_userlist_set(value, line_num, &opts->divertusers, "DivertUsers");
 	} else if (equal(name, "PassUsers")) {
-		return opts_set_userlist(value, line_num, &opts->passusers, "PassUsers");
+		return filter_userlist_set(value, line_num, &opts->passusers, "PassUsers");
 #endif /* !WITHOUT_USERAUTH */
 	} else if (equal(name, "ValidateProto")) {
 		yes = check_value_yesno(value, "ValidateProto", line_num);
