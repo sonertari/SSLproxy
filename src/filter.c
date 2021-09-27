@@ -1501,7 +1501,7 @@ filter_rule_translate(opts_t *opts, const char *name, int argc, char **argv, int
 static int WUNRES
 filter_rule_parse(opts_t *opts, const char *name, int argc, char **argv, int line_num);
 
-#define MAX_FILTER_RULE_TOKENS 15
+#define MAX_FILTER_RULE_TOKENS 17
 
 static int WUNRES
 filter_rule_macro_expand(opts_t *opts, const char *name, int argc, char **argv, int i, int line_num)

@@ -431,7 +431,8 @@ PassSite.
 Per-site filters can be defined using client IP addresses, users, and 
 description keywords. If the UserAuth option is disabled, only client IP 
 addresses can be used in PassSite filters. Multiple sites can be defined, one 
-on each line. PassSite rules can search for exact or substring matches.
+on each line. PassSite rules can search for exact or substring matches. 
+PassSite rules do not support macro expansion.
 
 #### User control lists
 
@@ -454,7 +455,8 @@ the lists are blocked. SSLproxy simply terminates their connections.
 - If *no* DivertUsers list is defined, only users *not* listed in PassUsers 
 are diverted to listening programs.
 
-These user control lists can be defined globally or per-proxyspec.
+These user control lists can be defined globally or per-proxyspec. User 
+control lists do not support macro expansion.
 
 ### Logging
 
