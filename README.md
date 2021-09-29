@@ -344,16 +344,16 @@ For example, if the following rules are defined in a structured HTTPS proxyspec,
 	Pass from user soner desc android to cn .fbcdn.net*
 
 The first filtering rule above splits but does not divert HTTPS connections 
-from the user soner who has logged in with a description containing the keyword 
-notebook to SSL sites with the SNI of example.com. Also, the rule specifies 
-that the packet contents of the matching connection be written to content log 
-file configured globally.
+from the user soner who has logged in with the description notebook to SSL 
+sites with the SNI of example.com. Also, the rule specifies that the packet 
+contents of the matching connection be written to content log file configured 
+globally.
 
 The second rule passes through HTTPS connections from the user soner who has 
-logged in with a description containing the keyword android to SSL sites with 
-the Common Names containing the substring .fbcdn.net anywhere in it (notice 
-the asterisk at the end). Since connection contents cannot be written to log 
-files in passthrough mode, the rule does not specify any log action.
+logged in with the description android to SSL sites with the Common Names 
+containing the substring .fbcdn.net anywhere in it (notice the asterisk at the 
+end). Since connection contents cannot be written to log files in passthrough 
+mode, the rule does not specify any log action.
 
 The default filter action is Divert. So, if those are the only filtering rules 
 in that proxyspec, the other connections are diverted to the listening program 
