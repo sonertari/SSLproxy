@@ -407,7 +407,10 @@ The macro name must be followed by words separated with spaces.
 
 You can append an asterisk `*` to the fields in filtering rules for substring 
 matching. Otherwise, the filter searches for an exact match with the field in 
-the rule.
+the rule. The filter uses binary search trees (BST) for exact match and linked 
+lists for substring match. So, filtering rules should be written using exact 
+matches instead of substring matches, as much as possible. Because BST search 
+must be faster than substring search over linked lists.
 
 The ordering of filtering rules is important. The ordering of from, to, and 
 log parts is not important. The ordering of log actions is not important.

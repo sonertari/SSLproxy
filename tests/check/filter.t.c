@@ -197,6 +197,7 @@ START_TEST(set_filter_rule_02)
 }
 END_TEST
 
+#ifndef WITHOUT_USERAUTH
 START_TEST(set_filter_rule_03)
 {
 	char *s;
@@ -425,6 +426,7 @@ START_TEST(set_filter_rule_03)
 	opts_free(opts);
 }
 END_TEST
+#endif /* !WITHOUT_USERAUTH */
 
 START_TEST(set_filter_rule_04)
 {
@@ -1320,6 +1322,7 @@ START_TEST(set_filter_rule_06)
 }
 END_TEST
 
+#ifndef WITHOUT_USERAUTH
 START_TEST(set_filter_rule_07)
 {
 	char *s;
@@ -1420,6 +1423,7 @@ START_TEST(set_filter_rule_07)
 	opts_free(opts);
 }
 END_TEST
+#endif /* !WITHOUT_USERAUTH */
 
 START_TEST(set_filter_rule_08)
 {
@@ -1479,6 +1483,7 @@ START_TEST(set_filter_rule_08)
 	free(s);
 
 	s = filter_rule_str(opts->filter_rules);
+#ifndef WITHOUT_USERAUTH
 	fail_unless(!strcmp(s,
 		"filter rule 0: site=192.168.0.2, port=, ip=192.168.0.1, user=, keyword=, exact=site||ip||, all=|||, action=divert||||, log=|||||, apply to=dstip||||, precedence=1\n"
 		"filter rule 1: site=192.168.0.2, port=, ip=192.168.0.1, user=, keyword=, exact=site||ip||, all=|||, action=|split|||, log=connect|master|cert|content|pcap|mirror, apply to=dstip||||, precedence=2\n"
@@ -1490,12 +1495,26 @@ START_TEST(set_filter_rule_08)
 		"filter rule 7: site=192.168.0., port=, ip=192.168.0.2, user=, keyword=, exact=||ip||, all=|||, action=||||match, log=|||||, apply to=dstip||||, precedence=1\n"
 		"filter rule 8: site=192.168.0.3, port=, ip=192.168.0.2, user=, keyword=, exact=site||ip||, all=|||, action=||||match, log=|||||, apply to=dstip||||, precedence=1"),
 		"failed to parse rule: %s", s);	
+#else /* WITHOUT_USERAUTH */
+	fail_unless(!strcmp(s,
+		"filter rule 0: site=192.168.0.2, port=, ip=192.168.0.1, exact=site||ip, all=||, action=divert||||, log=|||||, apply to=dstip||||, precedence=1\n"
+		"filter rule 1: site=192.168.0.2, port=, ip=192.168.0.1, exact=site||ip, all=||, action=|split|||, log=connect|master|cert|content|pcap|mirror, apply to=dstip||||, precedence=2\n"
+		"filter rule 2: site=192.168.0.2, port=, ip=192.168.0.1, exact=site||ip, all=||, action=||pass||, log=!connect||!cert||!pcap|, apply to=dstip||||, precedence=2\n"
+		"filter rule 3: site=192.168.0.2, port=, ip=192.168.0.1, exact=site||ip, all=||, action=|||block|, log=|||||, apply to=dstip||||, precedence=1\n"
+		"filter rule 4: site=192.168.0.3, port=, ip=192.168.0.1, exact=site||ip, all=||, action=||||match, log=|||||, apply to=dstip||||, precedence=1\n"
+		"filter rule 5: site=192.168.0.1, port=, ip=192.168.0.2, exact=site||ip, all=||, action=||||match, log=|||||, apply to=dstip||||, precedence=1\n"
+		"filter rule 6: site=, port=, ip=192.168.0.2, exact=||ip, all=|sites|, action=||||match, log=|||||, apply to=dstip||||, precedence=1\n"
+		"filter rule 7: site=192.168.0., port=, ip=192.168.0.2, exact=||ip, all=||, action=||||match, log=|||||, apply to=dstip||||, precedence=1\n"
+		"filter rule 8: site=192.168.0.3, port=, ip=192.168.0.2, exact=site||ip, all=||, action=||||match, log=|||||, apply to=dstip||||, precedence=1"),
+		"failed to parse rule: %s", s);	
+#endif /* WITHOUT_USERAUTH */
 	free(s);
 
 	close(2);
 	opts->filter = filter_set(opts->filter_rules);
 
 	s = filter_str(opts->filter);
+#ifndef WITHOUT_USERAUTH
 	fail_unless(!strcmp(s, "filter=>\n"
 "userkeyword_filter_exact->\n"
 "userkeyword_filter_substr->\n"
@@ -1518,6 +1537,23 @@ START_TEST(set_filter_rule_08)
 "      1:  (all_sites, substring, action=||||match, log=|||||, precedence=1)\n"
 "ip_filter_substr->\n"
 "all_filter->\n"), "failed to translate rule: %s", s);	
+#else /* WITHOUT_USERAUTH */
+	fail_unless(!strcmp(s, "filter=>\n"
+"ip_filter_exact->\n"
+"  ip 0 192.168.0.1 (exact)= \n"
+"    ip exact: \n"
+"      0: 192.168.0.2 (exact, action=divert|split|pass||, log=!connect|master|!cert|content|!pcap|mirror, precedence=2)\n"
+"      1: 192.168.0.3 (exact, action=||||match, log=|||||, precedence=1)\n"
+"  ip 1 192.168.0.2 (exact)= \n"
+"    ip exact: \n"
+"      0: 192.168.0.1 (exact, action=||||match, log=|||||, precedence=1)\n"
+"      1: 192.168.0.3 (exact, action=||||match, log=|||||, precedence=1)\n"
+"    ip substring: \n"
+"      0: 192.168.0. (substring, action=||||match, log=|||||, precedence=1)\n"
+"      1:  (all_sites, substring, action=||||match, log=|||||, precedence=1)\n"
+"ip_filter_substr->\n"
+"all_filter->\n"), "failed to translate rule: %s", s);	
+#endif /* WITHOUT_USERAUTH */
 	free(s);
 
 	opts_free(opts);
@@ -1588,6 +1624,7 @@ START_TEST(set_filter_rule_09)
 	free(s);
 
 	s = filter_rule_str(opts->filter_rules);
+#ifndef WITHOUT_USERAUTH
 	fail_unless(!strcmp(s,
 		"filter rule 0: site=192.168.0.2, port=443, ip=192.168.0.1, user=, keyword=, exact=site|port|ip||, all=|||, action=divert||||, log=|||||, apply to=dstip||||, precedence=2\n"
 		"filter rule 1: site=192.168.0.2, port=443, ip=192.168.0.1, user=, keyword=, exact=site|port|ip||, all=|||, action=|split|||, log=connect|master|cert|content|pcap|mirror, apply to=dstip||||, precedence=3\n"
@@ -1600,12 +1637,27 @@ START_TEST(set_filter_rule_09)
 		"filter rule 8: site=192.168.0.1, port=, ip=192.168.0.2, user=, keyword=, exact=site||ip||, all=|||ports, action=||||match, log=|||||, apply to=dstip||||, precedence=2\n"
 		"filter rule 9: site=192.168.0.1, port=80, ip=192.168.0.2, user=, keyword=, exact=site||ip||, all=|||, action=||||match, log=|||||, apply to=dstip||||, precedence=2"),
 		"failed to parse rule: %s", s);	
+#else /* WITHOUT_USERAUTH */
+	fail_unless(!strcmp(s,
+		"filter rule 0: site=192.168.0.2, port=443, ip=192.168.0.1, exact=site|port|ip, all=||, action=divert||||, log=|||||, apply to=dstip||||, precedence=2\n"
+		"filter rule 1: site=192.168.0.2, port=443, ip=192.168.0.1, exact=site|port|ip, all=||, action=|split|||, log=connect|master|cert|content|pcap|mirror, apply to=dstip||||, precedence=3\n"
+		"filter rule 2: site=192.168.0.2, port=443, ip=192.168.0.1, exact=site|port|ip, all=||, action=||pass||, log=!connect||!cert||!pcap|, apply to=dstip||||, precedence=3\n"
+		"filter rule 3: site=192.168.0.2, port=443, ip=192.168.0.1, exact=site|port|ip, all=||, action=|||block|, log=|||||, apply to=dstip||||, precedence=2\n"
+		"filter rule 4: site=192.168.0.3, port=, ip=192.168.0.1, exact=site||ip, all=||, action=||||match, log=|||||!mirror, apply to=dstip||||, precedence=2\n"
+		"filter rule 5: site=192.168.0.3, port=443, ip=192.168.0.1, exact=site|port|ip, all=||, action=||||match, log=|||||, apply to=dstip||||, precedence=2\n"
+		"filter rule 6: site=192.168.0.3, port=80, ip=192.168.0.1, exact=site|port|ip, all=||, action=||||match, log=|||||, apply to=dstip||||, precedence=2\n"
+		"filter rule 7: site=192.168.0.1, port=443, ip=192.168.0.2, exact=site|port|ip, all=||, action=||||match, log=|||||, apply to=dstip||||, precedence=2\n"
+		"filter rule 8: site=192.168.0.1, port=, ip=192.168.0.2, exact=site||ip, all=||ports, action=||||match, log=|||||, apply to=dstip||||, precedence=2\n"
+		"filter rule 9: site=192.168.0.1, port=80, ip=192.168.0.2, exact=site||ip, all=||, action=||||match, log=|||||, apply to=dstip||||, precedence=2"),
+		"failed to parse rule: %s", s);	
+#endif /* WITHOUT_USERAUTH */
 	free(s);
 
 	close(2);
 	opts->filter = filter_set(opts->filter_rules);
 
 	s = filter_str(opts->filter);
+#ifndef WITHOUT_USERAUTH
 	fail_unless(!strcmp(s, "filter=>\n"
 "userkeyword_filter_exact->\n"
 "userkeyword_filter_substr->\n"
@@ -1634,12 +1686,36 @@ START_TEST(set_filter_rule_09)
 "          1:  (all_ports, substring, action=||||match, log=|||||, precedence=2)\n"
 "ip_filter_substr->\n"
 "all_filter->\n"), "failed to translate rule: %s", s);	
+#else /* WITHOUT_USERAUTH */
+	fail_unless(!strcmp(s, "filter=>\n"
+"ip_filter_exact->\n"
+"  ip 0 192.168.0.1 (exact)= \n"
+"    ip exact: \n"
+"      0: 192.168.0.2 (exact, action=||||, log=|||||, precedence=0)\n"
+"        port exact:\n"
+"          0: 443 (exact, action=divert|split|pass||, log=!connect|master|!cert|content|!pcap|mirror, precedence=3)\n"
+"      1: 192.168.0.3 (exact, action=||||match, log=|||||!mirror, precedence=2)\n"
+"        port exact:\n"
+"          0: 443 (exact, action=||||match, log=|||||, precedence=2)\n"
+"          1: 80 (exact, action=||||match, log=|||||, precedence=2)\n"
+"  ip 1 192.168.0.2 (exact)= \n"
+"    ip exact: \n"
+"      0: 192.168.0.1 (exact, action=||||, log=|||||, precedence=0)\n"
+"        port exact:\n"
+"          0: 443 (exact, action=||||match, log=|||||, precedence=2)\n"
+"        port substring:\n"
+"          0: 80 (substring, action=||||match, log=|||||, precedence=2)\n"
+"          1:  (all_ports, substring, action=||||match, log=|||||, precedence=2)\n"
+"ip_filter_substr->\n"
+"all_filter->\n"), "failed to translate rule: %s", s);	
+#endif /* WITHOUT_USERAUTH */
 	free(s);
 
 	opts_free(opts);
 }
 END_TEST
 
+#ifndef WITHOUT_USERAUTH
 START_TEST(set_filter_rule_10)
 {
 	char *s;
@@ -1892,6 +1968,7 @@ START_TEST(set_filter_rule_11)
 	opts_free(opts);
 }
 END_TEST
+#endif /* !WITHOUT_USERAUTH */
 
 START_TEST(set_filter_rule_12)
 {
@@ -1925,6 +2002,7 @@ START_TEST(set_filter_rule_12)
 	free(s);
 
 	s = filter_rule_str(opts->filter_rules);
+#ifndef WITHOUT_USERAUTH
 	fail_unless(!strcmp(s,
 		"filter rule 0: site=192.168.0.3, port=80, ip=192.168.0.1, user=, keyword=, exact=site|port|ip||, all=|||, action=||||match, log=|!master||||, apply to=dstip||||, precedence=3\n"
 		"filter rule 1: site=192.168.0.3, port=80, ip=192.168.0.1, user=, keyword=, exact=site|port|ip||, all=|||, action=||||match, log=||||!pcap|, apply to=dstip||||, precedence=3\n"
@@ -1943,12 +2021,33 @@ START_TEST(set_filter_rule_12)
 		"filter rule 14: site=192.168.0.4, port=443, ip=192.168.0.2, user=, keyword=, exact=site|port|ip||, all=|||, action=||||match, log=|!master||||, apply to=dstip||||, precedence=3\n"
 		"filter rule 15: site=192.168.0.4, port=443, ip=192.168.0.2, user=, keyword=, exact=site|port|ip||, all=|||, action=||||match, log=||||!pcap|, apply to=dstip||||, precedence=3"),
 		"failed to parse rule: %s", s);	
+#else /* WITHOUT_USERAUTH */
+	fail_unless(!strcmp(s,
+		"filter rule 0: site=192.168.0.3, port=80, ip=192.168.0.1, exact=site|port|ip, all=||, action=||||match, log=|!master||||, apply to=dstip||||, precedence=3\n"
+		"filter rule 1: site=192.168.0.3, port=80, ip=192.168.0.1, exact=site|port|ip, all=||, action=||||match, log=||||!pcap|, apply to=dstip||||, precedence=3\n"
+		"filter rule 2: site=192.168.0.3, port=443, ip=192.168.0.1, exact=site|port|ip, all=||, action=||||match, log=|!master||||, apply to=dstip||||, precedence=3\n"
+		"filter rule 3: site=192.168.0.3, port=443, ip=192.168.0.1, exact=site|port|ip, all=||, action=||||match, log=||||!pcap|, apply to=dstip||||, precedence=3\n"
+		"filter rule 4: site=192.168.0.4, port=80, ip=192.168.0.1, exact=site|port|ip, all=||, action=||||match, log=|!master||||, apply to=dstip||||, precedence=3\n"
+		"filter rule 5: site=192.168.0.4, port=80, ip=192.168.0.1, exact=site|port|ip, all=||, action=||||match, log=||||!pcap|, apply to=dstip||||, precedence=3\n"
+		"filter rule 6: site=192.168.0.4, port=443, ip=192.168.0.1, exact=site|port|ip, all=||, action=||||match, log=|!master||||, apply to=dstip||||, precedence=3\n"
+		"filter rule 7: site=192.168.0.4, port=443, ip=192.168.0.1, exact=site|port|ip, all=||, action=||||match, log=||||!pcap|, apply to=dstip||||, precedence=3\n"
+		"filter rule 8: site=192.168.0.3, port=80, ip=192.168.0.2, exact=site|port|ip, all=||, action=||||match, log=|!master||||, apply to=dstip||||, precedence=3\n"
+		"filter rule 9: site=192.168.0.3, port=80, ip=192.168.0.2, exact=site|port|ip, all=||, action=||||match, log=||||!pcap|, apply to=dstip||||, precedence=3\n"
+		"filter rule 10: site=192.168.0.3, port=443, ip=192.168.0.2, exact=site|port|ip, all=||, action=||||match, log=|!master||||, apply to=dstip||||, precedence=3\n"
+		"filter rule 11: site=192.168.0.3, port=443, ip=192.168.0.2, exact=site|port|ip, all=||, action=||||match, log=||||!pcap|, apply to=dstip||||, precedence=3\n"
+		"filter rule 12: site=192.168.0.4, port=80, ip=192.168.0.2, exact=site|port|ip, all=||, action=||||match, log=|!master||||, apply to=dstip||||, precedence=3\n"
+		"filter rule 13: site=192.168.0.4, port=80, ip=192.168.0.2, exact=site|port|ip, all=||, action=||||match, log=||||!pcap|, apply to=dstip||||, precedence=3\n"
+		"filter rule 14: site=192.168.0.4, port=443, ip=192.168.0.2, exact=site|port|ip, all=||, action=||||match, log=|!master||||, apply to=dstip||||, precedence=3\n"
+		"filter rule 15: site=192.168.0.4, port=443, ip=192.168.0.2, exact=site|port|ip, all=||, action=||||match, log=||||!pcap|, apply to=dstip||||, precedence=3"),
+		"failed to parse rule: %s", s);	
+#endif /* WITHOUT_USERAUTH */
 	free(s);
 
 	close(2);
 	opts->filter = filter_set(opts->filter_rules);
 
 	s = filter_str(opts->filter);
+#ifndef WITHOUT_USERAUTH
 	fail_unless(!strcmp(s, "filter=>\n"
 "userkeyword_filter_exact->\n"
 "userkeyword_filter_substr->\n"
@@ -1980,12 +2079,39 @@ START_TEST(set_filter_rule_12)
 "          1: 80 (exact, action=||||match, log=|!master|||!pcap|, precedence=3)\n"
 "ip_filter_substr->\n"
 "all_filter->\n"), "failed to translate rule: %s", s);	
+#else /* WITHOUT_USERAUTH */
+	fail_unless(!strcmp(s, "filter=>\n"
+"ip_filter_exact->\n"
+"  ip 0 192.168.0.1 (exact)= \n"
+"    ip exact: \n"
+"      0: 192.168.0.3 (exact, action=||||, log=|||||, precedence=0)\n"
+"        port exact:\n"
+"          0: 443 (exact, action=||||match, log=|!master|||!pcap|, precedence=3)\n"
+"          1: 80 (exact, action=||||match, log=|!master|||!pcap|, precedence=3)\n"
+"      1: 192.168.0.4 (exact, action=||||, log=|||||, precedence=0)\n"
+"        port exact:\n"
+"          0: 443 (exact, action=||||match, log=|!master|||!pcap|, precedence=3)\n"
+"          1: 80 (exact, action=||||match, log=|!master|||!pcap|, precedence=3)\n"
+"  ip 1 192.168.0.2 (exact)= \n"
+"    ip exact: \n"
+"      0: 192.168.0.3 (exact, action=||||, log=|||||, precedence=0)\n"
+"        port exact:\n"
+"          0: 443 (exact, action=||||match, log=|!master|||!pcap|, precedence=3)\n"
+"          1: 80 (exact, action=||||match, log=|!master|||!pcap|, precedence=3)\n"
+"      1: 192.168.0.4 (exact, action=||||, log=|||||, precedence=0)\n"
+"        port exact:\n"
+"          0: 443 (exact, action=||||match, log=|!master|||!pcap|, precedence=3)\n"
+"          1: 80 (exact, action=||||match, log=|!master|||!pcap|, precedence=3)\n"
+"ip_filter_substr->\n"
+"all_filter->\n"), "failed to translate rule: %s", s);	
+#endif /* WITHOUT_USERAUTH */
 	free(s);
 
 	opts_free(opts);
 }
 END_TEST
 
+#ifndef WITHOUT_USERAUTH
 START_TEST(set_filter_rule_13)
 {
 	char *s;
@@ -2085,6 +2211,7 @@ START_TEST(set_filter_rule_13)
 	opts_free(opts);
 }
 END_TEST
+#endif /* !WITHOUT_USERAUTH */
 
 Suite *
 filter_suite(void)
@@ -2096,17 +2223,25 @@ filter_suite(void)
 	tc = tcase_create("set_filter_rule");
 	tcase_add_test(tc, set_filter_rule_01);
 	tcase_add_test(tc, set_filter_rule_02);
+#ifndef WITHOUT_USERAUTH
 	tcase_add_test(tc, set_filter_rule_03);
+#endif /* !WITHOUT_USERAUTH */
 	tcase_add_test(tc, set_filter_rule_04);
 	tcase_add_test(tc, set_filter_rule_05);
 	tcase_add_test(tc, set_filter_rule_06);
+#ifndef WITHOUT_USERAUTH
 	tcase_add_test(tc, set_filter_rule_07);
+#endif /* !WITHOUT_USERAUTH */
 	tcase_add_test(tc, set_filter_rule_08);
 	tcase_add_test(tc, set_filter_rule_09);
+#ifndef WITHOUT_USERAUTH
 	tcase_add_test(tc, set_filter_rule_10);
 	tcase_add_test(tc, set_filter_rule_11);
+#endif /* !WITHOUT_USERAUTH */
 	tcase_add_test(tc, set_filter_rule_12);
+#ifndef WITHOUT_USERAUTH
 	tcase_add_test(tc, set_filter_rule_13);
+#endif /* !WITHOUT_USERAUTH */
 	suite_add_tcase(s, tc);
 
 	return s;

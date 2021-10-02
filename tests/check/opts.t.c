@@ -652,7 +652,7 @@ START_TEST(opts_set_passsite_01)
 #ifndef WITHOUT_USERAUTH
 	fail_unless(!strcmp(ps, "filter rule 0: site=example.com, port=, ip=, user=, keyword=, exact=site||||, all=conns|||, action=||pass||, log=|||||, apply to=|sni|cn||, precedence=1"), "failed parsing passite example.com: %s", ps);
 #else /* WITHOUT_USERAUTH */
-	fail_unless(!strcmp(ps, "filter rule 0: site=example.com, exact, ip=, all=conns|, action=||pass||, log=|||||, apply to=|sni|cn||, precedence=1"), "failed parsing passite example.com: %s", ps);
+	fail_unless(!strcmp(ps, "filter rule 0: site=example.com, port=, ip=, exact=site||, all=conns||, action=||pass||, log=|||||, apply to=|sni|cn||, precedence=1"), "failed parsing passite example.com: %s", ps);
 #endif /* WITHOUT_USERAUTH */
 	free(ps);
 
@@ -682,7 +682,7 @@ START_TEST(opts_set_passsite_02)
 #ifndef WITHOUT_USERAUTH
 	fail_unless(!strcmp(ps, "filter rule 0: site=example.com, port=, ip=192.168.0.1, user=, keyword=, exact=site||||, all=|||, action=||pass||, log=|||||, apply to=|sni|cn||, precedence=2"), "failed parsing passite example.com 192.168.0.1: %s", ps);
 #else /* WITHOUT_USERAUTH */
-	fail_unless(!strcmp(ps, "filter rule 0: site=example.com, exact, ip=192.168.0.1, all=|, action=||pass||, log=|||||, apply to=|sni|cn||, precedence=2"), "failed parsing passite example.com 192.168.0.1: %s", ps);
+	fail_unless(!strcmp(ps, "filter rule 0: site=example.com, port=, ip=192.168.0.1, exact=site||, all=||, action=||pass||, log=|||||, apply to=|sni|cn||, precedence=2"), "failed parsing passite example.com 192.168.0.1: %s", ps);
 #endif /* !WITHOUT_USERAUTH */
 	free(ps);
 
@@ -800,9 +800,9 @@ START_TEST(opts_set_passsite_05)
 		"failed parsing multiple passites: %s", ps);
 #else /* WITHOUT_USERAUTH */
 	fail_unless(!opts->filter_rules->next->next->next, "next->next->next set");
-	fail_unless(!strcmp(ps, "filter rule 0: site=example.com, exact, ip=, all=conns|, action=||pass||, log=|||||, apply to=|sni|cn||, precedence=1\n"
-		"filter rule 1: site=example.com, exact, ip=, all=conns|, action=||pass||, log=|||||, apply to=|sni|cn||, precedence=1\n"
-		"filter rule 2: site=example.com, exact, ip=192.168.0.1, all=|, action=||pass||, log=|||||, apply to=|sni|cn||, precedence=2"),
+	fail_unless(!strcmp(ps, "filter rule 0: site=example.com, port=, ip=, exact=site||, all=conns||, action=||pass||, log=|||||, apply to=|sni|cn||, precedence=1\n"
+		"filter rule 1: site=example.com, port=, ip=, exact=site||, all=conns||, action=||pass||, log=|||||, apply to=|sni|cn||, precedence=1\n"
+		"filter rule 2: site=example.com, port=, ip=192.168.0.1, exact=site||, all=||, action=||pass||, log=|||||, apply to=|sni|cn||, precedence=2"),
 		"failed parsing multiple passites: %s", ps);
 #endif /* WITHOUT_USERAUTH */
 	free(ps);
