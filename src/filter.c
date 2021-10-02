@@ -32,6 +32,26 @@
 #include "log.h"
 #include "util.h"
 
+#define free_list(list, type) { \
+	while (list) { \
+		type *next = (list)->next; \
+		free(list); \
+		list = next; \
+	}}
+
+#define append_list(list, value, type) { \
+	type *l = *list; \
+	while (l) { \
+		if (!l->next) \
+			break; \
+		l = l->next; \
+	} \
+	if (l) \
+		l->next = value; \
+	else \
+		*list = value; \
+	}
+
 #ifndef WITHOUT_USERAUTH
 void
 filter_userlist_free(userlist_t *ul)
@@ -56,8 +76,8 @@ filter_userlist_copy(userlist_t *userlist, const char *argv0, userlist_t **ul)
 		du->user = strdup(userlist->user);
 		if (!du->user)
 			return oom_return(argv0);
-		du->next = *ul;
-		*ul = du;
+
+		append_list(ul, du, userlist_t)
 
 		userlist = userlist->next;
 	}
@@ -142,8 +162,8 @@ filter_userlist_set(char *value, int line_num, userlist_t **list, const char *li
 		ul->user = strdup(argv[argc]);
 		if (!ul->user)
 			return oom_return_na();
-		ul->next = *list;
-		*list = ul;
+
+		append_list(list, ul, userlist_t)
 	}
 	return 0;
 }
@@ -276,6 +296,7 @@ filter_list_free(filter_list_t *list)
 	free(list);
 }
 
+#ifndef WITHOUT_USERAUTH
 #define free_keyword(p) { \
 	free(*p->keyword); \
 	filter_list_free(*p->list); \
@@ -309,6 +330,7 @@ filter_user_free(filter_user_t *user)
 #define free_user(p) { \
 	filter_user_free(*p); \
 	free(*p); }
+#endif /* !WITHOUT_USERAUTH */
 
 void
 filter_free(opts_t *opts)
@@ -367,22 +389,6 @@ filter_free(opts_t *opts)
 	opts->filter = NULL;
 }
 
-static void
-filter_macro_value_append(value_t **list, value_t *value)
-{
-	value_t *l = *list;
-	while (l) {
-		if (!l->next)
-			break;
-		l = l->next;
-	}
-
-	if (l)
-		l->next = value;
-	else
-		*list = value;
-}
-
 int
 filter_macro_copy(macro_t *macro, const char *argv0, opts_t *opts)
 {
@@ -407,33 +413,16 @@ filter_macro_copy(macro_t *macro, const char *argv0, opts_t *opts)
 			if (!v->value)
 				return oom_return(argv0);
 
-			filter_macro_value_append(&m->value, v);
+			append_list(&m->value, v, value_t)
 
 			value = value->next;
 		}
 
-		m->next = opts->macro;
-		opts->macro = m;
+		append_list(&opts->macro, m, macro_t)
 
 		macro = macro->next;
 	}
 	return 0;
-}
-
-static void
-filter_rule_append(filter_rule_t **list, filter_rule_t *rule)
-{
-	filter_rule_t *l = *list;
-	while (l) {
-		if (!l->next)
-			break;
-		l = l->next;
-	}
-
-	if (l)
-		l->next = rule;
-	else
-		*list = rule;
 }
 
 int
@@ -497,7 +486,7 @@ filter_rules_copy(filter_rule_t *rule, const char *argv0, opts_t *opts)
 		// The action field is not a pointer, hence the direct assignment (copy)
 		r->action = rule->action;
 
-		filter_rule_append(&opts->filter_rules, r);
+		append_list(&opts->filter_rules, r, filter_rule_t)
 
 		rule = rule->next;
 	}
@@ -690,18 +679,7 @@ out:
 	filter_port_list_t *s = malloc(sizeof(filter_port_list_t)); \
 	memset(s, 0, sizeof(filter_port_list_t)); \
 	s->port = *p; \
-	s->next = port; \
-	port = s; }
-
-static void
-filter_tmp_port_list_free(filter_port_list_t *port_list)
-{
-	while (port_list) {
-		filter_port_list_t *next = port_list->next;
-		free(port_list);
-		port_list = next;
-	}
-}
+	append_list(&port, s, filter_port_list_t) }
 
 static char *
 filter_sites_str(filter_site_list_t *site_list)
@@ -738,7 +716,7 @@ filter_sites_str(filter_site_list_t *site_list)
 				ports_substring ? "\n        port substring:" : "", STRORNONE(ports_substring)) < 0) {
 			if (ports_exact) {
 				free(ports_exact);
-				filter_tmp_port_list_free(port);
+				free_list(port, filter_port_list_t)
 			}
 			if (ports_substring)
 				free(ports_substring);
@@ -746,7 +724,7 @@ filter_sites_str(filter_site_list_t *site_list)
 		}
 		if (ports_exact) {
 			free(ports_exact);
-			filter_tmp_port_list_free(port);
+			free_list(port, filter_port_list_t)
 		}
 		if (ports_substring)
 			free(ports_substring);
@@ -785,11 +763,7 @@ filter_list_sub_str(filter_site_list_t *list, char *old_s, const char *name)
 static void
 filter_tmp_site_list_free(filter_site_list_t **list)
 {
-	while (*list) {
-		filter_site_list_t *next = (*list)->next;
-		free(*list);
-		*list = next;
-	}
+	free_list(*list, filter_site_list_t)
 	*list = NULL;
 }
 
@@ -803,8 +777,7 @@ filter_list_str(filter_list_t *list)
 	filter_site_list_t *s = malloc(sizeof(filter_site_list_t)); \
 	memset(s, 0, sizeof(filter_site_list_t)); \
 	s->site = *p; \
-	s->next = site; \
-	site = s; }
+	append_list(&site, s, filter_site_list_t) }
 
 	if (list->ip_btree) {
 		__kb_traverse(filter_site_p_t, list->ip_btree, build_site_list);
@@ -902,19 +875,14 @@ filter_ip_btree_str(kbtree_t(ip) *ip_btree)
 	filter_ip_list_t *i = malloc(sizeof(filter_ip_list_t)); \
 	memset(i, 0, sizeof(filter_ip_list_t)); \
 	i->ip = *p; \
-	i->next = ip; \
-	ip = i; }
+	append_list(&ip, i, filter_ip_list_t) }
 	
 	filter_ip_list_t *ip = NULL;
 	__kb_traverse(filter_ip_p_t, ip_btree, build_ip_list);
 
 	char *s = filter_ip_list_str(ip);
 	
-	while (ip) {
-		filter_ip_list_t *next = ip->next;
-		free(ip);
-		ip = next;
-	}
+	free_list(ip, filter_ip_list_t)
 	return s;
 }
 
@@ -966,8 +934,7 @@ out:
 	filter_user_list_t *u = malloc(sizeof(filter_user_list_t)); \
 	memset(u, 0, sizeof(filter_user_list_t)); \
 	u->user = *p; \
-	u->next = user; \
-	user = u; }
+	append_list(&user, u, filter_user_list_t) }
 
 static char *
 filter_user_btree_str(kbtree_t(user) *user_btree)
@@ -980,11 +947,7 @@ filter_user_btree_str(kbtree_t(user) *user_btree)
 
 	char *s = filter_user_list_str(user);
 
-	while (user) {
-		filter_user_list_t *next = user->next;
-		free(user);
-		user = next;
-	}
+	free_list(user, filter_user_list_t)
 	return s;
 }
 
@@ -1032,19 +995,14 @@ filter_keyword_btree_str(kbtree_t(keyword) *keyword_btree)
 	filter_keyword_list_t *k = malloc(sizeof(filter_keyword_list_t)); \
 	memset(k, 0, sizeof(filter_keyword_list_t)); \
 	k->keyword = *p; \
-	k->next = keyword; \
-	keyword = k; }
+	append_list(&keyword, k, filter_keyword_list_t) }
 	
 	filter_keyword_list_t *keyword = NULL;
 	__kb_traverse(filter_keyword_p_t, keyword_btree, build_keyword_list);
 
 	char *s = filter_keyword_list_str(keyword);
 	
-	while (keyword) {
-		filter_keyword_list_t *next = keyword->next;
-		free(keyword);
-		keyword = next;
-	}
+	free_list(keyword, filter_keyword_list_t)
 	return s;
 }
 
@@ -1106,11 +1064,7 @@ filter_userkeyword_btree_str(kbtree_t(user) *user_btree)
 
 	char *s = filter_userkeyword_list_str(user);
 
-	while (user) {
-		filter_user_list_t *next = user->next;
-		free(user);
-		user = next;
-	}
+	free_list(user, filter_user_list_t)
 	return s;
 }
 #endif /* !WITHOUT_USERAUTH */
@@ -1381,7 +1335,7 @@ filter_passsite_set(opts_t *opts, char *value, int line_num)
 	rule->cn = 1;
 	rule->action.pass = 1;
 
-	filter_rule_append(&opts->filter_rules, rule);
+	append_list(&opts->filter_rules, rule, filter_rule_t)
 
 #ifdef DEBUG_OPTS
 	filter_rule_dbg_print(rule);
@@ -1463,11 +1417,10 @@ filter_macro_set(opts_t *opts, char *value, int line_num)
 		if (!v->value)
 			return oom_return_na();
 
-		filter_macro_value_append(&macro->value, v);
+		append_list(&macro->value, v, value_t)
 	}
 
-	macro->next = opts->macro;
-	opts->macro = macro;
+	append_list(&opts->macro, macro, macro_t)
 
 #ifdef DEBUG_OPTS
 	log_dbg_printf("Macro: %s = %s\n", macro->name, filter_value_str(macro->value));
@@ -1837,7 +1790,7 @@ filter_rule_translate(opts_t *opts, const char *name, int argc, char **argv, int
 		rule->dstip = 1;
 	}
 
-	filter_rule_append(&opts->filter_rules, rule);
+	append_list(&opts->filter_rules, rule, filter_rule_t)
 
 #ifdef DEBUG_OPTS
 	filter_rule_dbg_print(rule);
@@ -2498,8 +2451,7 @@ filter_ip_get(filter_t *filter, filter_rule_t *rule)
 
 			ip_list->ip = ip;
 
-			ip_list->next = filter->ip_list;
-			filter->ip_list = ip_list;
+			append_list(&filter->ip_list, ip_list, filter_ip_list_t)
 		}
 	}
 	return ip;
@@ -2599,8 +2551,7 @@ filter_keyword_get(filter_t *filter, filter_user_t *user, filter_rule_t *rule)
 			keyword_list->keyword = keyword;
 
 			filter_keyword_list_t **list = user ? &user->keyword_list : &filter->keyword_list;
-			keyword_list->next = *list;
-			*list = keyword_list;
+			append_list(list, keyword_list, filter_keyword_list_t)
 		}
 	}
 	return keyword;
@@ -2691,8 +2642,7 @@ filter_user_get(filter_t *filter, filter_rule_t *rule)
 
 			user_list->user = user;
 
-			user_list->next = filter->user_list;
-			filter->user_list = user_list;
+			append_list(&filter->user_list, user_list, filter_user_list_t)
 		}
 	}
 	return user;
@@ -2765,6 +2715,7 @@ filter_set(filter_rule_t *rule)
 	}
 
 #ifdef DEBUG_OPTS
+#ifndef WITHOUT_USERAUTH
 #define traverse_user(p) { if (cnt == 0) y = *p; ++cnt; }
 	int cnt = 0;
 	if (filter->user_btree) {
@@ -2785,14 +2736,15 @@ filter_set(filter_rule_t *rule)
 		if (cnt)
 			fprintf(stderr, "keyword_exact first element: %s == %s\n", x2->keyword, y2->keyword);
 	}
-#define traverse_ip(p) { if (cnt == 0) y3 = *p; ++cnt; }
+#endif /* !WITHOUT_USERAUTH */
+#define traverse_ip(p) { if (cnt2 == 0) y3 = *p; ++cnt2; }
 	if (filter->ip_btree) {
-		cnt = 0;
+		int cnt2 = 0;
 		filter_ip_p_t x3, y3 = NULL;
 		__kb_traverse(filter_ip_p_t, filter->ip_btree, traverse_ip);
 		__kb_get_first(filter_ip_p_t, filter->ip_btree, x3);
-		fprintf(stderr, "ip_exact # of elements from traversal: %d\n", cnt);
-		if (cnt)
+		fprintf(stderr, "ip_exact # of elements from traversal: %d\n", cnt2);
+		if (cnt2)
 			fprintf(stderr, "ip_exact first element: %s == %s\n", x3->ip, y3->ip);
 	}
 #endif /* DEBUG_OPTS */
