@@ -197,60 +197,100 @@ filter_rules_free(opts_t *opts)
 	opts->filter_rules = NULL;
 }
 
+#define free_port(p) { \
+	free(*p->port); \
+	free(*p); }
+
 static void
-filter_port_free(filter_port_t *port)
+filter_port_btree_free(kbtree_t(port) *port_btree)
+{
+	if (port_btree) {
+		__kb_traverse(filter_port_p_t, port_btree, free_port);
+		__kb_destroy(port_btree);
+	}
+}
+
+static void
+filter_port_list_free(filter_port_list_t *port)
 {
 	while (port) {
-		filter_port_t *p = port->next;
-		free(port->port);
-		free(port);
+		filter_port_list_t *p = port->next;
+		free_port(&port)
 		port = p;
 	}
 }
 
-static filter_site_t *
-filter_site_free(filter_site_t *site)
+#define free_site(p) { \
+	free(*p->site); \
+	filter_port_btree_free(*p->port_btree); \
+	filter_port_list_free(*p->port_list); \
+	free(*p); }
+
+static filter_site_list_t *
+filter_site_free(filter_site_list_t *site_list)
 {
-	filter_site_t *s = site->next;
-	free(site->site);
-	filter_port_free(site->port);
-	free(site);
+	filter_site_list_t *s = site_list->next;
+	free_site(&site_list->site)
+	free(site_list);
 	return s;
 }
 
 static void
 filter_list_free(filter_list_t *list)
 {
-	while (list->ip)
-		list->ip = filter_site_free(list->ip);
-	while (list->sni)
-		list->sni = filter_site_free(list->sni);
-	while (list->cn)
-		list->cn = filter_site_free(list->cn);
-	while (list->host)
-		list->host = filter_site_free(list->host);
-	while (list->uri)
-		list->uri = filter_site_free(list->uri);
-	free(list);
-}
-
-static void
-filter_keyword_list_free(filter_keyword_list_t *list)
-{
-	while (list) {
-		free(list->keyword->keyword);
-		filter_list_free(list->keyword->list);
-
-		filter_keyword_list_t *keyword = list->next;
-		free(list);
-		list = keyword;
+	if (list->ip_btree) {
+		__kb_traverse(filter_site_p_t, list->ip_btree, free_site);
+		__kb_destroy(list->ip_btree);
 	}
+	while (list->ip_list)
+		list->ip_list = filter_site_free(list->ip_list);
+
+	if (list->sni_btree) {
+		__kb_traverse(filter_site_p_t, list->sni_btree, free_site);
+		__kb_destroy(list->sni_btree);
+	}
+	while (list->sni_list)
+		list->sni_list = filter_site_free(list->sni_list);
+
+	if (list->cn_btree) {
+		__kb_traverse(filter_site_p_t, list->cn_btree, free_site);
+		__kb_destroy(list->cn_btree);
+	}
+	while (list->cn_list)
+		list->cn_list = filter_site_free(list->cn_list);
+
+	if (list->host_btree) {
+		__kb_traverse(filter_site_p_t, list->host_btree, free_site);
+		__kb_destroy(list->host_btree);
+	}
+	while (list->host_list)
+		list->host_list = filter_site_free(list->host_list);
+
+	if (list->uri_btree) {
+		__kb_traverse(filter_site_p_t, list->uri_btree, free_site);
+		__kb_destroy(list->uri_btree);
+	}
+	while (list->uri_list)
+		list->uri_list = filter_site_free(list->uri_list);
+
+	free(list);
 }
 
 #define free_keyword(p) { \
 	free(*p->keyword); \
 	filter_list_free(*p->list); \
 	free(*p); }
+
+static void
+filter_keyword_list_free(filter_keyword_list_t *list)
+{
+	while (list) {
+		filter_keyword_list_t *keyword = list->next;
+		free_keyword(&list->keyword)
+		free(list);
+		list = keyword;
+	}
+}
 
 static void
 filter_user_free(filter_user_t *user)
@@ -438,7 +478,7 @@ filter_rules_copy(filter_rule_t *rule, const char *argv0, opts_t *opts)
 				return oom_return(argv0);
 		}
 		r->all_sites = rule->all_sites;
-		r->exact = rule->exact;
+		r->exact_site = rule->exact_site;
 
 		if (rule->port) {
 			r->port = strdup(rule->port);
@@ -563,7 +603,7 @@ filter_rule_str(filter_rule_t *rule)
 #ifndef WITHOUT_USERAUTH
 				STRORNONE(rule->user), STRORNONE(rule->keyword),
 #endif /* !WITHOUT_USERAUTH */
-				rule->exact ? "site" : "", rule->exact_port ? "port" : "", rule->exact_ip ? "ip" : "",
+				rule->exact_site ? "site" : "", rule->exact_port ? "port" : "", rule->exact_ip ? "ip" : "",
 #ifndef WITHOUT_USERAUTH
 				rule->exact_user ? "user" : "", rule->exact_keyword ? "keyword" : "",
 #endif /* !WITHOUT_USERAUTH */
@@ -607,33 +647,33 @@ out:
 }
 
 static char *
-filter_port_str(filter_port_t *port)
+filter_port_str(filter_port_list_t *port_list)
 {
 	char *s = NULL;
 
 	int count = 0;
-	while (port) {
+	while (port_list) {
 		char *p;
 		if (asprintf(&p, "%s\n          %d: %s (%s%s, action=%s|%s|%s|%s|%s, log=%s|%s|%s|%s|%s"
 #ifndef WITHOUT_MIRROR
 				"|%s"
 #endif /* !WITHOUT_MIRROR */
 				", precedence=%d)", STRORNONE(s), count,
-				port->port, port->all_ports ? "all_ports, " : "", port->exact ? "exact" : "substring",
-				port->action.divert ? "divert" : "", port->action.split ? "split" : "", port->action.pass ? "pass" : "", port->action.block ? "block" : "", port->action.match ? "match" : "",
-				port->action.log_connect ? (port->action.log_connect == 1 ? "!connect" : "connect") : "", port->action.log_master ? (port->action.log_master == 1 ? "!master" : "master") : "",
-				port->action.log_cert ? (port->action.log_cert == 1 ? "!cert" : "cert") : "", port->action.log_content ? (port->action.log_content == 1 ? "!content" : "content") : "",
-				port->action.log_pcap ? (port->action.log_pcap == 1 ? "!pcap" : "pcap") : "",
+				port_list->port->port, port_list->port->all_ports ? "all_ports, " : "", port_list->port->exact ? "exact" : "substring",
+				port_list->port->action.divert ? "divert" : "", port_list->port->action.split ? "split" : "", port_list->port->action.pass ? "pass" : "", port_list->port->action.block ? "block" : "", port_list->port->action.match ? "match" : "",
+				port_list->port->action.log_connect ? (port_list->port->action.log_connect == 1 ? "!connect" : "connect") : "", port_list->port->action.log_master ? (port_list->port->action.log_master == 1 ? "!master" : "master") : "",
+				port_list->port->action.log_cert ? (port_list->port->action.log_cert == 1 ? "!cert" : "cert") : "", port_list->port->action.log_content ? (port_list->port->action.log_content == 1 ? "!content" : "content") : "",
+				port_list->port->action.log_pcap ? (port_list->port->action.log_pcap == 1 ? "!pcap" : "pcap") : "",
 #ifndef WITHOUT_MIRROR
-				port->action.log_mirror ? (port->action.log_mirror == 1 ? "!mirror" : "mirror") : "",
+				port_list->port->action.log_mirror ? (port_list->port->action.log_mirror == 1 ? "!mirror" : "mirror") : "",
 #endif /* !WITHOUT_MIRROR */
-				port->action.precedence) < 0) {
+				port_list->port->action.precedence) < 0) {
 			goto err;
 		}
 		if (s)
 			free(s);
 		s = p;
-		port = port->next;
+		port_list = port_list->next;
 		count++;
 	}
 	goto out;
@@ -646,41 +686,74 @@ out:
 	return s;
 }
 
+#define build_port_list(p) { \
+	filter_port_list_t *s = malloc(sizeof(filter_port_list_t)); \
+	memset(s, 0, sizeof(filter_port_list_t)); \
+	s->port = *p; \
+	s->next = port; \
+	port = s; }
+
+static void
+filter_tmp_port_list_free(filter_port_list_t *port_list)
+{
+	while (port_list) {
+		filter_port_list_t *next = port_list->next;
+		free(port_list);
+		port_list = next;
+	}
+}
+
 static char *
-filter_sites_str(filter_site_t *site)
+filter_sites_str(filter_site_list_t *site_list)
 {
 	char *s = NULL;
 
 	int count = 0;
-	while (site) {
-		char *ports = filter_port_str(site->port);
+	while (site_list) {
+		filter_port_list_t *port = NULL;
+
+		if (site_list->site->port_btree)
+			__kb_traverse(filter_port_p_t, site_list->site->port_btree, build_port_list);
+
+		char *ports_exact = filter_port_str(port);
+		char *ports_substring = filter_port_str(site_list->site->port_list);
 
 		char *p;
 		if (asprintf(&p, "%s\n      %d: %s (%s%s, action=%s|%s|%s|%s|%s, log=%s|%s|%s|%s|%s"
 #ifndef WITHOUT_MIRROR
 				"|%s"
 #endif /* !WITHOUT_MIRROR */
-				", precedence=%d)%s%s", STRORNONE(s), count,
-				site->site, site->all_sites ? "all_sites, " : "", site->exact ? "exact" : "substring",
-				site->action.divert ? "divert" : "", site->action.split ? "split" : "", site->action.pass ? "pass" : "", site->action.block ? "block" : "", site->action.match ? "match" : "",
-				site->action.log_connect ? (site->action.log_connect == 1 ? "!connect" : "connect") : "", site->action.log_master ? (site->action.log_master == 1 ? "!master" : "master") : "",
-				site->action.log_cert ? (site->action.log_cert == 1 ? "!cert" : "cert") : "", site->action.log_content ? (site->action.log_content == 1 ? "!content" : "content") : "",
-				site->action.log_pcap ? (site->action.log_pcap == 1 ? "!pcap" : "pcap") : "",
+				", precedence=%d)%s%s%s%s",
+				STRORNONE(s), count,
+				site_list->site->site, site_list->site->all_sites ? "all_sites, " : "", site_list->site->exact ? "exact" : "substring",
+				site_list->site->action.divert ? "divert" : "", site_list->site->action.split ? "split" : "", site_list->site->action.pass ? "pass" : "", site_list->site->action.block ? "block" : "", site_list->site->action.match ? "match" : "",
+				site_list->site->action.log_connect ? (site_list->site->action.log_connect == 1 ? "!connect" : "connect") : "", site_list->site->action.log_master ? (site_list->site->action.log_master == 1 ? "!master" : "master") : "",
+				site_list->site->action.log_cert ? (site_list->site->action.log_cert == 1 ? "!cert" : "cert") : "", site_list->site->action.log_content ? (site_list->site->action.log_content == 1 ? "!content" : "content") : "",
+				site_list->site->action.log_pcap ? (site_list->site->action.log_pcap == 1 ? "!pcap" : "pcap") : "",
 #ifndef WITHOUT_MIRROR
-				site->action.log_mirror ? (site->action.log_mirror == 1 ? "!mirror" : "mirror") : "",
+				site_list->site->action.log_mirror ? (site_list->site->action.log_mirror == 1 ? "!mirror" : "mirror") : "",
 #endif /* !WITHOUT_MIRROR */
-				site->action.precedence,
-				ports ? "\n        port:" : "", STRORNONE(ports)) < 0) {
-			if (ports)
-				free(ports);
+				site_list->site->action.precedence,
+				ports_exact ? "\n        port exact:" : "", STRORNONE(ports_exact),
+				ports_substring ? "\n        port substring:" : "", STRORNONE(ports_substring)) < 0) {
+			if (ports_exact) {
+				free(ports_exact);
+				filter_tmp_port_list_free(port);
+			}
+			if (ports_substring)
+				free(ports_substring);
 			goto err;
 		}
-		if (ports)
-			free(ports);
+		if (ports_exact) {
+			free(ports_exact);
+			filter_tmp_port_list_free(port);
+		}
+		if (ports_substring)
+			free(ports_substring);
 		if (s)
 			free(s);
 		s = p;
-		site = site->next;
+		site_list = site_list->next;
 		count++;
 	}
 	goto out;
@@ -694,63 +767,95 @@ out:
 }
 
 static char *
+filter_list_sub_str(filter_site_list_t *list, char *old_s, const char *name)
+{
+	char *new_s = NULL;
+	char *s = filter_sites_str(list);
+	if (asprintf(&new_s, "%s%s    %s: %s", STRORNONE(old_s), old_s ? "\n" : "", name, STRORNONE(s)) < 0) {
+		// @todo Handle oom, and don't just use STRORNONE()
+		new_s = NULL;
+	}
+	if (s)
+		free(s);
+	if (old_s)
+		free(old_s);
+	return new_s;
+}
+
+static void
+filter_tmp_site_list_free(filter_site_list_t **list)
+{
+	while (*list) {
+		filter_site_list_t *next = (*list)->next;
+		free(*list);
+		*list = next;
+	}
+	*list = NULL;
+}
+
+static char *
 filter_list_str(filter_list_t *list)
 {
-	char *p = NULL;
-	char *op = NULL;
+	char *s = NULL;
+	filter_site_list_t *site = NULL;
 
-	// @todo Handle oom, don't use STRORNONE()
-	char *s = filter_sites_str(list->ip);
-	if (asprintf(&p, "    ip: %s", STRORNONE(s)) < 0) {
-		goto err;
-	}
-	if (s)
-		free(s);
-	op = p;
+#define build_site_list(p) { \
+	filter_site_list_t *s = malloc(sizeof(filter_site_list_t)); \
+	memset(s, 0, sizeof(filter_site_list_t)); \
+	s->site = *p; \
+	s->next = site; \
+	site = s; }
 
-	s = filter_sites_str(list->sni);
-	if (asprintf(&p, "%s\n    sni: %s", op, STRORNONE(s)) < 0) {
-		goto err;
+	if (list->ip_btree) {
+		__kb_traverse(filter_site_p_t, list->ip_btree, build_site_list);
+		s = filter_list_sub_str(site, s, "ip exact");
+		filter_tmp_site_list_free(&site);
 	}
-	if (s)
-		free(s);
-	free(op);
-	op = p;
 
-	s = filter_sites_str(list->cn);
-	if (asprintf(&p, "%s\n    cn: %s", op, STRORNONE(s)) < 0) {
-		goto err;
+	if (list->ip_list) {
+		s = filter_list_sub_str(list->ip_list, s, "ip substring");
 	}
-	if (s)
-		free(s);
-	free(op);
-	op = p;
 
-	s = filter_sites_str(list->host);
-	if (asprintf(&p, "%s\n    host: %s", op, STRORNONE(s)) < 0) {
-		goto err;
+	if (list->sni_btree) {
+		__kb_traverse(filter_site_p_t, list->sni_btree, build_site_list);
+		s = filter_list_sub_str(site, s, "sni exact");
+		filter_tmp_site_list_free(&site);
 	}
-	if (s)
-		free(s);
-	free(op);
-	op = p;
 
-	s = filter_sites_str(list->uri);
-	if (asprintf(&p, "%s\n    uri: %s", op, STRORNONE(s)) < 0) {
-		goto err;
+	if (list->sni_list) {
+		s = filter_list_sub_str(list->sni_list, s, "sni substring");
 	}
-	goto out;
-err:
-	if (p) {
-		free(p);
-		p = NULL;
+
+	if (list->cn_btree) {
+		__kb_traverse(filter_site_p_t, list->cn_btree, build_site_list);
+		s = filter_list_sub_str(site, s, "cn exact");
+		filter_tmp_site_list_free(&site);
 	}
-out:
-	if (s)
-		free(s);
-	if (op)
-		free(op);
-	return p;
+
+	if (list->cn_list) {
+		s = filter_list_sub_str(list->cn_list, s, "cn substring");
+	}
+
+	if (list->host_btree) {
+		__kb_traverse(filter_site_p_t, list->host_btree, build_site_list);
+		s = filter_list_sub_str(site, s, "host exact");
+		filter_tmp_site_list_free(&site);
+	}
+
+	if (list->host_list) {
+		s = filter_list_sub_str(list->host_list, s, "host substring");
+	}
+
+	if (list->uri_btree) {
+		__kb_traverse(filter_site_p_t, list->uri_btree, build_site_list);
+		s = filter_list_sub_str(site, s, "uri exact");
+		filter_tmp_site_list_free(&site);
+	}
+
+	if (list->uri_list) {
+		s = filter_list_sub_str(list->uri_list, s, "uri substring");
+	}
+	return s;
 }
 
 static char *
@@ -763,7 +868,8 @@ filter_ip_list_str(filter_ip_list_t *ip_list)
 		char *list = filter_list_str(ip_list->ip->list);
 
 		char *p;
-		if (asprintf(&p, "%s%s  ip %d %s= \n%s", STRORNONE(s), s ? "\n" : "", count, ip_list->ip->ip, STRORNONE(list)) < 0) {
+		if (asprintf(&p, "%s%s  ip %d %s (%s)= \n%s", STRORNONE(s), s ? "\n" : "",
+				count, ip_list->ip->ip, ip_list->ip->exact ? "exact" : "substring", STRORNONE(list)) < 0) {
 			if (list)
 				free(list);
 			goto err;
@@ -832,7 +938,8 @@ filter_user_list_str(filter_user_list_t *user)
 		// It is possible to have users without any filter rule,
 		// but the user exists because it has keyword filters
 		if (list) {
-			if (asprintf(&p, "%s%s  user %d %s= \n%s", STRORNONE(s), s ? "\n" : "", count, user->user->user, list) < 0) {
+			if (asprintf(&p, "%s%s  user %d %s (%s)= \n%s", STRORNONE(s), s ? "\n" : "",
+					count, user->user->user, user->user->exact ? "exact" : "substring", list) < 0) {
 				free(list);
 				goto err;
 			}
@@ -891,7 +998,8 @@ filter_keyword_list_str(filter_keyword_list_t *keyword)
 		char *list = filter_list_str(keyword->keyword->list);
 
 		char *p;
-		if (asprintf(&p, "%s%s   keyword %d %s= \n%s", STRORNONE(s), s ? "\n" : "", count, keyword->keyword->keyword, STRORNONE(list)) < 0) {
+		if (asprintf(&p, "%s%s   keyword %d %s (%s)= \n%s", STRORNONE(s), s ? "\n" : "",
+				count, keyword->keyword->keyword, keyword->keyword->exact ? "exact" : "substring", STRORNONE(list)) < 0) {
 			if (list)
 				free(list);
 			goto err;
@@ -955,7 +1063,11 @@ filter_userkeyword_list_str(filter_user_list_t *user)
 		char *list_substr = filter_keyword_list_str(user->user->keyword_list);
 
 		char *p = NULL;
-		if (asprintf(&p, "%s%s user %d %s=\n  exact=\n%s\n  substring=\n%s", STRORNONE(s), s ? "\n" : "", count, user->user->user, STRORNONE(list_exact), STRORNONE(list_substr)) < 0) {
+		if (asprintf(&p, "%s%s user %d %s (%s)=%s%s%s%s", STRORNONE(s), s ? "\n" : "",
+				count, user->user->user, user->user->exact ? "exact" : "substring",
+				list_exact ? "\n  keyword exact:\n" : "", STRORNONE(list_exact),
+				list_substr ? "\n  keyword substring:\n" : "", STRORNONE(list_substr)
+				) < 0) {
 			if (list_exact)
 				free(list_exact);
 			if (list_substr)
@@ -1125,7 +1237,7 @@ filter_rule_dbg_print(filter_rule_t *rule)
 #ifndef WITHOUT_USERAUTH
 		STRORNONE(rule->user), STRORNONE(rule->keyword),
 #endif /* !WITHOUT_USERAUTH */
-		rule->exact ? "site" : "", rule->exact_port ? "port" : "", rule->exact_ip ? "ip" : "",
+		rule->exact_site ? "site" : "", rule->exact_port ? "port" : "", rule->exact_ip ? "ip" : "",
 #ifndef WITHOUT_USERAUTH
 		rule->exact_user ? "user" : "", rule->exact_keyword ? "keyword" : "",
 #endif /* !WITHOUT_USERAUTH */
@@ -1189,14 +1301,14 @@ filter_passsite_set(opts_t *opts, char *value, int line_num)
 	}
 
 	if (argv[0][len - 1] == '*') {
-		rule->exact = 0;
+		rule->exact_site = 0;
 		len--;
 		argv[0][len] = '\0';
 		// site == "*" ?
 		if (len == 0)
 			rule->all_sites = 1;
 	} else {
-		rule->exact = 1;
+		rule->exact_site = 1;
 	}
 
 	rule->site = strdup(argv[0]);
@@ -1381,14 +1493,14 @@ filter_site_set(filter_rule_t *rule, const char *site, int line_num)
 		return oom_return_na();
 
 	if (rule->site[len - 1] == '*') {
-		rule->exact = 0;
+		rule->exact_site = 0;
 		len--;
 		rule->site[len] = '\0';
 		// site == "*" ?
 		if (len == 0)
 			rule->all_sites = 1;
 	} else {
-		rule->exact = 1;
+		rule->exact_site = 1;
 	}
 
 	// redundant?
@@ -1997,170 +2109,280 @@ filter_rule_set(opts_t *opts, const char *name, char *value, int line_num)
 }
 
 static filter_port_t *
-filter_port_find(filter_port_t *port, filter_rule_t *rule)
+filter_port_btree_exact_match(kbtree_t(port) *port_btree, char *p)
 {
-	while (port) {
-		if ((port->exact == rule->exact_port) && !strcmp(port->port, rule->port))
+	if (!port_btree)
+		return NULL;
+	filter_port_t **port = kb_get(port, port_btree, p);
+	return port ? *port : NULL;
+}
+
+static filter_port_t *
+filter_port_list_substring_match(filter_port_list_t *list, char *p)
+{
+	while (list) {
+		if (strstr(p, list->port->port))
 			break;
-		port = port->next;
+		list = list->next;
 	}
-	return port;
+	return list ? list->port : NULL;
+}
+
+filter_port_t *
+filter_port_find(filter_site_t *site, char *p)
+{
+	filter_port_t *port = filter_port_btree_exact_match(site->port_btree, p);
+	if (port)
+		return port;
+	return filter_port_list_substring_match(site->port_list, p);
+}
+
+static filter_port_t *
+filter_port_list_exact_match(filter_port_list_t *list, char *p)
+{
+	while (list) {
+		if (!strcmp(list->port->port, p))
+			break;
+		list = list->next;
+	}
+	return list ? list->port : NULL;
+}
+
+static filter_port_t *
+filter_rule_port_find(filter_site_t *site, filter_rule_t *rule)
+{
+	if (rule->exact_port)
+		return filter_port_btree_exact_match(site->port_btree, rule->port);
+	else
+		return filter_port_list_exact_match(site->port_list, rule->port);
 }
 
 static int NONNULL(1,2) WUNRES
-filter_port_add(filter_port_t **port, filter_rule_t *rule)
+filter_port_add(filter_site_t *site, filter_rule_t *rule)
 {
-	filter_port_t *p = filter_port_find(*port, rule);
-	if (!p) {
-		p = malloc(sizeof(filter_port_t));
-		if (!p)
+	filter_port_t *port = filter_rule_port_find(site, rule);
+	if (!port) {
+		port = malloc(sizeof(filter_port_t));
+		if (!port)
 			return oom_return_na();
-		memset(p, 0, sizeof(filter_port_t));
-		p->port = strdup(rule->port);
-		if (!p->port)
+		memset(port, 0, sizeof(filter_port_t));
+
+		port->port = strdup(rule->port);
+		if (!port->port)
 			return oom_return_na();
 
-		// all_ports should be at the end of the port list, it has the lowest precedence
-		filter_port_t *prev = NULL;
-		filter_port_t *l = *port;
-		while (l) {
-			if (l->all_ports)
-				break;
-			prev = l;
-			l = l->next;
-		}
+		if (rule->exact_port) {
+			if (!site->port_btree)
+				if (!(site->port_btree = kb_init(port, KB_DEFAULT_SIZE)))
+					return oom_return_na();
 
-		if (prev) {
-			p->next = prev->next;
-			prev->next = p;
+			kb_put(port, site->port_btree, port);
 		}
 		else {
-			if (*port)
-				p->next = *port;
-			*port = p;
+			filter_port_list_t *port_list = malloc(sizeof(filter_port_list_t));
+			if (!port_list)
+				return oom_return_na();
+			memset(port_list, 0, sizeof(filter_port_list_t));
+
+			port_list->port = port;
+
+			// all_ports should be at the end of the port list, it has the lowest precedence
+			filter_port_list_t *prev = NULL;
+			filter_port_list_t *l = site->port_list;
+			while (l) {
+				if (l->port->all_ports)
+					break;
+				prev = l;
+				l = l->next;
+			}
+
+			if (prev) {
+				port_list->next = prev->next;
+				prev->next = port_list;
+			}
+			else {
+				if (site->port_list)
+					port_list->next = site->port_list;
+				site->port_list = port_list;
+			}
 		}
 	}
 
+	port->all_ports = rule->all_ports;
+	port->exact = rule->exact_port;
+
 	// Do not override the specs of port rules at higher precedence
 	// precedence can only go up not down
-	if (rule->action.precedence >= p->action.precedence) {
-		p->all_ports = rule->all_ports;
-		p->exact = rule->exact_port;
-
+	if (rule->action.precedence >= port->action.precedence) {
 		// Multiple rules can set an action for the same port, hence the bit-wise OR
-		p->action.divert |= rule->action.divert;
-		p->action.split |= rule->action.split;
-		p->action.pass |= rule->action.pass;
-		p->action.block |= rule->action.block;
-		p->action.match |= rule->action.match;
+		port->action.divert |= rule->action.divert;
+		port->action.split |= rule->action.split;
+		port->action.pass |= rule->action.pass;
+		port->action.block |= rule->action.block;
+		port->action.match |= rule->action.match;
 
 		// Multiple log actions can be set for the same port
 		// Multiple rules can enable/disable or don't change a log action for the same port
 		// 0: don't change, 1: disable, 2: enable
 		if (rule->action.log_connect)
-			p->action.log_connect = rule->action.log_connect;
+			port->action.log_connect = rule->action.log_connect;
 		if (rule->action.log_master)
-			p->action.log_master = rule->action.log_master;
+			port->action.log_master = rule->action.log_master;
 		if (rule->action.log_cert)
-			p->action.log_cert = rule->action.log_cert;
+			port->action.log_cert = rule->action.log_cert;
 		if (rule->action.log_content)
-			p->action.log_content = rule->action.log_content;
+			port->action.log_content = rule->action.log_content;
 		if (rule->action.log_pcap)
-			p->action.log_pcap = rule->action.log_pcap;
+			port->action.log_pcap = rule->action.log_pcap;
 #ifndef WITHOUT_MIRROR
 		if (rule->action.log_mirror)
-			p->action.log_mirror = rule->action.log_mirror;
+			port->action.log_mirror = rule->action.log_mirror;
 #endif /* !WITHOUT_MIRROR */
 
-		p->action.precedence = rule->action.precedence;
+		port->action.precedence = rule->action.precedence;
 	}
 	return 0;
 }
 
-static filter_site_t *
-filter_site_find(filter_site_t *site, filter_rule_t *rule)
+filter_site_t *
+filter_site_btree_exact_match(kbtree_t(site) *site_btree, char *s)
 {
-	while (site) {
-		if ((site->exact == rule->exact) && !strcmp(site->site, rule->site))
-			break;
-		site = site->next;
-	}
-	return site;
+	if (!site_btree)
+		return NULL;
+	filter_site_t **site = kb_get(site, site_btree, s);
+	return site ? *site : NULL;
 }
 
-static int NONNULL(1,2) WUNRES
-filter_site_add(filter_site_t **site, filter_rule_t *rule)
+filter_site_t *
+filter_site_list_substring_match(filter_site_list_t *list, char *s)
 {
-	filter_site_t *s = filter_site_find(*site, rule);
-	if (!s) {
-		s = malloc(sizeof(filter_site_t));
-		if (!s)
+	while (list) {
+		if (strstr(s, list->site->site))
+			break;
+		list = list->next;
+	}
+	return list ? list->site : NULL;
+}
+
+filter_site_t *
+filter_site_find(kbtree_t(site) *site_btree, filter_site_list_t *list, char *s)
+{
+	filter_site_t *site = filter_site_btree_exact_match(site_btree, s);
+	if (site)
+		return site;
+	return filter_site_list_substring_match(list, s);
+}
+
+static filter_site_t *
+filter_site_list_exact_match(filter_site_list_t *list, char *s)
+{
+	while (list) {
+		if (!strcmp(list->site->site, s))
+			break;
+		list = list->next;
+	}
+	return list ? list->site : NULL;
+}
+
+static filter_site_t *
+filter_rule_site_find(kbtree_t(site) *site_btree, filter_site_list_t *list, filter_rule_t *rule)
+{
+	if (rule->exact_site)
+		return filter_site_btree_exact_match(site_btree, rule->site);
+	else
+		return filter_site_list_exact_match(list, rule->site);
+}
+
+static int NONNULL(3) WUNRES
+filter_site_add(kbtree_t(site) **site_btree, filter_site_list_t **site_list, filter_rule_t *rule)
+{
+	filter_site_t *site = filter_rule_site_find(*site_btree, *site_list, rule);
+	if (!site) {
+		site = malloc(sizeof(filter_site_t));
+		if (!site)
 			return oom_return_na();
-		memset(s, 0, sizeof(filter_site_t));
-		s->site = strdup(rule->site);
-		if (!s->site)
+		memset(site, 0, sizeof(filter_site_t));
+
+		site->site = strdup(rule->site);
+		if (!site->site)
 			return oom_return_na();
 
-		// all_sites should be at the end of the site list, it has the lowest precedence
-		filter_site_t *prev = NULL;
-		filter_site_t *l = *site;
-		while (l) {
-			if (l->all_sites)
-				break;
-			prev = l;
-			l = l->next;
-		}
+		if (rule->exact_site) {
+			if (!*site_btree)
+				if (!(*site_btree = kb_init(site, KB_DEFAULT_SIZE)))
+					return oom_return_na();
 
-		if (prev) {
-			s->next = prev->next;
-			prev->next = s;
+			kb_put(site, *site_btree, site);
 		}
 		else {
-			if (*site)
-				s->next = *site;
-			*site = s;
+			filter_site_list_t *list = malloc(sizeof(filter_site_list_t));
+			if (!list)
+				return oom_return_na();
+			memset(list, 0, sizeof(filter_site_list_t));
+
+			list->site = site;
+
+			// all_sites should be at the end of the site list, it has the lowest precedence
+			filter_site_list_t *prev = NULL;
+			filter_site_list_t *l = *site_list;
+			while (l) {
+				if (l->site->all_sites)
+					break;
+				prev = l;
+				l = l->next;
+			}
+
+			if (prev) {
+				list->next = prev->next;
+				prev->next = list;
+			}
+			else {
+				if (*site_list)
+					list->next = *site_list;
+				*site_list = list;
+			}
 		}
 	}
 
-	s->all_sites = rule->all_sites;
-	s->exact = rule->exact;
+	site->all_sites = rule->all_sites;
+	site->exact = rule->exact_site;
 
 	// Do not override the specs of a site with a port rule
 	// Port rule is added as a new port under the same site
 	// hence 'if else', not just 'if'
 	if (rule->port) {
-		if (filter_port_add(&s->port, rule) == -1)
+		if (filter_port_add(site, rule) == -1)
 			return -1;
 	}
 	// Do not override the specs of site rules at higher precedence
 	// precedence can only go up not down
-	else if (rule->action.precedence >= s->action.precedence) {
+	else if (rule->action.precedence >= site->action.precedence) {
 		// Multiple rules can set an action for the same site, hence the bit-wise OR
-		s->action.divert |= rule->action.divert;
-		s->action.split |= rule->action.split;
-		s->action.pass |= rule->action.pass;
-		s->action.block |= rule->action.block;
-		s->action.match |= rule->action.match;
+		site->action.divert |= rule->action.divert;
+		site->action.split |= rule->action.split;
+		site->action.pass |= rule->action.pass;
+		site->action.block |= rule->action.block;
+		site->action.match |= rule->action.match;
 
 		// Multiple log actions can be set for the same site
 		// Multiple rules can enable/disable or don't change a log action for the same site
 		// 0: don't change, 1: disable, 2: enable
 		if (rule->action.log_connect)
-			s->action.log_connect = rule->action.log_connect;
+			site->action.log_connect = rule->action.log_connect;
 		if (rule->action.log_master)
-			s->action.log_master = rule->action.log_master;
+			site->action.log_master = rule->action.log_master;
 		if (rule->action.log_cert)
-			s->action.log_cert = rule->action.log_cert;
+			site->action.log_cert = rule->action.log_cert;
 		if (rule->action.log_content)
-			s->action.log_content = rule->action.log_content;
+			site->action.log_content = rule->action.log_content;
 		if (rule->action.log_pcap)
-			s->action.log_pcap = rule->action.log_pcap;
+			site->action.log_pcap = rule->action.log_pcap;
 #ifndef WITHOUT_MIRROR
 		if (rule->action.log_mirror)
-			s->action.log_mirror = rule->action.log_mirror;
+			site->action.log_mirror = rule->action.log_mirror;
 #endif /* !WITHOUT_MIRROR */
 
-		s->action.precedence = rule->action.precedence;
+		site->action.precedence = rule->action.precedence;
 	}
 	return 0;
 }
@@ -2169,23 +2391,23 @@ static int
 filter_sitelist_add(filter_list_t *list, filter_rule_t *rule)
 {
 	if (rule->dstip) {
-		if (filter_site_add(&list->ip, rule) == -1)
+		if (filter_site_add(&list->ip_btree, &list->ip_list, rule) == -1)
 			return -1;
 	}
 	if (rule->sni) {
-		if (filter_site_add(&list->sni, rule) == -1)
+		if (filter_site_add(&list->sni_btree, &list->sni_list, rule) == -1)
 			return -1;
 	}
 	if (rule->cn) {
-		if (filter_site_add(&list->cn, rule) == -1)
+		if (filter_site_add(&list->cn_btree, &list->cn_list, rule) == -1)
 			return -1;
 	}
 	if (rule->host) {
-		if (filter_site_add(&list->host, rule) == -1)
+		if (filter_site_add(&list->host_btree, &list->host_list, rule) == -1)
 			return -1;
 	}
 	if (rule->uri) {
-		if (filter_site_add(&list->uri, rule) == -1)
+		if (filter_site_add(&list->uri_btree, &list->uri_list, rule) == -1)
 			return -1;
 	}
 	return 0;
@@ -2258,6 +2480,8 @@ filter_ip_get(filter_t *filter, filter_rule_t *rule)
 		ip->ip = strdup(rule->ip);
 		if (!ip->ip)
 			return oom_return_na_null();
+
+		ip->exact = rule->exact_ip;
 
 		if (rule->exact_ip) {
 			if (!filter->ip_btree)
@@ -2349,6 +2573,8 @@ filter_keyword_get(filter_t *filter, filter_user_t *user, filter_rule_t *rule)
 		keyword->keyword = strdup(rule->keyword);
 		if (!keyword->keyword)
 			return oom_return_na_null();
+
+		keyword->exact = rule->exact_keyword;
 
 		if (rule->exact_keyword) {
 			if (user) {
@@ -2448,6 +2674,8 @@ filter_user_get(filter_t *filter, filter_rule_t *rule)
 		if (!user->user)
 			return oom_return_na_null();
 
+		user->exact = rule->exact_user;
+
 		if (rule->exact_user) {
 			if (!filter->user_btree)
 				if (!(filter->user_btree = kb_init(user, KB_DEFAULT_SIZE)))
@@ -2543,9 +2771,9 @@ filter_set(filter_rule_t *rule)
 		filter_user_p_t x, y = NULL;
 		__kb_traverse(filter_user_p_t, filter->user_btree, traverse_user);
 		__kb_get_first(filter_user_p_t, filter->user_btree, x);
-		printf("user_exact # of elements from traversal: %d\n", cnt);
+		fprintf(stderr, "user_exact # of elements from traversal: %d\n", cnt);
 		if (cnt)
-			printf("user_exact first element: %s == %s\n", x->user, y->user);
+			fprintf(stderr, "user_exact first element: %s == %s\n", x->user, y->user);
 	}
 #define traverse_keyword(p) { if (cnt == 0) y2 = *p; ++cnt; }
 	if (filter->keyword_btree) {
@@ -2553,9 +2781,9 @@ filter_set(filter_rule_t *rule)
 		filter_keyword_p_t x2, y2 = NULL;
 		__kb_traverse(filter_keyword_p_t, filter->keyword_btree, traverse_keyword);
 		__kb_get_first(filter_keyword_p_t, filter->keyword_btree, x2);
-		printf("keyword_exact # of elements from traversal: %d\n", cnt);
+		fprintf(stderr, "keyword_exact # of elements from traversal: %d\n", cnt);
 		if (cnt)
-			printf("keyword_exact first element: %s == %s\n", x2->keyword, y2->keyword);
+			fprintf(stderr, "keyword_exact first element: %s == %s\n", x2->keyword, y2->keyword);
 	}
 #define traverse_ip(p) { if (cnt == 0) y3 = *p; ++cnt; }
 	if (filter->ip_btree) {
@@ -2563,9 +2791,9 @@ filter_set(filter_rule_t *rule)
 		filter_ip_p_t x3, y3 = NULL;
 		__kb_traverse(filter_ip_p_t, filter->ip_btree, traverse_ip);
 		__kb_get_first(filter_ip_p_t, filter->ip_btree, x3);
-		printf("ip_exact # of elements from traversal: %d\n", cnt);
+		fprintf(stderr, "ip_exact # of elements from traversal: %d\n", cnt);
 		if (cnt)
-			printf("ip_exact first element: %s == %s\n", x3->ip, y3->ip);
+			fprintf(stderr, "ip_exact first element: %s == %s\n", x3->ip, y3->ip);
 	}
 #endif /* DEBUG_OPTS */
 	return filter;

@@ -590,121 +590,117 @@ protossl_srccert_create(pxy_conn_ctx_t *ctx)
 	return cert;
 }
 
-static int NONNULL(1,2)
-protossl_filter_match_sni(pxy_conn_ctx_t *ctx, filter_site_t *site)
+static filter_action_t * NONNULL(1,2)
+protossl_filter_match_sni(pxy_conn_ctx_t *ctx, filter_list_t *list)
 {
+	filter_site_t *site = filter_site_find(list->sni_btree, list->sni_list, ctx->sslctx->sni);
+	if (!site)
+		return NULL;
+
+#ifndef WITHOUT_USERAUTH
+	log_fine_va("Found site: %s for %s:%s, %s:%s, %s, %s, %s", site->site,
+		STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
+		STRORDASH(ctx->user), STRORDASH(ctx->desc), STRORDASH(ctx->sslctx->sni));
+#else /* WITHOUT_USERAUTH */
+	log_fine_va("Found site: %s for %s:%s, %s:%s, %s", site->site,
+		STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
+		STRORDASH(ctx->sslctx->sni));
+#endif /* WITHOUT_USERAUTH */
+
 	if (site->action.precedence < ctx->filter_precedence) {
 		log_finest_va("Rule precedence lower than conn filter precedence %d < %d: %s, %s", site->action.precedence, ctx->filter_precedence, site->site, ctx->sslctx->sni);
-		return 0;
+		return NULL;
 	}
 
-	if (site->all_sites) {
+#ifdef DEBUG_PROXY
+	if (site->all_sites)
 		log_finest_va("Match all sni: %s, %s", site->site, ctx->sslctx->sni);
-		return 1;
-	}
-	else if (site->exact) {
-		if (!strcmp(ctx->sslctx->sni, site->site)) {
-			log_finest_va("Match exact with sni: %s, %s", site->site, ctx->sslctx->sni);
-			return 1;
-		}
-	} else {
-		if (strstr(ctx->sslctx->sni, site->site)) {
-			log_finest_va("Match substring in sni: %s, %s", site->site, ctx->sslctx->sni);
-			return 1;
-		}
-	}
-	return 0;
+	else if (site->exact)
+		log_finest_va("Match exact with sni: %s, %s", site->site, ctx->sslctx->sni);
+	else
+		log_finest_va("Match substring in sni: %s, %s", site->site, ctx->sslctx->sni);
+#endif /* DEBUG_PROXY */
+
+	return &site->action;
 }
 
-static int NONNULL(1,2)
-protossl_filter_match_cn(pxy_conn_ctx_t *ctx, filter_site_t *site)
+static filter_action_t * NONNULL(1,2)
+protossl_filter_match_cn(pxy_conn_ctx_t *ctx, filter_list_t *list)
 {
+	filter_site_t *site = NULL;
+
+// ballpark figures
+#define MAX_CN_LEN 2048
+#define MAX_CN_TOKENS 50
+
+	int argc = 0;
+	char *p, *last = NULL;
+
+	size_t len = strlen(ctx->sslctx->ssl_names);
+
+	if (len > MAX_CN_LEN) {
+		log_err_level_printf(LOG_WARNING, "Skip too long common names, max len %d: %s\n", MAX_CN_LEN, ctx->sslctx->ssl_names);
+		return NULL;
+	}
+
+	// strtok_r() modifies the string param, so copy ssl_names to a local var and pass it to strtok_r()
+	char _cn[len + 1];
+	memcpy(_cn, ctx->sslctx->ssl_names, len);
+	_cn[len] = '\0';
+
+	for ((p = strtok_r(_cn, "/", &last));
+		 p;
+		 (p = strtok_r(NULL, "/", &last))) {
+		if (argc < MAX_CN_TOKENS) {
+			site = filter_site_btree_exact_match(list->cn_btree, p);
+			if (site) {
+				log_finest_va("Match exact with common name: %s, %s", p, ctx->sslctx->ssl_names);
+				break;
+			}
+		}
+		else {
+			log_err_level_printf(LOG_WARNING, "Too many tokens in common names, max tokens %d: %s\n", MAX_CN_TOKENS, ctx->sslctx->ssl_names);
+			break;
+		}
+	}
+
+	if (!site) {
+		site = filter_site_list_substring_match(list->cn_list, ctx->sslctx->ssl_names);
+		if (site)
+			log_finest_va("Match substring in common names: %s, %s", site->site, ctx->sslctx->ssl_names);
+	}
+
+	if (!site)
+		return NULL;
+
+#ifndef WITHOUT_USERAUTH
+	log_fine_va("Found site: %s for %s:%s, %s:%s, %s, %s, %s", site->site,
+		STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
+		STRORDASH(ctx->user), STRORDASH(ctx->desc), STRORDASH(ctx->sslctx->ssl_names));
+#else /* WITHOUT_USERAUTH */
+	log_fine_va("Found site: %s for %s:%s, %s:%s, %s", site->site,
+		STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
+		STRORDASH(ctx->sslctx->ssl_names));
+#endif /* WITHOUT_USERAUTH */
+
 	if (site->action.precedence < ctx->filter_precedence) {
 		log_finest_va("Rule precedence lower than conn filter precedence %d < %d: %s, %s", site->action.precedence, ctx->filter_precedence, site->site, ctx->sslctx->ssl_names);
-		return 0;
+		return NULL;
 	}
 
-	if (site->all_sites) {
+	if (site->all_sites)
 		log_finest_va("Match all common names: %s, %s", site->site, ctx->sslctx->ssl_names);
-		return 1;
-	}
-	else if (site->exact) {
-		// Avoid multithreading issues by copying the site arg to a local var
-		// site arg is from the spec filter, which may be being used by other threads
 
-		size_t len = strlen(site->site);
-
-		// Common names are separated by slashes
-		char _site[len + 3];
-		memcpy(_site + 1, site->site, len);
-		_site[0] = '/';
-		_site[len + 1] = '/';
-		_site[len + 2] = '\0';
-		len += 2;
-
-		// Skip the first slash
-		char *s = _site + 1;
-
-		// Replace the last slash with null
-		_site[len - 1] = '\0';
-
-		// Single common name: "example.com"
-		if (!strcmp(ctx->sslctx->ssl_names, s)) {
-			log_finest_va("Match exact with single common name: %s", ctx->sslctx->ssl_names);
-			return 1;
-		}
-
-		// Restore the slash at the end
-		_site[len - 1] = '/';
-
-		// First common name: "example.com/"
-		if (strstr(ctx->sslctx->ssl_names, s) == ctx->sslctx->ssl_names) {
-			log_finest_va("Match exact with the first common name: %s, %s", ctx->sslctx->ssl_names, s);
-			return 1;
-		}
-
-		// Middle common name: "/example.com/"
-		if (strstr(ctx->sslctx->ssl_names, _site)) {
-			log_finest_va("Match exact with a middle common name: %s, %s", ctx->sslctx->ssl_names, _site);
-			return 1;
-		}
-
-		// Replace the last slash with null
-		_site[len - 1] = '\0';
-
-		// Last common name: "/example.com"
-		if (strstr(ctx->sslctx->ssl_names, _site) == ctx->sslctx->ssl_names + strlen(ctx->sslctx->ssl_names) - strlen(_site)) {
-			log_finest_va("Match exact with the last common name: %s, %s", ctx->sslctx->ssl_names, _site);
-			return 1;
-		}
-	} else {
-		if (strstr(ctx->sslctx->ssl_names, site->site)) {
-			log_finest_va("Match substring in common names: %s, %s", site->site, ctx->sslctx->ssl_names);
-			return 1;
-		}
-	}
-	return 0;
+	return &site->action;
 }
 
 static unsigned int NONNULL(1,2)
 protossl_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
 {
 	if (ctx->sslctx->sni) {
-		filter_site_t *site = list->sni;
-		while (site) {
-			if (protossl_filter_match_sni(ctx, site)) {
-#ifndef WITHOUT_USERAUTH
-				log_fine_va("Found site: %s for %s:%s, %s:%s, %s, %s, %s", site->site,
-					STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
-					STRORDASH(ctx->user), STRORDASH(ctx->desc), STRORDASH(ctx->sslctx->sni));
-#else /* WITHOUT_USERAUTH */
-				log_fine_va("Found site: %s for %s:%s, %s:%s, %s", site->site,
-					STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
-					STRORDASH(ctx->sslctx->sni));
-#endif /* WITHOUT_USERAUTH */
-				return pxyconn_set_filter_action(ctx, site->action, site->site);
-			}
-			site = site->next;
+		filter_action_t *action;
+		if ((action = protossl_filter_match_sni(ctx, list))) {
+			return pxyconn_set_filter_action(ctx, action, ctx->sslctx->sni);
 		}
 #ifndef WITHOUT_USERAUTH
 		log_finest_va("No filter match with sni: %s:%s, %s:%s, %s, %s, %s, %s",
@@ -718,21 +714,9 @@ protossl_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
 	}
 
 	if (ctx->sslctx->ssl_names) {
-		filter_site_t *site = list->cn;
-		while (site) {
-			if (protossl_filter_match_cn(ctx, site)) {
-#ifndef WITHOUT_USERAUTH
-				log_fine_va("Found site: %s for %s:%s, %s:%s, %s, %s, %s", site->site,
-					STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
-					STRORDASH(ctx->user), STRORDASH(ctx->desc), STRORDASH(ctx->sslctx->ssl_names));
-#else /* WITHOUT_USERAUTH */
-				log_fine_va("Found site: %s for %s:%s, %s:%s, %s", site->site,
-					STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
-					STRORDASH(ctx->sslctx->ssl_names));
-#endif /* WITHOUT_USERAUTH */
-				return pxyconn_set_filter_action(ctx, site->action, site->site);
-			}
-			site = site->next;
+		filter_action_t *action;
+		if ((action = protossl_filter_match_cn(ctx, list))) {
+			return pxyconn_set_filter_action(ctx, action, ctx->sslctx->ssl_names);
 		}
 #ifndef WITHOUT_USERAUTH
 		log_finest_va("No filter match with common names: %s:%s, %s:%s, %s, %s, %s, %s",

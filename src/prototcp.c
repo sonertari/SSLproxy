@@ -516,71 +516,56 @@ prototcp_filter_match_port(pxy_conn_ctx_t *ctx, filter_port_t *port)
 		return 0;
 	}
 
-	if (port->all_ports) {
+#ifdef DEBUG_PROXY
+	if (port->all_ports)
 		log_finest_va("Match all dst ports: %s, %s", port->port, ctx->dstport_str);
-		return 1;
-	}
-	else if (port->exact) {
-		if (!strcmp(ctx->dstport_str, port->port)) {
-			log_finest_va("Match exact with port: %s, %s", port->port, ctx->dstport_str);
-			return 1;
-		}
-	}
-	else {
-		if (strstr(ctx->dstport_str, port->port)) {
-			log_finest_va("Match substring in dst port: %s, %s", port->port, ctx->dstport_str);
-			return 1;
-		}
-	}
-	return 0;
+	else if (port->exact)
+		log_finest_va("Match exact with port: %s, %s", port->port, ctx->dstport_str);
+	else
+		log_finest_va("Match substring in dst port: %s, %s", port->port, ctx->dstport_str);
+#endif /* DEBUG_PROXY */
+
+	return 1;
 }
 
 static filter_action_t * NONNULL(1,2)
-prototcp_filter_match_ip(pxy_conn_ctx_t *ctx, filter_site_t *site)
+prototcp_filter_match_ip(pxy_conn_ctx_t *ctx, filter_list_t *list)
 {
+	filter_site_t *site = filter_site_find(list->ip_btree, list->ip_list, ctx->dsthost_str);
+	if (!site)
+		return NULL;
+
+	log_fine_va("Found site: %s for %s:%s, %s:%s", site->site,
+		STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str));
+
 	// Port spec determines the precedence of a site rule, unless the rule does not have any port
-	if (!site->port && (site->action.precedence < ctx->filter_precedence)) {
+	if (!site->port_list && (site->action.precedence < ctx->filter_precedence)) {
 		log_finest_va("Rule precedence lower than conn filter precedence %d < %d: %s, %s", site->action.precedence, ctx->filter_precedence, site->site, ctx->dsthost_str);
 		return NULL;
 	}
 
-	filter_action_t *action = NULL;
+	filter_action_t *action = &site->action;
 
-	if (site->all_sites) {
+#ifdef DEBUG_PROXY
+	if (site->all_sites)
 		log_finest_va("Match all dst: %s, %s", site->site, ctx->dsthost_str);
-		action = &site->action;
-	}
-	else if (site->exact) {
-		if (!strcmp(ctx->dsthost_str, site->site)) {
-			log_finest_va("Match exact with dst: %s, %s", site->site, ctx->dsthost_str);
-			action = &site->action;
-		}
-	}
-	else {
-		if (strstr(ctx->dsthost_str, site->site)) {
-			log_finest_va("Match substring in dst: %s, %s", site->site, ctx->dsthost_str);
-			action = &site->action;
-		}
-	}
+	else if (site->exact)
+		log_finest_va("Match exact with dst: %s, %s", site->site, ctx->dsthost_str);
+	else
+		log_finest_va("Match substring in dst: %s, %s", site->site, ctx->dsthost_str);
+#endif /* DEBUG_PROXY */
 
-	if (action) {
-		log_fine_va("Found site: %s for %s:%s, %s:%s", site->site,
+	filter_port_t *port = filter_port_find(site, ctx->dstport_str);
+	if (port) {
+		log_fine_va("Found port: %s for %s:%s, %s:%s", port->port,
+			STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str));
+		if (prototcp_filter_match_port(ctx, port))
+			return &port->action;
+	}
+	else
+		log_finest_va("No filter match with port: %s:%s, %s:%s",
 			STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str));
 
-		if (site->port) {
-			filter_port_t *port = site->port;
-			while (port) {
-				if (prototcp_filter_match_port(ctx, port)) {
-					log_fine_va("Found port: %s for %s:%s, %s:%s", port->port,
-						STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str));
-					return &port->action;
-				}
-				port = port->next;
-			}
-			log_finest_va("No filter match with port: %s:%s, %s:%s",
-				STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str));
-		}
-	}
 	return action;
 }
 
@@ -588,13 +573,10 @@ static unsigned int NONNULL(1,2)
 prototcp_dsthost_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
 {
 	if (ctx->dsthost_str) {
-		filter_site_t *site = list->ip;
-		while (site) {
-			filter_action_t *action = prototcp_filter_match_ip(ctx, site);
-			if (action)
-				return pxyconn_set_filter_action(ctx, *action, site->site);
-			site = site->next;
-		}
+		filter_action_t *action;
+		if ((action = prototcp_filter_match_ip(ctx, list)))
+			return pxyconn_set_filter_action(ctx, action, ctx->dsthost_str);
+
 		log_finest_va("No filter match with ip: %s:%s, %s:%s",
 			STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str));
 	}

@@ -386,60 +386,76 @@ protohttp_filter_request_header_line(const char *line, protohttp_ctx_t *http_ctx
 	return (char*)line;
 }
 
-static int NONNULL(1,2)
-protohttp_filter_match_host(pxy_conn_ctx_t *ctx, filter_site_t *site)
+static filter_action_t * NONNULL(1,2)
+protohttp_filter_match_host(pxy_conn_ctx_t *ctx, filter_list_t *list)
 {
 	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
+
+	filter_site_t *site = filter_site_find(list->host_btree, list->host_list, http_ctx->http_host);
+	if (!site)
+		return NULL;
+
+#ifndef WITHOUT_USERAUTH
+	log_fine_va("Found site: %s for %s:%s, %s:%s, %s, %s, %s", site->site,
+		STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
+		STRORDASH(ctx->user), STRORDASH(ctx->desc), STRORDASH(http_ctx->http_host));
+#else /* WITHOUT_USERAUTH */
+	log_fine_va("Found site: %s for %s:%s, %s:%s, %s", site->site,
+		STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
+		STRORDASH(http_ctx->http_host));
+#endif /* WITHOUT_USERAUTH */
 
 	if (site->action.precedence < ctx->filter_precedence) {
 		log_finest_va("Rule precedence lower than conn filter precedence %d < %d: %s, %s", site->action.precedence, ctx->filter_precedence, site->site, http_ctx->http_host);
-		return 0;
+		return NULL;
 	}
 
-	if (site->all_sites) {
+#ifdef DEBUG_PROXY
+	if (site->all_sites)
 		log_finest_va("Match all host: %s, %s", site->site, http_ctx->http_host);
-		return 1;
-	}
-	else if (site->exact) {
-		if (http_ctx->http_host && !strcmp(http_ctx->http_host, site->site)) {
-			log_finest_va("Match exact with host: %s, %s", site->site, http_ctx->http_host);
-			return 1;
-		}
-	} else {
-		if (http_ctx->http_host && strstr(http_ctx->http_host, site->site)) {
-			log_finest_va("Match substring in host: %s, %s", site->site, http_ctx->http_host);
-			return 1;
-		}
-	}
-	return 0;
+	else if (site->exact)
+		log_finest_va("Match exact with host: %s, %s", site->site, http_ctx->http_host);
+	else
+		log_finest_va("Match substring in host: %s, %s", site->site, http_ctx->http_host);
+#endif /* DEBUG_PROXY */
+
+	return &site->action;
 }
 
-static int NONNULL(1,2)
-protohttp_filter_match_uri(pxy_conn_ctx_t *ctx, filter_site_t *site)
+static filter_action_t * NONNULL(1,2)
+protohttp_filter_match_uri(pxy_conn_ctx_t *ctx, filter_list_t *list)
 {
 	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
 
+	filter_site_t *site = filter_site_find(list->uri_btree, list->uri_list, http_ctx->http_uri);
+	if (!site)
+		return NULL;
+
+#ifndef WITHOUT_USERAUTH
+	log_fine_va("Found site: %s for %s:%s, %s:%s, %s, %s, %s", site->site,
+		STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
+		STRORDASH(ctx->user), STRORDASH(ctx->desc), STRORDASH(http_ctx->http_uri));
+#else /* WITHOUT_USERAUTH */
+	log_fine_va("Found site: %s for %s:%s, %s:%s, %s", site->site,
+		STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
+		STRORDASH(http_ctx->http_uri));
+#endif /* WITHOUT_USERAUTH */
+
 	if (site->action.precedence < ctx->filter_precedence) {
 		log_finest_va("Rule precedence lower than conn filter precedence %d < %d: %s, %s", site->action.precedence, ctx->filter_precedence, site->site, http_ctx->http_uri);
-		return 0;
+		return NULL;
 	}
 
-	if (site->all_sites) {
+#ifdef DEBUG_PROXY
+	if (site->all_sites)
 		log_finest_va("Match all uri: %s, %s", site->site, http_ctx->http_uri);
-		return 1;
-	}
-	else if (site->exact) {
-		if (!strcmp(http_ctx->http_uri, site->site)) {
-			log_finest_va("Match exact with uri: %s, %s", site->site, http_ctx->http_uri);
-			return 1;
-		}
-	} else {
-		if (strstr(http_ctx->http_uri, site->site)) {
-			log_finest_va("Match substring in uri: %s, %s", site->site, http_ctx->http_uri);
-			return 1;
-		}
-	}
-	return 0;
+	else if (site->exact)
+		log_finest_va("Match exact with uri: %s, %s", site->site, http_ctx->http_uri);
+	else
+		log_finest_va("Match substring in uri: %s, %s", site->site, http_ctx->http_uri);
+#endif /* DEBUG_PROXY */
+
+	return &site->action;
 }
 
 static unsigned int NONNULL(1,2)
@@ -448,21 +464,9 @@ protohttp_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
 	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
 
 	if (http_ctx->http_host) {
-		filter_site_t *site = list->host;
-		while (site) {
-			if (protohttp_filter_match_host(ctx, site)) {
-#ifndef WITHOUT_USERAUTH
-				log_fine_va("Found site: %s for %s:%s, %s:%s, %s, %s, %s", site->site,
-					STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
-					STRORDASH(ctx->user), STRORDASH(ctx->desc), STRORDASH(http_ctx->http_host));
-#else /* WITHOUT_USERAUTH */
-				log_fine_va("Found site: %s for %s:%s, %s:%s, %s", site->site,
-					STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
-					STRORDASH(http_ctx->http_host));
-#endif /* WITHOUT_USERAUTH */
-				return pxyconn_set_filter_action(ctx, site->action, site->site);
-			}
-			site = site->next;
+		filter_action_t *action;
+		if ((action = protohttp_filter_match_host(ctx, list))) {
+			return pxyconn_set_filter_action(ctx, action, http_ctx->http_host);
 		}
 #ifndef WITHOUT_USERAUTH
 		log_finest_va("No filter match with host: %s:%s, %s:%s, %s, %s, %s, %s",
@@ -476,21 +480,9 @@ protohttp_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
 	}
 
 	if (http_ctx->http_uri) {
-		filter_site_t *site = list->uri;
-		while (site) {
-			if (protohttp_filter_match_uri(ctx, site)) {
-#ifndef WITHOUT_USERAUTH
-				log_fine_va("Found site: %s for %s:%s, %s:%s, %s, %s, %s", site->site,
-					STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
-					STRORDASH(ctx->user), STRORDASH(ctx->desc), STRORDASH(http_ctx->http_uri));
-#else /* WITHOUT_USERAUTH */
-				log_fine_va("Found site: %s for %s:%s, %s:%s, %s", site->site,
-					STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
-					STRORDASH(http_ctx->http_uri));
-#endif /* WITHOUT_USERAUTH */
-				return pxyconn_set_filter_action(ctx, site->action, site->site);
-			}
-			site = site->next;
+		filter_action_t *action;
+		if ((action = protohttp_filter_match_uri(ctx, list))) {
+			return pxyconn_set_filter_action(ctx, action, http_ctx->http_uri);
 		}
 #ifndef WITHOUT_USERAUTH
 		log_finest_va("No filter match with uri: %s:%s, %s:%s, %s, %s, %s, %s",

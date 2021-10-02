@@ -91,13 +91,13 @@ typedef struct filter_action {
 
 typedef struct filter_rule {
 	// from: source filter
-	unsigned int all_conns : 1;    /* 1 to apply to all src ips and users */
+	unsigned int all_conns : 1;   /* 1 to apply to all src ips and users */
 
 #ifndef WITHOUT_USERAUTH
-	unsigned int all_users : 1;    /* 1 to apply to all users */
+	unsigned int all_users : 1;   /* 1 to apply to all users */
 
 	char *user;
-	unsigned int exact_user : 1;   /* 1 for exact, 0 for substring match */
+	unsigned int exact_user : 1;  /* 1 for exact, 0 for substring match */
 
 	char *keyword;
 	unsigned int exact_keyword : 1; /* 1 for exact, 0 for substring match */
@@ -109,7 +109,7 @@ typedef struct filter_rule {
 	// to: target filter
 	char *site;
 	unsigned int all_sites : 1;   /* 1 to match all sites == '*' */
-	unsigned int exact : 1;       /* 1 for exact, 0 for substring match */
+	unsigned int exact_site : 1;  /* 1 for exact, 0 for substring match */
 
 	// Used with dstip filters only, i.e. if the site is an ip address
 	// This is not for the src ip in the 'from' part of rules
@@ -132,36 +132,63 @@ typedef struct filter_rule {
 typedef struct filter_port {
 	char *port;
 	unsigned int all_ports : 1;
-	unsigned int exact : 1;
+	unsigned int exact : 1;       /* used in debug logging only */
 
 	struct filter_action action;
-
-	struct filter_port *next;
 } filter_port_t;
+
+typedef const char *str_t;
+
+#define getk_port(a) (a)->port
+typedef filter_port_t *filter_port_p_t;
+KBTREE_INIT(port, filter_port_p_t, kb_str_cmp, str_t, getk_port)
+
+typedef struct filter_port_list {
+	struct filter_port *port;
+	struct filter_port_list *next;
+} filter_port_list_t;
 
 typedef struct filter_site {
 	char *site;
 	unsigned int all_sites : 1;
-	unsigned int exact : 1;
+	unsigned int exact : 1;       /* used in debug logging only */
 
 	// Used with dstip filters only, i.e. if the site is an ip address
-	struct filter_port *port;
+	kbtree_t(port) *port_btree;
+	struct filter_port_list *port_list;
 
 	struct filter_action action;
-
-	struct filter_site *next;
 } filter_site_t;
 
+#define getk_site(a) (a)->site
+typedef filter_site_t *filter_site_p_t;
+KBTREE_INIT(site, filter_site_p_t, kb_str_cmp, str_t, getk_site)
+
+typedef struct filter_site_list {
+	struct filter_site *site;
+	struct filter_site_list *next;
+} filter_site_list_t;
+
 typedef struct filter_list {
-	struct filter_site *ip;
-	struct filter_site *sni;
-	struct filter_site *cn;
-	struct filter_site *host;
-	struct filter_site *uri;
+	kbtree_t(site) *ip_btree;
+	struct filter_site_list *ip_list;
+
+	kbtree_t(site) *sni_btree;
+	struct filter_site_list *sni_list;
+
+	kbtree_t(site) *cn_btree;
+	struct filter_site_list *cn_list;
+
+	kbtree_t(site) *host_btree;
+	struct filter_site_list *host_list;
+
+	kbtree_t(site) *uri_btree;
+	struct filter_site_list *uri_list;
 } filter_list_t;
 
 typedef struct filter_ip {
 	char *ip;
+	unsigned int exact : 1;       /* used in debug logging only */
 	struct filter_list *list;
 } filter_ip_t;
 
@@ -173,10 +200,9 @@ typedef struct filter_ip_list {
 #ifndef WITHOUT_USERAUTH
 typedef struct filter_keyword {
 	char *keyword;
+	unsigned int exact : 1;       /* used in debug logging only */
 	struct filter_list *list;
 } filter_keyword_t;
-
-typedef const char *str_t;
 
 #define getk_keyword(a) (a)->keyword
 typedef filter_keyword_t *filter_keyword_p_t;
@@ -189,6 +215,7 @@ typedef struct filter_keyword_list {
 
 typedef struct filter_user {
 	char *user;
+	unsigned int exact : 1;       /* used in debug logging only */
 	struct filter_list *list;
 	kbtree_t(keyword) *keyword_btree;
 	struct filter_keyword_list *keyword_list;
@@ -210,17 +237,17 @@ KBTREE_INIT(ip, filter_ip_p_t, kb_str_cmp, str_t, getk_ip)
 
 typedef struct filter {
 #ifndef WITHOUT_USERAUTH
-	kbtree_t(user) *user_btree; // exact
-	struct filter_user_list *user_list; // substring
+	kbtree_t(user) *user_btree;               /* exact */
+	struct filter_user_list *user_list;       /* substring */
 
-	kbtree_t(keyword) *keyword_btree; // exact
-	struct filter_keyword_list *keyword_list; // substring
+	kbtree_t(keyword) *keyword_btree;         /* exact */
+	struct filter_keyword_list *keyword_list; /* substring */
 
 	struct filter_list *all_user;
 #endif /* !WITHOUT_USERAUTH */
 
-	kbtree_t(ip) *ip_btree; // exact
-	struct filter_ip_list *ip_list; // substring
+	kbtree_t(ip) *ip_btree;                   /* exact */
+	struct filter_ip_list *ip_list;           /* substring */
 
 	struct filter_list *all;
 } filter_t;
@@ -245,6 +272,12 @@ char *filter_str(filter_t *);
 
 int filter_passsite_set(opts_t *, char *, int) WUNRES;
 int filter_macro_set(opts_t *, char *, int) WUNRES;
+
+filter_port_t *filter_port_find(filter_site_t *, char *) NONNULL(1,2);
+
+filter_site_t *filter_site_btree_exact_match(kbtree_t(site) *, char *);
+filter_site_t *filter_site_list_substring_match(filter_site_list_t *, char *);
+filter_site_t *filter_site_find(kbtree_t(site) *, filter_site_list_t *, char *) NONNULL(3) WUNRES;
 
 filter_ip_t *filter_ip_find(filter_t *, char *) NONNULL(1,2);
 #ifndef WITHOUT_USERAUTH

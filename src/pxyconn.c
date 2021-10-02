@@ -2007,63 +2007,63 @@ pxyconn_apply_deferred_block_action(pxy_conn_ctx_t *ctx)
 }
 
 unsigned int
-pxyconn_set_filter_action(pxy_conn_ctx_t *ctx, filter_action_t a, UNUSED char *site)
+pxyconn_set_filter_action(pxy_conn_ctx_t *ctx, filter_action_t *a, UNUSED char *site)
 {
 	unsigned int action = FILTER_ACTION_NONE;
-	if (a.divert) {
-		log_fine_va("Filter divert action for %s, precedence %d", site, a.precedence);
+	if (a->divert) {
+		log_fine_va("Filter divert action for %s, precedence %d", site, a->precedence);
 		action = FILTER_ACTION_DIVERT;
 	}
-	else if (a.split) {
-		log_fine_va("Filter split action for %s, precedence %d", site, a.precedence);
+	else if (a->split) {
+		log_fine_va("Filter split action for %s, precedence %d", site, a->precedence);
 		action = FILTER_ACTION_SPLIT;
 	}
-	else if (a.pass) {
+	else if (a->pass) {
 		// Ignore pass action if already in passthrough mode
 		if (!ctx->pass) {
-			log_fine_va("Filter pass action for %s, precedence %d", site, a.precedence);
+			log_fine_va("Filter pass action for %s, precedence %d", site, a->precedence);
 			action = FILTER_ACTION_PASS;
 		}
 	}
-	else if (a.block) {
-		log_fine_va("Filter block action for %s, precedence %d", site, a.precedence);
+	else if (a->block) {
+		log_fine_va("Filter block action for %s, precedence %d", site, a->precedence);
 		action = FILTER_ACTION_BLOCK;
 	}
-	else if (a.match) {
-		log_fine_va("Filter match action for %s, precedence %d", site, a.precedence);
+	else if (a->match) {
+		log_fine_va("Filter match action for %s, precedence %d", site, a->precedence);
 		action = FILTER_ACTION_MATCH;
 	}
 
 	// Multiple log actions can be defined, hence no 'else'
 	// 0: don't change, 1: disable, 2: enable
-	if (a.log_connect) {
-		log_fine_va("Filter %s connect log for %s, precedence %d", a.log_connect % 2 ? "disable" : "enable", site, a.precedence);
-		action |= (a.log_connect % 2) ? FILTER_LOG_NOCONNECT : FILTER_LOG_CONNECT;
+	if (a->log_connect) {
+		log_fine_va("Filter %s connect log for %s, precedence %d", a->log_connect % 2 ? "disable" : "enable", site, a->precedence);
+		action |= (a->log_connect % 2) ? FILTER_LOG_NOCONNECT : FILTER_LOG_CONNECT;
 	}
-	if (a.log_master) {
-		log_fine_va("Filter %s master log for %s, precedence %d", a.log_master % 2 ? "disable" : "enable", site, a.precedence);
-		action |= (a.log_master % 2) ? FILTER_LOG_NOMASTER : FILTER_LOG_MASTER;
+	if (a->log_master) {
+		log_fine_va("Filter %s master log for %s, precedence %d", a->log_master % 2 ? "disable" : "enable", site, a->precedence);
+		action |= (a->log_master % 2) ? FILTER_LOG_NOMASTER : FILTER_LOG_MASTER;
 	}
-	if (a.log_cert) {
-		log_fine_va("Filter %s cert log for %s, precedence %d", a.log_cert % 2 ? "disable" : "enable", site, a.precedence);
-		action |= (a.log_cert % 2) ? FILTER_LOG_NOCERT : FILTER_LOG_CERT;
+	if (a->log_cert) {
+		log_fine_va("Filter %s cert log for %s, precedence %d", a->log_cert % 2 ? "disable" : "enable", site, a->precedence);
+		action |= (a->log_cert % 2) ? FILTER_LOG_NOCERT : FILTER_LOG_CERT;
 	}
-	if (a.log_content) {
-		log_fine_va("Filter %s content log for %s, precedence %d", a.log_content % 2 ? "disable" : "enable", site, a.precedence);
-		action |= (a.log_content % 2) ? FILTER_LOG_NOCONTENT : FILTER_LOG_CONTENT;
+	if (a->log_content) {
+		log_fine_va("Filter %s content log for %s, precedence %d", a->log_content % 2 ? "disable" : "enable", site, a->precedence);
+		action |= (a->log_content % 2) ? FILTER_LOG_NOCONTENT : FILTER_LOG_CONTENT;
 	}
-	if (a.log_pcap) {
-		log_fine_va("Filter %s pcap log for %s, precedence %d", a.log_pcap % 2 ? "disable" : "enable", site, a.precedence);
-		action |= (a.log_pcap % 2) ? FILTER_LOG_NOPCAP : FILTER_LOG_PCAP;
+	if (a->log_pcap) {
+		log_fine_va("Filter %s pcap log for %s, precedence %d", a->log_pcap % 2 ? "disable" : "enable", site, a->precedence);
+		action |= (a->log_pcap % 2) ? FILTER_LOG_NOPCAP : FILTER_LOG_PCAP;
 	}
 #ifndef WITHOUT_MIRROR
-	if (a.log_mirror) {
-		log_fine_va("Filter %s mirror log for %s, precedence %d", a.log_mirror % 2 ? "disable" : "enable", site, a.precedence);
-		action |= (a.log_mirror % 2) ? FILTER_LOG_NOMIRROR : FILTER_LOG_MIRROR;
+	if (a->log_mirror) {
+		log_fine_va("Filter %s mirror log for %s, precedence %d", a->log_mirror % 2 ? "disable" : "enable", site, a->precedence);
+		action |= (a->log_mirror % 2) ? FILTER_LOG_NOMIRROR : FILTER_LOG_MIRROR;
 	}
 #endif /* !WITHOUT_MIRROR */
 
-	action |= a.precedence;
+	action |= a->precedence;
 
 	return action;
 }
