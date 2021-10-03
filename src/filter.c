@@ -346,9 +346,8 @@ filter_free(opts_t *opts)
 	}
 
 	while (pf->user_list) {
-		filter_user_free(pf->user_list->user);
-
 		filter_user_list_t *user = pf->user_list->next;
+		free_user(&pf->user_list->user)
 		free(pf->user_list);
 		pf->user_list = user;
 	}
@@ -374,11 +373,8 @@ filter_free(opts_t *opts)
 	}
 
 	while (pf->ip_list) {
-		free(pf->ip_list->ip->ip);
-		filter_list_free(pf->ip_list->ip->list);
-		free(pf->ip_list->ip);
-
 		filter_ip_list_t *ip = pf->ip_list->next;
+		free_ip(&pf->ip_list->ip)
 		free(pf->ip_list);
 		pf->ip_list = ip;
 	}
@@ -1563,7 +1559,7 @@ filter_rule_translate(opts_t *opts, const char *name, int argc, char **argv, int
 	//     port (serverport[*]|$macro|*)|
 	//     *)]
 	//  [log ([[!]connect] [[!]master] [[!]cert]
-	//        [[!]content] [[!]pcap] [[!]mirror] [$macro]|*|!*)]
+	//        [[!]content] [[!]pcap] [[!]mirror] [$macro]|[!]*)]
 	//  |*)
 
 	filter_rule_t *rule = malloc(sizeof(filter_rule_t));
@@ -2652,6 +2648,9 @@ filter_user_get(filter_t *filter, filter_rule_t *rule)
 filter_t *
 filter_set(filter_rule_t *rule)
 {
+	if (!rule)
+		return NULL;
+
 	filter_t *filter = malloc(sizeof(filter_t));
 	if (!filter)
 		return oom_return_na_null();

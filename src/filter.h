@@ -256,12 +256,12 @@ typedef struct filter {
 void filter_userlist_free(userlist_t *);
 int filter_userlist_copy(userlist_t *, const char *, userlist_t **) NONNULL(2) WUNRES;
 char *filter_userlist_str(userlist_t *);
-int filter_userlist_set(char *, int, userlist_t **, const char *) WUNRES;
+int filter_userlist_set(char *, int, userlist_t **, const char *) NONNULL(1,4) WUNRES;
 #endif /* !WITHOUT_USERAUTH */
 
-void filter_macro_free(opts_t *);
+void filter_macro_free(opts_t *) NONNULL(1);
 void filter_rules_free(opts_t *) NONNULL(1);
-void filter_free(opts_t *);
+void filter_free(opts_t *) NONNULL(1);
 
 int filter_macro_copy(macro_t *, const char *, opts_t *) NONNULL(2,3) WUNRES;
 int filter_rules_copy(filter_rule_t *, const char *, opts_t *) NONNULL(2,3) WUNRES;
@@ -270,13 +270,13 @@ char *filter_macro_str(macro_t *);
 char *filter_rule_str(filter_rule_t *);
 char *filter_str(filter_t *);
 
-int filter_passsite_set(opts_t *, char *, int) WUNRES;
-int filter_macro_set(opts_t *, char *, int) WUNRES;
+int filter_passsite_set(opts_t *, char *, int) NONNULL(1,2) WUNRES;
+int filter_macro_set(opts_t *, char *, int) NONNULL(1,2) WUNRES;
 
 filter_port_t *filter_port_find(filter_site_t *, char *) NONNULL(1,2);
 
-filter_site_t *filter_site_btree_exact_match(kbtree_t(site) *, char *);
-filter_site_t *filter_site_list_substring_match(filter_site_list_t *, char *);
+filter_site_t *filter_site_btree_exact_match(kbtree_t(site) *, char *) NONNULL(2) WUNRES;
+filter_site_t *filter_site_list_substring_match(filter_site_list_t *, char *) NONNULL(2) WUNRES;
 filter_site_t *filter_site_find(kbtree_t(site) *, filter_site_list_t *, char *) NONNULL(3) WUNRES;
 
 filter_ip_t *filter_ip_find(filter_t *, char *) NONNULL(1,2);

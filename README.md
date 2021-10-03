@@ -308,7 +308,7 @@ The syntax of filtering rules is as follows:
 	     port (serverport[*]|$macro|*)|
 	     *)]
 	  [log ([[!]connect] [[!]master] [[!]cert]
-	        [[!]content] [[!]pcap] [[!]mirror] [$macro]|*|!*)]
+	        [[!]content] [[!]pcap] [[!]mirror] [$macro]|[!]*)]
 	  |*)
 
 The definition of which connections the rule action will be applied to is 

@@ -18,7 +18,7 @@
 	         port (serverport[*]|$macro|*)|
 	         *)]
 	      [log ([[!]connect] [[!]master] [[!]cert]
-	            [[!]content] [[!]pcap] [[!]mirror] [$macro]|*|!*)]
+	            [[!]content] [[!]pcap] [[!]mirror] [$macro]|[!]*)]
 	      |*)
 
 -   Add Define config option for defining macros to be used in filtering rules.
