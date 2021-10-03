@@ -539,7 +539,7 @@ prototcp_filter_match_ip(pxy_conn_ctx_t *ctx, filter_list_t *list)
 		STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str));
 
 	// Port spec determines the precedence of a site rule, unless the rule does not have any port
-	if (!site->port_list && (site->action.precedence < ctx->filter_precedence)) {
+	if (!site->port_btree && !site->port_list && (site->action.precedence < ctx->filter_precedence)) {
 		log_finest_va("Rule precedence lower than conn filter precedence %d < %d: %s, %s", site->action.precedence, ctx->filter_precedence, site->site, ctx->dsthost_str);
 		return NULL;
 	}

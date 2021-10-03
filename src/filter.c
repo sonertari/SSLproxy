@@ -2070,7 +2070,9 @@ static filter_port_t *
 filter_port_list_substring_match(filter_port_list_t *list, char *p)
 {
 	while (list) {
-		if (strstr(p, list->port->port))
+		// Actually, no need to check all_ports, @see filter_site_list_substring_match(),
+		// if all_ports is set, port (little/needle) is empty.
+		if (list->port->all_ports || strstr(p, list->port->port))
 			break;
 		list = list->next;
 	}
@@ -2206,7 +2208,10 @@ filter_site_t *
 filter_site_list_substring_match(filter_site_list_t *list, char *s)
 {
 	while (list) {
-		if (strstr(s, list->site->site))
+		// Actually, no need to check all_sites, because strstr(3) on OpenBSD
+		// reads that "If little is an empty string, big is returned",
+		// and if all_sites is set, site (little/needle) is empty.
+		if (list->site->all_sites || strstr(s, list->site->site))
 			break;
 		list = list->next;
 	}
