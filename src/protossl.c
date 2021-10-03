@@ -643,24 +643,27 @@ protossl_filter_match_cn(pxy_conn_ctx_t *ctx, filter_list_t *list)
 		return NULL;
 	}
 
-	// strtok_r() modifies the string param, so copy ssl_names to a local var and pass it to strtok_r()
-	char _cn[len + 1];
-	memcpy(_cn, ctx->sslctx->ssl_names, len);
-	_cn[len] = '\0';
+	// Do not tokenize ssl_names if there is no rule to match exact common names
+	if (list->cn_btree) {
+		// strtok_r() modifies the string param, so copy ssl_names to a local var and pass it to strtok_r()
+		char _cn[len + 1];
+		memcpy(_cn, ctx->sslctx->ssl_names, len);
+		_cn[len] = '\0';
 
-	for ((p = strtok_r(_cn, "/", &last));
-		 p;
-		 (p = strtok_r(NULL, "/", &last))) {
-		if (argc++ < MAX_CN_TOKENS) {
-			site = filter_site_btree_exact_match(list->cn_btree, p);
-			if (site) {
-				log_finest_va("Match exact with common name (%d): %s, %s", argc, p, ctx->sslctx->ssl_names);
+		for ((p = strtok_r(_cn, "/", &last));
+			 p;
+			 (p = strtok_r(NULL, "/", &last))) {
+			if (argc++ < MAX_CN_TOKENS) {
+				site = filter_site_btree_exact_match(list->cn_btree, p);
+				if (site) {
+					log_finest_va("Match exact with common name (%d): %s, %s", argc, p, ctx->sslctx->ssl_names);
+					break;
+				}
+			}
+			else {
+				log_err_level_printf(LOG_WARNING, "Too many tokens in common names, max tokens %d: %s\n", MAX_CN_TOKENS, ctx->sslctx->ssl_names);
 				break;
 			}
-		}
-		else {
-			log_err_level_printf(LOG_WARNING, "Too many tokens in common names, max tokens %d: %s\n", MAX_CN_TOKENS, ctx->sslctx->ssl_names);
-			break;
 		}
 	}
 
