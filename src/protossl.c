@@ -651,10 +651,10 @@ protossl_filter_match_cn(pxy_conn_ctx_t *ctx, filter_list_t *list)
 	for ((p = strtok_r(_cn, "/", &last));
 		 p;
 		 (p = strtok_r(NULL, "/", &last))) {
-		if (argc < MAX_CN_TOKENS) {
+		if (argc++ < MAX_CN_TOKENS) {
 			site = filter_site_btree_exact_match(list->cn_btree, p);
 			if (site) {
-				log_finest_va("Match exact with common name: %s, %s", p, ctx->sslctx->ssl_names);
+				log_finest_va("Match exact with common name (%d): %s, %s", argc, p, ctx->sslctx->ssl_names);
 				break;
 			}
 		}
