@@ -2650,12 +2650,14 @@ filter_user_get(filter_t *filter, filter_rule_t *rule)
 }
 #endif /* WITHOUT_USERAUTH */
 
+/*
+ * Translates filtering rules into data structures.
+ * Never pass NULL as rule param.
+ * Otherwise, we must return NULL, but NULL retval means oom.
+ */
 filter_t *
 filter_set(filter_rule_t *rule)
 {
-	if (!rule)
-		return NULL;
-
 	filter_t *filter = malloc(sizeof(filter_t));
 	if (!filter)
 		return oom_return_na_null();

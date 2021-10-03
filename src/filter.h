@@ -285,7 +285,7 @@ filter_keyword_t *filter_keyword_find(filter_t *, filter_user_t *, char *) NONNU
 filter_user_t *filter_user_find(filter_t *, char *) NONNULL(1,2);
 #endif /* !WITHOUT_USERAUTH */
 int filter_rule_set(opts_t *, const char *, char *, int) NONNULL(1,2,3) WUNRES;
-filter_t *filter_set(filter_rule_t *);
+filter_t *filter_set(filter_rule_t *) NONNULL(1) WUNRES;
 
 #endif /* !FILTER_H */
 
