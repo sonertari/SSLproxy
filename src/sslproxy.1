@@ -116,7 +116,7 @@ connection. Then SSLproxy re-encrypts and sends the packets to the Server.
 The response from the Server follows the same path back to the Client in 
 reverse order.
 .LP
-See the SSLsplit documentation for split style proxyspecs.
+See the SSLsplit documentation for split style and structured proxyspecs.
 .SH 	SSLproxy line
 A sample line SSLproxy inserts into the first packet in the connection is the 
 following:
@@ -421,10 +421,11 @@ The macro name must be followed by words separated with spaces.
 .LP
 You can append an asterisk * to the fields in filtering rules for substring 
 matching. Otherwise, the filter searches for an exact match with the field in 
-the rule. The filter uses binary search trees (BST) for exact match and linked 
-lists for substring match. So, filtering rules should be written using exact 
-matches instead of substring matches, as much as possible. Because BST search 
-must be faster than substring search over linked lists.
+the rule. The filter uses B-tree data structure, a self-balancing tree for 
+exact match, and linked list for substring match. So, filtering rules should 
+be written using exact matches instead of substring matches, as much as 
+possible, because B-tree search must be faster than substring search over a 
+linked list.
 .LP
 The ordering of filtering rules is important. The ordering of from, to, and 
 log parts is not important. The ordering of log actions is not important.
