@@ -745,7 +745,7 @@ filter_list_sub_str(filter_site_list_t *list, char *old_s, const char *name)
 {
 	char *new_s = NULL;
 	char *s = filter_sites_str(list);
-	if (asprintf(&new_s, "%s%s    %s: %s", STRORNONE(old_s), NLORNONE(old_s), name, STRORNONE(s)) < 0) {
+	if (asprintf(&new_s, "%s%s    %s:%s", STRORNONE(old_s), NLORNONE(old_s), name, STRORNONE(s)) < 0) {
 		// @todo Handle oom, and don't just use STRORNONE()
 		new_s = NULL;
 	}
@@ -837,7 +837,7 @@ filter_ip_list_str(filter_ip_list_t *ip_list)
 		char *list = filter_list_str(ip_list->ip->list);
 
 		char *p;
-		if (asprintf(&p, "%s%s  ip %d %s (%s)= \n%s", STRORNONE(s), NLORNONE(s),
+		if (asprintf(&p, "%s%s  ip %d %s (%s)=\n%s", STRORNONE(s), NLORNONE(s),
 				count, ip_list->ip->ip, ip_list->ip->exact ? "exact" : "substring", STRORNONE(list)) < 0) {
 			if (list)
 				free(list);
@@ -902,7 +902,7 @@ filter_user_list_str(filter_user_list_t *user)
 		// It is possible to have users without any filter rule,
 		// but the user exists because it has keyword filters
 		if (list) {
-			if (asprintf(&p, "%s%s  user %d %s (%s)= \n%s", STRORNONE(s), NLORNONE(s),
+			if (asprintf(&p, "%s%s  user %d %s (%s)=\n%s", STRORNONE(s), NLORNONE(s),
 					count, user->user->user, user->user->exact ? "exact" : "substring", list) < 0) {
 				free(list);
 				goto err;
@@ -957,7 +957,7 @@ filter_keyword_list_str(filter_keyword_list_t *keyword)
 		char *list = filter_list_str(keyword->keyword->list);
 
 		char *p;
-		if (asprintf(&p, "%s%s   keyword %d %s (%s)= \n%s", STRORNONE(s), NLORNONE(s),
+		if (asprintf(&p, "%s%s   keyword %d %s (%s)=\n%s", STRORNONE(s), NLORNONE(s),
 				count, keyword->keyword->keyword, keyword->keyword->exact ? "exact" : "substring", STRORNONE(list)) < 0) {
 			if (list)
 				free(list);
@@ -2530,18 +2530,12 @@ filter_keyword_get(filter_t *filter, filter_user_t *user, filter_rule_t *rule)
 		keyword->exact = rule->exact_keyword;
 
 		if (rule->exact_keyword) {
-			if (user) {
-				if (!user->keyword_btree)
-					if (!(user->keyword_btree = kb_init(keyword, KB_DEFAULT_SIZE)))
-						return oom_return_na_null();
-				kb_put(keyword, user->keyword_btree, keyword);
-			}
-			else {
-				if (!filter->keyword_btree)
-					if (!(filter->keyword_btree = kb_init(keyword, KB_DEFAULT_SIZE)))
-						return oom_return_na_null();
-				kb_put(keyword, filter->keyword_btree, keyword);
-			}
+			kbtree_t(keyword) **keyword_btree = user ? &user->keyword_btree : &filter->keyword_btree;
+			if (!*keyword_btree)
+				if (!(*keyword_btree = kb_init(keyword, KB_DEFAULT_SIZE)))
+					return oom_return_na_null();
+
+			kb_put(keyword, *keyword_btree, keyword);
 		}
 		else {
 			filter_keyword_list_t *keyword_list = malloc(sizeof(filter_keyword_list_t));
