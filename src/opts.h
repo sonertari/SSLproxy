@@ -47,6 +47,7 @@
  */
 #define STRORDASH(x)	(((x)&&*(x))?(x):"-")
 #define STRORNONE(x)	(((x)&&*(x))?(x):"")
+#define NLORNONE(x)		(((x)&&*(x))?"\n":"")
 
 #define FILTER_ACTION_NONE   0x00000000U
 #define FILTER_ACTION_MATCH  0x00000200U

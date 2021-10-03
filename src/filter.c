@@ -530,7 +530,7 @@ filter_macro_str(macro_t *macro)
 		char *v = filter_value_str(macro->value);
 
 		char *p;
-		if (asprintf(&p, "%s%smacro %s = %s", STRORNONE(s), s ? "\n" : "", macro->name, STRORNONE(v)) < 0) {
+		if (asprintf(&p, "%s%smacro %s = %s", STRORNONE(s), NLORNONE(s), macro->name, STRORNONE(v)) < 0) {
 			if (v)
 				free(v);
 			goto err;
@@ -610,7 +610,7 @@ filter_rule_str(filter_rule_t *rule)
 		}
 		char *nfrs;
 		if (asprintf(&nfrs, "%s%sfilter rule %d: %s", 
-					STRORNONE(frs), frs ? "\n" : "", count, p) < 0) {
+					STRORNONE(frs), NLORNONE(frs), count, p) < 0) {
 			free(p);
 			goto err;
 		}
@@ -745,7 +745,7 @@ filter_list_sub_str(filter_site_list_t *list, char *old_s, const char *name)
 {
 	char *new_s = NULL;
 	char *s = filter_sites_str(list);
-	if (asprintf(&new_s, "%s%s    %s: %s", STRORNONE(old_s), old_s ? "\n" : "", name, STRORNONE(s)) < 0) {
+	if (asprintf(&new_s, "%s%s    %s: %s", STRORNONE(old_s), NLORNONE(old_s), name, STRORNONE(s)) < 0) {
 		// @todo Handle oom, and don't just use STRORNONE()
 		new_s = NULL;
 	}
@@ -837,7 +837,7 @@ filter_ip_list_str(filter_ip_list_t *ip_list)
 		char *list = filter_list_str(ip_list->ip->list);
 
 		char *p;
-		if (asprintf(&p, "%s%s  ip %d %s (%s)= \n%s", STRORNONE(s), s ? "\n" : "",
+		if (asprintf(&p, "%s%s  ip %d %s (%s)= \n%s", STRORNONE(s), NLORNONE(s),
 				count, ip_list->ip->ip, ip_list->ip->exact ? "exact" : "substring", STRORNONE(list)) < 0) {
 			if (list)
 				free(list);
@@ -902,7 +902,7 @@ filter_user_list_str(filter_user_list_t *user)
 		// It is possible to have users without any filter rule,
 		// but the user exists because it has keyword filters
 		if (list) {
-			if (asprintf(&p, "%s%s  user %d %s (%s)= \n%s", STRORNONE(s), s ? "\n" : "",
+			if (asprintf(&p, "%s%s  user %d %s (%s)= \n%s", STRORNONE(s), NLORNONE(s),
 					count, user->user->user, user->user->exact ? "exact" : "substring", list) < 0) {
 				free(list);
 				goto err;
@@ -957,7 +957,7 @@ filter_keyword_list_str(filter_keyword_list_t *keyword)
 		char *list = filter_list_str(keyword->keyword->list);
 
 		char *p;
-		if (asprintf(&p, "%s%s   keyword %d %s (%s)= \n%s", STRORNONE(s), s ? "\n" : "",
+		if (asprintf(&p, "%s%s   keyword %d %s (%s)= \n%s", STRORNONE(s), NLORNONE(s),
 				count, keyword->keyword->keyword, keyword->keyword->exact ? "exact" : "substring", STRORNONE(list)) < 0) {
 			if (list)
 				free(list);
@@ -1017,7 +1017,7 @@ filter_userkeyword_list_str(filter_user_list_t *user)
 		char *list_substr = filter_keyword_list_str(user->user->keyword_list);
 
 		char *p = NULL;
-		if (asprintf(&p, "%s%s user %d %s (%s)=%s%s%s%s", STRORNONE(s), s ? "\n" : "",
+		if (asprintf(&p, "%s%s user %d %s (%s)=%s%s%s%s", STRORNONE(s), NLORNONE(s),
 				count, user->user->user, user->user->exact ? "exact" : "substring",
 				list_exact ? "\n  keyword exact:\n" : "", STRORNONE(list_exact),
 				list_substr ? "\n  keyword substring:\n" : "", STRORNONE(list_substr)
@@ -1116,17 +1116,17 @@ filter_str(filter_t *filter)
 			"ip_filter_substr->%s%s\n"
 			"all_filter->%s%s\n",
 #ifndef WITHOUT_USERAUTH
-			userkeyword_filter_exact ? "\n" : "", STRORNONE(userkeyword_filter_exact),
-			userkeyword_filter_substr ? "\n" : "", STRORNONE(userkeyword_filter_substr),
-			user_filter_exact ? "\n" : "", STRORNONE(user_filter_exact),
-			user_filter_substr ? "\n" : "", STRORNONE(user_filter_substr),
-			keyword_filter_exact ? "\n" : "", STRORNONE(keyword_filter_exact),
-			keyword_filter_substr ? "\n" : "", STRORNONE(keyword_filter_substr),
-			all_user_filter ? "\n" : "", STRORNONE(all_user_filter),
+			NLORNONE(userkeyword_filter_exact), STRORNONE(userkeyword_filter_exact),
+			NLORNONE(userkeyword_filter_substr), STRORNONE(userkeyword_filter_substr),
+			NLORNONE(user_filter_exact), STRORNONE(user_filter_exact),
+			NLORNONE(user_filter_substr), STRORNONE(user_filter_substr),
+			NLORNONE(keyword_filter_exact), STRORNONE(keyword_filter_exact),
+			NLORNONE(keyword_filter_substr), STRORNONE(keyword_filter_substr),
+			NLORNONE(all_user_filter), STRORNONE(all_user_filter),
 #endif /* !WITHOUT_USERAUTH */
-			ip_filter_exact ? "\n" : "", STRORNONE(ip_filter_exact),
-			ip_filter_substr ? "\n" : "", STRORNONE(ip_filter_substr),
-			all_filter ? "\n" : "", STRORNONE(all_filter)) < 0) {
+			NLORNONE(ip_filter_exact), STRORNONE(ip_filter_exact),
+			NLORNONE(ip_filter_substr), STRORNONE(ip_filter_substr),
+			NLORNONE(all_filter), STRORNONE(all_filter)) < 0) {
 		// fs is undefined
 		goto err;
 	}
