@@ -295,8 +295,8 @@ The syntax of filtering rules is as follows:
 
 	(Divert|Split|Pass|Block|Match)
 	 ([from (
-	     user (username[*]|$macro|*) [desc (keyword[*]|$macro|*)]|
-	     desc (keyword[*]|$macro|*)|
+	     user (username[*]|$macro|*) [desc (desc[*]|$macro|*)]|
+	     desc (desc[*]|$macro|*)|
 	     ip (clientip[*]|$macro|*)|
 	     *)]
 	  [to (
@@ -316,7 +316,7 @@ achieved by the `from` and `to` parts of a filtering rule and by the proxyspec
 that the rule is defined for.
 
 - The `from` part of a rule defines source filter based on client IP address, 
-user or description keyword, or `*` for all.
+user and/or description, or `*` for all.
 - The `to` part defines destination filter based on server IP address, SNI or 
 Common Names of SSL connections, Host or URI fields in HTTP Request headers, or 
 `*` for all.
@@ -407,11 +407,8 @@ The macro name must be followed by words separated with spaces.
 
 You can append an asterisk `*` to the fields in filtering rules for substring 
 matching. Otherwise, the filter searches for an exact match with the field in 
-the rule. The filter uses B-tree data structure, a self-balancing tree for 
-exact match, and linked list for substring match. So, filtering rules should 
-be written using exact matches instead of substring matches, as much as 
-possible, because B-tree search must be faster than substring search over a 
-linked list.
+the rule. The filter uses B-trees for exact string matching and Aho-Corasick 
+machines for substring matching.
 
 The ordering of filtering rules is important. The ordering of from, to, and 
 log parts is not important. The ordering of log actions is not important.
@@ -433,10 +430,10 @@ purpose. For example, sites requiring client authentication can be added as
 PassSite.
 
 Per-site filters can be defined using client IP addresses, users, and 
-description keywords. If the UserAuth option is disabled, only client IP 
-addresses can be used in PassSite filters. Multiple sites can be defined, one 
-on each line. PassSite rules can search for exact or substring matches. 
-PassSite rules do not support macro expansion.
+description. If the UserAuth option is disabled, only client IP addresses can 
+be used in PassSite filters. Multiple sites can be defined, one on each line. 
+PassSite rules can search for exact or substring matches. PassSite rules do 
+not support macro expansion.
 
 #### User control lists
 

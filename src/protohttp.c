@@ -391,7 +391,7 @@ protohttp_filter_match_host(pxy_conn_ctx_t *ctx, filter_list_t *list)
 {
 	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
 
-	filter_site_t *site = filter_site_find(list->host_btree, list->host_list, http_ctx->http_host);
+	filter_site_t *site = filter_site_find(list->host_btree, list->host_acm, list->host_all, http_ctx->http_host);
 	if (!site)
 		return NULL;
 
@@ -427,7 +427,7 @@ protohttp_filter_match_uri(pxy_conn_ctx_t *ctx, filter_list_t *list)
 {
 	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
 
-	filter_site_t *site = filter_site_find(list->uri_btree, list->uri_list, http_ctx->http_uri);
+	filter_site_t *site = filter_site_find(list->uri_btree, list->uri_acm, list->uri_all, http_ctx->http_uri);
 	if (!site)
 		return NULL;
 

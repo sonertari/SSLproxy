@@ -32,6 +32,8 @@
 #include "log.h"
 #include "util.h"
 
+ACM_DEFINE (char);
+
 #define free_list(list, type) { \
 	while (list) { \
 		type *next = (list)->next; \
@@ -51,6 +53,15 @@
 	else \
 		*list = value; \
 	}
+
+#define match_acm(acm, haystack, value) { \
+	const ACState(char) *state = ACM_reset(acm); \
+	for (char *c = haystack; *c; c++) { \
+		if (ACM_match(state, *c)) { \
+			ACM_get_match(state, 0, 0, (void **)&value); \
+			break; \
+		} \
+	}}
 
 #ifndef WITHOUT_USERAUTH
 void
@@ -208,8 +219,8 @@ filter_rules_free(opts_t *opts)
 #ifndef WITHOUT_USERAUTH
 		if (rule->user)
 			free(rule->user);
-		if (rule->keyword)
-			free(rule->keyword);
+		if (rule->desc)
+			free(rule->desc);
 #endif /* !WITHOUT_USERAUTH */
 		free(rule);
 		rule = next;
@@ -218,41 +229,37 @@ filter_rules_free(opts_t *opts)
 }
 
 #define free_port(p) { \
-	free(*p->port); \
+	free((*p)->port); \
 	free(*p); }
 
 static void
-filter_port_btree_free(kbtree_t(port) *port_btree)
+free_port_func(void *p)
 {
-	if (port_btree) {
-		__kb_traverse(filter_port_p_t, port_btree, free_port);
-		__kb_destroy(port_btree);
-	}
+	free_port((filter_port_t **)&p)
 }
 
 static void
-filter_port_list_free(filter_port_list_t *port)
+filter_port_btree_free(kbtree_t(port) *btree)
 {
-	while (port) {
-		filter_port_list_t *p = port->next;
-		free_port(&port)
-		port = p;
+	if (btree) {
+		__kb_traverse(filter_port_p_t, btree, free_port);
+		__kb_destroy(btree);
 	}
 }
 
 #define free_site(p) { \
-	free(*p->site); \
-	filter_port_btree_free(*p->port_btree); \
-	filter_port_list_free(*p->port_list); \
+	free((*p)->site); \
+	filter_port_btree_free((*p)->port_btree); \
+	if ((*p)->port_acm) \
+		ACM_release((*p)->port_acm); \
+	if ((*p)->port_all) \
+		free_port_func((*p)->port_all); \
 	free(*p); }
 
-static filter_site_list_t *
-filter_site_free(filter_site_list_t *site_list)
+static void
+free_site_func(void *s)
 {
-	filter_site_list_t *s = site_list->next;
-	free_site(&site_list->site)
-	free(site_list);
-	return s;
+	free_site((filter_site_t **)&s)
 }
 
 static void
@@ -262,56 +269,55 @@ filter_list_free(filter_list_t *list)
 		__kb_traverse(filter_site_p_t, list->ip_btree, free_site);
 		__kb_destroy(list->ip_btree);
 	}
-	while (list->ip_list)
-		list->ip_list = filter_site_free(list->ip_list);
+	if (list->ip_acm)
+		ACM_release(list->ip_acm);
+	if (list->ip_all)
+		free_site_func(list->ip_all);
 
 	if (list->sni_btree) {
 		__kb_traverse(filter_site_p_t, list->sni_btree, free_site);
 		__kb_destroy(list->sni_btree);
 	}
-	while (list->sni_list)
-		list->sni_list = filter_site_free(list->sni_list);
+	if (list->sni_acm)
+		ACM_release(list->sni_acm);
+	if (list->sni_all)
+		free_site_func(list->sni_all);
 
 	if (list->cn_btree) {
 		__kb_traverse(filter_site_p_t, list->cn_btree, free_site);
 		__kb_destroy(list->cn_btree);
 	}
-	while (list->cn_list)
-		list->cn_list = filter_site_free(list->cn_list);
+	if (list->cn_acm)
+		ACM_release(list->cn_acm);
+	if (list->cn_all)
+		free_site_func(list->cn_all);
 
 	if (list->host_btree) {
 		__kb_traverse(filter_site_p_t, list->host_btree, free_site);
 		__kb_destroy(list->host_btree);
 	}
-	while (list->host_list)
-		list->host_list = filter_site_free(list->host_list);
+	if (list->host_acm)
+		ACM_release(list->host_acm);
+	if (list->host_all)
+		free_site_func(list->host_all);
 
 	if (list->uri_btree) {
 		__kb_traverse(filter_site_p_t, list->uri_btree, free_site);
 		__kb_destroy(list->uri_btree);
 	}
-	while (list->uri_list)
-		list->uri_list = filter_site_free(list->uri_list);
+	if (list->uri_acm)
+		ACM_release(list->uri_acm);
+	if (list->uri_all)
+		free_site_func(list->uri_all);
 
 	free(list);
 }
 
 #ifndef WITHOUT_USERAUTH
-#define free_keyword(p) { \
-	free(*p->keyword); \
-	filter_list_free(*p->list); \
+#define free_desc(p) { \
+	free((*p)->desc); \
+	filter_list_free((*p)->list); \
 	free(*p); }
-
-static void
-filter_keyword_list_free(filter_keyword_list_t *list)
-{
-	while (list) {
-		filter_keyword_list_t *keyword = list->next;
-		free_keyword(&list->keyword)
-		free(list);
-		list = keyword;
-	}
-}
 
 static void
 filter_user_free(filter_user_t *user)
@@ -319,18 +325,24 @@ filter_user_free(filter_user_t *user)
 	free(user->user);
 	filter_list_free(user->list);
 
-	if (user->keyword_btree) {
-		__kb_traverse(filter_keyword_p_t, user->keyword_btree, free_keyword);
-		__kb_destroy(user->keyword_btree);
+	if (user->desc_btree) {
+		__kb_traverse(filter_desc_p_t, user->desc_btree, free_desc);
+		__kb_destroy(user->desc_btree);
 	}
 
-	filter_keyword_list_free(user->keyword_list);
+	if (user->desc_acm)
+		ACM_release(user->desc_acm);
 }
 
 #define free_user(p) { \
 	filter_user_free(*p); \
 	free(*p); }
 #endif /* !WITHOUT_USERAUTH */
+
+#define free_ip(p) { \
+	free((*p)->ip); \
+	filter_list_free((*p)->list); \
+	free(*p); }
 
 void
 filter_free(opts_t *opts)
@@ -345,39 +357,27 @@ filter_free(opts_t *opts)
 		__kb_destroy(pf->user_btree);
 	}
 
-	while (pf->user_list) {
-		filter_user_list_t *user = pf->user_list->next;
-		free_user(&pf->user_list->user)
-		free(pf->user_list);
-		pf->user_list = user;
+	if (pf->user_acm)
+		ACM_release(pf->user_acm);
+
+	if (pf->desc_btree) {
+		__kb_traverse(filter_desc_p_t, pf->desc_btree, free_desc);
+		__kb_destroy(pf->desc_btree);
 	}
 
-	if (pf->keyword_btree) {
-		__kb_traverse(filter_keyword_p_t, pf->keyword_btree, free_keyword);
-		__kb_destroy(pf->keyword_btree);
-	}
-
-	filter_keyword_list_free(pf->keyword_list);
+	if (pf->desc_acm)
+		ACM_release(pf->desc_acm);
 
 	filter_list_free(pf->all_user);
 #endif /* !WITHOUT_USERAUTH */
-
-#define free_ip(p) { \
-	free(*p->ip); \
-	filter_list_free(*p->list); \
-	free(*p); }
 
 	if (pf->ip_btree) {
 		__kb_traverse(filter_ip_p_t, pf->ip_btree, free_ip);
 		__kb_destroy(pf->ip_btree);
 	}
 
-	while (pf->ip_list) {
-		filter_ip_list_t *ip = pf->ip_list->next;
-		free_ip(&pf->ip_list->ip)
-		free(pf->ip_list);
-		pf->ip_list = ip;
-	}
+	if (pf->ip_acm)
+		ACM_release(pf->ip_acm);
 
 	filter_list_free(pf->all);
 
@@ -410,12 +410,10 @@ filter_macro_copy(macro_t *macro, const char *argv0, opts_t *opts)
 				return oom_return(argv0);
 
 			append_list(&m->value, v, value_t)
-
 			value = value->next;
 		}
 
 		append_list(&opts->macro, m, macro_t)
-
 		macro = macro->next;
 	}
 	return 0;
@@ -442,12 +440,12 @@ filter_rules_copy(filter_rule_t *rule, const char *argv0, opts_t *opts)
 		}
 		r->exact_user = rule->exact_user;
 
-		if (rule->keyword) {
-			r->keyword = strdup(rule->keyword);
-			if (!r->keyword)
+		if (rule->desc) {
+			r->desc = strdup(rule->desc);
+			if (!r->desc)
 				return oom_return(argv0);
 		}
-		r->exact_keyword = rule->exact_keyword;
+		r->exact_desc = rule->exact_desc;
 #endif /* !WITHOUT_USERAUTH */
 
 		if (rule->ip) {
@@ -569,7 +567,7 @@ filter_rule_str(filter_rule_t *rule)
 		char *p;
 		if (asprintf(&p, "site=%s, port=%s, ip=%s"
 #ifndef WITHOUT_USERAUTH
-				", user=%s, keyword=%s"
+				", user=%s, desc=%s"
 #endif /* !WITHOUT_USERAUTH */
 				", exact=%s|%s|%s"
 #ifndef WITHOUT_USERAUTH
@@ -586,11 +584,11 @@ filter_rule_str(filter_rule_t *rule)
 				", apply to=%s|%s|%s|%s|%s, precedence=%d",
 				rule->site, STRORNONE(rule->port), STRORNONE(rule->ip),
 #ifndef WITHOUT_USERAUTH
-				STRORNONE(rule->user), STRORNONE(rule->keyword),
+				STRORNONE(rule->user), STRORNONE(rule->desc),
 #endif /* !WITHOUT_USERAUTH */
 				rule->exact_site ? "site" : "", rule->exact_port ? "port" : "", rule->exact_ip ? "ip" : "",
 #ifndef WITHOUT_USERAUTH
-				rule->exact_user ? "user" : "", rule->exact_keyword ? "keyword" : "",
+				rule->exact_user ? "user" : "", rule->exact_desc ? "desc" : "",
 #endif /* !WITHOUT_USERAUTH */
 				rule->all_conns ? "conns" : "",
 #ifndef WITHOUT_USERAUTH
@@ -677,6 +675,20 @@ out:
 	s->port = *p; \
 	append_list(&port, s, filter_port_list_t) }
 
+static filter_port_list_t *port_list_acm = NULL;
+
+static void
+build_port_list_acm(UNUSED MatchHolder(char) match, void *v)
+{
+	filter_port_t *port = v;
+
+	filter_port_list_t *p = malloc(sizeof(filter_port_list_t));
+	memset(p, 0, sizeof(filter_port_list_t));
+	p->port = port;
+
+	append_list(&port_list_acm, p, filter_port_list_t)
+}
+
 static char *
 filter_sites_str(filter_site_list_t *site_list)
 {
@@ -690,14 +702,28 @@ filter_sites_str(filter_site_list_t *site_list)
 			__kb_traverse(filter_port_p_t, site_list->site->port_btree, build_port_list);
 
 		char *ports_exact = filter_port_str(port);
-		char *ports_substring = filter_port_str(site_list->site->port_list);
+		free_list(port, filter_port_list_t)
+
+		if (site_list->site->port_acm)
+			ACM_foreach_keyword(site_list->site->port_acm, build_port_list_acm);
+
+		char *ports_substring = filter_port_str(port_list_acm);
+		free_list(port_list_acm, filter_port_list_t)
+		port_list_acm = NULL;
+
+		if (site_list->site->port_all)
+			build_port_list_acm((MatchHolder(char)){0}, site_list->site->port_all);
+
+		char *ports_all = filter_port_str(port_list_acm);
+		free_list(port_list_acm, filter_port_list_t)
+		port_list_acm = NULL;
 
 		char *p;
 		if (asprintf(&p, "%s\n      %d: %s (%s%s, action=%s|%s|%s|%s|%s, log=%s|%s|%s|%s|%s"
 #ifndef WITHOUT_MIRROR
 				"|%s"
 #endif /* !WITHOUT_MIRROR */
-				", precedence=%d)%s%s%s%s",
+				", precedence=%d)%s%s%s%s%s%s",
 				STRORNONE(s), count,
 				site_list->site->site, site_list->site->all_sites ? "all_sites, " : "", site_list->site->exact ? "exact" : "substring",
 				site_list->site->action.divert ? "divert" : "", site_list->site->action.split ? "split" : "", site_list->site->action.pass ? "pass" : "", site_list->site->action.block ? "block" : "", site_list->site->action.match ? "match" : "",
@@ -709,21 +735,22 @@ filter_sites_str(filter_site_list_t *site_list)
 #endif /* !WITHOUT_MIRROR */
 				site_list->site->action.precedence,
 				ports_exact ? "\n        port exact:" : "", STRORNONE(ports_exact),
-				ports_substring ? "\n        port substring:" : "", STRORNONE(ports_substring)) < 0) {
-			if (ports_exact) {
+				ports_substring ? "\n        port substring:" : "", STRORNONE(ports_substring),
+				ports_all ? "\n        port all:" : "", STRORNONE(ports_all)) < 0) {
+			if (ports_exact)
 				free(ports_exact);
-				free_list(port, filter_port_list_t)
-			}
 			if (ports_substring)
 				free(ports_substring);
+			if (ports_all)
+				free(ports_all);
 			goto err;
 		}
-		if (ports_exact) {
+		if (ports_exact)
 			free(ports_exact);
-			free_list(port, filter_port_list_t)
-		}
 		if (ports_substring)
 			free(ports_substring);
+		if (ports_all)
+			free(ports_all);
 		if (s)
 			free(s);
 		s = p;
@@ -756,6 +783,20 @@ filter_list_sub_str(filter_site_list_t *list, char *old_s, const char *name)
 	return new_s;
 }
 
+static filter_site_list_t *site_list_acm = NULL;
+
+static void
+build_site_list_acm(UNUSED MatchHolder(char) match, void *v)
+{
+	filter_site_t *site = v;
+
+	filter_site_list_t *s = malloc(sizeof(filter_site_list_t));
+	memset(s, 0, sizeof(filter_site_list_t));
+	s->site = site;
+
+	append_list(&site_list_acm, s, filter_site_list_t)
+}
+
 static void
 filter_tmp_site_list_free(filter_site_list_t **list)
 {
@@ -780,9 +821,15 @@ filter_list_str(filter_list_t *list)
 		s = filter_list_sub_str(site, s, "ip exact");
 		filter_tmp_site_list_free(&site);
 	}
-
-	if (list->ip_list) {
-		s = filter_list_sub_str(list->ip_list, s, "ip substring");
+	if (list->ip_acm) {
+		ACM_foreach_keyword(list->ip_acm, build_site_list_acm);
+		s = filter_list_sub_str(site_list_acm, s, "ip substring");
+		filter_tmp_site_list_free(&site_list_acm);
+	}
+	if (list->ip_all) {
+		build_site_list_acm((MatchHolder(char)){0}, list->ip_all);
+		s = filter_list_sub_str(site_list_acm, s, "ip all");
+		filter_tmp_site_list_free(&site_list_acm);
 	}
 
 	if (list->sni_btree) {
@@ -790,9 +837,15 @@ filter_list_str(filter_list_t *list)
 		s = filter_list_sub_str(site, s, "sni exact");
 		filter_tmp_site_list_free(&site);
 	}
-
-	if (list->sni_list) {
-		s = filter_list_sub_str(list->sni_list, s, "sni substring");
+	if (list->sni_acm) {
+		ACM_foreach_keyword(list->sni_acm, build_site_list_acm);
+		s = filter_list_sub_str(site_list_acm, s, "sni substring");
+		filter_tmp_site_list_free(&site_list_acm);
+	}
+	if (list->sni_all) {
+		build_site_list_acm((MatchHolder(char)){0}, list->sni_all);
+		s = filter_list_sub_str(site_list_acm, s, "sni all");
+		filter_tmp_site_list_free(&site_list_acm);
 	}
 
 	if (list->cn_btree) {
@@ -800,9 +853,15 @@ filter_list_str(filter_list_t *list)
 		s = filter_list_sub_str(site, s, "cn exact");
 		filter_tmp_site_list_free(&site);
 	}
-
-	if (list->cn_list) {
-		s = filter_list_sub_str(list->cn_list, s, "cn substring");
+	if (list->cn_acm) {
+		ACM_foreach_keyword(list->cn_acm, build_site_list_acm);
+		s = filter_list_sub_str(site_list_acm, s, "cn substring");
+		filter_tmp_site_list_free(&site_list_acm);
+	}
+	if (list->cn_all) {
+		build_site_list_acm((MatchHolder(char)){0}, list->cn_all);
+		s = filter_list_sub_str(site_list_acm, s, "cn all");
+		filter_tmp_site_list_free(&site_list_acm);
 	}
 
 	if (list->host_btree) {
@@ -810,9 +869,15 @@ filter_list_str(filter_list_t *list)
 		s = filter_list_sub_str(site, s, "host exact");
 		filter_tmp_site_list_free(&site);
 	}
-
-	if (list->host_list) {
-		s = filter_list_sub_str(list->host_list, s, "host substring");
+	if (list->host_acm) {
+		ACM_foreach_keyword(list->host_acm, build_site_list_acm);
+		s = filter_list_sub_str(site_list_acm, s, "host substring");
+		filter_tmp_site_list_free(&site_list_acm);
+	}
+	if (list->host_all) {
+		build_site_list_acm((MatchHolder(char)){0}, list->host_all);
+		s = filter_list_sub_str(site_list_acm, s, "host all");
+		filter_tmp_site_list_free(&site_list_acm);
 	}
 
 	if (list->uri_btree) {
@@ -820,9 +885,15 @@ filter_list_str(filter_list_t *list)
 		s = filter_list_sub_str(site, s, "uri exact");
 		filter_tmp_site_list_free(&site);
 	}
-
-	if (list->uri_list) {
-		s = filter_list_sub_str(list->uri_list, s, "uri substring");
+	if (list->uri_acm) {
+		ACM_foreach_keyword(list->uri_acm, build_site_list_acm);
+		s = filter_list_sub_str(site_list_acm, s, "uri substring");
+		filter_tmp_site_list_free(&site_list_acm);
+	}
+	if (list->uri_all) {
+		build_site_list_acm((MatchHolder(char)){0}, list->uri_all);
+		s = filter_list_sub_str(site_list_acm, s, "uri all");
+		filter_tmp_site_list_free(&site_list_acm);
 	}
 	return s;
 }
@@ -862,9 +933,9 @@ out:
 }
 
 static char *
-filter_ip_btree_str(kbtree_t(ip) *ip_btree)
+filter_ip_btree_str(kbtree_t(ip) *btree)
 {
-	if (!ip_btree)
+	if (!btree)
 		return NULL;
 
 #define build_ip_list(p) { \
@@ -874,11 +945,40 @@ filter_ip_btree_str(kbtree_t(ip) *ip_btree)
 	append_list(&ip, i, filter_ip_list_t) }
 	
 	filter_ip_list_t *ip = NULL;
-	__kb_traverse(filter_ip_p_t, ip_btree, build_ip_list);
+	__kb_traverse(filter_ip_p_t, btree, build_ip_list);
 
 	char *s = filter_ip_list_str(ip);
 	
 	free_list(ip, filter_ip_list_t)
+	return s;
+}
+
+static filter_ip_list_t *ip_list_acm = NULL;
+
+static void
+build_ip_list_acm(UNUSED MatchHolder(char) match, void *v)
+{
+	filter_ip_t *ip = v;
+
+	filter_ip_list_t *i = malloc(sizeof(filter_ip_list_t));
+	memset(i, 0, sizeof(filter_ip_list_t));
+	i->ip = ip;
+
+	append_list(&ip_list_acm, i, filter_ip_list_t)
+}
+
+static char *
+filter_ip_acm_str(ACMachine(char) *acm)
+{
+	if (!acm)
+		return NULL;
+
+	ACM_foreach_keyword(acm, build_ip_list_acm);
+
+	char *s = filter_ip_list_str(ip_list_acm);
+
+	free_list(ip_list_acm, filter_ip_list_t)
+	ip_list_acm = NULL;
 	return s;
 }
 
@@ -890,17 +990,17 @@ filter_user_list_str(filter_user_list_t *user)
 
 	int count = 0;
 	while (user) {
-		// Make sure the current user does not have any keyword
-		if (user->user->keyword_btree || user->user->keyword_list)
+		// Make sure the user has a filter rule
+		// It is possible to have users without any filter rule,
+		// but the user exists because it has desc filters,
+		// so the current user should not have any desc
+		if (user->user->desc_btree || user->user->desc_acm)
 			goto skip;
 
 		char *list = filter_list_str(user->user->list);
 
 		char *p = NULL;
 
-		// Make sure the user has a filter rule
-		// It is possible to have users without any filter rule,
-		// but the user exists because it has keyword filters
 		if (list) {
 			if (asprintf(&p, "%s%s  user %d %s (%s)=\n%s", STRORNONE(s), NLORNONE(s),
 					count, user->user->user, user->user->exact ? "exact" : "substring", list) < 0) {
@@ -933,13 +1033,13 @@ out:
 	append_list(&user, u, filter_user_list_t) }
 
 static char *
-filter_user_btree_str(kbtree_t(user) *user_btree)
+filter_user_btree_str(kbtree_t(user) *btree)
 {
-	if (!user_btree)
+	if (!btree)
 		return NULL;
 
 	filter_user_list_t *user = NULL;
-	__kb_traverse(filter_user_p_t, user_btree, build_user_list);
+	__kb_traverse(filter_user_p_t, btree, build_user_list);
 
 	char *s = filter_user_list_str(user);
 
@@ -947,18 +1047,47 @@ filter_user_btree_str(kbtree_t(user) *user_btree)
 	return s;
 }
 
+static filter_user_list_t *user_list_acm = NULL;
+
+static void
+build_user_list_acm(UNUSED MatchHolder(char) match, void *v)
+{
+	filter_user_t *user = v;
+
+	filter_user_list_t *u = malloc(sizeof(filter_user_list_t));
+	memset(u, 0, sizeof(filter_user_list_t));
+	u->user = user;
+
+	append_list(&user_list_acm, u, filter_user_list_t)
+}
+
 static char *
-filter_keyword_list_str(filter_keyword_list_t *keyword)
+filter_user_acm_str(ACMachine(char) *acm)
+{
+	if (!acm)
+		return NULL;
+
+	ACM_foreach_keyword(acm, build_user_list_acm);
+
+	char *s = filter_user_list_str(user_list_acm);
+
+	free_list(user_list_acm, filter_user_list_t)
+	user_list_acm = NULL;
+	return s;
+}
+
+static char *
+filter_desc_list_str(filter_desc_list_t *desc)
 {
 	char *s = NULL;
 
 	int count = 0;
-	while (keyword) {
-		char *list = filter_list_str(keyword->keyword->list);
+	while (desc) {
+		char *list = filter_list_str(desc->desc->list);
 
 		char *p;
-		if (asprintf(&p, "%s%s   keyword %d %s (%s)=\n%s", STRORNONE(s), NLORNONE(s),
-				count, keyword->keyword->keyword, keyword->keyword->exact ? "exact" : "substring", STRORNONE(list)) < 0) {
+		if (asprintf(&p, "%s%s   desc %d %s (%s)=\n%s", STRORNONE(s), NLORNONE(s),
+				count, desc->desc->desc, desc->desc->exact ? "exact" : "substring", STRORNONE(list)) < 0) {
 			if (list)
 				free(list);
 			goto err;
@@ -968,7 +1097,7 @@ filter_keyword_list_str(filter_keyword_list_t *keyword)
 		if (s)
 			free(s);
 		s = p;
-		keyword = keyword->next;
+		desc = desc->next;
 		count++;
 	}
 	goto out;
@@ -982,45 +1111,74 @@ out:
 }
 
 static char *
-filter_keyword_btree_str(kbtree_t(keyword) *keyword_btree)
+filter_desc_btree_str(kbtree_t(desc) *btree)
 {
-	if (!keyword_btree)
+	if (!btree)
 		return NULL;
 
-#define build_keyword_list(p) { \
-	filter_keyword_list_t *k = malloc(sizeof(filter_keyword_list_t)); \
-	memset(k, 0, sizeof(filter_keyword_list_t)); \
-	k->keyword = *p; \
-	append_list(&keyword, k, filter_keyword_list_t) }
-	
-	filter_keyword_list_t *keyword = NULL;
-	__kb_traverse(filter_keyword_p_t, keyword_btree, build_keyword_list);
+#define build_desc_list(p) { \
+	filter_desc_list_t *d = malloc(sizeof(filter_desc_list_t)); \
+	memset(d, 0, sizeof(filter_desc_list_t)); \
+	d->desc = *p; \
+	append_list(&desc, d, filter_desc_list_t) }
 
-	char *s = filter_keyword_list_str(keyword);
+	filter_desc_list_t *desc = NULL;
+	__kb_traverse(filter_desc_p_t, btree, build_desc_list);
+
+	char *s = filter_desc_list_str(desc);
+
+	free_list(desc, filter_desc_list_t)
+	return s;
+}
+
+static filter_desc_list_t *desc_list_acm = NULL;
+
+static void
+build_desc_list_acm(UNUSED MatchHolder(char) match, void *v)
+{
+	filter_desc_t *desc = v;
+
+	filter_desc_list_t *d = malloc(sizeof(filter_desc_list_t));
+	memset(d, 0, sizeof(filter_desc_list_t));
+	d->desc = desc;
+
+	append_list(&desc_list_acm, d, filter_desc_list_t)
+}
+
+static char *
+filter_desc_acm_str(ACMachine(char) *acm)
+{
+	if (!acm)
+		return NULL;
+
+	ACM_foreach_keyword(acm, build_desc_list_acm);
+
+	char *s = filter_desc_list_str(desc_list_acm);
 	
-	free_list(keyword, filter_keyword_list_t)
+	free_list(desc_list_acm, filter_desc_list_t)
+	desc_list_acm = NULL;
 	return s;
 }
 
 static char *
-filter_userkeyword_list_str(filter_user_list_t *user)
+filter_userdesc_list_str(filter_user_list_t *user)
 {
 	char *s = NULL;
 
 	int count = 0;
 	while (user) {
-		// Make sure the current user has a keyword
-		if (!user->user->keyword_btree && !user->user->keyword_list)
+		// Make sure the current user has a desc
+		if (!user->user->desc_btree && !user->user->desc_acm)
 			goto skip;
 
-		char *list_exact = filter_keyword_btree_str(user->user->keyword_btree);
-		char *list_substr = filter_keyword_list_str(user->user->keyword_list);
+		char *list_exact = filter_desc_btree_str(user->user->desc_btree);
+		char *list_substr = filter_desc_acm_str(user->user->desc_acm);
 
 		char *p = NULL;
 		if (asprintf(&p, "%s%s user %d %s (%s)=%s%s%s%s", STRORNONE(s), NLORNONE(s),
 				count, user->user->user, user->user->exact ? "exact" : "substring",
-				list_exact ? "\n  keyword exact:\n" : "", STRORNONE(list_exact),
-				list_substr ? "\n  keyword substring:\n" : "", STRORNONE(list_substr)
+				list_exact ? "\n  desc exact:\n" : "", STRORNONE(list_exact),
+				list_substr ? "\n  desc substring:\n" : "", STRORNONE(list_substr)
 				) < 0) {
 			if (list_exact)
 				free(list_exact);
@@ -1050,19 +1208,35 @@ out:
 }
 
 static char *
-filter_userkeyword_btree_str(kbtree_t(user) *user_btree)
+filter_userdesc_btree_str(kbtree_t(user) *btree)
 {
-	if (!user_btree)
+	if (!btree)
 		return NULL;
 
 	filter_user_list_t *user = NULL;
-	__kb_traverse(filter_user_p_t, user_btree, build_user_list);
+	__kb_traverse(filter_user_p_t, btree, build_user_list);
 
-	char *s = filter_userkeyword_list_str(user);
+	char *s = filter_userdesc_list_str(user);
 
 	free_list(user, filter_user_list_t)
 	return s;
 }
+
+static char *
+filter_userdesc_acm_str(ACMachine(char) *acm)
+{
+	if (!acm)
+		return NULL;
+
+	ACM_foreach_keyword(acm, build_user_list_acm);
+
+	char *s = filter_userdesc_list_str(user_list_acm);
+
+	free_list(user_list_acm, filter_user_list_t)
+	user_list_acm = NULL;
+	return s;
+}
+
 #endif /* !WITHOUT_USERAUTH */
 
 char *
@@ -1070,17 +1244,17 @@ filter_str(filter_t *filter)
 {
 	char *fs = NULL;
 #ifndef WITHOUT_USERAUTH
-	char *userkeyword_filter_exact = NULL;
-	char *userkeyword_filter_substr = NULL;
+	char *userdesc_filter_exact = NULL;
+	char *userdesc_filter_substr = NULL;
 	char *user_filter_exact = NULL;
 	char *user_filter_substr = NULL;
-	char *keyword_filter_exact = NULL;
-	char *keyword_filter_substr = NULL;
-	char *all_user_filter = NULL;
+	char *desc_filter_exact = NULL;
+	char *desc_filter_substr = NULL;
+	char *user_filter_all = NULL;
 #endif /* !WITHOUT_USERAUTH */
 	char *ip_filter_exact = NULL;
 	char *ip_filter_substr = NULL;
-	char *all_filter = NULL;
+	char *filter_all = NULL;
 
 	if (!filter) {
 		fs = strdup("");
@@ -1090,43 +1264,43 @@ filter_str(filter_t *filter)
 	}
 
 #ifndef WITHOUT_USERAUTH
-	userkeyword_filter_exact = filter_userkeyword_btree_str(filter->user_btree);
-	userkeyword_filter_substr = filter_userkeyword_list_str(filter->user_list);
+	userdesc_filter_exact = filter_userdesc_btree_str(filter->user_btree);
+	userdesc_filter_substr = filter_userdesc_acm_str(filter->user_acm);
 	user_filter_exact = filter_user_btree_str(filter->user_btree);
-	user_filter_substr = filter_user_list_str(filter->user_list);
-	keyword_filter_exact = filter_keyword_btree_str(filter->keyword_btree);
-	keyword_filter_substr = filter_keyword_list_str(filter->keyword_list);
-	all_user_filter = filter_list_str(filter->all_user);
+	user_filter_substr = filter_user_acm_str(filter->user_acm);
+	desc_filter_exact = filter_desc_btree_str(filter->desc_btree);
+	desc_filter_substr = filter_desc_acm_str(filter->desc_acm);
+	user_filter_all = filter_list_str(filter->all_user);
 #endif /* !WITHOUT_USERAUTH */
 	ip_filter_exact = filter_ip_btree_str(filter->ip_btree);
-	ip_filter_substr = filter_ip_list_str(filter->ip_list);
-	all_filter = filter_list_str(filter->all);
+	ip_filter_substr = filter_ip_acm_str(filter->ip_acm);
+	filter_all = filter_list_str(filter->all);
 
 	if (asprintf(&fs, "filter=>\n"
 #ifndef WITHOUT_USERAUTH
-			"userkeyword_filter_exact->%s%s\n"
-			"userkeyword_filter_substr->%s%s\n"
+			"userdesc_filter_exact->%s%s\n"
+			"userdesc_filter_substring->%s%s\n"
 			"user_filter_exact->%s%s\n"
-			"user_filter_substr->%s%s\n"
-			"keyword_filter_exact->%s%s\n"
-			"keyword_filter_substr->%s%s\n"
-			"all_user_filter->%s%s\n"
+			"user_filter_substring->%s%s\n"
+			"desc_filter_exact->%s%s\n"
+			"desc_filter_substring->%s%s\n"
+			"user_filter_all->%s%s\n"
 #endif /* !WITHOUT_USERAUTH */
 			"ip_filter_exact->%s%s\n"
-			"ip_filter_substr->%s%s\n"
-			"all_filter->%s%s\n",
+			"ip_filter_substring->%s%s\n"
+			"filter_all->%s%s\n",
 #ifndef WITHOUT_USERAUTH
-			NLORNONE(userkeyword_filter_exact), STRORNONE(userkeyword_filter_exact),
-			NLORNONE(userkeyword_filter_substr), STRORNONE(userkeyword_filter_substr),
+			NLORNONE(userdesc_filter_exact), STRORNONE(userdesc_filter_exact),
+			NLORNONE(userdesc_filter_substr), STRORNONE(userdesc_filter_substr),
 			NLORNONE(user_filter_exact), STRORNONE(user_filter_exact),
 			NLORNONE(user_filter_substr), STRORNONE(user_filter_substr),
-			NLORNONE(keyword_filter_exact), STRORNONE(keyword_filter_exact),
-			NLORNONE(keyword_filter_substr), STRORNONE(keyword_filter_substr),
-			NLORNONE(all_user_filter), STRORNONE(all_user_filter),
+			NLORNONE(desc_filter_exact), STRORNONE(desc_filter_exact),
+			NLORNONE(desc_filter_substr), STRORNONE(desc_filter_substr),
+			NLORNONE(user_filter_all), STRORNONE(user_filter_all),
 #endif /* !WITHOUT_USERAUTH */
 			NLORNONE(ip_filter_exact), STRORNONE(ip_filter_exact),
 			NLORNONE(ip_filter_substr), STRORNONE(ip_filter_substr),
-			NLORNONE(all_filter), STRORNONE(all_filter)) < 0) {
+			NLORNONE(filter_all), STRORNONE(filter_all)) < 0) {
 		// fs is undefined
 		goto err;
 	}
@@ -1138,27 +1312,27 @@ err:
 	}
 out:
 #ifndef WITHOUT_USERAUTH
-	if (userkeyword_filter_exact)
-		free(userkeyword_filter_exact);
-	if (userkeyword_filter_substr)
-		free(userkeyword_filter_substr);
+	if (userdesc_filter_exact)
+		free(userdesc_filter_exact);
+	if (userdesc_filter_substr)
+		free(userdesc_filter_substr);
 	if (user_filter_exact)
 		free(user_filter_exact);
 	if (user_filter_substr)
 		free(user_filter_substr);
-	if (keyword_filter_exact)
-		free(keyword_filter_exact);
-	if (keyword_filter_substr)
-		free(keyword_filter_substr);
-	if (all_user_filter)
-		free(all_user_filter);
+	if (desc_filter_exact)
+		free(desc_filter_exact);
+	if (desc_filter_substr)
+		free(desc_filter_substr);
+	if (user_filter_all)
+		free(user_filter_all);
 #endif /* !WITHOUT_USERAUTH */
 	if (ip_filter_exact)
 		free(ip_filter_exact);
 	if (ip_filter_substr)
 		free(ip_filter_substr);
-	if (all_filter)
-		free(all_filter);
+	if (filter_all)
+		free(filter_all);
 	return fs;
 }
 
@@ -1168,7 +1342,7 @@ filter_rule_dbg_print(filter_rule_t *rule)
 {
 	log_dbg_printf("Filter rule: site=%s, port=%s, ip=%s"
 #ifndef WITHOUT_USERAUTH
-		", user=%s, keyword=%s"
+		", user=%s, desc=%s"
 #endif /* !WITHOUT_USERAUTH */
 		", exact=%s|%s|%s"
 #ifndef WITHOUT_USERAUTH
@@ -1185,11 +1359,11 @@ filter_rule_dbg_print(filter_rule_t *rule)
 		", apply to=%s|%s|%s|%s|%s, precedence=%d\n",
 		rule->site, STRORNONE(rule->port), STRORNONE(rule->ip),
 #ifndef WITHOUT_USERAUTH
-		STRORNONE(rule->user), STRORNONE(rule->keyword),
+		STRORNONE(rule->user), STRORNONE(rule->desc),
 #endif /* !WITHOUT_USERAUTH */
 		rule->exact_site ? "site" : "", rule->exact_port ? "port" : "", rule->exact_ip ? "ip" : "",
 #ifndef WITHOUT_USERAUTH
-		rule->exact_user ? "user" : "", rule->exact_keyword ? "keyword" : "",
+		rule->exact_user ? "user" : "", rule->exact_desc ? "desc" : "",
 #endif /* !WITHOUT_USERAUTH */
 		rule->all_conns ? "conns" : "",
 #ifndef WITHOUT_USERAUTH
@@ -1215,7 +1389,7 @@ filter_passsite_set(opts_t *opts, char *value, int line_num)
 {
 #define MAX_PASSSITE_TOKENS 3
 
-	// site[*] [(clientaddr|user|*) [keyword]]
+	// site[*] [(clientaddr|user|*) [desc]]
 	char *argv[sizeof(char *) * MAX_PASSSITE_TOKENS];
 	int argc = 0;
 	char *p, *last = NULL;
@@ -1277,7 +1451,7 @@ filter_passsite_set(opts_t *opts, char *value, int line_num)
 	if (argc > 1) {
 		if (!strcmp(argv[1], "*")) {
 #ifndef WITHOUT_USERAUTH
-			// Apply filter rule to all users perhaps with keyword
+			// Apply filter rule to all users perhaps with desc
 			rule->action.precedence++;
 			rule->all_users = 1;
 		} else if (sys_isuser(argv[1])) {
@@ -1303,7 +1477,7 @@ filter_passsite_set(opts_t *opts, char *value, int line_num)
 
 	if (argc > 2) {
 		if (rule->ip) {
-			fprintf(stderr, "Ip filter cannot define keyword filter"
+			fprintf(stderr, "Ip filter cannot define desc filter"
 #ifndef WITHOUT_USERAUTH
 					", or user '%s' does not exist"
 #endif /* !WITHOUT_USERAUTH */
@@ -1320,8 +1494,8 @@ filter_passsite_set(opts_t *opts, char *value, int line_num)
 			return -1;
 		}
 		rule->action.precedence++;
-		rule->keyword = strdup(argv[2]);
-		if (!rule->keyword)
+		rule->desc = strdup(argv[2]);
+		if (!rule->desc)
 			return oom_return_na();
 #endif /* !WITHOUT_USERAUTH */
 	}
@@ -1546,8 +1720,8 @@ filter_rule_translate(opts_t *opts, const char *name, int argc, char **argv, int
 {
 	//(Divert|Split|Pass|Block|Match)
 	// ([from (
-	//     user (username[*]|$macro|*) [desc (keyword[*]|$macro|*)]|
-	//     desc (keyword[*]|$macro|*)|
+	//     user (username[*]|$macro|*) [desc (desc[*]|$macro|*)]|
+	//     desc (desc[*]|$macro|*)|
 	//     ip (clientip[*]|$macro|*)|
 	//     *)]
 	//  [to (
@@ -1614,8 +1788,8 @@ filter_rule_translate(opts_t *opts, const char *name, int argc, char **argv, int
 						return -1;
 
 					if (!filter_is_all(argv[i])) {
-						rule->exact_keyword = filter_is_exact(argv[i]);
-						if (filter_field_set(&rule->keyword, argv[i], line_num) == -1)
+						rule->exact_desc = filter_is_exact(argv[i]);
+						if (filter_field_set(&rule->desc, argv[i], line_num) == -1)
 							return -1;
 						rule->action.precedence++;
 					}
@@ -1898,7 +2072,7 @@ filter_rule_parse(opts_t *opts, const char *name, int argc, char **argv, int lin
 						return -1;
 
 					if (argv[i][strlen(argv[i]) - 1] == '*') {
-						// Nothing to do for '*' or substring search for 'keyword*'
+						// Nothing to do for '*' or substring search for 'desc*'
 					}
 					else if ((rv = filter_rule_macro_expand(opts, name, argc, argv, i, line_num)) != 0) {
 						return rv;
@@ -2058,60 +2232,70 @@ filter_rule_set(opts_t *opts, const char *name, char *value, int line_num)
 }
 
 static filter_port_t *
-filter_port_btree_exact_match(kbtree_t(port) *port_btree, char *p)
+filter_port_exact_match(kbtree_t(port) *btree, char *p)
 {
-	if (!port_btree)
+	if (!btree)
 		return NULL;
-	filter_port_t **port = kb_get(port, port_btree, p);
+	filter_port_t **port = kb_get(port, btree, p);
 	return port ? *port : NULL;
 }
 
 static filter_port_t *
-filter_port_list_substring_match(filter_port_list_t *list, char *p)
+filter_port_substring_match(ACMachine(char) *acm, char *port)
 {
-	while (list) {
-		// Actually, no need to check all_ports, @see filter_site_list_substring_match(),
-		// if all_ports is set, port (little/needle) is empty.
-		if (list->port->all_ports || strstr(p, list->port->port))
-			break;
-		list = list->next;
+	if (acm) {
+		filter_port_t *p = NULL;
+		match_acm(acm, port, p)
+		return p;
 	}
-	return list ? list->port : NULL;
+	return NULL;
 }
 
 filter_port_t *
 filter_port_find(filter_site_t *site, char *p)
 {
-	filter_port_t *port = filter_port_btree_exact_match(site->port_btree, p);
-	if (port)
+	filter_port_t *port;
+	if ((port = filter_port_exact_match(site->port_btree, p)))
 		return port;
-	return filter_port_list_substring_match(site->port_list, p);
+	if ((port = filter_port_substring_match(site->port_acm, p)))
+		return port;
+	return site->port_all;
 }
 
 static filter_port_t *
-filter_port_list_exact_match(filter_port_list_t *list, char *p)
+filter_port_substring_exact_match(ACMachine(char) *acm, char *p)
 {
-	while (list) {
-		if (!strcmp(list->port->port, p))
-			break;
-		list = list->next;
+	if (acm) {
+		const ACState(char) *state = ACM_reset(acm);
+		for (char *c = p; *c; c++) {
+			size_t nb = ACM_match(state, *c);
+			for (size_t j = 0; j < nb; j++) {
+				filter_port_t *value;
+				ACM_get_match(state, j, 0, (void **)&value);
+				// ACM matches a substring, make sure the match is exact
+				if (equal(value->port, p))
+					return value;
+			}
+		}
 	}
-	return list ? list->port : NULL;
+	return NULL;
 }
 
 static filter_port_t *
-filter_rule_port_find(filter_site_t *site, filter_rule_t *rule)
+filter_port_find_exact(filter_site_t *site, filter_rule_t *rule)
 {
-	if (rule->exact_port)
-		return filter_port_btree_exact_match(site->port_btree, rule->port);
+	if (rule->all_ports)
+		return site->port_all;
+	else if (rule->exact_port)
+		return filter_port_exact_match(site->port_btree, rule->port);
 	else
-		return filter_port_list_exact_match(site->port_list, rule->port);
+		return filter_port_substring_exact_match(site->port_acm, rule->port);
 }
 
 static int NONNULL(1,2) WUNRES
 filter_port_add(filter_site_t *site, filter_rule_t *rule)
 {
-	filter_port_t *port = filter_rule_port_find(site, rule);
+	filter_port_t *port = filter_port_find_exact(site, rule);
 	if (!port) {
 		port = malloc(sizeof(filter_port_t));
 		if (!port)
@@ -2122,7 +2306,10 @@ filter_port_add(filter_site_t *site, filter_rule_t *rule)
 		if (!port->port)
 			return oom_return_na();
 
-		if (rule->exact_port) {
+		if (rule->all_ports) {
+			site->port_all = port;
+		}
+		else if (rule->exact_port) {
 			if (!site->port_btree)
 				if (!(site->port_btree = kb_init(port, KB_DEFAULT_SIZE)))
 					return oom_return_na();
@@ -2130,32 +2317,13 @@ filter_port_add(filter_site_t *site, filter_rule_t *rule)
 			kb_put(port, site->port_btree, port);
 		}
 		else {
-			filter_port_list_t *port_list = malloc(sizeof(filter_port_list_t));
-			if (!port_list)
-				return oom_return_na();
-			memset(port_list, 0, sizeof(filter_port_list_t));
+			if (!site->port_acm)
+				if (!(site->port_acm = ACM_create(char)))
+					return oom_return_na();
 
-			port_list->port = port;
-
-			// all_ports should be at the end of the port list, it has the lowest precedence
-			filter_port_list_t *prev = NULL;
-			filter_port_list_t *l = site->port_list;
-			while (l) {
-				if (l->port->all_ports)
-					break;
-				prev = l;
-				l = l->next;
-			}
-
-			if (prev) {
-				port_list->next = prev->next;
-				prev->next = port_list;
-			}
-			else {
-				if (site->port_list)
-					port_list->next = site->port_list;
-				site->port_list = port_list;
-			}
+			Keyword(char) k;
+			ACM_KEYWORD_SET(k, port->port, strlen(port->port));
+			ACM_register_keyword(site->port_acm, k, port, free_port_func);
 		}
 	}
 
@@ -2196,61 +2364,70 @@ filter_port_add(filter_site_t *site, filter_rule_t *rule)
 }
 
 filter_site_t *
-filter_site_btree_exact_match(kbtree_t(site) *site_btree, char *s)
+filter_site_exact_match(kbtree_t(site) *btree, char *s)
 {
-	if (!site_btree)
+	if (!btree)
 		return NULL;
-	filter_site_t **site = kb_get(site, site_btree, s);
+	filter_site_t **site = kb_get(site, btree, s);
 	return site ? *site : NULL;
 }
 
 filter_site_t *
-filter_site_list_substring_match(filter_site_list_t *list, char *s)
+filter_site_substring_match(ACMachine(char) *acm, char *site)
 {
-	while (list) {
-		// Actually, no need to check all_sites, because strstr(3) on OpenBSD
-		// reads that "If little is an empty string, big is returned",
-		// and if all_sites is set, site (little/needle) is empty.
-		if (list->site->all_sites || strstr(s, list->site->site))
-			break;
-		list = list->next;
+	if (acm) {
+		filter_site_t *s = NULL;
+		match_acm(acm, site, s)
+		return s;
 	}
-	return list ? list->site : NULL;
+	return NULL;
 }
 
 filter_site_t *
-filter_site_find(kbtree_t(site) *site_btree, filter_site_list_t *list, char *s)
+filter_site_find(kbtree_t(site) *btree, ACMachine(char) *acm, filter_site_t *all, char *s)
 {
-	filter_site_t *site = filter_site_btree_exact_match(site_btree, s);
-	if (site)
+	filter_site_t *site;
+	if ((site = filter_site_exact_match(btree, s)))
 		return site;
-	return filter_site_list_substring_match(list, s);
+	if ((site = filter_site_substring_match(acm, s)))
+		return site;
+	return all;
 }
 
 static filter_site_t *
-filter_site_list_exact_match(filter_site_list_t *list, char *s)
+filter_site_substring_exact_match(ACMachine(char) *acm, char *s)
 {
-	while (list) {
-		if (!strcmp(list->site->site, s))
-			break;
-		list = list->next;
+	if (acm) {
+		const ACState(char) *state = ACM_reset(acm);
+		for (char *c = s; *c; c++) {
+			size_t nb = ACM_match(state, *c);
+			for (size_t j = 0; j < nb; j++) {
+				filter_site_t *value;
+				ACM_get_match(state, j, 0, (void **)&value);
+				// ACM matches a substring, make sure the match is exact
+				if (equal(value->site, s))
+					return value;
+			}
+		}
 	}
-	return list ? list->site : NULL;
+	return NULL;
 }
 
 static filter_site_t *
-filter_rule_site_find(kbtree_t(site) *site_btree, filter_site_list_t *list, filter_rule_t *rule)
+filter_site_find_exact(kbtree_t(site) *btree, ACMachine(char) *acm, filter_site_t *all, filter_rule_t *rule)
 {
-	if (rule->exact_site)
-		return filter_site_btree_exact_match(site_btree, rule->site);
+	if (rule->all_sites)
+		return all;
+	else if (rule->exact_site)
+		return filter_site_exact_match(btree, rule->site);
 	else
-		return filter_site_list_exact_match(list, rule->site);
+		return filter_site_substring_exact_match(acm, rule->site);
 }
 
 static int NONNULL(3) WUNRES
-filter_site_add(kbtree_t(site) **site_btree, filter_site_list_t **site_list, filter_rule_t *rule)
+filter_site_add(kbtree_t(site) **btree, ACMachine(char) **acm, filter_site_t **all, filter_rule_t *rule)
 {
-	filter_site_t *site = filter_rule_site_find(*site_btree, *site_list, rule);
+	filter_site_t *site = filter_site_find_exact(*btree, *acm, *all, rule);
 	if (!site) {
 		site = malloc(sizeof(filter_site_t));
 		if (!site)
@@ -2261,40 +2438,24 @@ filter_site_add(kbtree_t(site) **site_btree, filter_site_list_t **site_list, fil
 		if (!site->site)
 			return oom_return_na();
 
-		if (rule->exact_site) {
-			if (!*site_btree)
-				if (!(*site_btree = kb_init(site, KB_DEFAULT_SIZE)))
+		if (rule->all_sites) {
+			*all = site;
+		}
+		else if (rule->exact_site) {
+			if (!*btree)
+				if (!(*btree = kb_init(site, KB_DEFAULT_SIZE)))
 					return oom_return_na();
 
-			kb_put(site, *site_btree, site);
+			kb_put(site, *btree, site);
 		}
 		else {
-			filter_site_list_t *list = malloc(sizeof(filter_site_list_t));
-			if (!list)
-				return oom_return_na();
-			memset(list, 0, sizeof(filter_site_list_t));
+			if (!*acm)
+				if (!(*acm = ACM_create(char)))
+					return oom_return_na();
 
-			list->site = site;
-
-			// all_sites should be at the end of the site list, it has the lowest precedence
-			filter_site_list_t *prev = NULL;
-			filter_site_list_t *l = *site_list;
-			while (l) {
-				if (l->site->all_sites)
-					break;
-				prev = l;
-				l = l->next;
-			}
-
-			if (prev) {
-				list->next = prev->next;
-				prev->next = list;
-			}
-			else {
-				if (*site_list)
-					list->next = *site_list;
-				*site_list = list;
-			}
+			Keyword(char) k;
+			ACM_KEYWORD_SET(k, site->site, strlen(site->site));
+			ACM_register_keyword(*acm, k, site, free_site_func);
 		}
 	}
 
@@ -2345,81 +2506,95 @@ static int
 filter_sitelist_add(filter_list_t *list, filter_rule_t *rule)
 {
 	if (rule->dstip) {
-		if (filter_site_add(&list->ip_btree, &list->ip_list, rule) == -1)
+		if (filter_site_add(&list->ip_btree, &list->ip_acm, &list->ip_all, rule) == -1)
 			return -1;
 	}
 	if (rule->sni) {
-		if (filter_site_add(&list->sni_btree, &list->sni_list, rule) == -1)
+		if (filter_site_add(&list->sni_btree, &list->sni_acm, &list->sni_all, rule) == -1)
 			return -1;
 	}
 	if (rule->cn) {
-		if (filter_site_add(&list->cn_btree, &list->cn_list, rule) == -1)
+		if (filter_site_add(&list->cn_btree, &list->cn_acm, &list->cn_all, rule) == -1)
 			return -1;
 	}
 	if (rule->host) {
-		if (filter_site_add(&list->host_btree, &list->host_list, rule) == -1)
+		if (filter_site_add(&list->host_btree, &list->host_acm, &list->host_all, rule) == -1)
 			return -1;
 	}
 	if (rule->uri) {
-		if (filter_site_add(&list->uri_btree, &list->uri_list, rule) == -1)
+		if (filter_site_add(&list->uri_btree, &list->uri_acm, &list->uri_all, rule) == -1)
 			return -1;
 	}
 	return 0;
 }
 
-static filter_ip_t *
-filter_ip_btree_exact_match(kbtree_t(ip) *ip_btree, char *i)
+filter_ip_t *
+filter_ip_exact_match(kbtree_t(ip) *btree, char *i)
 {
-	if (!ip_btree)
+	if (!btree)
 		return NULL;
-	filter_ip_t **ip = kb_get(ip, ip_btree, i);
+	filter_ip_t **ip = kb_get(ip, btree, i);
 	return ip ? *ip : NULL;
 }
 
-static filter_ip_t *
-filter_ip_list_substring_match(filter_ip_list_t *list, char *i)
+filter_ip_t *
+filter_ip_substring_match(ACMachine(char) *acm, char *ip)
 {
-	while (list) {
-		if (strstr(i, list->ip->ip))
-			break;
-		list = list->next;
+	if (acm) {
+		filter_ip_t *i = NULL;
+		match_acm(acm, ip, i)
+		return i;
 	}
-	return list ? list->ip : NULL;
+	return NULL;
 }
 
 filter_ip_t *
 filter_ip_find(filter_t *filter, char *i)
 {
-	filter_ip_t *ip = filter_ip_btree_exact_match(filter->ip_btree, i);
+	filter_ip_t *ip = filter_ip_exact_match(filter->ip_btree, i);
 	if (ip)
 		return ip;
-	return filter_ip_list_substring_match(filter->ip_list, i);
+	return filter_ip_substring_match(filter->ip_acm, i);
 }
 
 static filter_ip_t *
-filter_ip_list_exact_match(filter_ip_list_t *list, char *i)
+filter_ip_substring_exact_match(ACMachine(char) *acm, char *i)
 {
-	while (list) {
-		if (!strcmp(list->ip->ip, i))
-			break;
-		list = list->next;
+	if (acm) {
+		const ACState(char) *state = ACM_reset(acm);
+		for (char *c = i; *c; c++) {
+			size_t nb = ACM_match(state, *c);
+			for (size_t j = 0; j < nb; j++) {
+				filter_ip_t *value;
+				ACM_get_match(state, j, 0, (void **)&value);
+				// ACM matches a substring, make sure the match is exact
+				if (equal(value->ip, i))
+					return value;
+			}
+		}
 	}
-	return list ? list->ip : NULL;
+	return NULL;
 }
 
 static filter_ip_t *
-filter_rule_ip_find(filter_t *filter, filter_rule_t *rule)
+filter_ip_find_exact(filter_t *filter, filter_rule_t *rule)
 {
 	if (rule->exact_ip)
-		return filter_ip_btree_exact_match(filter->ip_btree, rule->ip);
+		return filter_ip_exact_match(filter->ip_btree, rule->ip);
 	else
-		return filter_ip_list_exact_match(filter->ip_list, rule->ip);
+		return filter_ip_substring_exact_match(filter->ip_acm, rule->ip);
+}
+
+static void
+free_ip_func(void *i)
+{
+	free_ip((filter_ip_t **)&i)
 }
 
 static filter_ip_t *
 filter_ip_get(filter_t *filter, filter_rule_t *rule)
 {
-	filter_ip_t *ip = filter_rule_ip_find(filter, rule);
+	filter_ip_t *ip = filter_ip_find_exact(filter, rule);
 	if (!ip) {
 		ip = malloc(sizeof(filter_ip_t));
 		if (!ip)
@@ -2445,166 +2620,192 @@ filter_ip_get(filter_t *filter, filter_rule_t *rule)
 			kb_put(ip, filter->ip_btree, ip);
 		}
 		else {
-			filter_ip_list_t *ip_list = malloc(sizeof(filter_ip_list_t));
-			if (!ip_list)
-				return oom_return_na_null();
-			memset(ip_list, 0, sizeof(filter_ip_list_t));
+			if (!filter->ip_acm)
+				if (!(filter->ip_acm = ACM_create(char)))
+					return oom_return_na_null();
 
-			ip_list->ip = ip;
-
-			append_list(&filter->ip_list, ip_list, filter_ip_list_t)
+			Keyword(char) k;
+			ACM_KEYWORD_SET(k, ip->ip, strlen(ip->ip));
+			ACM_register_keyword(filter->ip_acm, k, ip, free_ip_func);
 		}
 	}
 	return ip;
 }
 
 #ifndef WITHOUT_USERAUTH
-static filter_keyword_t *
-filter_keyword_btree_exact_match(kbtree_t(keyword) *keyword_btree, char *k)
+filter_desc_t *
+filter_desc_exact_match(kbtree_t(desc) *btree, char *k)
 {
-	if (!keyword_btree)
+	if (!btree)
 		return NULL;
-	filter_keyword_t **keyword = kb_get(keyword, keyword_btree, k);
-	return keyword ? *keyword : NULL;
+	filter_desc_t **desc = kb_get(desc, btree, k);
+	return desc ? *desc : NULL;
 }
 
-static filter_keyword_t *
-filter_keyword_list_substring_match(filter_keyword_list_t *list, char *k)
+filter_desc_t *
+filter_desc_substring_match(ACMachine(char) *acm, char *desc)
 {
-	while (list) {
-		if (strstr(k, list->keyword->keyword))
-			break;
-		list = list->next;
+	if (acm) {
+		filter_desc_t *k = NULL;
+		match_acm(acm, desc, k)
+		return k;
 	}
-	return list ? list->keyword : NULL;
+	return NULL;
 }
 
-filter_keyword_t *
-filter_keyword_find(filter_t *filter, filter_user_t *user, char *k)
+filter_desc_t *
+filter_desc_find(filter_t *filter, filter_user_t *user, char *k)
 {
-	filter_keyword_t *keyword = filter_keyword_btree_exact_match(user ? user->keyword_btree : filter->keyword_btree, k);
-	if (keyword)
-		return keyword;
-	return filter_keyword_list_substring_match(user ? user->keyword_list : filter->keyword_list, k);
+	filter_desc_t *desc = filter_desc_exact_match(user ? user->desc_btree : filter->desc_btree, k);
+	if (desc)
+		return desc;
+	return filter_desc_substring_match(user ? user->desc_acm : filter->desc_acm, k);
 }
 
-static filter_keyword_t *
-filter_keyword_list_exact_match(filter_keyword_list_t *list, char *k)
+static filter_desc_t *
+filter_desc_substring_exact_match(ACMachine(char) *acm, char *k)
 {
-	while (list) {
-		if (!strcmp(list->keyword->keyword, k))
-			break;
-		list = list->next;
+	if (acm) {
+		const ACState(char) *state = ACM_reset(acm);
+		for (char *c = k; *c; c++) {
+			size_t nb = ACM_match(state, *c);
+			for (size_t j = 0; j < nb; j++) {
+				filter_desc_t *value;
+				ACM_get_match(state, j, 0, (void **)&value);
+				// ACM matches a substring, make sure the match is exact
+				if (equal(value->desc, k))
+					return value;
+			}
+		}
 	}
-	return list ? list->keyword : NULL;
+	return NULL;
 }
 
-static filter_keyword_t *
-filter_rule_keyword_find(filter_t *filter, filter_user_t *user, filter_rule_t *rule)
+static filter_desc_t *
+filter_desc_find_exact(filter_t *filter, filter_user_t *user, filter_rule_t *rule)
 {
-	if (rule->exact_keyword)
-		return filter_keyword_btree_exact_match(user ? user->keyword_btree : filter->keyword_btree, rule->keyword);
+	if (rule->exact_desc)
+		return filter_desc_exact_match(user ? user->desc_btree : filter->desc_btree, rule->desc);
 	else
-		return filter_keyword_list_exact_match(user ? user->keyword_list : filter->keyword_list, rule->keyword);
+		return filter_desc_substring_exact_match(user ? user->desc_acm : filter->desc_acm, rule->desc);
 }
 
-static filter_keyword_t *
-filter_keyword_get(filter_t *filter, filter_user_t *user, filter_rule_t *rule)
+static void
+free_desc_func(void *k)
 {
-	filter_keyword_t *keyword = filter_rule_keyword_find(filter, user, rule);
-	if (!keyword) {
-		keyword = malloc(sizeof(filter_keyword_t));
-		if (!keyword)
+	free_desc((filter_desc_t **)&k)
+}
+
+static filter_desc_t *
+filter_desc_get(filter_t *filter, filter_user_t *user, filter_rule_t *rule)
+{
+	filter_desc_t *desc = filter_desc_find_exact(filter, user, rule);
+	if (!desc) {
+		desc = malloc(sizeof(filter_desc_t));
+		if (!desc)
 			return oom_return_na_null();
-		memset(keyword, 0, sizeof(filter_keyword_t));
+		memset(desc, 0, sizeof(filter_desc_t));
 
-		keyword->list = malloc(sizeof(filter_list_t));
-		if (!keyword->list)
+		desc->list = malloc(sizeof(filter_list_t));
+		if (!desc->list)
 			return oom_return_na_null();
-		memset(keyword->list, 0, sizeof(filter_list_t));
+		memset(desc->list, 0, sizeof(filter_list_t));
 
-		keyword->keyword = strdup(rule->keyword);
-		if (!keyword->keyword)
+		desc->desc = strdup(rule->desc);
+		if (!desc->desc)
 			return oom_return_na_null();
 
-		keyword->exact = rule->exact_keyword;
+		desc->exact = rule->exact_desc;
 
-		if (rule->exact_keyword) {
-			kbtree_t(keyword) **keyword_btree = user ? &user->keyword_btree : &filter->keyword_btree;
-			if (!*keyword_btree)
-				if (!(*keyword_btree = kb_init(keyword, KB_DEFAULT_SIZE)))
+		if (rule->exact_desc) {
+			kbtree_t(desc) **btree = user ? &user->desc_btree : &filter->desc_btree;
+			if (!*btree)
+				if (!(*btree = kb_init(desc, KB_DEFAULT_SIZE)))
 					return oom_return_na_null();
 
-			kb_put(keyword, *keyword_btree, keyword);
+			kb_put(desc, *btree, desc);
 		}
 		else {
-			filter_keyword_list_t *keyword_list = malloc(sizeof(filter_keyword_list_t));
-			if (!keyword_list)
-				return oom_return_na_null();
-			memset(keyword_list, 0, sizeof(filter_keyword_list_t));
+			ACMachine(char) **acm = user ? &user->desc_acm : &filter->desc_acm;
+			if (!*acm)
+				if (!(*acm = ACM_create(char)))
+					return oom_return_na_null();
 
-			keyword_list->keyword = keyword;
-
-			filter_keyword_list_t **list = user ? &user->keyword_list : &filter->keyword_list;
-			append_list(list, keyword_list, filter_keyword_list_t)
+			Keyword(char) k;
+			ACM_KEYWORD_SET(k, desc->desc, strlen(desc->desc));
+			ACM_register_keyword(*acm, k, desc, free_desc_func);
 		}
 	}
-	return keyword;
+	return desc;
 }
 
-static filter_user_t *
-filter_user_btree_exact_match(kbtree_t(user) *user_btree, char *u)
+filter_user_t *
+filter_user_exact_match(kbtree_t(user) *btree, char *u)
 {
-	if (!user_btree)
+	if (!btree)
 		return NULL;
-	filter_user_t **_user = kb_get(user, user_btree, u);
-	return _user ? *_user : NULL;
+	filter_user_t **user = kb_get(user, btree, u);
+	return user ? *user : NULL;
 }
 
-static filter_user_t *
-filter_user_list_substring_match(filter_user_list_t *list, char *u)
+filter_user_t *
+filter_user_substring_match(ACMachine(char) *acm, char *user)
 {
-	while (list) {
-		if (strstr(u, list->user->user))
-			break;
-		list = list->next;
+	if (acm) {
+		filter_user_t *u = NULL;
+		match_acm(acm, user, u)
+		return u;
 	}
-	return list ? list->user : NULL;
+	return NULL;
 }
 
 filter_user_t *
 filter_user_find(filter_t *filter, char *u)
 {
-	filter_user_t *user = filter_user_btree_exact_match(filter->user_btree, u);
+	filter_user_t *user = filter_user_exact_match(filter->user_btree, u);
 	if (user)
 		return user;
-	return filter_user_list_substring_match(filter->user_list, u);
+	return filter_user_substring_match(filter->user_acm, u);
 }
 
 static filter_user_t *
-filter_user_list_exact_match(filter_user_list_t *list, char *u)
+filter_user_substring_exact_match(ACMachine(char) *acm, char *u)
 {
-	while (list) {
-		if (!strcmp(list->user->user, u))
-			break;
-		list = list->next;
+	if (acm) {
+		const ACState(char) *state = ACM_reset(acm);
+		for (char *c = u; *c; c++) {
+			size_t nb = ACM_match(state, *c);
+			for (size_t j = 0; j < nb; j++) {
+				filter_user_t *value;
+				ACM_get_match(state, j, 0, (void **)&value);
+				// ACM matches a substring, make sure the match is exact
+				if (equal(value->user, u))
+					return value;
+			}
+		}
 	}
-	return list ? list->user : NULL;
+	return NULL;
 }
 
 static filter_user_t *
-filter_rule_user_find(filter_t *filter, filter_rule_t *rule)
+filter_user_find_exact(filter_t *filter, filter_rule_t *rule)
 {
 	if (rule->exact_user)
-		return filter_user_btree_exact_match(filter->user_btree, rule->user);
+		return filter_user_exact_match(filter->user_btree, rule->user);
 	else
-		return filter_user_list_exact_match(filter->user_list, rule->user);
+		return filter_user_substring_exact_match(filter->user_acm, rule->user);
+}
+
+static void
+free_user_func(void *u)
+{
+	free_user((filter_user_t **)&u)
 }
 
 static filter_user_t *
 filter_user_get(filter_t *filter, filter_rule_t *rule)
 {
-	filter_user_t *user = filter_rule_user_find(filter, rule);
+	filter_user_t *user = filter_user_find_exact(filter, rule);
 	if (!user) {
 		user = malloc(sizeof(filter_user_t));
 		if (!user)
@@ -2630,14 +2831,13 @@ filter_user_get(filter_t *filter, filter_rule_t *rule)
 			kb_put(user, filter->user_btree, user);
 		}
 		else {
-			filter_user_list_t *user_list = malloc(sizeof(filter_user_list_t));
-			if (!user_list)
-				return oom_return_na_null();
-			memset(user_list, 0, sizeof(filter_user_list_t));
+			if (!filter->user_acm)
+				if (!(filter->user_acm = ACM_create(char)))
+					return oom_return_na_null();
 
-			user_list->user = user;
-
-			append_list(&filter->user_list, user_list, filter_user_list_t)
+			Keyword(char) k;
+			ACM_KEYWORD_SET(k, user->user, strlen(user->user));
+			ACM_register_keyword(filter->user_acm, k, user, free_user_func);
 		}
 	}
 	return user;
@@ -2675,11 +2875,11 @@ filter_set(filter_rule_t *rule)
 			filter_user_t *user = filter_user_get(filter, rule);
 			if (!user)
 				return NULL;
-			if (rule->keyword) {
-				filter_keyword_t *keyword = filter_keyword_get(filter, user, rule);
-				if (!keyword)
+			if (rule->desc) {
+				filter_desc_t *desc = filter_desc_get(filter, user, rule);
+				if (!desc)
 					return NULL;
-				if (filter_sitelist_add(keyword->list, rule) == -1)
+				if (filter_sitelist_add(desc->list, rule) == -1)
 					return NULL;
 			}
 			else {
@@ -2687,11 +2887,11 @@ filter_set(filter_rule_t *rule)
 					return NULL;
 			}
 		}
-		else if (rule->keyword) {
-			filter_keyword_t *keyword = filter_keyword_get(filter, NULL, rule);
-			if (!keyword)
+		else if (rule->desc) {
+			filter_desc_t *desc = filter_desc_get(filter, NULL, rule);
+			if (!desc)
 				return NULL;
-			if (filter_sitelist_add(keyword->list, rule) == -1)
+			if (filter_sitelist_add(desc->list, rule) == -1)
 				return NULL;
 		}
 		else if (rule->all_users) {
@@ -2713,41 +2913,6 @@ filter_set(filter_rule_t *rule)
 		}
 		rule = rule->next;
 	}
-
-#ifdef DEBUG_OPTS
-#ifndef WITHOUT_USERAUTH
-#define traverse_user(p) { if (cnt == 0) y = *p; ++cnt; }
-	int cnt = 0;
-	if (filter->user_btree) {
-		filter_user_p_t x, y = NULL;
-		__kb_traverse(filter_user_p_t, filter->user_btree, traverse_user);
-		__kb_get_first(filter_user_p_t, filter->user_btree, x);
-		fprintf(stderr, "user_exact # of elements from traversal: %d\n", cnt);
-		if (cnt)
-			fprintf(stderr, "user_exact first element: %s == %s\n", x->user, y->user);
-	}
-#define traverse_keyword(p) { if (cnt == 0) y2 = *p; ++cnt; }
-	if (filter->keyword_btree) {
-		cnt = 0;
-		filter_keyword_p_t x2, y2 = NULL;
-		__kb_traverse(filter_keyword_p_t, filter->keyword_btree, traverse_keyword);
-		__kb_get_first(filter_keyword_p_t, filter->keyword_btree, x2);
-		fprintf(stderr, "keyword_exact # of elements from traversal: %d\n", cnt);
-		if (cnt)
-			fprintf(stderr, "keyword_exact first element: %s == %s\n", x2->keyword, y2->keyword);
-	}
-#endif /* !WITHOUT_USERAUTH */
-#define traverse_ip(p) { if (cnt2 == 0) y3 = *p; ++cnt2; }
-	if (filter->ip_btree) {
-		int cnt2 = 0;
-		filter_ip_p_t x3, y3 = NULL;
-		__kb_traverse(filter_ip_p_t, filter->ip_btree, traverse_ip);
-		__kb_get_first(filter_ip_p_t, filter->ip_btree, x3);
-		fprintf(stderr, "ip_exact # of elements from traversal: %d\n", cnt2);
-		if (cnt2)
-			fprintf(stderr, "ip_exact first element: %s == %s\n", x3->ip, y3->ip);
-	}
-#endif /* DEBUG_OPTS */
 	return filter;
 }
 

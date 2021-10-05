@@ -593,7 +593,7 @@ protossl_srccert_create(pxy_conn_ctx_t *ctx)
 static filter_action_t * NONNULL(1,2)
 protossl_filter_match_sni(pxy_conn_ctx_t *ctx, filter_list_t *list)
 {
-	filter_site_t *site = filter_site_find(list->sni_btree, list->sni_list, ctx->sslctx->sni);
+	filter_site_t *site = filter_site_find(list->sni_btree, list->sni_acm, list->sni_all, ctx->sslctx->sni);
 	if (!site)
 		return NULL;
 
@@ -630,8 +630,8 @@ protossl_filter_match_cn(pxy_conn_ctx_t *ctx, filter_list_t *list)
 	filter_site_t *site = NULL;
 
 // ballpark figures
-#define MAX_CN_LEN 2048
-#define MAX_CN_TOKENS 50
+#define MAX_CN_LEN 4096
+#define MAX_CN_TOKENS 100
 
 	int argc = 0;
 	char *p, *last = NULL;
@@ -654,7 +654,7 @@ protossl_filter_match_cn(pxy_conn_ctx_t *ctx, filter_list_t *list)
 			 p;
 			 (p = strtok_r(NULL, "/", &last))) {
 			if (argc++ < MAX_CN_TOKENS) {
-				site = filter_site_btree_exact_match(list->cn_btree, p);
+				site = filter_site_exact_match(list->cn_btree, p);
 				if (site) {
 					log_finest_va("Match exact with common name (%d): %s, %s", argc, p, ctx->sslctx->ssl_names);
 					break;
@@ -668,7 +668,7 @@ protossl_filter_match_cn(pxy_conn_ctx_t *ctx, filter_list_t *list)
 	}
 
 	if (!site) {
-		site = filter_site_list_substring_match(list->cn_list, ctx->sslctx->ssl_names);
+		site = filter_site_substring_match(list->cn_acm, ctx->sslctx->ssl_names);
 		if (site)
 			log_finest_va("Match substring in common names: %s, %s", site->site, ctx->sslctx->ssl_names);
 	}

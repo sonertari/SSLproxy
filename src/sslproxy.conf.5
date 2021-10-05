@@ -302,19 +302,18 @@ The Divert option is not equivalent to the command line -n option.
 Default: yes
 .TP
 \fBPassSite STRING\fR
-Passthrough site: site[*] [(clientaddr|user|*) [description keyword]].
+Passthrough site: site[*] [(clientaddr|user|*) [description desc]].
 PassSite option is a special form of Pass filtering rule. All PassSite rules 
 can be written as Pass filter rules. The PassSite option will be deprecated in 
 favor of filter rules in the future. If the site matches SNI or common names 
 in the SSL certificate, the connection is passed through the proxy. Per site 
-filters can be defined using client IP addresses, users, and description 
-keywords. '*' matches all client IP addresses or users. User auth should be 
-enabled for user and description keyword filtering to work. Case is ignored 
-while matching description keywords. Multiple sites are allowed, one on each 
-line. PassSite rules can search for exact or substring matches. Append an 
-asterisk to the site field to search for substring match. Note that the 
-substring search is not a regex or wildcard search, and that the asterisk at 
-the end is removed before search.
+filters can be defined using client IP addresses, users, and description. '*' 
+matches all client IP addresses or users. User auth should be enabled for user 
+and description filtering to work. Case is ignored while matching description. 
+Multiple sites are allowed, one on each line. PassSite rules can search for 
+exact or substring matches. Append an asterisk to the site field to search for 
+substring match. Note that the substring search is not a regex or wildcard 
+search, and that the asterisk at the end is removed before search.
 .TP 
 \fBInclude STRING\fR
 Load configuration from an include file.
@@ -353,8 +352,8 @@ The syntax of filtering rules is as follows:
 
 (Divert|Split|Pass|Block|Match)
  ([from (
-     user (username[*]|$macro|*) [desc (keyword[*]|$macro|*)]|
-     desc (keyword[*]|$macro|*)|
+     user (username[*]|$macro|*) [desc (desc[*]|$macro|*)]|
+     desc (desc[*]|$macro|*)|
      ip (clientip[*]|$macro|*)|
      *)]
   [to (

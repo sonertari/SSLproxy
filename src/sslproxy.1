@@ -308,8 +308,8 @@ The syntax of filtering rules is as follows:
 
 (Divert|Split|Pass|Block|Match)
  ([from (
-     user (username[*]|$macro|*) [desc (keyword[*]|$macro|*)]|
-     desc (keyword[*]|$macro|*)|
+     user (username[*]|$macro|*) [desc (desc[*]|$macro|*)]|
+     desc (desc[*]|$macro|*)|
      ip (clientip[*]|$macro|*)|
      *)]
   [to (
@@ -329,7 +329,7 @@ achieved by the from and to parts of a filtering rule and by the proxyspec
 that the rule is defined for.
 .LP
  - The from part of a rule defines source filter based on client IP address, 
-user or description keyword, or * for all.
+user and/or description, or * for all.
  - The to part defines destination filter based on server IP address, SNI or 
 Common Names of SSL connections, Host or URI fields in HTTP Request headers, or 
 * for all.
@@ -358,16 +358,16 @@ For example, if the following rules are defined in a structured HTTPS proxyspec,
  Pass from user soner desc android to cn .fbcdn.net*
 .LP
 The first filtering rule above splits but does not divert HTTPS connections 
-from the user soner who has logged in with a description containing the keyword 
-notebook to SSL sites with the SNI of example.com. Also, the rule specifies 
-that the packet contents of the matching connection be written to content log 
-file configured globally.
+from the user soner who has logged in with the description notebook to SSL 
+sites with the SNI of example.com. Also, the rule specifies that the packet 
+contents of the matching connection be written to content log file configured 
+globally.
 .LP
 The second rule passes through HTTPS connections from the user soner who has 
-logged in with a description containing the keyword android to SSL sites with 
-the Common Names containing the substring .fbcdn.net anywhere in it (notice 
-the asterisk at the end). Since connection contents cannot be written to log 
-files in passthrough mode, the rule does not specify any log action.
+logged in with the description android to SSL sites with the Common Names 
+containing the substring .fbcdn.net anywhere in it (notice the asterisk at the 
+end). Since connection contents cannot be written to log files in passthrough 
+mode, the rule does not specify any log action.
 .LP
 The default filter action is Divert. So, if those are the only filtering rules 
 in that proxyspec, the other connections are diverted to the listening program 
@@ -421,11 +421,8 @@ The macro name must be followed by words separated with spaces.
 .LP
 You can append an asterisk * to the fields in filtering rules for substring 
 matching. Otherwise, the filter searches for an exact match with the field in 
-the rule. The filter uses B-tree data structure, a self-balancing tree for 
-exact match, and linked list for substring match. So, filtering rules should 
-be written using exact matches instead of substring matches, as much as 
-possible, because B-tree search must be faster than substring search over a 
-linked list.
+the rule. The filter uses B-trees for exact string matching and Aho-Corasick 
+machines for substring matching.
 .LP
 The ordering of filtering rules is important. The ordering of from, to, and 
 log parts is not important. The ordering of log actions is not important.
@@ -445,10 +442,10 @@ purpose. For example, sites requiring client authentication can be added as
 PassSite.
 .LP
 Per-site filters can be defined using client IP addresses, users, and 
-description keywords. If the UserAuth option is disabled, only client IP 
-addresses can be used in PassSite filters. Multiple sites can be defined, one 
-on each line. PassSite rules can search for exact or substring matches. 
-PassSite rules do not support macro expansion.
+description. If the UserAuth option is disabled, only client IP addresses can 
+be used in PassSite filters. Multiple sites can be defined, one on each line. 
+PassSite rules can search for exact or substring matches. PassSite rules do 
+not support macro expansion.
 .SH 	User control lists
 User control lists can be implemented using filtering rules. The DivertUsers 
 and PassUsers options will be deprecated in favor of filtering rules in the 

@@ -30,6 +30,7 @@
 
 #include "opts.h"
 #include "kbtree.h"
+#include "aho_corasick_template_impl.h"
 
 #define FILTER_ACTION_NONE   0x00000000U
 #define FILTER_ACTION_MATCH  0x00000200U
@@ -53,6 +54,8 @@
 #define FILTER_LOG_NOMIRROR  0x02000000U
 
 #define FILTER_PRECEDENCE    0x000000FFU
+
+ACM_DECLARE (char);
 
 typedef struct value {
 	char *value;
@@ -99,8 +102,8 @@ typedef struct filter_rule {
 	char *user;
 	unsigned int exact_user : 1;  /* 1 for exact, 0 for substring match */
 
-	char *keyword;
-	unsigned int exact_keyword : 1; /* 1 for exact, 0 for substring match */
+	char *desc;
+	unsigned int exact_desc : 1; /* 1 for exact, 0 for substring match */
 #endif /* !WITHOUT_USERAUTH */
 
 	char *ip;
@@ -155,7 +158,8 @@ typedef struct filter_site {
 
 	// Used with dstip filters only, i.e. if the site is an ip address
 	kbtree_t(port) *port_btree;
-	struct filter_port_list *port_list;
+	ACMachine(char) *port_acm;
+	struct filter_port *port_all;
 
 	struct filter_action action;
 } filter_site_t;
@@ -171,19 +175,24 @@ typedef struct filter_site_list {
 
 typedef struct filter_list {
 	kbtree_t(site) *ip_btree;
-	struct filter_site_list *ip_list;
+	ACMachine(char) *ip_acm;
+	struct filter_site *ip_all;
 
 	kbtree_t(site) *sni_btree;
-	struct filter_site_list *sni_list;
+	ACMachine(char) *sni_acm;
+	struct filter_site *sni_all;
 
 	kbtree_t(site) *cn_btree;
-	struct filter_site_list *cn_list;
+	ACMachine(char) *cn_acm;
+	struct filter_site *cn_all;
 
 	kbtree_t(site) *host_btree;
-	struct filter_site_list *host_list;
+	ACMachine(char) *host_acm;
+	struct filter_site *host_all;
 
 	kbtree_t(site) *uri_btree;
-	struct filter_site_list *uri_list;
+	ACMachine(char) *uri_acm;
+	struct filter_site *uri_all;
 } filter_list_t;
 
 typedef struct filter_ip {
@@ -198,27 +207,27 @@ typedef struct filter_ip_list {
 } filter_ip_list_t;
 
 #ifndef WITHOUT_USERAUTH
-typedef struct filter_keyword {
-	char *keyword;
+typedef struct filter_desc {
+	char *desc;
 	unsigned int exact : 1;       /* used in debug logging only */
 	struct filter_list *list;
-} filter_keyword_t;
+} filter_desc_t;
 
-#define getk_keyword(a) (a)->keyword
-typedef filter_keyword_t *filter_keyword_p_t;
-KBTREE_INIT(keyword, filter_keyword_p_t, kb_str_cmp, str_t, getk_keyword)
+#define getk_desc(a) (a)->desc
+typedef filter_desc_t *filter_desc_p_t;
+KBTREE_INIT(desc, filter_desc_p_t, kb_str_cmp, str_t, getk_desc)
 
-typedef struct filter_keyword_list {
-	struct filter_keyword *keyword;
-	struct filter_keyword_list *next;
-} filter_keyword_list_t;
+typedef struct filter_desc_list {
+	struct filter_desc *desc;
+	struct filter_desc_list *next;
+} filter_desc_list_t;
 
 typedef struct filter_user {
 	char *user;
 	unsigned int exact : 1;       /* used in debug logging only */
 	struct filter_list *list;
-	kbtree_t(keyword) *keyword_btree;
-	struct filter_keyword_list *keyword_list;
+	kbtree_t(desc) *desc_btree;
+	ACMachine(char) *desc_acm;
 } filter_user_t;
 
 #define getk_user(a) (a)->user
@@ -237,17 +246,17 @@ KBTREE_INIT(ip, filter_ip_p_t, kb_str_cmp, str_t, getk_ip)
 
 typedef struct filter {
 #ifndef WITHOUT_USERAUTH
-	kbtree_t(user) *user_btree;               /* exact */
-	struct filter_user_list *user_list;       /* substring */
+	kbtree_t(user) *user_btree;   /* exact */
+	ACMachine(char) *user_acm;    /* substring */
 
-	kbtree_t(keyword) *keyword_btree;         /* exact */
-	struct filter_keyword_list *keyword_list; /* substring */
+	kbtree_t(desc) *desc_btree;   /* exact */
+	ACMachine(char) *desc_acm;    /* substring */
 
 	struct filter_list *all_user;
 #endif /* !WITHOUT_USERAUTH */
 
-	kbtree_t(ip) *ip_btree;                   /* exact */
-	struct filter_ip_list *ip_list;           /* substring */
+	kbtree_t(ip) *ip_btree;       /* exact */
+	ACMachine(char) *ip_acm;      /* substring */
 
 	struct filter_list *all;
 } filter_t;
@@ -275,14 +284,19 @@ int filter_macro_set(opts_t *, char *, int) NONNULL(1,2) WUNRES;
 
 filter_port_t *filter_port_find(filter_site_t *, char *) NONNULL(1,2);
 
-filter_site_t *filter_site_btree_exact_match(kbtree_t(site) *, char *) NONNULL(2) WUNRES;
-filter_site_t *filter_site_list_substring_match(filter_site_list_t *, char *) NONNULL(2) WUNRES;
-filter_site_t *filter_site_find(kbtree_t(site) *, filter_site_list_t *, char *) NONNULL(3) WUNRES;
+filter_site_t *filter_site_exact_match(kbtree_t(site) *, char *) NONNULL(2) WUNRES;
+filter_site_t *filter_site_substring_match(ACMachine(char) *, char *) NONNULL(2) WUNRES;
+filter_site_t *filter_site_find(kbtree_t(site) *, ACMachine(char) *, filter_site_t *, char *) NONNULL(4) WUNRES;
 
-filter_ip_t *filter_ip_find(filter_t *, char *) NONNULL(1,2);
+filter_ip_t *filter_ip_exact_match(kbtree_t(ip) *, char *) NONNULL(2);
+filter_ip_t *filter_ip_substring_match(ACMachine(char) *, char *) NONNULL(2);
+
 #ifndef WITHOUT_USERAUTH
-filter_keyword_t *filter_keyword_find(filter_t *, filter_user_t *, char *) NONNULL(1,3);
-filter_user_t *filter_user_find(filter_t *, char *) NONNULL(1,2);
+filter_desc_t *filter_desc_exact_match(kbtree_t(desc) *, char *) NONNULL(2) WUNRES;
+filter_desc_t *filter_desc_substring_match(ACMachine(char) *, char *) NONNULL(2) WUNRES;
+
+filter_user_t *filter_user_exact_match(kbtree_t(user) *, char *) NONNULL(2) WUNRES;
+filter_user_t *filter_user_substring_match(ACMachine(char) *, char *) NONNULL(2) WUNRES;
 #endif /* !WITHOUT_USERAUTH */
 int filter_rule_set(opts_t *, const char *, char *, int) NONNULL(1,2,3) WUNRES;
 filter_t *filter_set(filter_rule_t *) WUNRES;

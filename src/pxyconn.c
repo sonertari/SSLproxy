@@ -2068,6 +2068,33 @@ pxyconn_set_filter_action(pxy_conn_ctx_t *ctx, filter_action_t *a, UNUSED char *
 	return action;
 }
 
+#ifndef WITHOUT_USERAUTH
+static unsigned int
+pxyconn_filter_user(pxy_conn_ctx_t *ctx, proto_filter_func_t filtercb, filter_user_t *user)
+{
+	unsigned int action = FILTER_ACTION_NONE;
+	if (user) {
+		if (ctx->desc) {
+			log_finest_va("Searching user keyword exact: %s, %s", ctx->user, ctx->desc);
+			filter_desc_t *keyword = filter_desc_exact_match(user->desc_btree, ctx->desc);
+			if (keyword && (action = filtercb(ctx, keyword->list))) {
+				return action;
+			}
+
+			log_finest_va("Searching user keyword substring: %s, %s", ctx->user, ctx->desc);
+			keyword = filter_desc_substring_match(user->desc_acm, ctx->desc);
+			if (keyword && (action = filtercb(ctx, keyword->list))) {
+				return action;
+			}
+		}
+		if ((action = filtercb(ctx, user->list))) {
+			return action;
+		}
+	}
+	return action;
+}
+#endif /* !WITHOUT_USERAUTH */
+
 unsigned int
 pxyconn_filter(pxy_conn_ctx_t *ctx, proto_filter_func_t filtercb)
 {
@@ -2077,24 +2104,25 @@ pxyconn_filter(pxy_conn_ctx_t *ctx, proto_filter_func_t filtercb)
 	if (filter) {
 #ifndef WITHOUT_USERAUTH
 		if (ctx->user) {
-			log_finest_va("Searching user: %s", ctx->user);
-			filter_user_t *user = filter_user_find(filter, ctx->user);
-			if (user) {
-				if (ctx->desc) {
-					log_finest_va("Searching user keyword: %s, %s", ctx->user, ctx->desc);
-					filter_keyword_t *keyword = filter_keyword_find(filter, user, ctx->desc);
-					if (keyword && (action = filtercb(ctx, keyword->list))) {
-						return action;
-					}
-				}
-				if ((action = filtercb(ctx, user->list))) {
-					return action;
-				}
-			}
+			log_finest_va("Searching user exact: %s", ctx->user);
+			filter_user_t *user = filter_user_exact_match(filter->user_btree, ctx->user);
+			if ((action = pxyconn_filter_user(ctx, filtercb, user)))
+				return action;
+
+			log_finest_va("Searching user substring: %s", ctx->user);
+			user = filter_user_substring_match(filter->user_acm, ctx->user);
+			if ((action = pxyconn_filter_user(ctx, filtercb, user)))
+				return action;
 
 			if (ctx->desc) {
-				log_finest_va("Searching keyword: %s", ctx->desc);
-				filter_keyword_t *keyword = filter_keyword_find(filter, user, ctx->desc);
+				log_finest_va("Searching keyword exact: %s", ctx->desc);
+				filter_desc_t *keyword = filter_desc_exact_match(filter->desc_btree, ctx->desc);
+				if (keyword && (action = filtercb(ctx, keyword->list))) {
+					return action;
+				}
+
+				log_finest_va("Searching keyword substring: %s, %s", ctx->user, ctx->desc);
+				keyword = filter_desc_substring_match(filter->desc_acm, ctx->desc);
 				if (keyword && (action = filtercb(ctx, keyword->list))) {
 					return action;
 				}
@@ -2107,8 +2135,14 @@ pxyconn_filter(pxy_conn_ctx_t *ctx, proto_filter_func_t filtercb)
 		}
 #endif /* !WITHOUT_USERAUTH */
 		if (ctx->srchost_str) {
-			log_finest_va("Searching ip: %s", ctx->srchost_str);
-			filter_ip_t *ip = filter_ip_find(filter, ctx->srchost_str);
+			log_finest_va("Searching ip exact: %s", ctx->srchost_str);
+			filter_ip_t *ip = filter_ip_exact_match(filter->ip_btree, ctx->srchost_str);
+			if (ip && (action = filtercb(ctx, ip->list))) {
+				return action;
+			}
+
+			log_finest_va("Searching ip substring: %s", ctx->srchost_str);
+			ip = filter_ip_substring_match(filter->ip_acm, ctx->srchost_str);
 			if (ip && (action = filtercb(ctx, ip->list))) {
 				return action;
 			}

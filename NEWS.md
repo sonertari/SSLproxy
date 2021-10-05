@@ -5,8 +5,8 @@
 
 	    (Divert|Split|Pass|Block|Match)
 	     ([from (
-	         user (username[*]|$macro|*) [desc (keyword[*]|$macro|*)]|
-	         desc (keyword[*]|$macro|*)|
+	         user (username[*]|$macro|*) [desc (desc[*]|$macro|*)]|
+	         desc (desc[*]|$macro|*)|
 	         ip (clientip[*]|$macro|*)|
 	         *)]
 	      [to (
