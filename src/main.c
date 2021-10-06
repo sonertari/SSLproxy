@@ -930,8 +930,8 @@ main(int argc, char *argv[])
 		}
 	}
 
-	// Free filter rules in linked lists, not needed anymore
-	// We use filter in conn handling, not filter rule lists
+	// Free filtering rules in linked lists, not needed anymore
+	// We use filter in conn handling, not filter_rules
 	for (proxyspec_t *spec = global->spec; spec; spec = spec->next) {
 		filter_rules_free(spec->opts);
 	}

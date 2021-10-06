@@ -35,8 +35,8 @@
  * - The key_t parameter is the type of the key returned by __getk().
  * 
  * For example, the tree nodes can be considered as the values of key-value 
- * pairs, which may be of a complex data type. And the key may a field in that 
- * complex data type.
+ * pairs, which may be of a complex data type. And the key may be a field in 
+ * that complex data type.
  */
 #ifndef __AC_KBTREE_H
 #define __AC_KBTREE_H

@@ -24,4 +24,18 @@ Mk/xcode.mk:
     Released under the Unlicense.
     https://github.com/droe/example.kext
 
+kbtree.h:
+
+    Copyright 1997-1999, 2001, John-Mark Gurney.
+              2008-2009, Attractive Chaos.
+    Licensed under a 2-clause BSD license.
+    https://github.com/attractivechaos/klib
+
+aho_corasick_template*.h:
+
+    Copyright 2017 Laurent Farhi
+    Licensed under the GPL-3.0.
+    https://github.com/farhiongit/aho-corasick-1975
+    Note: The developer has been contacted for a license change to the LGPL.
+
 See the respective source and/or license files for details.

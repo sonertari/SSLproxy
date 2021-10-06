@@ -2272,7 +2272,7 @@ filter_port_substring_exact_match(ACMachine(char) *acm, char *p)
 			for (size_t j = 0; j < nb; j++) {
 				filter_port_t *value;
 				ACM_get_match(state, j, 0, (void **)&value);
-				// ACM matches a substring, make sure the match is exact
+				// ACM matches any substring, make sure the match is exact
 				if (equal(value->port, p))
 					return value;
 			}
@@ -2404,7 +2404,7 @@ filter_site_substring_exact_match(ACMachine(char) *acm, char *s)
 			for (size_t j = 0; j < nb; j++) {
 				filter_site_t *value;
 				ACM_get_match(state, j, 0, (void **)&value);
-				// ACM matches a substring, make sure the match is exact
+				// ACM matches any substring, make sure the match is exact
 				if (equal(value->site, s))
 					return value;
 			}
@@ -2567,7 +2567,7 @@ filter_ip_substring_exact_match(ACMachine(char) *acm, char *i)
 			for (size_t j = 0; j < nb; j++) {
 				filter_ip_t *value;
 				ACM_get_match(state, j, 0, (void **)&value);
-				// ACM matches a substring, make sure the match is exact
+				// ACM matches any substring, make sure the match is exact
 				if (equal(value->ip, i))
 					return value;
 			}
@@ -2672,7 +2672,7 @@ filter_desc_substring_exact_match(ACMachine(char) *acm, char *k)
 			for (size_t j = 0; j < nb; j++) {
 				filter_desc_t *value;
 				ACM_get_match(state, j, 0, (void **)&value);
-				// ACM matches a substring, make sure the match is exact
+				// ACM matches any substring, make sure the match is exact
 				if (equal(value->desc, k))
 					return value;
 			}
@@ -2778,7 +2778,7 @@ filter_user_substring_exact_match(ACMachine(char) *acm, char *u)
 			for (size_t j = 0; j < nb; j++) {
 				filter_user_t *value;
 				ACM_get_match(state, j, 0, (void **)&value);
-				// ACM matches a substring, make sure the match is exact
+				// ACM matches any substring, make sure the match is exact
 				if (equal(value->user, u))
 					return value;
 			}
