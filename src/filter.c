@@ -34,14 +34,15 @@
 
 ACM_DEFINE (char);
 
-#define free_list(list, type) { \
+#define free_list(list, type) do { \
 	while (list) { \
 		type *next = (list)->next; \
 		free(list); \
 		list = next; \
-	}}
+	} \
+} while (0)
 
-#define append_list(list, value, type) { \
+#define append_list(list, value, type) do { \
 	type *l = *list; \
 	while (l) { \
 		if (!l->next) \
@@ -52,16 +53,17 @@ ACM_DEFINE (char);
 		l->next = value; \
 	else \
 		*list = value; \
-	}
+} while (0)
 
-#define match_acm(acm, haystack, value) { \
+#define match_acm(acm, haystack, value) do { \
 	const ACState(char) *state = ACM_reset(acm); \
 	for (char *c = haystack; *c; c++) { \
 		if (ACM_match(state, *c)) { \
 			ACM_get_match(state, 0, 0, (void **)&value); \
 			break; \
 		} \
-	}}
+	} \
+} while (0)
 
 #ifndef WITHOUT_USERAUTH
 void
@@ -88,7 +90,7 @@ filter_userlist_copy(userlist_t *userlist, const char *argv0, userlist_t **ul)
 		if (!du->user)
 			return oom_return(argv0);
 
-		append_list(ul, du, userlist_t)
+		append_list(ul, du, userlist_t);
 
 		userlist = userlist->next;
 	}
@@ -174,7 +176,7 @@ filter_userlist_set(char *value, int line_num, userlist_t **list, const char *li
 		if (!ul->user)
 			return oom_return_na();
 
-		append_list(list, ul, userlist_t)
+		append_list(list, ul, userlist_t);
 	}
 	return 0;
 }
@@ -228,14 +230,15 @@ filter_rules_free(opts_t *opts)
 	opts->filter_rules = NULL;
 }
 
-#define free_port(p) { \
+#define free_port(p) do { \
 	free((*p)->port); \
-	free(*p); }
+	free(*p); \
+} while (0)
 
 static void
 free_port_func(void *p)
 {
-	free_port((filter_port_t **)&p)
+	free_port((filter_port_t **)&p);
 }
 
 static void
@@ -247,19 +250,20 @@ filter_port_btree_free(kbtree_t(port) *btree)
 	}
 }
 
-#define free_site(p) { \
+#define free_site(p) do { \
 	free((*p)->site); \
 	filter_port_btree_free((*p)->port_btree); \
 	if ((*p)->port_acm) \
 		ACM_release((*p)->port_acm); \
 	if ((*p)->port_all) \
 		free_port_func((*p)->port_all); \
-	free(*p); }
+	free(*p); \
+} while (0)
 
 static void
 free_site_func(void *s)
 {
-	free_site((filter_site_t **)&s)
+	free_site((filter_site_t **)&s);
 }
 
 static void
@@ -314,10 +318,11 @@ filter_list_free(filter_list_t *list)
 }
 
 #ifndef WITHOUT_USERAUTH
-#define free_desc(p) { \
+#define free_desc(p) do { \
 	free((*p)->desc); \
 	filter_list_free((*p)->list); \
-	free(*p); }
+	free(*p); \
+} while (0)
 
 static void
 filter_user_free(filter_user_t *user)
@@ -334,15 +339,17 @@ filter_user_free(filter_user_t *user)
 		ACM_release(user->desc_acm);
 }
 
-#define free_user(p) { \
+#define free_user(p) do { \
 	filter_user_free(*p); \
-	free(*p); }
+	free(*p); \
+} while (0)
 #endif /* !WITHOUT_USERAUTH */
 
-#define free_ip(p) { \
+#define free_ip(p) do { \
 	free((*p)->ip); \
 	filter_list_free((*p)->list); \
-	free(*p); }
+	free(*p); \
+} while (0)
 
 void
 filter_free(opts_t *opts)
@@ -409,11 +416,11 @@ filter_macro_copy(macro_t *macro, const char *argv0, opts_t *opts)
 			if (!v->value)
 				return oom_return(argv0);
 
-			append_list(&m->value, v, value_t)
+			append_list(&m->value, v, value_t);
 			value = value->next;
 		}
 
-		append_list(&opts->macro, m, macro_t)
+		append_list(&opts->macro, m, macro_t);
 		macro = macro->next;
 	}
 	return 0;
@@ -480,7 +487,7 @@ filter_rules_copy(filter_rule_t *rule, const char *argv0, opts_t *opts)
 		// The action field is not a pointer, hence the direct assignment (copy)
 		r->action = rule->action;
 
-		append_list(&opts->filter_rules, r, filter_rule_t)
+		append_list(&opts->filter_rules, r, filter_rule_t);
 
 		rule = rule->next;
 	}
@@ -669,11 +676,12 @@ out:
 	return s;
 }
 
-#define build_port_list(p) { \
+#define build_port_list(p) do { \
 	filter_port_list_t *s = malloc(sizeof(filter_port_list_t)); \
 	memset(s, 0, sizeof(filter_port_list_t)); \
 	s->port = *p; \
-	append_list(&port, s, filter_port_list_t) }
+	append_list(&port, s, filter_port_list_t); \
+} while (0)
 
 static filter_port_list_t *port_list_acm = NULL;
 
@@ -686,7 +694,7 @@ build_port_list_acm(UNUSED MatchHolder(char) match, void *v)
 	memset(p, 0, sizeof(filter_port_list_t));
 	p->port = port;
 
-	append_list(&port_list_acm, p, filter_port_list_t)
+	append_list(&port_list_acm, p, filter_port_list_t);
 }
 
 static char *
@@ -702,20 +710,20 @@ filter_sites_str(filter_site_list_t *site_list)
 			__kb_traverse(filter_port_p_t, site_list->site->port_btree, build_port_list);
 
 		char *ports_exact = filter_port_str(port);
-		free_list(port, filter_port_list_t)
+		free_list(port, filter_port_list_t);
 
 		if (site_list->site->port_acm)
 			ACM_foreach_keyword(site_list->site->port_acm, build_port_list_acm);
 
 		char *ports_substring = filter_port_str(port_list_acm);
-		free_list(port_list_acm, filter_port_list_t)
+		free_list(port_list_acm, filter_port_list_t);
 		port_list_acm = NULL;
 
 		if (site_list->site->port_all)
 			build_port_list_acm((MatchHolder(char)){0}, site_list->site->port_all);
 
 		char *ports_all = filter_port_str(port_list_acm);
-		free_list(port_list_acm, filter_port_list_t)
+		free_list(port_list_acm, filter_port_list_t);
 		port_list_acm = NULL;
 
 		char *p;
@@ -794,13 +802,13 @@ build_site_list_acm(UNUSED MatchHolder(char) match, void *v)
 	memset(s, 0, sizeof(filter_site_list_t));
 	s->site = site;
 
-	append_list(&site_list_acm, s, filter_site_list_t)
+	append_list(&site_list_acm, s, filter_site_list_t);
 }
 
 static void
 filter_tmp_site_list_free(filter_site_list_t **list)
 {
-	free_list(*list, filter_site_list_t)
+	free_list(*list, filter_site_list_t);
 	*list = NULL;
 }
 
@@ -810,11 +818,12 @@ filter_list_str(filter_list_t *list)
 	char *s = NULL;
 	filter_site_list_t *site = NULL;
 
-#define build_site_list(p) { \
+#define build_site_list(p) do { \
 	filter_site_list_t *s = malloc(sizeof(filter_site_list_t)); \
 	memset(s, 0, sizeof(filter_site_list_t)); \
 	s->site = *p; \
-	append_list(&site, s, filter_site_list_t) }
+	append_list(&site, s, filter_site_list_t); \
+} while (0)
 
 	if (list->ip_btree) {
 		__kb_traverse(filter_site_p_t, list->ip_btree, build_site_list);
@@ -938,18 +947,19 @@ filter_ip_btree_str(kbtree_t(ip) *btree)
 	if (!btree)
 		return NULL;
 
-#define build_ip_list(p) { \
+#define build_ip_list(p) do { \
 	filter_ip_list_t *i = malloc(sizeof(filter_ip_list_t)); \
 	memset(i, 0, sizeof(filter_ip_list_t)); \
 	i->ip = *p; \
-	append_list(&ip, i, filter_ip_list_t) }
+	append_list(&ip, i, filter_ip_list_t); \
+} while (0)
 	
 	filter_ip_list_t *ip = NULL;
 	__kb_traverse(filter_ip_p_t, btree, build_ip_list);
 
 	char *s = filter_ip_list_str(ip);
 	
-	free_list(ip, filter_ip_list_t)
+	free_list(ip, filter_ip_list_t);
 	return s;
 }
 
@@ -964,7 +974,7 @@ build_ip_list_acm(UNUSED MatchHolder(char) match, void *v)
 	memset(i, 0, sizeof(filter_ip_list_t));
 	i->ip = ip;
 
-	append_list(&ip_list_acm, i, filter_ip_list_t)
+	append_list(&ip_list_acm, i, filter_ip_list_t);
 }
 
 static char *
@@ -977,7 +987,7 @@ filter_ip_acm_str(ACMachine(char) *acm)
 
 	char *s = filter_ip_list_str(ip_list_acm);
 
-	free_list(ip_list_acm, filter_ip_list_t)
+	free_list(ip_list_acm, filter_ip_list_t);
 	ip_list_acm = NULL;
 	return s;
 }
@@ -1026,11 +1036,12 @@ out:
 	return s;
 }
 
-#define build_user_list(p) { \
+#define build_user_list(p) do { \
 	filter_user_list_t *u = malloc(sizeof(filter_user_list_t)); \
 	memset(u, 0, sizeof(filter_user_list_t)); \
 	u->user = *p; \
-	append_list(&user, u, filter_user_list_t) }
+	append_list(&user, u, filter_user_list_t); \
+} while (0)
 
 static char *
 filter_user_btree_str(kbtree_t(user) *btree)
@@ -1043,7 +1054,7 @@ filter_user_btree_str(kbtree_t(user) *btree)
 
 	char *s = filter_user_list_str(user);
 
-	free_list(user, filter_user_list_t)
+	free_list(user, filter_user_list_t);
 	return s;
 }
 
@@ -1058,7 +1069,7 @@ build_user_list_acm(UNUSED MatchHolder(char) match, void *v)
 	memset(u, 0, sizeof(filter_user_list_t));
 	u->user = user;
 
-	append_list(&user_list_acm, u, filter_user_list_t)
+	append_list(&user_list_acm, u, filter_user_list_t);
 }
 
 static char *
@@ -1071,7 +1082,7 @@ filter_user_acm_str(ACMachine(char) *acm)
 
 	char *s = filter_user_list_str(user_list_acm);
 
-	free_list(user_list_acm, filter_user_list_t)
+	free_list(user_list_acm, filter_user_list_t);
 	user_list_acm = NULL;
 	return s;
 }
@@ -1116,18 +1127,19 @@ filter_desc_btree_str(kbtree_t(desc) *btree)
 	if (!btree)
 		return NULL;
 
-#define build_desc_list(p) { \
+#define build_desc_list(p) do { \
 	filter_desc_list_t *d = malloc(sizeof(filter_desc_list_t)); \
 	memset(d, 0, sizeof(filter_desc_list_t)); \
 	d->desc = *p; \
-	append_list(&desc, d, filter_desc_list_t) }
+	append_list(&desc, d, filter_desc_list_t); \
+} while (0)
 
 	filter_desc_list_t *desc = NULL;
 	__kb_traverse(filter_desc_p_t, btree, build_desc_list);
 
 	char *s = filter_desc_list_str(desc);
 
-	free_list(desc, filter_desc_list_t)
+	free_list(desc, filter_desc_list_t);
 	return s;
 }
 
@@ -1142,7 +1154,7 @@ build_desc_list_acm(UNUSED MatchHolder(char) match, void *v)
 	memset(d, 0, sizeof(filter_desc_list_t));
 	d->desc = desc;
 
-	append_list(&desc_list_acm, d, filter_desc_list_t)
+	append_list(&desc_list_acm, d, filter_desc_list_t);
 }
 
 static char *
@@ -1155,7 +1167,7 @@ filter_desc_acm_str(ACMachine(char) *acm)
 
 	char *s = filter_desc_list_str(desc_list_acm);
 	
-	free_list(desc_list_acm, filter_desc_list_t)
+	free_list(desc_list_acm, filter_desc_list_t);
 	desc_list_acm = NULL;
 	return s;
 }
@@ -1218,7 +1230,7 @@ filter_userdesc_btree_str(kbtree_t(user) *btree)
 
 	char *s = filter_userdesc_list_str(user);
 
-	free_list(user, filter_user_list_t)
+	free_list(user, filter_user_list_t);
 	return s;
 }
 
@@ -1232,7 +1244,7 @@ filter_userdesc_acm_str(ACMachine(char) *acm)
 
 	char *s = filter_userdesc_list_str(user_list_acm);
 
-	free_list(user_list_acm, filter_user_list_t)
+	free_list(user_list_acm, filter_user_list_t);
 	user_list_acm = NULL;
 	return s;
 }
@@ -1505,7 +1517,7 @@ filter_passsite_set(opts_t *opts, char *value, int line_num)
 	rule->cn = 1;
 	rule->action.pass = 1;
 
-	append_list(&opts->filter_rules, rule, filter_rule_t)
+	append_list(&opts->filter_rules, rule, filter_rule_t);
 
 #ifdef DEBUG_OPTS
 	filter_rule_dbg_print(rule);
@@ -1587,10 +1599,10 @@ filter_macro_set(opts_t *opts, char *value, int line_num)
 		if (!v->value)
 			return oom_return_na();
 
-		append_list(&macro->value, v, value_t)
+		append_list(&macro->value, v, value_t);
 	}
 
-	append_list(&opts->macro, macro, macro_t)
+	append_list(&opts->macro, macro, macro_t);
 
 #ifdef DEBUG_OPTS
 	log_dbg_printf("Macro: %s = %s\n", macro->name, filter_value_str(macro->value));
@@ -1960,7 +1972,7 @@ filter_rule_translate(opts_t *opts, const char *name, int argc, char **argv, int
 		rule->dstip = 1;
 	}
 
-	append_list(&opts->filter_rules, rule, filter_rule_t)
+	append_list(&opts->filter_rules, rule, filter_rule_t);
 
 #ifdef DEBUG_OPTS
 	filter_rule_dbg_print(rule);
@@ -2246,7 +2258,7 @@ filter_port_substring_match(ACMachine(char) *acm, char *port)
 	if (!acm)
 		return NULL;
 	filter_port_t *p = NULL;
-	match_acm(acm, port, p)
+	match_acm(acm, port, p);
 	return p;
 }
 
@@ -2377,7 +2389,7 @@ filter_site_substring_match(ACMachine(char) *acm, char *site)
 	if (!acm)
 		return NULL;
 	filter_site_t *s = NULL;
-	match_acm(acm, site, s)
+	match_acm(acm, site, s);
 	return s;
 }
 
@@ -2541,7 +2553,7 @@ filter_ip_substring_match(ACMachine(char) *acm, char *ip)
 	if (!acm)
 		return NULL;
 	filter_ip_t *i = NULL;
-	match_acm(acm, ip, i)
+	match_acm(acm, ip, i);
 	return i;
 }
 
@@ -2576,7 +2588,7 @@ filter_ip_find_exact(filter_t *filter, filter_rule_t *rule)
 static void
 free_ip_func(void *i)
 {
-	free_ip((filter_ip_t **)&i)
+	free_ip((filter_ip_t **)&i);
 }
 
 static filter_ip_t *
@@ -2636,7 +2648,7 @@ filter_desc_substring_match(ACMachine(char) *acm, char *desc)
 	if (!acm)
 		return NULL;
 	filter_desc_t *k = NULL;
-	match_acm(acm, desc, k)
+	match_acm(acm, desc, k);
 	return k;
 }
 
@@ -2671,7 +2683,7 @@ filter_desc_find_exact(filter_t *filter, filter_user_t *user, filter_rule_t *rul
 static void
 free_desc_func(void *k)
 {
-	free_desc((filter_desc_t **)&k)
+	free_desc((filter_desc_t **)&k);
 }
 
 static filter_desc_t *
@@ -2732,7 +2744,7 @@ filter_user_substring_match(ACMachine(char) *acm, char *user)
 	if (!acm)
 		return NULL;
 	filter_user_t *u = NULL;
-	match_acm(acm, user, u)
+	match_acm(acm, user, u);
 	return u;
 }
 
@@ -2767,7 +2779,7 @@ filter_user_find_exact(filter_t *filter, filter_rule_t *rule)
 static void
 free_user_func(void *u)
 {
-	free_user((filter_user_t **)&u)
+	free_user((filter_user_t **)&u);
 }
 
 static filter_user_t *
