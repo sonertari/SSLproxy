@@ -17,6 +17,10 @@
 */
 
 /*
+ * 2021-10-06: The developer has been contacted for a license change to the LGPL.
+ */
+
+/*
  * This file is modified from the original to suppress ISO C and c99 warnings 
  * issued by both gcc and clang, such as those for _Generic selection and %n$ 
  * operand number formats. So, this version is compatible with ISO C and c99, 

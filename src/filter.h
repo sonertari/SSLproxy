@@ -122,10 +122,10 @@ typedef struct filter_rule {
 
 	// Conn field to apply filter to
 	unsigned int dstip : 1;       /* 1 to apply to dst ip */
-	unsigned int host : 1;        /* 1 to apply to http host */
-	unsigned int uri : 1;         /* 1 to apply to http uri */
 	unsigned int sni : 1;         /* 1 to apply to sni */
 	unsigned int cn : 1;          /* 1 to apply to common names */
+	unsigned int host : 1;        /* 1 to apply to http host */
+	unsigned int uri : 1;         /* 1 to apply to http uri */
 
 	struct filter_action action;
 

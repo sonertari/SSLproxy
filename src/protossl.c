@@ -1673,7 +1673,8 @@ protossl_bev_eventcb_connected_srvdst(UNUSED struct bufferevent *bev, pxy_conn_c
 		return;
 	}
 
-	// Set src ssl up early to apply protossl filter 
+	// Set src ssl up early to apply SSL filter,
+	// this is the last moment we can take divert or split action
 	if (protossl_setup_src_ssl(ctx) != 0) {
 		return;
 	}

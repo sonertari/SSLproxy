@@ -2243,12 +2243,11 @@ filter_port_exact_match(kbtree_t(port) *btree, char *p)
 static filter_port_t *
 filter_port_substring_match(ACMachine(char) *acm, char *port)
 {
-	if (acm) {
-		filter_port_t *p = NULL;
-		match_acm(acm, port, p)
-		return p;
-	}
-	return NULL;
+	if (!acm)
+		return NULL;
+	filter_port_t *p = NULL;
+	match_acm(acm, port, p)
+	return p;
 }
 
 filter_port_t *
@@ -2375,12 +2374,11 @@ filter_site_exact_match(kbtree_t(site) *btree, char *s)
 filter_site_t *
 filter_site_substring_match(ACMachine(char) *acm, char *site)
 {
-	if (acm) {
-		filter_site_t *s = NULL;
-		match_acm(acm, site, s)
-		return s;
-	}
-	return NULL;
+	if (!acm)
+		return NULL;
+	filter_site_t *s = NULL;
+	match_acm(acm, site, s)
+	return s;
 }
 
 filter_site_t *
@@ -2540,21 +2538,11 @@ filter_ip_exact_match(kbtree_t(ip) *btree, char *i)
 filter_ip_t *
 filter_ip_substring_match(ACMachine(char) *acm, char *ip)
 {
-	if (acm) {
-		filter_ip_t *i = NULL;
-		match_acm(acm, ip, i)
-		return i;
-	}
-	return NULL;
-}
-
-filter_ip_t *
-filter_ip_find(filter_t *filter, char *i)
-{
-	filter_ip_t *ip = filter_ip_exact_match(filter->ip_btree, i);
-	if (ip)
-		return ip;
-	return filter_ip_substring_match(filter->ip_acm, i);
+	if (!acm)
+		return NULL;
+	filter_ip_t *i = NULL;
+	match_acm(acm, ip, i)
+	return i;
 }
 
 static filter_ip_t *
@@ -2645,21 +2633,11 @@ filter_desc_exact_match(kbtree_t(desc) *btree, char *k)
 filter_desc_t *
 filter_desc_substring_match(ACMachine(char) *acm, char *desc)
 {
-	if (acm) {
-		filter_desc_t *k = NULL;
-		match_acm(acm, desc, k)
-		return k;
-	}
-	return NULL;
-}
-
-filter_desc_t *
-filter_desc_find(filter_t *filter, filter_user_t *user, char *k)
-{
-	filter_desc_t *desc = filter_desc_exact_match(user ? user->desc_btree : filter->desc_btree, k);
-	if (desc)
-		return desc;
-	return filter_desc_substring_match(user ? user->desc_acm : filter->desc_acm, k);
+	if (!acm)
+		return NULL;
+	filter_desc_t *k = NULL;
+	match_acm(acm, desc, k)
+	return k;
 }
 
 static filter_desc_t *
@@ -2751,21 +2729,11 @@ filter_user_exact_match(kbtree_t(user) *btree, char *u)
 filter_user_t *
 filter_user_substring_match(ACMachine(char) *acm, char *user)
 {
-	if (acm) {
-		filter_user_t *u = NULL;
-		match_acm(acm, user, u)
-		return u;
-	}
-	return NULL;
-}
-
-filter_user_t *
-filter_user_find(filter_t *filter, char *u)
-{
-	filter_user_t *user = filter_user_exact_match(filter->user_btree, u);
-	if (user)
-		return user;
-	return filter_user_substring_match(filter->user_acm, u);
+	if (!acm)
+		return NULL;
+	filter_user_t *u = NULL;
+	match_acm(acm, user, u)
+	return u;
 }
 
 static filter_user_t *

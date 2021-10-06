@@ -17,6 +17,10 @@
 *  along with this file.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+/*
+ * 2021-10-06: The developer has been contacted for a license change to the LGPL.
+ */
+
 #ifndef __ACM_TEMPLATE__
 
 #  define __ACM_TEMPLATE__
