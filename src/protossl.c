@@ -740,7 +740,11 @@ protossl_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
 	}
 
 	if (action_sni ||  action_cn)
-		return pxyconn_set_filter_action(ctx, action_sni, action_cn, ctx->sslctx->sni, ctx->sslctx->ssl_names);
+		return pxyconn_set_filter_action(ctx, action_sni, action_cn
+#ifdef DEBUG_PROXY
+				, ctx->sslctx->sni, ctx->sslctx->ssl_names
+#endif /* DEBUG_PROXY */
+				);
 
 	return FILTER_ACTION_NONE;
 }

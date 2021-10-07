@@ -546,7 +546,11 @@ prototcp_dsthost_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
 	if (ctx->dsthost_str) {
 		filter_action_t *action;
 		if ((action = prototcp_filter_match_ip(ctx, list)))
-			return pxyconn_set_filter_action(ctx, action, NULL, ctx->dsthost_str, NULL);
+			return pxyconn_set_filter_action(ctx, action, NULL
+#ifdef DEBUG_PROXY
+					, ctx->dsthost_str, NULL
+#endif /* DEBUG_PROXY */
+					);
 
 		log_finest_va("No filter match with ip: %s:%s, %s:%s",
 			STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str));

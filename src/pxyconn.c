@@ -2007,22 +2007,30 @@ pxyconn_apply_deferred_block_action(pxy_conn_ctx_t *ctx)
 }
 
 unsigned int
-pxyconn_set_filter_action(pxy_conn_ctx_t *ctx, filter_action_t *a1, filter_action_t *a2, UNUSED char *s1, UNUSED char *s2)
+pxyconn_set_filter_action(pxy_conn_ctx_t *ctx, filter_action_t *a1, filter_action_t *a2
+#ifdef DEBUG_PROXY
+	, char *s1, char *s2
+#endif /* DEBUG_PROXY */
+	)
 {
 	filter_action_t *a;
+#ifdef DEBUG_PROXY
 	char *site;
+#endif /* DEBUG_PROXY */
 
 	// a1 has precedence over a2, unless a2's precedence is higher
 	if (!a1 || (a1 &&  a2 && (a1->precedence < a2->precedence))) {
 		a = a2;
-		site = s2;
 #ifdef DEBUG_PROXY
+		site = s2;
 		if (a1 &&  a2 && (a1->precedence < a2->precedence))
 			log_finest_va("Rule 2 has higher precedence than rule 1: %d > %d, %s, %s", a2->precedence, a1->precedence, s2, s1);
 #endif /* DEBUG_PROXY */
 	} else {
 		a = a1;
+#ifdef DEBUG_PROXY
 		site = s1;
+#endif /* DEBUG_PROXY */
 	}
 
 	unsigned int action = FILTER_ACTION_NONE;
