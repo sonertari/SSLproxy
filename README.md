@@ -300,11 +300,11 @@ The syntax of filtering rules is as follows:
 	     ip (clientip[*]|$macro|*)|
 	     *)]
 	  [to (
-	     sni (servername[*]|$macro|*)|
-	     cn (commonname[*]|$macro|*)|
-	     host (host[*]|$macro|*)|
-	     uri (uri[*]|$macro|*)|
-	     ip (serverip[*]|$macro|*) [port (serverport[*]|$macro|*)]|
+	     (sni (servername[*]|$macro|*)|
+	      cn (commonname[*]|$macro|*)|
+	      host (host[*]|$macro|*)|
+	      uri (uri[*]|$macro|*)|
+	      ip (serverip[*]|$macro|*)) [port (serverport[*]|$macro|*)]|
 	     port (serverport[*]|$macro|*)|
 	     *)]
 	  [log ([[!]connect] [[!]master] [[!]cert]
@@ -317,12 +317,13 @@ that the rule is defined for.
 
 - The `from` part of a rule defines source filter based on client IP address, 
 user and/or description, or `*` for all.
-- The `to` part defines destination filter based on server IP address, SNI or 
-Common Names of SSL connections, Host or URI fields in HTTP Request headers, or 
-`*` for all.
-	+ Dst Host type of rules use `ip` and `port` site fields
-	+ SSL type of rules use `sni` and `cn` site fields
-	+ HTTP type of rules use `host` and `uri` site fields
+- The `to` part defines destination filter based on server IP and/or port, SNI 
+or Common Names of SSL connections, Host or URI fields in HTTP Request 
+headers, or `*` for all.
+	+ Dst Host type of rules use the `ip` site field
+	+ SSL type of rules use the `sni` or `cn` site field
+	+ HTTP type of rules use the `host` or `uri` site field
+	+ All rule types can use the `port` field
 - The proxyspec handling the connection defines the protocol filter for the 
 connection.
 
@@ -371,7 +372,9 @@ smartphones to connect to the Internet behind sslproxy.
 
 Filtering rules are applied based on certain precedence orders:
 
-- More specific rules have higher precedence.
+- More specific rules have higher precedence. Log actions increase rule 
+precedence too, but this effects log actions only, not the precedence of 
+filter actions.
 - The precedence of filter types is as HTTP > SSL > Dst Host. Because, the 
 application order of filter types is as Dst Host > SSL > HTTP, and a filter 
 type can override the actions of a preceding filter type.

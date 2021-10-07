@@ -2007,8 +2007,24 @@ pxyconn_apply_deferred_block_action(pxy_conn_ctx_t *ctx)
 }
 
 unsigned int
-pxyconn_set_filter_action(pxy_conn_ctx_t *ctx, filter_action_t *a, UNUSED char *site)
+pxyconn_set_filter_action(pxy_conn_ctx_t *ctx, filter_action_t *a1, filter_action_t *a2, UNUSED char *s1, UNUSED char *s2)
 {
+	filter_action_t *a;
+	char *site;
+
+	// a1 has precedence over a2, unless a2's precedence is higher
+	if (!a1 || (a1 &&  a2 && (a1->precedence < a2->precedence))) {
+		a = a2;
+		site = s2;
+#ifdef DEBUG_PROXY
+		if (a1 &&  a2 && (a1->precedence < a2->precedence))
+			log_finest_va("Rule 2 has higher precedence than rule 1: %d > %d, %s, %s", a2->precedence, a1->precedence, s2, s1);
+#endif /* DEBUG_PROXY */
+	} else {
+		a = a1;
+		site = s1;
+	}
+
 	unsigned int action = FILTER_ACTION_NONE;
 	if (a->divert) {
 		log_fine_va("Filter divert action for %s, precedence %d", site, a->precedence);
@@ -2066,6 +2082,43 @@ pxyconn_set_filter_action(pxy_conn_ctx_t *ctx, filter_action_t *a, UNUSED char *
 	action |= a->precedence;
 
 	return action;
+}
+
+static int NONNULL(1,2)
+pxyconn_filter_match_port(pxy_conn_ctx_t *ctx, filter_port_t *port)
+{
+	if (port->action.precedence < ctx->filter_precedence) {
+		log_finest_va("Rule port precedence lower than conn filter precedence %d < %d: %s, %s", port->action.precedence, ctx->filter_precedence, port->port, ctx->dsthost_str);
+		return 0;
+	}
+
+#ifdef DEBUG_PROXY
+	if (port->all_ports)
+		log_finest_va("Match all dst ports: %s, %s", port->port, ctx->dstport_str);
+	else if (port->exact)
+		log_finest_va("Match exact with dst port: %s, %s", port->port, ctx->dstport_str);
+	else
+		log_finest_va("Match substring in dst port: %s, %s", port->port, ctx->dstport_str);
+#endif /* DEBUG_PROXY */
+
+	return 1;
+}
+
+filter_action_t *
+pxyconn_filter_port(pxy_conn_ctx_t *ctx, filter_site_t *site)
+{
+	filter_port_t *port = filter_port_find(site, ctx->dstport_str);
+	if (port) {
+		log_fine_va("Found port: %s for %s:%s, %s:%s", port->port,
+			STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str));
+		if (pxyconn_filter_match_port(ctx, port))
+			return &port->action;
+	}
+	else
+		log_finest_va("No filter match with port: %s:%s, %s:%s",
+			STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str));
+
+	return NULL;
 }
 
 #ifndef WITHOUT_USERAUTH

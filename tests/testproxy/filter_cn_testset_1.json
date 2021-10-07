@@ -1,0 +1,204 @@
+{
+  "comment": "Tests for Common Names Pass filtering rules, HTTP request headers: SSLproxy, Connection, Upgrade, Keep-Alive, Accept-Encoding, Via, X-Forwarded-For, and Referer",
+  "configs": {
+    "1": {
+      "proto": {
+        "proto": "ssl",
+        "verify_peer": "no"
+      },
+      "client": {
+        "ip": "127.0.0.1",
+        "port": "8202"
+      },
+      "server": {
+        "ip": "127.0.0.1",
+        "port": "9202",
+        "crt": "server.crt",
+        "key": "server.key"
+      }
+    }
+  },
+  "tests": {
+    "1": {
+      "comment": "Pass filtering rule does not remove any extra SSLproxy line, and does not append Connection: close",
+      "states": {
+        "1": {
+          "testend": "server",
+          "cmd": "reconnect",
+          "payload": "",
+          "comment": "Pass rules cause sslproxy to disconnect/reconnect to the server, so the reconnect cmd instructs the server to allow it"
+        },
+        "2": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "GET / HTTP/1.1\r\nHost: example.com\r\nSSLproxy: sslproxy\r\n\r\n"
+        },
+        "3": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": "GET / HTTP/1.1\r\nHost: example.com\r\nSSLproxy: sslproxy\r\n\r\n"
+        }
+      }
+    },
+    "2": {
+      "comment": "Pass filtering rule does not remove any extra SSLproxy lines",
+      "states": {
+        "1": {
+          "testend": "server",
+          "cmd": "reconnect",
+          "payload": ""
+        },
+        "2": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "GET / HTTP/1.1\r\nHost: example.com\r\nSSLproxy: sslproxy\r\nSSLproxy: sslproxy\r\n\r\n"
+        },
+        "3": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": "GET / HTTP/1.1\r\nHost: example.com\r\nSSLproxy: sslproxy\r\nSSLproxy: sslproxy\r\n\r\n"
+        }
+      }
+    },
+    "3": {
+      "comment": "Pass filtering rule does not change Connection header to close",
+      "states": {
+        "1": {
+          "testend": "server",
+          "cmd": "reconnect",
+          "payload": ""
+        },
+        "2": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "GET / HTTP/1.1\r\nHost: example.com\r\nConnection: Keep-Alive\r\n\r\n"
+        },
+        "3": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": "GET / HTTP/1.1\r\nHost: example.com\r\nConnection: Keep-Alive\r\n\r\n"
+        }
+      }
+    },
+    "4": {
+      "comment": "Pass filtering rule does not suppress upgrading to SSL/TLS, WebSockets or HTTP/2",
+      "states": {
+        "1": {
+          "testend": "server",
+          "cmd": "reconnect",
+          "payload": ""
+        },
+        "2": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "GET / HTTP/1.1\r\nHost: example.com\r\nUpgrade: websocket\r\n\r\n"
+        },
+        "3": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": "GET / HTTP/1.1\r\nHost: example.com\r\nUpgrade: websocket\r\n\r\n"
+        }
+      }
+    },
+    "5": {
+      "comment": "Pass filtering rule does not remove Keep-Alive",
+      "states": {
+        "1": {
+          "testend": "server",
+          "cmd": "reconnect",
+          "payload": ""
+        },
+        "2": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "GET / HTTP/1.1\r\nHost: example.com\r\nKeep-Alive: keep-alive\r\n\r\n"
+        },
+        "3": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": "GET / HTTP/1.1\r\nHost: example.com\r\nKeep-Alive: keep-alive\r\n\r\n"
+        }
+      }
+    },
+    "6": {
+      "comment": "Pass filtering rule does not remove Accept-Encoding",
+      "states": {
+        "1": {
+          "testend": "server",
+          "cmd": "reconnect",
+          "payload": ""
+        },
+        "2": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "GET / HTTP/1.1\r\nHost: example.com\r\nAccept-Encoding: encoding\r\n\r\n"
+        },
+        "3": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": "GET / HTTP/1.1\r\nHost: example.com\r\nAccept-Encoding: encoding\r\n\r\n"
+        }
+      }
+    },
+    "7": {
+      "comment": "Pass filtering rule does not remove Via",
+      "states": {
+        "1": {
+          "testend": "server",
+          "cmd": "reconnect",
+          "payload": ""
+        },
+        "2": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "GET / HTTP/1.1\r\nHost: example.com\r\nVia: via\r\n\r\n"
+        },
+        "3": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": "GET / HTTP/1.1\r\nHost: example.com\r\nVia: via\r\n\r\n"
+        }
+      }
+    },
+    "8": {
+      "comment": "Pass filtering rule does not remove X-Forwarded-For",
+      "states": {
+        "1": {
+          "testend": "server",
+          "cmd": "reconnect",
+          "payload": ""
+        },
+        "2": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "GET / HTTP/1.1\r\nHost: example.com\r\nX-Forwarded-For: x-forwarded-for\r\n\r\n"
+        },
+        "3": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": "GET / HTTP/1.1\r\nHost: example.com\r\nX-Forwarded-For: x-forwarded-for\r\n\r\n"
+        }
+      }
+    },
+    "9": {
+      "comment": "Pass filtering rule does not remove Referer",
+      "states": {
+        "1": {
+          "testend": "server",
+          "cmd": "reconnect",
+          "payload": ""
+        },
+        "2": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "GET / HTTP/1.1\r\nHost: example.com\r\nReferer: referer\r\n\r\n"
+        },
+        "3": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": "GET / HTTP/1.1\r\nHost: example.com\r\nReferer: referer\r\n\r\n"
+        }
+      }
+    }
+  }
+}

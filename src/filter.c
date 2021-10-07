@@ -1674,12 +1674,6 @@ filter_port_set(filter_rule_t *rule, const char *port, int line_num)
 	// redundant?
 	if (equal(rule->port, "*"))
 		rule->all_ports = 1;
-
-	if (!rule->site) {
-		rule->site = strdup("");
-		if (!rule->site)
-			return oom_return_na();
-	}
 	return 0;
 }
 
@@ -1737,11 +1731,11 @@ filter_rule_translate(opts_t *opts, const char *name, int argc, char **argv, int
 	//     ip (clientip[*]|$macro|*)|
 	//     *)]
 	//  [to (
-	//     sni (servername[*]|$macro|*)|
-	//     cn (commonname[*]|$macro|*)|
-	//     host (host[*]|$macro|*)|
-	//     uri (uri[*]|$macro|*)|
-	//     ip (serverip[*]|$macro|*) [port (serverport[*]|$macro|*)]|
+	//     (sni (servername[*]|$macro|*)|
+	//      cn (commonname[*]|$macro|*)|
+	//      host (host[*]|$macro|*)|
+	//      uri (uri[*]|$macro|*)|
+	//      ip (serverip[*]|$macro|*)) [port (serverport[*]|$macro|*)]|
 	//     port (serverport[*]|$macro|*)|
 	//     *)]
 	//  [log ([[!]connect] [[!]master] [[!]cert]
@@ -1768,7 +1762,7 @@ filter_rule_translate(opts_t *opts, const char *name, int argc, char **argv, int
 	rule->action.precedence = 0;
 
 	int done_from = 0;
-	int done_to = 0;
+	int done_site = 0;
 	int i = 0;
 	while (i < argc) {
 		if (equal(argv[i], "*")) {
@@ -1843,36 +1837,29 @@ filter_rule_translate(opts_t *opts, const char *name, int argc, char **argv, int
 			if ((i = filter_arg_index_inc(i, argc, argv[i], line_num)) == -1)
 				return -1;
 
-			if (equal(argv[i], "sni") || equal(argv[i], "cn") || equal(argv[i], "host") || equal(argv[i], "uri")) {
-				rule->action.precedence++;
-				if (equal(argv[i], "sni"))
-					rule->sni = 1;
-				else if (equal(argv[i], "cn"))
-					rule->cn = 1;
-				else if (equal(argv[i], "host"))
-					rule->host = 1;
-				else if (equal(argv[i], "uri"))
-					rule->uri = 1;
+			if (equal(argv[i], "ip") || equal(argv[i], "sni") || equal(argv[i], "cn") || equal(argv[i], "host") || equal(argv[i], "uri") ||
+					equal(argv[i], "port")) {
+				if (equal(argv[i], "ip") || equal(argv[i], "sni") || equal(argv[i], "cn") || equal(argv[i], "host") || equal(argv[i], "uri")) {
+					if (equal(argv[i], "ip"))
+						rule->dstip = 1;
+					else if (equal(argv[i], "sni"))
+						rule->sni = 1;
+					else if (equal(argv[i], "cn"))
+						rule->cn = 1;
+					else if (equal(argv[i], "host"))
+						rule->host = 1;
+					else if (equal(argv[i], "uri"))
+						rule->uri = 1;
 
-				if ((i = filter_arg_index_inc(i, argc, argv[i], line_num)) == -1)
-					return -1;
-
-				if (filter_site_set(rule, argv[i++], line_num) == -1)
-					return -1;
-
-				done_to = 1;
-			}
-			else if (equal(argv[i], "ip") || equal(argv[i], "port")) {
-				rule->dstip = 1;
-
-				if (equal(argv[i], "ip")) {
 					if ((i = filter_arg_index_inc(i, argc, argv[i], line_num)) == -1)
 						return -1;
 
-					// Just ip spec should not increase rule precedence
+					rule->action.precedence++;
 
 					if (filter_site_set(rule, argv[i++], line_num) == -1)
 						return -1;
+
+					done_site = 1;
 				}
 
 				if (i < argc && equal(argv[i], "port")) {
@@ -1884,8 +1871,6 @@ filter_rule_translate(opts_t *opts, const char *name, int argc, char **argv, int
 					if (filter_port_set(rule, argv[i++], line_num) == -1)
 						return -1;
 				}
-
-				done_to = 1;
 			}
 			else if (equal(argv[i], "*")) {
 				i++;
@@ -1895,6 +1880,7 @@ filter_rule_translate(opts_t *opts, const char *name, int argc, char **argv, int
 			if ((i = filter_arg_index_inc(i, argc, argv[i], line_num)) == -1)
 				return -1;
 
+			// Log actions increase rule precedence too, but this effects log actions only, not the precedence of filter actions
 			rule->action.precedence++;
 
 			if (equal(argv[i], "connect") || equal(argv[i], "master") || equal(argv[i], "cert") || equal(argv[i], "content") || equal(argv[i], "pcap") ||
@@ -1968,16 +1954,16 @@ filter_rule_translate(opts_t *opts, const char *name, int argc, char **argv, int
 	if (!done_from) {
 		rule->all_conns = 1;
 	}
-	if (!done_to) {
+	if (!done_site) {
 		rule->site = strdup("");
 		if (!rule->site)
 			return oom_return_na();
 		rule->all_sites = 1;
+		rule->dstip = 1;
 		rule->sni = 1;
 		rule->cn = 1;
 		rule->host = 1;
 		rule->uri = 1;
-		rule->dstip = 1;
 	}
 
 	append_list(&opts->filter_rules, rule, filter_rule_t);
@@ -2134,19 +2120,9 @@ filter_rule_parse(opts_t *opts, const char *name, int argc, char **argv, int lin
 			if ((i = filter_arg_index_inc(i, argc, argv[i], line_num)) == -1)
 				return -1;
 
-			if (equal(argv[i], "sni") || equal(argv[i], "cn") || equal(argv[i], "host") || equal(argv[i], "uri")) {
-				if ((i = filter_arg_index_inc(i, argc, argv[i], line_num)) == -1)
-					return -1;
-
-				if ((rv = filter_rule_macro_expand(opts, name, argc, argv, i, line_num)) != 0) {
-					return rv;
-				}
-				i++;
-
-				done_to = 1;
-			}
-			else if (equal(argv[i], "ip") || equal(argv[i], "port")) {
-				if (equal(argv[i], "ip")) {
+			if (equal(argv[i], "ip") || equal(argv[i], "sni") || equal(argv[i], "cn") || equal(argv[i], "host") || equal(argv[i], "uri") ||
+					equal(argv[i], "port")) {
+				if (equal(argv[i], "ip") || equal(argv[i], "sni") || equal(argv[i], "cn") || equal(argv[i], "host") || equal(argv[i], "uri")) {
 					if ((i = filter_arg_index_inc(i, argc, argv[i], line_num)) == -1)
 						return -1;
 
@@ -2156,7 +2132,7 @@ filter_rule_parse(opts_t *opts, const char *name, int argc, char **argv, int lin
 					i++;
 				}
 
-				// It is possible to define port without ip (i.e. * or all_sites), hence no 'else' here
+				// It is possible to define port without site (i.e. * or all_sites), hence no 'else' here
 				if (i < argc && equal(argv[i], "port")) {
 					if ((i = filter_arg_index_inc(i, argc, argv[i], line_num)) == -1)
 						return -1;
@@ -2166,7 +2142,6 @@ filter_rule_parse(opts_t *opts, const char *name, int argc, char **argv, int lin
 					}
 					i++;
 				}
-
 				done_to = 1;
 			}
 			else if (equal(argv[i], "*")) {

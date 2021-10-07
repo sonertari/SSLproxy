@@ -405,7 +405,7 @@ protohttp_filter_match_host(pxy_conn_ctx_t *ctx, filter_list_t *list)
 		STRORDASH(http_ctx->http_host));
 #endif /* WITHOUT_USERAUTH */
 
-	if (site->action.precedence < ctx->filter_precedence) {
+	if (!site->port_btree && !site->port_acm && (site->action.precedence < ctx->filter_precedence)) {
 		log_finest_va("Rule precedence lower than conn filter precedence %d < %d: %s, %s", site->action.precedence, ctx->filter_precedence, site->site, http_ctx->http_host);
 		return NULL;
 	}
@@ -418,6 +418,10 @@ protohttp_filter_match_host(pxy_conn_ctx_t *ctx, filter_list_t *list)
 	else
 		log_finest_va("Match substring in host: %s, %s", site->site, http_ctx->http_host);
 #endif /* DEBUG_PROXY */
+
+	filter_action_t *port_action = pxyconn_filter_port(ctx, site);
+	if (port_action)
+		return port_action;
 
 	return &site->action;
 }
@@ -441,7 +445,7 @@ protohttp_filter_match_uri(pxy_conn_ctx_t *ctx, filter_list_t *list)
 		STRORDASH(http_ctx->http_uri));
 #endif /* WITHOUT_USERAUTH */
 
-	if (site->action.precedence < ctx->filter_precedence) {
+	if (!site->port_btree && !site->port_acm && (site->action.precedence < ctx->filter_precedence)) {
 		log_finest_va("Rule precedence lower than conn filter precedence %d < %d: %s, %s", site->action.precedence, ctx->filter_precedence, site->site, http_ctx->http_uri);
 		return NULL;
 	}
@@ -455,6 +459,10 @@ protohttp_filter_match_uri(pxy_conn_ctx_t *ctx, filter_list_t *list)
 		log_finest_va("Match substring in uri: %s, %s", site->site, http_ctx->http_uri);
 #endif /* DEBUG_PROXY */
 
+	filter_action_t *port_action = pxyconn_filter_port(ctx, site);
+	if (port_action)
+		return port_action;
+
 	return &site->action;
 }
 
@@ -463,37 +471,40 @@ protohttp_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
 {
 	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
 
+	filter_action_t *action_host = NULL;
+	filter_action_t *action_uri = NULL;
+
 	if (http_ctx->http_host) {
-		filter_action_t *action;
-		if ((action = protohttp_filter_match_host(ctx, list))) {
-			return pxyconn_set_filter_action(ctx, action, http_ctx->http_host);
-		}
+		if (!(action_host = protohttp_filter_match_host(ctx, list))) {
 #ifndef WITHOUT_USERAUTH
-		log_finest_va("No filter match with host: %s:%s, %s:%s, %s, %s, %s, %s",
-			STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
-			STRORDASH(ctx->user), STRORDASH(ctx->desc), STRORDASH(http_ctx->http_host), STRORDASH(http_ctx->http_uri));
+			log_finest_va("No filter match with host: %s:%s, %s:%s, %s, %s, %s, %s",
+				STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
+				STRORDASH(ctx->user), STRORDASH(ctx->desc), STRORDASH(http_ctx->http_host), STRORDASH(http_ctx->http_uri));
 #else /* WITHOUT_USERAUTH */
-		log_finest_va("No filter match with host: %s:%s, %s:%s, %s, %s",
-			STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
-			STRORDASH(http_ctx->http_host), STRORDASH(http_ctx->http_uri));
+			log_finest_va("No filter match with host: %s:%s, %s:%s, %s, %s",
+				STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
+				STRORDASH(http_ctx->http_host), STRORDASH(http_ctx->http_uri));
 #endif /* !WITHOUT_USERAUTH */
+		}
 	}
 
 	if (http_ctx->http_uri) {
-		filter_action_t *action;
-		if ((action = protohttp_filter_match_uri(ctx, list))) {
-			return pxyconn_set_filter_action(ctx, action, http_ctx->http_uri);
-		}
+		if (!(action_uri = protohttp_filter_match_uri(ctx, list))) {
 #ifndef WITHOUT_USERAUTH
-		log_finest_va("No filter match with uri: %s:%s, %s:%s, %s, %s, %s, %s",
-			STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
-			STRORDASH(ctx->user), STRORDASH(ctx->desc), STRORDASH(http_ctx->http_host), STRORDASH(http_ctx->http_uri));
+			log_finest_va("No filter match with uri: %s:%s, %s:%s, %s, %s, %s, %s",
+				STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
+				STRORDASH(ctx->user), STRORDASH(ctx->desc), STRORDASH(http_ctx->http_host), STRORDASH(http_ctx->http_uri));
 #else /* WITHOUT_USERAUTH */
-		log_finest_va("No filter match with uri: %s:%s, %s:%s, %s, %s",
-			STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
-			STRORDASH(http_ctx->http_host), STRORDASH(http_ctx->http_uri));
+			log_finest_va("No filter match with uri: %s:%s, %s:%s, %s, %s",
+				STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
+				STRORDASH(http_ctx->http_host), STRORDASH(http_ctx->http_uri));
 #endif /* !WITHOUT_USERAUTH */
+		}
 	}
+
+	if (action_host ||  action_uri)
+		return pxyconn_set_filter_action(ctx, action_host, action_uri, http_ctx->http_host, http_ctx->http_uri);
+
 	return FILTER_ACTION_NONE;
 }
 

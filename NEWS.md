@@ -10,11 +10,11 @@
 	         ip (clientip[*]|$macro|*)|
 	         *)]
 	      [to (
-	         sni (servername[*]|$macro|*)|
-	         cn (commonname[*]|$macro|*)|
-	         host (host[*]|$macro|*)|
-	         uri (uri[*]|$macro|*)|
-	         ip (serverip[*]|$macro|*) [port (serverport[*]|$macro|*)]|
+	         (sni (servername[*]|$macro|*)|
+	          cn (commonname[*]|$macro|*)|
+	          host (host[*]|$macro|*)|
+	          uri (uri[*]|$macro|*)|
+	          ip (serverip[*]|$macro|*)) [port (serverport[*]|$macro|*)]|
 	         port (serverport[*]|$macro|*)|
 	         *)]
 	      [log ([[!]connect] [[!]master] [[!]cert]

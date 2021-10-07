@@ -1,0 +1,172 @@
+{
+  "comment": "Tests for Host Divert filtering rules, HTTP request headers: SSLproxy, Connection, Upgrade, Keep-Alive, Accept-Encoding, Via, X-Forwarded-For, and Referer",
+  "configs": {
+   "1": {
+      "proto": {
+        "proto": "tcp"
+      },
+      "client": {
+        "ip": "127.0.0.1",
+        "port": "8206"
+      },
+      "server": {
+        "ip": "127.0.0.1",
+        "port": "9206"
+      }
+    },
+    "2": {
+      "proto": {
+        "proto": "ssl",
+        "verify_peer": "no"
+      },
+      "client": {
+        "ip": "127.0.0.1",
+        "port": "8207"
+      },
+      "server": {
+        "ip": "127.0.0.1",
+        "port": "9207",
+        "crt": "server.crt",
+        "key": "server.key"
+      }
+    }
+  },
+  "tests": {
+    "1": {
+      "comment": "Divert filtering rule removes any extra SSLproxy line, and appends Connection: close",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "GET / HTTP/1.1\r\nHost: example1.com\r\nSSLproxy: sslproxy\r\n\r\n",
+          "comment": "The block host filtering rule for example.com should not match the host name example1.com"
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": "GET / HTTP/1.1\r\nHost: example1.com\r\nConnection: close\r\n\r\n"
+        }
+      }
+    },
+    "2": {
+      "comment": "Divert filtering rule removes all extra SSLproxy lines",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "GET / HTTP/1.1\r\nHost: example1.com\r\nSSLproxy: sslproxy\r\nSSLproxy: sslproxy\r\n\r\n"
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": "GET / HTTP/1.1\r\nHost: example1.com\r\nConnection: close\r\n\r\n"
+        }
+      }
+    },
+    "3": {
+      "comment": "Divert filtering rule changes Connection header to close",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "GET / HTTP/1.1\r\nHost: example1.com\r\nConnection: Keep-Alive\r\n\r\n"
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": "GET / HTTP/1.1\r\nHost: example1.com\r\nConnection: close\r\n\r\n"
+        }
+      }
+    },
+    "4": {
+      "comment": "Divert filtering rule suppresses upgrading to SSL/TLS, WebSockets or HTTP/2",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "GET / HTTP/1.1\r\nHost: example1.com\r\nUpgrade: websocket\r\n\r\n"
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": "GET / HTTP/1.1\r\nHost: example1.com\r\nConnection: close\r\n\r\n"
+        }
+      }
+    },
+    "5": {
+      "comment": "Divert filtering rule removes Keep-Alive",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "GET / HTTP/1.1\r\nHost: example1.com\r\nKeep-Alive: keep-alive\r\n\r\n"
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": "GET / HTTP/1.1\r\nHost: example1.com\r\nConnection: close\r\n\r\n"
+        }
+      }
+    },
+    "6": {
+      "comment": "Divert filtering rule does not remove Accept-Encoding by default (it's a config option)",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "GET / HTTP/1.1\r\nHost: example1.com\r\nAccept-Encoding: encoding\r\n\r\n"
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": "GET / HTTP/1.1\r\nHost: example1.com\r\nAccept-Encoding: encoding\r\nConnection: close\r\n\r\n"
+        }
+      }
+    },
+    "7": {
+      "comment": "Divert filtering rule removes Via",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "GET / HTTP/1.1\r\nHost: example1.com\r\nVia: via\r\n\r\n"
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": "GET / HTTP/1.1\r\nHost: example1.com\r\nConnection: close\r\n\r\n"
+        }
+      }
+    },
+    "8": {
+      "comment": "Divert filtering rule removes X-Forwarded-For",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "GET / HTTP/1.1\r\nHost: example1.com\r\nX-Forwarded-For: x-forwarded-for\r\n\r\n"
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": "GET / HTTP/1.1\r\nHost: example1.com\r\nConnection: close\r\n\r\n"
+        }
+      }
+    },
+    "9": {
+      "comment": "Divert filtering rule removes Referer",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "GET / HTTP/1.1\r\nHost: example1.com\r\nReferer: referer\r\n\r\n"
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": "GET / HTTP/1.1\r\nHost: example1.com\r\nConnection: close\r\n\r\n"
+        }
+      }
+    }
+  }
+}

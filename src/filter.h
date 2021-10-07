@@ -114,7 +114,6 @@ typedef struct filter_rule {
 	unsigned int all_sites : 1;   /* 1 to match all sites == '*' */
 	unsigned int exact_site : 1;  /* 1 for exact, 0 for substring match */
 
-	// Used with dstip filters only, i.e. if the site is an ip address
 	// This is not for the src ip in the 'from' part of rules
 	char *port;
 	unsigned int all_ports : 1;   /* 1 to match all ports == '*' */
@@ -156,7 +155,6 @@ typedef struct filter_site {
 	unsigned int all_sites : 1;
 	unsigned int exact : 1;       /* used in debug logging only */
 
-	// Used with dstip filters only, i.e. if the site is an ip address
 	kbtree_t(port) *port_btree;
 	ACMachine(char) *port_acm;
 	struct filter_port *port_all;

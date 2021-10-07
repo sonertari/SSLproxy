@@ -1,0 +1,171 @@
+{
+  "comment": "Tests for Uri Block filtering rules, HTTP request headers: SSLproxy, Connection, Upgrade, Keep-Alive, Accept-Encoding, Via, X-Forwarded-For, and Referer",
+  "configs": {
+   "1": {
+      "proto": {
+        "proto": "tcp"
+      },
+      "client": {
+        "ip": "127.0.0.1",
+        "port": "8208"
+      },
+      "server": {
+        "ip": "127.0.0.1",
+        "port": "9208"
+      }
+    },
+    "2": {
+      "proto": {
+        "proto": "ssl",
+        "verify_peer": "no"
+      },
+      "client": {
+        "ip": "127.0.0.1",
+        "port": "8209"
+      },
+      "server": {
+        "ip": "127.0.0.1",
+        "port": "9209",
+        "crt": "server.crt",
+        "key": "server.key"
+      }
+    }
+  },
+  "tests": {
+    "1": {
+      "comment": "Block filtering rule blocks connection with an extra SSLproxy line",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "GET /utmfw/View/system/index.php HTTP/1.1\r\nHost: example.com\r\nSSLproxy: sslproxy\r\n\r\n"
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": ""
+        }
+      }
+    },
+    "2": {
+      "comment": "Block filtering rule blocks connection with extra SSLproxy lines",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "GET /utmfw/View/system/index.php HTTP/1.1\r\nHost: example.com\r\nSSLproxy: sslproxy\r\nSSLproxy: sslproxy\r\n\r\n"
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": ""
+        }
+      }
+    },
+    "3": {
+      "comment": "Block filtering rule blocks connection with Connection header",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "GET /utmfw/View/system/index.php HTTP/1.1\r\nHost: example.com\r\nConnection: Keep-Alive\r\n\r\n"
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": ""
+        }
+      }
+    },
+    "4": {
+      "comment": "Block filtering rule blocks connection upgrading to SSL/TLS, WebSockets or HTTP/2",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "GET /utmfw/View/system/index.php HTTP/1.1\r\nHost: example.com\r\nUpgrade: websocket\r\n\r\n"
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": ""
+        }
+      }
+    },
+    "5": {
+      "comment": "Block filtering rule blocks connection with Keep-Alive",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "GET /utmfw/View/system/index.php HTTP/1.1\r\nHost: example.com\r\nKeep-Alive: keep-alive\r\n\r\n"
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": ""
+        }
+      }
+    },
+    "6": {
+      "comment": "Block filtering rule blocks connection with Accept-Encoding",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "GET /utmfw/View/system/index.php HTTP/1.1\r\nHost: example.com\r\nAccept-Encoding: encoding\r\n\r\n"
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": ""
+        }
+      }
+    },
+    "7": {
+      "comment": "Block filtering rule blocks connection with Via",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "GET /utmfw/View/system/index.php HTTP/1.1\r\nHost: example.com\r\nVia: via\r\n\r\n"
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": ""
+        }
+      }
+    },
+    "8": {
+      "comment": "Block filtering rule blocks connection with X-Forwarded-For",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "GET /utmfw/View/system/index.php HTTP/1.1\r\nHost: example.com\r\nX-Forwarded-For: x-forwarded-for\r\n\r\n"
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": ""
+        }
+      }
+    },
+    "9": {
+      "comment": "Block filtering rule blocks connection with Referer",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "GET /utmfw/View/system/index.php HTTP/1.1\r\nHost: example.com\r\nReferer: referer\r\n\r\n"
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": ""
+        }
+      }
+    }
+  }
+}

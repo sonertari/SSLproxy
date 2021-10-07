@@ -49,7 +49,15 @@
         "1": "filter_divert_testset_1.json",
         "2": "filter_split_testset_1.json",
         "3": "filter_pass_testset_1.json",
-        "4": "filter_block_testset_1.json"
+        "4": "filter_block_testset_1.json",
+        "5": "filter_sni_testset_1.json",
+        "6": "filter_sni_testset_2.json",
+        "7": "filter_cn_testset_1.json",
+        "8": "filter_cn_testset_2.json",
+        "9": "filter_host_testset_1.json",
+        "10": "filter_host_testset_2.json",
+        "11": "filter_uri_testset_1.json",
+        "12": "filter_uri_testset_2.json"
       }
     }
   }
