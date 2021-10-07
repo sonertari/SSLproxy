@@ -1779,11 +1779,14 @@ filter_rule_translate(opts_t *opts, const char *name, int argc, char **argv, int
 				return -1;
 #ifndef WITHOUT_USERAUTH
 			if (equal(argv[i], "user") || equal(argv[i], "desc")) {
+				// The existence of user or desc should increment precedence, all_users or not
+				// user spec is more specific than ip spec
+				rule->action.precedence++;
+
 				if (equal(argv[i], "user")) {
 					if ((i = filter_arg_index_inc(i, argc, argv[i], line_num)) == -1)
 						return -1;
 
-					rule->action.precedence++;
 					rule->all_users = filter_is_all(argv[i]);
 
 					if (!rule->all_users) {
@@ -1799,7 +1802,12 @@ filter_rule_translate(opts_t *opts, const char *name, int argc, char **argv, int
 					if ((i = filter_arg_index_inc(i, argc, argv[i], line_num)) == -1)
 						return -1;
 
-					if (!filter_is_all(argv[i])) {
+					if (filter_is_all(argv[i])) {
+						if (!rule->user) {
+							rule->all_users = 1;
+						}
+					}
+					else {
 						rule->exact_desc = filter_is_exact(argv[i]);
 						if (filter_field_set(&rule->desc, argv[i], line_num) == -1)
 							return -1;
