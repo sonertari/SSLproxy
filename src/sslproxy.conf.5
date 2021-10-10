@@ -345,6 +345,10 @@ effectively disabling SSL inspection and content logging of packets.
 .TP
 \fBBlock STRING\fR
 Block filtering rule terminates the connection.
+.TP
+\fBMatch STRING\fR
+Match filtering rule specifies log actions for the connection without changing 
+its filter action.
 .br
 
 The syntax of filtering rules is as follows:
@@ -366,7 +370,7 @@ The syntax of filtering rules is as follows:
      *)]
   [log ([[!]connect] [[!]master] [[!]cert]
         [[!]content] [[!]pcap] [[!]mirror] [$macro]|[!]*)]
-  |*)
+  |*) [# comment]
 .br
 
 See sslproxy(1) for the details.

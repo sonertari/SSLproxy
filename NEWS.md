@@ -19,7 +19,7 @@
 	         *)]
 	      [log ([[!]connect] [[!]master] [[!]cert]
 	            [[!]content] [[!]pcap] [[!]mirror] [$macro]|[!]*)]
-	      |*)
+	      |*) [# comment]
 
 -   Add Define config option for defining macros to be used in filtering rules.
 -   Add Include config option for loading configuration from an include file.

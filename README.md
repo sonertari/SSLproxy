@@ -309,7 +309,7 @@ The syntax of filtering rules is as follows:
 	     *)]
 	  [log ([[!]connect] [[!]master] [[!]cert]
 	        [[!]content] [[!]pcap] [[!]mirror] [$macro]|[!]*)]
-	  |*)
+	  |*) [# comment]
 
 The definition of which connections the rule action will be applied to is 
 achieved by the `from` and `to` parts of a filtering rule and by the proxyspec 

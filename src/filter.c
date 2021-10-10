@@ -1740,7 +1740,7 @@ filter_rule_translate(opts_t *opts, const char *name, int argc, char **argv, int
 	//     *)]
 	//  [log ([[!]connect] [[!]master] [[!]cert]
 	//        [[!]content] [[!]pcap] [[!]mirror] [$macro]|[!]*)]
-	//  |*)
+	//  |*) [# comment]
 
 	filter_rule_t *rule = malloc(sizeof(filter_rule_t));
 	if (!rule)

@@ -103,7 +103,7 @@ typedef struct filter_rule {
 	unsigned int exact_user : 1;  /* 1 for exact, 0 for substring match */
 
 	char *desc;
-	unsigned int exact_desc : 1; /* 1 for exact, 0 for substring match */
+	unsigned int exact_desc : 1;  /* 1 for exact, 0 for substring match */
 #endif /* !WITHOUT_USERAUTH */
 
 	char *ip;

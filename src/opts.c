@@ -2717,6 +2717,17 @@ get_name_value(char *name, char **value, const char sep, int line_num)
 
 	size_t value_len = strlen(*value);
 
+	// Trim inline comment
+	n = *value;
+	while (*n) {
+		if (*n == '#') {
+			*n = '\0';
+			value_len = strlen(*value);
+			break;
+		}
+		n++;
+	}
+
 	if (!value_len) {
 #ifdef DEBUG_OPTS
 		log_dbg_printf("Warning in option: No option value on line %d\n", line_num);
