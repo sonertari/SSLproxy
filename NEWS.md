@@ -25,6 +25,10 @@
 -   Add Include config option for loading configuration from an include file.
 -   Add -Q test config option.
 
+    Note: The UTMFW project provides the SSLproxy Rule Editor, SPRE, which can 
+    be used to configure proxyspecs, filtering rules, and options, similar to 
+    the PF Rule Editor, PFRE, for OpenBSD/pf.
+
 
 ### SSLproxy 0.8.4 2021-08-29
 
