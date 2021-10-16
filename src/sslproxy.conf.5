@@ -131,6 +131,16 @@ Disable SSL/TLS protocol version. Equivalent to -R command line option.
 .br
 Default: none
 .TP
+\fBMinSSLProto STRING\fR
+Min SSL/TLS protocol version.
+.br
+Default: tls10
+.TP
+\fBMaxSSLProto STRING\fR
+Max SSL/TLS protocol version.
+.br
+Default: tls13
+.TP
 \fBCiphers STRING\fR
 Use the given OpenSSL ciphers spec. Equivalent to -s command line option.
 .br
@@ -427,6 +437,10 @@ SSLCompression
 ForceSSLProto
 .br
 DisableSSLProto
+.br
+MinSSLProto
+.br
+MaxSSLProto
 .br
 Ciphers
 .br
