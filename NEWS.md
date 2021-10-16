@@ -1,5 +1,5 @@
 
-### SSLproxy 0.8.7
+### SSLproxy 0.9.0
 
 -   Add filtering rules:
 
@@ -24,6 +24,7 @@
 -   Add Define config option for defining macros to be used in filtering rules.
 -   Add Include config option for loading configuration from an include file.
 -   Add -Q test config option.
+-   Various fixes and improvements.
 
     Note: The UTMFW project provides the SSLproxy Rule Editor, SPRE, which can 
     be used to configure proxyspecs, filtering rules, and options, similar to 
