@@ -81,7 +81,11 @@ the SSLproxy line in the first packet in the connection.
 The response from the Server follows the same path back to the Client in 
 reverse order.
 
-See the SSLsplit documentation for split style and structured proxyspecs.
+Along with one line proxyspecs above, SSLproxy supports structured proxyspecs 
+to configure further options per proxyspec. It also supports split style 
+proxyspecs for split mode of operation similar to SSLsplit. See 
+sslproxy.conf(5) for structured proxyspecs, and the SSLsplit documentation for 
+split style proxyspecs.
 
 #### SSLproxy line
 

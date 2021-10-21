@@ -27,7 +27,7 @@
 .\" ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 .\" POSSIBILITY OF SUCH DAMAGE.
 .\"
-.TH "sslproxy" "1" "16 October 2021" "v0.9.0" "SSLproxy"
+.TH "sslproxy" "1" "21 October 2021" "v0.9.0" "SSLproxy"
 .SH NAME
 sslproxy \-\- transparent SSL/TLS proxy for decrypting and diverting network 
 traffic to other programs for deep SSL inspection
@@ -116,7 +116,11 @@ connection. Then SSLproxy re-encrypts and sends the packets to the Server.
 The response from the Server follows the same path back to the Client in 
 reverse order.
 .LP
-See the SSLsplit documentation for split style and structured proxyspecs.
+Along with one line proxyspecs above, SSLproxy supports structured proxyspecs 
+to configure further options per proxyspec. It also supports split style 
+proxyspecs for split mode of operation similar to SSLsplit. See 
+sslproxy.conf(5) for structured proxyspecs, and the SSLsplit documentation for 
+split style proxyspecs.
 .SH 	SSLproxy line
 A sample line SSLproxy inserts into the first packet in the connection is the 
 following:
