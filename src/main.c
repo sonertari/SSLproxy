@@ -328,26 +328,26 @@ main_load_leafcert(const char *filename, void *arg)
 }
 
 static void
-main_check_opts(opts_t *opts, const char *argv0)
+main_check_opts(opts_t *opts, conn_opts_t *conn_opts, const char *argv0)
 {
-	if (opts->cacrt && !opts->cakey) {
+	if (conn_opts->cacrt && !conn_opts->cakey) {
 		fprintf(stderr, "%s: no CA key specified (-k).\n",
 						argv0);
 		exit(EXIT_FAILURE);
 	}
-	if (opts->cakey && !opts->cacrt) {
+	if (conn_opts->cakey && !conn_opts->cacrt) {
 		fprintf(stderr, "%s: no CA cert specified (-c).\n",
 						argv0);
 		exit(EXIT_FAILURE);
 	}
-	if (opts->cakey && opts->cacrt &&
-		(X509_check_private_key(opts->cacrt, opts->cakey) != 1)) {
+	if (conn_opts->cakey && conn_opts->cacrt &&
+		(X509_check_private_key(conn_opts->cacrt, conn_opts->cakey) != 1)) {
 		fprintf(stderr, "%s: CA cert does not match key.\n",
 						argv0);
 		ERR_print_errors_fp(stderr);
 		exit(EXIT_FAILURE);
 	}
-	if (!opts->cakey &&
+	if (!conn_opts->cakey &&
 	    !opts->global->leafcertdir &&
 	    !opts->global->defaultleafcert) {
 		fprintf(stderr, "%s: at least one of -c/-k, -t or -A "
@@ -410,15 +410,15 @@ main(int argc, char *argv[])
 					exit(EXIT_FAILURE);
 				break;
 			case 'c':
-				if (opts_set_cacrt(global->opts, argv0, optarg, global_tmp_opts) == -1)
+				if (opts_set_cacrt(global->conn_opts, argv0, optarg, global_tmp_opts) == -1)
 					exit(EXIT_FAILURE);
 				break;
 			case 'k':
-				if (opts_set_cakey(global->opts, argv0, optarg, global_tmp_opts) == -1)
+				if (opts_set_cakey(global->conn_opts, argv0, optarg, global_tmp_opts) == -1)
 					exit(EXIT_FAILURE);
 				break;
 			case 'C':
-				if (opts_set_chain(global->opts, argv0, optarg, global_tmp_opts) == -1)
+				if (opts_set_chain(global->conn_opts, argv0, optarg, global_tmp_opts) == -1)
 					exit(EXIT_FAILURE);
 				break;
 			case 'K':
@@ -434,54 +434,54 @@ main(int argc, char *argv[])
 					exit(EXIT_FAILURE);
 				break;
 			case 'q':
-				if (opts_set_leafcrlurl(global->opts, argv0, optarg, global_tmp_opts) == -1)
+				if (opts_set_leafcrlurl(global->conn_opts, argv0, optarg, global_tmp_opts) == -1)
 					exit(EXIT_FAILURE);
 				break;
 			case 'O':
-				opts_set_deny_ocsp(global->opts);
+				opts_set_deny_ocsp(global->conn_opts);
 				break;
 			case 'P':
-				opts_set_passthrough(global->opts);
+				opts_set_passthrough(global->conn_opts);
 				break;
 			case 'a':
-				if (opts_set_clientcrt(global->opts, argv0, optarg, global_tmp_opts) == -1)
+				if (opts_set_clientcrt(global->conn_opts, argv0, optarg, global_tmp_opts) == -1)
 					exit(EXIT_FAILURE);
 				break;
 			case 'b':
-				if (opts_set_clientkey(global->opts, argv0, optarg, global_tmp_opts) == -1)
+				if (opts_set_clientkey(global->conn_opts, argv0, optarg, global_tmp_opts) == -1)
 					exit(EXIT_FAILURE);
 				break;
 #ifndef OPENSSL_NO_DH
 			case 'g':
-				if (opts_set_dh(global->opts, argv0, optarg, global_tmp_opts) == -1)
+				if (opts_set_dh(global->conn_opts, argv0, optarg, global_tmp_opts) == -1)
 					exit(EXIT_FAILURE);
 				break;
 #endif /* !OPENSSL_NO_DH */
 #ifndef OPENSSL_NO_ECDH
 			case 'G':
-				if (opts_set_ecdhcurve(global->opts, argv0, optarg) == -1)
+				if (opts_set_ecdhcurve(global->conn_opts, argv0, optarg) == -1)
 					exit(EXIT_FAILURE);
 				break;
 #endif /* !OPENSSL_NO_ECDH */
 #ifdef SSL_OP_NO_COMPRESSION
 			case 'Z':
-				opts_unset_sslcomp(global->opts);
+				opts_unset_sslcomp(global->conn_opts);
 				break;
 #endif /* SSL_OP_NO_COMPRESSION */
 			case 's':
-				if (opts_set_ciphers(global->opts, argv0, optarg) == -1)
+				if (opts_set_ciphers(global->conn_opts, argv0, optarg) == -1)
 					exit(EXIT_FAILURE);
 				break;
 			case 'U':
-				if (opts_set_ciphersuites(global->opts, argv0, optarg) == -1)
+				if (opts_set_ciphersuites(global->conn_opts, argv0, optarg) == -1)
 					exit(EXIT_FAILURE);
 				break;
 			case 'r':
-				if (opts_force_proto(global->opts, argv0, optarg) == -1)
+				if (opts_force_proto(global->conn_opts, argv0, optarg) == -1)
 					exit(EXIT_FAILURE);
 				break;
 			case 'R':
-				if (opts_disable_proto(global->opts, argv0, optarg) == -1)
+				if (opts_disable_proto(global->conn_opts, argv0, optarg) == -1)
 					exit(EXIT_FAILURE);
 				break;
 #ifndef OPENSSL_NO_ENGINE
@@ -671,10 +671,10 @@ main(int argc, char *argv[])
 			exit(EXIT_FAILURE);
 		}
 #endif /* !OPENSSL_NO_ENGINE */
-		main_check_opts(global->opts, argv0);
+		main_check_opts(global->opts, global->conn_opts, argv0);
 		for (proxyspec_t *spec = global->spec; spec; spec = spec->next) {
 			if (spec->ssl || spec->upgrade)
-				main_check_opts(spec->opts, argv0);
+				main_check_opts(spec->opts, spec->conn_opts, argv0);
 		}
 	}
 #ifdef __APPLE__
@@ -698,7 +698,7 @@ main(int argc, char *argv[])
 	}
 
 #ifndef WITHOUT_USERAUTH
-	if (global->opts->user_auth || global_has_userauth_spec(global)) {
+	if (global->conn_opts->user_auth || global_has_userauth_spec(global)) {
 		if (!global->userdb_path) {
 			fprintf(stderr, "User auth requires a userdb path\n");
 			exit(EXIT_FAILURE);
@@ -720,25 +720,25 @@ main(int argc, char *argv[])
 #endif /* !WITHOUT_USERAUTH */
 
 	/* dynamic defaults */
-	if (!global->opts->ciphers) {
-		global->opts->ciphers = strdup(DFLT_CIPHERS);
-		if (!global->opts->ciphers)
+	if (!global->conn_opts->ciphers) {
+		global->conn_opts->ciphers = strdup(DFLT_CIPHERS);
+		if (!global->conn_opts->ciphers)
 			oom_die(argv0);
 	}
-	if (!global->opts->ciphersuites) {
-		global->opts->ciphersuites = strdup(DFLT_CIPHERSUITES);
-		if (!global->opts->ciphersuites)
+	if (!global->conn_opts->ciphersuites) {
+		global->conn_opts->ciphersuites = strdup(DFLT_CIPHERSUITES);
+		if (!global->conn_opts->ciphersuites)
 			oom_die(argv0);
 	}
 	for (proxyspec_t *spec = global->spec; spec; spec = spec->next) {
-		if (!spec->opts->ciphers) {
-			spec->opts->ciphers = strdup(DFLT_CIPHERS);
-			if (!spec->opts->ciphers)
+		if (!spec->conn_opts->ciphers) {
+			spec->conn_opts->ciphers = strdup(DFLT_CIPHERS);
+			if (!spec->conn_opts->ciphers)
 				oom_die(argv0);
 		}
-		if (!spec->opts->ciphersuites) {
-			spec->opts->ciphersuites = strdup(DFLT_CIPHERSUITES);
-			if (!spec->opts->ciphersuites)
+		if (!spec->conn_opts->ciphersuites) {
+			spec->conn_opts->ciphersuites = strdup(DFLT_CIPHERSUITES);
+			if (!spec->conn_opts->ciphersuites)
 				oom_die(argv0);
 		}
 	}
@@ -867,7 +867,7 @@ main(int argc, char *argv[])
 
 	/* debug log, part 2 */
 	if (OPTS_DEBUG(global)) {
-		char *s = opts_proto_dbg_dump(global->opts);
+		char *s = opts_proto_dbg_dump(global->conn_opts);
 		if (!s)
 			oom_die(argv0);
 
@@ -889,20 +889,20 @@ main(int argc, char *argv[])
 			               global->openssl_engine);
 		}
 #endif /* !OPENSSL_NO_ENGINE */
-		if (global->opts->cacrt) {
-			char *subj = ssl_x509_subject(global->opts->cacrt);
+		if (global->conn_opts->cacrt) {
+			char *subj = ssl_x509_subject(global->conn_opts->cacrt);
 			log_dbg_printf("Loaded CA: '%s'\n", subj);
 			free(subj);
 #ifdef DEBUG_CERTIFICATE
-			log_dbg_print_free(ssl_x509_to_str(global->opts->cacrt));
-			log_dbg_print_free(ssl_x509_to_pem(global->opts->cacrt));
+			log_dbg_print_free(ssl_x509_to_str(global->conn_opts->cacrt));
+			log_dbg_print_free(ssl_x509_to_pem(global->conn_opts->cacrt));
 #endif /* DEBUG_CERTIFICATE */
 		} else {
 			log_dbg_printf("No CA loaded.\n");
 		}
 		for (proxyspec_t *spec = global->spec; spec; spec = spec->next) {
-			if (spec->opts->cacrt) {
-				char *subj = ssl_x509_subject(spec->opts->cacrt);
+			if (spec->conn_opts->cacrt) {
+				char *subj = ssl_x509_subject(spec->conn_opts->cacrt);
 				log_dbg_printf("Loaded ProxySpec CA: '%s'\n", subj);
 				free(subj);
 #ifdef DEBUG_CERTIFICATE
@@ -921,9 +921,9 @@ main(int argc, char *argv[])
 		if (global->defaultleafcert) {
 			log_dbg_printf("- Default leaf key\n");
 		// @todo Debug print the cakey and passthrough opts for proxspecs too?
-		} else if (global->opts->cakey) {
+		} else if (global->conn_opts->cakey) {
 			log_dbg_printf("- Global generated on the fly\n");
-		} else if (global->opts->passthrough) {
+		} else if (global->conn_opts->passthrough) {
 			log_dbg_printf("- Global passthrough without decryption\n");
 		} else {
 			log_dbg_printf("- Global connection drop\n");

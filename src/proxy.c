@@ -170,6 +170,7 @@ proxy_conn_ctx_new(evutil_socket_t fd,
 	ctx->fd = fd;
 	ctx->thrmgr = thrmgr;
 	ctx->spec = spec;
+	ctx->conn_opts = spec->conn_opts;
 	ctx->divert = spec->opts->divert;
 
 	// Enable all logging for conn if proxyspec does not have any filter

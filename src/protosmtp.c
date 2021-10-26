@@ -118,7 +118,7 @@ protosmtp_validate_response(pxy_conn_ctx_t *ctx, char *packet, size_t packet_siz
 static int NONNULL(1,2,3,4)
 protosmtp_try_validate_response(struct bufferevent *bev, pxy_conn_ctx_t *ctx, struct evbuffer *inbuf, struct evbuffer *outbuf)
 {
-	if (ctx->spec->opts->validate_proto) {
+	if (ctx->conn_opts->validate_proto) {
 		size_t packet_size = evbuffer_get_length(inbuf);
 		char *packet = (char *)pxy_malloc_packet(packet_size, ctx);
 		if (!packet) {

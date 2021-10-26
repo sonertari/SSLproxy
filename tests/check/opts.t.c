@@ -636,7 +636,7 @@ START_TEST(opts_set_passsite_01)
 	opts_t *opts = opts_new();
 
 	char *s = strdup("example.com");
-	UNUSED int rv = filter_passsite_set(opts, s, 0);
+	UNUSED int rv = filter_passsite_set(opts, 0, s, 0);
 	free(s);
 
 	fail_unless(!strcmp(opts->filter_rules->site, "example.com"), "site not example.com");
@@ -666,7 +666,7 @@ START_TEST(opts_set_passsite_02)
 	opts_t *opts = opts_new();
 
 	char *s = strdup("example.com 192.168.0.1");
-	UNUSED int rv = filter_passsite_set(opts, s, 0);
+	UNUSED int rv = filter_passsite_set(opts, 0, s, 0);
 	free(s);
 
 	fail_unless(!strcmp(opts->filter_rules->site, "example.com"), "site not example.com");
@@ -696,10 +696,8 @@ START_TEST(opts_set_passsite_03)
 	char *ps;
 	opts_t *opts = opts_new();
 
-	opts->user_auth = 1;
-
 	char *s = strdup("example.com root");
-	UNUSED int rv = filter_passsite_set(opts, s, 0);
+	UNUSED int rv = filter_passsite_set(opts, 1, s, 0);
 	free(s);
 
 	fail_unless(!strcmp(opts->filter_rules->site, "example.com"), "site not example.com");
@@ -722,10 +720,8 @@ START_TEST(opts_set_passsite_04)
 	char *ps;
 	opts_t *opts = opts_new();
 
-	opts->user_auth = 1;
-
 	char *s = strdup("*.google.com * android");
-	UNUSED int rv = filter_passsite_set(opts, s, 0);
+	UNUSED int rv = filter_passsite_set(opts, 1, s, 0);
 	free(s);
 
 	fail_unless(!strcmp(opts->filter_rules->site, "*.google.com"), "site not *.google.com");
@@ -753,28 +749,27 @@ START_TEST(opts_set_passsite_05)
 
 	// Dup string using strdup(), otherwise strtok_r() in opts_set_passsite() will cause segmentation fault
 	s = strdup("example.com");
-	UNUSED int rv = filter_passsite_set(opts, s, 0);
+	UNUSED int rv = filter_passsite_set(opts, 0, s, 0);
 	free(s);
 	fail_unless(!opts->filter_rules->next, "next set");
 
 	s = strdup("example.com *");
-	rv = filter_passsite_set(opts, s, 1);
+	rv = filter_passsite_set(opts, 0, s, 1);
 	free(s);
 	fail_unless(opts->filter_rules->next, "next not set");
 	fail_unless(!opts->filter_rules->next->next, "next->next set");
 
 	s = strdup("example.com 192.168.0.1");
-	rv = filter_passsite_set(opts, s, 2);
+	rv = filter_passsite_set(opts, 0, s, 2);
 	free(s);
 	fail_unless(opts->filter_rules->next, "next not set");
 	fail_unless(opts->filter_rules->next->next, "next->next not set");
 	fail_unless(!opts->filter_rules->next->next->next, "next->next->next set");
 
 #ifndef WITHOUT_USERAUTH
-	opts->user_auth = 1;
 	// Use root user, opts_set_passsite() calls sys_isuser() to validate the user
 	s = strdup("example.com root");
-	rv = filter_passsite_set(opts, s, 3);
+	rv = filter_passsite_set(opts, 1, s, 3);
 	free(s);
 	fail_unless(opts->filter_rules->next, "next not set");
 	fail_unless(opts->filter_rules->next->next, "next->next not set");
@@ -782,7 +777,7 @@ START_TEST(opts_set_passsite_05)
 	fail_unless(!opts->filter_rules->next->next->next->next, "next->next->next->next set");
 
 	s = strdup("*.google.com * android");
-	rv = filter_passsite_set(opts, s, 4);
+	rv = filter_passsite_set(opts, 1, s, 4);
 	free(s);
 #endif /* !WITHOUT_USERAUTH */
 	ps = filter_rule_str(opts->filter_rules);

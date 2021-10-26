@@ -1397,7 +1397,7 @@ filter_rule_dbg_print(filter_rule_t *rule)
 #define MAX_SITE_LEN 200
 
 int
-filter_passsite_set(opts_t *opts, char *value, int line_num)
+filter_passsite_set(opts_t *opts, unsigned int user_auth, char *value, int line_num)
 {
 #define MAX_PASSSITE_TOKENS 3
 
@@ -1467,7 +1467,7 @@ filter_passsite_set(opts_t *opts, char *value, int line_num)
 			rule->action.precedence++;
 			rule->all_users = 1;
 		} else if (sys_isuser(argv[1])) {
-			if (!opts->user_auth) {
+			if (!user_auth) {
 				fprintf(stderr, "User filter requires user auth on line %d\n", line_num);
 				return -1;
 			}
@@ -1501,7 +1501,7 @@ filter_passsite_set(opts_t *opts, char *value, int line_num)
 			return -1;
 		}
 #ifndef WITHOUT_USERAUTH
-		if (!opts->user_auth) {
+		if (!user_auth) {
 			fprintf(stderr, "Keyword filter requires user auth on line %d\n", line_num);
 			return -1;
 		}
@@ -1975,12 +1975,12 @@ filter_rule_translate(opts_t *opts, const char *name, int argc, char **argv, int
 }
 
 static int WUNRES
-filter_rule_parse(opts_t *opts, const char *name, int argc, char **argv, int line_num);
+filter_rule_parse(opts_t *opts, unsigned int user_auth, const char *name, int argc, char **argv, int line_num);
 
 #define MAX_FILTER_RULE_TOKENS 17
 
 static int WUNRES
-filter_rule_macro_expand(opts_t *opts, const char *name, int argc, char **argv, int i, int line_num)
+filter_rule_macro_expand(opts_t *opts, unsigned int user_auth, const char *name, int argc, char **argv, int i, int line_num)
 {
 	if (argv[i][0] == '$') {
 		macro_t *macro;
@@ -1998,7 +1998,7 @@ filter_rule_macro_expand(opts_t *opts, const char *name, int argc, char **argv, 
 
 				expanded_argv[i] = value->value;
 
-				if (filter_rule_parse(opts, name, argc, expanded_argv, line_num) == -1)
+				if (filter_rule_parse(opts, user_auth, name, argc, expanded_argv, line_num) == -1)
 					return -1;
 
 				value = value->next;
@@ -2015,7 +2015,7 @@ filter_rule_macro_expand(opts_t *opts, const char *name, int argc, char **argv, 
 }
 
 static int WUNRES
-filter_rule_parse(opts_t *opts, const char *name, int argc, char **argv, int line_num)
+filter_rule_parse(opts_t *opts, unsigned int user_auth, const char *name, int argc, char **argv, int line_num)
 {
 	int done_all = 0;
 	int done_from = 0;
@@ -2046,7 +2046,7 @@ filter_rule_parse(opts_t *opts, const char *name, int argc, char **argv, int lin
 #ifndef WITHOUT_USERAUTH
 			if (equal(argv[i], "user") || equal(argv[i], "desc")) {
 				if (equal(argv[i], "user")) {
-					if (!opts->user_auth) {
+					if (!user_auth) {
 						fprintf(stderr, "User filter requires user auth on line %d\n", line_num);
 						return -1;
 					}
@@ -2057,7 +2057,7 @@ filter_rule_parse(opts_t *opts, const char *name, int argc, char **argv, int lin
 					if (argv[i][strlen(argv[i]) - 1] == '*') {
 						// Nothing to do for '*' or substring search for 'user*'
 					}
-					else if ((rv = filter_rule_macro_expand(opts, name, argc, argv, i, line_num)) != 0) {
+					else if ((rv = filter_rule_macro_expand(opts, user_auth, name, argc, argv, i, line_num)) != 0) {
 						return rv;
 					}
 					else if (!sys_isuser(argv[i])) {
@@ -2069,7 +2069,7 @@ filter_rule_parse(opts_t *opts, const char *name, int argc, char **argv, int lin
 
 				// It is possible to define desc without user (i.e. * or all_users), hence no 'else' here
 				if (i < argc && equal(argv[i], "desc")) {
-					if (!opts->user_auth) {
+					if (!user_auth) {
 						fprintf(stderr, "Desc filter requires user auth on line %d\n", line_num);
 						return -1;
 					}
@@ -2080,7 +2080,7 @@ filter_rule_parse(opts_t *opts, const char *name, int argc, char **argv, int lin
 					if (argv[i][strlen(argv[i]) - 1] == '*') {
 						// Nothing to do for '*' or substring search for 'desc*'
 					}
-					else if ((rv = filter_rule_macro_expand(opts, name, argc, argv, i, line_num)) != 0) {
+					else if ((rv = filter_rule_macro_expand(opts, user_auth, name, argc, argv, i, line_num)) != 0) {
 						return rv;
 					}
 					i++;
@@ -2097,7 +2097,7 @@ filter_rule_parse(opts_t *opts, const char *name, int argc, char **argv, int lin
 				if (argv[i][strlen(argv[i]) - 1] == '*') {
 					// Nothing to do for '*' or substring search for 'ip*'
 					}
-				else if ((rv = filter_rule_macro_expand(opts, name, argc, argv, i, line_num)) != 0) {
+				else if ((rv = filter_rule_macro_expand(opts, user_auth, name, argc, argv, i, line_num)) != 0) {
 					return rv;
 				}
 				i++;
@@ -2126,7 +2126,7 @@ filter_rule_parse(opts_t *opts, const char *name, int argc, char **argv, int lin
 					if ((i = filter_arg_index_inc(i, argc, argv[i], line_num)) == -1)
 						return -1;
 
-					if ((rv = filter_rule_macro_expand(opts, name, argc, argv, i, line_num)) != 0) {
+					if ((rv = filter_rule_macro_expand(opts, user_auth, name, argc, argv, i, line_num)) != 0) {
 						return rv;
 					}
 					i++;
@@ -2137,7 +2137,7 @@ filter_rule_parse(opts_t *opts, const char *name, int argc, char **argv, int lin
 					if ((i = filter_arg_index_inc(i, argc, argv[i], line_num)) == -1)
 						return -1;
 
-					if ((rv = filter_rule_macro_expand(opts, name, argc, argv, i, line_num)) != 0) {
+					if ((rv = filter_rule_macro_expand(opts, user_auth, name, argc, argv, i, line_num)) != 0) {
 						return rv;
 					}
 					i++;
@@ -2168,7 +2168,7 @@ filter_rule_parse(opts_t *opts, const char *name, int argc, char **argv, int lin
 #endif /* !WITHOUT_MIRROR */
 				|| argv[i][0] == '$') {
 				do {
-					if ((rv = filter_rule_macro_expand(opts, name, argc, argv, i, line_num)) != 0) {
+					if ((rv = filter_rule_macro_expand(opts, user_auth, name, argc, argv, i, line_num)) != 0) {
 						return rv;
 					}
 					if (++i == argc)
@@ -2206,7 +2206,7 @@ filter_rule_parse(opts_t *opts, const char *name, int argc, char **argv, int lin
 }
 
 int
-filter_rule_set(opts_t *opts, const char *name, char *value, int line_num)
+filter_rule_set(opts_t *opts, unsigned int user_auth, const char *name, char *value, int line_num)
 {
 	char *argv[sizeof(char *) * MAX_FILTER_RULE_TOKENS];
 	int argc = 0;
@@ -2223,7 +2223,7 @@ filter_rule_set(opts_t *opts, const char *name, char *value, int line_num)
 		}
 	}
 
-	return filter_rule_parse(opts, name, argc, argv, line_num);
+	return filter_rule_parse(opts, user_auth, name, argc, argv, line_num);
 }
 
 static filter_port_t *

@@ -328,10 +328,10 @@ pxy_conn_ctx_free(pxy_conn_ctx_t *ctx, int by_requestor)
 	}
 
 #ifndef WITHOUT_USERAUTH
-	if (ctx->spec->opts->user_auth && ctx->srchost_str && ctx->user && ctx->ether) {
+	if (ctx->conn_opts->user_auth && ctx->srchost_str && ctx->user && ctx->ether) {
 		// Update userdb atime if idle time is more than 50% of user timeout, which is expected to reduce update frequency
 		unsigned int idletime = ctx->idletime + (time(NULL) - ctx->ctime);
-		if (idletime > (ctx->spec->opts->user_timeout / 2)) {
+		if (idletime > (ctx->conn_opts->user_timeout / 2)) {
 			userdbkeys_t keys;
 			// Zero out for NULL termination
 			memset(&keys, 0, sizeof(userdbkeys_t));
@@ -1270,7 +1270,7 @@ pxy_setup_child_listener(pxy_conn_ctx_t *ctx)
 
 #ifndef WITHOUT_USERAUTH
 	int user_len = 0;
-	if (ctx->spec->opts->user_auth && ctx->user) {
+	if (ctx->conn_opts->user_auth && ctx->user) {
 		// +1 for comma
 		user_len = strlen(ctx->user) + 1;
 	}
@@ -1773,7 +1773,7 @@ identify_user(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 			log_finest_va("Passed ethernet address test, %s", ether);
 
 			ctx->idletime = time(NULL) - sqlite3_column_int(ctx->thr->get_user, 2);
-			if (ctx->idletime > ctx->spec->opts->user_timeout) {
+			if (ctx->idletime > ctx->conn_opts->user_timeout) {
 				log_finest_va("User entry timed out, idletime=%u", ctx->idletime);
 				goto redirect;
 			}
@@ -1969,7 +1969,7 @@ out:
 void
 pxy_userauth(pxy_conn_ctx_t *ctx)
 {
-	if (ctx->spec->opts->user_auth && !ctx->user) {
+	if (ctx->conn_opts->user_auth && !ctx->user) {
 #if defined(__OpenBSD__) || defined(__linux__)
 		int ec = get_client_ether(
 #if defined(__OpenBSD__)

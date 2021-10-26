@@ -81,11 +81,7 @@ typedef struct userlist {
 
 typedef struct global global_t;
 
-typedef struct opts {
-	// Set to 1 to divert to lp, set to 0 for split mode
-	// Defaults to 1
-	unsigned int divert : 1;
-
+typedef struct conn_opts {
 	unsigned int sslcomp : 1;
 #ifdef HAVE_SSLV2
 	unsigned int no_ssl2 : 1;
@@ -135,11 +131,21 @@ typedef struct opts {
 	unsigned int user_auth: 1;
 	char *user_auth_url;
 	unsigned int user_timeout;
-	userlist_t *divertusers;
-	userlist_t *passusers;
 #endif /* !WITHOUT_USERAUTH */
 	unsigned int validate_proto : 1;
 	unsigned int max_http_header_size;
+} conn_opts_t;
+
+typedef struct opts {
+	// Set to 1 to divert to lp, set to 0 for split mode
+	// Defaults to 1
+	unsigned int divert : 1;
+
+#ifndef WITHOUT_USERAUTH
+	userlist_t *divertusers;
+	userlist_t *passusers;
+#endif /* !WITHOUT_USERAUTH */
+
 	// Used to store filter rules and to create filter
 	// Freed during startup after filter is created and debug printed
 	struct filter_rule *filter_rules;
@@ -176,6 +182,7 @@ typedef struct proxyspec {
 
 	// Each proxyspec has its own opts
 	opts_t *opts;
+	conn_opts_t *conn_opts;
 } proxyspec_t;
 
 // Temporary global options
@@ -237,6 +244,8 @@ struct global {
 	sqlite3 *userdb;
 	struct sqlite3_stmt *update_user_atime;
 #endif /* !WITHOUT_USERAUTH */
+
+	conn_opts_t *conn_opts;
 	proxyspec_t *spec;
 	opts_t *opts;
 
@@ -279,26 +288,26 @@ char *proxyspec_str(proxyspec_t *) NONNULL(1) MALLOC WUNRES;
 
 opts_t *opts_new(void) MALLOC WUNRES;
 void opts_free(opts_t *) NONNULL(1);
-char *opts_proto_dbg_dump(opts_t *) NONNULL(1);
-int opts_set_cacrt(opts_t *, const char *, const char *, global_tmp_opts_t *) NONNULL(1,2,3) WUNRES;
-int opts_set_cakey(opts_t *, const char *, const char *, global_tmp_opts_t *) NONNULL(1,2,3) WUNRES;
-int opts_set_chain(opts_t *, const char *, const char *, global_tmp_opts_t *) NONNULL(1,2,3) WUNRES;
-int opts_set_leafcrlurl(opts_t *, const char *, const char *, global_tmp_opts_t *) NONNULL(1,2,3) WUNRES;
-void opts_set_deny_ocsp(opts_t *) NONNULL(1);
-void opts_set_passthrough(opts_t *) NONNULL(1);
-int opts_set_clientcrt(opts_t *, const char *, const char *, global_tmp_opts_t *) NONNULL(1,2,3) WUNRES;
-int opts_set_clientkey(opts_t *, const char *, const char *, global_tmp_opts_t *) NONNULL(1,2,3) WUNRES;
+char *opts_proto_dbg_dump(conn_opts_t *) NONNULL(1);
+int opts_set_cacrt(conn_opts_t *, const char *, const char *, global_tmp_opts_t *) NONNULL(1,2,3) WUNRES;
+int opts_set_cakey(conn_opts_t *, const char *, const char *, global_tmp_opts_t *) NONNULL(1,2,3) WUNRES;
+int opts_set_chain(conn_opts_t *, const char *, const char *, global_tmp_opts_t *) NONNULL(1,2,3) WUNRES;
+int opts_set_leafcrlurl(conn_opts_t *, const char *, const char *, global_tmp_opts_t *) NONNULL(1,2,3) WUNRES;
+void opts_set_deny_ocsp(conn_opts_t *) NONNULL(1);
+void opts_set_passthrough(conn_opts_t *) NONNULL(1);
+int opts_set_clientcrt(conn_opts_t *, const char *, const char *, global_tmp_opts_t *) NONNULL(1,2,3) WUNRES;
+int opts_set_clientkey(conn_opts_t *, const char *, const char *, global_tmp_opts_t *) NONNULL(1,2,3) WUNRES;
 #ifndef OPENSSL_NO_DH
-int opts_set_dh(opts_t *, const char *, const char *, global_tmp_opts_t *) NONNULL(1,2,3) WUNRES;
+int opts_set_dh(conn_opts_t *, const char *, const char *, global_tmp_opts_t *) NONNULL(1,2,3) WUNRES;
 #endif /* !OPENSSL_NO_DH */
 #ifndef OPENSSL_NO_ECDH
-int opts_set_ecdhcurve(opts_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;
+int opts_set_ecdhcurve(conn_opts_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;
 #endif /* !OPENSSL_NO_ECDH */
-void opts_unset_sslcomp(opts_t *) NONNULL(1);
-int opts_force_proto(opts_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;
-int opts_disable_proto(opts_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;
-int opts_set_ciphers(opts_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;
-int opts_set_ciphersuites(opts_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;
+void opts_unset_sslcomp(conn_opts_t *) NONNULL(1);
+int opts_force_proto(conn_opts_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;
+int opts_disable_proto(conn_opts_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;
+int opts_set_ciphers(conn_opts_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;
+int opts_set_ciphersuites(conn_opts_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;
 
 #define OPTS_DEBUG(global) unlikely((global)->debug)
 

@@ -277,7 +277,7 @@ char *filter_macro_str(macro_t *);
 char *filter_rule_str(filter_rule_t *);
 char *filter_str(filter_t *);
 
-int filter_passsite_set(opts_t *, char *, int) NONNULL(1,2) WUNRES;
+int filter_passsite_set(opts_t *, unsigned int, char *, int) NONNULL(1,3) WUNRES;
 int filter_macro_set(opts_t *, char *, int) NONNULL(1,2) WUNRES;
 
 filter_port_t *filter_port_find(filter_site_t *, char *) NONNULL(1,2);
@@ -296,7 +296,7 @@ filter_desc_t *filter_desc_substring_match(ACMachine(char) *, char *) NONNULL(2)
 filter_user_t *filter_user_exact_match(kbtree_t(user) *, char *) NONNULL(2) WUNRES;
 filter_user_t *filter_user_substring_match(ACMachine(char) *, char *) NONNULL(2) WUNRES;
 #endif /* !WITHOUT_USERAUTH */
-int filter_rule_set(opts_t *, const char *, char *, int) NONNULL(1,2,3) WUNRES;
+int filter_rule_set(opts_t *, unsigned int, const char *, char *, int) NONNULL(1,3,4) WUNRES;
 filter_t *filter_set(filter_rule_t *) WUNRES;
 
 #endif /* !FILTER_H */

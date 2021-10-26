@@ -120,6 +120,36 @@ opts_load_cert_chain_key(const char *filename)
 	return cert;
 }
 
+static conn_opts_t * MALLOC WUNRES
+conn_opts_new(void)
+{
+	conn_opts_t *conn_opts;
+
+	conn_opts = malloc(sizeof(conn_opts_t));
+	if (!conn_opts)
+		return oom_return_na_null();
+	memset(conn_opts, 0, sizeof(conn_opts_t));
+
+	conn_opts->sslcomp = 1;
+	conn_opts->chain = sk_X509_new_null();
+	conn_opts->sslmethod = SSLv23_method;
+#if (OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER >= 0x20702000L)
+	conn_opts->minsslversion = TLS1_VERSION;
+#ifdef HAVE_TLSV13
+	conn_opts->maxsslversion = TLS1_3_VERSION;
+#else /* !HAVE_TLSV13 */
+	conn_opts->maxsslversion = TLS1_2_VERSION;
+#endif /* !HAVE_TLSV13 */
+#endif /* OPENSSL_VERSION_NUMBER >= 0x10100000L */
+	conn_opts->remove_http_referer = 1;
+	conn_opts->verify_peer = 1;
+#ifndef WITHOUT_USERAUTH
+	conn_opts->user_timeout = 300;
+#endif /* !WITHOUT_USERAUTH */
+	conn_opts->max_http_header_size = 8192;
+	return conn_opts;
+}
+
 opts_t *
 opts_new(void)
 {
@@ -131,23 +161,6 @@ opts_new(void)
 	memset(opts, 0, sizeof(opts_t));
 
 	opts->divert = 1;
-	opts->sslcomp = 1;
-	opts->chain = sk_X509_new_null();
-	opts->sslmethod = SSLv23_method;
-#if (OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER >= 0x20702000L)
-	opts->minsslversion = TLS1_VERSION;
-#ifdef HAVE_TLSV13
-	opts->maxsslversion = TLS1_3_VERSION;
-#else /* !HAVE_TLSV13 */
-	opts->maxsslversion = TLS1_2_VERSION;
-#endif /* !HAVE_TLSV13 */
-#endif /* OPENSSL_VERSION_NUMBER >= 0x10100000L */
-	opts->remove_http_referer = 1;
-	opts->verify_peer = 1;
-#ifndef WITHOUT_USERAUTH
-	opts->user_timeout = 300;
-#endif /* !WITHOUT_USERAUTH */
-	opts->max_http_header_size = 8192;
 	return opts;
 }
 
@@ -166,6 +179,9 @@ global_new(void)
 	global->expired_conn_check_period = 10;
 	global->stats_period = 1;
 
+	global->conn_opts = conn_opts_new();
+	if (!global->conn_opts)
+		return NULL;
 	global->opts = opts_new();
 	if (!global->opts)
 		return NULL;
@@ -173,44 +189,54 @@ global_new(void)
 	return global;
 }
 
-void
-opts_free(opts_t *opts)
+static void NONNULL(1)
+conn_opts_free(conn_opts_t *conn_opts)
 {
-	if (opts->chain) {
-		sk_X509_pop_free(opts->chain, X509_free);
+	if (conn_opts->chain) {
+		sk_X509_pop_free(conn_opts->chain, X509_free);
 	}
-	if (opts->clientcrt) {
-		X509_free(opts->clientcrt);
+	if (conn_opts->clientcrt) {
+		X509_free(conn_opts->clientcrt);
 	}
-	if (opts->clientkey) {
-		EVP_PKEY_free(opts->clientkey);
+	if (conn_opts->clientkey) {
+		EVP_PKEY_free(conn_opts->clientkey);
 	}
-	if (opts->cacrt) {
-		X509_free(opts->cacrt);
+	if (conn_opts->cacrt) {
+		X509_free(conn_opts->cacrt);
 	}
-	if (opts->cakey) {
-		EVP_PKEY_free(opts->cakey);
+	if (conn_opts->cakey) {
+		EVP_PKEY_free(conn_opts->cakey);
 	}
 #ifndef OPENSSL_NO_DH
-	if (opts->dh) {
-		DH_free(opts->dh);
+	if (conn_opts->dh) {
+		DH_free(conn_opts->dh);
 	}
 #endif /* !OPENSSL_NO_DH */
 #ifndef OPENSSL_NO_ECDH
-	if (opts->ecdhcurve) {
-		free(opts->ecdhcurve);
+	if (conn_opts->ecdhcurve) {
+		free(conn_opts->ecdhcurve);
 	}
 #endif /* !OPENSSL_NO_ECDH */
-	if (opts->ciphers) {
-		free(opts->ciphers);
+	if (conn_opts->ciphers) {
+		free(conn_opts->ciphers);
 	}
-	if (opts->ciphersuites) {
-		free(opts->ciphersuites);
+	if (conn_opts->ciphersuites) {
+		free(conn_opts->ciphersuites);
 	}
 #ifndef WITHOUT_USERAUTH
-	if (opts->user_auth_url) {
-		free(opts->user_auth_url);
+	if (conn_opts->user_auth_url) {
+		free(conn_opts->user_auth_url);
 	}
+#endif /* !WITHOUT_USERAUTH */
+
+	memset(conn_opts, 0, sizeof(opts_t));
+	free(conn_opts);
+}
+
+void
+opts_free(opts_t *opts)
+{
+#ifndef WITHOUT_USERAUTH
 	filter_userlist_free(opts->divertusers);
 	filter_userlist_free(opts->passusers);
 #endif /* !WITHOUT_USERAUTH */
@@ -244,6 +270,8 @@ spec_addrs_free(spec_addrs_t *spec_addrs)
 void
 proxyspec_free(proxyspec_t *spec)
 {
+	if (spec->conn_opts)
+		conn_opts_free(spec->conn_opts);
 	if (spec->opts)
 		opts_free(spec->opts);
 	if (spec->natengine)
@@ -365,6 +393,9 @@ global_free(global_t *global)
 		sqlite3_close(global->userdb);
 	}
 #endif /* !WITHOUT_USERAUTH */
+	if (global->conn_opts) {
+		conn_opts_free(global->conn_opts);
+	}
 	if (global->opts) {
 		opts_free(global->opts);
 	}
@@ -422,7 +453,7 @@ global_has_userauth_spec(global_t *global)
 {
 	proxyspec_t *p = global->spec;
 	while (p) {
-		if (p->opts->user_auth)
+		if (p->conn_opts->user_auth)
 			return 1;
 		p = p->next;
 	}
@@ -438,7 +469,7 @@ global_has_cakey_spec(global_t *global)
 {
 	proxyspec_t *p = global->spec;
 	while (p) {
-		if (p->opts->cakey)
+		if (p->conn_opts->cakey)
 			return 1;
 		p = p->next;
 	}
@@ -449,101 +480,101 @@ global_has_cakey_spec(global_t *global)
  * Dump the SSL/TLS protocol related configuration.
  */
 char *
-opts_proto_dbg_dump(opts_t *opts)
+opts_proto_dbg_dump(conn_opts_t *conn_opts)
 {
 	char *s;
 	if (asprintf(&s, "SSL/TLS protocol: %s%s%s%s%s%s%s%s%s",
 #if (OPENSSL_VERSION_NUMBER < 0x10100000L) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER < 0x20702000L)
 #ifdef HAVE_SSLV2
-	               (opts->sslmethod == SSLv2_method) ? "ssl2" :
+	               (conn_opts->sslmethod == SSLv2_method) ? "ssl2" :
 #endif /* HAVE_SSLV2 */
 #ifdef HAVE_SSLV3
-	               (opts->sslmethod == SSLv3_method) ? "ssl3" :
+	               (conn_opts->sslmethod == SSLv3_method) ? "ssl3" :
 #endif /* HAVE_SSLV3 */
 #ifdef HAVE_TLSV10
-	               (opts->sslmethod == TLSv1_method) ? "tls10" :
+	               (conn_opts->sslmethod == TLSv1_method) ? "tls10" :
 #endif /* HAVE_TLSV10 */
 #ifdef HAVE_TLSV11
-	               (opts->sslmethod == TLSv1_1_method) ? "tls11" :
+	               (conn_opts->sslmethod == TLSv1_1_method) ? "tls11" :
 #endif /* HAVE_TLSV11 */
 #ifdef HAVE_TLSV12
-	               (opts->sslmethod == TLSv1_2_method) ? "tls12" :
+	               (conn_opts->sslmethod == TLSv1_2_method) ? "tls12" :
 #endif /* HAVE_TLSV12 */
 /* There is no TLSv1_3_method defined,
  * since no ssl version < 0x10100000L supports it. */
 #else /* OPENSSL_VERSION_NUMBER >= 0x10100000L */
 #ifdef HAVE_SSLV3
-	               (opts->sslversion == SSL3_VERSION) ? "ssl3" :
+	               (conn_opts->sslversion == SSL3_VERSION) ? "ssl3" :
 #endif /* HAVE_SSLV3 */
 #ifdef HAVE_TLSV10
-	               (opts->sslversion == TLS1_VERSION) ? "tls10" :
+	               (conn_opts->sslversion == TLS1_VERSION) ? "tls10" :
 #endif /* HAVE_TLSV10 */
 #ifdef HAVE_TLSV11
-	               (opts->sslversion == TLS1_1_VERSION) ? "tls11" :
+	               (conn_opts->sslversion == TLS1_1_VERSION) ? "tls11" :
 #endif /* HAVE_TLSV11 */
 #ifdef HAVE_TLSV12
-	               (opts->sslversion == TLS1_2_VERSION) ? "tls12" :
+	               (conn_opts->sslversion == TLS1_2_VERSION) ? "tls12" :
 #endif /* HAVE_TLSV12 */
 #ifdef HAVE_TLSV13
-	               (opts->sslversion == TLS1_3_VERSION) ? "tls13" :
+	               (conn_opts->sslversion == TLS1_3_VERSION) ? "tls13" :
 #endif /* HAVE_TLSV13 */
 #endif /* OPENSSL_VERSION_NUMBER >= 0x10100000L */
 	               "negotiate",
 #ifdef HAVE_SSLV2
-	               opts->no_ssl2 ? " -ssl2" :
+	               conn_opts->no_ssl2 ? " -ssl2" :
 #endif /* HAVE_SSLV2 */
 	               "",
 #ifdef HAVE_SSLV3
-	               opts->no_ssl3 ? " -ssl3" :
+	               conn_opts->no_ssl3 ? " -ssl3" :
 #endif /* HAVE_SSLV3 */
 	               "",
 #ifdef HAVE_TLSV10
-	               opts->no_tls10 ? " -tls10" :
+	               conn_opts->no_tls10 ? " -tls10" :
 #endif /* HAVE_TLSV10 */
 	               "",
 #ifdef HAVE_TLSV11
-	               opts->no_tls11 ? " -tls11" :
+	               conn_opts->no_tls11 ? " -tls11" :
 #endif /* HAVE_TLSV11 */
 	               "",
 #ifdef HAVE_TLSV12
-	               opts->no_tls12 ? " -tls12" :
+	               conn_opts->no_tls12 ? " -tls12" :
 #endif /* HAVE_TLSV12 */
 	               "",
 #ifdef HAVE_TLSV13
-	               opts->no_tls13 ? " -tls13" :
+	               conn_opts->no_tls13 ? " -tls13" :
 #endif /* HAVE_TLSV13 */
 	               "",
 #if (OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER >= 0x20702000L)
 #ifdef HAVE_SSLV3
-	               (opts->minsslversion == SSL3_VERSION) ? ">=ssl3" :
+	               (conn_opts->minsslversion == SSL3_VERSION) ? ">=ssl3" :
 #endif /* HAVE_SSLV3 */
 #ifdef HAVE_TLSV10
-	               (opts->minsslversion == TLS1_VERSION) ? ">=tls10" :
+	               (conn_opts->minsslversion == TLS1_VERSION) ? ">=tls10" :
 #endif /* HAVE_TLSV10 */
 #ifdef HAVE_TLSV11
-	               (opts->minsslversion == TLS1_1_VERSION) ? ">=tls11" :
+	               (conn_opts->minsslversion == TLS1_1_VERSION) ? ">=tls11" :
 #endif /* HAVE_TLSV11 */
 #ifdef HAVE_TLSV12
-	               (opts->minsslversion == TLS1_2_VERSION) ? ">=tls12" :
+	               (conn_opts->minsslversion == TLS1_2_VERSION) ? ">=tls12" :
 #endif /* HAVE_TLSV12 */
 #ifdef HAVE_TLSV13
-	               (opts->minsslversion == TLS1_3_VERSION) ? ">=tls13" :
+	               (conn_opts->minsslversion == TLS1_3_VERSION) ? ">=tls13" :
 #endif /* HAVE_TLSV13 */
 	               "",
 #ifdef HAVE_SSLV3
-	               (opts->maxsslversion == SSL3_VERSION) ? "<=ssl3" :
+	               (conn_opts->maxsslversion == SSL3_VERSION) ? "<=ssl3" :
 #endif /* HAVE_SSLV3 */
 #ifdef HAVE_TLSV10
-	               (opts->maxsslversion == TLS1_VERSION) ? "<=tls10" :
+	               (conn_opts->maxsslversion == TLS1_VERSION) ? "<=tls10" :
 #endif /* HAVE_TLSV10 */
 #ifdef HAVE_TLSV11
-	               (opts->maxsslversion == TLS1_1_VERSION) ? "<=tls11" :
+	               (conn_opts->maxsslversion == TLS1_1_VERSION) ? "<=tls11" :
 #endif /* HAVE_TLSV11 */
 #ifdef HAVE_TLSV12
-	               (opts->maxsslversion == TLS1_2_VERSION) ? "<=tls12" :
+	               (conn_opts->maxsslversion == TLS1_2_VERSION) ? "<=tls12" :
 #endif /* HAVE_TLSV12 */
 #ifdef HAVE_TLSV13
-	               (opts->maxsslversion == TLS1_3_VERSION) ? "<=tls13" :
+	               (conn_opts->maxsslversion == TLS1_3_VERSION) ? "<=tls13" :
 #endif /* HAVE_TLSV13 */
 	               ""
 #else /* OPENSSL_VERSION_NUMBER < 0x10100000L */
@@ -557,22 +588,126 @@ opts_proto_dbg_dump(opts_t *opts)
 
 #ifndef WITHOUT_USERAUTH
 static int WUNRES
-opts_set_user_auth_url(opts_t *opts, const char * argv0, const char *optarg)
+opts_set_user_auth_url(conn_opts_t *conn_opts, const char * argv0, const char *optarg)
 {
-	if (opts->user_auth_url)
-		free(opts->user_auth_url);
-	opts->user_auth_url = strdup(optarg);
-	if (!opts->user_auth_url)
+	if (conn_opts->user_auth_url)
+		free(conn_opts->user_auth_url);
+	conn_opts->user_auth_url = strdup(optarg);
+	if (!conn_opts->user_auth_url)
 		return oom_return(argv0);
 #ifdef DEBUG_OPTS
-	log_dbg_printf("UserAuthURL: %s\n", opts->user_auth_url);
+	log_dbg_printf("UserAuthURL: %s\n", conn_opts->user_auth_url);
 #endif /* DEBUG_OPTS */
 	return 0;
 }
 #endif /* !WITHOUT_USERAUTH */
 
+static conn_opts_t * WUNRES
+global_conn_opts_copy(global_t *global, const char *argv0, global_tmp_opts_t *global_tmp_opts)
+{
+#ifdef DEBUG_OPTS
+	log_dbg_printf("Copy global conn_opts\n");
+#endif /* DEBUG_OPTS */
+
+	conn_opts_t *conn_opts = conn_opts_new();
+	if (!conn_opts)
+		return NULL;
+
+	conn_opts->sslcomp = global->conn_opts->sslcomp;
+#ifdef HAVE_SSLV2
+	conn_opts->no_ssl2 = global->conn_opts->no_ssl2;
+#endif /* HAVE_SSLV2 */
+#ifdef HAVE_SSLV3
+	conn_opts->no_ssl3 = global->conn_opts->no_ssl3;
+#endif /* HAVE_SSLV3 */
+#ifdef HAVE_TLSV10
+	conn_opts->no_tls10 = global->conn_opts->no_tls10;
+#endif /* HAVE_TLSV10 */
+#ifdef HAVE_TLSV11
+	conn_opts->no_tls11 = global->conn_opts->no_tls11;
+#endif /* HAVE_TLSV11 */
+#ifdef HAVE_TLSV12
+	conn_opts->no_tls12 = global->conn_opts->no_tls12;
+#endif /* HAVE_TLSV12 */
+#ifdef HAVE_TLSV13
+	conn_opts->no_tls13 = global->conn_opts->no_tls13;
+#endif /* HAVE_TLSV13 */
+	conn_opts->passthrough = global->conn_opts->passthrough;
+	conn_opts->deny_ocsp = global->conn_opts->deny_ocsp;
+	conn_opts->sslmethod = global->conn_opts->sslmethod;
+#if (OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER >= 0x20702000L)
+	conn_opts->sslversion = global->conn_opts->sslversion;
+	conn_opts->minsslversion = global->conn_opts->minsslversion;
+	conn_opts->maxsslversion = global->conn_opts->maxsslversion;
+#endif /* OPENSSL_VERSION_NUMBER >= 0x10100000L */
+	conn_opts->remove_http_accept_encoding = global->conn_opts->remove_http_accept_encoding;
+	conn_opts->remove_http_referer = global->conn_opts->remove_http_referer;
+	conn_opts->verify_peer = global->conn_opts->verify_peer;
+	conn_opts->allow_wrong_host = global->conn_opts->allow_wrong_host;
+#ifndef WITHOUT_USERAUTH
+	conn_opts->user_auth = global->conn_opts->user_auth;
+	conn_opts->user_timeout = global->conn_opts->user_timeout;
+#endif /* !WITHOUT_USERAUTH */
+	conn_opts->validate_proto = global->conn_opts->validate_proto;
+	conn_opts->max_http_header_size = global->conn_opts->max_http_header_size;
+
+	// Pass NULL as global_tmp_opts param, so we don't reassign the var to itself
+	// That would be harmless but incorrect
+	if (global_tmp_opts && global_tmp_opts->chain_str) {
+		if (opts_set_chain(conn_opts, argv0, global_tmp_opts->chain_str, NULL) == -1)
+			return NULL;
+	}
+	if (global_tmp_opts && global_tmp_opts->leafcrlurl_str) {
+		if (opts_set_leafcrlurl(conn_opts, argv0, global_tmp_opts->leafcrlurl_str, NULL) == -1)
+			return NULL;
+	}
+	if (global_tmp_opts && global_tmp_opts->cacrt_str) {
+		if (opts_set_cacrt(conn_opts, argv0, global_tmp_opts->cacrt_str, NULL) == -1)
+			return NULL;
+	}
+	if (global_tmp_opts && global_tmp_opts->cakey_str) {
+		if (opts_set_cakey(conn_opts, argv0, global_tmp_opts->cakey_str, NULL) == -1)
+			return NULL;
+	}
+	if (global_tmp_opts && global_tmp_opts->clientcrt_str) {
+		if (opts_set_clientcrt(conn_opts, argv0, global_tmp_opts->clientcrt_str, NULL) == -1)
+			return NULL;
+	}
+	if (global_tmp_opts && global_tmp_opts->clientkey_str) {
+		if (opts_set_clientkey(conn_opts, argv0, global_tmp_opts->clientkey_str, NULL) == -1)
+			return NULL;
+	}
+#ifndef OPENSSL_NO_DH
+	if (global_tmp_opts && global_tmp_opts->dh_str) {
+		if (opts_set_dh(conn_opts, argv0, global_tmp_opts->dh_str, NULL) == -1)
+			return NULL;
+	}
+#endif /* !OPENSSL_NO_DH */
+#ifndef OPENSSL_NO_ECDH
+	if (global->conn_opts->ecdhcurve) {
+		if (opts_set_ecdhcurve(conn_opts, argv0, global->conn_opts->ecdhcurve) == -1)
+			return NULL;
+	}
+#endif /* !OPENSSL_NO_ECDH */
+	if (global->conn_opts->ciphers) {
+		if (opts_set_ciphers(conn_opts, argv0, global->conn_opts->ciphers) == -1)
+			return NULL;
+	}
+	if (global->conn_opts->ciphersuites) {
+		if (opts_set_ciphersuites(conn_opts, argv0, global->conn_opts->ciphersuites) == -1)
+			return NULL;
+	}
+#ifndef WITHOUT_USERAUTH
+	if (global->conn_opts->user_auth_url) {
+		if (opts_set_user_auth_url(conn_opts, argv0, global->conn_opts->user_auth_url) == -1)
+			return NULL;
+	}
+
+	return conn_opts;
+}
+
 static opts_t * WUNRES
-global_opts_copy(global_t *global, const char *argv0, global_tmp_opts_t *global_tmp_opts)
+global_opts_copy(global_t *global, const char *argv0)
 {
 #ifdef DEBUG_OPTS
 	log_dbg_printf("Copy global opts\n");
@@ -584,95 +719,6 @@ global_opts_copy(global_t *global, const char *argv0, global_tmp_opts_t *global_
 	opts->global = global;
 
 	opts->divert = global->opts->divert;
-	opts->sslcomp = global->opts->sslcomp;
-#ifdef HAVE_SSLV2
-	opts->no_ssl2 = global->opts->no_ssl2;
-#endif /* HAVE_SSLV2 */
-#ifdef HAVE_SSLV3
-	opts->no_ssl3 = global->opts->no_ssl3;
-#endif /* HAVE_SSLV3 */
-#ifdef HAVE_TLSV10
-	opts->no_tls10 = global->opts->no_tls10;
-#endif /* HAVE_TLSV10 */
-#ifdef HAVE_TLSV11
-	opts->no_tls11 = global->opts->no_tls11;
-#endif /* HAVE_TLSV11 */
-#ifdef HAVE_TLSV12
-	opts->no_tls12 = global->opts->no_tls12;
-#endif /* HAVE_TLSV12 */
-#ifdef HAVE_TLSV13
-	opts->no_tls13 = global->opts->no_tls13;
-#endif /* HAVE_TLSV13 */
-	opts->passthrough = global->opts->passthrough;
-	opts->deny_ocsp = global->opts->deny_ocsp;
-	opts->sslmethod = global->opts->sslmethod;
-#if (OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER >= 0x20702000L)
-	opts->sslversion = global->opts->sslversion;
-	opts->minsslversion = global->opts->minsslversion;
-	opts->maxsslversion = global->opts->maxsslversion;
-#endif /* OPENSSL_VERSION_NUMBER >= 0x10100000L */
-	opts->remove_http_accept_encoding = global->opts->remove_http_accept_encoding;
-	opts->remove_http_referer = global->opts->remove_http_referer;
-	opts->verify_peer = global->opts->verify_peer;
-	opts->allow_wrong_host = global->opts->allow_wrong_host;
-#ifndef WITHOUT_USERAUTH
-	opts->user_auth = global->opts->user_auth;
-	opts->user_timeout = global->opts->user_timeout;
-#endif /* !WITHOUT_USERAUTH */
-	opts->validate_proto = global->opts->validate_proto;
-	opts->max_http_header_size = global->opts->max_http_header_size;
-
-	// Pass NULL as global_tmp_opts param, so we don't reassign the var to itself
-	// That would be harmless but incorrect
-	if (global_tmp_opts && global_tmp_opts->chain_str) {
-		if (opts_set_chain(opts, argv0, global_tmp_opts->chain_str, NULL) == -1)
-			return NULL;
-	}
-	if (global_tmp_opts && global_tmp_opts->leafcrlurl_str) {
-		if (opts_set_leafcrlurl(opts, argv0, global_tmp_opts->leafcrlurl_str, NULL) == -1)
-			return NULL;
-	}
-	if (global_tmp_opts && global_tmp_opts->cacrt_str) {
-		if (opts_set_cacrt(opts, argv0, global_tmp_opts->cacrt_str, NULL) == -1)
-			return NULL;
-	}
-	if (global_tmp_opts && global_tmp_opts->cakey_str) {
-		if (opts_set_cakey(opts, argv0, global_tmp_opts->cakey_str, NULL) == -1)
-			return NULL;
-	}
-	if (global_tmp_opts && global_tmp_opts->clientcrt_str) {
-		if (opts_set_clientcrt(opts, argv0, global_tmp_opts->clientcrt_str, NULL) == -1)
-			return NULL;
-	}
-	if (global_tmp_opts && global_tmp_opts->clientkey_str) {
-		if (opts_set_clientkey(opts, argv0, global_tmp_opts->clientkey_str, NULL) == -1)
-			return NULL;
-	}
-#ifndef OPENSSL_NO_DH
-	if (global_tmp_opts && global_tmp_opts->dh_str) {
-		if (opts_set_dh(opts, argv0, global_tmp_opts->dh_str, NULL) == -1)
-			return NULL;
-	}
-#endif /* !OPENSSL_NO_DH */
-#ifndef OPENSSL_NO_ECDH
-	if (global->opts->ecdhcurve) {
-		if (opts_set_ecdhcurve(opts, argv0, global->opts->ecdhcurve) == -1)
-			return NULL;
-	}
-#endif /* !OPENSSL_NO_ECDH */
-	if (global->opts->ciphers) {
-		if (opts_set_ciphers(opts, argv0, global->opts->ciphers) == -1)
-			return NULL;
-	}
-	if (global->opts->ciphersuites) {
-		if (opts_set_ciphersuites(opts, argv0, global->opts->ciphersuites) == -1)
-			return NULL;
-	}
-#ifndef WITHOUT_USERAUTH
-	if (global->opts->user_auth_url) {
-		if (opts_set_user_auth_url(opts, argv0, global->opts->user_auth_url) == -1)
-			return NULL;
-	}
 
 	if (filter_userlist_copy(global->opts->divertusers, argv0, &opts->divertusers) == -1)
 		return oom_return_null(argv0);
@@ -697,7 +743,10 @@ proxyspec_new(global_t *global, const char *argv0, global_tmp_opts_t *global_tmp
 	if (!spec)
 		return oom_return_null(argv0);
 	memset(spec, 0, sizeof(proxyspec_t));
-	spec->opts = global_opts_copy(global, argv0, global_tmp_opts);
+	spec->conn_opts = global_conn_opts_copy(global, argv0, global_tmp_opts);
+	if (!spec->conn_opts)
+		return NULL;
+	spec->opts = global_opts_copy(global, argv0);
 	if (!spec->opts)
 		return NULL;
 	return spec;
@@ -1021,7 +1070,7 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine, global_t *globa
 }
 
 static char *
-opts_str(opts_t *opts)
+opts_str(opts_t *opts, conn_opts_t *conn_opts)
 {
 	char *s = NULL;
 	char *proto_dump = NULL;
@@ -1054,7 +1103,7 @@ opts_str(opts_t *opts)
 	if (!fs)
 		goto out;
 
-	proto_dump = opts_proto_dbg_dump(opts);
+	proto_dump = opts_proto_dbg_dump(conn_opts);
 	if (!proto_dump)
 		goto out;
 
@@ -1087,46 +1136,46 @@ opts_str(opts_t *opts)
 #endif /* !WITHOUT_USERAUTH */
 				 "%s|%d\n%s%s%s%s%s%s%s",
 	             (opts->divert ? "divert" : "split"),
-	             (!opts->sslcomp ? "|no sslcomp" : ""),
+	             (!conn_opts->sslcomp ? "|no sslcomp" : ""),
 #ifdef HAVE_SSLV2
-	             (opts->no_ssl2 ? "|no_ssl2" : ""),
+	             (conn_opts->no_ssl2 ? "|no_ssl2" : ""),
 #endif /* HAVE_SSLV2 */
 #ifdef HAVE_SSLV3
-	             (opts->no_ssl3 ? "|no_ssl3" : ""),
+	             (conn_opts->no_ssl3 ? "|no_ssl3" : ""),
 #endif /* HAVE_SSLV3 */
 #ifdef HAVE_TLSV10
-	             (opts->no_tls10 ? "|no_tls10" : ""),
+	             (conn_opts->no_tls10 ? "|no_tls10" : ""),
 #endif /* HAVE_TLSV10 */
 #ifdef HAVE_TLSV11
-	             (opts->no_tls11 ? "|no_tls11" : ""),
+	             (conn_opts->no_tls11 ? "|no_tls11" : ""),
 #endif /* HAVE_TLSV11 */
 #ifdef HAVE_TLSV12
-	             (opts->no_tls12 ? "|no_tls12" : ""),
+	             (conn_opts->no_tls12 ? "|no_tls12" : ""),
 #endif /* HAVE_TLSV12 */
 #ifdef HAVE_TLSV13
-	             (opts->no_tls13 ? "|no_tls13" : ""),
+	             (conn_opts->no_tls13 ? "|no_tls13" : ""),
 #endif /* HAVE_TLSV13 */
-	             (opts->passthrough ? "|passthrough" : ""),
-	             (opts->deny_ocsp ? "|deny_ocsp" : ""),
-	             (opts->ciphers ? opts->ciphers : "no ciphers"),
-	             (opts->ciphersuites ? opts->ciphersuites : "no ciphersuites"),
+	             (conn_opts->passthrough ? "|passthrough" : ""),
+	             (conn_opts->deny_ocsp ? "|deny_ocsp" : ""),
+	             (conn_opts->ciphers ? conn_opts->ciphers : "no ciphers"),
+	             (conn_opts->ciphersuites ? conn_opts->ciphersuites : "no ciphersuites"),
 #ifndef OPENSSL_NO_ECDH
-	             (opts->ecdhcurve ? opts->ecdhcurve : "no ecdhcurve"),
+	             (conn_opts->ecdhcurve ? conn_opts->ecdhcurve : "no ecdhcurve"),
 #endif /* !OPENSSL_NO_ECDH */
-	             (opts->leafcrlurl ? opts->leafcrlurl : "no leafcrlurl"),
-	             (opts->remove_http_accept_encoding ? "|remove_http_accept_encoding" : ""),
-	             (opts->remove_http_referer ? "|remove_http_referer" : ""),
-	             (opts->verify_peer ? "|verify_peer" : ""),
-	             (opts->allow_wrong_host ? "|allow_wrong_host" : ""),
+	             (conn_opts->leafcrlurl ? conn_opts->leafcrlurl : "no leafcrlurl"),
+	             (conn_opts->remove_http_accept_encoding ? "|remove_http_accept_encoding" : ""),
+	             (conn_opts->remove_http_referer ? "|remove_http_referer" : ""),
+	             (conn_opts->verify_peer ? "|verify_peer" : ""),
+	             (conn_opts->allow_wrong_host ? "|allow_wrong_host" : ""),
 #ifndef WITHOUT_USERAUTH
-	             (opts->user_auth ? "|user_auth" : ""),
-	             (opts->user_auth_url ? opts->user_auth_url : "no user_auth_url"),
-	             opts->user_timeout,
+	             (conn_opts->user_auth ? "|user_auth" : ""),
+	             (conn_opts->user_auth_url ? conn_opts->user_auth_url : "no user_auth_url"),
+	             conn_opts->user_timeout,
 	             du,
 	             pu,
 #endif /* !WITHOUT_USERAUTH */
-	             (opts->validate_proto ? "|validate_proto" : ""),
-				 opts->max_http_header_size,
+	             (conn_opts->validate_proto ? "|validate_proto" : ""),
+				 conn_opts->max_http_header_size,
 				 proto_dump,
 				 strlen(ms) ? "\n" : "", ms,
 				 strlen(frs) ? "\n" : "", frs,
@@ -1214,7 +1263,7 @@ proxyspec_str(proxyspec_t *spec)
 			goto out;
 		}
 	}
-	optsstr = opts_str(spec->opts);
+	optsstr = opts_str(spec->opts, spec->conn_opts);
 	if (!optsstr) {
 		goto out;
 	}
@@ -1248,7 +1297,7 @@ out:
 }
 
 int
-opts_set_cacrt(opts_t *opts, const char *argv0, const char *optarg, global_tmp_opts_t *global_tmp_opts)
+opts_set_cacrt(conn_opts_t *conn_opts, const char *argv0, const char *optarg, global_tmp_opts_t *global_tmp_opts)
 {
 	if (global_tmp_opts) {
 		if (global_tmp_opts->cacrt_str)
@@ -1258,10 +1307,10 @@ opts_set_cacrt(opts_t *opts, const char *argv0, const char *optarg, global_tmp_o
 			return oom_return(argv0);
 	}
 
-	if (opts->cacrt)
-		X509_free(opts->cacrt);
-	opts->cacrt = ssl_x509_load(optarg);
-	if (!opts->cacrt) {
+	if (conn_opts->cacrt)
+		X509_free(conn_opts->cacrt);
+	conn_opts->cacrt = ssl_x509_load(optarg);
+	if (!conn_opts->cacrt) {
 		fprintf(stderr, "%s: error loading CA cert from '%s':\n",
 		        argv0, optarg);
 		if (errno) {
@@ -1271,14 +1320,14 @@ opts_set_cacrt(opts_t *opts, const char *argv0, const char *optarg, global_tmp_o
 		}
 		return -1;
 	}
-	ssl_x509_refcount_inc(opts->cacrt);
-	sk_X509_insert(opts->chain, opts->cacrt, 0);
-	if (!opts->cakey) {
-		opts->cakey = ssl_key_load(optarg);
+	ssl_x509_refcount_inc(conn_opts->cacrt);
+	sk_X509_insert(conn_opts->chain, conn_opts->cacrt, 0);
+	if (!conn_opts->cakey) {
+		conn_opts->cakey = ssl_key_load(optarg);
 	}
 #ifndef OPENSSL_NO_DH
-	if (!opts->dh) {
-		opts->dh = ssl_dh_load(optarg);
+	if (!conn_opts->dh) {
+		conn_opts->dh = ssl_dh_load(optarg);
 	}
 #endif /* !OPENSSL_NO_DH */
 #ifdef DEBUG_OPTS
@@ -1288,7 +1337,7 @@ opts_set_cacrt(opts_t *opts, const char *argv0, const char *optarg, global_tmp_o
 }
 
 int
-opts_set_cakey(opts_t *opts, const char *argv0, const char *optarg, global_tmp_opts_t *global_tmp_opts)
+opts_set_cakey(conn_opts_t *conn_opts, const char *argv0, const char *optarg, global_tmp_opts_t *global_tmp_opts)
 {
 	if (global_tmp_opts) {
 		if (global_tmp_opts->cakey_str)
@@ -1298,10 +1347,10 @@ opts_set_cakey(opts_t *opts, const char *argv0, const char *optarg, global_tmp_o
 			return oom_return(argv0);
 	}
 
-	if (opts->cakey)
-		EVP_PKEY_free(opts->cakey);
-	opts->cakey = ssl_key_load(optarg);
-	if (!opts->cakey) {
+	if (conn_opts->cakey)
+		EVP_PKEY_free(conn_opts->cakey);
+	conn_opts->cakey = ssl_key_load(optarg);
+	if (!conn_opts->cakey) {
 		fprintf(stderr, "%s: error loading CA key from '%s':\n",
 		        argv0, optarg);
 		if (errno) {
@@ -1311,16 +1360,16 @@ opts_set_cakey(opts_t *opts, const char *argv0, const char *optarg, global_tmp_o
 		}
 		return -1;
 	}
-	if (!opts->cacrt) {
-		opts->cacrt = ssl_x509_load(optarg);
-		if (opts->cacrt) {
-			ssl_x509_refcount_inc(opts->cacrt);
-			sk_X509_insert(opts->chain, opts->cacrt, 0);
+	if (!conn_opts->cacrt) {
+		conn_opts->cacrt = ssl_x509_load(optarg);
+		if (conn_opts->cacrt) {
+			ssl_x509_refcount_inc(conn_opts->cacrt);
+			sk_X509_insert(conn_opts->chain, conn_opts->cacrt, 0);
 		}
 	}
 #ifndef OPENSSL_NO_DH
-	if (!opts->dh) {
-		opts->dh = ssl_dh_load(optarg);
+	if (!conn_opts->dh) {
+		conn_opts->dh = ssl_dh_load(optarg);
 	}
 #endif /* !OPENSSL_NO_DH */
 #ifdef DEBUG_OPTS
@@ -1330,7 +1379,7 @@ opts_set_cakey(opts_t *opts, const char *argv0, const char *optarg, global_tmp_o
 }
 
 int
-opts_set_chain(opts_t *opts, const char *argv0, const char *optarg, global_tmp_opts_t *global_tmp_opts)
+opts_set_chain(conn_opts_t *opts, const char *argv0, const char *optarg, global_tmp_opts_t *global_tmp_opts)
 {
 	if (global_tmp_opts) {
 		if (global_tmp_opts->chain_str)
@@ -1357,7 +1406,7 @@ opts_set_chain(opts_t *opts, const char *argv0, const char *optarg, global_tmp_o
 }
 
 int
-opts_set_leafcrlurl(opts_t *opts, const char *argv0, const char *optarg, global_tmp_opts_t *global_tmp_opts)
+opts_set_leafcrlurl(conn_opts_t *conn_opts, const char *argv0, const char *optarg, global_tmp_opts_t *global_tmp_opts)
 {
 	if (global_tmp_opts) {
 		if (global_tmp_opts->leafcrlurl_str)
@@ -1367,13 +1416,13 @@ opts_set_leafcrlurl(opts_t *opts, const char *argv0, const char *optarg, global_
 			return oom_return(argv0);
 	}
 
-	if (opts->leafcrlurl)
-		free(opts->leafcrlurl);
-	opts->leafcrlurl = strdup(optarg);
-	if (!opts->leafcrlurl)
+	if (conn_opts->leafcrlurl)
+		free(conn_opts->leafcrlurl);
+	conn_opts->leafcrlurl = strdup(optarg);
+	if (!conn_opts->leafcrlurl)
 		return oom_return(argv0);
 #ifdef DEBUG_OPTS
-	log_dbg_printf("LeafCRLURL: %s\n", opts->leafcrlurl);
+	log_dbg_printf("LeafCRLURL: %s\n", conn_opts->leafcrlurl);
 #endif /* DEBUG_OPTS */
 	return 0;
 }
@@ -1390,31 +1439,31 @@ set_certgendir(global_t *global, const char *argv0, const char *optarg)
 }
 
 void
-opts_set_deny_ocsp(opts_t *opts)
+opts_set_deny_ocsp(conn_opts_t *conn_opts)
 {
-	opts->deny_ocsp = 1;
+	conn_opts->deny_ocsp = 1;
+}
+
+static void
+opts_unset_deny_ocsp(conn_opts_t *conn_opts)
+{
+	conn_opts->deny_ocsp = 0;
 }
 
 void
-opts_unset_deny_ocsp(opts_t *opts)
+opts_set_passthrough(conn_opts_t *conn_opts)
 {
-	opts->deny_ocsp = 0;
+	conn_opts->passthrough = 1;
 }
 
 void
-opts_set_passthrough(opts_t *opts)
+opts_unset_passthrough(conn_opts_t *conn_opts)
 {
-	opts->passthrough = 1;
-}
-
-void
-opts_unset_passthrough(opts_t *opts)
-{
-	opts->passthrough = 0;
+	conn_opts->passthrough = 0;
 }
 
 int
-opts_set_clientcrt(opts_t *opts, const char *argv0, const char *optarg, global_tmp_opts_t *global_tmp_opts)
+opts_set_clientcrt(conn_opts_t *conn_opts, const char *argv0, const char *optarg, global_tmp_opts_t *global_tmp_opts)
 {
 	if (global_tmp_opts) {
 		if (global_tmp_opts->clientcrt_str)
@@ -1424,10 +1473,10 @@ opts_set_clientcrt(opts_t *opts, const char *argv0, const char *optarg, global_t
 			return oom_return(argv0);
 	}
 
-	if (opts->clientcrt)
-		X509_free(opts->clientcrt);
-	opts->clientcrt = ssl_x509_load(optarg);
-	if (!opts->clientcrt) {
+	if (conn_opts->clientcrt)
+		X509_free(conn_opts->clientcrt);
+	conn_opts->clientcrt = ssl_x509_load(optarg);
+	if (!conn_opts->clientcrt) {
 		fprintf(stderr, "%s: error loading client cert from '%s':\n",
 		        argv0, optarg);
 		if (errno) {
@@ -1444,7 +1493,7 @@ opts_set_clientcrt(opts_t *opts, const char *argv0, const char *optarg, global_t
 }
 
 int
-opts_set_clientkey(opts_t *opts, const char *argv0, const char *optarg, global_tmp_opts_t *global_tmp_opts)
+opts_set_clientkey(conn_opts_t *opts, const char *argv0, const char *optarg, global_tmp_opts_t *global_tmp_opts)
 {
 	if (global_tmp_opts) {
 		if (global_tmp_opts->clientkey_str)
@@ -1475,7 +1524,7 @@ opts_set_clientkey(opts_t *opts, const char *argv0, const char *optarg, global_t
 
 #ifndef OPENSSL_NO_DH
 int
-opts_set_dh(opts_t *opts, const char *argv0, const char *optarg, global_tmp_opts_t *global_tmp_opts)
+opts_set_dh(conn_opts_t *conn_opts, const char *argv0, const char *optarg, global_tmp_opts_t *global_tmp_opts)
 {
 	if (global_tmp_opts) {
 		if (global_tmp_opts->dh_str)
@@ -1485,10 +1534,10 @@ opts_set_dh(opts_t *opts, const char *argv0, const char *optarg, global_tmp_opts
 			return oom_return(argv0);
 	}
 
-	if (opts->dh)
-		DH_free(opts->dh);
-	opts->dh = ssl_dh_load(optarg);
-	if (!opts->dh) {
+	if (conn_opts->dh)
+		DH_free(conn_opts->dh);
+	conn_opts->dh = ssl_dh_load(optarg);
+	if (!conn_opts->dh) {
 		fprintf(stderr, "%s: error loading DH params from '%s':\n",
 		        argv0, optarg);
 		if (errno) {
@@ -1507,62 +1556,62 @@ opts_set_dh(opts_t *opts, const char *argv0, const char *optarg, global_tmp_opts
 
 #ifndef OPENSSL_NO_ECDH
 int
-opts_set_ecdhcurve(opts_t *opts, const char *argv0, const char *optarg)
+opts_set_ecdhcurve(conn_opts_t *conn_opts, const char *argv0, const char *optarg)
 {
 	EC_KEY *ec;
-	if (opts->ecdhcurve)
-		free(opts->ecdhcurve);
+	if (conn_opts->ecdhcurve)
+		free(conn_opts->ecdhcurve);
 	if (!(ec = ssl_ec_by_name(optarg))) {
 		fprintf(stderr, "%s: unknown curve '%s'\n", argv0, optarg);
 		return -1;
 	}
 	EC_KEY_free(ec);
-	opts->ecdhcurve = strdup(optarg);
-	if (!opts->ecdhcurve)
+	conn_opts->ecdhcurve = strdup(optarg);
+	if (!conn_opts->ecdhcurve)
 		return oom_return(argv0);
 #ifdef DEBUG_OPTS
-	log_dbg_printf("ECDHCurve: %s\n", opts->ecdhcurve);
+	log_dbg_printf("ECDHCurve: %s\n", conn_opts->ecdhcurve);
 #endif /* DEBUG_OPTS */
 	return 0;
 }
 #endif /* !OPENSSL_NO_ECDH */
 
-void
-opts_set_sslcomp(opts_t *opts)
+static void
+opts_set_sslcomp(conn_opts_t *conn_opts)
 {
-	opts->sslcomp = 1;
+	conn_opts->sslcomp = 1;
 }
 
 void
-opts_unset_sslcomp(opts_t *opts)
+opts_unset_sslcomp(conn_opts_t *conn_opts)
 {
-	opts->sslcomp = 0;
+	conn_opts->sslcomp = 0;
 }
 
 int
-opts_set_ciphers(opts_t *opts, const char *argv0, const char *optarg)
+opts_set_ciphers(conn_opts_t *conn_opts, const char *argv0, const char *optarg)
 {
-	if (opts->ciphers)
-		free(opts->ciphers);
-	opts->ciphers = strdup(optarg);
-	if (!opts->ciphers)
+	if (conn_opts->ciphers)
+		free(conn_opts->ciphers);
+	conn_opts->ciphers = strdup(optarg);
+	if (!conn_opts->ciphers)
 		return oom_return(argv0);
 #ifdef DEBUG_OPTS
-	log_dbg_printf("Ciphers: %s\n", opts->ciphers);
+	log_dbg_printf("Ciphers: %s\n", conn_opts->ciphers);
 #endif /* DEBUG_OPTS */
 	return 0;
 }
 
 int
-opts_set_ciphersuites(opts_t *opts, const char *argv0, const char *optarg)
+opts_set_ciphersuites(conn_opts_t *conn_opts, const char *argv0, const char *optarg)
 {
-	if (opts->ciphersuites)
-		free(opts->ciphersuites);
-	opts->ciphersuites = strdup(optarg);
-	if (!opts->ciphersuites)
+	if (conn_opts->ciphersuites)
+		free(conn_opts->ciphersuites);
+	conn_opts->ciphersuites = strdup(optarg);
+	if (!conn_opts->ciphersuites)
 		return oom_return(argv0);
 #ifdef DEBUG_OPTS
-	log_dbg_printf("CipherSuites: %s\n", opts->ciphersuites);
+	log_dbg_printf("CipherSuites: %s\n", conn_opts->ciphersuites);
 #endif /* DEBUG_OPTS */
 	return 0;
 }
@@ -1571,12 +1620,12 @@ opts_set_ciphersuites(opts_t *opts, const char *argv0, const char *optarg)
  * Parse SSL proto string in optarg and look up the corresponding SSL method.
  */
 int
-opts_force_proto(opts_t *opts, const char *argv0, const char *optarg)
+opts_force_proto(conn_opts_t *conn_opts, const char *argv0, const char *optarg)
 {
 #if (OPENSSL_VERSION_NUMBER < 0x10100000L) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER < 0x20702000L)
-	if (opts->sslmethod != SSLv23_method) {
+	if (conn_opts->sslmethod != SSLv23_method) {
 #else /* OPENSSL_VERSION_NUMBER >= 0x10100000L */
-	if (opts->sslversion) {
+	if (conn_opts->sslversion) {
 #endif /* OPENSSL_VERSION_NUMBER >= 0x10100000L */
 		fprintf(stderr, "%s: cannot use -r multiple times\n", argv0);
 		return -1;
@@ -1585,27 +1634,27 @@ opts_force_proto(opts_t *opts, const char *argv0, const char *optarg)
 #if (OPENSSL_VERSION_NUMBER < 0x10100000L) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER < 0x20702000L)
 #ifdef HAVE_SSLV2
 	if (!strcmp(optarg, "ssl2")) {
-		opts->sslmethod = SSLv2_method;
+		conn_opts->sslmethod = SSLv2_method;
 	} else
 #endif /* HAVE_SSLV2 */
 #ifdef HAVE_SSLV3
 	if (!strcmp(optarg, "ssl3")) {
-		opts->sslmethod = SSLv3_method;
+		conn_opts->sslmethod = SSLv3_method;
 	} else
 #endif /* HAVE_SSLV3 */
 #ifdef HAVE_TLSV10
 	if (!strcmp(optarg, "tls10") || !strcmp(optarg, "tls1")) {
-		opts->sslmethod = TLSv1_method;
+		conn_opts->sslmethod = TLSv1_method;
 	} else
 #endif /* HAVE_TLSV10 */
 #ifdef HAVE_TLSV11
 	if (!strcmp(optarg, "tls11")) {
-		opts->sslmethod = TLSv1_1_method;
+		conn_opts->sslmethod = TLSv1_1_method;
 	} else
 #endif /* HAVE_TLSV11 */
 #ifdef HAVE_TLSV12
 	if (!strcmp(optarg, "tls12")) {
-		opts->sslmethod = TLSv1_2_method;
+		conn_opts->sslmethod = TLSv1_2_method;
 	} else
 #endif /* HAVE_TLSV12 */
 /* There is no TLSv1_3_method defined,
@@ -1618,27 +1667,27 @@ opts_force_proto(opts_t *opts, const char *argv0, const char *optarg)
  */
 #ifdef HAVE_SSLV3
 	if (!strcmp(optarg, "ssl3")) {
-		opts->sslversion = SSL3_VERSION;
+		conn_opts->sslversion = SSL3_VERSION;
 	} else
 #endif /* HAVE_SSLV3 */
 #ifdef HAVE_TLSV10
 	if (!strcmp(optarg, "tls10") || !strcmp(optarg, "tls1")) {
-		opts->sslversion = TLS1_VERSION;
+		conn_opts->sslversion = TLS1_VERSION;
 	} else
 #endif /* HAVE_TLSV10 */
 #ifdef HAVE_TLSV11
 	if (!strcmp(optarg, "tls11")) {
-		opts->sslversion = TLS1_1_VERSION;
+		conn_opts->sslversion = TLS1_1_VERSION;
 	} else
 #endif /* HAVE_TLSV11 */
 #ifdef HAVE_TLSV12
 	if (!strcmp(optarg, "tls12")) {
-		opts->sslversion = TLS1_2_VERSION;
+		conn_opts->sslversion = TLS1_2_VERSION;
 	} else
 #endif /* HAVE_TLSV12 */
 #ifdef HAVE_TLSV13
 	if (!strcmp(optarg, "tls13")) {
-		opts->sslversion = TLS1_3_VERSION;
+		conn_opts->sslversion = TLS1_3_VERSION;
 	} else
 #endif /* HAVE_TLSV13 */
 #endif /* OPENSSL_VERSION_NUMBER >= 0x10100000L */
@@ -1657,36 +1706,36 @@ opts_force_proto(opts_t *opts, const char *argv0, const char *optarg)
  * Parse SSL proto string in optarg and set the corresponding no_foo bit.
  */
 int
-opts_disable_proto(opts_t *opts, const char *argv0, const char *optarg)
+opts_disable_proto(conn_opts_t *conn_opts, const char *argv0, const char *optarg)
 {
 #ifdef HAVE_SSLV2
 	if (!strcmp(optarg, "ssl2")) {
-		opts->no_ssl2 = 1;
+		conn_opts->no_ssl2 = 1;
 	} else
 #endif /* HAVE_SSLV2 */
 #ifdef HAVE_SSLV3
 	if (!strcmp(optarg, "ssl3")) {
-		opts->no_ssl3 = 1;
+		conn_opts->no_ssl3 = 1;
 	} else
 #endif /* HAVE_SSLV3 */
 #ifdef HAVE_TLSV10
 	if (!strcmp(optarg, "tls10") || !strcmp(optarg, "tls1")) {
-		opts->no_tls10 = 1;
+		conn_opts->no_tls10 = 1;
 	} else
 #endif /* HAVE_TLSV10 */
 #ifdef HAVE_TLSV11
 	if (!strcmp(optarg, "tls11")) {
-		opts->no_tls11 = 1;
+		conn_opts->no_tls11 = 1;
 	} else
 #endif /* HAVE_TLSV11 */
 #ifdef HAVE_TLSV12
 	if (!strcmp(optarg, "tls12")) {
-		opts->no_tls12 = 1;
+		conn_opts->no_tls12 = 1;
 	} else
 #endif /* HAVE_TLSV12 */
 #ifdef HAVE_TLSV13
 	if (!strcmp(optarg, "tls13")) {
-		opts->no_tls13 = 1;
+		conn_opts->no_tls13 = 1;
 	} else
 #endif /* HAVE_TLSV13 */
 	{
@@ -1701,32 +1750,32 @@ opts_disable_proto(opts_t *opts, const char *argv0, const char *optarg)
 }
 
 static int WUNRES
-opts_set_min_proto(UNUSED opts_t *opts, const char *argv0, const char *optarg)
+opts_set_min_proto(UNUSED conn_opts_t *conn_opts, const char *argv0, const char *optarg)
 {
 #if (OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER >= 0x20702000L)
 #ifdef HAVE_SSLV3
 	if (!strcmp(optarg, "ssl3")) {
-		opts->minsslversion = SSL3_VERSION;
+		conn_opts->minsslversion = SSL3_VERSION;
 	} else
 #endif /* HAVE_SSLV3 */
 #ifdef HAVE_TLSV10
 	if (!strcmp(optarg, "tls10") || !strcmp(optarg, "tls1")) {
-		opts->minsslversion = TLS1_VERSION;
+		conn_opts->minsslversion = TLS1_VERSION;
 	} else
 #endif /* HAVE_TLSV10 */
 #ifdef HAVE_TLSV11
 	if (!strcmp(optarg, "tls11")) {
-		opts->minsslversion = TLS1_1_VERSION;
+		conn_opts->minsslversion = TLS1_1_VERSION;
 	} else
 #endif /* HAVE_TLSV11 */
 #ifdef HAVE_TLSV12
 	if (!strcmp(optarg, "tls12")) {
-		opts->minsslversion = TLS1_2_VERSION;
+		conn_opts->minsslversion = TLS1_2_VERSION;
 	} else
 #endif /* HAVE_TLSV12 */
 #ifdef HAVE_TLSV13
 	if (!strcmp(optarg, "tls13")) {
-		opts->minsslversion = TLS1_3_VERSION;
+		conn_opts->minsslversion = TLS1_3_VERSION;
 	} else
 #endif /* HAVE_TLSV13 */
 #endif /* OPENSSL_VERSION_NUMBER >= 0x10100000L */
@@ -1742,32 +1791,32 @@ opts_set_min_proto(UNUSED opts_t *opts, const char *argv0, const char *optarg)
 }
 
 static int WUNRES
-opts_set_max_proto(UNUSED opts_t *opts, const char *argv0, const char *optarg)
+opts_set_max_proto(UNUSED conn_opts_t *conn_opts, const char *argv0, const char *optarg)
 {
 #if (OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER >= 0x20702000L)
 #ifdef HAVE_SSLV3
 	if (!strcmp(optarg, "ssl3")) {
-		opts->maxsslversion = SSL3_VERSION;
+		conn_opts->maxsslversion = SSL3_VERSION;
 	} else
 #endif /* HAVE_SSLV3 */
 #ifdef HAVE_TLSV10
 	if (!strcmp(optarg, "tls10") || !strcmp(optarg, "tls1")) {
-		opts->maxsslversion = TLS1_VERSION;
+		conn_opts->maxsslversion = TLS1_VERSION;
 	} else
 #endif /* HAVE_TLSV10 */
 #ifdef HAVE_TLSV11
 	if (!strcmp(optarg, "tls11")) {
-		opts->maxsslversion = TLS1_1_VERSION;
+		conn_opts->maxsslversion = TLS1_1_VERSION;
 	} else
 #endif /* HAVE_TLSV11 */
 #ifdef HAVE_TLSV12
 	if (!strcmp(optarg, "tls12")) {
-		opts->maxsslversion = TLS1_2_VERSION;
+		conn_opts->maxsslversion = TLS1_2_VERSION;
 	} else
 #endif /* HAVE_TLSV12 */
 #ifdef HAVE_TLSV13
 	if (!strcmp(optarg, "tls13")) {
-		opts->maxsslversion = TLS1_3_VERSION;
+		conn_opts->maxsslversion = TLS1_3_VERSION;
 	} else
 #endif /* HAVE_TLSV13 */
 #endif /* OPENSSL_VERSION_NUMBER >= 0x10100000L */
@@ -1783,80 +1832,80 @@ opts_set_max_proto(UNUSED opts_t *opts, const char *argv0, const char *optarg)
 }
 
 static void
-opts_set_remove_http_accept_encoding(opts_t *opts)
+opts_set_remove_http_accept_encoding(conn_opts_t *conn_opts)
 {
-	opts->remove_http_accept_encoding = 1;
+	conn_opts->remove_http_accept_encoding = 1;
 }
 
 static void
-opts_unset_remove_http_accept_encoding(opts_t *opts)
+opts_unset_remove_http_accept_encoding(conn_opts_t *conn_opts)
 {
-	opts->remove_http_accept_encoding = 0;
+	conn_opts->remove_http_accept_encoding = 0;
 }
 
 static void
-opts_set_remove_http_referer(opts_t *opts)
+opts_set_remove_http_referer(conn_opts_t *conn_opts)
 {
-	opts->remove_http_referer = 1;
+	conn_opts->remove_http_referer = 1;
 }
 
 static void
-opts_unset_remove_http_referer(opts_t *opts)
+opts_unset_remove_http_referer(conn_opts_t *conn_opts)
 {
-	opts->remove_http_referer = 0;
+	conn_opts->remove_http_referer = 0;
 }
 
 static void
-opts_set_verify_peer(opts_t *opts)
+opts_set_verify_peer(conn_opts_t *conn_opts)
 {
-	opts->verify_peer = 1;
+	conn_opts->verify_peer = 1;
 }
 
 static void
-opts_unset_verify_peer(opts_t *opts)
+opts_unset_verify_peer(conn_opts_t *conn_opts)
 {
-	opts->verify_peer = 0;
+	conn_opts->verify_peer = 0;
 }
 
 static void
-opts_set_allow_wrong_host(opts_t *opts)
+opts_set_allow_wrong_host(conn_opts_t *conn_opts)
 {
-	opts->allow_wrong_host = 1;
+	conn_opts->allow_wrong_host = 1;
 }
 
 static void
-opts_unset_allow_wrong_host(opts_t *opts)
+opts_unset_allow_wrong_host(conn_opts_t *conn_opts)
 {
-	opts->allow_wrong_host = 0;
+	conn_opts->allow_wrong_host = 0;
 }
 
 #ifndef WITHOUT_USERAUTH
 static void
-opts_set_user_auth(UNUSED opts_t *opts)
+opts_set_user_auth(UNUSED conn_opts_t *conn_opts)
 {
 #if defined(__OpenBSD__) || defined(__linux__)
 	// Enable user auth on OpenBSD and Linux only
-	opts->user_auth = 1;
+	conn_opts->user_auth = 1;
 #endif /* __OpenBSD__ || __linux__ */
 }
 
 static void
-opts_unset_user_auth(opts_t *opts)
+opts_unset_user_auth(conn_opts_t *conn_opts)
 {
-	opts->user_auth = 0;
+	conn_opts->user_auth = 0;
 }
 #endif /* !WITHOUT_USERAUTH */
 
 static void
-opts_set_validate_proto(opts_t *opts)
+opts_set_validate_proto(conn_opts_t *conn_opts)
 {
-	opts->validate_proto = 1;
+	conn_opts->validate_proto = 1;
 }
 
 static void
-opts_unset_validate_proto(opts_t *opts)
+opts_unset_validate_proto(conn_opts_t *conn_opts)
 {
-	opts->validate_proto = 0;
+	conn_opts->validate_proto = 0;
 }
 
 int
@@ -1876,8 +1925,8 @@ global_set_leafkey(global_t *global, const char *argv0, const char *optarg)
 		return -1;
 	}
 #ifndef OPENSSL_NO_DH
-	if (!global->opts->dh) {
-		global->opts->dh = ssl_dh_load(optarg);
+	if (!global->conn_opts->dh) {
+		global->conn_opts->dh = ssl_dh_load(optarg);
 	}
 #endif /* !OPENSSL_NO_DH */
 #ifdef DEBUG_OPTS
@@ -2415,7 +2464,7 @@ check_value_yesno(const char *value, const char *name, int line_num)
  * them cloning global opts while creating proxyspecs
  */
 static int
-set_option(opts_t *opts, const char *argv0,
+set_option(opts_t *opts, conn_opts_t *conn_opts, const char *argv0,
 		const char *name, char *value, char **natengine, int line_num, global_tmp_opts_t *global_tmp_opts)
 {
 	int yes;
@@ -2426,63 +2475,63 @@ set_option(opts_t *opts, const char *argv0,
 	}
 
 	if (equal(name, "CACert")) {
-		return opts_set_cacrt(opts, argv0, value, global_tmp_opts);
+		return opts_set_cacrt(conn_opts, argv0, value, global_tmp_opts);
 	} else if (equal(name, "CAKey")) {
-		return opts_set_cakey(opts, argv0, value, global_tmp_opts);
+		return opts_set_cakey(conn_opts, argv0, value, global_tmp_opts);
 	} else if (equal(name, "ClientCert")) {
-		return opts_set_clientcrt(opts, argv0, value, global_tmp_opts);
+		return opts_set_clientcrt(conn_opts, argv0, value, global_tmp_opts);
 	} else if (equal(name, "ClientKey")) {
-		return opts_set_clientkey(opts, argv0, value, global_tmp_opts);
+		return opts_set_clientkey(conn_opts, argv0, value, global_tmp_opts);
 	} else if (equal(name, "CAChain")) {
-		return opts_set_chain(opts, argv0, value, global_tmp_opts);
+		return opts_set_chain(conn_opts, argv0, value, global_tmp_opts);
 	} else if (equal(name, "LeafCRLURL")) {
-		return opts_set_leafcrlurl(opts, argv0, value, global_tmp_opts);
+		return opts_set_leafcrlurl(conn_opts, argv0, value, global_tmp_opts);
 	} else if (equal(name, "DenyOCSP")) {
 		yes = check_value_yesno(value, "DenyOCSP", line_num);
 		if (yes == -1)
 			return -1;
-		yes ? opts_set_deny_ocsp(opts) : opts_unset_deny_ocsp(opts);
+		yes ? opts_set_deny_ocsp(conn_opts) : opts_unset_deny_ocsp(conn_opts);
 #ifdef DEBUG_OPTS
-		log_dbg_printf("DenyOCSP: %u\n", opts->deny_ocsp);
+		log_dbg_printf("DenyOCSP: %u\n", conn_opts->deny_ocsp);
 #endif /* DEBUG_OPTS */
 	} else if (equal(name, "Passthrough")) {
 		yes = check_value_yesno(value, "Passthrough", line_num);
 		if (yes == -1)
 			return -1;
-		yes ? opts_set_passthrough(opts) : opts_unset_passthrough(opts);
+		yes ? opts_set_passthrough(conn_opts) : opts_unset_passthrough(conn_opts);
 #ifdef DEBUG_OPTS
-		log_dbg_printf("Passthrough: %u\n", opts->passthrough);
+		log_dbg_printf("Passthrough: %u\n", conn_opts->passthrough);
 #endif /* DEBUG_OPTS */
 #ifndef OPENSSL_NO_DH
 	} else if (equal(name, "DHGroupParams")) {
-		return opts_set_dh(opts, argv0, value, global_tmp_opts);
+		return opts_set_dh(conn_opts, argv0, value, global_tmp_opts);
 #endif /* !OPENSSL_NO_DH */
 #ifndef OPENSSL_NO_ECDH
 	} else if (equal(name, "ECDHCurve")) {
-		return opts_set_ecdhcurve(opts, argv0, value);
+		return opts_set_ecdhcurve(conn_opts, argv0, value);
 #endif /* !OPENSSL_NO_ECDH */
 #ifdef SSL_OP_NO_COMPRESSION
 	} else if (equal(name, "SSLCompression")) {
 		yes = check_value_yesno(value, "SSLCompression", line_num);
 		if (yes == -1)
 			return -1;
-		yes ? opts_set_sslcomp(opts) : opts_unset_sslcomp(opts);
+		yes ? opts_set_sslcomp(conn_opts) : opts_unset_sslcomp(conn_opts);
 #ifdef DEBUG_OPTS
-		log_dbg_printf("SSLCompression: %u\n", opts->sslcomp);
+		log_dbg_printf("SSLCompression: %u\n", conn_opts->sslcomp);
 #endif /* DEBUG_OPTS */
 #endif /* SSL_OP_NO_COMPRESSION */
 	} else if (equal(name, "ForceSSLProto")) {
-		return opts_force_proto(opts, argv0, value);
+		return opts_force_proto(conn_opts, argv0, value);
 	} else if (equal(name, "DisableSSLProto")) {
-		return opts_disable_proto(opts, argv0, value);
+		return opts_disable_proto(conn_opts, argv0, value);
 	} else if (equal(name, "MinSSLProto")) {
-		return opts_set_min_proto(opts, argv0, value);
+		return opts_set_min_proto(conn_opts, argv0, value);
 	} else if (equal(name, "MaxSSLProto")) {
-		return opts_set_max_proto(opts, argv0, value);
+		return opts_set_max_proto(conn_opts, argv0, value);
 	} else if (equal(name, "Ciphers")) {
-		return opts_set_ciphers(opts, argv0, value);
+		return opts_set_ciphers(conn_opts, argv0, value);
 	} else if (equal(name, "CipherSuites")) {
-		return opts_set_ciphersuites(opts, argv0, value);
+		return opts_set_ciphersuites(conn_opts, argv0, value);
 	} else if (equal(name, "NATEngine")) {
 		if (*natengine)
 			free(*natengine);
@@ -2497,22 +2546,22 @@ set_option(opts_t *opts, const char *argv0,
 		yes = check_value_yesno(value, "UserAuth", line_num);
 		if (yes == -1)
 			return -1;
-		yes ? opts_set_user_auth(opts) : opts_unset_user_auth(opts);
+		yes ? opts_set_user_auth(conn_opts) : opts_unset_user_auth(conn_opts);
 #ifdef DEBUG_OPTS
-		log_dbg_printf("UserAuth: %u\n", opts->user_auth);
+		log_dbg_printf("UserAuth: %u\n", conn_opts->user_auth);
 #endif /* DEBUG_OPTS */
 	} else if (equal(name, "UserAuthURL")) {
-		return opts_set_user_auth_url(opts, argv0, value);
+		return opts_set_user_auth_url(conn_opts, argv0, value);
 	} else if (equal(name, "UserTimeout")) {
 		unsigned int i = atoi(value);
 		if (i <= 86400) {
-			opts->user_timeout = i;
+			conn_opts->user_timeout = i;
 		} else {
 			fprintf(stderr, "Invalid UserTimeout %s on line %d, use 0-86400\n", value, line_num);
 			return -1;
 		}
 #ifdef DEBUG_OPTS
-		log_dbg_printf("UserTimeout: %u\n", opts->user_timeout);
+		log_dbg_printf("UserTimeout: %u\n", conn_opts->user_timeout);
 #endif /* DEBUG_OPTS */
 	} else if (equal(name, "DivertUsers")) {
 		return filter_userlist_set(value, line_num, &opts->divertusers, "DivertUsers");
@@ -2523,63 +2572,63 @@ set_option(opts_t *opts, const char *argv0,
 		yes = check_value_yesno(value, "ValidateProto", line_num);
 		if (yes == -1)
 			return -1;
-		yes ? opts_set_validate_proto(opts) : opts_unset_validate_proto(opts);
+		yes ? opts_set_validate_proto(conn_opts) : opts_unset_validate_proto(conn_opts);
 #ifdef DEBUG_OPTS
-		log_dbg_printf("ValidateProto: %u\n", opts->validate_proto);
+		log_dbg_printf("ValidateProto: %u\n", conn_opts->validate_proto);
 #endif /* DEBUG_OPTS */
 	} else if (equal(name, "MaxHTTPHeaderSize")) {
 		unsigned int i = atoi(value);
 		if (i >= 1024 && i <= 65536) {
-			opts->max_http_header_size = i;
+			conn_opts->max_http_header_size = i;
 		} else {
 			fprintf(stderr, "Invalid MaxHTTPHeaderSize %s on line %d, use 1024-65536\n", value, line_num);
 			return -1;
 		}
 #ifdef DEBUG_OPTS
-		log_dbg_printf("MaxHTTPHeaderSize: %u\n", opts->max_http_header_size);
+		log_dbg_printf("MaxHTTPHeaderSize: %u\n", conn_opts->max_http_header_size);
 #endif /* DEBUG_OPTS */
 	} else if (equal(name, "VerifyPeer")) {
 		yes = check_value_yesno(value, "VerifyPeer", line_num);
 		if (yes == -1)
 			return -1;
-		yes ? opts_set_verify_peer(opts) : opts_unset_verify_peer(opts);
+		yes ? opts_set_verify_peer(conn_opts) : opts_unset_verify_peer(conn_opts);
 #ifdef DEBUG_OPTS
-		log_dbg_printf("VerifyPeer: %u\n", opts->verify_peer);
+		log_dbg_printf("VerifyPeer: %u\n", conn_opts->verify_peer);
 #endif /* DEBUG_OPTS */
 	} else if (equal(name, "AllowWrongHost")) {
 		yes = check_value_yesno(value, "AllowWrongHost", line_num);
 		if (yes == -1)
 			return -1;
-		yes ? opts_set_allow_wrong_host(opts) : opts_unset_allow_wrong_host(opts);
+		yes ? opts_set_allow_wrong_host(conn_opts) : opts_unset_allow_wrong_host(conn_opts);
 #ifdef DEBUG_OPTS
-		log_dbg_printf("AllowWrongHost: %u\n", opts->allow_wrong_host);
+		log_dbg_printf("AllowWrongHost: %u\n", conn_opts->allow_wrong_host);
 #endif /* DEBUG_OPTS */
 	} else if (equal(name, "RemoveHTTPAcceptEncoding")) {
 		yes = check_value_yesno(value, "RemoveHTTPAcceptEncoding", line_num);
 		if (yes == -1)
 			return -1;
-		yes ? opts_set_remove_http_accept_encoding(opts) : opts_unset_remove_http_accept_encoding(opts);
+		yes ? opts_set_remove_http_accept_encoding(conn_opts) : opts_unset_remove_http_accept_encoding(conn_opts);
 #ifdef DEBUG_OPTS
-		log_dbg_printf("RemoveHTTPAcceptEncoding: %u\n", opts->remove_http_accept_encoding);
+		log_dbg_printf("RemoveHTTPAcceptEncoding: %u\n", conn_opts->remove_http_accept_encoding);
 #endif /* DEBUG_OPTS */
 	} else if (equal(name, "RemoveHTTPReferer")) {
 		yes = check_value_yesno(value, "RemoveHTTPReferer", line_num);
 		if (yes == -1)
 			return -1;
-		yes ? opts_set_remove_http_referer(opts) : opts_unset_remove_http_referer(opts);
+		yes ? opts_set_remove_http_referer(conn_opts) : opts_unset_remove_http_referer(conn_opts);
 #ifdef DEBUG_OPTS
-		log_dbg_printf("RemoveHTTPReferer: %u\n", opts->remove_http_referer);
+		log_dbg_printf("RemoveHTTPReferer: %u\n", conn_opts->remove_http_referer);
 #endif /* DEBUG_OPTS */
 	} else if (equal(name, "PassSite")) {
-		return filter_passsite_set(opts, value, line_num);
+		return filter_passsite_set(opts, conn_opts->user_auth, value, line_num);
 	} else if (equal(name, "Define")) {
 		return filter_macro_set(opts, value, line_num);
 	} else if (equal(name, "Split") || equal(name, "Pass") || equal(name, "Block") || equal(name, "Match")) {
-		return filter_rule_set(opts, name, value, line_num);
+		return filter_rule_set(opts, conn_opts->user_auth, name, value, line_num);
 	} else if (equal(name, "Divert")) {
 		yes = is_yesno(value);
 		if (yes == -1)
-			return filter_rule_set(opts, name, value, line_num);
+			return filter_rule_set(opts, conn_opts->user_auth, name, value, line_num);
 		else
 			yes ? opts_set_divert(opts) : opts_unset_divert(opts);
 	} else {
@@ -2670,7 +2719,7 @@ set_proxyspec_option(proxyspec_t *spec, const char *argv0,
 		return 2;
 	}
 	else {
-		return set_option(spec->opts, argv0, name, value, natengine, line_num, NULL);
+		return set_option(spec->opts, spec->conn_opts, argv0, name, value, natengine, line_num, NULL);
 	}
 	return 0;
 }
@@ -3048,7 +3097,7 @@ set_global_option(global_t *global, const char *argv0,
 		}
 		return retval;
 	} else {
-		return set_option(global->opts, argv0, name, value, natengine, *line_num, global_tmp_opts);
+		return set_option(global->opts, global->conn_opts, argv0, name, value, natengine, *line_num, global_tmp_opts);
 	}
 	return 0;
 }

@@ -255,6 +255,7 @@ struct pxy_conn_ctx {
 	pxy_thr_ctx_t *thr;
 
 	pxy_thrmgr_ctx_t *thrmgr;
+	conn_opts_t *conn_opts;
 	proxyspec_t *spec;
 	global_t *global;
 

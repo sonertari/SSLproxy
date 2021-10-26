@@ -287,7 +287,7 @@ protossl_sslctx_setoptions(SSL_CTX *sslctx, pxy_conn_ctx_t *ctx)
 
 #ifdef SSL_OP_NO_SSLv2
 #ifdef HAVE_SSLV2
-	if (ctx->spec->opts->no_ssl2) {
+	if (ctx->conn_opts->no_ssl2) {
 #endif /* HAVE_SSLV2 */
 		SSL_CTX_set_options(sslctx, SSL_OP_NO_SSLv2);
 #ifdef HAVE_SSLV2
@@ -295,40 +295,40 @@ protossl_sslctx_setoptions(SSL_CTX *sslctx, pxy_conn_ctx_t *ctx)
 #endif /* HAVE_SSLV2 */
 #endif /* !SSL_OP_NO_SSLv2 */
 #ifdef HAVE_SSLV3
-	if (ctx->spec->opts->no_ssl3) {
+	if (ctx->conn_opts->no_ssl3) {
 		SSL_CTX_set_options(sslctx, SSL_OP_NO_SSLv3);
 	}
 #endif /* HAVE_SSLV3 */
 #ifdef HAVE_TLSV10
-	if (ctx->spec->opts->no_tls10) {
+	if (ctx->conn_opts->no_tls10) {
 		SSL_CTX_set_options(sslctx, SSL_OP_NO_TLSv1);
 	}
 #endif /* HAVE_TLSV10 */
 #ifdef HAVE_TLSV11
-	if (ctx->spec->opts->no_tls11) {
+	if (ctx->conn_opts->no_tls11) {
 		SSL_CTX_set_options(sslctx, SSL_OP_NO_TLSv1_1);
 	}
 #endif /* HAVE_TLSV11 */
 #ifdef HAVE_TLSV12
-	if (ctx->spec->opts->no_tls12) {
+	if (ctx->conn_opts->no_tls12) {
 		SSL_CTX_set_options(sslctx, SSL_OP_NO_TLSv1_2);
 	}
 #endif /* HAVE_TLSV12 */
 #ifdef HAVE_TLSV13
-	if (ctx->spec->opts->no_tls13) {
+	if (ctx->conn_opts->no_tls13) {
 		SSL_CTX_set_options(sslctx, SSL_OP_NO_TLSv1_3);
 	}
 #endif /* HAVE_TLSV13 */
 
 #ifdef SSL_OP_NO_COMPRESSION
-	if (!ctx->spec->opts->sslcomp) {
+	if (!ctx->conn_opts->sslcomp) {
 		SSL_CTX_set_options(sslctx, SSL_OP_NO_COMPRESSION);
 	}
 #endif /* SSL_OP_NO_COMPRESSION */
 
-	SSL_CTX_set_cipher_list(sslctx, ctx->spec->opts->ciphers);
+	SSL_CTX_set_cipher_list(sslctx, ctx->conn_opts->ciphers);
 #ifdef HAVE_TLSV13
-	SSL_CTX_set_ciphersuites(sslctx, ctx->spec->opts->ciphersuites);
+	SSL_CTX_set_ciphersuites(sslctx, ctx->conn_opts->ciphersuites);
 #endif /* HAVE_TLSV13 */
 
 #if (OPENSSL_VERSION_NUMBER >= 0x10100000L) && !defined(LIBRESSL_VERSION_NUMBER)
@@ -346,7 +346,7 @@ static SSL_CTX *
 protossl_srcsslctx_create(pxy_conn_ctx_t *ctx, X509 *crt, STACK_OF(X509) *chain,
                      EVP_PKEY *key)
 {
-	SSL_CTX *sslctx = SSL_CTX_new(ctx->spec->opts->sslmethod());
+	SSL_CTX *sslctx = SSL_CTX_new(ctx->conn_opts->sslmethod());
 	if (!sslctx) {
 		ctx->enomem = 1;
 		return NULL;
@@ -355,22 +355,22 @@ protossl_srcsslctx_create(pxy_conn_ctx_t *ctx, X509 *crt, STACK_OF(X509) *chain,
 	protossl_sslctx_setoptions(sslctx, ctx);
 
 #if (OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER >= 0x20702000L)
-	if (ctx->spec->opts->minsslversion) {
-		if (SSL_CTX_set_min_proto_version(sslctx, ctx->spec->opts->minsslversion) == 0) {
+	if (ctx->conn_opts->minsslversion) {
+		if (SSL_CTX_set_min_proto_version(sslctx, ctx->conn_opts->minsslversion) == 0) {
 			SSL_CTX_free(sslctx);
 			return NULL;
 		}
 	}
-	if (ctx->spec->opts->maxsslversion) {
-		if (SSL_CTX_set_max_proto_version(sslctx, ctx->spec->opts->maxsslversion) == 0) {
+	if (ctx->conn_opts->maxsslversion) {
+		if (SSL_CTX_set_max_proto_version(sslctx, ctx->conn_opts->maxsslversion) == 0) {
 			SSL_CTX_free(sslctx);
 			return NULL;
 		}
 	}
 	// ForceSSLproto has precedence
-	if (ctx->spec->opts->sslversion) {
-		if (SSL_CTX_set_min_proto_version(sslctx, ctx->spec->opts->sslversion) == 0 ||
-			SSL_CTX_set_max_proto_version(sslctx, ctx->spec->opts->sslversion) == 0) {
+	if (ctx->conn_opts->sslversion) {
+		if (SSL_CTX_set_min_proto_version(sslctx, ctx->conn_opts->sslversion) == 0 ||
+			SSL_CTX_set_max_proto_version(sslctx, ctx->conn_opts->sslversion) == 0) {
 			SSL_CTX_free(sslctx);
 			return NULL;
 		}
@@ -391,15 +391,15 @@ protossl_srcsslctx_create(pxy_conn_ctx_t *ctx, X509 *crt, STACK_OF(X509) *chain,
 	SSL_CTX_set_tlsext_servername_arg(sslctx, ctx);
 #endif /* !OPENSSL_NO_TLSEXT */
 #ifndef OPENSSL_NO_DH
-	if (ctx->spec->opts->dh) {
-		SSL_CTX_set_tmp_dh(sslctx, ctx->spec->opts->dh);
+	if (ctx->conn_opts->dh) {
+		SSL_CTX_set_tmp_dh(sslctx, ctx->conn_opts->dh);
 	} else {
 		SSL_CTX_set_tmp_dh_callback(sslctx, ssl_tmp_dh_callback);
 	}
 #endif /* !OPENSSL_NO_DH */
 #ifndef OPENSSL_NO_ECDH
-	if (ctx->spec->opts->ecdhcurve) {
-		EC_KEY *ecdh = ssl_ec_by_name(ctx->spec->opts->ecdhcurve);
+	if (ctx->conn_opts->ecdhcurve) {
+		EC_KEY *ecdh = ssl_ec_by_name(ctx->conn_opts->ecdhcurve);
 		SSL_CTX_set_tmp_ecdh(sslctx, ecdh);
 		EC_KEY_free(ecdh);
 	} else {
@@ -562,16 +562,16 @@ protossl_srccert_create(pxy_conn_ctx_t *ctx)
 		} else {
 			if (OPTS_DEBUG(ctx->global))
 				log_dbg_printf("Certificate cache: MISS\n");
-			cert->crt = ssl_x509_forge(ctx->spec->opts->cacrt,
-			                           ctx->spec->opts->cakey,
+			cert->crt = ssl_x509_forge(ctx->conn_opts->cacrt,
+			                           ctx->conn_opts->cakey,
 			                           ctx->sslctx->origcrt,
 			                           ctx->global->leafkey,
 			                           NULL,
-			                           ctx->spec->opts->leafcrlurl);
+			                           ctx->conn_opts->leafcrlurl);
 			cachemgr_fkcrt_set(ctx->sslctx->origcrt, cert->crt);
 		}
 		cert_set_key(cert, ctx->global->leafkey);
-		cert_set_chain(cert, ctx->spec->opts->chain);
+		cert_set_chain(cert, ctx->conn_opts->chain);
 		ctx->sslctx->generated_cert = 1;
 	}
 
@@ -940,7 +940,7 @@ protossl_ossl_servername_cb(SSL *ssl, UNUSED int *al, void *arg)
 
 	/* generate a new certificate with sn as additional altSubjectName
 	 * and replace it both in the current SSL ctx and in the cert cache */
-	if (ctx->spec->opts->allow_wrong_host && !ctx->sslctx->immutable_cert &&
+	if (ctx->conn_opts->allow_wrong_host && !ctx->sslctx->immutable_cert &&
 	    !ssl_x509_names_match((sslcrt = SSL_get_certificate(ssl)), sn)) {
 		X509 *newcrt;
 		SSL_CTX *newsslctx;
@@ -949,9 +949,9 @@ protossl_ossl_servername_cb(SSL *ssl, UNUSED int *al, void *arg)
 			log_dbg_printf("Certificate cache: UPDATE "
 			               "(SNI mismatch)\n");
 		}
-		newcrt = ssl_x509_forge(ctx->spec->opts->cacrt, ctx->spec->opts->cakey,
+		newcrt = ssl_x509_forge(ctx->conn_opts->cacrt, ctx->conn_opts->cakey,
 		                        sslcrt, ctx->global->leafkey,
-		                        sn, ctx->spec->opts->leafcrlurl);
+		                        sn, ctx->conn_opts->leafcrlurl);
 		if (!newcrt) {
 			ctx->enomem = 1;
 			return SSL_TLSEXT_ERR_NOACK;
@@ -982,7 +982,7 @@ protossl_ossl_servername_cb(SSL *ssl, UNUSED int *al, void *arg)
 			}
 		}
 
-		newsslctx = protossl_srcsslctx_create(ctx, newcrt, ctx->spec->opts->chain,
+		newsslctx = protossl_srcsslctx_create(ctx, newcrt, ctx->conn_opts->chain,
 		                                 ctx->global->leafkey);
 		if (!newsslctx) {
 			X509_free(newcrt);
@@ -1011,7 +1011,7 @@ protossl_dstssl_create(pxy_conn_ctx_t *ctx)
 	SSL *ssl;
 	SSL_SESSION *sess;
 
-	sslctx = SSL_CTX_new(ctx->spec->opts->sslmethod());
+	sslctx = SSL_CTX_new(ctx->conn_opts->sslmethod());
 	if (!sslctx) {
 		ctx->enomem = 1;
 		return NULL;
@@ -1020,43 +1020,43 @@ protossl_dstssl_create(pxy_conn_ctx_t *ctx)
 	protossl_sslctx_setoptions(sslctx, ctx);
 
 #if (OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER >= 0x20702000L)
-	if (ctx->spec->opts->minsslversion) {
-		if (SSL_CTX_set_min_proto_version(sslctx, ctx->spec->opts->minsslversion) == 0) {
+	if (ctx->conn_opts->minsslversion) {
+		if (SSL_CTX_set_min_proto_version(sslctx, ctx->conn_opts->minsslversion) == 0) {
 			SSL_CTX_free(sslctx);
 			return NULL;
 		}
 	}
-	if (ctx->spec->opts->maxsslversion) {
-		if (SSL_CTX_set_max_proto_version(sslctx, ctx->spec->opts->maxsslversion) == 0) {
+	if (ctx->conn_opts->maxsslversion) {
+		if (SSL_CTX_set_max_proto_version(sslctx, ctx->conn_opts->maxsslversion) == 0) {
 			SSL_CTX_free(sslctx);
 			return NULL;
 		}
 	}
 	// ForceSSLproto has precedence
-	if (ctx->spec->opts->sslversion) {
-		if (SSL_CTX_set_min_proto_version(sslctx, ctx->spec->opts->sslversion) == 0 ||
-			SSL_CTX_set_max_proto_version(sslctx, ctx->spec->opts->sslversion) == 0) {
+	if (ctx->conn_opts->sslversion) {
+		if (SSL_CTX_set_min_proto_version(sslctx, ctx->conn_opts->sslversion) == 0 ||
+			SSL_CTX_set_max_proto_version(sslctx, ctx->conn_opts->sslversion) == 0) {
 			SSL_CTX_free(sslctx);
 			return NULL;
 		}
 	}
 #endif /* OPENSSL_VERSION_NUMBER >= 0x10100000L */
 
-	if (ctx->spec->opts->verify_peer) {
+	if (ctx->conn_opts->verify_peer) {
 		SSL_CTX_set_verify(sslctx, SSL_VERIFY_PEER, NULL);
 		SSL_CTX_set_default_verify_paths(sslctx);
 	} else {
 		SSL_CTX_set_verify(sslctx, SSL_VERIFY_NONE, NULL);
 	}
 
-	if (ctx->spec->opts->clientcrt &&
-	    (SSL_CTX_use_certificate(sslctx, ctx->spec->opts->clientcrt) != 1)) {
+	if (ctx->conn_opts->clientcrt &&
+	    (SSL_CTX_use_certificate(sslctx, ctx->conn_opts->clientcrt) != 1)) {
 		log_dbg_printf("loading dst client certificate failed\n");
 		SSL_CTX_free(sslctx);
 		return NULL;
 	}
-	if (ctx->spec->opts->clientkey &&
-	    (SSL_CTX_use_PrivateKey(sslctx, ctx->spec->opts->clientkey) != 1)) {
+	if (ctx->conn_opts->clientkey &&
+	    (SSL_CTX_use_PrivateKey(sslctx, ctx->conn_opts->clientkey) != 1)) {
 		log_dbg_printf("loading dst client key failed\n");
 		SSL_CTX_free(sslctx);
 		return NULL;
@@ -1527,7 +1527,7 @@ protossl_setup_src_ssl(pxy_conn_ctx_t *ctx)
 	else if (ctx->term) {
 		return -1;
 	}
-	else if (!ctx->enomem && (ctx->pass || ctx->spec->opts->passthrough)) {
+	else if (!ctx->enomem && (ctx->pass || ctx->conn_opts->passthrough)) {
 		log_err_level_printf(LOG_WARNING, "Falling back to passthrough\n");
 		protopassthrough_engage(ctx);
 		// report protocol change by returning 1
@@ -1719,7 +1719,7 @@ protossl_bev_eventcb_error_srvdst(UNUSED struct bufferevent *bev, pxy_conn_ctx_t
 		/* the callout to the original destination failed,
 		 * e.g. because it asked for client cert auth, so
 		 * close the accepted socket and clean up */
-		if (((ctx->spec->opts->passthrough && ctx->sslctx->have_sslerr) || (ctx->pass && !ctx->sslctx->have_sslerr))) {
+		if (((ctx->conn_opts->passthrough && ctx->sslctx->have_sslerr) || (ctx->pass && !ctx->sslctx->have_sslerr))) {
 			/* ssl callout failed, fall back to plain TCP passthrough of SSL connection */
 			log_err_level_printf(LOG_WARNING, "SSL srvdst connection failed; falling back to passthrough\n");
 			ctx->sslctx->have_sslerr = 0;

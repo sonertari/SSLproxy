@@ -349,10 +349,10 @@ protohttp_filter_request_header_line(const char *line, protohttp_ctx_t *http_ctx
 			http_ctx->seen_keyword_count++;
 			return newhdr;
 		// @attention Always use conn ctx for opts, child ctx does not have opts, see the comments in pxy_conn_child_ctx
-		} else if (ctx->spec->opts->remove_http_accept_encoding && !strncasecmp(line, "Accept-Encoding:", 16)) {
+		} else if (ctx->conn_opts->remove_http_accept_encoding && !strncasecmp(line, "Accept-Encoding:", 16)) {
 			http_ctx->seen_keyword_count++;
 			return NULL;
-		} else if (ctx->spec->opts->remove_http_referer && !strncasecmp(line, "Referer:", 8)) {
+		} else if (ctx->conn_opts->remove_http_referer && !strncasecmp(line, "Referer:", 8)) {
 			http_ctx->seen_keyword_count++;
 			return NULL;
 		/* Suppress upgrading to SSL/TLS, WebSockets or HTTP/2 and keep-alive */
@@ -630,7 +630,7 @@ protohttp_filter_request_header(struct evbuffer *inbuf, struct evbuffer *outbuf,
 			}
 
 			/* request header complete */
-			if (ctx->spec->opts->deny_ocsp) {
+			if (ctx->conn_opts->deny_ocsp) {
 				protohttp_ocsp_deny(ctx, http_ctx);
 			}
 		}
@@ -764,7 +764,7 @@ protohttp_validate(pxy_conn_ctx_t *ctx)
 		log_finest("Passed validation");
 		return 0;
 	}
-	if (http_ctx->seen_bytes > ctx->spec->opts->max_http_header_size) {
+	if (http_ctx->seen_bytes > ctx->conn_opts->max_http_header_size) {
 		// Fail validation if still cannot pass as http after reaching max header size
 		http_ctx->not_valid = 1;
 		log_finest_va("Reached max header size, size=%llu", http_ctx->seen_bytes);
@@ -805,22 +805,22 @@ protohttp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	struct evbuffer *outbuf = bufferevent_get_output(ctx->dst.bev);
 
 #ifndef WITHOUT_USERAUTH
-	if (ctx->spec->opts->user_auth && !ctx->user) {
+	if (ctx->conn_opts->user_auth && !ctx->user) {
 		log_finest("Redirecting conn");
 		char *url = protohttp_get_url(inbuf, ctx);
 		pxy_discard_inbuf(bev);
 		if (url) {
-			evbuffer_add_printf(bufferevent_get_output(bev), redirect_url, ctx->spec->opts->user_auth_url, url);
+			evbuffer_add_printf(bufferevent_get_output(bev), redirect_url, ctx->conn_opts->user_auth_url, url);
 			free(url);
 		} else {
-			evbuffer_add_printf(bufferevent_get_output(bev), redirect, ctx->spec->opts->user_auth_url);
+			evbuffer_add_printf(bufferevent_get_output(bev), redirect, ctx->conn_opts->user_auth_url);
 		}
 		ctx->sent_userauth_msg = 1;
 		return;
 	}
 #endif /* !WITHOUT_USERAUTH */
 
-	if (ctx->spec->opts->validate_proto && !ctx->protoctx->is_valid) {
+	if (ctx->conn_opts->validate_proto && !ctx->protoctx->is_valid) {
 		http_ctx->seen_bytes += evbuffer_get_length(inbuf);
 	}
 
@@ -843,7 +843,7 @@ protohttp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		evbuffer_add_buffer(outbuf, inbuf);
 	}
 
-	if (ctx->spec->opts->validate_proto && !ctx->protoctx->is_valid) {
+	if (ctx->conn_opts->validate_proto && !ctx->protoctx->is_valid) {
 		if (protohttp_validate(ctx) == -1) {
 			evbuffer_add(bufferevent_get_output(bev), proto_error, strlen(proto_error));
 			ctx->sent_protoerror_msg = 1;
