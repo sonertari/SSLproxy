@@ -797,8 +797,8 @@ opts_unset_divert(opts_t *opts)
 static int WUNRES
 proxyspec_set_divert_addr(proxyspec_t *spec, char *addr, char *port)
 {
-	if (sys_sockaddr_parse(&spec->conn_dst_addr,
-						&spec->conn_dst_addrlen,
+	if (sys_sockaddr_parse(&spec->divert_addr,
+						&spec->divert_addrlen,
 						addr, port, AF_INET, EVUTIL_AI_PASSIVE) == -1) {
 		return -1;
 	}
@@ -811,8 +811,8 @@ proxyspec_set_divert_addr(proxyspec_t *spec, char *addr, char *port)
 static int WUNRES
 proxyspec_set_return_addr(proxyspec_t *spec, char *addr)
 {
-	if (sys_sockaddr_parse(&spec->child_src_addr,
-						&spec->child_src_addrlen,
+	if (sys_sockaddr_parse(&spec->return_addr,
+						&spec->return_addrlen,
 						addr, "0", AF_INET, EVUTIL_AI_PASSIVE) == -1) {
 		return -1;
 	}
@@ -892,9 +892,9 @@ set_divert(proxyspec_t *spec, int split)
 {
 	// The global divert option -n has precedence over the proxyspec Divert option
 	// Use split mode if no divert address is specified, even if the Divert option is used
-	// The Divert option in structured proxyspecs has precedence over the divert address option (conn_dst_addrlen)
+	// The Divert option in structured proxyspecs has precedence over the divert address option
 	// If the Divert option is not used in structured proxyspecs, use the global Divert option
-	if (split || !spec->conn_dst_addrlen) {
+	if (split || !spec->divert_addrlen) {
 		opts_unset_divert(spec->opts);
 	}
 }
@@ -1183,27 +1183,27 @@ proxyspec_str(proxyspec_t *spec)
 		if (rv < 0)
 			goto out;
 	}
-	if (spec->conn_dst_addrlen) {
+	if (spec->divert_addrlen) {
 		char *chbuf, *cpbuf;
-		if (sys_sockaddr_str((struct sockaddr *)&spec->conn_dst_addr,
-		                     spec->conn_dst_addrlen,
+		if (sys_sockaddr_str((struct sockaddr *)&spec->divert_addr,
+		                     spec->divert_addrlen,
 		                     &chbuf, &cpbuf) != 0) {
 			goto out;
 		}
-		int rv = asprintf(&pdstbuf, "\nparent dst addr= [%s]:%s", chbuf, cpbuf);
+		int rv = asprintf(&pdstbuf, "\ndivert addr= [%s]:%s", chbuf, cpbuf);
 		free(chbuf);
 		free(cpbuf);
 		if (rv < 0)
 			goto out;
 	}
-	if (spec->child_src_addrlen) {
+	if (spec->return_addrlen) {
 		char *chbuf, *cpbuf;
-		if (sys_sockaddr_str((struct sockaddr *)&spec->child_src_addr,
-		                     spec->child_src_addrlen,
+		if (sys_sockaddr_str((struct sockaddr *)&spec->return_addr,
+		                     spec->return_addrlen,
 		                     &chbuf, &cpbuf) != 0) {
 			goto out;
 		}
-		int rv = asprintf(&csrcbuf, "\nchild src addr= [%s]:%s", chbuf, cpbuf);
+		int rv = asprintf(&csrcbuf, "\nreturn addr= [%s]:%s", chbuf, cpbuf);
 		free(chbuf);
 		free(cpbuf);
 		if (rv < 0)
@@ -1228,7 +1228,7 @@ proxyspec_str(proxyspec_t *spec)
 	             STRORNONE(pdstbuf),
 	             STRORNONE(csrcbuf),
 	             optsstr,
-	             !spec->opts->divert && spec->conn_dst_addrlen ? "\nWARNING: Divert address specified in split mode" : "") < 0) {
+	             !spec->opts->divert && spec->divert_addrlen ? "\nWARNING: Divert address specified in split mode" : "") < 0) {
 		s = NULL;
 	}
 out:

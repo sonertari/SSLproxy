@@ -1169,7 +1169,7 @@ out:
 static int WUNRES NONNULL(1)
 pxy_opensock_child(pxy_conn_ctx_t *ctx)
 {
-	evutil_socket_t fd = socket(ctx->spec->child_src_addr.ss_family, SOCK_STREAM, IPPROTO_TCP);
+	evutil_socket_t fd = socket(ctx->spec->return_addr.ss_family, SOCK_STREAM, IPPROTO_TCP);
 	if (fd == -1) {
 		log_err_level_printf(LOG_CRIT, "Error from socket(): %s (%i)\n", strerror(errno), errno);
 		log_fine_va("Error from socket(): %s (%i)", strerror(errno), errno);
@@ -1199,7 +1199,7 @@ pxy_opensock_child(pxy_conn_ctx_t *ctx)
 		return -1;
 	}
 
-	if (bind(fd, (struct sockaddr *)&ctx->spec->child_src_addr, ctx->spec->child_src_addrlen) == -1) {
+	if (bind(fd, (struct sockaddr *)&ctx->spec->return_addr, ctx->spec->return_addrlen) == -1) {
 		log_err_level_printf(LOG_CRIT, "Error from bind(): %s (%i)\n", strerror(errno), errno);
 		log_fine_va("Error from bind(): %s (%i)", strerror(errno), errno);
 		evutil_closesocket(fd);

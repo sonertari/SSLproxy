@@ -168,11 +168,11 @@ typedef struct proxyspec {
 	nat_socket_cb_t natsocket;
 	struct proxyspec *next;
 
-	struct sockaddr_storage conn_dst_addr;
-	socklen_t conn_dst_addrlen;
+	struct sockaddr_storage divert_addr;
+	socklen_t divert_addrlen;
 
-	struct sockaddr_storage child_src_addr;
-	socklen_t child_src_addrlen;
+	struct sockaddr_storage return_addr;
+	socklen_t return_addrlen;
 
 	// Each proxyspec has its own opts
 	opts_t *opts;
