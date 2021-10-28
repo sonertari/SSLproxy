@@ -207,30 +207,39 @@ filter_macro_free(opts_t *opts)
 	opts->macro = NULL;
 }
 
+static void
+filter_rule_free(filter_rule_t *rule)
+{
+	if (rule->site)
+		free(rule->site);
+	if (rule->port)
+		free(rule->port);
+	if (rule->ip)
+		free(rule->ip);
+#ifndef WITHOUT_USERAUTH
+	if (rule->user)
+		free(rule->user);
+	if (rule->desc)
+		free(rule->desc);
+#endif /* !WITHOUT_USERAUTH */
+	free(rule);
+}
+
 void
 filter_rules_free(opts_t *opts)
 {
 	filter_rule_t *rule = opts->filter_rules;
 	while (rule) {
 		filter_rule_t *next = rule->next;
-		free(rule->site);
-		if (rule->port)
-			free(rule->port);
-		if (rule->ip)
-			free(rule->ip);
-#ifndef WITHOUT_USERAUTH
-		if (rule->user)
-			free(rule->user);
-		if (rule->desc)
-			free(rule->desc);
-#endif /* !WITHOUT_USERAUTH */
-		free(rule);
+		filter_rule_free(rule);
 		rule = next;
 	}
 	opts->filter_rules = NULL;
 }
 
 #define free_port(p) do { \
+	if ((*p)->action.conn_opts) \
+		conn_opts_free((*p)->action.conn_opts); \
 	free((*p)->port); \
 	free(*p); \
 } while (0)
@@ -251,6 +260,8 @@ filter_port_btree_free(kbtree_t(port) *btree)
 }
 
 #define free_site(p) do { \
+	if ((*p)->action.conn_opts) \
+		conn_opts_free((*p)->action.conn_opts); \
 	free((*p)->site); \
 	filter_port_btree_free((*p)->port_btree); \
 	if ((*p)->port_acm) \
@@ -571,6 +582,10 @@ filter_rule_str(filter_rule_t *rule)
 
 	int count = 0;
 	while (rule) {
+		char *copts_str = conn_opts_str(rule->action.conn_opts);
+		if (!copts_str)
+			goto err;
+
 		char *p;
 		if (asprintf(&p, "site=%s, port=%s, ip=%s"
 #ifndef WITHOUT_USERAUTH
@@ -588,7 +603,7 @@ filter_rule_str(filter_rule_t *rule)
 #ifndef WITHOUT_MIRROR
 				"|%s"
 #endif /* !WITHOUT_MIRROR */
-				", apply to=%s|%s|%s|%s|%s, precedence=%d",
+				", apply to=%s|%s|%s|%s|%s, precedence=%d%s%s",
 				rule->site, STRORNONE(rule->port), STRORNONE(rule->ip),
 #ifndef WITHOUT_USERAUTH
 				STRORNONE(rule->user), STRORNONE(rule->desc),
@@ -610,15 +625,21 @@ filter_rule_str(filter_rule_t *rule)
 				rule->action.log_mirror ? (rule->action.log_mirror == 1 ? "!mirror" : "mirror") : "",
 #endif /* !WITHOUT_MIRROR */
 				rule->dstip ? "dstip" : "", rule->sni ? "sni" : "", rule->cn ? "cn" : "", rule->host ? "host" : "", rule->uri ? "uri" : "",
-				rule->action.precedence) < 0) {
+				rule->action.precedence, strlen(copts_str) ? "\n  " : "", copts_str) < 0) {
+			if (copts_str)
+				free(copts_str);
 			goto err;
 		}
 		char *nfrs;
 		if (asprintf(&nfrs, "%s%sfilter rule %d: %s", 
 					STRORNONE(frs), NLORNONE(frs), count, p) < 0) {
+			if (copts_str)
+				free(copts_str);
 			free(p);
 			goto err;
 		}
+		if (copts_str)
+			free(copts_str);
 		free(p);
 		if (frs)
 			free(frs);
@@ -643,12 +664,16 @@ filter_port_str(filter_port_list_t *port_list)
 
 	int count = 0;
 	while (port_list) {
+		char *copts_str = conn_opts_str(port_list->port->action.conn_opts);
+		if (!copts_str)
+			goto err;
+
 		char *p;
 		if (asprintf(&p, "%s\n          %d: %s (%s%s, action=%s|%s|%s|%s|%s, log=%s|%s|%s|%s|%s"
 #ifndef WITHOUT_MIRROR
 				"|%s"
 #endif /* !WITHOUT_MIRROR */
-				", precedence=%d)", STRORNONE(s), count,
+				", precedence=%d%s%s)", STRORNONE(s), count,
 				port_list->port->port, port_list->port->all_ports ? "all_ports, " : "", port_list->port->exact ? "exact" : "substring",
 				port_list->port->action.divert ? "divert" : "", port_list->port->action.split ? "split" : "", port_list->port->action.pass ? "pass" : "", port_list->port->action.block ? "block" : "", port_list->port->action.match ? "match" : "",
 				port_list->port->action.log_connect ? (port_list->port->action.log_connect == 1 ? "!connect" : "connect") : "", port_list->port->action.log_master ? (port_list->port->action.log_master == 1 ? "!master" : "master") : "",
@@ -657,9 +682,14 @@ filter_port_str(filter_port_list_t *port_list)
 #ifndef WITHOUT_MIRROR
 				port_list->port->action.log_mirror ? (port_list->port->action.log_mirror == 1 ? "!mirror" : "mirror") : "",
 #endif /* !WITHOUT_MIRROR */
-				port_list->port->action.precedence) < 0) {
+				port_list->port->action.precedence,
+				strlen(copts_str) ? "\n            " : "", copts_str) < 0) {
+			if (copts_str)
+				free(copts_str);
 			goto err;
 		}
+		if (copts_str)
+			free(copts_str);
 		if (s)
 			free(s);
 		s = p;
@@ -726,12 +756,16 @@ filter_sites_str(filter_site_list_t *site_list)
 		free_list(port_list_acm, filter_port_list_t);
 		port_list_acm = NULL;
 
+		char *copts_str = conn_opts_str(site_list->site->action.conn_opts);
+		if (!copts_str)
+			goto err;
+
 		char *p;
 		if (asprintf(&p, "%s\n      %d: %s (%s%s, action=%s|%s|%s|%s|%s, log=%s|%s|%s|%s|%s"
 #ifndef WITHOUT_MIRROR
 				"|%s"
 #endif /* !WITHOUT_MIRROR */
-				", precedence=%d)%s%s%s%s%s%s",
+				", precedence=%d%s%s)%s%s%s%s%s%s",
 				STRORNONE(s), count,
 				site_list->site->site, site_list->site->all_sites ? "all_sites, " : "", site_list->site->exact ? "exact" : "substring",
 				site_list->site->action.divert ? "divert" : "", site_list->site->action.split ? "split" : "", site_list->site->action.pass ? "pass" : "", site_list->site->action.block ? "block" : "", site_list->site->action.match ? "match" : "",
@@ -742,6 +776,7 @@ filter_sites_str(filter_site_list_t *site_list)
 				site_list->site->action.log_mirror ? (site_list->site->action.log_mirror == 1 ? "!mirror" : "mirror") : "",
 #endif /* !WITHOUT_MIRROR */
 				site_list->site->action.precedence,
+				strlen(copts_str) ? "\n        " : "", copts_str,
 				ports_exact ? "\n        port exact:" : "", STRORNONE(ports_exact),
 				ports_substring ? "\n        port substring:" : "", STRORNONE(ports_substring),
 				ports_all ? "\n        port all:" : "", STRORNONE(ports_all)) < 0) {
@@ -751,6 +786,8 @@ filter_sites_str(filter_site_list_t *site_list)
 				free(ports_substring);
 			if (ports_all)
 				free(ports_all);
+			if (copts_str)
+				free(copts_str);
 			goto err;
 		}
 		if (ports_exact)
@@ -759,6 +796,8 @@ filter_sites_str(filter_site_list_t *site_list)
 			free(ports_substring);
 		if (ports_all)
 			free(ports_all);
+		if (copts_str)
+			free(copts_str);
 		if (s)
 			free(s);
 		s = p;
@@ -1352,6 +1391,10 @@ out:
 static void
 filter_rule_dbg_print(filter_rule_t *rule)
 {
+	char *copts_str = conn_opts_str(rule->action.conn_opts);
+	if (!copts_str)
+		return;
+
 	log_dbg_printf("Filter rule: site=%s, port=%s, ip=%s"
 #ifndef WITHOUT_USERAUTH
 		", user=%s, desc=%s"
@@ -1368,7 +1411,7 @@ filter_rule_dbg_print(filter_rule_t *rule)
 #ifndef WITHOUT_MIRROR
 		"|%s"
 #endif /* !WITHOUT_MIRROR */
-		", apply to=%s|%s|%s|%s|%s, precedence=%d\n",
+		", apply to=%s|%s|%s|%s|%s, precedence=%d%s%s\n",
 		rule->site, STRORNONE(rule->port), STRORNONE(rule->ip),
 #ifndef WITHOUT_USERAUTH
 		STRORNONE(rule->user), STRORNONE(rule->desc),
@@ -1390,14 +1433,16 @@ filter_rule_dbg_print(filter_rule_t *rule)
 		rule->action.log_mirror ? (rule->action.log_mirror == 1 ? "!mirror" : "mirror") : "",
 #endif /* !WITHOUT_MIRROR */
 		rule->dstip ? "dstip" : "", rule->sni ? "sni" : "", rule->cn ? "cn" : "", rule->host ? "host" : "", rule->uri ? "uri" : "",
-		rule->action.precedence);
+		rule->action.precedence, strlen(copts_str) ? "\n  " : "", copts_str);
+
+	free(copts_str);
 }
 #endif /* DEBUG_OPTS */
 
 #define MAX_SITE_LEN 200
 
 int
-filter_passsite_set(opts_t *opts, unsigned int user_auth, char *value, int line_num)
+filter_passsite_set(opts_t *opts, UNUSED conn_opts_t *conn_opts, char *value, int line_num)
 {
 #define MAX_PASSSITE_TOKENS 3
 
@@ -1467,7 +1512,7 @@ filter_passsite_set(opts_t *opts, unsigned int user_auth, char *value, int line_
 			rule->action.precedence++;
 			rule->all_users = 1;
 		} else if (sys_isuser(argv[1])) {
-			if (!user_auth) {
+			if (!conn_opts->user_auth) {
 				fprintf(stderr, "User filter requires user auth on line %d\n", line_num);
 				return -1;
 			}
@@ -1501,7 +1546,7 @@ filter_passsite_set(opts_t *opts, unsigned int user_auth, char *value, int line_
 			return -1;
 		}
 #ifndef WITHOUT_USERAUTH
-		if (!user_auth) {
+		if (!conn_opts->user_auth) {
 			fprintf(stderr, "Keyword filter requires user auth on line %d\n", line_num);
 			return -1;
 		}
@@ -1975,12 +2020,12 @@ filter_rule_translate(opts_t *opts, const char *name, int argc, char **argv, int
 }
 
 static int WUNRES
-filter_rule_parse(opts_t *opts, unsigned int user_auth, const char *name, int argc, char **argv, int line_num);
+filter_rule_parse(opts_t *opts, conn_opts_t *conn_opts, const char *name, int argc, char **argv, int line_num);
 
 #define MAX_FILTER_RULE_TOKENS 17
 
 static int WUNRES
-filter_rule_macro_expand(opts_t *opts, unsigned int user_auth, const char *name, int argc, char **argv, int i, int line_num)
+filter_rule_macro_expand(opts_t *opts, conn_opts_t *conn_opts, const char *name, int argc, char **argv, int i, int line_num)
 {
 	if (argv[i][0] == '$') {
 		macro_t *macro;
@@ -1998,7 +2043,7 @@ filter_rule_macro_expand(opts_t *opts, unsigned int user_auth, const char *name,
 
 				expanded_argv[i] = value->value;
 
-				if (filter_rule_parse(opts, user_auth, name, argc, expanded_argv, line_num) == -1)
+				if (filter_rule_parse(opts, conn_opts, name, argc, expanded_argv, line_num) == -1)
 					return -1;
 
 				value = value->next;
@@ -2015,7 +2060,7 @@ filter_rule_macro_expand(opts_t *opts, unsigned int user_auth, const char *name,
 }
 
 static int WUNRES
-filter_rule_parse(opts_t *opts, unsigned int user_auth, const char *name, int argc, char **argv, int line_num)
+filter_rule_parse(opts_t *opts, conn_opts_t *conn_opts, const char *name, int argc, char **argv, int line_num)
 {
 	int done_all = 0;
 	int done_from = 0;
@@ -2046,7 +2091,7 @@ filter_rule_parse(opts_t *opts, unsigned int user_auth, const char *name, int ar
 #ifndef WITHOUT_USERAUTH
 			if (equal(argv[i], "user") || equal(argv[i], "desc")) {
 				if (equal(argv[i], "user")) {
-					if (!user_auth) {
+					if (!conn_opts->user_auth) {
 						fprintf(stderr, "User filter requires user auth on line %d\n", line_num);
 						return -1;
 					}
@@ -2057,7 +2102,7 @@ filter_rule_parse(opts_t *opts, unsigned int user_auth, const char *name, int ar
 					if (argv[i][strlen(argv[i]) - 1] == '*') {
 						// Nothing to do for '*' or substring search for 'user*'
 					}
-					else if ((rv = filter_rule_macro_expand(opts, user_auth, name, argc, argv, i, line_num)) != 0) {
+					else if ((rv = filter_rule_macro_expand(opts, conn_opts, name, argc, argv, i, line_num)) != 0) {
 						return rv;
 					}
 					else if (!sys_isuser(argv[i])) {
@@ -2069,7 +2114,7 @@ filter_rule_parse(opts_t *opts, unsigned int user_auth, const char *name, int ar
 
 				// It is possible to define desc without user (i.e. * or all_users), hence no 'else' here
 				if (i < argc && equal(argv[i], "desc")) {
-					if (!user_auth) {
+					if (!conn_opts->user_auth) {
 						fprintf(stderr, "Desc filter requires user auth on line %d\n", line_num);
 						return -1;
 					}
@@ -2080,7 +2125,7 @@ filter_rule_parse(opts_t *opts, unsigned int user_auth, const char *name, int ar
 					if (argv[i][strlen(argv[i]) - 1] == '*') {
 						// Nothing to do for '*' or substring search for 'desc*'
 					}
-					else if ((rv = filter_rule_macro_expand(opts, user_auth, name, argc, argv, i, line_num)) != 0) {
+					else if ((rv = filter_rule_macro_expand(opts, conn_opts, name, argc, argv, i, line_num)) != 0) {
 						return rv;
 					}
 					i++;
@@ -2097,7 +2142,7 @@ filter_rule_parse(opts_t *opts, unsigned int user_auth, const char *name, int ar
 				if (argv[i][strlen(argv[i]) - 1] == '*') {
 					// Nothing to do for '*' or substring search for 'ip*'
 					}
-				else if ((rv = filter_rule_macro_expand(opts, user_auth, name, argc, argv, i, line_num)) != 0) {
+				else if ((rv = filter_rule_macro_expand(opts, conn_opts, name, argc, argv, i, line_num)) != 0) {
 					return rv;
 				}
 				i++;
@@ -2126,7 +2171,7 @@ filter_rule_parse(opts_t *opts, unsigned int user_auth, const char *name, int ar
 					if ((i = filter_arg_index_inc(i, argc, argv[i], line_num)) == -1)
 						return -1;
 
-					if ((rv = filter_rule_macro_expand(opts, user_auth, name, argc, argv, i, line_num)) != 0) {
+					if ((rv = filter_rule_macro_expand(opts, conn_opts, name, argc, argv, i, line_num)) != 0) {
 						return rv;
 					}
 					i++;
@@ -2137,7 +2182,7 @@ filter_rule_parse(opts_t *opts, unsigned int user_auth, const char *name, int ar
 					if ((i = filter_arg_index_inc(i, argc, argv[i], line_num)) == -1)
 						return -1;
 
-					if ((rv = filter_rule_macro_expand(opts, user_auth, name, argc, argv, i, line_num)) != 0) {
+					if ((rv = filter_rule_macro_expand(opts, conn_opts, name, argc, argv, i, line_num)) != 0) {
 						return rv;
 					}
 					i++;
@@ -2168,7 +2213,7 @@ filter_rule_parse(opts_t *opts, unsigned int user_auth, const char *name, int ar
 #endif /* !WITHOUT_MIRROR */
 				|| argv[i][0] == '$') {
 				do {
-					if ((rv = filter_rule_macro_expand(opts, user_auth, name, argc, argv, i, line_num)) != 0) {
+					if ((rv = filter_rule_macro_expand(opts, conn_opts, name, argc, argv, i, line_num)) != 0) {
 						return rv;
 					}
 					if (++i == argc)
@@ -2206,7 +2251,7 @@ filter_rule_parse(opts_t *opts, unsigned int user_auth, const char *name, int ar
 }
 
 int
-filter_rule_set(opts_t *opts, unsigned int user_auth, const char *name, char *value, int line_num)
+filter_rule_set(opts_t *opts, conn_opts_t *conn_opts, const char *name, char *value, int line_num)
 {
 	char *argv[sizeof(char *) * MAX_FILTER_RULE_TOKENS];
 	int argc = 0;
@@ -2223,7 +2268,450 @@ filter_rule_set(opts_t *opts, unsigned int user_auth, const char *name, char *va
 		}
 	}
 
-	return filter_rule_parse(opts, user_auth, name, argc, argv, line_num);
+	return filter_rule_parse(opts, conn_opts, name, argc, argv, line_num);
+}
+
+static int WUNRES
+filter_rule_struct_translate(filter_rule_t *rule, UNUSED conn_opts_t *conn_opts, const char *name, char *value, int line_num)
+{
+	if (equal(name, "Action")) {
+		if (equal(value, "Divert"))
+			rule->action.divert = 1;
+		else if (equal(value, "Split"))
+			rule->action.split = 1;
+		else if (equal(value, "Pass"))
+			rule->action.pass = 1;
+		else if (equal(value, "Block"))
+			rule->action.block = 1;
+		else if (equal(value, "Match"))
+			rule->action.match = 1;
+		else {
+			fprintf(stderr, "Error in conf: Unknown Action '%s' on line %d\n", value, line_num);
+			return -1;
+		}
+	}
+#ifndef WITHOUT_USERAUTH
+	else if (equal(name, "User")) {
+		if (!conn_opts->user_auth) {
+			fprintf(stderr, "User filter requires user auth on line %d\n", line_num);
+			return -1;
+		}
+
+		if (value[strlen(value) - 1] != '*' && !sys_isuser(value)) {
+			fprintf(stderr, "No such user '%s' on line %d\n", value, line_num);
+			return -1;
+		}
+
+		rule->action.precedence++;
+
+		rule->all_users = filter_is_all(value);
+
+		if (!rule->all_users) {
+			rule->exact_user = filter_is_exact(value);
+			if (filter_field_set(&rule->user, value, line_num) == -1)
+				return -1;
+			rule->action.precedence++;
+		}
+	}
+	else if (equal(name, "Desc")) {
+		if (!conn_opts->user_auth) {
+			fprintf(stderr, "Desc filter requires user auth on line %d\n", line_num);
+			return -1;
+		}
+
+		if (filter_is_all(value)) {
+			if (!rule->user) {
+				rule->all_users = 1;
+			}
+		}
+		else {
+			rule->exact_desc = filter_is_exact(value);
+			if (filter_field_set(&rule->desc, value, line_num) == -1)
+				return -1;
+			rule->action.precedence++;
+		}
+	}
+#endif /* !WITHOUT_USERAUTH */
+	else if (equal(name, "SrcIp")) {
+		rule->all_conns = filter_is_all(value);
+
+		if (!rule->all_conns) {
+			rule->exact_ip = filter_is_exact(value);
+			if (filter_field_set(&rule->ip, value, line_num) == -1)
+				return -1;
+			rule->action.precedence++;
+		}
+	}
+	else if (equal(name, "SNI") || equal(name, "CN") || equal(name, "Host") || equal(name, "URI") || equal(name, "DstIp")) {
+		if (equal(name, "SNI"))
+			rule->sni = 1;
+		else if (equal(name, "CN"))
+			rule->cn = 1;
+		else if (equal(name, "Host"))
+			rule->host = 1;
+		else if (equal(name, "URI"))
+			rule->uri = 1;
+		else if (equal(name, "DstIp"))
+			rule->dstip = 1;
+
+		rule->action.precedence++;
+
+		if (filter_site_set(rule, value, line_num) == -1)
+			return -1;
+	}
+	else if (equal(name, "DstPort")) {
+		rule->action.precedence++;
+
+		if (filter_port_set(rule, value, line_num) == -1)
+			return -1;
+	}
+	else if (equal(name, "LogAction")) {
+		if (equal(value, "connect"))
+			rule->action.log_connect = 2;
+		else if (equal(value, "master"))
+			rule->action.log_master = 2;
+		else if (equal(value, "cert"))
+			rule->action.log_cert = 2;
+		else if (equal(value, "content"))
+			rule->action.log_content = 2;
+		else if (equal(value, "pcap"))
+			rule->action.log_pcap = 2;
+		else if (equal(value, "!connect"))
+			rule->action.log_connect = 1;
+		else if (equal(value, "!master"))
+			rule->action.log_master = 1;
+		else if (equal(value, "!cert"))
+			rule->action.log_cert = 1;
+		else if (equal(value, "!content"))
+			rule->action.log_content = 1;
+		else if (equal(value, "!pcap"))
+			rule->action.log_pcap = 1;
+#ifndef WITHOUT_MIRROR
+		else if (equal(value, "mirror"))
+			rule->action.log_mirror = 2;
+		else if (equal(value, "!mirror"))
+			rule->action.log_mirror = 1;
+#endif /* !WITHOUT_MIRROR */
+		else if (equal(value, "*")) {
+			rule->action.log_connect = 2;
+			rule->action.log_master = 2;
+			rule->action.log_cert = 2;
+			rule->action.log_content = 2;
+			rule->action.log_pcap = 2;
+#ifndef WITHOUT_MIRROR
+			rule->action.log_mirror = 2;
+#endif /* !WITHOUT_MIRROR */
+		}
+		else if (equal(value, "!*")) {
+			rule->action.log_connect = 1;
+			rule->action.log_master = 1;
+			rule->action.log_cert = 1;
+			rule->action.log_content = 1;
+			rule->action.log_pcap = 1;
+#ifndef WITHOUT_MIRROR
+			rule->action.log_mirror = 1;
+#endif /* !WITHOUT_MIRROR */
+		}
+		else {
+			fprintf(stderr, "Error in conf: Unknown LogAction '%s' on line %d\n", value, line_num);
+			return -1;
+		}
+	} else {
+		// This should have been handled by the parser, but in case
+		fprintf(stderr, "Error in conf: Unknown option '%s' on line %d\n", name, line_num);
+		return -1;
+	}
+	return 0;
+}
+
+static int WUNRES
+filter_rule_struct_translate_nvls(opts_t *opts, name_value_lines_t nvls[], int nvls_size, conn_opts_t *conn_opts, const char *argv0, global_tmp_opts_t *global_tmp_opts)
+{
+	filter_rule_t *rule = malloc(sizeof(filter_rule_t));
+	if (!rule)
+		return oom_return_na();
+	memset(rule, 0, sizeof(filter_rule_t));
+
+	for (int i = 0; i < nvls_size; i++) {
+		if (filter_rule_struct_translate(rule, conn_opts, nvls[i].name, nvls[i].value, nvls[i].line_num) == -1) {
+			filter_rule_free(rule);
+			return -1;
+		}
+	}
+
+	if (!rule->ip
+#ifndef WITHOUT_USERAUTH
+		&& !rule->all_users && !rule->user && !rule->desc
+#endif /* !WITHOUT_USERAUTH */
+		) {
+		rule->all_conns = 1;
+	}
+	if (!rule->site) {
+		rule->site = strdup("");
+		if (!rule->site)
+			return oom_return_na();
+		rule->all_sites = 1;
+		rule->dstip = 1;
+		rule->sni = 1;
+		rule->cn = 1;
+		rule->host = 1;
+		rule->uri = 1;
+	}
+
+	rule->action.conn_opts = conn_opts_copy(conn_opts, argv0, global_tmp_opts);
+	if (!rule->action.conn_opts) {
+		filter_rule_free(rule);
+		return oom_return_na();
+	}
+
+	append_list(&opts->filter_rules, rule, filter_rule_t);
+
+#ifdef DEBUG_OPTS
+	filter_rule_dbg_print(rule);
+#endif /* DEBUG_OPTS */
+	return 0;
+}
+
+static int WUNRES
+filter_rule_struct_macro_expand(opts_t *opts, name_value_lines_t nvls[], int nvls_size, conn_opts_t *conn_opts, const char *argv0, global_tmp_opts_t *global_tmp_opts)
+{
+	for (int i = 0; i < nvls_size; i++) {
+		if (nvls[i].value[0] == '$') {
+			macro_t *macro;
+			if ((macro = filter_macro_find(opts->macro, nvls[i].value))) {
+				value_t *value = macro->value;
+				while (value) {
+					// Prevent infinite macro expansion, macros do not allow it, but macro expansion should detect it too
+					if (value->value[0] == '$') {
+						fprintf(stderr, "Invalid macro value '%s' on line %d\n", value->value, nvls[i].line_num);
+						return -1;
+					}
+
+					name_value_lines_t n[nvls_size];
+					memcpy(n, nvls, sizeof(name_value_lines_t) * nvls_size);
+
+					n[i].value = value->value;
+
+					if (filter_rule_struct_macro_expand(opts, n, nvls_size, conn_opts, argv0, global_tmp_opts) == -1)
+						return -1;
+
+					value = value->next;
+				}
+				// End of macro expansion, the caller must stop processing the rule
+				return 1;
+			}
+			else {
+				fprintf(stderr, "No such macro '%s' on line %d\n", nvls[i].value, nvls[i].line_num);
+				return -1;
+			}
+		}
+	}
+
+	if (filter_rule_struct_translate_nvls(opts, nvls, nvls_size, conn_opts, argv0, global_tmp_opts) == -1)
+		return -1;
+	return 0;
+}
+
+static int WUNRES
+filter_rule_struct_parse(name_value_lines_t nvls[], int *nvls_size, conn_opts_t *conn_opts, const char *argv0,
+		char *name, char *value, int line_num, global_tmp_opts_t *global_tmp_opts, filter_parse_state_t *parse_state)
+{
+	// Closing brace '}' is the only option without a value
+	// and only allowed in structured filtering rules and proxyspecs
+	if ((!value || !strlen(value)) && !equal(name, "}")) {
+		fprintf(stderr, "Error in conf: No value assigned for %s on line %d\n", name, line_num);
+		return -1;
+	}
+
+	if (equal(name, "}")) {
+#ifdef DEBUG_OPTS
+		log_dbg_printf("FilterRule } on line %d\n", line_num);
+#endif /* DEBUG_OPTS */
+		if (!parse_state->action) {
+			fprintf(stderr, "Incomplete FilterRule on line %d\n", line_num);
+			return -1;
+		}
+		// Return 2 to indicate the end of structured filter rule
+		return 2;
+	}
+
+	int rv = set_conn_opts_option(conn_opts, argv0, name, value, line_num, global_tmp_opts);
+	if (rv == -1) {
+		fprintf(stderr, "Error in conf: '%s' on line %d\n", name, line_num);
+		return -1;
+	} else if (rv == 0) {
+		return 0;
+	}
+
+	if (equal(name, "Action")) {
+		if (parse_state->action) {
+			fprintf(stderr, "Error in conf: Only one Action spec allowed '%s' on line %d\n", value, line_num);
+			return -1;
+		}
+		parse_state->action = 1;
+	}
+	else if (equal(name, "User")) {
+		if (parse_state->user) {
+			fprintf(stderr, "Error in conf: Only one User spec allowed '%s' on line %d\n", value, line_num);
+			return -1;
+		}
+		parse_state->user = 1;
+	}
+	else if (equal(name, "Desc")) {
+		if (parse_state->desc) {
+			fprintf(stderr, "Error in conf: Only one Desc spec allowed '%s' on line %d\n", value, line_num);
+			return -1;
+		}
+		parse_state->desc = 1;
+	}
+	else if (equal(name, "SrcIp")) {
+		if (parse_state->srcip) {
+			fprintf(stderr, "Error in conf: Only one SrcIp spec allowed '%s' on line %d\n", value, line_num);
+			return -1;
+		}
+		parse_state->srcip = 1;
+	}
+	else if (equal(name, "SNI")) {
+		if (parse_state->sni) {
+			fprintf(stderr, "Error in conf: Only one SNI spec allowed '%s' on line %d\n", value, line_num);
+			return -1;
+		}
+		parse_state->sni = 1;
+	}
+	else if (equal(name, "CN")) {
+		if (parse_state->cn) {
+			fprintf(stderr, "Error in conf: Only one CN spec allowed '%s' on line %d\n", value, line_num);
+			return -1;
+		}
+		parse_state->cn = 1;
+	}
+	else if (equal(name, "Host")) {
+		if (parse_state->host) {
+			fprintf(stderr, "Error in conf: Only one Host spec allowed '%s' on line %d\n", value, line_num);
+			return -1;
+		}
+		parse_state->host = 1;
+	}
+	else if (equal(name, "URI")) {
+		if (parse_state->uri) {
+			fprintf(stderr, "Error in conf: Only one URI spec allowed '%s' on line %d\n", value, line_num);
+			return -1;
+		}
+		parse_state->uri = 1;
+	}
+	else if (equal(name, "DstIp")) {
+		if (parse_state->dstip) {
+			fprintf(stderr, "Error in conf: Only one DstIp spec allowed '%s' on line %d\n", value, line_num);
+			return -1;
+		}
+		parse_state->dstip = 1;
+	}
+	else if (equal(name, "DstPort")) {
+		if (parse_state->dstport) {
+			fprintf(stderr, "Error in conf: Only one DstPort spec allowed '%s' on line %d\n", value, line_num);
+			return -1;
+		}
+		parse_state->dstport = 1;
+	}
+	else if (equal(name, "LogAction")) {
+		// LogAction can be used more than once to define multiple log actions, if not using macros
+	}
+	else {
+		fprintf(stderr, "Error in conf: Unknown option '%s' on line %d\n", name, line_num);
+		return -1;
+	}
+
+	nvls[*nvls_size].name = strdup(name);
+	nvls[*nvls_size].value = strdup(value);
+	nvls[*nvls_size].line_num = line_num;
+	(*nvls_size)++;
+
+	return 0;
+}
+
+int
+load_filterrule_struct(opts_t *opts, conn_opts_t *conn_opts, const char *argv0, int *line_num, FILE *f, global_tmp_opts_t *global_tmp_opts)
+{
+	int retval = -1;
+	char *name, *value;
+	char *line = NULL;
+	size_t line_len;
+	int i;
+
+	filter_parse_state_t parse_state;
+	memset(&parse_state, 0, sizeof(filter_parse_state_t));
+
+#define MAX_NVLS_SIZE 100
+	int nvls_size = 0;
+	name_value_lines_t nvls[MAX_NVLS_SIZE];
+
+	conn_opts_t *copts = conn_opts_copy(conn_opts, argv0, global_tmp_opts);
+	if (!copts)
+		return -1;
+
+	int closing_brace = 0;
+
+	while (!feof(f) && !closing_brace) {
+		if (getline(&line, &line_len, f) == -1) {
+			break;
+		}
+		if (line == NULL) {
+			fprintf(stderr, "Error in conf file: getline() returns NULL line after line %d\n", *line_num);
+			retval = -1;
+			goto err;
+		}
+		(*line_num)++;
+
+		/* Skip white space */
+		for (name = line; *name == ' ' || *name == '\t'; name++);
+
+		/* Skip comments and empty lines */
+		if ((name[0] == '\0') || (name[0] == '#') || (name[0] == ';') ||
+			(name[0] == '\r') || (name[0] == '\n')) {
+			continue;
+		}
+
+		retval = get_name_value(name, &value, ' ', *line_num);
+		if (retval == 0) {
+			retval = filter_rule_struct_parse(nvls, &nvls_size, copts, argv0, name, value, *line_num, global_tmp_opts, &parse_state);
+		}
+		if (retval == -1) {
+			goto err;
+		} else if (retval == 2) {
+			closing_brace = 1;
+		}
+
+		if (nvls_size >= MAX_NVLS_SIZE) {
+			fprintf(stderr, "Error in conf file: max allowed lines reached in struct FilterRule on line %d\n", *line_num);
+			retval = -1;
+			goto err;
+		}
+
+		free(line);
+		line = NULL;
+	}
+
+	if (!closing_brace) {
+		fprintf(stderr, "Error in conf file: struct FilterRule has no closing brace '}' after line %d\n", *line_num);
+		retval = -1;
+		goto err;
+	}
+
+	if (filter_rule_struct_macro_expand(opts, nvls, nvls_size, copts, argv0, global_tmp_opts) == -1) {
+		retval = -1;
+		goto err;
+	}
+
+	retval = 0;
+err:
+	conn_opts_free(copts);
+	for (i = 0; i < nvls_size; i++) {
+		free(nvls[i].name);
+		free(nvls[i].value);
+	}
+	if (line)
+		free(line);
+	return retval;
 }
 
 static filter_port_t *
@@ -2287,7 +2775,7 @@ filter_port_find_exact(filter_site_t *site, filter_rule_t *rule)
 }
 
 static int NONNULL(1,2) WUNRES
-filter_port_add(filter_site_t *site, filter_rule_t *rule)
+filter_port_add(filter_site_t *site, filter_rule_t *rule, const char *argv0, global_tmp_opts_t *global_tmp_opts)
 {
 	filter_port_t *port = filter_port_find_exact(site, rule);
 	if (!port) {
@@ -2351,6 +2839,14 @@ filter_port_add(filter_site_t *site, filter_rule_t *rule)
 		if (rule->action.log_mirror)
 			port->action.log_mirror = rule->action.log_mirror;
 #endif /* !WITHOUT_MIRROR */
+
+		if (rule->action.conn_opts) {
+			if (port->action.conn_opts)
+				conn_opts_free(port->action.conn_opts);
+			port->action.conn_opts = conn_opts_copy(rule->action.conn_opts, argv0, global_tmp_opts);
+			if (!port->action.conn_opts)
+				return oom_return_na();
+		}
 
 		port->action.precedence = rule->action.precedence;
 	}
@@ -2418,7 +2914,7 @@ filter_site_find_exact(kbtree_t(site) *btree, ACMachine(char) *acm, filter_site_
 }
 
 static int NONNULL(3) WUNRES
-filter_site_add(kbtree_t(site) **btree, ACMachine(char) **acm, filter_site_t **all, filter_rule_t *rule)
+filter_site_add(kbtree_t(site) **btree, ACMachine(char) **acm, filter_site_t **all, filter_rule_t *rule, const char *argv0, global_tmp_opts_t *global_tmp_opts)
 {
 	filter_site_t *site = filter_site_find_exact(*btree, *acm, *all, rule);
 	if (!site) {
@@ -2459,7 +2955,7 @@ filter_site_add(kbtree_t(site) **btree, ACMachine(char) **acm, filter_site_t **a
 	// Port rule is added as a new port under the same site
 	// hence 'if else', not just 'if'
 	if (rule->port) {
-		if (filter_port_add(site, rule) == -1)
+		if (filter_port_add(site, rule, argv0, global_tmp_opts) == -1)
 			return -1;
 	}
 	// Do not override the specs of site rules at higher precedence
@@ -2490,32 +2986,40 @@ filter_site_add(kbtree_t(site) **btree, ACMachine(char) **acm, filter_site_t **a
 			site->action.log_mirror = rule->action.log_mirror;
 #endif /* !WITHOUT_MIRROR */
 
+		if (rule->action.conn_opts) {
+			if (site->action.conn_opts)
+				conn_opts_free(site->action.conn_opts);
+			site->action.conn_opts = conn_opts_copy(rule->action.conn_opts, argv0, global_tmp_opts);
+			if (!site->action.conn_opts)
+				return oom_return_na();
+		}
+
 		site->action.precedence = rule->action.precedence;
 	}
 	return 0;
 }
 
 static int
-filter_sitelist_add(filter_list_t *list, filter_rule_t *rule)
+filter_sitelist_add(filter_list_t *list, filter_rule_t *rule, const char *argv0, global_tmp_opts_t *global_tmp_opts)
 {
 	if (rule->dstip) {
-		if (filter_site_add(&list->ip_btree, &list->ip_acm, &list->ip_all, rule) == -1)
+		if (filter_site_add(&list->ip_btree, &list->ip_acm, &list->ip_all, rule, argv0, global_tmp_opts) == -1)
 			return -1;
 	}
 	if (rule->sni) {
-		if (filter_site_add(&list->sni_btree, &list->sni_acm, &list->sni_all, rule) == -1)
+		if (filter_site_add(&list->sni_btree, &list->sni_acm, &list->sni_all, rule, argv0, global_tmp_opts) == -1)
 			return -1;
 	}
 	if (rule->cn) {
-		if (filter_site_add(&list->cn_btree, &list->cn_acm, &list->cn_all, rule) == -1)
+		if (filter_site_add(&list->cn_btree, &list->cn_acm, &list->cn_all, rule, argv0, global_tmp_opts) == -1)
 			return -1;
 	}
 	if (rule->host) {
-		if (filter_site_add(&list->host_btree, &list->host_acm, &list->host_all, rule) == -1)
+		if (filter_site_add(&list->host_btree, &list->host_acm, &list->host_all, rule, argv0, global_tmp_opts) == -1)
 			return -1;
 	}
 	if (rule->uri) {
-		if (filter_site_add(&list->uri_btree, &list->uri_acm, &list->uri_all, rule) == -1)
+		if (filter_site_add(&list->uri_btree, &list->uri_acm, &list->uri_all, rule, argv0, global_tmp_opts) == -1)
 			return -1;
 	}
 	return 0;
@@ -2813,7 +3317,7 @@ filter_user_get(filter_t *filter, filter_rule_t *rule)
  * Otherwise, we must return NULL, but NULL retval means oom.
  */
 filter_t *
-filter_set(filter_rule_t *rule)
+filter_set(filter_rule_t *rule, const char *argv0, global_tmp_opts_t *global_tmp_opts)
 {
 	filter_t *filter = malloc(sizeof(filter_t));
 	if (!filter)
@@ -2842,11 +3346,11 @@ filter_set(filter_rule_t *rule)
 				filter_desc_t *desc = filter_desc_get(filter, user, rule);
 				if (!desc)
 					return NULL;
-				if (filter_sitelist_add(desc->list, rule) == -1)
+				if (filter_sitelist_add(desc->list, rule, argv0, global_tmp_opts) == -1)
 					return NULL;
 			}
 			else {
-				if (filter_sitelist_add(user->list, rule) == -1)
+				if (filter_sitelist_add(user->list, rule, argv0, global_tmp_opts) == -1)
 					return NULL;
 			}
 		}
@@ -2854,11 +3358,11 @@ filter_set(filter_rule_t *rule)
 			filter_desc_t *desc = filter_desc_get(filter, NULL, rule);
 			if (!desc)
 				return NULL;
-			if (filter_sitelist_add(desc->list, rule) == -1)
+			if (filter_sitelist_add(desc->list, rule, argv0, global_tmp_opts) == -1)
 				return NULL;
 		}
 		else if (rule->all_users) {
-			if (filter_sitelist_add(filter->all_user, rule) == -1)
+			if (filter_sitelist_add(filter->all_user, rule, argv0, global_tmp_opts) == -1)
 				return NULL;
 		}
 		else
@@ -2867,11 +3371,11 @@ filter_set(filter_rule_t *rule)
 			 filter_ip_t *ip = filter_ip_get(filter, rule);
 			if (!ip)
 				return NULL;
-			if (filter_sitelist_add(ip->list, rule) == -1)
+			if (filter_sitelist_add(ip->list, rule, argv0, global_tmp_opts) == -1)
 				return NULL;
 		}
 		else if (rule->all_conns) {
-			if (filter_sitelist_add(filter->all, rule) == -1)
+			if (filter_sitelist_add(filter->all, rule, argv0, global_tmp_opts) == -1)
 				return NULL;
 		}
 		rule = rule->next;

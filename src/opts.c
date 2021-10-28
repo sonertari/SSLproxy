@@ -120,7 +120,7 @@ opts_load_cert_chain_key(const char *filename)
 	return cert;
 }
 
-static conn_opts_t * MALLOC WUNRES
+conn_opts_t *
 conn_opts_new(void)
 {
 	conn_opts_t *conn_opts;
@@ -189,7 +189,7 @@ global_new(void)
 	return global;
 }
 
-static void NONNULL(1)
+void
 conn_opts_free(conn_opts_t *conn_opts)
 {
 	if (conn_opts->chain) {
@@ -455,6 +455,15 @@ global_has_userauth_spec(global_t *global)
 	while (p) {
 		if (p->conn_opts->user_auth)
 			return 1;
+
+		filter_rule_t *rule = p->opts->filter_rules;
+		while (rule) {
+			if (rule->action.conn_opts)
+				if (rule->action.conn_opts->user_auth)
+					return 1;
+			rule = rule->next;
+		}
+
 		p = p->next;
 	}
 	return 0;
@@ -471,119 +480,18 @@ global_has_cakey_spec(global_t *global)
 	while (p) {
 		if (p->conn_opts->cakey)
 			return 1;
+
+		filter_rule_t *rule = p->opts->filter_rules;
+		while (rule) {
+			if (rule->action.conn_opts)
+				if (rule->action.conn_opts->cakey)
+					return 1;
+			rule = rule->next;
+		}
+
 		p = p->next;
 	}
 	return 0;
-}
-
-/*
- * Dump the SSL/TLS protocol related configuration.
- */
-char *
-opts_proto_dbg_dump(conn_opts_t *conn_opts)
-{
-	char *s;
-	if (asprintf(&s, "SSL/TLS protocol: %s%s%s%s%s%s%s%s%s",
-#if (OPENSSL_VERSION_NUMBER < 0x10100000L) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER < 0x20702000L)
-#ifdef HAVE_SSLV2
-	               (conn_opts->sslmethod == SSLv2_method) ? "ssl2" :
-#endif /* HAVE_SSLV2 */
-#ifdef HAVE_SSLV3
-	               (conn_opts->sslmethod == SSLv3_method) ? "ssl3" :
-#endif /* HAVE_SSLV3 */
-#ifdef HAVE_TLSV10
-	               (conn_opts->sslmethod == TLSv1_method) ? "tls10" :
-#endif /* HAVE_TLSV10 */
-#ifdef HAVE_TLSV11
-	               (conn_opts->sslmethod == TLSv1_1_method) ? "tls11" :
-#endif /* HAVE_TLSV11 */
-#ifdef HAVE_TLSV12
-	               (conn_opts->sslmethod == TLSv1_2_method) ? "tls12" :
-#endif /* HAVE_TLSV12 */
-/* There is no TLSv1_3_method defined,
- * since no ssl version < 0x10100000L supports it. */
-#else /* OPENSSL_VERSION_NUMBER >= 0x10100000L */
-#ifdef HAVE_SSLV3
-	               (conn_opts->sslversion == SSL3_VERSION) ? "ssl3" :
-#endif /* HAVE_SSLV3 */
-#ifdef HAVE_TLSV10
-	               (conn_opts->sslversion == TLS1_VERSION) ? "tls10" :
-#endif /* HAVE_TLSV10 */
-#ifdef HAVE_TLSV11
-	               (conn_opts->sslversion == TLS1_1_VERSION) ? "tls11" :
-#endif /* HAVE_TLSV11 */
-#ifdef HAVE_TLSV12
-	               (conn_opts->sslversion == TLS1_2_VERSION) ? "tls12" :
-#endif /* HAVE_TLSV12 */
-#ifdef HAVE_TLSV13
-	               (conn_opts->sslversion == TLS1_3_VERSION) ? "tls13" :
-#endif /* HAVE_TLSV13 */
-#endif /* OPENSSL_VERSION_NUMBER >= 0x10100000L */
-	               "negotiate",
-#ifdef HAVE_SSLV2
-	               conn_opts->no_ssl2 ? " -ssl2" :
-#endif /* HAVE_SSLV2 */
-	               "",
-#ifdef HAVE_SSLV3
-	               conn_opts->no_ssl3 ? " -ssl3" :
-#endif /* HAVE_SSLV3 */
-	               "",
-#ifdef HAVE_TLSV10
-	               conn_opts->no_tls10 ? " -tls10" :
-#endif /* HAVE_TLSV10 */
-	               "",
-#ifdef HAVE_TLSV11
-	               conn_opts->no_tls11 ? " -tls11" :
-#endif /* HAVE_TLSV11 */
-	               "",
-#ifdef HAVE_TLSV12
-	               conn_opts->no_tls12 ? " -tls12" :
-#endif /* HAVE_TLSV12 */
-	               "",
-#ifdef HAVE_TLSV13
-	               conn_opts->no_tls13 ? " -tls13" :
-#endif /* HAVE_TLSV13 */
-	               "",
-#if (OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER >= 0x20702000L)
-#ifdef HAVE_SSLV3
-	               (conn_opts->minsslversion == SSL3_VERSION) ? ">=ssl3" :
-#endif /* HAVE_SSLV3 */
-#ifdef HAVE_TLSV10
-	               (conn_opts->minsslversion == TLS1_VERSION) ? ">=tls10" :
-#endif /* HAVE_TLSV10 */
-#ifdef HAVE_TLSV11
-	               (conn_opts->minsslversion == TLS1_1_VERSION) ? ">=tls11" :
-#endif /* HAVE_TLSV11 */
-#ifdef HAVE_TLSV12
-	               (conn_opts->minsslversion == TLS1_2_VERSION) ? ">=tls12" :
-#endif /* HAVE_TLSV12 */
-#ifdef HAVE_TLSV13
-	               (conn_opts->minsslversion == TLS1_3_VERSION) ? ">=tls13" :
-#endif /* HAVE_TLSV13 */
-	               "",
-#ifdef HAVE_SSLV3
-	               (conn_opts->maxsslversion == SSL3_VERSION) ? "<=ssl3" :
-#endif /* HAVE_SSLV3 */
-#ifdef HAVE_TLSV10
-	               (conn_opts->maxsslversion == TLS1_VERSION) ? "<=tls10" :
-#endif /* HAVE_TLSV10 */
-#ifdef HAVE_TLSV11
-	               (conn_opts->maxsslversion == TLS1_1_VERSION) ? "<=tls11" :
-#endif /* HAVE_TLSV11 */
-#ifdef HAVE_TLSV12
-	               (conn_opts->maxsslversion == TLS1_2_VERSION) ? "<=tls12" :
-#endif /* HAVE_TLSV12 */
-#ifdef HAVE_TLSV13
-	               (conn_opts->maxsslversion == TLS1_3_VERSION) ? "<=tls13" :
-#endif /* HAVE_TLSV13 */
-	               ""
-#else /* OPENSSL_VERSION_NUMBER < 0x10100000L */
-	               "", ""
-#endif /* OPENSSL_VERSION_NUMBER < 0x10100000L */
-	               ) < 0) {
-		s = NULL;
-	}
-	return s;
 }
 
 #ifndef WITHOUT_USERAUTH
@@ -602,108 +510,109 @@ opts_set_user_auth_url(conn_opts_t *conn_opts, const char * argv0, const char *o
 }
 #endif /* !WITHOUT_USERAUTH */
 
-static conn_opts_t * WUNRES
-global_conn_opts_copy(global_t *global, const char *argv0, global_tmp_opts_t *global_tmp_opts)
+conn_opts_t *
+conn_opts_copy(conn_opts_t *conn_opts, const char *argv0, global_tmp_opts_t *global_tmp_opts)
 {
 #ifdef DEBUG_OPTS
-	log_dbg_printf("Copy global conn_opts\n");
+	log_dbg_printf("Copy conn_opts\n");
 #endif /* DEBUG_OPTS */
 
-	conn_opts_t *conn_opts = conn_opts_new();
-	if (!conn_opts)
+	conn_opts_t *cops = conn_opts_new();
+	if (!cops)
 		return NULL;
+	memset(cops, 0, sizeof(conn_opts_t));
 
-	conn_opts->sslcomp = global->conn_opts->sslcomp;
+	cops->sslcomp = conn_opts->sslcomp;
 #ifdef HAVE_SSLV2
-	conn_opts->no_ssl2 = global->conn_opts->no_ssl2;
+	cops->no_ssl2 = conn_opts->no_ssl2;
 #endif /* HAVE_SSLV2 */
 #ifdef HAVE_SSLV3
-	conn_opts->no_ssl3 = global->conn_opts->no_ssl3;
+	cops->no_ssl3 = conn_opts->no_ssl3;
 #endif /* HAVE_SSLV3 */
 #ifdef HAVE_TLSV10
-	conn_opts->no_tls10 = global->conn_opts->no_tls10;
+	cops->no_tls10 = conn_opts->no_tls10;
 #endif /* HAVE_TLSV10 */
 #ifdef HAVE_TLSV11
-	conn_opts->no_tls11 = global->conn_opts->no_tls11;
+	cops->no_tls11 = conn_opts->no_tls11;
 #endif /* HAVE_TLSV11 */
 #ifdef HAVE_TLSV12
-	conn_opts->no_tls12 = global->conn_opts->no_tls12;
+	cops->no_tls12 = conn_opts->no_tls12;
 #endif /* HAVE_TLSV12 */
 #ifdef HAVE_TLSV13
-	conn_opts->no_tls13 = global->conn_opts->no_tls13;
+	cops->no_tls13 = conn_opts->no_tls13;
 #endif /* HAVE_TLSV13 */
-	conn_opts->passthrough = global->conn_opts->passthrough;
-	conn_opts->deny_ocsp = global->conn_opts->deny_ocsp;
-	conn_opts->sslmethod = global->conn_opts->sslmethod;
+	cops->passthrough = conn_opts->passthrough;
+	cops->deny_ocsp = conn_opts->deny_ocsp;
+	cops->sslmethod = conn_opts->sslmethod;
 #if (OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER >= 0x20702000L)
-	conn_opts->sslversion = global->conn_opts->sslversion;
-	conn_opts->minsslversion = global->conn_opts->minsslversion;
-	conn_opts->maxsslversion = global->conn_opts->maxsslversion;
+	cops->sslversion = conn_opts->sslversion;
+	cops->minsslversion = conn_opts->minsslversion;
+	cops->maxsslversion = conn_opts->maxsslversion;
 #endif /* OPENSSL_VERSION_NUMBER >= 0x10100000L */
-	conn_opts->remove_http_accept_encoding = global->conn_opts->remove_http_accept_encoding;
-	conn_opts->remove_http_referer = global->conn_opts->remove_http_referer;
-	conn_opts->verify_peer = global->conn_opts->verify_peer;
-	conn_opts->allow_wrong_host = global->conn_opts->allow_wrong_host;
+	cops->remove_http_accept_encoding = conn_opts->remove_http_accept_encoding;
+	cops->remove_http_referer = conn_opts->remove_http_referer;
+	cops->verify_peer = conn_opts->verify_peer;
+	cops->allow_wrong_host = conn_opts->allow_wrong_host;
 #ifndef WITHOUT_USERAUTH
-	conn_opts->user_auth = global->conn_opts->user_auth;
-	conn_opts->user_timeout = global->conn_opts->user_timeout;
+	cops->user_auth = conn_opts->user_auth;
+	cops->user_timeout = conn_opts->user_timeout;
 #endif /* !WITHOUT_USERAUTH */
-	conn_opts->validate_proto = global->conn_opts->validate_proto;
-	conn_opts->max_http_header_size = global->conn_opts->max_http_header_size;
+	cops->validate_proto = conn_opts->validate_proto;
+	cops->max_http_header_size = conn_opts->max_http_header_size;
 
 	// Pass NULL as global_tmp_opts param, so we don't reassign the var to itself
 	// That would be harmless but incorrect
 	if (global_tmp_opts && global_tmp_opts->chain_str) {
-		if (opts_set_chain(conn_opts, argv0, global_tmp_opts->chain_str, NULL) == -1)
+		if (opts_set_chain(cops, argv0, global_tmp_opts->chain_str, NULL) == -1)
 			return NULL;
 	}
 	if (global_tmp_opts && global_tmp_opts->leafcrlurl_str) {
-		if (opts_set_leafcrlurl(conn_opts, argv0, global_tmp_opts->leafcrlurl_str, NULL) == -1)
+		if (opts_set_leafcrlurl(cops, argv0, global_tmp_opts->leafcrlurl_str, NULL) == -1)
 			return NULL;
 	}
 	if (global_tmp_opts && global_tmp_opts->cacrt_str) {
-		if (opts_set_cacrt(conn_opts, argv0, global_tmp_opts->cacrt_str, NULL) == -1)
+		if (opts_set_cacrt(cops, argv0, global_tmp_opts->cacrt_str, NULL) == -1)
 			return NULL;
 	}
 	if (global_tmp_opts && global_tmp_opts->cakey_str) {
-		if (opts_set_cakey(conn_opts, argv0, global_tmp_opts->cakey_str, NULL) == -1)
+		if (opts_set_cakey(cops, argv0, global_tmp_opts->cakey_str, NULL) == -1)
 			return NULL;
 	}
 	if (global_tmp_opts && global_tmp_opts->clientcrt_str) {
-		if (opts_set_clientcrt(conn_opts, argv0, global_tmp_opts->clientcrt_str, NULL) == -1)
+		if (opts_set_clientcrt(cops, argv0, global_tmp_opts->clientcrt_str, NULL) == -1)
 			return NULL;
 	}
 	if (global_tmp_opts && global_tmp_opts->clientkey_str) {
-		if (opts_set_clientkey(conn_opts, argv0, global_tmp_opts->clientkey_str, NULL) == -1)
+		if (opts_set_clientkey(cops, argv0, global_tmp_opts->clientkey_str, NULL) == -1)
 			return NULL;
 	}
 #ifndef OPENSSL_NO_DH
 	if (global_tmp_opts && global_tmp_opts->dh_str) {
-		if (opts_set_dh(conn_opts, argv0, global_tmp_opts->dh_str, NULL) == -1)
+		if (opts_set_dh(cops, argv0, global_tmp_opts->dh_str, NULL) == -1)
 			return NULL;
 	}
 #endif /* !OPENSSL_NO_DH */
 #ifndef OPENSSL_NO_ECDH
-	if (global->conn_opts->ecdhcurve) {
-		if (opts_set_ecdhcurve(conn_opts, argv0, global->conn_opts->ecdhcurve) == -1)
+	if (conn_opts->ecdhcurve) {
+		if (opts_set_ecdhcurve(cops, argv0, conn_opts->ecdhcurve) == -1)
 			return NULL;
 	}
 #endif /* !OPENSSL_NO_ECDH */
-	if (global->conn_opts->ciphers) {
-		if (opts_set_ciphers(conn_opts, argv0, global->conn_opts->ciphers) == -1)
+	if (conn_opts->ciphers) {
+		if (opts_set_ciphers(cops, argv0, conn_opts->ciphers) == -1)
 			return NULL;
 	}
-	if (global->conn_opts->ciphersuites) {
-		if (opts_set_ciphersuites(conn_opts, argv0, global->conn_opts->ciphersuites) == -1)
+	if (conn_opts->ciphersuites) {
+		if (opts_set_ciphersuites(cops, argv0, conn_opts->ciphersuites) == -1)
 			return NULL;
 	}
 #ifndef WITHOUT_USERAUTH
-	if (global->conn_opts->user_auth_url) {
-		if (opts_set_user_auth_url(conn_opts, argv0, global->conn_opts->user_auth_url) == -1)
+	if (conn_opts->user_auth_url) {
+		if (opts_set_user_auth_url(cops, argv0, conn_opts->user_auth_url) == -1)
 			return NULL;
 	}
-
-	return conn_opts;
+#endif /* !WITHOUT_USERAUTH */
+	return cops;
 }
 
 static opts_t * WUNRES
@@ -720,6 +629,7 @@ global_opts_copy(global_t *global, const char *argv0)
 
 	opts->divert = global->opts->divert;
 
+#ifndef WITHOUT_USERAUTH
 	if (filter_userlist_copy(global->opts->divertusers, argv0, &opts->divertusers) == -1)
 		return oom_return_null(argv0);
 
@@ -743,7 +653,7 @@ proxyspec_new(global_t *global, const char *argv0, global_tmp_opts_t *global_tmp
 	if (!spec)
 		return oom_return_null(argv0);
 	memset(spec, 0, sizeof(proxyspec_t));
-	spec->conn_opts = global_conn_opts_copy(global, argv0, global_tmp_opts);
+	spec->conn_opts = conn_opts_copy(global->conn_opts, argv0, global_tmp_opts);
 	if (!spec->conn_opts)
 		return NULL;
 	spec->opts = global_opts_copy(global, argv0);
@@ -1069,45 +979,19 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine, global_t *globa
 	return 0;
 }
 
-static char *
-opts_str(opts_t *opts, conn_opts_t *conn_opts)
+char *
+conn_opts_str(conn_opts_t *conn_opts)
 {
-	char *s = NULL;
-	char *proto_dump = NULL;
-	char *ms = NULL;
-	char *frs = NULL;
-	char *fs = NULL;
+	char *s;
 
-#ifndef WITHOUT_USERAUTH
-	char *du = NULL;
-	char *pu = NULL;
+	if (!conn_opts) {
+		s = strdup("");
+		if (!s)
+			return oom_return_na_null();
+		return s;
+	}
 
-	du = filter_userlist_str(opts->divertusers);
-	if (!du)
-		goto out;
-
-	pu = filter_userlist_str(opts->passusers);
-	if (!pu)
-		goto out;
-#endif /* !WITHOUT_USERAUTH */
-
-	ms = filter_macro_str(opts->macro);
-	if (!ms)
-		goto out;
-
-	frs = filter_rule_str(opts->filter_rules);
-	if (!frs)
-		goto out;
-
-	fs = filter_str(opts->filter);
-	if (!fs)
-		goto out;
-
-	proto_dump = opts_proto_dbg_dump(conn_opts);
-	if (!proto_dump)
-		goto out;
-
-	if (asprintf(&s, "opts=%s%s"
+	if (asprintf(&s, "conn opts: %s%s%s%s%s%s%s%s%s%s"
 #ifdef HAVE_SSLV2
 				 "%s"
 #endif /* HAVE_SSLV2 */
@@ -1132,10 +1016,105 @@ opts_str(opts_t *opts, conn_opts_t *conn_opts)
 #endif /* !OPENSSL_NO_ECDH */
 				 "|%s%s%s%s%s"
 #ifndef WITHOUT_USERAUTH
-				 "%s|%s|%d|%s|%s"
+				 "%s|%s|%d"
 #endif /* !WITHOUT_USERAUTH */
-				 "%s|%d\n%s%s%s%s%s%s%s",
-	             (opts->divert ? "divert" : "split"),
+				 "%s|%d",
+#if (OPENSSL_VERSION_NUMBER < 0x10100000L) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER < 0x20702000L)
+#ifdef HAVE_SSLV2
+	               (conn_opts->sslmethod == SSLv2_method) ? "ssl2" :
+#endif /* HAVE_SSLV2 */
+#ifdef HAVE_SSLV3
+	               (conn_opts->sslmethod == SSLv3_method) ? "ssl3" :
+#endif /* HAVE_SSLV3 */
+#ifdef HAVE_TLSV10
+	               (conn_opts->sslmethod == TLSv1_method) ? "tls10" :
+#endif /* HAVE_TLSV10 */
+#ifdef HAVE_TLSV11
+	               (conn_opts->sslmethod == TLSv1_1_method) ? "tls11" :
+#endif /* HAVE_TLSV11 */
+#ifdef HAVE_TLSV12
+	               (conn_opts->sslmethod == TLSv1_2_method) ? "tls12" :
+#endif /* HAVE_TLSV12 */
+/* There is no TLSv1_3_method defined,
+ * since no ssl version < 0x10100000L supports it. */
+#else /* OPENSSL_VERSION_NUMBER >= 0x10100000L */
+#ifdef HAVE_SSLV3
+	               (conn_opts->sslversion == SSL3_VERSION) ? "ssl3" :
+#endif /* HAVE_SSLV3 */
+#ifdef HAVE_TLSV10
+	               (conn_opts->sslversion == TLS1_VERSION) ? "tls10" :
+#endif /* HAVE_TLSV10 */
+#ifdef HAVE_TLSV11
+	               (conn_opts->sslversion == TLS1_1_VERSION) ? "tls11" :
+#endif /* HAVE_TLSV11 */
+#ifdef HAVE_TLSV12
+	               (conn_opts->sslversion == TLS1_2_VERSION) ? "tls12" :
+#endif /* HAVE_TLSV12 */
+#ifdef HAVE_TLSV13
+	               (conn_opts->sslversion == TLS1_3_VERSION) ? "tls13" :
+#endif /* HAVE_TLSV13 */
+#endif /* OPENSSL_VERSION_NUMBER >= 0x10100000L */
+	               "negotiate",
+#ifdef HAVE_SSLV2
+	               conn_opts->no_ssl2 ? " -ssl2" :
+#endif /* HAVE_SSLV2 */
+	               "",
+#ifdef HAVE_SSLV3
+	               conn_opts->no_ssl3 ? " -ssl3" :
+#endif /* HAVE_SSLV3 */
+	               "",
+#ifdef HAVE_TLSV10
+	               conn_opts->no_tls10 ? " -tls10" :
+#endif /* HAVE_TLSV10 */
+	               "",
+#ifdef HAVE_TLSV11
+	               conn_opts->no_tls11 ? " -tls11" :
+#endif /* HAVE_TLSV11 */
+	               "",
+#ifdef HAVE_TLSV12
+	               conn_opts->no_tls12 ? " -tls12" :
+#endif /* HAVE_TLSV12 */
+	               "",
+#ifdef HAVE_TLSV13
+	               conn_opts->no_tls13 ? " -tls13" :
+#endif /* HAVE_TLSV13 */
+	               "",
+#if (OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER >= 0x20702000L)
+#ifdef HAVE_SSLV3
+	               (conn_opts->minsslversion == SSL3_VERSION) ? ">=ssl3" :
+#endif /* HAVE_SSLV3 */
+#ifdef HAVE_TLSV10
+	               (conn_opts->minsslversion == TLS1_VERSION) ? ">=tls10" :
+#endif /* HAVE_TLSV10 */
+#ifdef HAVE_TLSV11
+	               (conn_opts->minsslversion == TLS1_1_VERSION) ? ">=tls11" :
+#endif /* HAVE_TLSV11 */
+#ifdef HAVE_TLSV12
+	               (conn_opts->minsslversion == TLS1_2_VERSION) ? ">=tls12" :
+#endif /* HAVE_TLSV12 */
+#ifdef HAVE_TLSV13
+	               (conn_opts->minsslversion == TLS1_3_VERSION) ? ">=tls13" :
+#endif /* HAVE_TLSV13 */
+	               "",
+#ifdef HAVE_SSLV3
+	               (conn_opts->maxsslversion == SSL3_VERSION) ? "<=ssl3" :
+#endif /* HAVE_SSLV3 */
+#ifdef HAVE_TLSV10
+	               (conn_opts->maxsslversion == TLS1_VERSION) ? "<=tls10" :
+#endif /* HAVE_TLSV10 */
+#ifdef HAVE_TLSV11
+	               (conn_opts->maxsslversion == TLS1_1_VERSION) ? "<=tls11" :
+#endif /* HAVE_TLSV11 */
+#ifdef HAVE_TLSV12
+	               (conn_opts->maxsslversion == TLS1_2_VERSION) ? "<=tls12" :
+#endif /* HAVE_TLSV12 */
+#ifdef HAVE_TLSV13
+	               (conn_opts->maxsslversion == TLS1_3_VERSION) ? "<=tls13" :
+#endif /* HAVE_TLSV13 */
+	               "",
+#else /* OPENSSL_VERSION_NUMBER < 0x10100000L */
+	               "", "",
+#endif /* OPENSSL_VERSION_NUMBER < 0x10100000L */
 	             (!conn_opts->sslcomp ? "|no sslcomp" : ""),
 #ifdef HAVE_SSLV2
 	             (conn_opts->no_ssl2 ? "|no_ssl2" : ""),
@@ -1171,12 +1150,64 @@ opts_str(opts_t *opts, conn_opts_t *conn_opts)
 	             (conn_opts->user_auth ? "|user_auth" : ""),
 	             (conn_opts->user_auth_url ? conn_opts->user_auth_url : "no user_auth_url"),
 	             conn_opts->user_timeout,
+#endif /* !WITHOUT_USERAUTH */
+	             (conn_opts->validate_proto ? "|validate_proto" : ""),
+	             conn_opts->max_http_header_size
+	               ) < 0) {
+		return oom_return_na_null();
+	}
+	return s;
+}
+
+static char *
+opts_str(opts_t *opts, conn_opts_t *conn_opts)
+{
+	char *s = NULL;
+	char *copts_str = NULL;
+	char *ms = NULL;
+	char *frs = NULL;
+	char *fs = NULL;
+
+#ifndef WITHOUT_USERAUTH
+	char *du = NULL;
+	char *pu = NULL;
+
+	du = filter_userlist_str(opts->divertusers);
+	if (!du)
+		goto out;
+
+	pu = filter_userlist_str(opts->passusers);
+	if (!pu)
+		goto out;
+#endif /* !WITHOUT_USERAUTH */
+
+	copts_str = conn_opts_str(conn_opts);
+	if (!copts_str)
+		goto out;
+
+	ms = filter_macro_str(opts->macro);
+	if (!ms)
+		goto out;
+
+	frs = filter_rule_str(opts->filter_rules);
+	if (!frs)
+		goto out;
+
+	fs = filter_str(opts->filter);
+	if (!fs)
+		goto out;
+
+	if (asprintf(&s, "opts= %s\n%s"
+#ifndef WITHOUT_USERAUTH
+				 "|%s|%s"
+#endif /* !WITHOUT_USERAUTH */
+				 "%s%s%s%s%s%s",
+				 copts_str,
+	             (opts->divert ? "divert" : "split"),
+#ifndef WITHOUT_USERAUTH
 	             du,
 	             pu,
 #endif /* !WITHOUT_USERAUTH */
-	             (conn_opts->validate_proto ? "|validate_proto" : ""),
-				 conn_opts->max_http_header_size,
-				 proto_dump,
 				 strlen(ms) ? "\n" : "", ms,
 				 strlen(frs) ? "\n" : "", frs,
 				 strlen(fs) ? "\n" : "", fs) < 0) {
@@ -1189,14 +1220,14 @@ out:
 	if (pu)
 		free(pu);
 #endif /* !WITHOUT_USERAUTH */
+	if (copts_str)
+		free(copts_str);
 	if (ms)
 		free(ms);
 	if (frs)
 		free(frs);
 	if (fs)
 		free(fs);
-	if (proto_dump)
-		free(proto_dump);
 	return s;
 }
 
@@ -2459,13 +2490,9 @@ check_value_yesno(const char *value, const char *name, int line_num)
 	return rv;
 }
 
-/*
- * global_opt param is used to save certain global opts, so that we can use 
- * them cloning global opts while creating proxyspecs
- */
-static int
-set_option(opts_t *opts, conn_opts_t *conn_opts, const char *argv0,
-		const char *name, char *value, char **natengine, int line_num, global_tmp_opts_t *global_tmp_opts)
+int
+set_conn_opts_option(conn_opts_t *conn_opts, const char *argv0,
+		const char *name, char *value, int line_num, global_tmp_opts_t *global_tmp_opts)
 {
 	int yes;
 
@@ -2532,15 +2559,6 @@ set_option(opts_t *opts, conn_opts_t *conn_opts, const char *argv0,
 		return opts_set_ciphers(conn_opts, argv0, value);
 	} else if (equal(name, "CipherSuites")) {
 		return opts_set_ciphersuites(conn_opts, argv0, value);
-	} else if (equal(name, "NATEngine")) {
-		if (*natengine)
-			free(*natengine);
-		*natengine = strdup(value);
-		if (!*natengine)
-			return oom_return(argv0);
-#ifdef DEBUG_OPTS
-		log_dbg_printf("NATEngine: %s\n", *natengine);
-#endif /* DEBUG_OPTS */
 #ifndef WITHOUT_USERAUTH
 	} else if (equal(name, "UserAuth")) {
 		yes = check_value_yesno(value, "UserAuth", line_num);
@@ -2563,10 +2581,6 @@ set_option(opts_t *opts, conn_opts_t *conn_opts, const char *argv0,
 #ifdef DEBUG_OPTS
 		log_dbg_printf("UserTimeout: %u\n", conn_opts->user_timeout);
 #endif /* DEBUG_OPTS */
-	} else if (equal(name, "DivertUsers")) {
-		return filter_userlist_set(value, line_num, &opts->divertusers, "DivertUsers");
-	} else if (equal(name, "PassUsers")) {
-		return filter_userlist_set(value, line_num, &opts->passusers, "PassUsers");
 #endif /* !WITHOUT_USERAUTH */
 	} else if (equal(name, "ValidateProto")) {
 		yes = check_value_yesno(value, "ValidateProto", line_num);
@@ -2619,34 +2633,82 @@ set_option(opts_t *opts, conn_opts_t *conn_opts, const char *argv0,
 #ifdef DEBUG_OPTS
 		log_dbg_printf("RemoveHTTPReferer: %u\n", conn_opts->remove_http_referer);
 #endif /* DEBUG_OPTS */
+	}
+	else {
+		// Unknown conn_opts option, but may not be an error, so return 1, instead of -1
+		return 1;
+	}
+	return 0;
+}
+
+/*
+ * global_opt param is used to save certain global opts, so that we can use 
+ * them cloning global opts while creating proxyspecs
+ */
+static int
+set_option(opts_t *opts, conn_opts_t *conn_opts, const char *argv0,
+		const char *name, char *value, char **natengine, FILE *f, int *line_num, global_tmp_opts_t *global_tmp_opts)
+{
+	int yes;
+
+	if (!value || !strlen(value)) {
+		fprintf(stderr, "Error in conf: No value assigned for %s on line %d\n", name, *line_num);
+		return -1;
+	}
+
+	if (equal(name, "NATEngine")) {
+		if (*natengine)
+			free(*natengine);
+		*natengine = strdup(value);
+		if (!*natengine)
+			return oom_return(argv0);
+#ifdef DEBUG_OPTS
+		log_dbg_printf("NATEngine: %s\n", *natengine);
+#endif /* DEBUG_OPTS */
+#ifndef WITHOUT_USERAUTH
+	} else if (equal(name, "DivertUsers")) {
+		return filter_userlist_set(value, *line_num, &opts->divertusers, "DivertUsers");
+	} else if (equal(name, "PassUsers")) {
+		return filter_userlist_set(value, *line_num, &opts->passusers, "PassUsers");
+#endif /* !WITHOUT_USERAUTH */
 	} else if (equal(name, "PassSite")) {
-		return filter_passsite_set(opts, conn_opts->user_auth, value, line_num);
+		return filter_passsite_set(opts, conn_opts, value, *line_num);
 	} else if (equal(name, "Define")) {
-		return filter_macro_set(opts, value, line_num);
+		return filter_macro_set(opts, value, *line_num);
 	} else if (equal(name, "Split") || equal(name, "Pass") || equal(name, "Block") || equal(name, "Match")) {
-		return filter_rule_set(opts, conn_opts->user_auth, name, value, line_num);
+		return filter_rule_set(opts, conn_opts, name, value, *line_num);
 	} else if (equal(name, "Divert")) {
 		yes = is_yesno(value);
 		if (yes == -1)
-			return filter_rule_set(opts, conn_opts->user_auth, name, value, line_num);
+			return filter_rule_set(opts, conn_opts, name, value, *line_num);
 		else
 			yes ? opts_set_divert(opts) : opts_unset_divert(opts);
+	} else if (equal(name, "FilterRule") && equal(value, "{")) {
+#ifdef DEBUG_OPTS
+		log_dbg_printf("FilterRule { on line %d\n", *line_num);
+#endif /* DEBUG_OPTS */
+		return load_filterrule_struct(opts, conn_opts, argv0, line_num, f, global_tmp_opts);
 	} else {
-		fprintf(stderr, "Error in conf: Unknown option "
-		                "'%s' on line %d\n", name, line_num);
-		return -1;
+		int rv = set_conn_opts_option(conn_opts, argv0, name, value, *line_num, global_tmp_opts);
+		if (rv == -1) {
+			fprintf(stderr, "Error in conf: '%s' on line %d\n", name, *line_num);
+			return -1;
+		} else if (rv == 1) {
+			fprintf(stderr, "Error in conf: Unknown option '%s' on line %d\n", name, *line_num);
+			return -1;
+		}
 	}
 	return 0;
 }
 
 static int WUNRES
 set_proxyspec_option(proxyspec_t *spec, const char *argv0,
-		const char *name, char *value, char **natengine, spec_addrs_t *spec_addrs, int line_num)
+		const char *name, char *value, char **natengine, spec_addrs_t *spec_addrs, FILE *f, int *line_num)
 {
 	// Closing brace '}' is the only option without a value
-	// and only allowed in structured proxyspecs
+	// and only allowed in structured proxyspecs and filter rules
 	if ((!value || !strlen(value)) && !equal(name, "}")) {
-		fprintf(stderr, "Error in conf: No value assigned for %s on line %d\n", name, line_num);
+		fprintf(stderr, "Error in conf: No value assigned for %s on line %d\n", name, *line_num);
 		return -1;
 	}
 
@@ -2663,7 +2725,7 @@ set_proxyspec_option(proxyspec_t *spec, const char *argv0,
 		if (spec_addrs->addr) {
 			spec_addrs->af = proxyspec_set_listen_addr(spec, spec_addrs->addr, value, *natengine);
 		} else {
-			fprintf(stderr, "ProxySpec Port without Addr on line %d\n", line_num);
+			fprintf(stderr, "ProxySpec Port without Addr on line %d\n", *line_num);
 			return -1;
 		}
 	}
@@ -2695,7 +2757,7 @@ set_proxyspec_option(proxyspec_t *spec, const char *argv0,
 			if (proxyspec_set_target_addr(spec, spec_addrs->target_addr, value, spec_addrs->af) == -1)
 				return -1;
 		} else {
-			fprintf(stderr, "ProxySpec TargetPort without TargetAddr on line %d\n", line_num);
+			fprintf(stderr, "ProxySpec TargetPort without TargetAddr on line %d\n", *line_num);
 			return -1;
 		}
 	}
@@ -2709,17 +2771,17 @@ set_proxyspec_option(proxyspec_t *spec, const char *argv0,
 	}
 	else if (equal(name, "}")) {
 #ifdef DEBUG_OPTS
-		log_dbg_printf("ProxySpec } on line %d\n", line_num);
+		log_dbg_printf("ProxySpec } on line %d\n", *line_num);
 #endif /* DEBUG_OPTS */
 		if (!spec_addrs->addr || !spec_addrs->af) {
-			fprintf(stderr, "Incomplete ProxySpec on line %d\n", line_num);
+			fprintf(stderr, "Incomplete ProxySpec on line %d\n", *line_num);
 			return -1;
 		}
 		// Return 2 to indicate the end of structured proxyspec
 		return 2;
 	}
 	else {
-		return set_option(spec->opts, spec->conn_opts, argv0, name, value, natengine, line_num, NULL);
+		return set_option(spec->opts, spec->conn_opts, argv0, name, value, natengine, f, line_num, NULL);
 	}
 	return 0;
 }
@@ -2863,7 +2925,7 @@ load_proxyspec_struct(global_t *global, const char *argv0, char **natengine, int
 		(*line_num)++;
 
 		/* Skip white space */
-		for (name = line; *name == ' ' || *name == '\t'; name++); 
+		for (name = line; *name == ' ' || *name == '\t'; name++);
 
 		/* Skip comments and empty lines */
 		if ((name[0] == '\0') || (name[0] == '#') || (name[0] == ';') ||
@@ -2873,7 +2935,7 @@ load_proxyspec_struct(global_t *global, const char *argv0, char **natengine, int
 
 		retval = get_name_value(name, &value, ' ', *line_num);
 		if (retval == 0) {
-			retval = set_proxyspec_option(spec, argv0, name, value, natengine, spec_addrs, *line_num);
+			retval = set_proxyspec_option(spec, argv0, name, value, natengine, spec_addrs, f, line_num);
 		}
 		if (retval == -1) {
 			goto leave;
@@ -3097,7 +3159,7 @@ set_global_option(global_t *global, const char *argv0,
 		}
 		return retval;
 	} else {
-		return set_option(global->opts, global->conn_opts, argv0, name, value, natengine, *line_num, global_tmp_opts);
+		return set_option(global->opts, global->conn_opts, argv0, name, value, natengine, f, line_num, global_tmp_opts);
 	}
 	return 0;
 }
@@ -3114,7 +3176,7 @@ global_set_option(global_t *global, const char *argv0, const char *optarg,
 
 	/* White spaces possible before option name,
 	 * if the command line option is passed between the quotes */
-	for (name = line; *name == ' ' || *name == '\t'; name++); 
+	for (name = line; *name == ' ' || *name == '\t'; name++);
 
 	/* Command line option separator is '=' */
 	retval = get_name_value(name, &value, '=', 0);
@@ -3161,7 +3223,7 @@ opts_load_conffile(global_t *global, const char *argv0, char *conffile, char **n
 		line_num++;
 
 		/* Skip white space */
-		for (name = line; *name == ' ' || *name == '\t'; name++); 
+		for (name = line; *name == ' ' || *name == '\t'; name++);
 
 		/* Skip comments and empty lines */
 		if ((name[0] == '\0') || (name[0] == '#') || (name[0] == ';') ||

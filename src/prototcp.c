@@ -540,7 +540,7 @@ prototcp_filter_match_ip(pxy_conn_ctx_t *ctx, filter_list_t *list)
 	return &site->action;
 }
 
-static unsigned int NONNULL(1,2)
+static filter_action_t * NONNULL(1,2)
 prototcp_dsthost_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
 {
 	if (ctx->dsthost_str) {
@@ -555,15 +555,17 @@ prototcp_dsthost_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
 		log_finest_va("No filter match with ip: %s:%s, %s:%s",
 			STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str));
 	}
-	return FILTER_ACTION_NONE;
+	return NULL;
 }
 
 int
 prototcp_apply_filter(pxy_conn_ctx_t *ctx, unsigned int defer_action)
 {
 	int rv = 0;
-	unsigned int action;
-	if ((action = pxyconn_filter(ctx, prototcp_dsthost_filter))) {
+	filter_action_t *a;
+	if ((a = pxyconn_filter(ctx, prototcp_dsthost_filter))) {
+		unsigned int action = pxyconn_translate_filter_action(ctx, a);
+
 		ctx->filter_precedence = action & FILTER_PRECEDENCE;
 
 		// If we reach here, the matching filtering rule must have a higher precedence
@@ -631,6 +633,9 @@ prototcp_apply_filter(pxy_conn_ctx_t *ctx, unsigned int defer_action)
 		else if (action & FILTER_LOG_NOMIRROR)
 			ctx->log_mirror = 0;
 #endif /* !WITHOUT_MIRROR */
+
+		if (a->conn_opts)
+			ctx->conn_opts = a->conn_opts;
 	}
 	return rv;
 }

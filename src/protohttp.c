@@ -466,7 +466,7 @@ protohttp_filter_match_uri(pxy_conn_ctx_t *ctx, filter_list_t *list)
 	return &site->action;
 }
 
-static unsigned int NONNULL(1,2)
+static filter_action_t * NONNULL(1,2)
 protohttp_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
 {
 	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
@@ -509,15 +509,17 @@ protohttp_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
 #endif /* DEBUG_PROXY */
 				);
 
-	return FILTER_ACTION_NONE;
+	return NULL;
 }
 
 static int
 protohttp_apply_filter(pxy_conn_ctx_t *ctx)
 {
 	int rv = 0;
-	unsigned int action;
-	if ((action = pxyconn_filter(ctx, protohttp_filter))) {
+	filter_action_t *a;
+	if ((a = pxyconn_filter(ctx, protohttp_filter))) {
+		unsigned int action = pxyconn_translate_filter_action(ctx, a);
+
 		ctx->filter_precedence = action & FILTER_PRECEDENCE;
 
 		if (action & FILTER_ACTION_DIVERT) {
@@ -583,6 +585,9 @@ protohttp_apply_filter(pxy_conn_ctx_t *ctx)
 		if (action & FILTER_LOG_NOMIRROR)
 			ctx->log_mirror = 0;
 #endif /* !WITHOUT_MIRROR */
+
+		if (a->conn_opts)
+			ctx->conn_opts = a->conn_opts;
 	}
 
 	// Cannot defer block action any longer

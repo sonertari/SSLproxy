@@ -37,84 +37,86 @@ START_TEST(set_filter_rule_01)
 	char *s;
 	int rv;
 	opts_t *opts = opts_new();
+	conn_opts_t *conn_opts = conn_opts_new();
 
 	s = strdup("*");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
-	fail_unless(rv == 0, "failed to parse rule");
-	free(s);
-
-	s = strdup("from *");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
-	fail_unless(rv == 0, "failed to parse rule");
-	free(s);
-	s = strdup("from *");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
-	fail_unless(rv == 0, "failed to parse rule");
-	free(s);
-	s = strdup("from *");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
-	fail_unless(rv == 0, "failed to parse rule");
-	free(s);
-	s = strdup("from *");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
-	fail_unless(rv == 0, "failed to parse rule");
-	free(s);
-	s = strdup("from *");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
+	s = strdup("from *");
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
+	fail_unless(rv == 0, "failed to parse rule");
+	free(s);
+	s = strdup("from *");
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
+	fail_unless(rv == 0, "failed to parse rule");
+	free(s);
+	s = strdup("from *");
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
+	fail_unless(rv == 0, "failed to parse rule");
+	free(s);
+	s = strdup("from *");
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
+	fail_unless(rv == 0, "failed to parse rule");
+	free(s);
+	s = strdup("from *");
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
+	fail_unless(rv == 0, "failed to parse rule");
+	free(s);
+
 	s = strdup("to *");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to *");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to *");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to *");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to *");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("log *");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log *");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log *");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log *");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log *");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	opts_free(opts);
+	conn_opts_free(conn_opts);
 }
 END_TEST
 
@@ -123,67 +125,68 @@ START_TEST(set_filter_rule_02)
 	char *s;
 	int rv;
 	opts_t *opts = opts_new();
+	conn_opts_t *conn_opts = conn_opts_new();
 
 	s = strdup("from ip *");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("from ip *");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("from ip *");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("from ip *");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("from ip *");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
-	fail_unless(rv == 0, "failed to parse rule");
-	free(s);
-
-	s = strdup("from ip 192.168.0.1");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
-	fail_unless(rv == 0, "failed to parse rule");
-	free(s);
-	s = strdup("from ip 192.168.0.1");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
-	fail_unless(rv == 0, "failed to parse rule");
-	free(s);
-	s = strdup("from ip 192.168.0.1");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
-	fail_unless(rv == 0, "failed to parse rule");
-	free(s);
-	s = strdup("from ip 192.168.0.1");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
-	fail_unless(rv == 0, "failed to parse rule");
-	free(s);
-	s = strdup("from ip 192.168.0.1");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
+	s = strdup("from ip 192.168.0.1");
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
+	fail_unless(rv == 0, "failed to parse rule");
+	free(s);
+	s = strdup("from ip 192.168.0.1");
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
+	fail_unless(rv == 0, "failed to parse rule");
+	free(s);
+	s = strdup("from ip 192.168.0.1");
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
+	fail_unless(rv == 0, "failed to parse rule");
+	free(s);
+	s = strdup("from ip 192.168.0.1");
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
+	fail_unless(rv == 0, "failed to parse rule");
+	free(s);
+	s = strdup("from ip 192.168.0.1");
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
+	fail_unless(rv == 0, "failed to parse rule");
+	free(s);
+
 	s = strdup("from ip 192.168.0.1*");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("from ip 192.168.0.1*");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("from ip 192.168.0.1*");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("from ip 192.168.0.1*");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("from ip 192.168.0.1*");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
@@ -194,27 +197,28 @@ START_TEST(set_filter_rule_02)
 
 	// macro expansion returns 1, not 0
 	s = strdup("from ip $macro");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("from ip $macro");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("from ip $macro");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("from ip $macro");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("from ip $macro");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	
 	opts_free(opts);
+	conn_opts_free(conn_opts);
 }
 END_TEST
 
@@ -224,6 +228,7 @@ START_TEST(set_filter_rule_03)
 	char *s;
 	int rv;
 	opts_t *opts = opts_new();
+	conn_opts_t *conn_opts = conn_opts_new();
 
 	s = strdup("$macro root daemon admin*");
 	rv = filter_macro_set(opts, s, 0);
@@ -233,216 +238,219 @@ START_TEST(set_filter_rule_03)
 	close(2);
 
 	s = strdup("from user *");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == -1, "failed to parse rule");
 	free(s);
 	s = strdup("from user *");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == -1, "failed to parse rule");
 	free(s);
 	s = strdup("from user *");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == -1, "failed to parse rule");
 	free(s);
 	s = strdup("from user *");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == -1, "failed to parse rule");
 	free(s);
 	s = strdup("from user *");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == -1, "failed to parse rule");
 	free(s);
 
 	s = strdup("from user * desc desc");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == -1, "failed to parse rule");
 	free(s);
 	s = strdup("from user * desc desc");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == -1, "failed to parse rule");
 	free(s);
 	s = strdup("from user * desc desc");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == -1, "failed to parse rule");
 	free(s);
 	s = strdup("from user * desc desc");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == -1, "failed to parse rule");
 	free(s);
 	s = strdup("from user * desc desc");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == -1, "failed to parse rule");
 	free(s);
 
 	s = strdup("from user $macro");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == -1, "failed to parse rule");
 	free(s);
 	s = strdup("from user $macro");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == -1, "failed to parse rule");
 	free(s);
 	s = strdup("from user $macro");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == -1, "failed to parse rule");
 	free(s);
 	s = strdup("from user $macro");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == -1, "failed to parse rule");
 	free(s);
 	s = strdup("from user $macro");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == -1, "failed to parse rule");
 	free(s);
 
 	s = strdup("from user $macro desc desc");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == -1, "failed to parse rule");
 	free(s);
 	s = strdup("from user $macro desc desc");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == -1, "failed to parse rule");
 	free(s);
 	s = strdup("from user $macro desc desc");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == -1, "failed to parse rule");
 	free(s);
 	s = strdup("from user $macro desc desc");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == -1, "failed to parse rule");
 	free(s);
 	s = strdup("from user $macro desc desc");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == -1, "failed to parse rule");
 	free(s);
 
 	s = strdup("from user $macro desc $macro");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == -1, "failed to parse rule");
 	free(s);
 	s = strdup("from user $macro desc $macro");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == -1, "failed to parse rule");
 	free(s);
 	s = strdup("from user $macro desc $macro");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == -1, "failed to parse rule");
 	free(s);
 	s = strdup("from user $macro desc $macro");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == -1, "failed to parse rule");
 	free(s);
 	s = strdup("from user $macro desc $macro");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == -1, "failed to parse rule");
 	free(s);
+
+	conn_opts->user_auth = 1;
 
 	s = strdup("from user *");
-	rv = filter_rule_set(opts, 1, "Divert", s, 0);
-	fail_unless(rv == 0, "failed to parse rule");
-	free(s);
-	s = strdup("from user *");
-	rv = filter_rule_set(opts, 1, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("from user *");
-	rv = filter_rule_set(opts, 1, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("from user *");
-	rv = filter_rule_set(opts, 1, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("from user *");
-	rv = filter_rule_set(opts, 1, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
+	fail_unless(rv == 0, "failed to parse rule");
+	free(s);
+	s = strdup("from user *");
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("from user * desc desc");
-	rv = filter_rule_set(opts, 1, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("from user * desc desc");
-	rv = filter_rule_set(opts, 1, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("from user * desc desc");
-	rv = filter_rule_set(opts, 1, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("from user * desc desc");
-	rv = filter_rule_set(opts, 1, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("from user * desc desc");
-	rv = filter_rule_set(opts, 1, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("from user $macro");
-	rv = filter_rule_set(opts, 1, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("from user $macro");
-	rv = filter_rule_set(opts, 1, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("from user $macro");
-	rv = filter_rule_set(opts, 1, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("from user $macro");
-	rv = filter_rule_set(opts, 1, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("from user $macro");
-	rv = filter_rule_set(opts, 1, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 
 	s = strdup("from user $macro desc desc");
-	rv = filter_rule_set(opts, 1, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("from user $macro desc desc");
-	rv = filter_rule_set(opts, 1, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("from user $macro desc desc");
-	rv = filter_rule_set(opts, 1, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("from user $macro desc desc");
-	rv = filter_rule_set(opts, 1, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("from user $macro desc desc");
-	rv = filter_rule_set(opts, 1, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 
 	s = strdup("from user $macro desc $macro");
-	rv = filter_rule_set(opts, 1, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("from user $macro desc $macro");
-	rv = filter_rule_set(opts, 1, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("from user $macro desc $macro");
-	rv = filter_rule_set(opts, 1, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("from user $macro desc $macro");
-	rv = filter_rule_set(opts, 1, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("from user $macro desc $macro");
-	rv = filter_rule_set(opts, 1, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	
 	opts_free(opts);
+	conn_opts_free(conn_opts);
 }
 END_TEST
 #endif /* !WITHOUT_USERAUTH */
@@ -452,130 +460,131 @@ START_TEST(set_filter_rule_04)
 	char *s;
 	int rv;
 	opts_t *opts = opts_new();
+	conn_opts_t *conn_opts = conn_opts_new();
 
 	s = strdup("to ip *");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to ip *");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to ip *");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to ip *");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to ip *");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("to ip * port *");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to ip * port *");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to ip * port *");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to ip * port *");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to ip * port *");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("to ip 192.168.0.1");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to ip 192.168.0.1");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to ip 192.168.0.1");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to ip 192.168.0.1");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to ip 192.168.0.1");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("to ip 192.168.0.1 port *");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to ip 192.168.0.1 port *");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to ip 192.168.0.1 port *");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to ip 192.168.0.1 port *");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to ip 192.168.0.1 port *");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("to ip * port 443");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to ip * port 443");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to ip * port 443");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to ip * port 443");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to ip * port 443");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("to ip 192.168.0.1 port 443");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to ip 192.168.0.1 port 443");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to ip 192.168.0.1 port 443");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to ip 192.168.0.1 port 443");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to ip 192.168.0.1 port 443");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
@@ -590,27 +599,28 @@ START_TEST(set_filter_rule_04)
 	free(s);
 
 	s = strdup("to ip $macro1 port $macro2");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("to ip $macro1 port $macro2");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("to ip $macro1 port $macro2");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("to ip $macro1 port $macro2");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("to ip $macro1 port $macro2");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 
 	opts_free(opts);
+	conn_opts_free(conn_opts);
 }
 END_TEST
 
@@ -619,6 +629,7 @@ START_TEST(set_filter_rule_05)
 	char *s;
 	int rv;
 	opts_t *opts = opts_new();
+	conn_opts_t *conn_opts = conn_opts_new();
 
 	s = strdup("$macro example.com example*");
 	rv = filter_macro_set(opts, s, 0);
@@ -631,552 +642,553 @@ START_TEST(set_filter_rule_05)
 	free(s);
 
 	s = strdup("to sni *");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to sni *");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to sni *");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to sni *");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to sni *");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("to sni example.com");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to sni example.com");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to sni example.com");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to sni example.com");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to sni example.com");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("to sni example.com port 443");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to sni example.com port 443");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to sni example.com port 443");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to sni example.com port 443");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to sni example.com port 443");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("to sni $macro");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("to sni $macro");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("to sni $macro");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("to sni $macro");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("to sni $macro");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 
 	s = strdup("to sni example.com port $macro2");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("to sni example.com port $macro2");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("to sni example.com port $macro2");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("to sni example.com port $macro2");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("to sni example.com port $macro2");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 
 	s = strdup("to sni $macro port $macro2");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("to sni $macro port $macro2");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("to sni $macro port $macro2");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("to sni $macro port $macro2");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("to sni $macro port $macro2");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 
 	s = strdup("to cn *");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to cn *");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to cn *");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to cn *");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to cn *");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("to cn example.com");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to cn example.com");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to cn example.com");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to cn example.com");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to cn example.com");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("to cn example.com port 443");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to cn example.com port 443");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to cn example.com port 443");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to cn example.com port 443");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to cn example.com port 443");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("to cn $macro");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("to cn $macro");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("to cn $macro");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("to cn $macro");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("to cn $macro");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 
 	s = strdup("to cn example.com port $macro2");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("to cn example.com port $macro2");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("to cn example.com port $macro2");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("to cn example.com port $macro2");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("to cn example.com port $macro2");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 
 	s = strdup("to cn $macro port $macro2");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("to cn $macro port $macro2");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("to cn $macro port $macro2");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("to cn $macro port $macro2");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("to cn $macro port $macro2");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 
 	s = strdup("to host *");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to host *");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to host *");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to host *");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to host *");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("to host example.com");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to host example.com");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to host example.com");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to host example.com");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to host example.com");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("to host example.com port 443");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to host example.com port 443");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to host example.com port 443");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to host example.com port 443");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to host example.com port 443");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("to host $macro");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("to host $macro");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("to host $macro");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("to host $macro");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("to host $macro");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 
 	s = strdup("to host example.com port $macro2");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("to host example.com port $macro2");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("to host example.com port $macro2");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("to host example.com port $macro2");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("to host example.com port $macro2");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 
 	s = strdup("to host $macro port $macro2");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("to host $macro port $macro2");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("to host $macro port $macro2");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("to host $macro port $macro2");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("to host $macro port $macro2");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 
 	s = strdup("to uri *");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to uri *");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to uri *");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to uri *");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to uri *");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("to uri example.com");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to uri example.com");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to uri example.com");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to uri example.com");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to uri example.com");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("to uri example.com port 443");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to uri example.com port 443");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to uri example.com port 443");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to uri example.com port 443");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to uri example.com port 443");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("to uri $macro");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("to uri $macro");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("to uri $macro");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("to uri $macro");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("to uri $macro");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 
 	s = strdup("to uri example.com port $macro2");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("to uri example.com port $macro2");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("to uri example.com port $macro2");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("to uri example.com port $macro2");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("to uri example.com port $macro2");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 
 	s = strdup("to uri $macro port $macro2");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("to uri $macro port $macro2");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("to uri $macro port $macro2");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("to uri $macro port $macro2");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("to uri $macro port $macro2");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 
 	s = strdup("to port 443");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to port 443");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to port 443");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to port 443");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("to port 443");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("to port $macro2");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("to port $macro2");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("to port $macro2");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("to port $macro2");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("to port $macro2");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 
 	opts_free(opts);
+	conn_opts_free(conn_opts);
 }
 END_TEST
 
@@ -1185,298 +1197,299 @@ START_TEST(set_filter_rule_06)
 	char *s;
 	int rv;
 	opts_t *opts = opts_new();
+	conn_opts_t *conn_opts = conn_opts_new();
 
 	s = strdup("log *");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log *");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log *");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log *");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log *");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("log connect");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log connect");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log connect");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log connect");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log connect");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("log master");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log master");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log master");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log master");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log master");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("log cert");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log cert");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log cert");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log cert");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log cert");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("log content");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log content");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log content");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log content");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log content");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("log pcap");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log pcap");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log pcap");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log pcap");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log pcap");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("log mirror");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log mirror");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log mirror");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log mirror");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log mirror");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("log !*");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log !*");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log !*");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log !*");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log !*");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("log !connect");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log !connect");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log !connect");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log !connect");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log !connect");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("log !master");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log !master");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log !master");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log !master");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log !master");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("log !cert");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log !cert");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log !cert");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log !cert");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log !cert");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("log !content");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log !content");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log !content");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log !content");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log !content");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("log !pcap");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log !pcap");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log !pcap");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log !pcap");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log !pcap");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("log !mirror");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log !mirror");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log !mirror");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log !mirror");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 	s = strdup("log !mirror");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
@@ -1486,23 +1499,23 @@ START_TEST(set_filter_rule_06)
 	free(s);
 
 	s = strdup("log $macro");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("log $macro");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("log $macro");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("log $macro");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("log $macro");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 
@@ -1512,23 +1525,23 @@ START_TEST(set_filter_rule_06)
 	free(s);
 
 	s = strdup("log $macro2");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("log $macro2");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("log $macro2");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("log $macro2");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("log $macro2");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 
@@ -1538,23 +1551,23 @@ START_TEST(set_filter_rule_06)
 	free(s);
 
 	s = strdup("log $macro3");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("log $macro3");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("log $macro3");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("log $macro3");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("log $macro3");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 
@@ -1564,23 +1577,23 @@ START_TEST(set_filter_rule_06)
 	free(s);
 
 	s = strdup("log $macro4");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("log $macro4");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("log $macro4");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("log $macro4");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("log $macro4");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 
@@ -1590,23 +1603,23 @@ START_TEST(set_filter_rule_06)
 	free(s);
 
 	s = strdup("log $macro5");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("log $macro5");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("log $macro5");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("log $macro5");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("log $macro5");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 
@@ -1616,27 +1629,28 @@ START_TEST(set_filter_rule_06)
 	free(s);
 
 	s = strdup("log $macro6");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("log $macro6");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("log $macro6");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("log $macro6");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 	s = strdup("log $macro6");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 
 	opts_free(opts);
+	conn_opts_free(conn_opts);
 }
 END_TEST
 
@@ -1646,54 +1660,57 @@ START_TEST(set_filter_rule_07)
 	char *s;
 	int rv;
 	opts_t *opts = opts_new();
+	conn_opts_t *conn_opts = conn_opts_new();
 
 	s = strdup("*");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("from *");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("from ip *");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("from ip * to ip 192.168.0.1");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
+	conn_opts->user_auth = 1;
+
 	s = strdup("from user *");
-	rv = filter_rule_set(opts, 1, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("from desc *");
-	rv = filter_rule_set(opts, 1, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("from user * desc desc");
-	rv = filter_rule_set(opts, 1, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("from user root desc *");
-	rv = filter_rule_set(opts, 1, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("from user * desc *");
-	rv = filter_rule_set(opts, 1, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("from * to * log *");
-	rv = filter_rule_set(opts, 1, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
@@ -1712,8 +1729,11 @@ START_TEST(set_filter_rule_07)
 		"failed to parse rule: %s", s);	
 	free(s);
 
+	global_tmp_opts_t *global_tmp_opts = malloc(sizeof(global_tmp_opts_t));
+	memset(global_tmp_opts, 0, sizeof(global_tmp_opts_t));
+
 	close(2);
-	opts->filter = filter_set(opts->filter_rules);
+	opts->filter = filter_set(opts->filter_rules, "sslproxy", global_tmp_opts);
 	
 	s = filter_str(opts->filter);
 	fail_unless(!strcmp(s, "filter=>\n"
@@ -1774,6 +1794,8 @@ START_TEST(set_filter_rule_07)
 	free(s);
 
 	opts_free(opts);
+	conn_opts_free(conn_opts);
+	global_tmp_opts_free(global_tmp_opts);
 }
 END_TEST
 #endif /* !WITHOUT_USERAUTH */
@@ -1783,66 +1805,67 @@ START_TEST(set_filter_rule_08)
 	char *s;
 	int rv;
 	opts_t *opts = opts_new();
+	conn_opts_t *conn_opts = conn_opts_new();
 
 	s = strdup("from ip 192.168.0.1 to ip 192.168.0.2");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("from ip 192.168.0.1 to ip 192.168.0.2 log connect master cert content pcap mirror");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("from ip 192.168.0.1 to ip 192.168.0.2 log !connect !cert !pcap");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	// Block action at precedence 1 is not applied to a site of the same rule at precedence 2 now
 	s = strdup("from ip 192.168.0.1 to ip 192.168.0.2");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	// Add another target
 	s = strdup("from ip 192.168.0.1 to ip 192.168.0.3");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	// Add another source
 	s = strdup("from ip 192.168.0.2 to ip 192.168.0.1");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("from ip 192.168.0.2 to ip *");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	// Search substring (subnet?)
 	s = strdup("from ip 192.168.0.2 to ip 192.168.0.*");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	// Add another target
 	s = strdup("from ip 192.168.0.2 to ip 192.168.0.3");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	// Add substring src
 	s = strdup("from ip 192.168.1.* to ip 192.168.0.1");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	// Add substring src and target
 	s = strdup("from ip 192.168.2.* to ip 192.168.3.*");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
@@ -1878,8 +1901,11 @@ START_TEST(set_filter_rule_08)
 #endif /* WITHOUT_USERAUTH */
 	free(s);
 
+	global_tmp_opts_t *global_tmp_opts = malloc(sizeof(global_tmp_opts_t));
+	memset(global_tmp_opts, 0, sizeof(global_tmp_opts_t));
+
 	close(2);
-	opts->filter = filter_set(opts->filter_rules);
+	opts->filter = filter_set(opts->filter_rules, "sslproxy", global_tmp_opts);
 
 	s = filter_str(opts->filter);
 #ifndef WITHOUT_USERAUTH
@@ -1939,6 +1965,8 @@ START_TEST(set_filter_rule_08)
 	free(s);
 
 	opts_free(opts);
+	conn_opts_free(conn_opts);
+	global_tmp_opts_free(global_tmp_opts);
 }
 END_TEST
 
@@ -1947,78 +1975,79 @@ START_TEST(set_filter_rule_09)
 	char *s;
 	int rv;
 	opts_t *opts = opts_new();
+	conn_opts_t *conn_opts = conn_opts_new();
 
 	s = strdup("from ip 192.168.0.1 to ip 192.168.0.2 port 443");
-	rv = filter_rule_set(opts, 0, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("from ip 192.168.0.1 to ip 192.168.0.2 port 443 log connect master cert content pcap mirror");
-	rv = filter_rule_set(opts, 0, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("from ip 192.168.0.1 to ip 192.168.0.2 port 443 log !connect !cert !pcap");
-	rv = filter_rule_set(opts, 0, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	// Block action at precedence 2 is not applied to a port of the same rule at precedence 3 now
 	s = strdup("from ip 192.168.0.1 to ip 192.168.0.2 port 443");
-	rv = filter_rule_set(opts, 0, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	// Add another target, the following port rules should not change this site rule
 	s = strdup("from ip 192.168.0.1 to ip 192.168.0.3 log !mirror");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	// Add another target port
 	s = strdup("from ip 192.168.0.1 to ip 192.168.0.3 port 443");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	// Add another target port
 	s = strdup("from ip 192.168.0.1 to ip 192.168.0.3 port 80");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	// Add another source
 	s = strdup("from ip 192.168.0.2 to ip 192.168.0.1 port 443");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	// Add substring source
 	s = strdup("from ip 192.168.1.* to ip 192.168.0.1 port 443");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	// Add substring source and target
 	s = strdup("from ip 192.168.2.* to ip 192.168.3.* port 443");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("from ip 192.168.0.2 to ip 192.168.0.1 port *");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	// Search substring
 	s = strdup("from ip 192.168.0.2 to ip 192.168.0.1 port 80*");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	// Add substring source, target, and port
 	s = strdup("from ip 192.168.4.* to ip 192.168.5.* port 80*");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
@@ -2058,8 +2087,11 @@ START_TEST(set_filter_rule_09)
 #endif /* WITHOUT_USERAUTH */
 	free(s);
 
+	global_tmp_opts_t *global_tmp_opts = malloc(sizeof(global_tmp_opts_t));
+	memset(global_tmp_opts, 0, sizeof(global_tmp_opts_t));
+
 	close(2);
-	opts->filter = filter_set(opts->filter_rules);
+	opts->filter = filter_set(opts->filter_rules, "sslproxy", global_tmp_opts);
 
 	s = filter_str(opts->filter);
 #ifndef WITHOUT_USERAUTH
@@ -2149,6 +2181,8 @@ START_TEST(set_filter_rule_09)
 	free(s);
 
 	opts_free(opts);
+	conn_opts_free(conn_opts);
+	global_tmp_opts_free(global_tmp_opts);
 }
 END_TEST
 
@@ -2158,65 +2192,68 @@ START_TEST(set_filter_rule_10)
 	char *s;
 	int rv;
 	opts_t *opts = opts_new();
+	conn_opts_t *conn_opts = conn_opts_new();
+
+	conn_opts->user_auth = 1;
 
 	s = strdup("from user root to sni example.com");
-	rv = filter_rule_set(opts, 1, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("from user root to sni example.com log connect master cert content pcap mirror");
-	rv = filter_rule_set(opts, 1, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("from user root to sni example.com log !connect !cert !pcap");
-	rv = filter_rule_set(opts, 1, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	// Block action at precedence 2 is not applied to a site of the same rule at precedence 4 now
 	s = strdup("from user root to sni example.com");
-	rv = filter_rule_set(opts, 1, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	// Add another target
 	s = strdup("from user root to sni example2.com");
-	rv = filter_rule_set(opts, 1, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	// Add another source
 	s = strdup("from user daemon to sni example.com");
-	rv = filter_rule_set(opts, 1, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("from user daemon to sni *");
-	rv = filter_rule_set(opts, 1, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	// Search substring (subdomain?)
 	s = strdup("from user daemon to sni .example.com*");
-	rv = filter_rule_set(opts, 1, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	// Add another target
 	s = strdup("from user daemon to sni example3.com");
-	rv = filter_rule_set(opts, 1, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	// Add substring source
 	s = strdup("from user admin1* to sni example4.com");
-	rv = filter_rule_set(opts, 1, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("from user admin2* to sni example5.com");
-	rv = filter_rule_set(opts, 1, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
@@ -2236,8 +2273,11 @@ START_TEST(set_filter_rule_10)
 		"failed to parse rule: %s", s);	
 	free(s);
 
+	global_tmp_opts_t *global_tmp_opts = malloc(sizeof(global_tmp_opts_t));
+	memset(global_tmp_opts, 0, sizeof(global_tmp_opts_t));
+
 	close(2);
-	opts->filter = filter_set(opts->filter_rules);
+	opts->filter = filter_set(opts->filter_rules, "sslproxy", global_tmp_opts);
 
 	s = filter_str(opts->filter);
 	fail_unless(!strcmp(s, "filter=>\n"
@@ -2272,6 +2312,8 @@ START_TEST(set_filter_rule_10)
 	free(s);
 
 	opts_free(opts);
+	conn_opts_free(conn_opts);
+	global_tmp_opts_free(global_tmp_opts);
 }
 END_TEST
 
@@ -2280,80 +2322,83 @@ START_TEST(set_filter_rule_11)
 	char *s;
 	int rv;
 	opts_t *opts = opts_new();
+	conn_opts_t *conn_opts = conn_opts_new();
+
+	conn_opts->user_auth = 1;
 
 	s = strdup("from user root to cn example.com port 443");
-	rv = filter_rule_set(opts, 1, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("from user root to cn example.com port 443 log connect master cert content pcap mirror");
-	rv = filter_rule_set(opts, 1, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("from user root to cn example.com port 443 log !connect !cert !pcap");
-	rv = filter_rule_set(opts, 1, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	// Block action at precedence 3 is not applied to a site of the same rule at precedence 5 now
 	s = strdup("from user root to cn example.com port 443");
-	rv = filter_rule_set(opts, 1, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	// Add another target
 	s = strdup("from user root to cn example2.com port 443");
-	rv = filter_rule_set(opts, 1, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	// Add another source
 	s = strdup("from user daemon to cn example.com port 443");
-	rv = filter_rule_set(opts, 1, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("from user daemon to cn * port 443");
-	rv = filter_rule_set(opts, 1, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("from user daemon to cn example.com port *");
-	rv = filter_rule_set(opts, 1, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("from user daemon to cn * port *");
-	rv = filter_rule_set(opts, 1, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	// Search substring (subdomain?)
 	s = strdup("from user daemon to cn .example.com* port 443");
-	rv = filter_rule_set(opts, 1, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("from user daemon to cn .example.com* port 443*");
-	rv = filter_rule_set(opts, 1, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	// Add another target
 	s = strdup("from user daemon to cn example3.com port 443");
-	rv = filter_rule_set(opts, 1, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	// Add substring source
 	s = strdup("from user admin1* to cn example4.com port 443");
-	rv = filter_rule_set(opts, 1, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("from user admin2* to cn example5.com port 443");
-	rv = filter_rule_set(opts, 1, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
@@ -2376,8 +2421,11 @@ START_TEST(set_filter_rule_11)
 		"failed to parse rule: %s", s);	
 	free(s);
 
+	global_tmp_opts_t *global_tmp_opts = malloc(sizeof(global_tmp_opts_t));
+	memset(global_tmp_opts, 0, sizeof(global_tmp_opts_t));
+
 	close(2);
-	opts->filter = filter_set(opts->filter_rules);
+	opts->filter = filter_set(opts->filter_rules, "sslproxy", global_tmp_opts);
 
 	s = filter_str(opts->filter);
 	fail_unless(!strcmp(s, "filter=>\n"
@@ -2434,6 +2482,8 @@ START_TEST(set_filter_rule_11)
 	free(s);
 
 	opts_free(opts);
+	conn_opts_free(conn_opts);
+	global_tmp_opts_free(global_tmp_opts);
 }
 END_TEST
 
@@ -2442,99 +2492,102 @@ START_TEST(set_filter_rule_12)
 	char *s;
 	int rv;
 	opts_t *opts = opts_new();
+	conn_opts_t *conn_opts = conn_opts_new();
+
+	conn_opts->user_auth = 1;
 
 	s = strdup("from user root desc desc to host example.com");
-	rv = filter_rule_set(opts, 1, "Divert", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Divert", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("from user root desc desc to host example.com port 443 log connect master cert content pcap mirror");
-	rv = filter_rule_set(opts, 1, "Split", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Split", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("from user root desc desc to host example.com log !connect !cert !pcap");
-	rv = filter_rule_set(opts, 1, "Pass", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Pass", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	// Block action at precedence 2 is not applied to a site of the same rule at precedence 5 now
 	s = strdup("from user root desc desc to host example.com");
-	rv = filter_rule_set(opts, 1, "Block", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Block", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	// Add another target
 	s = strdup("from user root desc desc to host example2.com port 443");
-	rv = filter_rule_set(opts, 1, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	// Add another source
 	s = strdup("from user daemon desc desc to host example.com");
-	rv = filter_rule_set(opts, 1, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("from user daemon desc desc to host * port 443");
-	rv = filter_rule_set(opts, 1, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	// Search substring (subdomain?)
 	s = strdup("from user daemon desc desc to host .example.com*");
-	rv = filter_rule_set(opts, 1, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	// Add another target
 	s = strdup("from user daemon desc desc to host example3.com");
-	rv = filter_rule_set(opts, 1, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	// Add substring source
 	s = strdup("from user admin1* desc desc1* to host example4.com");
-	rv = filter_rule_set(opts, 1, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("from user admin2* desc desc2* to host example5.com");
-	rv = filter_rule_set(opts, 1, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	// Add another desc
 	s = strdup("from user daemon desc desc2 to host example6.com");
-	rv = filter_rule_set(opts, 1, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	// Add all users
 	s = strdup("from user * desc desc to host example7.com");
-	rv = filter_rule_set(opts, 1, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	// Add all users all sni sites
 	s = strdup("from user * desc desc to sni *");
-	rv = filter_rule_set(opts, 1, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	// Add another desc
 	s = strdup("from desc desc3 to uri example8.com");
-	rv = filter_rule_set(opts, 1, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("from user * desc desc4* to host example9.com");
-	rv = filter_rule_set(opts, 1, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
 	s = strdup("from user admin* desc desc5* to host example10.com* port 443*");
-	rv = filter_rule_set(opts, 1, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 0, "failed to parse rule");
 	free(s);
 
@@ -2560,8 +2613,11 @@ START_TEST(set_filter_rule_12)
 		"failed to parse rule: %s", s);	
 	free(s);
 
+	global_tmp_opts_t *global_tmp_opts = malloc(sizeof(global_tmp_opts_t));
+	memset(global_tmp_opts, 0, sizeof(global_tmp_opts_t));
+
 	close(2);
-	opts->filter = filter_set(opts->filter_rules);
+	opts->filter = filter_set(opts->filter_rules, "sslproxy", global_tmp_opts);
 
 	s = filter_str(opts->filter);
 	fail_unless(!strcmp(s, "filter=>\n"
@@ -2631,6 +2687,8 @@ START_TEST(set_filter_rule_12)
 	free(s);
 
 	opts_free(opts);
+	conn_opts_free(conn_opts);
+	global_tmp_opts_free(global_tmp_opts);
 }
 END_TEST
 #endif /* !WITHOUT_USERAUTH */
@@ -2640,6 +2698,7 @@ START_TEST(set_filter_rule_13)
 	char *s;
 	int rv;
 	opts_t *opts = opts_new();
+	conn_opts_t *conn_opts = conn_opts_new();
 
 	s = strdup("$ips 192.168.0.1 192.168.0.2*");
 	rv = filter_macro_set(opts, s, 0);
@@ -2662,7 +2721,7 @@ START_TEST(set_filter_rule_13)
 	free(s);
 
 	s = strdup("from ip $ips to ip $dstips port $ports log $logs");
-	rv = filter_rule_set(opts, 0, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 
@@ -2708,8 +2767,11 @@ START_TEST(set_filter_rule_13)
 #endif /* WITHOUT_USERAUTH */
 	free(s);
 
+	global_tmp_opts_t *global_tmp_opts = malloc(sizeof(global_tmp_opts_t));
+	memset(global_tmp_opts, 0, sizeof(global_tmp_opts_t));
+
 	close(2);
-	opts->filter = filter_set(opts->filter_rules);
+	opts->filter = filter_set(opts->filter_rules, "sslproxy", global_tmp_opts);
 
 	s = filter_str(opts->filter);
 #ifndef WITHOUT_USERAUTH
@@ -2785,6 +2847,8 @@ START_TEST(set_filter_rule_13)
 	free(s);
 
 	opts_free(opts);
+	conn_opts_free(conn_opts);
+	global_tmp_opts_free(global_tmp_opts);
 }
 END_TEST
 
@@ -2794,6 +2858,7 @@ START_TEST(set_filter_rule_14)
 	char *s;
 	int rv;
 	opts_t *opts = opts_new();
+	conn_opts_t *conn_opts = conn_opts_new();
 
 	s = strdup("$users root admin*");
 	rv = filter_macro_set(opts, s, 0);
@@ -2820,8 +2885,10 @@ START_TEST(set_filter_rule_14)
 	fail_unless(rv == 0, "failed to set macro");
 	free(s);
 
+	conn_opts->user_auth = 1;
+
 	s = strdup("from user $users desc $descs to sni $sites log $logs");
-	rv = filter_rule_set(opts, 1, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 
@@ -2846,8 +2913,11 @@ START_TEST(set_filter_rule_14)
 		"failed to parse rule: %s", s);	
 	free(s);
 
+	global_tmp_opts_t *global_tmp_opts = malloc(sizeof(global_tmp_opts_t));
+	memset(global_tmp_opts, 0, sizeof(global_tmp_opts_t));
+
 	close(2);
-	opts->filter = filter_set(opts->filter_rules);
+	opts->filter = filter_set(opts->filter_rules, "sslproxy", global_tmp_opts);
 
 	s = filter_str(opts->filter);
 	fail_unless(!strcmp(s, "filter=>\n"
@@ -2890,6 +2960,8 @@ START_TEST(set_filter_rule_14)
 	free(s);
 
 	opts_free(opts);
+	conn_opts_free(conn_opts);
+	global_tmp_opts_free(global_tmp_opts);
 }
 END_TEST
 
@@ -2898,6 +2970,7 @@ START_TEST(set_filter_rule_15)
 	char *s;
 	int rv;
 	opts_t *opts = opts_new();
+	conn_opts_t *conn_opts = conn_opts_new();
 
 	s = strdup("$users root admin*");
 	rv = filter_macro_set(opts, s, 0);
@@ -2930,8 +3003,10 @@ START_TEST(set_filter_rule_15)
 	fail_unless(rv == 0, "failed to set macro");
 	free(s);
 
+	conn_opts->user_auth = 1;
+
 	s = strdup("from user $users desc $descs to cn $sites port $ports log $logs");
-	rv = filter_rule_set(opts, 1, "Match", s, 0);
+	rv = filter_rule_set(opts, conn_opts, "Match", s, 0);
 	fail_unless(rv == 1, "failed to parse rule");
 	free(s);
 
@@ -2956,8 +3031,11 @@ START_TEST(set_filter_rule_15)
 		"failed to parse rule: %s", s);	
 	free(s);
 
+	global_tmp_opts_t *global_tmp_opts = malloc(sizeof(global_tmp_opts_t));
+	memset(global_tmp_opts, 0, sizeof(global_tmp_opts_t));
+
 	close(2);
-	opts->filter = filter_set(opts->filter_rules);
+	opts->filter = filter_set(opts->filter_rules, "sslproxy", global_tmp_opts);
 
 	s = filter_str(opts->filter);
 	fail_unless(!strcmp(s, "filter=>\n"
@@ -3032,6 +3110,8 @@ START_TEST(set_filter_rule_15)
 	free(s);
 
 	opts_free(opts);
+	conn_opts_free(conn_opts);
+	global_tmp_opts_free(global_tmp_opts);
 }
 END_TEST
 #endif /* !WITHOUT_USERAUTH */

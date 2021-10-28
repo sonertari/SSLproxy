@@ -284,11 +284,15 @@ void proxyspec_free(proxyspec_t *);
 proxyspec_t *proxyspec_new(global_t *, const char *, global_tmp_opts_t *) MALLOC WUNRES;
 int proxyspec_set_proto(proxyspec_t *, const char *) NONNULL(1,2) WUNRES;
 int proxyspec_parse(int *, char **[], const char *, global_t *, const char *, global_tmp_opts_t *) WUNRES;
+
+char *conn_opts_str(conn_opts_t *);
 char *proxyspec_str(proxyspec_t *) NONNULL(1) MALLOC WUNRES;
 
+conn_opts_t *conn_opts_new(void) MALLOC WUNRES;
 opts_t *opts_new(void) MALLOC WUNRES;
 void opts_free(opts_t *) NONNULL(1);
-char *opts_proto_dbg_dump(conn_opts_t *) NONNULL(1);
+void conn_opts_free(conn_opts_t *);
+conn_opts_t *conn_opts_copy(conn_opts_t *, const char *, global_tmp_opts_t *) WUNRES;
 int opts_set_cacrt(conn_opts_t *, const char *, const char *, global_tmp_opts_t *) NONNULL(1,2,3) WUNRES;
 int opts_set_cakey(conn_opts_t *, const char *, const char *, global_tmp_opts_t *) NONNULL(1,2,3) WUNRES;
 int opts_set_chain(conn_opts_t *, const char *, const char *, global_tmp_opts_t *) NONNULL(1,2,3) WUNRES;
@@ -308,6 +312,8 @@ int opts_force_proto(conn_opts_t *, const char *, const char *) NONNULL(1,2,3) W
 int opts_disable_proto(conn_opts_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;
 int opts_set_ciphers(conn_opts_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;
 int opts_set_ciphersuites(conn_opts_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;
+
+int set_conn_opts_option(conn_opts_t *, const char *, const char *, char *, int, global_tmp_opts_t *);
 
 #define OPTS_DEBUG(global) unlikely((global)->debug)
 

@@ -57,6 +57,25 @@
 
 ACM_DECLARE (char);
 
+typedef struct filter_parse_state {
+	unsigned int action : 1;
+	unsigned int user : 1;
+	unsigned int desc : 1;
+	unsigned int srcip : 1;
+	unsigned int sni : 1;
+	unsigned int cn : 1;
+	unsigned int host : 1;
+	unsigned int uri : 1;
+	unsigned int dstip : 1;
+	unsigned int dstport : 1;
+} filter_parse_state_t;
+
+typedef struct name_value_lines {
+	char *name;
+	char *value;
+	int line_num;
+} name_value_lines_t;
+
 typedef struct value {
 	char *value;
 	struct value *next;
@@ -86,6 +105,9 @@ typedef struct filter_action {
 #ifndef WITHOUT_MIRROR
 	unsigned int log_mirror : 2;
 #endif /* !WITHOUT_MIRROR */
+
+	// Only used with struct filter rules
+	conn_opts_t *conn_opts;
 
 	// Precedence is used in rule application
 	// More specific rules have higher precedence
@@ -277,8 +299,10 @@ char *filter_macro_str(macro_t *);
 char *filter_rule_str(filter_rule_t *);
 char *filter_str(filter_t *);
 
-int filter_passsite_set(opts_t *, unsigned int, char *, int) NONNULL(1,3) WUNRES;
+int filter_passsite_set(opts_t *, conn_opts_t *, char *, int) NONNULL(1,3) WUNRES;
 int filter_macro_set(opts_t *, char *, int) NONNULL(1,2) WUNRES;
+
+int load_filterrule_struct(opts_t *, conn_opts_t *, const char *, int *, FILE *, global_tmp_opts_t *) WUNRES;
 
 filter_port_t *filter_port_find(filter_site_t *, char *) NONNULL(1,2);
 
@@ -296,8 +320,8 @@ filter_desc_t *filter_desc_substring_match(ACMachine(char) *, char *) NONNULL(2)
 filter_user_t *filter_user_exact_match(kbtree_t(user) *, char *) NONNULL(2) WUNRES;
 filter_user_t *filter_user_substring_match(ACMachine(char) *, char *) NONNULL(2) WUNRES;
 #endif /* !WITHOUT_USERAUTH */
-int filter_rule_set(opts_t *, unsigned int, const char *, char *, int) NONNULL(1,3,4) WUNRES;
-filter_t *filter_set(filter_rule_t *) WUNRES;
+int filter_rule_set(opts_t *, conn_opts_t *conn_opts, const char *, char *, int) NONNULL(1,3,4) WUNRES;
+filter_t *filter_set(filter_rule_t *, const char *, global_tmp_opts_t *) WUNRES;
 
 #endif /* !FILTER_H */
 

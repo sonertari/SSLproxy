@@ -1135,14 +1135,7 @@ pxy_listener_acceptcb_child(UNUSED struct evconnlistener *listener, evutil_socke
 	}
 
 	if (OPTS_DEBUG(ctx->global)) {
-		char *host, *port;
-		if (sys_sockaddr_str((struct sockaddr *)&ctx->dstaddr, ctx->dstaddrlen, &host, &port) == 0) {
-			log_dbg_printf("Child connecting to [%s]:%s\n", host, port);
-			free(host);
-			free(port);
-		} else {
-			log_dbg_printf("Child connecting to [?]:?\n");
-		}
+		log_dbg_printf("Child connecting to [%s]:%s\n", STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str));
 	}
 
 	/* initiate connection, except for the first child conn which uses the parent's srvdst as dst */
@@ -2007,6 +2000,58 @@ pxyconn_apply_deferred_block_action(pxy_conn_ctx_t *ctx)
 }
 
 unsigned int
+pxyconn_translate_filter_action(pxy_conn_ctx_t *ctx, filter_action_t *a)
+{
+	unsigned int action = FILTER_ACTION_NONE;
+
+	if (a->divert) {
+		action = FILTER_ACTION_DIVERT;
+	}
+	else if (a->split) {
+		action = FILTER_ACTION_SPLIT;
+	}
+	else if (a->pass) {
+		// Ignore pass action if already in passthrough mode
+		if (!ctx->pass) {
+			action = FILTER_ACTION_PASS;
+		}
+	}
+	else if (a->block) {
+		action = FILTER_ACTION_BLOCK;
+	}
+	else if (a->match) {
+		action = FILTER_ACTION_MATCH;
+	}
+
+	// Multiple log actions can be defined, hence no 'else'
+	// 0: don't change, 1: disable, 2: enable
+	if (a->log_connect) {
+		action |= (a->log_connect % 2) ? FILTER_LOG_NOCONNECT : FILTER_LOG_CONNECT;
+	}
+	if (a->log_master) {
+		action |= (a->log_master % 2) ? FILTER_LOG_NOMASTER : FILTER_LOG_MASTER;
+	}
+	if (a->log_cert) {
+		action |= (a->log_cert % 2) ? FILTER_LOG_NOCERT : FILTER_LOG_CERT;
+	}
+	if (a->log_content) {
+		action |= (a->log_content % 2) ? FILTER_LOG_NOCONTENT : FILTER_LOG_CONTENT;
+	}
+	if (a->log_pcap) {
+		action |= (a->log_pcap % 2) ? FILTER_LOG_NOPCAP : FILTER_LOG_PCAP;
+	}
+#ifndef WITHOUT_MIRROR
+	if (a->log_mirror) {
+		action |= (a->log_mirror % 2) ? FILTER_LOG_NOMIRROR : FILTER_LOG_MIRROR;
+	}
+#endif /* !WITHOUT_MIRROR */
+
+	action |= a->precedence;
+
+	return action;
+}
+
+filter_action_t *
 pxyconn_set_filter_action(pxy_conn_ctx_t *ctx, filter_action_t *a1, filter_action_t *a2
 #ifdef DEBUG_PROXY
 	, char *s1, char *s2
@@ -2033,63 +2078,50 @@ pxyconn_set_filter_action(pxy_conn_ctx_t *ctx, filter_action_t *a1, filter_actio
 #endif /* DEBUG_PROXY */
 	}
 
-	unsigned int action = FILTER_ACTION_NONE;
+#ifdef DEBUG_PROXY
 	if (a->divert) {
 		log_fine_va("Filter divert action for %s, precedence %d", site, a->precedence);
-		action = FILTER_ACTION_DIVERT;
 	}
 	else if (a->split) {
 		log_fine_va("Filter split action for %s, precedence %d", site, a->precedence);
-		action = FILTER_ACTION_SPLIT;
 	}
 	else if (a->pass) {
 		// Ignore pass action if already in passthrough mode
 		if (!ctx->pass) {
 			log_fine_va("Filter pass action for %s, precedence %d", site, a->precedence);
-			action = FILTER_ACTION_PASS;
 		}
 	}
 	else if (a->block) {
 		log_fine_va("Filter block action for %s, precedence %d", site, a->precedence);
-		action = FILTER_ACTION_BLOCK;
 	}
 	else if (a->match) {
 		log_fine_va("Filter match action for %s, precedence %d", site, a->precedence);
-		action = FILTER_ACTION_MATCH;
 	}
 
 	// Multiple log actions can be defined, hence no 'else'
 	// 0: don't change, 1: disable, 2: enable
 	if (a->log_connect) {
 		log_fine_va("Filter %s connect log for %s, precedence %d", a->log_connect % 2 ? "disable" : "enable", site, a->precedence);
-		action |= (a->log_connect % 2) ? FILTER_LOG_NOCONNECT : FILTER_LOG_CONNECT;
 	}
 	if (a->log_master) {
 		log_fine_va("Filter %s master log for %s, precedence %d", a->log_master % 2 ? "disable" : "enable", site, a->precedence);
-		action |= (a->log_master % 2) ? FILTER_LOG_NOMASTER : FILTER_LOG_MASTER;
 	}
 	if (a->log_cert) {
 		log_fine_va("Filter %s cert log for %s, precedence %d", a->log_cert % 2 ? "disable" : "enable", site, a->precedence);
-		action |= (a->log_cert % 2) ? FILTER_LOG_NOCERT : FILTER_LOG_CERT;
 	}
 	if (a->log_content) {
 		log_fine_va("Filter %s content log for %s, precedence %d", a->log_content % 2 ? "disable" : "enable", site, a->precedence);
-		action |= (a->log_content % 2) ? FILTER_LOG_NOCONTENT : FILTER_LOG_CONTENT;
 	}
 	if (a->log_pcap) {
 		log_fine_va("Filter %s pcap log for %s, precedence %d", a->log_pcap % 2 ? "disable" : "enable", site, a->precedence);
-		action |= (a->log_pcap % 2) ? FILTER_LOG_NOPCAP : FILTER_LOG_PCAP;
 	}
 #ifndef WITHOUT_MIRROR
 	if (a->log_mirror) {
 		log_fine_va("Filter %s mirror log for %s, precedence %d", a->log_mirror % 2 ? "disable" : "enable", site, a->precedence);
-		action |= (a->log_mirror % 2) ? FILTER_LOG_NOMIRROR : FILTER_LOG_MIRROR;
 	}
 #endif /* !WITHOUT_MIRROR */
-
-	action |= a->precedence;
-
-	return action;
+#endif /* DEBUG_PROXY */
+	return a;
 }
 
 static int NONNULL(1,2)
@@ -2130,10 +2162,10 @@ pxyconn_filter_port(pxy_conn_ctx_t *ctx, filter_site_t *site)
 }
 
 #ifndef WITHOUT_USERAUTH
-static unsigned int
+static filter_action_t *
 pxyconn_filter_user(pxy_conn_ctx_t *ctx, proto_filter_func_t filtercb, filter_user_t *user)
 {
-	unsigned int action = FILTER_ACTION_NONE;
+	filter_action_t * action = NULL;
 	if (user) {
 		if (ctx->desc) {
 			log_finest_va("Searching user keyword exact: %s, %s", ctx->user, ctx->desc);
@@ -2156,10 +2188,10 @@ pxyconn_filter_user(pxy_conn_ctx_t *ctx, proto_filter_func_t filtercb, filter_us
 }
 #endif /* !WITHOUT_USERAUTH */
 
-unsigned int
+filter_action_t *
 pxyconn_filter(pxy_conn_ctx_t *ctx, proto_filter_func_t filtercb)
 {
-	unsigned int action = FILTER_ACTION_NONE;
+	filter_action_t * action = NULL;
 
 	filter_t *filter = ctx->spec->opts->filter;
 	if (filter) {

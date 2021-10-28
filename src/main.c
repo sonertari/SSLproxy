@@ -610,18 +610,6 @@ main(int argc, char *argv[])
 	if (proxyspec_parse(&argc, &argv, natengine, global, argv0, global_tmp_opts) == -1)
 		exit(EXIT_FAILURE);
 
-	// We don't need the tmp opts used to clone global opts into proxyspecs anymore
-	global_tmp_opts_free(global_tmp_opts);
-	global_tmp_opts = NULL;
-
-	for (proxyspec_t *spec = global->spec; spec; spec = spec->next) {
-		if (spec->opts->filter_rules) {
-			spec->opts->filter = filter_set(spec->opts->filter_rules);
-			if (!spec->opts->filter)
-				oom_die(argv0);
-		}
-	}
-
 	/* usage checks before defaults */
 	if (global->detach && OPTS_DEBUG(global)) {
 		fprintf(stderr, "%s: -d and -D are mutually exclusive.\n",
@@ -673,8 +661,16 @@ main(int argc, char *argv[])
 #endif /* !OPENSSL_NO_ENGINE */
 		main_check_opts(global->opts, global->conn_opts, argv0);
 		for (proxyspec_t *spec = global->spec; spec; spec = spec->next) {
-			if (spec->ssl || spec->upgrade)
+			if (spec->ssl || spec->upgrade) {
 				main_check_opts(spec->opts, spec->conn_opts, argv0);
+
+				filter_rule_t *rule = spec->opts->filter_rules;
+				while (rule) {
+					if (rule->action.conn_opts)
+						main_check_opts(spec->opts, rule->action.conn_opts, argv0);
+					rule = rule->next;
+				}
+			}
 		}
 	}
 #ifdef __APPLE__
@@ -740,6 +736,23 @@ main(int argc, char *argv[])
 			spec->conn_opts->ciphersuites = strdup(DFLT_CIPHERSUITES);
 			if (!spec->conn_opts->ciphersuites)
 				oom_die(argv0);
+		}
+
+		filter_rule_t *rule = spec->opts->filter_rules;
+		while (rule) {
+			if (rule->action.conn_opts) {
+				if (!rule->action.conn_opts->ciphers) {
+					rule->action.conn_opts->ciphers = strdup(DFLT_CIPHERS);
+					if (!rule->action.conn_opts->ciphers)
+						oom_die(argv0);
+				}
+				if (!rule->action.conn_opts->ciphersuites) {
+					rule->action.conn_opts->ciphersuites = strdup(DFLT_CIPHERSUITES);
+					if (!rule->action.conn_opts->ciphersuites)
+						oom_die(argv0);
+				}
+			}
+			rule = rule->next;
 		}
 	}
 	if (!global->dropuser && !geteuid() && !getuid() &&
@@ -865,9 +878,21 @@ main(int argc, char *argv[])
 		fclose(keyf);
 	}
 
+	for (proxyspec_t *spec = global->spec; spec; spec = spec->next) {
+		if (spec->opts->filter_rules) {
+			spec->opts->filter = filter_set(spec->opts->filter_rules, argv0, global_tmp_opts);
+			if (!spec->opts->filter)
+				oom_die(argv0);
+		}
+	}
+
+	// We don't need the tmp opts used to clone global opts into proxyspecs and struct filtering rules anymore
+	global_tmp_opts_free(global_tmp_opts);
+	global_tmp_opts = NULL;
+
 	/* debug log, part 2 */
 	if (OPTS_DEBUG(global)) {
-		char *s = opts_proto_dbg_dump(global->conn_opts);
+		char *s = conn_opts_str(global->conn_opts);
 		if (!s)
 			oom_die(argv0);
 
@@ -891,14 +916,14 @@ main(int argc, char *argv[])
 #endif /* !OPENSSL_NO_ENGINE */
 		if (global->conn_opts->cacrt) {
 			char *subj = ssl_x509_subject(global->conn_opts->cacrt);
-			log_dbg_printf("Loaded CA: '%s'\n", subj);
+			log_dbg_printf("Loaded Global CA: '%s'\n", subj);
 			free(subj);
 #ifdef DEBUG_CERTIFICATE
 			log_dbg_print_free(ssl_x509_to_str(global->conn_opts->cacrt));
 			log_dbg_print_free(ssl_x509_to_pem(global->conn_opts->cacrt));
 #endif /* DEBUG_CERTIFICATE */
 		} else {
-			log_dbg_printf("No CA loaded.\n");
+			log_dbg_printf("No Global CA loaded.\n");
 		}
 		for (proxyspec_t *spec = global->spec; spec; spec = spec->next) {
 			if (spec->conn_opts->cacrt) {
@@ -906,11 +931,29 @@ main(int argc, char *argv[])
 				log_dbg_printf("Loaded ProxySpec CA: '%s'\n", subj);
 				free(subj);
 #ifdef DEBUG_CERTIFICATE
-				log_dbg_print_free(ssl_x509_to_str(spec->opts->cacrt));
-				log_dbg_print_free(ssl_x509_to_pem(spec->opts->cacrt));
+				log_dbg_print_free(ssl_x509_to_str(spec->conn_opts->cacrt));
+				log_dbg_print_free(ssl_x509_to_pem(spec->conn_opts->cacrt));
 #endif /* DEBUG_CERTIFICATE */
 			} else {
 				log_dbg_printf("No ProxySpec CA loaded.\n");
+			}
+
+			filter_rule_t *rule = spec->opts->filter_rules;
+			while (rule) {
+				if (rule->action.conn_opts) {
+					if (rule->action.conn_opts->cacrt) {
+						char *subj = ssl_x509_subject(rule->action.conn_opts->cacrt);
+						log_dbg_printf("Loaded FilterRule CA: '%s'\n", subj);
+						free(subj);
+#ifdef DEBUG_CERTIFICATE
+						log_dbg_print_free(ssl_x509_to_str(rule->action.conn_opts->cacrt));
+						log_dbg_print_free(ssl_x509_to_pem(rule->action.conn_opts->cacrt));
+#endif /* DEBUG_CERTIFICATE */
+					} else {
+						log_dbg_printf("No FilterRule CA loaded.\n");
+					}
+				}
+				rule = rule->next;
 			}
 		}
 		log_dbg_printf("SSL/TLS leaf certificates taken from:\n");

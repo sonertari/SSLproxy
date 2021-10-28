@@ -705,7 +705,7 @@ protossl_filter_match_cn(pxy_conn_ctx_t *ctx, filter_list_t *list)
 	return &site->action;
 }
 
-static unsigned int NONNULL(1,2)
+static filter_action_t * NONNULL(1,2)
 protossl_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
 {
 	filter_action_t *action_sni = NULL;
@@ -746,15 +746,17 @@ protossl_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
 #endif /* DEBUG_PROXY */
 				);
 
-	return FILTER_ACTION_NONE;
+	return NULL;
 }
 
 static int
 protossl_apply_filter(pxy_conn_ctx_t *ctx)
 {
 	int rv = 0;
-	unsigned int action;
-	if ((action = pxyconn_filter(ctx, protossl_filter))) {
+	filter_action_t *a;
+	if ((a = pxyconn_filter(ctx, protossl_filter))) {
+		unsigned int action = pxyconn_translate_filter_action(ctx, a);
+
 		ctx->filter_precedence = action & FILTER_PRECEDENCE;
 
 		if (action & FILTER_ACTION_DIVERT) {
@@ -806,6 +808,9 @@ protossl_apply_filter(pxy_conn_ctx_t *ctx)
 		else if (action & FILTER_LOG_NOMIRROR)
 			ctx->log_mirror = 0;
 #endif /* !WITHOUT_MIRROR */
+
+		if (a->conn_opts)
+			ctx->conn_opts = a->conn_opts;
 	}
 
 	// Cannot defer pass action any longer
@@ -1685,6 +1690,7 @@ protossl_bev_eventcb_connected_srvdst(UNUSED struct bufferevent *bev, pxy_conn_c
 
 	// Defer any pass or block action until SSL filter application below
 	if (prototcp_apply_filter(ctx, FILTER_ACTION_PASS | FILTER_ACTION_BLOCK)) {
+		// We never reach here, since we defer pass and block actions
 		return;
 	}
 
