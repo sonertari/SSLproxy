@@ -53,7 +53,6 @@ void prototcp_bev_eventcb_error_src(struct bufferevent *, pxy_conn_ctx_t *) NONN
 void prototcp_bev_eventcb_eof_dst(struct bufferevent *, pxy_conn_ctx_t *) NONNULL(1,2);
 void prototcp_bev_eventcb_error_dst(struct bufferevent *, pxy_conn_ctx_t *) NONNULL(1,2);
 
-int prototcp_apply_filter(pxy_conn_ctx_t *, unsigned int) NONNULL(1);
 void prototcp_bev_eventcb_eof_srvdst(struct bufferevent *, pxy_conn_ctx_t *) NONNULL(1,2);
 void prototcp_bev_eventcb_error_srvdst(struct bufferevent *, pxy_conn_ctx_t *) NONNULL(1,2);
 

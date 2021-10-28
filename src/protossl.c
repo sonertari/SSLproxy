@@ -621,7 +621,7 @@ protossl_filter_match_sni(pxy_conn_ctx_t *ctx, filter_list_t *list)
 		log_finest_va("Match substring in sni: %s, %s", site->site, ctx->sslctx->sni);
 #endif /* DEBUG_PROXY */
 
-	filter_action_t *port_action = pxyconn_filter_port(ctx, site);
+	filter_action_t *port_action = pxy_conn_filter_port(ctx, site);
 	if (port_action)
 		return port_action;
 
@@ -698,7 +698,7 @@ protossl_filter_match_cn(pxy_conn_ctx_t *ctx, filter_list_t *list)
 	if (site->all_sites)
 		log_finest_va("Match all common names: %s, %s", site->site, ctx->sslctx->ssl_names);
 
-	filter_action_t *port_action = pxyconn_filter_port(ctx, site);
+	filter_action_t *port_action = pxy_conn_filter_port(ctx, site);
 	if (port_action)
 		return port_action;
 
@@ -740,7 +740,7 @@ protossl_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
 	}
 
 	if (action_sni ||  action_cn)
-		return pxyconn_set_filter_action(ctx, action_sni, action_cn
+		return pxy_conn_set_filter_action(ctx, action_sni, action_cn
 #ifdef DEBUG_PROXY
 				, ctx->sslctx->sni, ctx->sslctx->ssl_names
 #endif /* DEBUG_PROXY */
@@ -754,8 +754,8 @@ protossl_apply_filter(pxy_conn_ctx_t *ctx)
 {
 	int rv = 0;
 	filter_action_t *a;
-	if ((a = pxyconn_filter(ctx, protossl_filter))) {
-		unsigned int action = pxyconn_translate_filter_action(ctx, a);
+	if ((a = pxy_conn_filter(ctx, protossl_filter))) {
+		unsigned int action = pxy_conn_translate_filter_action(ctx, a);
 
 		ctx->filter_precedence = action & FILTER_PRECEDENCE;
 
@@ -1687,12 +1687,6 @@ protossl_bev_eventcb_connected_srvdst(UNUSED struct bufferevent *bev, pxy_conn_c
 		return;
 	}
 #endif /* !WITHOUT_USERAUTH */
-
-	// Defer any pass or block action until SSL filter application below
-	if (prototcp_apply_filter(ctx, FILTER_ACTION_PASS | FILTER_ACTION_BLOCK)) {
-		// We never reach here, since we defer pass and block actions
-		return;
-	}
 
 	// Set src ssl up early to apply SSL filter,
 	// this is the last moment we can take divert or split action

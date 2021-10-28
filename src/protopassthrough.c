@@ -149,7 +149,7 @@ protopassthrough_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	}
 #endif /* !WITHOUT_USERAUTH */
 
-	if (pxyconn_apply_deferred_block_action(ctx)) {
+	if (pxy_conn_apply_deferred_block_action(ctx)) {
 		return;
 	}
 

@@ -419,7 +419,7 @@ protohttp_filter_match_host(pxy_conn_ctx_t *ctx, filter_list_t *list)
 		log_finest_va("Match substring in host: %s, %s", site->site, http_ctx->http_host);
 #endif /* DEBUG_PROXY */
 
-	filter_action_t *port_action = pxyconn_filter_port(ctx, site);
+	filter_action_t *port_action = pxy_conn_filter_port(ctx, site);
 	if (port_action)
 		return port_action;
 
@@ -459,7 +459,7 @@ protohttp_filter_match_uri(pxy_conn_ctx_t *ctx, filter_list_t *list)
 		log_finest_va("Match substring in uri: %s, %s", site->site, http_ctx->http_uri);
 #endif /* DEBUG_PROXY */
 
-	filter_action_t *port_action = pxyconn_filter_port(ctx, site);
+	filter_action_t *port_action = pxy_conn_filter_port(ctx, site);
 	if (port_action)
 		return port_action;
 
@@ -503,7 +503,7 @@ protohttp_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
 	}
 
 	if (action_host ||  action_uri)
-		return pxyconn_set_filter_action(ctx, action_host, action_uri
+		return pxy_conn_set_filter_action(ctx, action_host, action_uri
 #ifdef DEBUG_PROXY
 				, http_ctx->http_host, http_ctx->http_uri
 #endif /* DEBUG_PROXY */
@@ -517,8 +517,8 @@ protohttp_apply_filter(pxy_conn_ctx_t *ctx)
 {
 	int rv = 0;
 	filter_action_t *a;
-	if ((a = pxyconn_filter(ctx, protohttp_filter))) {
-		unsigned int action = pxyconn_translate_filter_action(ctx, a);
+	if ((a = pxy_conn_filter(ctx, protohttp_filter))) {
+		unsigned int action = pxy_conn_translate_filter_action(ctx, a);
 
 		ctx->filter_precedence = action & FILTER_PRECEDENCE;
 
@@ -592,7 +592,7 @@ protohttp_apply_filter(pxy_conn_ctx_t *ctx)
 
 	// Cannot defer block action any longer
 	// Match action should not override any deferred action, hence no 'else if'
-	if (pxyconn_apply_deferred_block_action(ctx))
+	if (pxy_conn_apply_deferred_block_action(ctx))
 		rv = 1;
 
 	return rv;

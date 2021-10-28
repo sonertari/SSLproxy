@@ -1636,6 +1636,138 @@ pxy_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 	}
 }
 
+static filter_action_t * NONNULL(1,2)
+pxy_conn_filter_match_ip(pxy_conn_ctx_t *ctx, filter_list_t *list)
+{
+	filter_site_t *site = filter_site_find(list->ip_btree, list->ip_acm, list->ip_all, ctx->dsthost_str);
+	if (!site)
+		return NULL;
+
+	log_fine_va("Found site: %s for %s:%s, %s:%s", site->site,
+		STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str));
+
+	// Port spec determines the precedence of a site rule, unless the rule does not have any port
+	if (!site->port_btree && !site->port_acm && (site->action.precedence < ctx->filter_precedence)) {
+		log_finest_va("Rule precedence lower than conn filter precedence %d < %d: %s, %s", site->action.precedence, ctx->filter_precedence, site->site, ctx->dsthost_str);
+		return NULL;
+	}
+
+#ifdef DEBUG_PROXY
+	if (site->all_sites)
+		log_finest_va("Match all dst: %s, %s", site->site, ctx->dsthost_str);
+	else if (site->exact)
+		log_finest_va("Match exact with dst: %s, %s", site->site, ctx->dsthost_str);
+	else
+		log_finest_va("Match substring in dst: %s, %s", site->site, ctx->dsthost_str);
+#endif /* DEBUG_PROXY */
+
+	filter_action_t *port_action = pxy_conn_filter_port(ctx, site);
+	if (port_action)
+		return port_action;
+
+	return &site->action;
+}
+
+static filter_action_t * NONNULL(1,2)
+pxy_conn_dsthost_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
+{
+	if (ctx->dsthost_str) {
+		filter_action_t *action;
+		if ((action = pxy_conn_filter_match_ip(ctx, list)))
+			return pxy_conn_set_filter_action(ctx, action, NULL
+#ifdef DEBUG_PROXY
+					, ctx->dsthost_str, NULL
+#endif /* DEBUG_PROXY */
+					);
+
+		log_finest_va("No filter match with ip: %s:%s, %s:%s",
+			STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str));
+	}
+	return NULL;
+}
+
+static int NONNULL(1)
+pxy_conn_apply_filter(pxy_conn_ctx_t *ctx, unsigned int defer_action)
+{
+	int rv = 0;
+	filter_action_t *a;
+	if ((a = pxy_conn_filter(ctx, pxy_conn_dsthost_filter))) {
+		unsigned int action = pxy_conn_translate_filter_action(ctx, a);
+
+		ctx->filter_precedence = action & FILTER_PRECEDENCE;
+
+		// If we reach here, the matching filtering rule must have a higher precedence
+		// Override any deferred action, if the current rule action is not match
+		// Match action cannot override other filter actions
+
+		if (action & FILTER_ACTION_DIVERT) {
+			ctx->deferred_action = FILTER_ACTION_NONE;
+			ctx->divert = 1;
+		}
+		else if (action & FILTER_ACTION_SPLIT) {
+			ctx->deferred_action = FILTER_ACTION_NONE;
+			ctx->divert = 0;
+		}
+		else if (action & FILTER_ACTION_PASS) {
+			if (defer_action & FILTER_ACTION_PASS) {
+				log_fine("Deferring pass action");
+				ctx->deferred_action = FILTER_ACTION_PASS;
+			}
+			else {
+				ctx->deferred_action = FILTER_ACTION_NONE;
+				protopassthrough_engage(ctx);
+				ctx->pass = 1;
+				rv = 1;
+			}
+		}
+		else if (action & FILTER_ACTION_BLOCK) {
+			if (defer_action & FILTER_ACTION_BLOCK) {
+				// This block action should override any deferred pass action,
+				// because the current rule must have a higher precedence
+				log_fine("Deferring block action");
+				ctx->deferred_action = FILTER_ACTION_BLOCK;
+			}
+			else {
+				pxy_conn_term(ctx, 1);
+				rv = 1;
+			}
+		}
+		//else { /* FILTER_ACTION_MATCH */ }
+
+		// Filtering rules at higher precedence can enable/disable logging
+		if (action & FILTER_LOG_CONNECT)
+			ctx->log_connect = 1;
+		else if (action & FILTER_LOG_NOCONNECT)
+			ctx->log_connect = 0;
+		if (action & FILTER_LOG_MASTER)
+			ctx->log_master = 1;
+		else if (action & FILTER_LOG_NOMASTER)
+			ctx->log_master = 0;
+		if (action & FILTER_LOG_CERT)
+			ctx->log_cert = 1;
+		else if (action & FILTER_LOG_NOCERT)
+			ctx->log_cert = 0;
+		if (action & FILTER_LOG_CONTENT)
+			ctx->log_content = 1;
+		else if (action & FILTER_LOG_NOCONTENT)
+			ctx->log_content = 0;
+		if (action & FILTER_LOG_PCAP)
+			ctx->log_pcap = 1;
+		else if (action & FILTER_LOG_NOPCAP)
+			ctx->log_pcap = 0;
+#ifndef WITHOUT_MIRROR
+		if (action & FILTER_LOG_MIRROR)
+			ctx->log_mirror = 1;
+		else if (action & FILTER_LOG_NOMIRROR)
+			ctx->log_mirror = 0;
+#endif /* !WITHOUT_MIRROR */
+
+		if (a->conn_opts)
+			ctx->conn_opts = a->conn_opts;
+	}
+	return rv;
+}
+
 /*
  * Complete the connection.  This gets called after finding out where to
  * connect to.
@@ -1655,6 +1787,15 @@ pxy_conn_connect(pxy_conn_ctx_t *ctx)
 	// This function may be called more than once for the same conn
 	// So, set the dstaddr only once
 	if (!ctx->dsthost_str && (pxy_set_dstaddr(ctx) == -1)) {
+		return;
+	}
+
+	// Apply dstip filter now, so we can replace the SSL/TLS configuration of the conn with the one in the matching filtering rule
+	// It does not matter if this function is called more than once for the same conn
+	// Defer any pass action until srvdst connected
+	// Defer any block action until HTTP filter application or the first src readcb of non-http proto
+	if (pxy_conn_apply_filter(ctx, FILTER_ACTION_PASS | FILTER_ACTION_BLOCK)) {
+		// We never reach here, since we defer pass and block actions
 		return;
 	}
 
@@ -1989,7 +2130,20 @@ pxy_userauth(pxy_conn_ctx_t *ctx)
 #endif /* !WITHOUT_USERAUTH */
 
 int
-pxyconn_apply_deferred_block_action(pxy_conn_ctx_t *ctx)
+pxy_conn_apply_deferred_pass_action(pxy_conn_ctx_t *ctx)
+{
+	if (ctx->deferred_action & FILTER_ACTION_PASS) {
+		log_fine("Applying deferred pass action");
+		ctx->deferred_action = FILTER_ACTION_NONE;
+		protopassthrough_engage(ctx);
+		ctx->pass = 1;
+		return 1;
+	}
+	return 0;
+}
+
+int
+pxy_conn_apply_deferred_block_action(pxy_conn_ctx_t *ctx)
 {
 	if (ctx->deferred_action & FILTER_ACTION_BLOCK) {
 		log_fine("Applying deferred block action");
@@ -2000,7 +2154,7 @@ pxyconn_apply_deferred_block_action(pxy_conn_ctx_t *ctx)
 }
 
 unsigned int
-pxyconn_translate_filter_action(pxy_conn_ctx_t *ctx, filter_action_t *a)
+pxy_conn_translate_filter_action(pxy_conn_ctx_t *ctx, filter_action_t *a)
 {
 	unsigned int action = FILTER_ACTION_NONE;
 
@@ -2052,7 +2206,7 @@ pxyconn_translate_filter_action(pxy_conn_ctx_t *ctx, filter_action_t *a)
 }
 
 filter_action_t *
-pxyconn_set_filter_action(pxy_conn_ctx_t *ctx, filter_action_t *a1, filter_action_t *a2
+pxy_conn_set_filter_action(pxy_conn_ctx_t *ctx, filter_action_t *a1, filter_action_t *a2
 #ifdef DEBUG_PROXY
 	, char *s1, char *s2
 #endif /* DEBUG_PROXY */
@@ -2125,7 +2279,7 @@ pxyconn_set_filter_action(pxy_conn_ctx_t *ctx, filter_action_t *a1, filter_actio
 }
 
 static int NONNULL(1,2)
-pxyconn_filter_match_port(pxy_conn_ctx_t *ctx, filter_port_t *port)
+pxy_conn_filter_match_port(pxy_conn_ctx_t *ctx, filter_port_t *port)
 {
 	if (port->action.precedence < ctx->filter_precedence) {
 		log_finest_va("Rule port precedence lower than conn filter precedence %d < %d: %s, %s", port->action.precedence, ctx->filter_precedence, port->port, ctx->dsthost_str);
@@ -2145,13 +2299,13 @@ pxyconn_filter_match_port(pxy_conn_ctx_t *ctx, filter_port_t *port)
 }
 
 filter_action_t *
-pxyconn_filter_port(pxy_conn_ctx_t *ctx, filter_site_t *site)
+pxy_conn_filter_port(pxy_conn_ctx_t *ctx, filter_site_t *site)
 {
 	filter_port_t *port = filter_port_find(site, ctx->dstport_str);
 	if (port) {
 		log_fine_va("Found port: %s for %s:%s, %s:%s", port->port,
 			STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str));
-		if (pxyconn_filter_match_port(ctx, port))
+		if (pxy_conn_filter_match_port(ctx, port))
 			return &port->action;
 	}
 	else
@@ -2163,7 +2317,7 @@ pxyconn_filter_port(pxy_conn_ctx_t *ctx, filter_site_t *site)
 
 #ifndef WITHOUT_USERAUTH
 static filter_action_t *
-pxyconn_filter_user(pxy_conn_ctx_t *ctx, proto_filter_func_t filtercb, filter_user_t *user)
+pxy_conn_filter_user(pxy_conn_ctx_t *ctx, proto_filter_func_t filtercb, filter_user_t *user)
 {
 	filter_action_t * action = NULL;
 	if (user) {
@@ -2189,7 +2343,7 @@ pxyconn_filter_user(pxy_conn_ctx_t *ctx, proto_filter_func_t filtercb, filter_us
 #endif /* !WITHOUT_USERAUTH */
 
 filter_action_t *
-pxyconn_filter(pxy_conn_ctx_t *ctx, proto_filter_func_t filtercb)
+pxy_conn_filter(pxy_conn_ctx_t *ctx, proto_filter_func_t filtercb)
 {
 	filter_action_t * action = NULL;
 
@@ -2199,12 +2353,12 @@ pxyconn_filter(pxy_conn_ctx_t *ctx, proto_filter_func_t filtercb)
 		if (ctx->user) {
 			log_finest_va("Searching user exact: %s", ctx->user);
 			filter_user_t *user = filter_user_exact_match(filter->user_btree, ctx->user);
-			if ((action = pxyconn_filter_user(ctx, filtercb, user)))
+			if ((action = pxy_conn_filter_user(ctx, filtercb, user)))
 				return action;
 
 			log_finest_va("Searching user substring: %s", ctx->user);
 			user = filter_user_substring_match(filter->user_acm, ctx->user);
-			if ((action = pxyconn_filter_user(ctx, filtercb, user)))
+			if ((action = pxy_conn_filter_user(ctx, filtercb, user)))
 				return action;
 
 			if (ctx->desc) {

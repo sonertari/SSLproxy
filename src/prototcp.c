@@ -282,7 +282,7 @@ prototcp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	}
 #endif /* !WITHOUT_USERAUTH */
 
-	if (pxyconn_apply_deferred_block_action(ctx)) {
+	if (pxy_conn_apply_deferred_block_action(ctx)) {
 		return;
 	}
 
@@ -508,138 +508,6 @@ prototcp_bev_eventcb_connected_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	prototcp_enable_src(ctx);
 }
 
-static filter_action_t * NONNULL(1,2)
-prototcp_filter_match_ip(pxy_conn_ctx_t *ctx, filter_list_t *list)
-{
-	filter_site_t *site = filter_site_find(list->ip_btree, list->ip_acm, list->ip_all, ctx->dsthost_str);
-	if (!site)
-		return NULL;
-
-	log_fine_va("Found site: %s for %s:%s, %s:%s", site->site,
-		STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str));
-
-	// Port spec determines the precedence of a site rule, unless the rule does not have any port
-	if (!site->port_btree && !site->port_acm && (site->action.precedence < ctx->filter_precedence)) {
-		log_finest_va("Rule precedence lower than conn filter precedence %d < %d: %s, %s", site->action.precedence, ctx->filter_precedence, site->site, ctx->dsthost_str);
-		return NULL;
-	}
-
-#ifdef DEBUG_PROXY
-	if (site->all_sites)
-		log_finest_va("Match all dst: %s, %s", site->site, ctx->dsthost_str);
-	else if (site->exact)
-		log_finest_va("Match exact with dst: %s, %s", site->site, ctx->dsthost_str);
-	else
-		log_finest_va("Match substring in dst: %s, %s", site->site, ctx->dsthost_str);
-#endif /* DEBUG_PROXY */
-
-	filter_action_t *port_action = pxyconn_filter_port(ctx, site);
-	if (port_action)
-		return port_action;
-
-	return &site->action;
-}
-
-static filter_action_t * NONNULL(1,2)
-prototcp_dsthost_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
-{
-	if (ctx->dsthost_str) {
-		filter_action_t *action;
-		if ((action = prototcp_filter_match_ip(ctx, list)))
-			return pxyconn_set_filter_action(ctx, action, NULL
-#ifdef DEBUG_PROXY
-					, ctx->dsthost_str, NULL
-#endif /* DEBUG_PROXY */
-					);
-
-		log_finest_va("No filter match with ip: %s:%s, %s:%s",
-			STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str));
-	}
-	return NULL;
-}
-
-int
-prototcp_apply_filter(pxy_conn_ctx_t *ctx, unsigned int defer_action)
-{
-	int rv = 0;
-	filter_action_t *a;
-	if ((a = pxyconn_filter(ctx, prototcp_dsthost_filter))) {
-		unsigned int action = pxyconn_translate_filter_action(ctx, a);
-
-		ctx->filter_precedence = action & FILTER_PRECEDENCE;
-
-		// If we reach here, the matching filtering rule must have a higher precedence
-		// Override any deferred action, if the current rule action is not match
-		// Match action cannot override other filter actions
-
-		if (action & FILTER_ACTION_DIVERT) {
-			ctx->deferred_action = FILTER_ACTION_NONE;
-			ctx->divert = 1;
-		}
-		else if (action & FILTER_ACTION_SPLIT) {
-			ctx->deferred_action = FILTER_ACTION_NONE;
-			ctx->divert = 0;
-		}
-		else if (action & FILTER_ACTION_PASS) {
-			if (defer_action & FILTER_ACTION_PASS) {
-				log_fine("Deferring pass action");
-				ctx->deferred_action = FILTER_ACTION_PASS;
-			}
-			else {
-				ctx->deferred_action = FILTER_ACTION_NONE;
-				protopassthrough_engage(ctx);
-				ctx->pass = 1;
-				rv = 1;
-			}
-		}
-		else if (action & FILTER_ACTION_BLOCK) {
-			if (defer_action & FILTER_ACTION_BLOCK) {
-				// This block action should override any deferred pass action,
-				// because the current rule must have a higher precedence
-				log_fine("Deferring block action");
-				ctx->deferred_action = FILTER_ACTION_BLOCK;
-			}
-			else {
-				pxy_conn_term(ctx, 1);
-				rv = 1;
-			}
-		}
-		//else { /* FILTER_ACTION_MATCH */ }
-
-		// Filtering rules at higher precedence can enable/disable logging
-		if (action & FILTER_LOG_CONNECT)
-			ctx->log_connect = 1;
-		else if (action & FILTER_LOG_NOCONNECT)
-			ctx->log_connect = 0;
-		if (action & FILTER_LOG_MASTER)
-			ctx->log_master = 1;
-		else if (action & FILTER_LOG_NOMASTER)
-			ctx->log_master = 0;
-		if (action & FILTER_LOG_CERT)
-			ctx->log_cert = 1;
-		else if (action & FILTER_LOG_NOCERT)
-			ctx->log_cert = 0;
-		if (action & FILTER_LOG_CONTENT)
-			ctx->log_content = 1;
-		else if (action & FILTER_LOG_NOCONTENT)
-			ctx->log_content = 0;
-		if (action & FILTER_LOG_PCAP)
-			ctx->log_pcap = 1;
-		else if (action & FILTER_LOG_NOPCAP)
-			ctx->log_pcap = 0;
-#ifndef WITHOUT_MIRROR
-		if (action & FILTER_LOG_MIRROR)
-			ctx->log_mirror = 1;
-		else if (action & FILTER_LOG_NOMIRROR)
-			ctx->log_mirror = 0;
-#endif /* !WITHOUT_MIRROR */
-
-		if (a->conn_opts)
-			ctx->conn_opts = a->conn_opts;
-	}
-	return rv;
-}
-
 static void NONNULL(1,2)
 prototcp_bev_eventcb_connected_srvdst(UNUSED struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
@@ -652,9 +520,8 @@ prototcp_bev_eventcb_connected_srvdst(UNUSED struct bufferevent *bev, pxy_conn_c
 	}
 #endif /* !WITHOUT_USERAUTH */
 
-	// Defer any block action until HTTP filter application or the first src readcb of non-http proto
-	// We cannot defer pass actions from this point on
-	if (prototcp_apply_filter(ctx, FILTER_ACTION_BLOCK)) {
+	// We cannot defer pass action from this point on
+	if (pxy_conn_apply_deferred_pass_action(ctx)) {
 		return;
 	}
 
