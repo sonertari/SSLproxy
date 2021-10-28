@@ -2458,6 +2458,16 @@ filter_rule_struct_translate_nvls(opts_t *opts, name_value_lines_t nvls[], int n
 		rule->uri = 1;
 	}
 
+	// Increment precedence for log action only once here, if any specified, because otherwise
+	// we would inc it multiple times while translating LogAction specifications, since we allow for multiple LogAction lines
+	if (rule->action.log_connect || rule->action.log_master || rule->action.log_cert || rule->action.log_content || rule->action.log_pcap
+#ifndef WITHOUT_MIRROR
+			|| rule->action.log_mirror
+#endif /* !WITHOUT_MIRROR */
+			) {
+		rule->action.precedence++;
+	}
+
 	rule->action.conn_opts = conn_opts_copy(conn_opts, argv0, global_tmp_opts);
 	if (!rule->action.conn_opts) {
 		filter_rule_free(rule);
