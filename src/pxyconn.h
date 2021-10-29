@@ -451,11 +451,11 @@ void pxy_userauth(pxy_conn_ctx_t *) NONNULL(1);
 int pxy_conn_apply_deferred_pass_action(pxy_conn_ctx_t *) NONNULL(1) WUNRES;
 int pxy_conn_apply_deferred_block_action(pxy_conn_ctx_t *) NONNULL(1) WUNRES;
 unsigned int pxy_conn_translate_filter_action(pxy_conn_ctx_t *, filter_action_t *);
-filter_action_t *pxy_conn_set_filter_action(pxy_conn_ctx_t *, filter_action_t *, filter_action_t *
+filter_action_t *pxy_conn_set_filter_action(filter_action_t *, filter_action_t *
 #ifdef DEBUG_PROXY
-	, char *, char *
+	, pxy_conn_ctx_t *, char *, char *
 #endif /* DEBUG_PROXY */
-	) NONNULL(1) WUNRES;
+	) WUNRES;
 filter_action_t *pxy_conn_filter_port(pxy_conn_ctx_t *, filter_site_t *) NONNULL(1,2);
 filter_action_t * pxy_conn_filter(pxy_conn_ctx_t *, proto_filter_func_t) NONNULL(1) WUNRES;
 void pxy_conn_setup(evutil_socket_t, struct sockaddr *, int,

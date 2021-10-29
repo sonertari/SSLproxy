@@ -503,9 +503,9 @@ protohttp_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
 	}
 
 	if (action_host ||  action_uri)
-		return pxy_conn_set_filter_action(ctx, action_host, action_uri
+		return pxy_conn_set_filter_action(action_host, action_uri
 #ifdef DEBUG_PROXY
-				, http_ctx->http_host, http_ctx->http_uri
+				, ctx, http_ctx->http_host, http_ctx->http_uri
 #endif /* DEBUG_PROXY */
 				);
 

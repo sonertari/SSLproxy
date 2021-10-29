@@ -1674,9 +1674,9 @@ pxy_conn_dsthost_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
 	if (ctx->dsthost_str) {
 		filter_action_t *action;
 		if ((action = pxy_conn_filter_match_ip(ctx, list)))
-			return pxy_conn_set_filter_action(ctx, action, NULL
+			return pxy_conn_set_filter_action(action, NULL
 #ifdef DEBUG_PROXY
-					, ctx->dsthost_str, NULL
+					, ctx, ctx->dsthost_str, NULL
 #endif /* DEBUG_PROXY */
 					);
 
@@ -2206,9 +2206,9 @@ pxy_conn_translate_filter_action(pxy_conn_ctx_t *ctx, filter_action_t *a)
 }
 
 filter_action_t *
-pxy_conn_set_filter_action(pxy_conn_ctx_t *ctx, filter_action_t *a1, filter_action_t *a2
+pxy_conn_set_filter_action(filter_action_t *a1, filter_action_t *a2
 #ifdef DEBUG_PROXY
-	, char *s1, char *s2
+	, pxy_conn_ctx_t *ctx, char *s1, char *s2
 #endif /* DEBUG_PROXY */
 	)
 {
