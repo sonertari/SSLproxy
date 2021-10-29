@@ -1686,7 +1686,7 @@ pxy_conn_dsthost_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
 	return NULL;
 }
 
-static int NONNULL(1)
+int
 pxy_conn_apply_filter(pxy_conn_ctx_t *ctx, unsigned int defer_action)
 {
 	int rv = 0;
@@ -2128,19 +2128,6 @@ pxy_userauth(pxy_conn_ctx_t *ctx)
 	}
 }
 #endif /* !WITHOUT_USERAUTH */
-
-int
-pxy_conn_apply_deferred_pass_action(pxy_conn_ctx_t *ctx)
-{
-	if (ctx->deferred_action & FILTER_ACTION_PASS) {
-		log_fine("Applying deferred pass action");
-		ctx->deferred_action = FILTER_ACTION_NONE;
-		protopassthrough_engage(ctx);
-		ctx->pass = 1;
-		return 1;
-	}
-	return 0;
-}
 
 int
 pxy_conn_apply_deferred_block_action(pxy_conn_ctx_t *ctx)

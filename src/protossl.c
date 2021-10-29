@@ -1688,6 +1688,12 @@ protossl_bev_eventcb_connected_srvdst(UNUSED struct bufferevent *bev, pxy_conn_c
 	}
 #endif /* !WITHOUT_USERAUTH */
 
+	// Defer any pass or block action until SSL filter application below
+	if (pxy_conn_apply_filter(ctx, FILTER_ACTION_PASS | FILTER_ACTION_BLOCK)) {
+		// We never reach here, since we defer pass and block actions
+		return;
+	}
+
 	// Set src ssl up early to apply SSL filter,
 	// this is the last moment we can take divert or split action
 	if (protossl_setup_src_ssl(ctx) != 0) {

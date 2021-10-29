@@ -448,8 +448,8 @@ int pxy_is_listuser(userlist_t *, const char *
 void pxy_classify_user(pxy_conn_ctx_t *) NONNULL(1);
 void pxy_userauth(pxy_conn_ctx_t *) NONNULL(1);
 #endif /* !WITHOUT_USERAUTH */
-int pxy_conn_apply_deferred_pass_action(pxy_conn_ctx_t *) NONNULL(1) WUNRES;
 int pxy_conn_apply_deferred_block_action(pxy_conn_ctx_t *) NONNULL(1) WUNRES;
+int pxy_conn_apply_filter(pxy_conn_ctx_t *, unsigned int) NONNULL(1);
 unsigned int pxy_conn_translate_filter_action(pxy_conn_ctx_t *, filter_action_t *);
 filter_action_t *pxy_conn_set_filter_action(filter_action_t *, filter_action_t *
 #ifdef DEBUG_PROXY

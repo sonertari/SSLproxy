@@ -520,8 +520,9 @@ prototcp_bev_eventcb_connected_srvdst(UNUSED struct bufferevent *bev, pxy_conn_c
 	}
 #endif /* !WITHOUT_USERAUTH */
 
+	// Defer any block action until HTTP filter application or the first src readcb of non-http proto
 	// We cannot defer pass action from this point on
-	if (pxy_conn_apply_deferred_pass_action(ctx)) {
+	if (pxy_conn_apply_filter(ctx, FILTER_ACTION_BLOCK)) {
 		return;
 	}
 
