@@ -190,6 +190,7 @@ main_usage(void)
 #endif /* !SSL_OP_NO_COMPRESSION */
 "  -r proto    only support one of " SSL_PROTO_SUPPORT_S "(default: all)\n"
 "  -R proto    disable one of " SSL_PROTO_SUPPORT_S "(default: none)\n"
+"  -B proto    enable one of " SSL_PROTO_SUPPORT_S "(default: all)\n"
 "  -s ciphers  use the given OpenSSL ciphers spec (default: " DFLT_CIPHERS ")\n"
 "  -U ciphersuites use the given OpenSSL ciphersuites spec with TLS 1.3\n"
 "  (default: " DFLT_CIPHERSUITES ")\n"
@@ -395,7 +396,7 @@ main(int argc, char *argv[])
 
 	while ((ch = getopt(argc, argv,
 	                    OPT_g OPT_G OPT_Z OPT_i OPT_x OPT_T OPT_I
-	                    "k:c:C:K:t:A:OPa:b:s:U:r:R:e:Eu:m:j:p:l:L:S:F:M:"
+	                    "k:c:C:K:t:A:OPa:b:s:U:r:R:B:e:Eu:m:j:p:l:L:S:F:M:"
 	                    "dD::VhW:w:q:f:o:X:Y:y:JnQ")) != -1) {
 		switch (ch) {
 			case 'f':
@@ -478,7 +479,11 @@ main(int argc, char *argv[])
 					exit(EXIT_FAILURE);
 				break;
 			case 'R':
-				if (opts_disable_proto(global->conn_opts, argv0, optarg) == -1)
+				if (opts_disable_enable_proto(global->conn_opts, argv0, optarg, 1) == -1)
+					exit(EXIT_FAILURE);
+				break;
+			case 'B':
+				if (opts_disable_enable_proto(global->conn_opts, argv0, optarg, 0) == -1)
 					exit(EXIT_FAILURE);
 				break;
 #ifndef OPENSSL_NO_ENGINE

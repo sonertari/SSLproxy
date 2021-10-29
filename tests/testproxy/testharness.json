@@ -57,7 +57,8 @@
         "9": "filter_host_testset_1.json",
         "10": "filter_host_testset_2.json",
         "11": "filter_uri_testset_1.json",
-        "12": "filter_uri_testset_2.json"
+        "12": "filter_uri_testset_2.json",
+        "13": "filter_struct_testset_1.json"
       }
     }
   }

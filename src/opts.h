@@ -307,7 +307,7 @@ int opts_set_ecdhcurve(conn_opts_t *, const char *, const char *) NONNULL(1,2,3)
 #endif /* !OPENSSL_NO_ECDH */
 void opts_unset_sslcomp(conn_opts_t *) NONNULL(1);
 int opts_force_proto(conn_opts_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;
-int opts_disable_proto(conn_opts_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;
+int opts_disable_enable_proto(conn_opts_t *, const char *, const char *, int) NONNULL(1,2,3) WUNRES;
 int opts_set_ciphers(conn_opts_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;
 int opts_set_ciphersuites(conn_opts_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;
 

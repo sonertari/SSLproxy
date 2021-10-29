@@ -131,6 +131,11 @@ Disable SSL/TLS protocol version. Equivalent to -R command line option.
 .br
 Default: none
 .TP
+\fBEnableSSLProto STRING\fR
+Enable SSL/TLS protocol version. Equivalent to -B command line option.
+.br
+Default: all
+.TP
 \fBMinSSLProto STRING\fR
 Min SSL/TLS protocol version.
 .br
@@ -428,6 +433,8 @@ ClientKey
 .br
 CAChain
 .br
+LeafCRLURL
+.br
 DHGroupParams
 .br
 ECDHCurve
@@ -437,6 +444,8 @@ SSLCompression
 ForceSSLProto
 .br
 DisableSSLProto
+.br
+EnableSSLProto
 .br
 MinSSLProto
 .br
@@ -452,6 +461,8 @@ RemoveHTTPReferer
 .br
 VerifyPeer
 .br
+AllowWrongHost
+.br
 UserAuth
 .br
 DivertUsers
@@ -463,6 +474,8 @@ UserTimeout
 UserAuthURL
 .br
 ValidateProto
+.br
+MaxHTTPHeaderSize
 .br
 PassSite
 .br

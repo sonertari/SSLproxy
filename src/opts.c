@@ -1686,8 +1686,7 @@ opts_force_proto(conn_opts_t *conn_opts, const char *argv0, const char *optarg)
 #else /* OPENSSL_VERSION_NUMBER >= 0x10100000L */
 	if (conn_opts->sslversion) {
 #endif /* OPENSSL_VERSION_NUMBER >= 0x10100000L */
-		fprintf(stderr, "%s: cannot use -r multiple times\n", argv0);
-		return -1;
+		fprintf(stderr, "%s: overriding -r ssl version option\n", argv0);
 	}
 
 #if (OPENSSL_VERSION_NUMBER < 0x10100000L) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER < 0x20702000L)
@@ -1763,38 +1762,39 @@ opts_force_proto(conn_opts_t *conn_opts, const char *argv0, const char *optarg)
 
 /*
  * Parse SSL proto string in optarg and set the corresponding no_foo bit.
+ * action: 1 for disable, 0 for enable.
  */
 int
-opts_disable_proto(conn_opts_t *conn_opts, const char *argv0, const char *optarg)
+opts_disable_enable_proto(conn_opts_t *conn_opts, const char *argv0, const char *optarg, int action)
 {
 #ifdef HAVE_SSLV2
 	if (!strcmp(optarg, "ssl2")) {
-		conn_opts->no_ssl2 = 1;
+		conn_opts->no_ssl2 = action;
 	} else
 #endif /* HAVE_SSLV2 */
 #ifdef HAVE_SSLV3
 	if (!strcmp(optarg, "ssl3")) {
-		conn_opts->no_ssl3 = 1;
+		conn_opts->no_ssl3 = action;
 	} else
 #endif /* HAVE_SSLV3 */
 #ifdef HAVE_TLSV10
 	if (!strcmp(optarg, "tls10") || !strcmp(optarg, "tls1")) {
-		conn_opts->no_tls10 = 1;
+		conn_opts->no_tls10 = action;
 	} else
 #endif /* HAVE_TLSV10 */
 #ifdef HAVE_TLSV11
 	if (!strcmp(optarg, "tls11")) {
-		conn_opts->no_tls11 = 1;
+		conn_opts->no_tls11 = action;
 	} else
 #endif /* HAVE_TLSV11 */
 #ifdef HAVE_TLSV12
 	if (!strcmp(optarg, "tls12")) {
-		conn_opts->no_tls12 = 1;
+		conn_opts->no_tls12 = action;
 	} else
 #endif /* HAVE_TLSV12 */
 #ifdef HAVE_TLSV13
 	if (!strcmp(optarg, "tls13")) {
-		conn_opts->no_tls13 = 1;
+		conn_opts->no_tls13 = action;
 	} else
 #endif /* HAVE_TLSV13 */
 	{
@@ -1803,7 +1803,10 @@ opts_disable_proto(conn_opts_t *conn_opts, const char *argv0, const char *optarg
 		return -1;
 	}
 #ifdef DEBUG_OPTS
-	log_dbg_printf("DisableSSLProto: %s\n", optarg);
+	if (action)
+		log_dbg_printf("DisableSSLProto: %s\n", optarg);
+	else
+		log_dbg_printf("EnableSSLProto: %s\n", optarg);
 #endif /* DEBUG_OPTS */
 	return 0;
 }
@@ -2578,7 +2581,9 @@ set_conn_opts_option(conn_opts_t *conn_opts, const char *argv0,
 	} else if (equal(name, "ForceSSLProto")) {
 		return opts_force_proto(conn_opts, argv0, value);
 	} else if (equal(name, "DisableSSLProto")) {
-		return opts_disable_proto(conn_opts, argv0, value);
+		return opts_disable_enable_proto(conn_opts, argv0, value, 1);
+	} else if (equal(name, "EnableSSLProto")) {
+		return opts_disable_enable_proto(conn_opts, argv0, value, 0);
 	} else if (equal(name, "MinSSLProto")) {
 		return opts_set_min_proto(conn_opts, argv0, value);
 	} else if (equal(name, "MaxSSLProto")) {

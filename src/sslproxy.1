@@ -501,6 +501,13 @@ instead, taking precedence over the certificate specified with \fB-A\fP.
 Use client private key from \fIpemfile\fP when destination server requests a
 client certificate.
 .TP
+.B \-B \fIproto\fP
+Enable the SSL/TLS protocol version \fIproto\fP on both client and server
+side by enabling the respective protocols in OpenSSL.  To enable multiple
+protocol versions, \fB-B\fP can be given multiple times. This option can be 
+used to enable any proto disabled before. Otherwise, all available protocols 
+are enabled by default. See the \fB-R\fP option for further details.
+.TP
 .B \-c \fIpemfile\fP
 Use CA certificate from \fIpemfile\fP to sign certificates forged on-the-fly.
 If \fIpemfile\fP also contains the matching CA private key, it is also loaded,
