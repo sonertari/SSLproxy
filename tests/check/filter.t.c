@@ -1729,11 +1729,11 @@ START_TEST(set_filter_rule_07)
 		"failed to parse rule: %s", s);	
 	free(s);
 
-	global_tmp_opts_t *global_tmp_opts = malloc(sizeof(global_tmp_opts_t));
-	memset(global_tmp_opts, 0, sizeof(global_tmp_opts_t));
+	tmp_opts_t *tmp_opts = malloc(sizeof(tmp_opts_t));
+	memset(tmp_opts, 0, sizeof(tmp_opts_t));
 
 	close(2);
-	opts->filter = filter_set(opts->filter_rules, "sslproxy", global_tmp_opts);
+	opts->filter = filter_set(opts->filter_rules, "sslproxy", tmp_opts);
 	
 	s = filter_str(opts->filter);
 	fail_unless(!strcmp(s, "filter=>\n"
@@ -1795,7 +1795,7 @@ START_TEST(set_filter_rule_07)
 
 	opts_free(opts);
 	conn_opts_free(conn_opts);
-	global_tmp_opts_free(global_tmp_opts);
+	tmp_opts_free(tmp_opts);
 }
 END_TEST
 #endif /* !WITHOUT_USERAUTH */
@@ -1901,11 +1901,11 @@ START_TEST(set_filter_rule_08)
 #endif /* WITHOUT_USERAUTH */
 	free(s);
 
-	global_tmp_opts_t *global_tmp_opts = malloc(sizeof(global_tmp_opts_t));
-	memset(global_tmp_opts, 0, sizeof(global_tmp_opts_t));
+	tmp_opts_t *tmp_opts = malloc(sizeof(tmp_opts_t));
+	memset(tmp_opts, 0, sizeof(tmp_opts_t));
 
 	close(2);
-	opts->filter = filter_set(opts->filter_rules, "sslproxy", global_tmp_opts);
+	opts->filter = filter_set(opts->filter_rules, "sslproxy", tmp_opts);
 
 	s = filter_str(opts->filter);
 #ifndef WITHOUT_USERAUTH
@@ -1966,7 +1966,7 @@ START_TEST(set_filter_rule_08)
 
 	opts_free(opts);
 	conn_opts_free(conn_opts);
-	global_tmp_opts_free(global_tmp_opts);
+	tmp_opts_free(tmp_opts);
 }
 END_TEST
 
@@ -2087,11 +2087,11 @@ START_TEST(set_filter_rule_09)
 #endif /* WITHOUT_USERAUTH */
 	free(s);
 
-	global_tmp_opts_t *global_tmp_opts = malloc(sizeof(global_tmp_opts_t));
-	memset(global_tmp_opts, 0, sizeof(global_tmp_opts_t));
+	tmp_opts_t *tmp_opts = malloc(sizeof(tmp_opts_t));
+	memset(tmp_opts, 0, sizeof(tmp_opts_t));
 
 	close(2);
-	opts->filter = filter_set(opts->filter_rules, "sslproxy", global_tmp_opts);
+	opts->filter = filter_set(opts->filter_rules, "sslproxy", tmp_opts);
 
 	s = filter_str(opts->filter);
 #ifndef WITHOUT_USERAUTH
@@ -2182,7 +2182,7 @@ START_TEST(set_filter_rule_09)
 
 	opts_free(opts);
 	conn_opts_free(conn_opts);
-	global_tmp_opts_free(global_tmp_opts);
+	tmp_opts_free(tmp_opts);
 }
 END_TEST
 
@@ -2273,11 +2273,11 @@ START_TEST(set_filter_rule_10)
 		"failed to parse rule: %s", s);	
 	free(s);
 
-	global_tmp_opts_t *global_tmp_opts = malloc(sizeof(global_tmp_opts_t));
-	memset(global_tmp_opts, 0, sizeof(global_tmp_opts_t));
+	tmp_opts_t *tmp_opts = malloc(sizeof(tmp_opts_t));
+	memset(tmp_opts, 0, sizeof(tmp_opts_t));
 
 	close(2);
-	opts->filter = filter_set(opts->filter_rules, "sslproxy", global_tmp_opts);
+	opts->filter = filter_set(opts->filter_rules, "sslproxy", tmp_opts);
 
 	s = filter_str(opts->filter);
 	fail_unless(!strcmp(s, "filter=>\n"
@@ -2313,7 +2313,7 @@ START_TEST(set_filter_rule_10)
 
 	opts_free(opts);
 	conn_opts_free(conn_opts);
-	global_tmp_opts_free(global_tmp_opts);
+	tmp_opts_free(tmp_opts);
 }
 END_TEST
 
@@ -2421,11 +2421,11 @@ START_TEST(set_filter_rule_11)
 		"failed to parse rule: %s", s);	
 	free(s);
 
-	global_tmp_opts_t *global_tmp_opts = malloc(sizeof(global_tmp_opts_t));
-	memset(global_tmp_opts, 0, sizeof(global_tmp_opts_t));
+	tmp_opts_t *tmp_opts = malloc(sizeof(tmp_opts_t));
+	memset(tmp_opts, 0, sizeof(tmp_opts_t));
 
 	close(2);
-	opts->filter = filter_set(opts->filter_rules, "sslproxy", global_tmp_opts);
+	opts->filter = filter_set(opts->filter_rules, "sslproxy", tmp_opts);
 
 	s = filter_str(opts->filter);
 	fail_unless(!strcmp(s, "filter=>\n"
@@ -2483,7 +2483,7 @@ START_TEST(set_filter_rule_11)
 
 	opts_free(opts);
 	conn_opts_free(conn_opts);
-	global_tmp_opts_free(global_tmp_opts);
+	tmp_opts_free(tmp_opts);
 }
 END_TEST
 
@@ -2613,11 +2613,11 @@ START_TEST(set_filter_rule_12)
 		"failed to parse rule: %s", s);	
 	free(s);
 
-	global_tmp_opts_t *global_tmp_opts = malloc(sizeof(global_tmp_opts_t));
-	memset(global_tmp_opts, 0, sizeof(global_tmp_opts_t));
+	tmp_opts_t *tmp_opts = malloc(sizeof(tmp_opts_t));
+	memset(tmp_opts, 0, sizeof(tmp_opts_t));
 
 	close(2);
-	opts->filter = filter_set(opts->filter_rules, "sslproxy", global_tmp_opts);
+	opts->filter = filter_set(opts->filter_rules, "sslproxy", tmp_opts);
 
 	s = filter_str(opts->filter);
 	fail_unless(!strcmp(s, "filter=>\n"
@@ -2688,7 +2688,7 @@ START_TEST(set_filter_rule_12)
 
 	opts_free(opts);
 	conn_opts_free(conn_opts);
-	global_tmp_opts_free(global_tmp_opts);
+	tmp_opts_free(tmp_opts);
 }
 END_TEST
 #endif /* !WITHOUT_USERAUTH */
@@ -2767,11 +2767,11 @@ START_TEST(set_filter_rule_13)
 #endif /* WITHOUT_USERAUTH */
 	free(s);
 
-	global_tmp_opts_t *global_tmp_opts = malloc(sizeof(global_tmp_opts_t));
-	memset(global_tmp_opts, 0, sizeof(global_tmp_opts_t));
+	tmp_opts_t *tmp_opts = malloc(sizeof(tmp_opts_t));
+	memset(tmp_opts, 0, sizeof(tmp_opts_t));
 
 	close(2);
-	opts->filter = filter_set(opts->filter_rules, "sslproxy", global_tmp_opts);
+	opts->filter = filter_set(opts->filter_rules, "sslproxy", tmp_opts);
 
 	s = filter_str(opts->filter);
 #ifndef WITHOUT_USERAUTH
@@ -2848,7 +2848,7 @@ START_TEST(set_filter_rule_13)
 
 	opts_free(opts);
 	conn_opts_free(conn_opts);
-	global_tmp_opts_free(global_tmp_opts);
+	tmp_opts_free(tmp_opts);
 }
 END_TEST
 
@@ -2913,11 +2913,11 @@ START_TEST(set_filter_rule_14)
 		"failed to parse rule: %s", s);	
 	free(s);
 
-	global_tmp_opts_t *global_tmp_opts = malloc(sizeof(global_tmp_opts_t));
-	memset(global_tmp_opts, 0, sizeof(global_tmp_opts_t));
+	tmp_opts_t *tmp_opts = malloc(sizeof(tmp_opts_t));
+	memset(tmp_opts, 0, sizeof(tmp_opts_t));
 
 	close(2);
-	opts->filter = filter_set(opts->filter_rules, "sslproxy", global_tmp_opts);
+	opts->filter = filter_set(opts->filter_rules, "sslproxy", tmp_opts);
 
 	s = filter_str(opts->filter);
 	fail_unless(!strcmp(s, "filter=>\n"
@@ -2961,7 +2961,7 @@ START_TEST(set_filter_rule_14)
 
 	opts_free(opts);
 	conn_opts_free(conn_opts);
-	global_tmp_opts_free(global_tmp_opts);
+	tmp_opts_free(tmp_opts);
 }
 END_TEST
 
@@ -3031,11 +3031,11 @@ START_TEST(set_filter_rule_15)
 		"failed to parse rule: %s", s);	
 	free(s);
 
-	global_tmp_opts_t *global_tmp_opts = malloc(sizeof(global_tmp_opts_t));
-	memset(global_tmp_opts, 0, sizeof(global_tmp_opts_t));
+	tmp_opts_t *tmp_opts = malloc(sizeof(tmp_opts_t));
+	memset(tmp_opts, 0, sizeof(tmp_opts_t));
 
 	close(2);
-	opts->filter = filter_set(opts->filter_rules, "sslproxy", global_tmp_opts);
+	opts->filter = filter_set(opts->filter_rules, "sslproxy", tmp_opts);
 
 	s = filter_str(opts->filter);
 	fail_unless(!strcmp(s, "filter=>\n"
@@ -3111,7 +3111,7 @@ START_TEST(set_filter_rule_15)
 
 	opts_free(opts);
 	conn_opts_free(conn_opts);
-	global_tmp_opts_free(global_tmp_opts);
+	tmp_opts_free(tmp_opts);
 }
 END_TEST
 #endif /* !WITHOUT_USERAUTH */

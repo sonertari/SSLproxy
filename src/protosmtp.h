@@ -42,4 +42,3 @@ protocol_t protosmtp_setup(pxy_conn_ctx_t *) NONNULL(1);
 protocol_t protosmtps_setup(pxy_conn_ctx_t *) NONNULL(1);
 
 #endif /* PROTOSMTP_H */
-

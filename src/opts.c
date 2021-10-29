@@ -294,37 +294,37 @@ global_proxyspec_free(proxyspec_t *spec)
 }
 
 void
-global_tmp_opts_free(global_tmp_opts_t *global_tmp_opts)
+tmp_opts_free(tmp_opts_t *tmp_opts)
 {
-	if (global_tmp_opts->cacrt_str) {
-		free(global_tmp_opts->cacrt_str);
-		global_tmp_opts->cacrt_str = NULL;
+	if (tmp_opts->cacrt_str) {
+		free(tmp_opts->cacrt_str);
+		tmp_opts->cacrt_str = NULL;
 	}
-	if (global_tmp_opts->cakey_str) {
-		free(global_tmp_opts->cakey_str);
-		global_tmp_opts->cakey_str = NULL;
+	if (tmp_opts->cakey_str) {
+		free(tmp_opts->cakey_str);
+		tmp_opts->cakey_str = NULL;
 	}
-	if (global_tmp_opts->chain_str) {
-		free(global_tmp_opts->chain_str);
-		global_tmp_opts->chain_str = NULL;
+	if (tmp_opts->chain_str) {
+		free(tmp_opts->chain_str);
+		tmp_opts->chain_str = NULL;
 	}
-	if (global_tmp_opts->clientcrt_str) {
-		free(global_tmp_opts->clientcrt_str);
-		global_tmp_opts->clientcrt_str = NULL;
+	if (tmp_opts->clientcrt_str) {
+		free(tmp_opts->clientcrt_str);
+		tmp_opts->clientcrt_str = NULL;
 	}
-	if (global_tmp_opts->clientkey_str) {
-		free(global_tmp_opts->clientkey_str);
-		global_tmp_opts->clientkey_str = NULL;
+	if (tmp_opts->clientkey_str) {
+		free(tmp_opts->clientkey_str);
+		tmp_opts->clientkey_str = NULL;
 	}
-	if (global_tmp_opts->leafcrlurl_str) {
-		free(global_tmp_opts->leafcrlurl_str);
-		global_tmp_opts->leafcrlurl_str = NULL;
+	if (tmp_opts->leafcrlurl_str) {
+		free(tmp_opts->leafcrlurl_str);
+		tmp_opts->leafcrlurl_str = NULL;
 	}
-	if (global_tmp_opts->dh_str) {
-		free(global_tmp_opts->dh_str);
-		global_tmp_opts->dh_str = NULL;
+	if (tmp_opts->dh_str) {
+		free(tmp_opts->dh_str);
+		tmp_opts->dh_str = NULL;
 	}
-	free(global_tmp_opts);
+	free(tmp_opts);
 }
 
 void
@@ -510,8 +510,36 @@ opts_set_user_auth_url(conn_opts_t *conn_opts, const char * argv0, const char *o
 }
 #endif /* !WITHOUT_USERAUTH */
 
+tmp_opts_t *
+tmp_opts_copy(tmp_opts_t *src_tmp_opts)
+{
+	tmp_opts_t *tmp_opts = malloc(sizeof(tmp_opts_t));
+	if (!tmp_opts)
+		return oom_return_na_null();
+	memset(tmp_opts, 0, sizeof(tmp_opts_t));
+
+	if (src_tmp_opts->cacrt_str)
+		tmp_opts->cacrt_str = strdup(src_tmp_opts->cacrt_str);
+	if (src_tmp_opts->cakey_str)
+		tmp_opts->cakey_str = strdup(src_tmp_opts->cakey_str);
+	if (src_tmp_opts->chain_str)
+		tmp_opts->chain_str = strdup(src_tmp_opts->chain_str);
+	if (src_tmp_opts->clientcrt_str)
+		tmp_opts->clientcrt_str = strdup(src_tmp_opts->clientcrt_str);
+	if (src_tmp_opts->clientkey_str)
+		tmp_opts->clientkey_str = strdup(src_tmp_opts->clientkey_str);
+	if (src_tmp_opts->leafcrlurl_str)
+		tmp_opts->leafcrlurl_str = strdup(src_tmp_opts->leafcrlurl_str);
+	if (src_tmp_opts->dh_str)
+		tmp_opts->dh_str = strdup(src_tmp_opts->dh_str);
+	tmp_opts->split = src_tmp_opts->split;
+	tmp_opts->include = src_tmp_opts->include;
+
+	return tmp_opts;
+}
+
 conn_opts_t *
-conn_opts_copy(conn_opts_t *conn_opts, const char *argv0, global_tmp_opts_t *global_tmp_opts)
+conn_opts_copy(conn_opts_t *conn_opts, const char *argv0, tmp_opts_t *tmp_opts)
 {
 #ifdef DEBUG_OPTS
 	log_dbg_printf("Copy conn_opts\n");
@@ -560,35 +588,35 @@ conn_opts_copy(conn_opts_t *conn_opts, const char *argv0, global_tmp_opts_t *glo
 	cops->validate_proto = conn_opts->validate_proto;
 	cops->max_http_header_size = conn_opts->max_http_header_size;
 
-	// Pass NULL as global_tmp_opts param, so we don't reassign the var to itself
+	// Pass NULL as tmp_opts param, so we don't reassign the var to itself
 	// That would be harmless but incorrect
-	if (global_tmp_opts && global_tmp_opts->chain_str) {
-		if (opts_set_chain(cops, argv0, global_tmp_opts->chain_str, NULL) == -1)
+	if (tmp_opts && tmp_opts->chain_str) {
+		if (opts_set_chain(cops, argv0, tmp_opts->chain_str, NULL) == -1)
 			return NULL;
 	}
-	if (global_tmp_opts && global_tmp_opts->leafcrlurl_str) {
-		if (opts_set_leafcrlurl(cops, argv0, global_tmp_opts->leafcrlurl_str, NULL) == -1)
+	if (tmp_opts && tmp_opts->leafcrlurl_str) {
+		if (opts_set_leafcrlurl(cops, argv0, tmp_opts->leafcrlurl_str, NULL) == -1)
 			return NULL;
 	}
-	if (global_tmp_opts && global_tmp_opts->cacrt_str) {
-		if (opts_set_cacrt(cops, argv0, global_tmp_opts->cacrt_str, NULL) == -1)
+	if (tmp_opts && tmp_opts->cacrt_str) {
+		if (opts_set_cacrt(cops, argv0, tmp_opts->cacrt_str, NULL) == -1)
 			return NULL;
 	}
-	if (global_tmp_opts && global_tmp_opts->cakey_str) {
-		if (opts_set_cakey(cops, argv0, global_tmp_opts->cakey_str, NULL) == -1)
+	if (tmp_opts && tmp_opts->cakey_str) {
+		if (opts_set_cakey(cops, argv0, tmp_opts->cakey_str, NULL) == -1)
 			return NULL;
 	}
-	if (global_tmp_opts && global_tmp_opts->clientcrt_str) {
-		if (opts_set_clientcrt(cops, argv0, global_tmp_opts->clientcrt_str, NULL) == -1)
+	if (tmp_opts && tmp_opts->clientcrt_str) {
+		if (opts_set_clientcrt(cops, argv0, tmp_opts->clientcrt_str, NULL) == -1)
 			return NULL;
 	}
-	if (global_tmp_opts && global_tmp_opts->clientkey_str) {
-		if (opts_set_clientkey(cops, argv0, global_tmp_opts->clientkey_str, NULL) == -1)
+	if (tmp_opts && tmp_opts->clientkey_str) {
+		if (opts_set_clientkey(cops, argv0, tmp_opts->clientkey_str, NULL) == -1)
 			return NULL;
 	}
 #ifndef OPENSSL_NO_DH
-	if (global_tmp_opts && global_tmp_opts->dh_str) {
-		if (opts_set_dh(cops, argv0, global_tmp_opts->dh_str, NULL) == -1)
+	if (tmp_opts && tmp_opts->dh_str) {
+		if (opts_set_dh(cops, argv0, tmp_opts->dh_str, NULL) == -1)
 			return NULL;
 	}
 #endif /* !OPENSSL_NO_DH */
@@ -647,13 +675,13 @@ global_opts_copy(global_t *global, const char *argv0)
 }
 
 proxyspec_t *
-proxyspec_new(global_t *global, const char *argv0, global_tmp_opts_t *global_tmp_opts)
+proxyspec_new(global_t *global, const char *argv0, tmp_opts_t *tmp_opts)
 {
 	proxyspec_t *spec = malloc(sizeof(proxyspec_t));
 	if (!spec)
 		return oom_return_null(argv0);
 	memset(spec, 0, sizeof(proxyspec_t));
-	spec->conn_opts = conn_opts_copy(global->conn_opts, argv0, global_tmp_opts);
+	spec->conn_opts = conn_opts_copy(global->conn_opts, argv0, tmp_opts);
 	if (!spec->conn_opts)
 		return NULL;
 	spec->opts = global_opts_copy(global, argv0);
@@ -862,7 +890,7 @@ set_divert(proxyspec_t *spec, int split)
  * Parse proxyspecs using a simple state machine.
  */
 int
-proxyspec_parse(int *argc, char **argv[], const char *natengine, global_t *global, const char *argv0, global_tmp_opts_t *global_tmp_opts)
+proxyspec_parse(int *argc, char **argv[], const char *natengine, global_t *global, const char *argv0, tmp_opts_t *tmp_opts)
 {
 	proxyspec_t *spec = NULL;
 	char *addr = NULL;
@@ -874,7 +902,7 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine, global_t *globa
 			default:
 			case 0:
 				/* tcp | ssl | http | https | autossl | pop3 | pop3s | smtp | smtps */
-				spec = proxyspec_new(global, argv0, global_tmp_opts);
+				spec = proxyspec_new(global, argv0, tmp_opts);
 				if (!spec)
 					return -1;
 				spec->next = global->spec;
@@ -974,7 +1002,7 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine, global_t *globa
 
 	// Empty line does not create new spec
 	if (spec)
-		set_divert(spec, global_tmp_opts->split);
+		set_divert(spec, tmp_opts->split);
 
 	return 0;
 }
@@ -1328,13 +1356,13 @@ out:
 }
 
 int
-opts_set_cacrt(conn_opts_t *conn_opts, const char *argv0, const char *optarg, global_tmp_opts_t *global_tmp_opts)
+opts_set_cacrt(conn_opts_t *conn_opts, const char *argv0, const char *optarg, tmp_opts_t *tmp_opts)
 {
-	if (global_tmp_opts) {
-		if (global_tmp_opts->cacrt_str)
-			free(global_tmp_opts->cacrt_str);
-		global_tmp_opts->cacrt_str = strdup(optarg);
-		if (!global_tmp_opts->cacrt_str)
+	if (tmp_opts) {
+		if (tmp_opts->cacrt_str)
+			free(tmp_opts->cacrt_str);
+		tmp_opts->cacrt_str = strdup(optarg);
+		if (!tmp_opts->cacrt_str)
 			return oom_return(argv0);
 	}
 
@@ -1368,13 +1396,13 @@ opts_set_cacrt(conn_opts_t *conn_opts, const char *argv0, const char *optarg, gl
 }
 
 int
-opts_set_cakey(conn_opts_t *conn_opts, const char *argv0, const char *optarg, global_tmp_opts_t *global_tmp_opts)
+opts_set_cakey(conn_opts_t *conn_opts, const char *argv0, const char *optarg, tmp_opts_t *tmp_opts)
 {
-	if (global_tmp_opts) {
-		if (global_tmp_opts->cakey_str)
-			free(global_tmp_opts->cakey_str);
-		global_tmp_opts->cakey_str = strdup(optarg);
-		if (!global_tmp_opts->cakey_str)
+	if (tmp_opts) {
+		if (tmp_opts->cakey_str)
+			free(tmp_opts->cakey_str);
+		tmp_opts->cakey_str = strdup(optarg);
+		if (!tmp_opts->cakey_str)
 			return oom_return(argv0);
 	}
 
@@ -1410,13 +1438,13 @@ opts_set_cakey(conn_opts_t *conn_opts, const char *argv0, const char *optarg, gl
 }
 
 int
-opts_set_chain(conn_opts_t *opts, const char *argv0, const char *optarg, global_tmp_opts_t *global_tmp_opts)
+opts_set_chain(conn_opts_t *opts, const char *argv0, const char *optarg, tmp_opts_t *tmp_opts)
 {
-	if (global_tmp_opts) {
-		if (global_tmp_opts->chain_str)
-			free(global_tmp_opts->chain_str);
-		global_tmp_opts->chain_str = strdup(optarg);
-		if (!global_tmp_opts->chain_str)
+	if (tmp_opts) {
+		if (tmp_opts->chain_str)
+			free(tmp_opts->chain_str);
+		tmp_opts->chain_str = strdup(optarg);
+		if (!tmp_opts->chain_str)
 			return oom_return(argv0);
 	}
 
@@ -1437,13 +1465,13 @@ opts_set_chain(conn_opts_t *opts, const char *argv0, const char *optarg, global_
 }
 
 int
-opts_set_leafcrlurl(conn_opts_t *conn_opts, const char *argv0, const char *optarg, global_tmp_opts_t *global_tmp_opts)
+opts_set_leafcrlurl(conn_opts_t *conn_opts, const char *argv0, const char *optarg, tmp_opts_t *tmp_opts)
 {
-	if (global_tmp_opts) {
-		if (global_tmp_opts->leafcrlurl_str)
-			free(global_tmp_opts->leafcrlurl_str);
-		global_tmp_opts->leafcrlurl_str = strdup(optarg);
-		if (!global_tmp_opts->leafcrlurl_str)
+	if (tmp_opts) {
+		if (tmp_opts->leafcrlurl_str)
+			free(tmp_opts->leafcrlurl_str);
+		tmp_opts->leafcrlurl_str = strdup(optarg);
+		if (!tmp_opts->leafcrlurl_str)
 			return oom_return(argv0);
 	}
 
@@ -1494,13 +1522,13 @@ opts_unset_passthrough(conn_opts_t *conn_opts)
 }
 
 int
-opts_set_clientcrt(conn_opts_t *conn_opts, const char *argv0, const char *optarg, global_tmp_opts_t *global_tmp_opts)
+opts_set_clientcrt(conn_opts_t *conn_opts, const char *argv0, const char *optarg, tmp_opts_t *tmp_opts)
 {
-	if (global_tmp_opts) {
-		if (global_tmp_opts->clientcrt_str)
-			free(global_tmp_opts->clientcrt_str);
-		global_tmp_opts->clientcrt_str = strdup(optarg);
-		if (!global_tmp_opts->clientcrt_str)
+	if (tmp_opts) {
+		if (tmp_opts->clientcrt_str)
+			free(tmp_opts->clientcrt_str);
+		tmp_opts->clientcrt_str = strdup(optarg);
+		if (!tmp_opts->clientcrt_str)
 			return oom_return(argv0);
 	}
 
@@ -1524,13 +1552,13 @@ opts_set_clientcrt(conn_opts_t *conn_opts, const char *argv0, const char *optarg
 }
 
 int
-opts_set_clientkey(conn_opts_t *opts, const char *argv0, const char *optarg, global_tmp_opts_t *global_tmp_opts)
+opts_set_clientkey(conn_opts_t *opts, const char *argv0, const char *optarg, tmp_opts_t *tmp_opts)
 {
-	if (global_tmp_opts) {
-		if (global_tmp_opts->clientkey_str)
-			free(global_tmp_opts->clientkey_str);
-		global_tmp_opts->clientkey_str = strdup(optarg);
-		if (!global_tmp_opts->clientkey_str)
+	if (tmp_opts) {
+		if (tmp_opts->clientkey_str)
+			free(tmp_opts->clientkey_str);
+		tmp_opts->clientkey_str = strdup(optarg);
+		if (!tmp_opts->clientkey_str)
 			return oom_return(argv0);
 	}
 
@@ -1555,13 +1583,13 @@ opts_set_clientkey(conn_opts_t *opts, const char *argv0, const char *optarg, glo
 
 #ifndef OPENSSL_NO_DH
 int
-opts_set_dh(conn_opts_t *conn_opts, const char *argv0, const char *optarg, global_tmp_opts_t *global_tmp_opts)
+opts_set_dh(conn_opts_t *conn_opts, const char *argv0, const char *optarg, tmp_opts_t *tmp_opts)
 {
-	if (global_tmp_opts) {
-		if (global_tmp_opts->dh_str)
-			free(global_tmp_opts->dh_str);
-		global_tmp_opts->dh_str = strdup(optarg);
-		if (!global_tmp_opts->dh_str)
+	if (tmp_opts) {
+		if (tmp_opts->dh_str)
+			free(tmp_opts->dh_str);
+		tmp_opts->dh_str = strdup(optarg);
+		if (!tmp_opts->dh_str)
 			return oom_return(argv0);
 	}
 
@@ -2492,7 +2520,7 @@ check_value_yesno(const char *value, const char *name, int line_num)
 
 int
 set_conn_opts_option(conn_opts_t *conn_opts, const char *argv0,
-		const char *name, char *value, int line_num, global_tmp_opts_t *global_tmp_opts)
+		const char *name, char *value, int line_num, tmp_opts_t *tmp_opts)
 {
 	int yes;
 
@@ -2502,17 +2530,17 @@ set_conn_opts_option(conn_opts_t *conn_opts, const char *argv0,
 	}
 
 	if (equal(name, "CACert")) {
-		return opts_set_cacrt(conn_opts, argv0, value, global_tmp_opts);
+		return opts_set_cacrt(conn_opts, argv0, value, tmp_opts);
 	} else if (equal(name, "CAKey")) {
-		return opts_set_cakey(conn_opts, argv0, value, global_tmp_opts);
+		return opts_set_cakey(conn_opts, argv0, value, tmp_opts);
 	} else if (equal(name, "ClientCert")) {
-		return opts_set_clientcrt(conn_opts, argv0, value, global_tmp_opts);
+		return opts_set_clientcrt(conn_opts, argv0, value, tmp_opts);
 	} else if (equal(name, "ClientKey")) {
-		return opts_set_clientkey(conn_opts, argv0, value, global_tmp_opts);
+		return opts_set_clientkey(conn_opts, argv0, value, tmp_opts);
 	} else if (equal(name, "CAChain")) {
-		return opts_set_chain(conn_opts, argv0, value, global_tmp_opts);
+		return opts_set_chain(conn_opts, argv0, value, tmp_opts);
 	} else if (equal(name, "LeafCRLURL")) {
-		return opts_set_leafcrlurl(conn_opts, argv0, value, global_tmp_opts);
+		return opts_set_leafcrlurl(conn_opts, argv0, value, tmp_opts);
 	} else if (equal(name, "DenyOCSP")) {
 		yes = check_value_yesno(value, "DenyOCSP", line_num);
 		if (yes == -1)
@@ -2531,7 +2559,7 @@ set_conn_opts_option(conn_opts_t *conn_opts, const char *argv0,
 #endif /* DEBUG_OPTS */
 #ifndef OPENSSL_NO_DH
 	} else if (equal(name, "DHGroupParams")) {
-		return opts_set_dh(conn_opts, argv0, value, global_tmp_opts);
+		return opts_set_dh(conn_opts, argv0, value, tmp_opts);
 #endif /* !OPENSSL_NO_DH */
 #ifndef OPENSSL_NO_ECDH
 	} else if (equal(name, "ECDHCurve")) {
@@ -2642,12 +2670,12 @@ set_conn_opts_option(conn_opts_t *conn_opts, const char *argv0,
 }
 
 /*
- * global_opt param is used to save certain global opts, so that we can use 
- * them cloning global opts while creating proxyspecs
+ * tmp_opts param is used to save certain opts, so that we can use them 
+ * to copy global opts to proxyspecs, or proxyspecs opts to struct filtering rules
  */
 static int
 set_option(opts_t *opts, conn_opts_t *conn_opts, const char *argv0,
-		const char *name, char *value, char **natengine, FILE *f, int *line_num, global_tmp_opts_t *global_tmp_opts)
+		const char *name, char *value, char **natengine, FILE *f, int *line_num, tmp_opts_t *tmp_opts)
 {
 	int yes;
 
@@ -2687,9 +2715,9 @@ set_option(opts_t *opts, conn_opts_t *conn_opts, const char *argv0,
 #ifdef DEBUG_OPTS
 		log_dbg_printf("FilterRule { on line %d\n", *line_num);
 #endif /* DEBUG_OPTS */
-		return load_filterrule_struct(opts, conn_opts, argv0, line_num, f, global_tmp_opts);
+		return load_filterrule_struct(opts, conn_opts, argv0, line_num, f, tmp_opts);
 	} else {
-		int rv = set_conn_opts_option(conn_opts, argv0, name, value, *line_num, global_tmp_opts);
+		int rv = set_conn_opts_option(conn_opts, argv0, name, value, *line_num, tmp_opts);
 		if (rv == -1) {
 			fprintf(stderr, "Error in conf: '%s' on line %d\n", name, *line_num);
 			return -1;
@@ -2703,7 +2731,7 @@ set_option(opts_t *opts, conn_opts_t *conn_opts, const char *argv0,
 
 static int WUNRES
 set_proxyspec_option(proxyspec_t *spec, const char *argv0,
-		const char *name, char *value, char **natengine, spec_addrs_t *spec_addrs, FILE *f, int *line_num)
+		const char *name, char *value, char **natengine, spec_addrs_t *spec_addrs, FILE *f, int *line_num, tmp_opts_t *proxyspec_tmp_opts)
 {
 	// Closing brace '}' is the only option without a value
 	// and only allowed in structured proxyspecs and filter rules
@@ -2781,7 +2809,7 @@ set_proxyspec_option(proxyspec_t *spec, const char *argv0,
 		return 2;
 	}
 	else {
-		return set_option(spec->opts, spec->conn_opts, argv0, name, value, natengine, f, line_num, NULL);
+		return set_option(spec->opts, spec->conn_opts, argv0, name, value, natengine, f, line_num, proxyspec_tmp_opts);
 	}
 	return 0;
 }
@@ -2858,7 +2886,7 @@ get_name_value(char *name, char **value, const char sep, int line_num)
 #define MAX_TOKENS 8
 
 static int WUNRES
-load_proxyspec_line(global_t *global, const char *argv0, char *value, char **natengine, int line_num, global_tmp_opts_t *global_tmp_opts)
+load_proxyspec_line(global_t *global, const char *argv0, char *value, char **natengine, int line_num, tmp_opts_t *global_tmp_opts)
 {
 	/* Use MAX_TOKENS instead of computing the actual number of tokens in value */
 	char **argv = malloc(sizeof(char *) * MAX_TOKENS);
@@ -2890,7 +2918,7 @@ load_proxyspec_line(global_t *global, const char *argv0, char *value, char **nat
 }
 
 static int WUNRES
-load_proxyspec_struct(global_t *global, const char *argv0, char **natengine, int *line_num, FILE *f, global_tmp_opts_t *global_tmp_opts)
+load_proxyspec_struct(global_t *global, const char *argv0, char **natengine, int *line_num, FILE *f, tmp_opts_t *global_tmp_opts)
 {
 	int retval = -1;
 	char *name, *value;
@@ -2911,6 +2939,12 @@ load_proxyspec_struct(global_t *global, const char *argv0, char **natengine, int
 	if (!spec_addrs)
 		return oom_return(argv0);
 	memset(spec_addrs, 0, sizeof(spec_addrs_t));
+
+	tmp_opts_t *proxyspec_tmp_opts = tmp_opts_copy(global_tmp_opts);
+	if (!proxyspec_tmp_opts) {
+		retval = -1;
+		goto leave;
+	}
 
 	int closing_brace = 0;
 
@@ -2935,7 +2969,7 @@ load_proxyspec_struct(global_t *global, const char *argv0, char **natengine, int
 
 		retval = get_name_value(name, &value, ' ', *line_num);
 		if (retval == 0) {
-			retval = set_proxyspec_option(spec, argv0, name, value, natengine, spec_addrs, f, line_num);
+			retval = set_proxyspec_option(spec, argv0, name, value, natengine, spec_addrs, f, line_num, proxyspec_tmp_opts);
 		}
 		if (retval == -1) {
 			goto leave;
@@ -2959,6 +2993,8 @@ leave:
 	if (line)
 		free(line);
 	spec_addrs_free(spec_addrs);
+	if (proxyspec_tmp_opts)
+		tmp_opts_free(proxyspec_tmp_opts);
 	return retval;
 }
 
@@ -2991,11 +3027,11 @@ global_set_open_files_limit(const char *value, int line_num)
 
 
 static int
-opts_load_conffile(global_t *global, const char *argv0, char *conffile, char **natengine, global_tmp_opts_t *global_tmp_opts);
+opts_load_conffile(global_t *global, const char *argv0, char *conffile, char **natengine, tmp_opts_t *tmp_opts);
 
 static int WUNRES
 set_global_option(global_t *global, const char *argv0,
-           const char *name, char *value, char **natengine, int *line_num, FILE *f, global_tmp_opts_t *global_tmp_opts)
+           const char *name, char *value, char **natengine, int *line_num, FILE *f, tmp_opts_t *tmp_opts)
 {
 	int yes;
 
@@ -3079,9 +3115,9 @@ set_global_option(global_t *global, const char *argv0,
 #ifdef DEBUG_OPTS
 			log_dbg_printf("ProxySpec { on line %d\n", *line_num);
 #endif /* DEBUG_OPTS */
-			return load_proxyspec_struct(global, argv0, natengine, line_num, f, global_tmp_opts);
+			return load_proxyspec_struct(global, argv0, natengine, line_num, f, tmp_opts);
 		} else {
-			return load_proxyspec_line(global, argv0, value, natengine, *line_num, global_tmp_opts);
+			return load_proxyspec_line(global, argv0, value, natengine, *line_num, tmp_opts);
 		}
 	} else if (equal(name, "ConnIdleTimeout")) {
 		unsigned int i = atoi(value);
@@ -3145,28 +3181,28 @@ set_global_option(global_t *global, const char *argv0,
 #endif /* !OPENSSL_NO_ENGINE */
 	} else if (equal(name, "Include")) {
 		// Prevent infinitely recursive include files
-		if (global_tmp_opts->include) {
+		if (tmp_opts->include) {
 			fprintf(stderr, "Include option not allowed in include files '%s' on line %d\n", value, *line_num);
 			return -1;
 		}
 
-		global_tmp_opts->include = 1;
-		int retval = opts_load_conffile(global, argv0, value, natengine, global_tmp_opts);
-		global_tmp_opts->include = 0;
+		tmp_opts->include = 1;
+		int retval = opts_load_conffile(global, argv0, value, natengine, tmp_opts);
+		tmp_opts->include = 0;
 
 		if (retval == -1) {
 			fprintf(stderr, "Error in include file '%s' on line %d\n", value, *line_num);
 		}
 		return retval;
 	} else {
-		return set_option(global->opts, global->conn_opts, argv0, name, value, natengine, f, line_num, global_tmp_opts);
+		return set_option(global->opts, global->conn_opts, argv0, name, value, natengine, f, line_num, tmp_opts);
 	}
 	return 0;
 }
 
 int
 global_set_option(global_t *global, const char *argv0, const char *optarg,
-		char **natengine, global_tmp_opts_t *global_tmp_opts)
+		char **natengine, tmp_opts_t *tmp_opts)
 {
 	char *name, *value;
 	int retval = -1;
@@ -3183,7 +3219,7 @@ global_set_option(global_t *global, const char *argv0, const char *optarg,
 	if (retval == 0) {
 		/* Line number param is for conf file, pass 0 for command line options */
 		int line_num = 0;
-		retval = set_global_option(global, argv0, name, value, natengine, &line_num, NULL, global_tmp_opts);
+		retval = set_global_option(global, argv0, name, value, natengine, &line_num, NULL, tmp_opts);
 	}
 
 	if (line)
@@ -3192,7 +3228,7 @@ global_set_option(global_t *global, const char *argv0, const char *optarg,
 }
 
 static int WUNRES
-opts_load_conffile(global_t *global, const char *argv0, char *conffile, char **natengine, global_tmp_opts_t *global_tmp_opts)
+opts_load_conffile(global_t *global, const char *argv0, char *conffile, char **natengine, tmp_opts_t *tmp_opts)
 {
 	int retval, line_num;
 	char *line, *name, *value;
@@ -3233,7 +3269,7 @@ opts_load_conffile(global_t *global, const char *argv0, char *conffile, char **n
 
 		retval = get_name_value(name, &value, ' ', line_num);
 		if (retval == 0) {
-			retval = set_global_option(global, argv0, name, value, natengine, &line_num, f, global_tmp_opts);
+			retval = set_global_option(global, argv0, name, value, natengine, &line_num, f, tmp_opts);
 		}
 
 		if (retval == -1) {
@@ -3251,14 +3287,14 @@ leave:
 }
 
 int
-global_load_conffile(global_t *global, const char *argv0, const char *optarg, char **natengine, global_tmp_opts_t *global_tmp_opts)
+global_load_conffile(global_t *global, const char *argv0, const char *optarg, char **natengine, tmp_opts_t *tmp_opts)
 {
 	if (global->conffile)
 		free(global->conffile);
 	global->conffile = strdup(optarg);
 	if (!global->conffile)
 		return oom_return(argv0);
-	int retval = opts_load_conffile(global, argv0, global->conffile, natengine, global_tmp_opts);
+	int retval = opts_load_conffile(global, argv0, global->conffile, natengine, tmp_opts);
 	if (retval == -1)
 		fprintf(stderr, "Error in conf file '%s'\n", global->conffile);
 	return retval;

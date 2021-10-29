@@ -327,33 +327,30 @@ main_load_leafcert(const char *filename, void *arg)
 	return 0;
 }
 
-static void
-main_check_opts(opts_t *opts, conn_opts_t *conn_opts, const char *argv0)
+static int WUNRES
+main_check_opts(opts_t *opts, conn_opts_t *conn_opts, const char *argv0, const char *name)
 {
 	if (conn_opts->cacrt && !conn_opts->cakey) {
-		fprintf(stderr, "%s: no CA key specified (-k).\n",
-						argv0);
-		exit(EXIT_FAILURE);
+		fprintf(stderr, "%s: no CA key specified (-k) in %s.\n", argv0, name);
+		return -1;
 	}
 	if (conn_opts->cakey && !conn_opts->cacrt) {
-		fprintf(stderr, "%s: no CA cert specified (-c).\n",
-						argv0);
-		exit(EXIT_FAILURE);
+		fprintf(stderr, "%s: no CA cert specified (-c) in %s.\n", argv0, name);
+		return -1;
 	}
 	if (conn_opts->cakey && conn_opts->cacrt &&
 		(X509_check_private_key(conn_opts->cacrt, conn_opts->cakey) != 1)) {
-		fprintf(stderr, "%s: CA cert does not match key.\n",
-						argv0);
+		fprintf(stderr, "%s: CA cert does not match key in %s.\n", argv0, name);
 		ERR_print_errors_fp(stderr);
-		exit(EXIT_FAILURE);
+		return -1;
 	}
 	if (!conn_opts->cakey &&
 	    !opts->global->leafcertdir &&
 	    !opts->global->defaultleafcert) {
-		fprintf(stderr, "%s: at least one of -c/-k, -t or -A "
-		                "must be specified\n", argv0);
-		exit(EXIT_FAILURE);
+		fprintf(stderr, "%s: at least one of -c/-k, -t or -A must be specified in %s.\n", argv0, name);
+		return -1;
 	}
+	return 0;
 }
 
 /*
@@ -393,8 +390,8 @@ main(int argc, char *argv[])
 	}
 
 	// This var is temporary, hence freed immediately after configuration is complete.
-	global_tmp_opts_t *global_tmp_opts = malloc(sizeof(global_tmp_opts_t));
-	memset(global_tmp_opts, 0, sizeof(global_tmp_opts_t));
+	tmp_opts_t *global_tmp_opts = malloc(sizeof(tmp_opts_t));
+	memset(global_tmp_opts, 0, sizeof(tmp_opts_t));
 
 	while ((ch = getopt(argc, argv,
 	                    OPT_g OPT_G OPT_Z OPT_i OPT_x OPT_T OPT_I
@@ -659,16 +656,24 @@ main(int argc, char *argv[])
 			exit(EXIT_FAILURE);
 		}
 #endif /* !OPENSSL_NO_ENGINE */
-		main_check_opts(global->opts, global->conn_opts, argv0);
+		// Do not call main_check_opts() for global options: global->opts and global->conn_opts
+		// because global options do not have to have SSL options, but proxyspecs do have to,
+		// and global options are copied into proxyspecs and then into struct filter rules anyway
 		for (proxyspec_t *spec = global->spec; spec; spec = spec->next) {
 			if (spec->ssl || spec->upgrade) {
-				main_check_opts(spec->opts, spec->conn_opts, argv0);
+				// Either the proxyspec itself or all of the filtering rules copied into or defined in the proxyspec must have a complete SSL/TLS configuration
+				if (main_check_opts(spec->opts, spec->conn_opts, argv0, "ProxySpec") == -1) {
+					if (!spec->opts->filter_rules)
+						exit(EXIT_FAILURE);
 
-				filter_rule_t *rule = spec->opts->filter_rules;
-				while (rule) {
-					if (rule->action.conn_opts)
-						main_check_opts(spec->opts, rule->action.conn_opts, argv0);
-					rule = rule->next;
+					filter_rule_t *rule = spec->opts->filter_rules;
+					while (rule) {
+						if (!rule->action.conn_opts || (main_check_opts(spec->opts, rule->action.conn_opts, argv0, "FilterRule") == -1)) {
+							fprintf(stderr, "%s: no or incomplete SSL/TLS configuration in ProxySpec and/or FilterRule.\n", argv0);
+							exit(EXIT_FAILURE);
+						}
+						rule = rule->next;
+					}
 				}
 			}
 		}
@@ -887,8 +892,7 @@ main(int argc, char *argv[])
 	}
 
 	// We don't need the tmp opts used to clone global opts into proxyspecs and struct filtering rules anymore
-	global_tmp_opts_free(global_tmp_opts);
-	global_tmp_opts = NULL;
+	tmp_opts_free(global_tmp_opts);
 
 	/* debug log, part 2 */
 	if (OPTS_DEBUG(global)) {

@@ -2425,7 +2425,7 @@ filter_rule_struct_translate(filter_rule_t *rule, UNUSED conn_opts_t *conn_opts,
 }
 
 static int WUNRES
-filter_rule_struct_translate_nvls(opts_t *opts, name_value_lines_t nvls[], int nvls_size, conn_opts_t *conn_opts, const char *argv0, global_tmp_opts_t *global_tmp_opts)
+filter_rule_struct_translate_nvls(opts_t *opts, name_value_lines_t nvls[], int nvls_size, conn_opts_t *conn_opts, const char *argv0, tmp_opts_t *tmp_opts)
 {
 	filter_rule_t *rule = malloc(sizeof(filter_rule_t));
 	if (!rule)
@@ -2468,7 +2468,7 @@ filter_rule_struct_translate_nvls(opts_t *opts, name_value_lines_t nvls[], int n
 		rule->action.precedence++;
 	}
 
-	rule->action.conn_opts = conn_opts_copy(conn_opts, argv0, global_tmp_opts);
+	rule->action.conn_opts = conn_opts_copy(conn_opts, argv0, tmp_opts);
 	if (!rule->action.conn_opts) {
 		filter_rule_free(rule);
 		return oom_return_na();
@@ -2483,7 +2483,7 @@ filter_rule_struct_translate_nvls(opts_t *opts, name_value_lines_t nvls[], int n
 }
 
 static int WUNRES
-filter_rule_struct_macro_expand(opts_t *opts, name_value_lines_t nvls[], int nvls_size, conn_opts_t *conn_opts, const char *argv0, global_tmp_opts_t *global_tmp_opts)
+filter_rule_struct_macro_expand(opts_t *opts, name_value_lines_t nvls[], int nvls_size, conn_opts_t *conn_opts, const char *argv0, tmp_opts_t *tmp_opts)
 {
 	for (int i = 0; i < nvls_size; i++) {
 		if (nvls[i].value[0] == '$') {
@@ -2502,7 +2502,7 @@ filter_rule_struct_macro_expand(opts_t *opts, name_value_lines_t nvls[], int nvl
 
 					n[i].value = value->value;
 
-					if (filter_rule_struct_macro_expand(opts, n, nvls_size, conn_opts, argv0, global_tmp_opts) == -1)
+					if (filter_rule_struct_macro_expand(opts, n, nvls_size, conn_opts, argv0, tmp_opts) == -1)
 						return -1;
 
 					value = value->next;
@@ -2517,14 +2517,14 @@ filter_rule_struct_macro_expand(opts_t *opts, name_value_lines_t nvls[], int nvl
 		}
 	}
 
-	if (filter_rule_struct_translate_nvls(opts, nvls, nvls_size, conn_opts, argv0, global_tmp_opts) == -1)
+	if (filter_rule_struct_translate_nvls(opts, nvls, nvls_size, conn_opts, argv0, tmp_opts) == -1)
 		return -1;
 	return 0;
 }
 
 static int WUNRES
 filter_rule_struct_parse(name_value_lines_t nvls[], int *nvls_size, conn_opts_t *conn_opts, const char *argv0,
-		char *name, char *value, int line_num, global_tmp_opts_t *global_tmp_opts, filter_parse_state_t *parse_state)
+		char *name, char *value, int line_num, tmp_opts_t *tmp_opts, filter_parse_state_t *parse_state)
 {
 	// Closing brace '}' is the only option without a value
 	// and only allowed in structured filtering rules and proxyspecs
@@ -2545,7 +2545,7 @@ filter_rule_struct_parse(name_value_lines_t nvls[], int *nvls_size, conn_opts_t 
 		return 2;
 	}
 
-	int rv = set_conn_opts_option(conn_opts, argv0, name, value, line_num, global_tmp_opts);
+	int rv = set_conn_opts_option(conn_opts, argv0, name, value, line_num, tmp_opts);
 	if (rv == -1) {
 		fprintf(stderr, "Error in conf: '%s' on line %d\n", name, line_num);
 		return -1;
@@ -2640,7 +2640,7 @@ filter_rule_struct_parse(name_value_lines_t nvls[], int *nvls_size, conn_opts_t 
 }
 
 int
-load_filterrule_struct(opts_t *opts, conn_opts_t *conn_opts, const char *argv0, int *line_num, FILE *f, global_tmp_opts_t *global_tmp_opts)
+load_filterrule_struct(opts_t *opts, conn_opts_t *conn_opts, const char *argv0, int *line_num, FILE *f, tmp_opts_t *orig_tmp_opts)
 {
 	int retval = -1;
 	char *name, *value;
@@ -2655,9 +2655,17 @@ load_filterrule_struct(opts_t *opts, conn_opts_t *conn_opts, const char *argv0, 
 	int nvls_size = 0;
 	name_value_lines_t nvls[MAX_NVLS_SIZE];
 
-	conn_opts_t *copts = conn_opts_copy(conn_opts, argv0, global_tmp_opts);
+	conn_opts_t *copts = conn_opts_copy(conn_opts, argv0, orig_tmp_opts);
 	if (!copts)
 		return -1;
+
+	// Operate on a local copy of orig_tmp_opts, do not modify the orig_tmp_opts
+	// otherwise struct filtering rules can override global or proxyspec options
+	tmp_opts_t *tmp_opts = tmp_opts_copy(orig_tmp_opts);
+	if (!tmp_opts) {
+		retval = -1;
+		goto err;
+	}
 
 	int closing_brace = 0;
 
@@ -2683,7 +2691,7 @@ load_filterrule_struct(opts_t *opts, conn_opts_t *conn_opts, const char *argv0, 
 
 		retval = get_name_value(name, &value, ' ', *line_num);
 		if (retval == 0) {
-			retval = filter_rule_struct_parse(nvls, &nvls_size, copts, argv0, name, value, *line_num, global_tmp_opts, &parse_state);
+			retval = filter_rule_struct_parse(nvls, &nvls_size, copts, argv0, name, value, *line_num, tmp_opts, &parse_state);
 		}
 		if (retval == -1) {
 			goto err;
@@ -2707,7 +2715,7 @@ load_filterrule_struct(opts_t *opts, conn_opts_t *conn_opts, const char *argv0, 
 		goto err;
 	}
 
-	if (filter_rule_struct_macro_expand(opts, nvls, nvls_size, copts, argv0, global_tmp_opts) == -1) {
+	if (filter_rule_struct_macro_expand(opts, nvls, nvls_size, copts, argv0, tmp_opts) == -1) {
 		retval = -1;
 		goto err;
 	}
@@ -2715,6 +2723,8 @@ load_filterrule_struct(opts_t *opts, conn_opts_t *conn_opts, const char *argv0, 
 	retval = 0;
 err:
 	conn_opts_free(copts);
+	if (tmp_opts)
+		tmp_opts_free(tmp_opts);
 	for (i = 0; i < nvls_size; i++) {
 		free(nvls[i].name);
 		free(nvls[i].value);
@@ -2785,7 +2795,7 @@ filter_port_find_exact(filter_site_t *site, filter_rule_t *rule)
 }
 
 static int NONNULL(1,2) WUNRES
-filter_port_add(filter_site_t *site, filter_rule_t *rule, const char *argv0, global_tmp_opts_t *global_tmp_opts)
+filter_port_add(filter_site_t *site, filter_rule_t *rule, const char *argv0, tmp_opts_t *tmp_opts)
 {
 	filter_port_t *port = filter_port_find_exact(site, rule);
 	if (!port) {
@@ -2853,7 +2863,7 @@ filter_port_add(filter_site_t *site, filter_rule_t *rule, const char *argv0, glo
 		if (rule->action.conn_opts) {
 			if (port->action.conn_opts)
 				conn_opts_free(port->action.conn_opts);
-			port->action.conn_opts = conn_opts_copy(rule->action.conn_opts, argv0, global_tmp_opts);
+			port->action.conn_opts = conn_opts_copy(rule->action.conn_opts, argv0, tmp_opts);
 			if (!port->action.conn_opts)
 				return oom_return_na();
 		}
@@ -2924,7 +2934,7 @@ filter_site_find_exact(kbtree_t(site) *btree, ACMachine(char) *acm, filter_site_
 }
 
 static int NONNULL(3) WUNRES
-filter_site_add(kbtree_t(site) **btree, ACMachine(char) **acm, filter_site_t **all, filter_rule_t *rule, const char *argv0, global_tmp_opts_t *global_tmp_opts)
+filter_site_add(kbtree_t(site) **btree, ACMachine(char) **acm, filter_site_t **all, filter_rule_t *rule, const char *argv0, tmp_opts_t *tmp_opts)
 {
 	filter_site_t *site = filter_site_find_exact(*btree, *acm, *all, rule);
 	if (!site) {
@@ -2965,7 +2975,7 @@ filter_site_add(kbtree_t(site) **btree, ACMachine(char) **acm, filter_site_t **a
 	// Port rule is added as a new port under the same site
 	// hence 'if else', not just 'if'
 	if (rule->port) {
-		if (filter_port_add(site, rule, argv0, global_tmp_opts) == -1)
+		if (filter_port_add(site, rule, argv0, tmp_opts) == -1)
 			return -1;
 	}
 	// Do not override the specs of site rules at higher precedence
@@ -2999,7 +3009,7 @@ filter_site_add(kbtree_t(site) **btree, ACMachine(char) **acm, filter_site_t **a
 		if (rule->action.conn_opts) {
 			if (site->action.conn_opts)
 				conn_opts_free(site->action.conn_opts);
-			site->action.conn_opts = conn_opts_copy(rule->action.conn_opts, argv0, global_tmp_opts);
+			site->action.conn_opts = conn_opts_copy(rule->action.conn_opts, argv0, tmp_opts);
 			if (!site->action.conn_opts)
 				return oom_return_na();
 		}
@@ -3010,26 +3020,26 @@ filter_site_add(kbtree_t(site) **btree, ACMachine(char) **acm, filter_site_t **a
 }
 
 static int
-filter_sitelist_add(filter_list_t *list, filter_rule_t *rule, const char *argv0, global_tmp_opts_t *global_tmp_opts)
+filter_sitelist_add(filter_list_t *list, filter_rule_t *rule, const char *argv0, tmp_opts_t *tmp_opts)
 {
 	if (rule->dstip) {
-		if (filter_site_add(&list->ip_btree, &list->ip_acm, &list->ip_all, rule, argv0, global_tmp_opts) == -1)
+		if (filter_site_add(&list->ip_btree, &list->ip_acm, &list->ip_all, rule, argv0, tmp_opts) == -1)
 			return -1;
 	}
 	if (rule->sni) {
-		if (filter_site_add(&list->sni_btree, &list->sni_acm, &list->sni_all, rule, argv0, global_tmp_opts) == -1)
+		if (filter_site_add(&list->sni_btree, &list->sni_acm, &list->sni_all, rule, argv0, tmp_opts) == -1)
 			return -1;
 	}
 	if (rule->cn) {
-		if (filter_site_add(&list->cn_btree, &list->cn_acm, &list->cn_all, rule, argv0, global_tmp_opts) == -1)
+		if (filter_site_add(&list->cn_btree, &list->cn_acm, &list->cn_all, rule, argv0, tmp_opts) == -1)
 			return -1;
 	}
 	if (rule->host) {
-		if (filter_site_add(&list->host_btree, &list->host_acm, &list->host_all, rule, argv0, global_tmp_opts) == -1)
+		if (filter_site_add(&list->host_btree, &list->host_acm, &list->host_all, rule, argv0, tmp_opts) == -1)
 			return -1;
 	}
 	if (rule->uri) {
-		if (filter_site_add(&list->uri_btree, &list->uri_acm, &list->uri_all, rule, argv0, global_tmp_opts) == -1)
+		if (filter_site_add(&list->uri_btree, &list->uri_acm, &list->uri_all, rule, argv0, tmp_opts) == -1)
 			return -1;
 	}
 	return 0;
@@ -3327,7 +3337,7 @@ filter_user_get(filter_t *filter, filter_rule_t *rule)
  * Otherwise, we must return NULL, but NULL retval means oom.
  */
 filter_t *
-filter_set(filter_rule_t *rule, const char *argv0, global_tmp_opts_t *global_tmp_opts)
+filter_set(filter_rule_t *rule, const char *argv0, tmp_opts_t *tmp_opts)
 {
 	filter_t *filter = malloc(sizeof(filter_t));
 	if (!filter)
@@ -3356,11 +3366,11 @@ filter_set(filter_rule_t *rule, const char *argv0, global_tmp_opts_t *global_tmp
 				filter_desc_t *desc = filter_desc_get(filter, user, rule);
 				if (!desc)
 					return NULL;
-				if (filter_sitelist_add(desc->list, rule, argv0, global_tmp_opts) == -1)
+				if (filter_sitelist_add(desc->list, rule, argv0, tmp_opts) == -1)
 					return NULL;
 			}
 			else {
-				if (filter_sitelist_add(user->list, rule, argv0, global_tmp_opts) == -1)
+				if (filter_sitelist_add(user->list, rule, argv0, tmp_opts) == -1)
 					return NULL;
 			}
 		}
@@ -3368,11 +3378,11 @@ filter_set(filter_rule_t *rule, const char *argv0, global_tmp_opts_t *global_tmp
 			filter_desc_t *desc = filter_desc_get(filter, NULL, rule);
 			if (!desc)
 				return NULL;
-			if (filter_sitelist_add(desc->list, rule, argv0, global_tmp_opts) == -1)
+			if (filter_sitelist_add(desc->list, rule, argv0, tmp_opts) == -1)
 				return NULL;
 		}
 		else if (rule->all_users) {
-			if (filter_sitelist_add(filter->all_user, rule, argv0, global_tmp_opts) == -1)
+			if (filter_sitelist_add(filter->all_user, rule, argv0, tmp_opts) == -1)
 				return NULL;
 		}
 		else
@@ -3381,11 +3391,11 @@ filter_set(filter_rule_t *rule, const char *argv0, global_tmp_opts_t *global_tmp
 			 filter_ip_t *ip = filter_ip_get(filter, rule);
 			if (!ip)
 				return NULL;
-			if (filter_sitelist_add(ip->list, rule, argv0, global_tmp_opts) == -1)
+			if (filter_sitelist_add(ip->list, rule, argv0, tmp_opts) == -1)
 				return NULL;
 		}
 		else if (rule->all_conns) {
-			if (filter_sitelist_add(filter->all, rule, argv0, global_tmp_opts) == -1)
+			if (filter_sitelist_add(filter->all, rule, argv0, tmp_opts) == -1)
 				return NULL;
 		}
 		rule = rule->next;

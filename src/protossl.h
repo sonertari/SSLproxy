@@ -67,4 +67,3 @@ protocol_t protossl_setup(pxy_conn_ctx_t *) NONNULL(1);
 protocol_t protossl_setup_child(pxy_conn_child_ctx_t *) NONNULL(1);
 
 #endif /* PROTOSSL_H */
-
