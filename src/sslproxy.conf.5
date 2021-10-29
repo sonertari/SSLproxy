@@ -366,7 +366,7 @@ Match filtering rule specifies log actions for the connection without changing
 its filter action.
 .br
 
-The syntax of filtering rules is as follows:
+The syntax of one line filtering rules is as follows:
 .br
 
 (Divert|Split|Pass|Block|Match)
@@ -387,6 +387,92 @@ The syntax of filtering rules is as follows:
         [[!]content] [[!]pcap] [[!]mirror] [$macro]|[!]*)]
   |*) [# comment]
 .br
+
+See sslproxy(1) for the details.
+.TP
+\fBFilterRule {\fR
+.br
+Action
+.br
+User
+.br
+Desc
+.br
+SrcIp
+.br
+SNI
+.br
+CN
+.br
+Host
+.br
+URI
+.br
+DstIp
+.br
+DstPort
+.br
+LogAction
+.br
+DenyOCSP
+.br
+Passthrough
+.br
+CACert
+.br
+CAKey
+.br
+ClientCert
+.br
+ClientKey
+.br
+CAChain
+.br
+LeafCRLURL
+.br
+DHGroupParams
+.br
+ECDHCurve
+.br
+SSLCompression (yes|no)
+.br
+ForceSSLProto
+.br
+DisableSSLProto
+.br
+EnableSSLProto
+.br
+MinSSLProto
+.br
+MaxSSLProto
+.br
+Ciphers
+.br
+CipherSuites
+.br
+RemoveHTTPAcceptEncoding
+.br
+RemoveHTTPReferer
+.br
+VerifyPeer
+.br
+AllowWrongHost
+.br
+UserAuth
+.br
+UserTimeout
+.br
+UserAuthURL
+.br
+ValidateProto
+.br
+MaxHTTPHeaderSize
+.br
+\fB}\fR
+.br
+Structured filtering rules can specify all possible connection options to be 
+selectively applied to matching connections, not just per-proxyspec or 
+globally. One line filtering rules cannot specify connection options.
 
 See sslproxy(1) for the details.
 .TP

@@ -281,6 +281,8 @@ only.
 
 ### Filtering rules
 
+SSLproxy supports one line and structured filtering rules.
+
 SSLproxy can divert, split, pass, block, or match connections based on 
 filtering rules. Filtering rules can be defined globally or per-proxyspec.
 
@@ -295,7 +297,7 @@ effectively disabling SSL inspection and content logging of packets
 - `Match` action specifies log actions for the connection without changing its 
 filter action
 
-The syntax of filtering rules is as follows:
+The syntax of one line filtering rules is as follows:
 
 	(Divert|Split|Pass|Block|Match)
 	 ([from (
@@ -315,8 +317,59 @@ The syntax of filtering rules is as follows:
 	        [[!]content] [[!]pcap] [[!]mirror] [$macro]|[!]*)]
 	  |*) [# comment]
 
-The definition of which connections the rule action will be applied to is 
-achieved by the `from` and `to` parts of a filtering rule and by the proxyspec 
+The syntax of structured filtering rules is as follows:
+
+	FilterRule {
+	    Action (Divert|Split|Pass|Block|Match)
+
+	    # From
+	    User (username[*]|$macro|*)  # inline
+	    Desc (desc[*]|$macro|*)      # comments
+	    SrcIp (clientip[*]|$macro|*) # allowed
+
+	    # To
+	    SNI (servername[*]|$macro|*)
+	    CN (commonname[*]|$macro|*)
+	    Host (host[*]|$macro|*)
+	    URI (uri[*]|$macro|*)
+	    DstIp (serverip[*]|$macro|*)
+	    DstPort (serverport[*]|$macro|*)
+
+	    # Multiple LogAction lines allowed
+	    LogAction ([!]connect|[!]master|[!]cert|[!]content|[!]pcap|[!]mirror|$macro|[!]*)
+
+	    # Connection options
+	    DenyOCSP (yes|no)
+	    Passthrough (yes|no)
+	    CACert ca.crt
+	    CAKey ca.key
+	    ClientCert client.crt
+	    ClientKey client.key
+	    CAChain chain.crt
+	    LeafCRLURL http://example.com/example.crl
+	    DHGroupParams dh.pem
+	    ECDHCurve prime256v1
+	    SSLCompression (yes|no)
+	    ForceSSLProto (ssl2|ssl3|tls10|tls11|tls12|tls13)
+	    DisableSSLProto (ssl2|ssl3|tls10|tls11|tls12|tls13)
+	    EnableSSLProto (ssl2|ssl3|tls10|tls11|tls12|tls13)
+	    MinSSLProto (ssl2|ssl3|tls10|tls11|tls12|tls13)
+	    MaxSSLProto (ssl2|ssl3|tls10|tls11|tls12|tls13)
+	    Ciphers MEDIUM:HIGH
+	    CipherSuites TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256
+	    RemoveHTTPAcceptEncoding (yes|no)
+	    RemoveHTTPReferer (yes|no)
+	    VerifyPeer (yes|no)
+	    AllowWrongHost (yes|no)
+	    UserAuth (yes|no)
+	    UserTimeout 300
+	    UserAuthURL https://192.168.0.1/userdblogin.php
+	    ValidateProto (yes|no)
+	    MaxHTTPHeaderSize 8192
+	}
+
+The definition of which connections the filter action will be applied to is 
+achieved by the `from` and `to` parts of filtering rule and by the proxyspec 
 that the rule is defined for.
 
 - The `from` part of a rule defines source filter based on client IP address, 
@@ -331,8 +384,8 @@ headers, or `*` for all.
 - The proxyspec handling the connection defines the protocol filter for the 
 connection.
 
-If and how a connection should be logged is specified using the `log` part of 
-filtering rules:
+If and how a connection should be logged is specified using the `log` or 
+LogAction part of filtering rules:
 
 - `connect` enables logging connection information to connect log file
 - `master` enables logging of master keys
@@ -342,6 +395,10 @@ filtering rules:
 - `mirror` enables mirroring packets to mirror interfaces or targets
 
 You can add a negation prefix `!` to a log action to disable that logging.
+
+Structured filtering rules can also specify all possible connection options to 
+be selectively applied to matching connections, not just per-proxyspec or 
+globally. One line filtering rules cannot specify connection options.
 
 For example, if the following rules are defined in a structured HTTPS proxyspec,
 
@@ -407,6 +464,14 @@ actions should have been configured for those log actions to have any effect.
 If no filtering rules are defined for a proxyspec, all log actions for that 
 proxyspec are enabled. Otherwise, all log actions are disabled, and filtering 
 rules should enable them specifically.
+
+Connection options specified in a structured filtering rule can have any 
+effect only if the rule matches the connection before proxyspec or global 
+options are applied. Otherwise, proxyspec or global connection options already 
+applied to a connection cannot be overriden by the connection option specified 
+in the matching structured filtering rule. For example, SSL/TLS options of a 
+connection cannot be changed after the SSL/TLS connection is established. So, 
+SSL type of rules cannot modify SSL/TLS options of a connection.
 
 Macro expansion is supported. The `Define` option can be used for defining 
 macros to be used in filtering rules. Macro names must start with a `$` char. 

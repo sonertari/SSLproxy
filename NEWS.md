@@ -1,4 +1,66 @@
 
+
+### SSLproxy 0.9.1
+
+-   Add structured filtering rules:
+
+	    FilterRule {
+	        Action (Divert|Split|Pass|Block|Match)
+
+	        # From
+	        User (username[*]|$macro|*)  # inline
+	        Desc (desc[*]|$macro|*)      # comments
+	        SrcIp (clientip[*]|$macro|*) # allowed
+
+	        # To
+	        SNI (servername[*]|$macro|*)
+	        CN (commonname[*]|$macro|*)
+	        Host (host[*]|$macro|*)
+	        URI (uri[*]|$macro|*)
+	        DstIp (serverip[*]|$macro|*)
+	        DstPort (serverport[*]|$macro|*)
+
+	        # Multiple LogAction lines allowed
+	        LogAction ([!]connect|[!]master|[!]cert|[!]content|[!]pcap|[!]mirror|$macro|[!]*)
+
+	        # Connection options
+	        DenyOCSP (yes|no)
+	        Passthrough (yes|no)
+	        CACert ca.crt
+	        CAKey ca.key
+	        ClientCert client.crt
+	        ClientKey client.key
+	        CAChain chain.crt
+	        LeafCRLURL http://example.com/example.crl
+	        DHGroupParams dh.pem
+	        ECDHCurve prime256v1
+	        SSLCompression (yes|no)
+	        ForceSSLProto (ssl2|ssl3|tls10|tls11|tls12|tls13)
+	        DisableSSLProto (ssl2|ssl3|tls10|tls11|tls12|tls13)
+	        EnableSSLProto (ssl2|ssl3|tls10|tls11|tls12|tls13)
+	        MinSSLProto (ssl2|ssl3|tls10|tls11|tls12|tls13)
+	        MaxSSLProto (ssl2|ssl3|tls10|tls11|tls12|tls13)
+	        Ciphers MEDIUM:HIGH
+	        CipherSuites TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256
+	        RemoveHTTPAcceptEncoding (yes|no)
+	        RemoveHTTPReferer (yes|no)
+	        VerifyPeer (yes|no)
+	        AllowWrongHost (yes|no)
+	        UserAuth (yes|no)
+	        UserTimeout 300
+	        UserAuthURL https://192.168.0.1/userdblogin.php
+	        ValidateProto (yes|no)
+	        MaxHTTPHeaderSize 8192
+	    }
+
+	Structured filtering rules can be used to specify all possible connection 
+	options to be selectively applied to matching connections, not just 
+	per-proxyspec or globally. One line filtering rules cannot specify 
+	connection options.
+
+-   Add -B EnableSSLProto config option.
+
+
 ### SSLproxy 0.9.0 2021-10-21
 
 -   Add filtering rules:
