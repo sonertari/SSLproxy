@@ -351,6 +351,8 @@ FilterRule {
     # Multiple LogAction lines allowed
     LogAction ([!]connect|[!]master|[!]cert|[!]content|[!]pcap|[!]mirror|$macro|[!]*)
 
+    ReconnectSSL (yes|no)
+
     # Connection options
     DenyOCSP (yes|no)
     Passthrough (yes|no)
@@ -481,11 +483,16 @@ rules should enable them specifically.
 .LP
 Connection options specified in a structured filtering rule can have any 
 effect only if the rule matches the connection before proxyspec or global 
-options are applied. Otherwise, proxyspec or global connection options already 
-applied to a connection cannot be overriden by the connection option specified 
-in the matching structured filtering rule. For example, SSL/TLS options of a 
-connection cannot be changed after the SSL/TLS connection is established. So, 
-SSL type of rules cannot modify SSL/TLS options of a connection.
+options are applied. Otherwise, the proxyspec or global connection options 
+already applied to a connection cannot be overriden by the connection options 
+specified in the matching structured filtering rule. For example, SSL/TLS 
+options of a connection cannot be changed after the SSL/TLS connection is 
+established. So, normally SSL type of rules cannot modify SSL/TLS options of a 
+connection, but you can use the ReconnectSSL option to reconnect the server 
+side of an SSL connection to enforce the SSL/TLS options in the SSL type of 
+filtering rules. In other words, the ReconnectSSL option allows for using the 
+SNI and CN fields in stuctured filtering rules to match connections and change 
+their SSL configuration.
 .LP
 Macro expansion is supported. The Define option can be used for defining 
 macros to be used in filtering rules. Macro names must start with a $ char.

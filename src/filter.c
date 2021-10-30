@@ -2416,7 +2416,11 @@ filter_rule_struct_translate(filter_rule_t *rule, UNUSED conn_opts_t *conn_opts,
 			fprintf(stderr, "Error in conf: Unknown LogAction '%s' on line %d\n", value, line_num);
 			return -1;
 		}
-	} else {
+	}
+	else if (equal(name, "ReconnectSSL")) {
+		// Already processed by the parser
+	}
+	else {
 		// This should have been handled by the parser, but in case
 		fprintf(stderr, "Error in conf: Unknown option '%s' on line %d\n", name, line_num);
 		return -1;
@@ -2625,6 +2629,15 @@ filter_rule_struct_parse(name_value_lines_t nvls[], int *nvls_size, conn_opts_t 
 	}
 	else if (equal(name, "LogAction")) {
 		// LogAction can be used more than once to define multiple log actions, if not using macros
+	}
+	else if (equal(name, "ReconnectSSL")) {
+		int yes = check_value_yesno(value, "ReconnectSSL", line_num);
+		if (yes == -1)
+			return -1;
+		conn_opts->reconnect_ssl = yes;
+#ifdef DEBUG_OPTS
+		log_dbg_printf("ReconnectSSL: %u\n", conn_opts->reconnect_ssl);
+#endif /* DEBUG_OPTS */
 	}
 	else {
 		fprintf(stderr, "Error in conf: Unknown option '%s' on line %d\n", name, line_num);

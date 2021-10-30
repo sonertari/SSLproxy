@@ -23,6 +23,8 @@
 	        # Multiple LogAction lines allowed
 	        LogAction ([!]connect|[!]master|[!]cert|[!]content|[!]pcap|[!]mirror|$macro|[!]*)
 
+	        ReconnectSSL (yes|no)
+
 	        # Connection options
 	        DenyOCSP (yes|no)
 	        Passthrough (yes|no)

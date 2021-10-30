@@ -586,6 +586,7 @@ conn_opts_copy(conn_opts_t *conn_opts, const char *argv0, tmp_opts_t *tmp_opts)
 	cops->user_timeout = conn_opts->user_timeout;
 #endif /* !WITHOUT_USERAUTH */
 	cops->validate_proto = conn_opts->validate_proto;
+	cops->reconnect_ssl = conn_opts->reconnect_ssl;
 	cops->max_http_header_size = conn_opts->max_http_header_size;
 
 	// Pass NULL as tmp_opts param, so we don't reassign the var to itself
@@ -2512,7 +2513,7 @@ is_yesno(const char *value)
 	return -1;
 }
 
-static int
+int
 check_value_yesno(const char *value, const char *name, int line_num)
 {
 	int rv;

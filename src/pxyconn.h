@@ -131,6 +131,8 @@ struct ssl_ctx {
 	unsigned int immutable_cert : 1;  /* 1 if the cert cannot be changed */
 	unsigned int generated_cert : 1;     /* 1 if we generated a new cert */
 	unsigned int have_sslerr : 1;           /* 1 if we have an ssl error */
+	// Set after reconnecting srvdst to enforce the SSL options in matching struct filtering rule
+	unsigned int reconnected_ssl : 1; /* 1 if we have reconnected srvdst */
 
 	/* server name indicated by client in SNI TLS extension */
 	char *sni;
