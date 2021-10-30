@@ -3,9 +3,7 @@
   "configs": {
     "1": {
       "proto": {
-        "proto": "ssl",
-        "crt": "server.crt",
-        "key": "server.key"
+        "proto": "ssl"
       },
       "client": {
         "ip": "127.0.0.1",
@@ -13,19 +11,21 @@
       },
       "server": {
         "ip": "127.0.0.1",
-        "port": "9213"
+        "port": "9213",
+        "crt": "server.crt",
+        "key": "server.key"
       }
     }
   },
   "tests": {
     "1": {
-      "comment": "Divert struct filtering rule removes any extra SSLproxy line, and appends Connection: close",
+      "comment": "Divert struct filtering rule with ReconnectSSL removes any extra SSLproxy line, and appends Connection: close",
       "states": {
         "1": {
           "testend": "server",
           "cmd": "reconnect",
           "payload": "",
-          "comment": "ReconnectSSL rules cause sslproxy to disconnect/reconnect to the server, so the reconnect cmd instructs the server to allow it"
+          "comment": "ReconnectSSL causes sslproxy to disconnect/reconnect to the server, so the reconnect cmd instructs the server to allow it"
         },
         "2": {
           "testend": "client",
@@ -40,7 +40,7 @@
       }
     },
     "2": {
-      "comment": "Divert struct filtering rule removes all extra SSLproxy lines",
+      "comment": "Divert struct filtering rule with ReconnectSSL removes all extra SSLproxy lines",
       "states": {
         "1": {
           "testend": "server",
@@ -60,7 +60,7 @@
       }
     },
     "3": {
-      "comment": "Divert struct filtering rule changes Connection header to close",
+      "comment": "Divert struct filtering rule with ReconnectSSL changes Connection header to close",
       "states": {
         "1": {
           "testend": "server",
@@ -80,7 +80,7 @@
       }
     },
     "4": {
-      "comment": "Divert struct filtering rule suppresses upgrading to SSL/TLS, WebSockets or HTTP/2",
+      "comment": "Divert struct filtering rule with ReconnectSSL suppresses upgrading to SSL/TLS, WebSockets or HTTP/2",
       "states": {
         "1": {
           "testend": "server",
@@ -100,7 +100,7 @@
       }
     },
     "5": {
-      "comment": "Divert struct filtering rule removes Keep-Alive",
+      "comment": "Divert struct filtering rule with ReconnectSSL removes Keep-Alive",
       "states": {
         "1": {
           "testend": "server",
@@ -120,7 +120,7 @@
       }
     },
     "6": {
-      "comment": "Divert struct filtering rule removes Accept-Encoding",
+      "comment": "Divert struct filtering rule with ReconnectSSL removes Accept-Encoding",
       "states": {
         "1": {
           "testend": "server",
@@ -140,7 +140,7 @@
       }
     },
     "7": {
-      "comment": "Divert struct filtering rule removes Via",
+      "comment": "Divert struct filtering rule with ReconnectSSL removes Via",
       "states": {
         "1": {
           "testend": "server",
@@ -160,7 +160,7 @@
       }
     },
     "8": {
-      "comment": "Divert struct filtering rule removes X-Forwarded-For",
+      "comment": "Divert struct filtering rule with ReconnectSSL removes X-Forwarded-For",
       "states": {
         "1": {
           "testend": "server",
@@ -180,7 +180,7 @@
       }
     },
     "9": {
-      "comment": "Divert struct filtering rule removes Referer",
+      "comment": "Divert struct filtering rule with ReconnectSSL removes Referer",
       "states": {
         "1": {
           "testend": "server",

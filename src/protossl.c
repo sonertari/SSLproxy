@@ -755,7 +755,7 @@ protossl_reconnect_srvdst(pxy_conn_ctx_t *ctx)
 	log_fine("ENTER");
 
 	// Reconnect only once
-	ctx->sslctx->reconnected_ssl = 1;
+	ctx->sslctx->reconnected = 1;
 
 	ctx->srvdst.free(ctx->srvdst.bev, ctx);
 	ctx->srvdst.bev = NULL;
@@ -763,15 +763,12 @@ protossl_reconnect_srvdst(pxy_conn_ctx_t *ctx)
 	ctx->connected = 0;
 
 	if (protossl_conn_connect(ctx) == -1) {
-		if (ctx->term || ctx->enomem) {
-			pxy_conn_free(ctx, ctx->term ? ctx->term_requestor : 1);
-			return;
-		}
+		return;
 	}
 
 	if (bufferevent_socket_connect(ctx->srvdst.bev, (struct sockaddr *)&ctx->dstaddr, ctx->dstaddrlen) == -1) {
 		log_err_level(LOG_CRIT, "bufferevent_socket_connect for srvdst failed");
-		pxy_conn_free(ctx, ctx->term ? ctx->term_requestor : 1);
+		pxy_conn_term(ctx, 1);
 	}
 }
 
@@ -840,7 +837,7 @@ protossl_apply_filter(pxy_conn_ctx_t *ctx)
 
 			if (ctx->conn_opts->reconnect_ssl) {
 				// Reconnect srvdst only once, if ReconnectSSL set in the rule
-				if (!ctx->sslctx->reconnected_ssl) {
+				if (!ctx->sslctx->reconnected) {
 					protossl_reconnect_srvdst(ctx);
 					// Return immediately to avoid applying deferred pass action
 					return 1;
@@ -1576,7 +1573,7 @@ protossl_setup_src_ssl(pxy_conn_ctx_t *ctx)
 		// report protocol change by returning 1
 		return 1;
 	}
-	else if (ctx->sslctx->reconnected_ssl) {
+	else if (ctx->sslctx->reconnected) {
 		return -1;
 	}
 	pxy_conn_term(ctx, 1);

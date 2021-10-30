@@ -3,9 +3,7 @@
   "configs": {
     "1": {
       "proto": {
-        "proto": "ssl",
-        "crt": "server.crt",
-        "key": "server.key"
+        "proto": "ssl"
       },
       "client": {
         "ip": "127.0.0.1",
@@ -13,7 +11,9 @@
       },
       "server": {
         "ip": "127.0.0.1",
-        "port": "9212"
+        "port": "9212",
+        "crt": "server.crt",
+        "key": "server.key"
       }
     }
   },
