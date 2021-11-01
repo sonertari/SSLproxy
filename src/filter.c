@@ -2302,7 +2302,9 @@ filter_rule_struct_translate(filter_rule_t *rule, UNUSED conn_opts_t *conn_opts,
 			return -1;
 		}
 
-		rule->action.precedence++;
+		if (!rule->desc && !rule->all_users) {
+			rule->action.precedence++;
+		}
 
 		rule->all_users = filter_is_all(value);
 
@@ -2317,6 +2319,10 @@ filter_rule_struct_translate(filter_rule_t *rule, UNUSED conn_opts_t *conn_opts,
 		if (!conn_opts->user_auth) {
 			fprintf(stderr, "Desc filter requires user auth on line %d\n", line_num);
 			return -1;
+		}
+
+		if (!rule->user && !rule->all_users) {
+			rule->action.precedence++;
 		}
 
 		if (filter_is_all(value)) {
