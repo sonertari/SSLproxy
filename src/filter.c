@@ -2371,7 +2371,7 @@ filter_rule_struct_translate(filter_rule_t *rule, UNUSED conn_opts_t *conn_opts,
 		if (filter_port_set(rule, value, line_num) == -1)
 			return -1;
 	}
-	else if (equal(name, "LogAction")) {
+	else if (equal(name, "Log")) {
 		if (equal(value, "connect"))
 			rule->action.log_connect = 2;
 		else if (equal(value, "master"))
@@ -2419,7 +2419,7 @@ filter_rule_struct_translate(filter_rule_t *rule, UNUSED conn_opts_t *conn_opts,
 #endif /* !WITHOUT_MIRROR */
 		}
 		else {
-			fprintf(stderr, "Error in conf: Unknown LogAction '%s' on line %d\n", value, line_num);
+			fprintf(stderr, "Error in conf: Unknown Log '%s' on line %d\n", value, line_num);
 			return -1;
 		}
 	}
@@ -2470,7 +2470,7 @@ filter_rule_struct_translate_nvls(opts_t *opts, name_value_lines_t nvls[], int n
 	}
 
 	// Increment precedence for log action only once here, if any specified, because otherwise
-	// we would inc it multiple times while translating LogAction specifications, since we allow for multiple LogAction lines
+	// we would inc it multiple times while translating Log specifications, since we allow for multiple Log lines
 	if (rule->action.log_connect || rule->action.log_master || rule->action.log_cert || rule->action.log_content || rule->action.log_pcap
 #ifndef WITHOUT_MIRROR
 			|| rule->action.log_mirror
@@ -2639,8 +2639,8 @@ filter_rule_struct_parse(name_value_lines_t nvls[], int *nvls_size, conn_opts_t 
 		}
 		parse_state->dstport = 1;
 	}
-	else if (equal(name, "LogAction")) {
-		// LogAction can be used more than once to define multiple log actions, if not using macros
+	else if (equal(name, "Log")) {
+		// Log can be used more than once to define multiple log actions, if not using macros
 	}
 	else if (equal(name, "ReconnectSSL")) {
 		int yes = check_value_yesno(value, "ReconnectSSL", line_num);

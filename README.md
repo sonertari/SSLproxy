@@ -335,8 +335,8 @@ The syntax of structured filtering rules is as follows:
 	    DstIp (serverip[*]|$macro|*)
 	    DstPort (serverport[*]|$macro|*)
 
-	    # Multiple LogAction lines allowed
-	    LogAction ([!]connect|[!]master|[!]cert|[!]content|[!]pcap|[!]mirror|$macro|[!]*)
+	    # Multiple Log lines allowed
+	    Log ([!]connect|[!]master|[!]cert|[!]content|[!]pcap|[!]mirror|$macro|[!]*)
 
 	    ReconnectSSL (yes|no)
 
@@ -387,7 +387,7 @@ headers, or `*` for all.
 connection.
 
 If and how a connection should be logged is specified using the `log` or 
-LogAction part of filtering rules:
+`Log` part of one line or structured filtering rules, respectively:
 
 - `connect` enables logging connection information to connect log file
 - `master` enables logging of master keys

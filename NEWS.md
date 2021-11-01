@@ -20,8 +20,8 @@
 	        DstIp (serverip[*]|$macro|*)
 	        DstPort (serverport[*]|$macro|*)
 
-	        # Multiple LogAction lines allowed
-	        LogAction ([!]connect|[!]master|[!]cert|[!]content|[!]pcap|[!]mirror|$macro|[!]*)
+	        # Multiple Log lines allowed
+	        Log ([!]connect|[!]master|[!]cert|[!]content|[!]pcap|[!]mirror|$macro|[!]*)
 
 	        ReconnectSSL (yes|no)
 
