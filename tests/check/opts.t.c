@@ -860,14 +860,14 @@ START_TEST(opts_get_name_value_01)
 	int retval;
 	char *name;
 	char *value;
-	
+
 	name = strdup("Name Value");
 	retval = get_name_value(name, &value, ' ', 0);
 	fail_unless(!strcmp(name, "Name"), "failed parsing name");
 	fail_unless(!strcmp(value, "Value"), "failed parsing value");
 	fail_unless(retval == 0, "failed parsing name value");
 	free(name);
-	
+
 	name = strdup("Name  Value");
 	retval = get_name_value(name, &value, ' ', 0);
 	fail_unless(!strcmp(name, "Name"), "failed parsing name");
@@ -876,7 +876,7 @@ START_TEST(opts_get_name_value_01)
 	free(name);
 
 	close(2);
-	
+
 	// Leading white space must be handled by the caller
 	// We cannot modify the name pointer, so we return -1
 	// So we don't actually need a test for " Name Value", or similar
@@ -886,21 +886,21 @@ START_TEST(opts_get_name_value_01)
 	fail_unless(!strcmp(value, ""), "failed parsing value");
 	fail_unless(retval == -1, "failed rejecting leading white space, empty name");
 	free(name);
-	
+
 	name = strdup("Name Value ");
 	retval = get_name_value(name, &value, ' ', 0);
 	fail_unless(!strcmp(name, "Name"), "failed parsing name");
 	fail_unless(!strcmp(value, "Value"), "failed parsing value");
 	fail_unless(retval == 0, "failed parsing name value");
 	free(name);
-	
+
 	name = strdup("Name=Value");
 	retval = get_name_value(name, &value, '=', 0);
 	fail_unless(!strcmp(name, "Name"), "failed parsing name");
 	fail_unless(!strcmp(value, "Value"), "failed parsing value");
 	fail_unless(retval == 0, "failed parsing name value");
 	free(name);
-	
+
 	// Leading white space must be handled by the caller
 	// We cannot modify the name pointer, so we return -1
 	// So we don't actually need a test for " Name Value", or similar
@@ -910,28 +910,28 @@ START_TEST(opts_get_name_value_01)
 	fail_unless(!strcmp(value, ""), "failed parsing value");
 	fail_unless(retval == -1, "failed rejecting leading white space, empty name");
 	free(name);
-	
+
 	name = strdup("Name=Value ");
 	retval = get_name_value(name, &value, '=', 0);
 	fail_unless(!strcmp(name, "Name"), "failed parsing name");
 	fail_unless(!strcmp(value, "Value"), "failed parsing value");
 	fail_unless(retval == 0, "failed parsing name value");
 	free(name);
-	
+
 	name = strdup("Name = Value");
 	retval = get_name_value(name, &value, '=', 0);
 	fail_unless(!strcmp(name, "Name"), "failed parsing name");
 	fail_unless(!strcmp(value, "Value"), "failed parsing value");
 	fail_unless(retval == 0, "failed parsing name value");
 	free(name);
-	
+
 	name = strdup("Name = Value ");
 	retval = get_name_value(name, &value, '=', 0);
 	fail_unless(!strcmp(name, "Name"), "failed parsing name");
 	fail_unless(!strcmp(value, "Value"), "failed parsing value");
 	fail_unless(retval == 0, "failed parsing name value");
 	free(name);
-	
+
 	// Name without value, e.g. '}' char is used for marking the end of structured proxyspecs
 	// so do not reject any form of just name, return success
 	name = strdup("Name");

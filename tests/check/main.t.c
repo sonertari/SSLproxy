@@ -67,6 +67,7 @@ main_suite(void)
 
 Suite * opts_suite(void);
 Suite * filter_suite(void);
+Suite * filter_struct_suite(void);
 Suite * dynbuf_suite(void);
 Suite * logbuf_suite(void);
 Suite * cert_suite(void);
@@ -94,6 +95,7 @@ main(UNUSED int argc, UNUSED char *argv[])
 	srunner_add_suite(sr, main_suite());
 	srunner_add_suite(sr, opts_suite());
 	srunner_add_suite(sr, filter_suite());
+	srunner_add_suite(sr, filter_struct_suite());
 	srunner_add_suite(sr, dynbuf_suite());
 	srunner_add_suite(sr, logbuf_suite());
 	srunner_add_suite(sr, cert_suite());
