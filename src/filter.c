@@ -2022,7 +2022,8 @@ filter_rule_translate(opts_t *opts, const char *name, int argc, char **argv, int
 static int WUNRES
 filter_rule_parse(opts_t *opts, conn_opts_t *conn_opts, const char *name, int argc, char **argv, int line_num);
 
-#define MAX_FILTER_RULE_TOKENS 17
+// Max = from(1) + user(2) + desc(2) + to(1) + sni(2) + port(2) + log(16 with macro)
+#define MAX_FILTER_RULE_TOKENS 26
 
 static int WUNRES
 filter_rule_macro_expand(opts_t *opts, conn_opts_t *conn_opts, const char *name, int argc, char **argv, int i, int line_num)
@@ -2372,55 +2373,72 @@ filter_rule_struct_translate(filter_rule_t *rule, UNUSED conn_opts_t *conn_opts,
 			return -1;
 	}
 	else if (equal(name, "Log")) {
-		if (equal(value, "connect"))
-			rule->action.log_connect = 2;
-		else if (equal(value, "master"))
-			rule->action.log_master = 2;
-		else if (equal(value, "cert"))
-			rule->action.log_cert = 2;
-		else if (equal(value, "content"))
-			rule->action.log_content = 2;
-		else if (equal(value, "pcap"))
-			rule->action.log_pcap = 2;
-		else if (equal(value, "!connect"))
-			rule->action.log_connect = 1;
-		else if (equal(value, "!master"))
-			rule->action.log_master = 1;
-		else if (equal(value, "!cert"))
-			rule->action.log_cert = 1;
-		else if (equal(value, "!content"))
-			rule->action.log_content = 1;
-		else if (equal(value, "!pcap"))
-			rule->action.log_pcap = 1;
+		// We don't support $macros within multi valued Log lines, i.e. cannot mix log actions with $macros
+		// use either log actions concat with spaces or just a $macro, and no point trying to support it either
+#define MAX_LOG_TOKENS 14
+		int argc = 0;
+		char *p, *last = NULL;
+
+		for ((p = strtok_r(value, " ", &last));
+			 p;
+			 (p = strtok_r(NULL, " ", &last))) {
+			if (argc < MAX_LOG_TOKENS) {
+				argc++;
+
+				if (equal(p, "connect"))
+					rule->action.log_connect = 2;
+				else if (equal(p, "master"))
+					rule->action.log_master = 2;
+				else if (equal(p, "cert"))
+					rule->action.log_cert = 2;
+				else if (equal(p, "content"))
+					rule->action.log_content = 2;
+				else if (equal(p, "pcap"))
+					rule->action.log_pcap = 2;
+				else if (equal(p, "!connect"))
+					rule->action.log_connect = 1;
+				else if (equal(p, "!master"))
+					rule->action.log_master = 1;
+				else if (equal(p, "!cert"))
+					rule->action.log_cert = 1;
+				else if (equal(p, "!content"))
+					rule->action.log_content = 1;
+				else if (equal(p, "!pcap"))
+					rule->action.log_pcap = 1;
 #ifndef WITHOUT_MIRROR
-		else if (equal(value, "mirror"))
-			rule->action.log_mirror = 2;
-		else if (equal(value, "!mirror"))
-			rule->action.log_mirror = 1;
+				else if (equal(p, "mirror"))
+					rule->action.log_mirror = 2;
+				else if (equal(p, "!mirror"))
+					rule->action.log_mirror = 1;
 #endif /* !WITHOUT_MIRROR */
-		else if (equal(value, "*")) {
-			rule->action.log_connect = 2;
-			rule->action.log_master = 2;
-			rule->action.log_cert = 2;
-			rule->action.log_content = 2;
-			rule->action.log_pcap = 2;
+				else if (equal(p, "*")) {
+					rule->action.log_connect = 2;
+					rule->action.log_master = 2;
+					rule->action.log_cert = 2;
+					rule->action.log_content = 2;
+					rule->action.log_pcap = 2;
 #ifndef WITHOUT_MIRROR
-			rule->action.log_mirror = 2;
+					rule->action.log_mirror = 2;
 #endif /* !WITHOUT_MIRROR */
-		}
-		else if (equal(value, "!*")) {
-			rule->action.log_connect = 1;
-			rule->action.log_master = 1;
-			rule->action.log_cert = 1;
-			rule->action.log_content = 1;
-			rule->action.log_pcap = 1;
+				}
+				else if (equal(p, "!*")) {
+					rule->action.log_connect = 1;
+					rule->action.log_master = 1;
+					rule->action.log_cert = 1;
+					rule->action.log_content = 1;
+					rule->action.log_pcap = 1;
 #ifndef WITHOUT_MIRROR
-			rule->action.log_mirror = 1;
+					rule->action.log_mirror = 1;
 #endif /* !WITHOUT_MIRROR */
-		}
-		else {
-			fprintf(stderr, "Error in conf: Unknown Log '%s' on line %d\n", value, line_num);
-			return -1;
+				}
+				else {
+					fprintf(stderr, "Error in conf: Unknown Log '%s' on line %d\n", p, line_num);
+					return -1;
+				}
+			} else {
+				fprintf(stderr, "Too many Log arguments in filter rule on line %d\n", line_num);
+				return -1;
+			}
 		}
 	}
 	else if (equal(name, "ReconnectSSL")) {
