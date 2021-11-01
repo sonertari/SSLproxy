@@ -68,6 +68,7 @@ typedef struct filter_parse_state {
 	unsigned int uri : 1;
 	unsigned int dstip : 1;
 	unsigned int dstport : 1;
+	unsigned int conn_opts : 1;
 } filter_parse_state_t;
 
 typedef struct name_value_lines {

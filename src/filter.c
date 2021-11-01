@@ -2435,7 +2435,8 @@ filter_rule_struct_translate(filter_rule_t *rule, UNUSED conn_opts_t *conn_opts,
 }
 
 static int WUNRES
-filter_rule_struct_translate_nvls(opts_t *opts, name_value_lines_t nvls[], int nvls_size, conn_opts_t *conn_opts, const char *argv0, tmp_opts_t *tmp_opts)
+filter_rule_struct_translate_nvls(opts_t *opts, name_value_lines_t nvls[], int nvls_size, conn_opts_t *conn_opts,
+		const char *argv0, tmp_opts_t *tmp_opts, filter_parse_state_t parse_state)
 {
 	filter_rule_t *rule = malloc(sizeof(filter_rule_t));
 	if (!rule)
@@ -2478,10 +2479,13 @@ filter_rule_struct_translate_nvls(opts_t *opts, name_value_lines_t nvls[], int n
 		rule->action.precedence++;
 	}
 
-	rule->action.conn_opts = conn_opts_copy(conn_opts, argv0, tmp_opts);
-	if (!rule->action.conn_opts) {
-		filter_rule_free(rule);
-		return oom_return_na();
+	// Set conn_opts only if the rule specifies any conn option to override the global or proxyspec conn options
+	if (parse_state.conn_opts) {
+		rule->action.conn_opts = conn_opts_copy(conn_opts, argv0, tmp_opts);
+		if (!rule->action.conn_opts) {
+			filter_rule_free(rule);
+			return oom_return_na();
+		}
 	}
 
 	append_list(&opts->filter_rules, rule, filter_rule_t);
@@ -2493,7 +2497,8 @@ filter_rule_struct_translate_nvls(opts_t *opts, name_value_lines_t nvls[], int n
 }
 
 static int WUNRES
-filter_rule_struct_macro_expand(opts_t *opts, name_value_lines_t nvls[], int nvls_size, conn_opts_t *conn_opts, const char *argv0, tmp_opts_t *tmp_opts)
+filter_rule_struct_macro_expand(opts_t *opts, name_value_lines_t nvls[], int nvls_size, conn_opts_t *conn_opts,
+		const char *argv0, tmp_opts_t *tmp_opts, filter_parse_state_t parse_state)
 {
 	for (int i = 0; i < nvls_size; i++) {
 		if (nvls[i].value[0] == '$') {
@@ -2512,7 +2517,7 @@ filter_rule_struct_macro_expand(opts_t *opts, name_value_lines_t nvls[], int nvl
 
 					n[i].value = value->value;
 
-					if (filter_rule_struct_macro_expand(opts, n, nvls_size, conn_opts, argv0, tmp_opts) == -1)
+					if (filter_rule_struct_macro_expand(opts, n, nvls_size, conn_opts, argv0, tmp_opts, parse_state) == -1)
 						return -1;
 
 					value = value->next;
@@ -2527,7 +2532,7 @@ filter_rule_struct_macro_expand(opts_t *opts, name_value_lines_t nvls[], int nvl
 		}
 	}
 
-	if (filter_rule_struct_translate_nvls(opts, nvls, nvls_size, conn_opts, argv0, tmp_opts) == -1)
+	if (filter_rule_struct_translate_nvls(opts, nvls, nvls_size, conn_opts, argv0, tmp_opts, parse_state) == -1)
 		return -1;
 	return 0;
 }
@@ -2560,6 +2565,7 @@ filter_rule_struct_parse(name_value_lines_t nvls[], int *nvls_size, conn_opts_t 
 		fprintf(stderr, "Error in conf: '%s' on line %d\n", name, line_num);
 		return -1;
 	} else if (rv == 0) {
+		parse_state->conn_opts = 1;
 		return 0;
 	}
 
@@ -2734,7 +2740,7 @@ load_filterrule_struct(opts_t *opts, conn_opts_t *conn_opts, const char *argv0, 
 		goto err;
 	}
 
-	if (filter_rule_struct_macro_expand(opts, nvls, nvls_size, copts, argv0, tmp_opts) == -1) {
+	if (filter_rule_struct_macro_expand(opts, nvls, nvls_size, copts, argv0, tmp_opts, parse_state) == -1) {
 		retval = -1;
 		goto err;
 	}
