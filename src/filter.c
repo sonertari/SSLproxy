@@ -2637,11 +2637,19 @@ filter_rule_struct_parse(name_value_lines_t nvls[], int *nvls_size, conn_opts_t 
 			fprintf(stderr, "Error in conf: Only one User spec allowed '%s' on line %d\n", value, line_num);
 			return -1;
 		}
+		if (parse_state->srcip) {
+			fprintf(stderr, "Error in conf: Cannot specify both SrcIp and User '%s' on line %d\n", value, line_num);
+			return -1;
+		}
 		parse_state->user = 1;
 	}
 	else if (equal(name, "Desc")) {
 		if (parse_state->desc) {
 			fprintf(stderr, "Error in conf: Only one Desc spec allowed '%s' on line %d\n", value, line_num);
+			return -1;
+		}
+		if (parse_state->srcip) {
+			fprintf(stderr, "Error in conf: Cannot specify both SrcIp and Desc '%s' on line %d\n", value, line_num);
 			return -1;
 		}
 		parse_state->desc = 1;
@@ -2651,11 +2659,19 @@ filter_rule_struct_parse(name_value_lines_t nvls[], int *nvls_size, conn_opts_t 
 			fprintf(stderr, "Error in conf: Only one SrcIp spec allowed '%s' on line %d\n", value, line_num);
 			return -1;
 		}
+		if (parse_state->user || parse_state->desc) {
+			fprintf(stderr, "Error in conf: Cannot specify both User/Desc and SrcIp '%s' on line %d\n", value, line_num);
+			return -1;
+		}
 		parse_state->srcip = 1;
 	}
 	else if (equal(name, "SNI")) {
 		if (parse_state->sni) {
 			fprintf(stderr, "Error in conf: Only one SNI spec allowed '%s' on line %d\n", value, line_num);
+			return -1;
+		}
+		if (parse_state->cn || parse_state->host || parse_state->uri || parse_state->dstip) {
+			fprintf(stderr, "Error in conf: Only one of SNI, CN, Host, URI, and DstIp allowed '%s' on line %d\n", value, line_num);
 			return -1;
 		}
 		parse_state->sni = 1;
@@ -2665,11 +2681,19 @@ filter_rule_struct_parse(name_value_lines_t nvls[], int *nvls_size, conn_opts_t 
 			fprintf(stderr, "Error in conf: Only one CN spec allowed '%s' on line %d\n", value, line_num);
 			return -1;
 		}
+		if (parse_state->sni || parse_state->host || parse_state->uri || parse_state->dstip) {
+			fprintf(stderr, "Error in conf: Only one of SNI, CN, Host, URI, and DstIp allowed '%s' on line %d\n", value, line_num);
+			return -1;
+		}
 		parse_state->cn = 1;
 	}
 	else if (equal(name, "Host")) {
 		if (parse_state->host) {
 			fprintf(stderr, "Error in conf: Only one Host spec allowed '%s' on line %d\n", value, line_num);
+			return -1;
+		}
+		if (parse_state->sni || parse_state->cn || parse_state->uri || parse_state->dstip) {
+			fprintf(stderr, "Error in conf: Only one of SNI, CN, Host, URI, and DstIp allowed '%s' on line %d\n", value, line_num);
 			return -1;
 		}
 		parse_state->host = 1;
@@ -2679,11 +2703,19 @@ filter_rule_struct_parse(name_value_lines_t nvls[], int *nvls_size, conn_opts_t 
 			fprintf(stderr, "Error in conf: Only one URI spec allowed '%s' on line %d\n", value, line_num);
 			return -1;
 		}
+		if (parse_state->sni || parse_state->cn || parse_state->host || parse_state->dstip) {
+			fprintf(stderr, "Error in conf: Only one of SNI, CN, Host, URI, and DstIp allowed '%s' on line %d\n", value, line_num);
+			return -1;
+		}
 		parse_state->uri = 1;
 	}
 	else if (equal(name, "DstIp")) {
 		if (parse_state->dstip) {
 			fprintf(stderr, "Error in conf: Only one DstIp spec allowed '%s' on line %d\n", value, line_num);
+			return -1;
+		}
+		if (parse_state->sni || parse_state->cn || parse_state->host || parse_state->uri) {
+			fprintf(stderr, "Error in conf: Only one of SNI, CN, Host, URI, and DstIp allowed '%s' on line %d\n", value, line_num);
 			return -1;
 		}
 		parse_state->dstip = 1;
@@ -2699,6 +2731,12 @@ filter_rule_struct_parse(name_value_lines_t nvls[], int *nvls_size, conn_opts_t 
 		// Log can be used more than once to define multiple log actions, if not using macros
 	}
 	else if (equal(name, "ReconnectSSL")) {
+		if (parse_state->reconnect_ssl) {
+			fprintf(stderr, "Error in conf: Only one ReconnectSSL spec allowed '%s' on line %d\n", value, line_num);
+			return -1;
+		}
+		parse_state->reconnect_ssl = 1;
+
 		int yes = check_value_yesno(value, "ReconnectSSL", line_num);
 		if (yes == -1)
 			return -1;
