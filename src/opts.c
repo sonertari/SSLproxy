@@ -2923,7 +2923,7 @@ load_proxyspec_line(global_t *global, const char *argv0, char *value, char **nat
 	return 0;
 }
 
-static int WUNRES
+int
 load_proxyspec_struct(global_t *global, const char *argv0, char **natengine, int *line_num, FILE *f, tmp_opts_t *global_tmp_opts)
 {
 	int retval = -1;

@@ -314,6 +314,7 @@ int opts_set_ciphers(conn_opts_t *, const char *, const char *) NONNULL(1,2,3) W
 int opts_set_ciphersuites(conn_opts_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;
 
 int set_conn_opts_option(conn_opts_t *, const char *, const char *, char *, int, tmp_opts_t *);
+int load_proxyspec_struct(global_t *, const char *, char **, int *, FILE *, tmp_opts_t *) WUNRES;
 
 #define OPTS_DEBUG(global) unlikely((global)->debug)
 

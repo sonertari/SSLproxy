@@ -613,6 +613,210 @@ START_TEST(proxyspec_set_proto_01)
 	fail_unless(spec->smtp, "smtp not set in smtps spec");
 
 	proxyspec_free(spec);
+	global_free(global);
+}
+END_TEST
+
+START_TEST(proxyspec_struct_parse_01)
+{
+	char *s;
+	int rv;
+	global_t *global = global_new();
+
+	tmp_opts_t *tmp_opts = malloc(sizeof (tmp_opts_t));
+	memset(tmp_opts, 0, sizeof (tmp_opts_t));
+
+	FILE *f;
+	int line_num = 0;
+
+	s =
+		"Proto https     # inline\n"
+		"Addr 127.0.0.1  # comments\n"
+		"Port 8213       # supported\n"
+		"DivertPort 8080\n"
+		"DivertAddr 192.168.1.1\n"
+		"ReturnAddr 192.168.2.1\n"
+		"TargetAddr 127.0.0.1\n"
+		"TargetPort 9213\n"
+		"Divert yes\n"
+		"NatEngine "NATENGINE"\n"
+		"SNIPort 4444\n"
+		"\n"
+		"# FilterRule below should override these options\n"
+		"DenyOCSP yes\n"
+		"Passthrough no\n"
+		"CACert ../testproxy/ca2.crt\n"
+		"CAKey ../testproxy/ca2.key\n"
+		"ClientCert ../testproxy/ca.crt\n"
+		"ClientKey ../testproxy/ca.key\n"
+		"CAChain ../testproxy/server2.crt\n"
+		"LeafCRLURL http://example2.com/example2.crl\n"
+		"#DHGroupParams /etc/sslproxy/dh.pem\n"
+		"ECDHCurve prime256v1\n"
+		"SSLCompression no\n"
+		"ForceSSLProto tls12\n"
+		"DisableSSLProto tls13\n"
+		"MinSSLProto tls11\n"
+		"MaxSSLProto tls12\n"
+		"Ciphers MEDIUM:HIGH\n"
+		"CipherSuites TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256\n"
+		"RemoveHTTPAcceptEncoding yes\n"
+		"RemoveHTTPReferer yes\n"
+		"VerifyPeer yes\n"
+		"AllowWrongHost no\n"
+#ifndef WITHOUT_USERAUTH
+		"UserAuth yes\n"
+		"UserTimeout 300\n"
+		"UserAuthURL https://192.168.0.13/userdblogin3.php\n"
+		"\n"
+		"DivertUsers root daemon\n"
+		"PassUsers root daemon\n"
+#endif /* !WITHOUT_USERAUTH */
+		"ValidateProto yes\n"
+		"MaxHTTPHeaderSize 2048\n"
+		"\n"
+		"PassSite example4.com\n"
+		"\n"
+		"Define $ip 127.0.0.1\n"
+		"Match from ip $ip to ip 127.0.0.1 port 9191 log content\n"
+		"Block from ip $ip to ip 127.0.0.1 port 9191 log content\n"
+		"Pass from ip $ip to ip 127.0.0.1 port 9191 log content\n"
+		"Split from ip $ip to ip 127.0.0.1 port 9191 log content\n"
+		"Divert from ip $ip to ip 127.0.0.1 port 9191 log content\n"
+		"\n"
+		"FilterRule {\n"
+			"Action Match       # inline\n"
+			"SrcIp 192.168.0.1  # comments\n"
+			"DstIp 192.168.0.2  # supported\n"
+			"Log connect\n"
+			"ReconnectSSL yes\n"
+			"DenyOCSP no\n"
+			"Passthrough yes\n"
+			"CACert ../testproxy/ca.crt\n"
+			"CAKey ../testproxy/ca.key\n"
+			"ClientCert ../testproxy/ca2.crt\n"
+			"ClientKey ../testproxy/ca2.key\n"
+			"CAChain ../testproxy/server.crt\n"
+			"LeafCRLURL http://example1.com/example1.crl\n"
+			"#DHGroupParams /etc/sslproxy/dh.pem\n"
+			"ECDHCurve prime192v1\n"
+			"SSLCompression yes\n"
+			"ForceSSLProto tls11\n"
+			"DisableSSLProto tls13\n"
+			"EnableSSLProto tls1\n"
+			"MinSSLProto tls10\n"
+			"MaxSSLProto tls11\n"
+			"Ciphers LOW\n"
+			"CipherSuites TLS_AES_128_CCM_SHA256\n"
+			"RemoveHTTPAcceptEncoding no\n"
+			"RemoveHTTPReferer no\n"
+			"VerifyPeer no\n"
+			"AllowWrongHost yes\n"
+#ifndef WITHOUT_USERAUTH
+			"UserAuth no\n"
+			"UserTimeout 1200\n"
+			"UserAuthURL https://192.168.0.12/userdblogin1.php\n"
+#endif /* !WITHOUT_USERAUTH */
+			"ValidateProto no\n"
+			"MaxHTTPHeaderSize 2048\n"
+			"}\n"
+		"}";
+	f = fmemopen(s, strlen(s), "r");
+
+	close(2);
+
+	char *natengine = "pf";
+	rv = load_proxyspec_struct(global, "sslproxy", &natengine, &line_num, f, tmp_opts);
+
+	fclose(f);
+	fail_unless(rv == 0, "failed to parse proxyspec");
+
+	global->spec->opts->filter = filter_set(global->spec->opts->filter_rules, "sslproxy", tmp_opts);
+
+	s = proxyspec_str(global->spec);
+
+#ifndef WITHOUT_USERAUTH
+	fail_unless(!strcmp(s,
+"listen=[127.0.0.1]:8213 ssl|http \n"
+"sni 4444\n"
+"divert addr= [127.0.0.1]:8080\n"
+"return addr= [192.168.2.1]:0\n"
+"opts= conn opts: tls12 -tls13>=tls11<=tls12|no sslcomp|no_tls13|deny_ocsp|MEDIUM:HIGH|TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256|prime256v1|http://example2.com/example2.crl|remove_http_accept_encoding|remove_http_referer|verify_peer|user_auth|https://192.168.0.13/userdblogin3.php|300|validate_proto|2048\n"
+"divert|daemon,root|daemon,root\n"
+"macro $ip = 127.0.0.1\n"
+"filter rule 0: site=example4.com, port=, ip=, user=, desc=, exact=site||||, all=conns|||, action=||pass||, log=|||||, apply to=|sni|cn||, precedence=1\n"
+"filter rule 1: site=127.0.0.1, port=9191, ip=127.0.0.1, user=, desc=, exact=site|port|ip||, all=|||, action=||||match, log=|||content||, apply to=dstip||||, precedence=4\n"
+"filter rule 2: site=127.0.0.1, port=9191, ip=127.0.0.1, user=, desc=, exact=site|port|ip||, all=|||, action=|||block|, log=|||content||, apply to=dstip||||, precedence=4\n"
+"filter rule 3: site=127.0.0.1, port=9191, ip=127.0.0.1, user=, desc=, exact=site|port|ip||, all=|||, action=||pass||, log=|||content||, apply to=dstip||||, precedence=4\n"
+"filter rule 4: site=127.0.0.1, port=9191, ip=127.0.0.1, user=, desc=, exact=site|port|ip||, all=|||, action=|split|||, log=|||content||, apply to=dstip||||, precedence=4\n"
+"filter rule 5: site=127.0.0.1, port=9191, ip=127.0.0.1, user=, desc=, exact=site|port|ip||, all=|||, action=divert||||, log=|||content||, apply to=dstip||||, precedence=4\n"
+"filter rule 6: site=192.168.0.2, port=, ip=192.168.0.1, user=, desc=, exact=site||ip||, all=|||, action=||||match, log=connect|||||, apply to=dstip||||, precedence=3\n"
+"  conn opts: tls11 -tls13>=tls10<=tls11|no_tls13|passthrough|LOW|TLS_AES_128_CCM_SHA256|prime192v1|http://example1.com/example1.crl|allow_wrong_host|https://192.168.0.12/userdblogin1.php|1200|2048\n"
+"filter=>\n"
+"userdesc_filter_exact->\n"
+"userdesc_filter_substring->\n"
+"user_filter_exact->\n"
+"user_filter_substring->\n"
+"desc_filter_exact->\n"
+"desc_filter_substring->\n"
+"user_filter_all->\n"
+"ip_filter_exact->\n"
+"  ip 0 127.0.0.1 (exact)=\n"
+"    ip exact:\n"
+"      0: 127.0.0.1 (exact, action=||||, log=|||||, precedence=0)\n"
+"        port exact:\n"
+"          0: 9191 (exact, action=divert|split|pass|block|match, log=|||content||, precedence=4)\n"
+"  ip 1 192.168.0.1 (exact)=\n"
+"    ip exact:\n"
+"      0: 192.168.0.2 (exact, action=||||match, log=connect|||||, precedence=3\n"
+"        conn opts: tls11 -tls13>=tls10<=tls11|no_tls13|passthrough|LOW|TLS_AES_128_CCM_SHA256|prime192v1|no leafcrlurl|allow_wrong_host|https://192.168.0.12/userdblogin1.php|1200|2048)\n"
+"ip_filter_substring->\n"
+"filter_all->\n"
+"    sni exact:\n"
+"      0: example4.com (exact, action=||pass||, log=|||||, precedence=1)\n"
+"    cn exact:\n"
+"      0: example4.com (exact, action=||pass||, log=|||||, precedence=1)\n"),
+		"failed to parse proxyspec: %s", s);
+#else /* WITHOUT_USERAUTH */
+	fail_unless(!strcmp(s,
+"listen=[127.0.0.1]:8213 ssl|http \n"
+"sni 4444\n"
+"divert addr= [127.0.0.1]:8080\n"
+"return addr= [192.168.2.1]:0\n"
+"opts= conn opts: tls12 -tls13>=tls11<=tls12|no sslcomp|no_tls13|deny_ocsp|MEDIUM:HIGH|TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256|prime256v1|http://example2.com/example2.crl|remove_http_accept_encoding|remove_http_referer|verify_peer|validate_proto|2048\n"
+"divert\n"
+"macro $ip = 127.0.0.1\n"
+"filter rule 0: site=example4.com, port=, ip=, exact=site||, all=conns||, action=||pass||, log=|||||, apply to=|sni|cn||, precedence=1\n"
+"filter rule 1: site=127.0.0.1, port=9191, ip=127.0.0.1, exact=site|port|ip, all=||, action=||||match, log=|||content||, apply to=dstip||||, precedence=4\n"
+"filter rule 2: site=127.0.0.1, port=9191, ip=127.0.0.1, exact=site|port|ip, all=||, action=|||block|, log=|||content||, apply to=dstip||||, precedence=4\n"
+"filter rule 3: site=127.0.0.1, port=9191, ip=127.0.0.1, exact=site|port|ip, all=||, action=||pass||, log=|||content||, apply to=dstip||||, precedence=4\n"
+"filter rule 4: site=127.0.0.1, port=9191, ip=127.0.0.1, exact=site|port|ip, all=||, action=|split|||, log=|||content||, apply to=dstip||||, precedence=4\n"
+"filter rule 5: site=127.0.0.1, port=9191, ip=127.0.0.1, exact=site|port|ip, all=||, action=divert||||, log=|||content||, apply to=dstip||||, precedence=4\n"
+"filter rule 6: site=192.168.0.2, port=, ip=192.168.0.1, exact=site||ip, all=||, action=||||match, log=connect|||||, apply to=dstip||||, precedence=3\n"
+"  conn opts: tls11 -tls13>=tls10<=tls11|no_tls13|passthrough|LOW|TLS_AES_128_CCM_SHA256|prime192v1|http://example1.com/example1.crl|allow_wrong_host|2048\n"
+"filter=>\n"
+"ip_filter_exact->\n"
+"  ip 0 127.0.0.1 (exact)=\n"
+"    ip exact:\n"
+"      0: 127.0.0.1 (exact, action=||||, log=|||||, precedence=0)\n"
+"        port exact:\n"
+"          0: 9191 (exact, action=divert|split|pass|block|match, log=|||content||, precedence=4)\n"
+"  ip 1 192.168.0.1 (exact)=\n"
+"    ip exact:\n"
+"      0: 192.168.0.2 (exact, action=||||match, log=connect|||||, precedence=3\n"
+"        conn opts: tls11 -tls13>=tls10<=tls11|no_tls13|passthrough|LOW|TLS_AES_128_CCM_SHA256|prime192v1|no leafcrlurl|allow_wrong_host|2048)\n"
+"ip_filter_substring->\n"
+"filter_all->\n"
+"    sni exact:\n"
+"      0: example4.com (exact, action=||pass||, log=|||||, precedence=1)\n"
+"    cn exact:\n"
+"      0: example4.com (exact, action=||pass||, log=|||||, precedence=1)\n"),
+		"failed to parse proxyspec: %s", s);
+#endif /* WITHOUT_USERAUTH */
+	free(s);
+
+	tmp_opts_free(tmp_opts);
+	global_free(global);
 }
 END_TEST
 
@@ -1018,6 +1222,7 @@ opts_suite(void)
 	tcase_add_test(tc, proxyspec_parse_12);
 	tcase_add_test(tc, proxyspec_parse_13);
 	tcase_add_test(tc, proxyspec_set_proto_01);
+	tcase_add_test(tc, proxyspec_struct_parse_01);
 	suite_add_tcase(s, tc);
 
 	tc = tcase_create("opts_config");
