@@ -438,7 +438,7 @@ filter_macro_copy(macro_t *macro, const char *argv0, opts_t *opts)
 }
 
 int
-filter_rules_copy(filter_rule_t *rule, const char *argv0, opts_t *opts)
+filter_rule_copy(filter_rule_t *rule, const char *argv0, opts_t *opts)
 {
 	while (rule) {
 		filter_rule_t *r = malloc(sizeof(filter_rule_t));
@@ -603,7 +603,11 @@ filter_rule_str(filter_rule_t *rule)
 #ifndef WITHOUT_MIRROR
 				"|%s"
 #endif /* !WITHOUT_MIRROR */
-				", apply to=%s|%s|%s|%s|%s, precedence=%d%s%s",
+				", apply to=%s|%s|%s|%s|%s, precedence=%d"
+#ifdef DEBUG_PROXY
+				", line=%d"
+#endif /* DEBUG_PROXY */
+				"%s%s",
 				rule->site, STRORNONE(rule->port), STRORNONE(rule->ip),
 #ifndef WITHOUT_USERAUTH
 				STRORNONE(rule->user), STRORNONE(rule->desc),
@@ -625,7 +629,11 @@ filter_rule_str(filter_rule_t *rule)
 				rule->action.log_mirror ? (rule->action.log_mirror == 1 ? "!mirror" : "mirror") : "",
 #endif /* !WITHOUT_MIRROR */
 				rule->dstip ? "dstip" : "", rule->sni ? "sni" : "", rule->cn ? "cn" : "", rule->host ? "host" : "", rule->uri ? "uri" : "",
-				rule->action.precedence, strlen(copts_str) ? "\n  " : "", copts_str) < 0) {
+				rule->action.precedence,
+#ifdef DEBUG_PROXY
+				rule->action.line_num,
+#endif /* DEBUG_PROXY */
+				strlen(copts_str) ? "\n  " : "", copts_str) < 0) {
 			if (copts_str)
 				free(copts_str);
 			goto err;
@@ -673,7 +681,11 @@ filter_port_str(filter_port_list_t *port_list)
 #ifndef WITHOUT_MIRROR
 				"|%s"
 #endif /* !WITHOUT_MIRROR */
-				", precedence=%d%s%s)", STRORNONE(s), count,
+				", precedence=%d"
+#ifdef DEBUG_PROXY
+				", line=%d"
+#endif /* DEBUG_PROXY */
+				"%s%s)", STRORNONE(s), count,
 				port_list->port->port, port_list->port->all_ports ? "all_ports, " : "", port_list->port->exact ? "exact" : "substring",
 				port_list->port->action.divert ? "divert" : "", port_list->port->action.split ? "split" : "", port_list->port->action.pass ? "pass" : "", port_list->port->action.block ? "block" : "", port_list->port->action.match ? "match" : "",
 				port_list->port->action.log_connect ? (port_list->port->action.log_connect == 1 ? "!connect" : "connect") : "", port_list->port->action.log_master ? (port_list->port->action.log_master == 1 ? "!master" : "master") : "",
@@ -683,6 +695,9 @@ filter_port_str(filter_port_list_t *port_list)
 				port_list->port->action.log_mirror ? (port_list->port->action.log_mirror == 1 ? "!mirror" : "mirror") : "",
 #endif /* !WITHOUT_MIRROR */
 				port_list->port->action.precedence,
+#ifdef DEBUG_PROXY
+				port_list->port->action.line_num,
+#endif /* DEBUG_PROXY */
 				strlen(copts_str) ? "\n            " : "", copts_str) < 0) {
 			if (copts_str)
 				free(copts_str);
@@ -765,7 +780,11 @@ filter_sites_str(filter_site_list_t *site_list)
 #ifndef WITHOUT_MIRROR
 				"|%s"
 #endif /* !WITHOUT_MIRROR */
-				", precedence=%d%s%s)%s%s%s%s%s%s",
+				", precedence=%d"
+#ifdef DEBUG_PROXY
+				", line=%d"
+#endif /* DEBUG_PROXY */
+				"%s%s)%s%s%s%s%s%s",
 				STRORNONE(s), count,
 				site_list->site->site, site_list->site->all_sites ? "all_sites, " : "", site_list->site->exact ? "exact" : "substring",
 				site_list->site->action.divert ? "divert" : "", site_list->site->action.split ? "split" : "", site_list->site->action.pass ? "pass" : "", site_list->site->action.block ? "block" : "", site_list->site->action.match ? "match" : "",
@@ -776,6 +795,9 @@ filter_sites_str(filter_site_list_t *site_list)
 				site_list->site->action.log_mirror ? (site_list->site->action.log_mirror == 1 ? "!mirror" : "mirror") : "",
 #endif /* !WITHOUT_MIRROR */
 				site_list->site->action.precedence,
+#ifdef DEBUG_PROXY
+				site_list->site->action.line_num,
+#endif /* DEBUG_PROXY */
 				strlen(copts_str) ? "\n        " : "", copts_str,
 				ports_exact ? "\n        port exact:" : "", STRORNONE(ports_exact),
 				ports_substring ? "\n        port substring:" : "", STRORNONE(ports_substring),
@@ -1411,7 +1433,11 @@ filter_rule_dbg_print(filter_rule_t *rule)
 #ifndef WITHOUT_MIRROR
 		"|%s"
 #endif /* !WITHOUT_MIRROR */
-		", apply to=%s|%s|%s|%s|%s, precedence=%d%s%s\n",
+		", apply to=%s|%s|%s|%s|%s, precedence=%d"
+#ifdef DEBUG_PROXY
+		", line=%d"
+#endif /* DEBUG_PROXY */
+		"%s%s\n",
 		rule->site, STRORNONE(rule->port), STRORNONE(rule->ip),
 #ifndef WITHOUT_USERAUTH
 		STRORNONE(rule->user), STRORNONE(rule->desc),
@@ -1433,7 +1459,11 @@ filter_rule_dbg_print(filter_rule_t *rule)
 		rule->action.log_mirror ? (rule->action.log_mirror == 1 ? "!mirror" : "mirror") : "",
 #endif /* !WITHOUT_MIRROR */
 		rule->dstip ? "dstip" : "", rule->sni ? "sni" : "", rule->cn ? "cn" : "", rule->host ? "host" : "", rule->uri ? "uri" : "",
-		rule->action.precedence, strlen(copts_str) ? "\n  " : "", copts_str);
+		rule->action.precedence,
+#ifdef DEBUG_PROXY
+		rule->action.line_num,
+#endif /* DEBUG_PROXY */
+		strlen(copts_str) ? "\n  " : "", copts_str);
 
 	free(copts_str);
 }
@@ -2011,6 +2041,10 @@ filter_rule_translate(opts_t *opts, const char *name, int argc, char **argv, uns
 		rule->uri = 1;
 	}
 
+#ifdef DEBUG_PROXY
+	rule->action.line_num = line_num;
+#endif /* DEBUG_PROXY */
+
 	append_list(&opts->filter_rules, rule, filter_rule_t);
 
 #ifdef DEBUG_OPTS
@@ -2506,6 +2540,10 @@ filter_rule_struct_translate_nvls(opts_t *opts, name_value_lines_t nvls[], int n
 		}
 	}
 
+#ifdef DEBUG_PROXY
+	rule->action.line_num = tmp_opts->line_num;
+#endif /* DEBUG_PROXY */
+
 	append_list(&opts->filter_rules, rule, filter_rule_t);
 
 #ifdef DEBUG_OPTS
@@ -2710,6 +2748,10 @@ load_filterrule_struct(opts_t *opts, conn_opts_t *conn_opts, const char *argv0, 
 		goto err;
 	}
 
+#ifdef DEBUG_PROXY
+	tmp_opts->line_num = *line_num;
+#endif /* DEBUG_PROXY */
+
 	int closing_brace = 0;
 
 	while (!feof(f) && !closing_brace) {
@@ -2912,6 +2954,9 @@ filter_port_add(filter_site_t *site, filter_rule_t *rule, const char *argv0, tmp
 		}
 
 		port->action.precedence = rule->action.precedence;
+#ifdef DEBUG_PROXY
+		port->action.line_num = rule->action.line_num;
+#endif /* DEBUG_PROXY */
 	}
 	return 0;
 }
@@ -3058,6 +3103,9 @@ filter_site_add(kbtree_t(site) **btree, ACMachine(char) **acm, filter_site_t **a
 		}
 
 		site->action.precedence = rule->action.precedence;
+#ifdef DEBUG_PROXY
+		site->action.line_num = rule->action.line_num;
+#endif /* DEBUG_PROXY */
 	}
 	return 0;
 }

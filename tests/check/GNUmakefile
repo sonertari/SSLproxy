@@ -34,6 +34,10 @@ buildtest: $(TARGET).test
 	$(MAKE) -C engine
 	$(MAKE) -C pki testreqs
 
+ifeq ($(findstring -DDEBUG_PROXY,$(shell $(PROJECT_ROOT)/src/sslproxy -V 2>&1 | grep "Features: ")),-DDEBUG_PROXY)
+$(error Unit tests cannot run with DEBUG_PROXY feature enabled, disable DEBUG_PROXY feature in main makefile and try again)
+endif
+
 test: buildtest
 	./$(TARGET).test
 

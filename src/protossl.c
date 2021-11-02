@@ -598,27 +598,27 @@ protossl_filter_match_sni(pxy_conn_ctx_t *ctx, filter_list_t *list)
 		return NULL;
 
 #ifndef WITHOUT_USERAUTH
-	log_fine_va("Found site: %s for %s:%s, %s:%s, %s, %s, %s", site->site,
+	log_fine_va("Found site (line=%d): %s for %s:%s, %s:%s, %s, %s, %s", site->action.line_num, site->site,
 		STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
 		STRORDASH(ctx->user), STRORDASH(ctx->desc), STRORDASH(ctx->sslctx->sni));
 #else /* WITHOUT_USERAUTH */
-	log_fine_va("Found site: %s for %s:%s, %s:%s, %s", site->site,
+	log_fine_va("Found site (line=%d): %s for %s:%s, %s:%s, %s", site->action.line_num, site->site,
 		STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
 		STRORDASH(ctx->sslctx->sni));
 #endif /* WITHOUT_USERAUTH */
 
 	if (!site->port_btree && !site->port_acm && (site->action.precedence < ctx->filter_precedence)) {
-		log_finest_va("Rule precedence lower than conn filter precedence %d < %d: %s, %s", site->action.precedence, ctx->filter_precedence, site->site, ctx->sslctx->sni);
+		log_finest_va("Rule precedence lower than conn filter precedence %d < %d (line=%d): %s, %s", site->action.precedence, ctx->filter_precedence, site->action.line_num, site->site, ctx->sslctx->sni);
 		return NULL;
 	}
 
 #ifdef DEBUG_PROXY
 	if (site->all_sites)
-		log_finest_va("Match all sni: %s, %s", site->site, ctx->sslctx->sni);
+		log_finest_va("Match all sni (line=%d): %s, %s", site->action.line_num, site->site, ctx->sslctx->sni);
 	else if (site->exact)
-		log_finest_va("Match exact with sni: %s, %s", site->site, ctx->sslctx->sni);
+		log_finest_va("Match exact with sni (line=%d): %s, %s", site->action.line_num, site->site, ctx->sslctx->sni);
 	else
-		log_finest_va("Match substring in sni: %s, %s", site->site, ctx->sslctx->sni);
+		log_finest_va("Match substring in sni (line=%d): %s, %s", site->action.line_num, site->site, ctx->sslctx->sni);
 #endif /* DEBUG_PROXY */
 
 	filter_action_t *port_action = pxy_conn_filter_port(ctx, site);
@@ -660,7 +660,7 @@ protossl_filter_match_cn(pxy_conn_ctx_t *ctx, filter_list_t *list)
 			if (argc++ < MAX_CN_TOKENS) {
 				site = filter_site_exact_match(list->cn_btree, p);
 				if (site) {
-					log_finest_va("Match exact with common name (%d): %s, %s", argc, p, ctx->sslctx->ssl_names);
+					log_finest_va("Match exact with common name (%d) (line=%d): %s, %s", argc, site->action.line_num, p, ctx->sslctx->ssl_names);
 					break;
 				}
 			}
@@ -674,29 +674,29 @@ protossl_filter_match_cn(pxy_conn_ctx_t *ctx, filter_list_t *list)
 	if (!site) {
 		site = filter_site_substring_match(list->cn_acm, ctx->sslctx->ssl_names);
 		if (site)
-			log_finest_va("Match substring in common names: %s, %s", site->site, ctx->sslctx->ssl_names);
+			log_finest_va("Match substring in common names (line=%d): %s, %s", site->action.line_num, site->site, ctx->sslctx->ssl_names);
 	}
 
 	if (!site)
 		return NULL;
 
 #ifndef WITHOUT_USERAUTH
-	log_fine_va("Found site: %s for %s:%s, %s:%s, %s, %s, %s", site->site,
+	log_fine_va("Found site (line=%d): %s for %s:%s, %s:%s, %s, %s, %s", site->action.line_num, site->site,
 		STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
 		STRORDASH(ctx->user), STRORDASH(ctx->desc), STRORDASH(ctx->sslctx->ssl_names));
 #else /* WITHOUT_USERAUTH */
-	log_fine_va("Found site: %s for %s:%s, %s:%s, %s", site->site,
+	log_fine_va("Found site (line=%d): %s for %s:%s, %s:%s, %s", site->action.line_num, site->site,
 		STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
 		STRORDASH(ctx->sslctx->ssl_names));
 #endif /* WITHOUT_USERAUTH */
 
 	if (!site->port_btree && !site->port_acm && (site->action.precedence < ctx->filter_precedence)) {
-		log_finest_va("Rule precedence lower than conn filter precedence %d < %d: %s, %s", site->action.precedence, ctx->filter_precedence, site->site, ctx->sslctx->ssl_names);
+		log_finest_va("Rule precedence lower than conn filter precedence %d < %d (line=%d): %s, %s", site->action.precedence, ctx->filter_precedence, site->action.line_num, site->site, ctx->sslctx->ssl_names);
 		return NULL;
 	}
 
 	if (site->all_sites)
-		log_finest_va("Match all common names: %s, %s", site->site, ctx->sslctx->ssl_names);
+		log_finest_va("Match all common names (line=%d): %s, %s", site->action.line_num, site->site, ctx->sslctx->ssl_names);
 
 	filter_action_t *port_action = pxy_conn_filter_port(ctx, site);
 	if (port_action)

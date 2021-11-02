@@ -113,6 +113,10 @@ typedef struct filter_action {
 	// Precedence is used in rule application
 	// More specific rules have higher precedence
 	unsigned int precedence;
+
+#ifdef DEBUG_PROXY
+	unsigned int line_num;
+#endif /* DEBUG_PROXY */
 } filter_action_t;
 
 typedef struct filter_rule {
@@ -294,7 +298,7 @@ void filter_rules_free(opts_t *) NONNULL(1);
 void filter_free(opts_t *) NONNULL(1);
 
 int filter_macro_copy(macro_t *, const char *, opts_t *) NONNULL(2,3) WUNRES;
-int filter_rules_copy(filter_rule_t *, const char *, opts_t *) NONNULL(2,3) WUNRES;
+int filter_rule_copy(filter_rule_t *, const char *, opts_t *) NONNULL(2,3) WUNRES;
 
 char *filter_macro_str(macro_t *);
 char *filter_rule_str(filter_rule_t *);

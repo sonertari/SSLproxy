@@ -396,27 +396,27 @@ protohttp_filter_match_host(pxy_conn_ctx_t *ctx, filter_list_t *list)
 		return NULL;
 
 #ifndef WITHOUT_USERAUTH
-	log_fine_va("Found site: %s for %s:%s, %s:%s, %s, %s, %s", site->site,
+	log_fine_va("Found site (line=%d): %s for %s:%s, %s:%s, %s, %s, %s", site->action.line_num, site->site,
 		STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
 		STRORDASH(ctx->user), STRORDASH(ctx->desc), STRORDASH(http_ctx->http_host));
 #else /* WITHOUT_USERAUTH */
-	log_fine_va("Found site: %s for %s:%s, %s:%s, %s", site->site,
+	log_fine_va("Found site (line=%d): %s for %s:%s, %s:%s, %s", site->action.line_num, site->site,
 		STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
 		STRORDASH(http_ctx->http_host));
 #endif /* WITHOUT_USERAUTH */
 
 	if (!site->port_btree && !site->port_acm && (site->action.precedence < ctx->filter_precedence)) {
-		log_finest_va("Rule precedence lower than conn filter precedence %d < %d: %s, %s", site->action.precedence, ctx->filter_precedence, site->site, http_ctx->http_host);
+		log_finest_va("Rule precedence lower than conn filter precedence %d < %d (line=%d): %s, %s", site->action.precedence, ctx->filter_precedence, site->action.line_num, site->site, http_ctx->http_host);
 		return NULL;
 	}
 
 #ifdef DEBUG_PROXY
 	if (site->all_sites)
-		log_finest_va("Match all host: %s, %s", site->site, http_ctx->http_host);
+		log_finest_va("Match all host (line=%d): %s, %s", site->action.line_num, site->site, http_ctx->http_host);
 	else if (site->exact)
-		log_finest_va("Match exact with host: %s, %s", site->site, http_ctx->http_host);
+		log_finest_va("Match exact with host (line=%d): %s, %s", site->action.line_num, site->site, http_ctx->http_host);
 	else
-		log_finest_va("Match substring in host: %s, %s", site->site, http_ctx->http_host);
+		log_finest_va("Match substring in host (line=%d): %s, %s", site->action.line_num, site->site, http_ctx->http_host);
 #endif /* DEBUG_PROXY */
 
 	filter_action_t *port_action = pxy_conn_filter_port(ctx, site);
@@ -436,27 +436,27 @@ protohttp_filter_match_uri(pxy_conn_ctx_t *ctx, filter_list_t *list)
 		return NULL;
 
 #ifndef WITHOUT_USERAUTH
-	log_fine_va("Found site: %s for %s:%s, %s:%s, %s, %s, %s", site->site,
+	log_fine_va("Found site (line=%d): %s for %s:%s, %s:%s, %s, %s, %s", site->action.line_num, site->site,
 		STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
 		STRORDASH(ctx->user), STRORDASH(ctx->desc), STRORDASH(http_ctx->http_uri));
 #else /* WITHOUT_USERAUTH */
-	log_fine_va("Found site: %s for %s:%s, %s:%s, %s", site->site,
+	log_fine_va("Found site (line=%d): %s for %s:%s, %s:%s, %s", site->action.line_num, site->site,
 		STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
 		STRORDASH(http_ctx->http_uri));
 #endif /* WITHOUT_USERAUTH */
 
 	if (!site->port_btree && !site->port_acm && (site->action.precedence < ctx->filter_precedence)) {
-		log_finest_va("Rule precedence lower than conn filter precedence %d < %d: %s, %s", site->action.precedence, ctx->filter_precedence, site->site, http_ctx->http_uri);
+		log_finest_va("Rule precedence lower than conn filter precedence %d < %d (line=%d): %s, %s", site->action.precedence, ctx->filter_precedence, site->action.line_num, site->site, http_ctx->http_uri);
 		return NULL;
 	}
 
 #ifdef DEBUG_PROXY
 	if (site->all_sites)
-		log_finest_va("Match all uri: %s, %s", site->site, http_ctx->http_uri);
+		log_finest_va("Match all uri (line=%d): %s, %s", site->action.line_num, site->site, http_ctx->http_uri);
 	else if (site->exact)
-		log_finest_va("Match exact with uri: %s, %s", site->site, http_ctx->http_uri);
+		log_finest_va("Match exact with uri (line=%d): %s, %s", site->action.line_num, site->site, http_ctx->http_uri);
 	else
-		log_finest_va("Match substring in uri: %s, %s", site->site, http_ctx->http_uri);
+		log_finest_va("Match substring in uri (line=%d): %s, %s", site->action.line_num, site->site, http_ctx->http_uri);
 #endif /* DEBUG_PROXY */
 
 	filter_action_t *port_action = pxy_conn_filter_port(ctx, site);

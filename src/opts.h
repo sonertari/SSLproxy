@@ -203,6 +203,9 @@ typedef struct tmp_opts {
 	unsigned int split : 1;
 	// Prevents Include option in include files
 	unsigned int include : 1;
+#ifdef DEBUG_PROXY
+	unsigned int line_num;
+#endif /* DEBUG_PROXY */
 } tmp_opts_t;
 
 struct global {

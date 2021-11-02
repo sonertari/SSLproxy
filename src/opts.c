@@ -534,6 +534,9 @@ tmp_opts_copy(tmp_opts_t *src_tmp_opts)
 		tmp_opts->dh_str = strdup(src_tmp_opts->dh_str);
 	tmp_opts->split = src_tmp_opts->split;
 	tmp_opts->include = src_tmp_opts->include;
+#ifdef DEBUG_PROXY
+	tmp_opts->line_num = src_tmp_opts->line_num;
+#endif /* DEBUG_PROXY */
 
 	return tmp_opts;
 }
@@ -669,7 +672,7 @@ global_opts_copy(global_t *global, const char *argv0)
 	if (filter_macro_copy(global->opts->macro, argv0, opts) == -1)
 		return oom_return_null(argv0);
 
-	if (filter_rules_copy(global->opts->filter_rules, argv0, opts) == -1)
+	if (filter_rule_copy(global->opts->filter_rules, argv0, opts) == -1)
 		return oom_return_null(argv0);
 
 	return opts;

@@ -1643,22 +1643,22 @@ pxy_conn_filter_match_ip(pxy_conn_ctx_t *ctx, filter_list_t *list)
 	if (!site)
 		return NULL;
 
-	log_fine_va("Found site: %s for %s:%s, %s:%s", site->site,
+	log_fine_va("Found site (line=%d): %s for %s:%s, %s:%s", site->action.line_num, site->site,
 		STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str));
 
 	// Port spec determines the precedence of a site rule, unless the rule does not have any port
 	if (!site->port_btree && !site->port_acm && (site->action.precedence < ctx->filter_precedence)) {
-		log_finest_va("Rule precedence lower than conn filter precedence %d < %d: %s, %s", site->action.precedence, ctx->filter_precedence, site->site, ctx->dsthost_str);
+		log_finest_va("Rule precedence lower than conn filter precedence %d < %d (line=%d): %s, %s", site->action.precedence, ctx->filter_precedence, site->action.line_num, site->site, ctx->dsthost_str);
 		return NULL;
 	}
 
 #ifdef DEBUG_PROXY
 	if (site->all_sites)
-		log_finest_va("Match all dst: %s, %s", site->site, ctx->dsthost_str);
+		log_finest_va("Match all dst (line=%d): %s, %s", site->action.line_num, site->site, ctx->dsthost_str);
 	else if (site->exact)
-		log_finest_va("Match exact with dst: %s, %s", site->site, ctx->dsthost_str);
+		log_finest_va("Match exact with dst (line=%d): %s, %s", site->action.line_num, site->site, ctx->dsthost_str);
 	else
-		log_finest_va("Match substring in dst: %s, %s", site->site, ctx->dsthost_str);
+		log_finest_va("Match substring in dst (line=%d): %s, %s", site->action.line_num, site->site, ctx->dsthost_str);
 #endif /* DEBUG_PROXY */
 
 	filter_action_t *port_action = pxy_conn_filter_port(ctx, site);
@@ -2210,7 +2210,7 @@ pxy_conn_set_filter_action(filter_action_t *a1, filter_action_t *a2
 #ifdef DEBUG_PROXY
 		site = s2;
 		if (a1 &&  a2 && (a1->precedence < a2->precedence))
-			log_finest_va("Rule 2 has higher precedence than rule 1: %d > %d, %s, %s", a2->precedence, a1->precedence, s2, s1);
+			log_finest_va("Rule 2 has higher precedence than rule 1: %d > %d (line=%d, %d), %s, %s", a2->precedence, a1->precedence, a2->line_num, a1->line_num, s2, s1);
 #endif /* DEBUG_PROXY */
 	} else {
 		a = a1;
@@ -2221,44 +2221,44 @@ pxy_conn_set_filter_action(filter_action_t *a1, filter_action_t *a2
 
 #ifdef DEBUG_PROXY
 	if (a->divert) {
-		log_fine_va("Filter divert action for %s, precedence %d", site, a->precedence);
+		log_fine_va("Filter divert action for %s, precedence %d (line=%d)", site, a->precedence, a->line_num);
 	}
 	else if (a->split) {
-		log_fine_va("Filter split action for %s, precedence %d", site, a->precedence);
+		log_fine_va("Filter split action for %s, precedence %d (line=%d)", site, a->precedence, a->line_num);
 	}
 	else if (a->pass) {
 		// Ignore pass action if already in passthrough mode
 		if (!ctx->pass) {
-			log_fine_va("Filter pass action for %s, precedence %d", site, a->precedence);
+			log_fine_va("Filter pass action for %s, precedence %d (line=%d)", site, a->precedence, a->line_num);
 		}
 	}
 	else if (a->block) {
-		log_fine_va("Filter block action for %s, precedence %d", site, a->precedence);
+		log_fine_va("Filter block action for %s, precedence %d (line=%d)", site, a->precedence, a->line_num);
 	}
 	else if (a->match) {
-		log_fine_va("Filter match action for %s, precedence %d", site, a->precedence);
+		log_fine_va("Filter match action for %s, precedence %d (line=%d)", site, a->precedence, a->line_num);
 	}
 
 	// Multiple log actions can be defined, hence no 'else'
 	// 0: don't change, 1: disable, 2: enable
 	if (a->log_connect) {
-		log_fine_va("Filter %s connect log for %s, precedence %d", a->log_connect % 2 ? "disable" : "enable", site, a->precedence);
+		log_fine_va("Filter %s connect log for %s, precedence %d (line=%d)", a->log_connect % 2 ? "disable" : "enable", site, a->precedence, a->line_num);
 	}
 	if (a->log_master) {
-		log_fine_va("Filter %s master log for %s, precedence %d", a->log_master % 2 ? "disable" : "enable", site, a->precedence);
+		log_fine_va("Filter %s master log for %s, precedence %d (line=%d)", a->log_master % 2 ? "disable" : "enable", site, a->precedence, a->line_num);
 	}
 	if (a->log_cert) {
-		log_fine_va("Filter %s cert log for %s, precedence %d", a->log_cert % 2 ? "disable" : "enable", site, a->precedence);
+		log_fine_va("Filter %s cert log for %s, precedence %d (line=%d)", a->log_cert % 2 ? "disable" : "enable", site, a->precedence, a->line_num);
 	}
 	if (a->log_content) {
-		log_fine_va("Filter %s content log for %s, precedence %d", a->log_content % 2 ? "disable" : "enable", site, a->precedence);
+		log_fine_va("Filter %s content log for %s, precedence %d (line=%d)", a->log_content % 2 ? "disable" : "enable", site, a->precedence, a->line_num);
 	}
 	if (a->log_pcap) {
-		log_fine_va("Filter %s pcap log for %s, precedence %d", a->log_pcap % 2 ? "disable" : "enable", site, a->precedence);
+		log_fine_va("Filter %s pcap log for %s, precedence %d (line=%d)", a->log_pcap % 2 ? "disable" : "enable", site, a->precedence, a->line_num);
 	}
 #ifndef WITHOUT_MIRROR
 	if (a->log_mirror) {
-		log_fine_va("Filter %s mirror log for %s, precedence %d", a->log_mirror % 2 ? "disable" : "enable", site, a->precedence);
+		log_fine_va("Filter %s mirror log for %s, precedence %d (line=%d)", a->log_mirror % 2 ? "disable" : "enable", site, a->precedence, a->line_num);
 	}
 #endif /* !WITHOUT_MIRROR */
 #endif /* DEBUG_PROXY */
@@ -2269,17 +2269,17 @@ static int NONNULL(1,2)
 pxy_conn_filter_match_port(pxy_conn_ctx_t *ctx, filter_port_t *port)
 {
 	if (port->action.precedence < ctx->filter_precedence) {
-		log_finest_va("Rule port precedence lower than conn filter precedence %d < %d: %s, %s", port->action.precedence, ctx->filter_precedence, port->port, ctx->dsthost_str);
+		log_finest_va("Rule port precedence lower than conn filter precedence %d < %d (line=%d): %s, %s", port->action.precedence, ctx->filter_precedence, port->action.line_num, port->port, ctx->dsthost_str);
 		return 0;
 	}
 
 #ifdef DEBUG_PROXY
 	if (port->all_ports)
-		log_finest_va("Match all dst ports: %s, %s", port->port, ctx->dstport_str);
+		log_finest_va("Match all dst ports (line=%d): %s, %s", port->action.line_num, port->port, ctx->dstport_str);
 	else if (port->exact)
-		log_finest_va("Match exact with dst port: %s, %s", port->port, ctx->dstport_str);
+		log_finest_va("Match exact with dst port (line=%d): %s, %s", port->action.line_num, port->port, ctx->dstport_str);
 	else
-		log_finest_va("Match substring in dst port: %s, %s", port->port, ctx->dstport_str);
+		log_finest_va("Match substring in dst port (line=%d): %s, %s", port->action.line_num, port->port, ctx->dstport_str);
 #endif /* DEBUG_PROXY */
 
 	return 1;
@@ -2290,7 +2290,7 @@ pxy_conn_filter_port(pxy_conn_ctx_t *ctx, filter_site_t *site)
 {
 	filter_port_t *port = filter_port_find(site, ctx->dstport_str);
 	if (port) {
-		log_fine_va("Found port: %s for %s:%s, %s:%s", port->port,
+		log_fine_va("Found port (line=%d): %s for %s:%s, %s:%s", port->action.line_num, port->port,
 			STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str));
 		if (pxy_conn_filter_match_port(ctx, port))
 			return &port->action;
