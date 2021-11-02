@@ -2514,7 +2514,7 @@ is_yesno(const char *value)
 }
 
 int
-check_value_yesno(const char *value, const char *name, int line_num)
+check_value_yesno(const char *value, const char *name, unsigned int line_num)
 {
 	int rv;
 	if ((rv = is_yesno(value)) == -1)
@@ -2524,7 +2524,7 @@ check_value_yesno(const char *value, const char *name, int line_num)
 
 int
 set_conn_opts_option(conn_opts_t *conn_opts, const char *argv0,
-		const char *name, char *value, int line_num, tmp_opts_t *tmp_opts)
+		const char *name, char *value, unsigned int line_num, tmp_opts_t *tmp_opts)
 {
 	int yes;
 
@@ -2681,7 +2681,7 @@ set_conn_opts_option(conn_opts_t *conn_opts, const char *argv0,
  */
 static int
 set_option(opts_t *opts, conn_opts_t *conn_opts, const char *argv0,
-		const char *name, char *value, char **natengine, FILE *f, int *line_num, tmp_opts_t *tmp_opts)
+		const char *name, char *value, char **natengine, FILE *f, unsigned int *line_num, tmp_opts_t *tmp_opts)
 {
 	int yes;
 
@@ -2737,7 +2737,7 @@ set_option(opts_t *opts, conn_opts_t *conn_opts, const char *argv0,
 
 static int WUNRES
 set_proxyspec_option(proxyspec_t *spec, const char *argv0,
-		const char *name, char *value, char **natengine, spec_addrs_t *spec_addrs, FILE *f, int *line_num, tmp_opts_t *proxyspec_tmp_opts)
+		const char *name, char *value, char **natengine, spec_addrs_t *spec_addrs, FILE *f, unsigned int *line_num, tmp_opts_t *proxyspec_tmp_opts)
 {
 	// Closing brace '}' is the only option without a value
 	// and only allowed in structured proxyspecs and filter rules
@@ -2826,7 +2826,7 @@ set_proxyspec_option(proxyspec_t *spec, const char *argv0,
  * Allows multiple separators between name and value.
  */
 int
-get_name_value(char *name, char **value, const char sep, int line_num)
+get_name_value(char *name, char **value, const char sep, unsigned int line_num)
 {
 	size_t len = strlen(name);
 
@@ -2892,7 +2892,7 @@ get_name_value(char *name, char **value, const char sep, int line_num)
 #define MAX_TOKENS 8
 
 static int WUNRES
-load_proxyspec_line(global_t *global, const char *argv0, char *value, char **natengine, int line_num, tmp_opts_t *global_tmp_opts)
+load_proxyspec_line(global_t *global, const char *argv0, char *value, char **natengine, unsigned int line_num, tmp_opts_t *global_tmp_opts)
 {
 	/* Use MAX_TOKENS instead of computing the actual number of tokens in value */
 	char **argv = malloc(sizeof(char *) * MAX_TOKENS);
@@ -2924,7 +2924,7 @@ load_proxyspec_line(global_t *global, const char *argv0, char *value, char **nat
 }
 
 int
-load_proxyspec_struct(global_t *global, const char *argv0, char **natengine, int *line_num, FILE *f, tmp_opts_t *global_tmp_opts)
+load_proxyspec_struct(global_t *global, const char *argv0, char **natengine, unsigned int *line_num, FILE *f, tmp_opts_t *global_tmp_opts)
 {
 	int retval = -1;
 	char *name, *value;
@@ -3005,7 +3005,7 @@ leave:
 }
 
 static int WUNRES
-global_set_open_files_limit(const char *value, int line_num)
+global_set_open_files_limit(const char *value, unsigned int line_num)
 {
 	unsigned int i = atoi(value);
 	if (i >= 50 && i <= 10000) {
@@ -3037,7 +3037,7 @@ opts_load_conffile(global_t *global, const char *argv0, char *conffile, char **n
 
 static int WUNRES
 set_global_option(global_t *global, const char *argv0,
-           const char *name, char *value, char **natengine, int *line_num, FILE *f, tmp_opts_t *tmp_opts)
+           const char *name, char *value, char **natengine, unsigned int *line_num, FILE *f, tmp_opts_t *tmp_opts)
 {
 	int yes;
 
@@ -3224,7 +3224,7 @@ global_set_option(global_t *global, const char *argv0, const char *optarg,
 	retval = get_name_value(name, &value, '=', 0);
 	if (retval == 0) {
 		/* Line number param is for conf file, pass 0 for command line options */
-		int line_num = 0;
+		unsigned int line_num = 0;
 		retval = set_global_option(global, argv0, name, value, natengine, &line_num, NULL, tmp_opts);
 	}
 
@@ -3236,7 +3236,8 @@ global_set_option(global_t *global, const char *argv0, const char *optarg,
 static int WUNRES
 opts_load_conffile(global_t *global, const char *argv0, char *conffile, char **natengine, tmp_opts_t *tmp_opts)
 {
-	int retval, line_num;
+	int retval;
+	unsigned int line_num;
 	char *line, *name, *value;
 	size_t line_len;
 	FILE *f;

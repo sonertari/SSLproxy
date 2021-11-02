@@ -43,7 +43,7 @@ START_TEST(set_filter_struct_01)
 	memset(tmp_opts, 0, sizeof (tmp_opts_t));
 
 	FILE *f;
-	int line_num = 0;
+	unsigned int line_num = 0;
 
 	// ATTENTION: We can use const strings here, because we do not modify s in load_filterrule_struct()
 	s = "Action Divert\n}";
@@ -156,7 +156,7 @@ START_TEST(set_filter_struct_02)
 	memset(tmp_opts, 0, sizeof (tmp_opts_t));
 
 	FILE *f;
-	int line_num = 0;
+	unsigned int line_num = 0;
 
 	s = "Action Divert\nSrcIp 192.168.0.1\n}";
 	f = fmemopen(s, strlen(s), "r");
@@ -281,7 +281,7 @@ START_TEST(set_filter_struct_03)
 	memset(tmp_opts, 0, sizeof (tmp_opts_t));
 
 	FILE *f;
-	int line_num = 0;
+	unsigned int line_num = 0;
 
 	s = "Action Divert\nUser *\n}";
 	f = fmemopen(s, strlen(s), "r");
@@ -610,7 +610,7 @@ START_TEST(set_filter_struct_04)
 	memset(tmp_opts, 0, sizeof (tmp_opts_t));
 
 	FILE *f;
-	int line_num = 0;
+	unsigned int line_num = 0;
 
 	s = "Action Divert\nDstIp *\n}";
 	f = fmemopen(s, strlen(s), "r");
@@ -855,7 +855,7 @@ START_TEST(set_filter_struct_05)
 	memset(tmp_opts, 0, sizeof (tmp_opts_t));
 
 	FILE *f;
-	int line_num = 0;
+	unsigned int line_num = 0;
 
 	s = strdup("$macro example.com example*");
 	rv = filter_macro_set(opts, s, 0);
@@ -1690,7 +1690,7 @@ START_TEST(set_filter_struct_06)
 	memset(tmp_opts, 0, sizeof (tmp_opts_t));
 
 	FILE *f;
-	int line_num = 0;
+	unsigned int line_num = 0;
 
 	s = "Action Divert\nLog *\n}";
 	f = fmemopen(s, strlen(s), "r");
@@ -2359,7 +2359,7 @@ START_TEST(set_filter_struct_07)
 	memset(tmp_opts, 0, sizeof (tmp_opts_t));
 
 	FILE *f;
-	int line_num = 0;
+	unsigned int line_num = 0;
 
 	s = "Action Divert\n}";
 	f = fmemopen(s, strlen(s), "r");
@@ -2547,7 +2547,7 @@ START_TEST(set_filter_struct_08)
 	memset(tmp_opts, 0, sizeof (tmp_opts_t));
 
 	FILE *f;
-	int line_num = 0;
+	unsigned int line_num = 0;
 
 	s = "Action Divert\nSrcIp 192.168.0.1\nDstIp 192.168.0.2\n}";
 	f = fmemopen(s, strlen(s), "r");
@@ -2730,7 +2730,7 @@ START_TEST(set_filter_struct_09)
 	memset(tmp_opts, 0, sizeof (tmp_opts_t));
 
 	FILE *f;
-	int line_num = 0;
+	unsigned int line_num = 0;
 
 	s = "Action Divert\nSrcIp 192.168.0.1\nDstIp 192.168.0.2\nDstPort 443\n}";
 	f = fmemopen(s, strlen(s), "r");
@@ -2962,7 +2962,7 @@ START_TEST(set_filter_struct_10)
 	memset(tmp_opts, 0, sizeof (tmp_opts_t));
 
 	FILE *f;
-	int line_num = 0;
+	unsigned int line_num = 0;
 
 	s = "Action Divert\nUser root\nSNI example.com\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
@@ -3123,7 +3123,7 @@ START_TEST(set_filter_struct_11)
 	memset(tmp_opts, 0, sizeof (tmp_opts_t));
 
 	FILE *f;
-	int line_num = 0;
+	unsigned int line_num = 0;
 
 	s = "Action Divert\nUser root\nCN example.com\nDstPort 443\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
@@ -3349,7 +3349,7 @@ START_TEST(set_filter_struct_12)
 	memset(tmp_opts, 0, sizeof (tmp_opts_t));
 
 	FILE *f;
-	int line_num = 0;
+	unsigned int line_num = 0;
 
 	s = "Action Divert\nUser root\nDesc desc\nHost example.com\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
@@ -3622,7 +3622,7 @@ START_TEST(set_filter_struct_13)
 	memset(tmp_opts, 0, sizeof (tmp_opts_t));
 
 	FILE *f;
-	int line_num = 0;
+	unsigned int line_num = 0;
 
 	s = strdup("$ips 192.168.0.1 192.168.0.2*");
 	rv = filter_macro_set(opts, s, 0);
@@ -3785,7 +3785,7 @@ START_TEST(set_filter_struct_14)
 	memset(tmp_opts, 0, sizeof (tmp_opts_t));
 
 	FILE *f;
-	int line_num = 0;
+	unsigned int line_num = 0;
 
 	s = strdup("$users root admin*");
 	rv = filter_macro_set(opts, s, 0);
@@ -3931,7 +3931,7 @@ START_TEST(set_filter_struct_15)
 	memset(tmp_opts, 0, sizeof (tmp_opts_t));
 
 	FILE *f;
-	int line_num = 0;
+	unsigned int line_num = 0;
 
 	s = strdup("$users root admin*");
 	rv = filter_macro_set(opts, s, 0);
@@ -4133,7 +4133,7 @@ START_TEST(set_filter_struct_16)
 	memset(tmp_opts, 0, sizeof (tmp_opts_t));
 
 	FILE *f;
-	int line_num = 0;
+	unsigned int line_num = 0;
 
 	s = "Action Match\n"
 		"SrcIp 192.168.0.1\n"

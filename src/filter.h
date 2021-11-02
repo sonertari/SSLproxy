@@ -74,7 +74,7 @@ typedef struct filter_parse_state {
 typedef struct name_value_lines {
 	char *name;
 	char *value;
-	int line_num;
+	unsigned int line_num;
 } name_value_lines_t;
 
 typedef struct value {
@@ -286,7 +286,7 @@ typedef struct filter {
 void filter_userlist_free(userlist_t *);
 int filter_userlist_copy(userlist_t *, const char *, userlist_t **) NONNULL(2) WUNRES;
 char *filter_userlist_str(userlist_t *);
-int filter_userlist_set(char *, int, userlist_t **, const char *) NONNULL(1,4) WUNRES;
+int filter_userlist_set(char *, unsigned int, userlist_t **, const char *) NONNULL(1,4) WUNRES;
 #endif /* !WITHOUT_USERAUTH */
 
 void filter_macro_free(opts_t *) NONNULL(1);
@@ -300,10 +300,10 @@ char *filter_macro_str(macro_t *);
 char *filter_rule_str(filter_rule_t *);
 char *filter_str(filter_t *);
 
-int filter_passsite_set(opts_t *, conn_opts_t *, char *, int) NONNULL(1,3) WUNRES;
-int filter_macro_set(opts_t *, char *, int) NONNULL(1,2) WUNRES;
+int filter_passsite_set(opts_t *, conn_opts_t *, char *, unsigned int) NONNULL(1,3) WUNRES;
+int filter_macro_set(opts_t *, char *, unsigned int) NONNULL(1,2) WUNRES;
 
-int load_filterrule_struct(opts_t *, conn_opts_t *, const char *, int *, FILE *, tmp_opts_t *) WUNRES;
+int load_filterrule_struct(opts_t *, conn_opts_t *, const char *, unsigned int *, FILE *, tmp_opts_t *) WUNRES;
 
 filter_port_t *filter_port_find(filter_site_t *, char *) NONNULL(1,2);
 
@@ -321,7 +321,7 @@ filter_desc_t *filter_desc_substring_match(ACMachine(char) *, char *) NONNULL(2)
 filter_user_t *filter_user_exact_match(kbtree_t(user) *, char *) NONNULL(2) WUNRES;
 filter_user_t *filter_user_substring_match(ACMachine(char) *, char *) NONNULL(2) WUNRES;
 #endif /* !WITHOUT_USERAUTH */
-int filter_rule_set(opts_t *, conn_opts_t *conn_opts, const char *, char *, int) NONNULL(1,3,4) WUNRES;
+int filter_rule_set(opts_t *, conn_opts_t *conn_opts, const char *, char *, unsigned int) NONNULL(1,3,4) WUNRES;
 filter_t *filter_set(filter_rule_t *, const char *, tmp_opts_t *) WUNRES;
 
 #endif /* !FILTER_H */

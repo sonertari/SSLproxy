@@ -134,7 +134,7 @@ out:
 #define MAX_USERS 50
 
 int
-filter_userlist_set(char *value, int line_num, userlist_t **list, const char *listname)
+filter_userlist_set(char *value, unsigned int line_num, userlist_t **list, const char *listname)
 {
 	// Delimiter can be either or all of ",", " ", and "\t"
 	// Using space as a delimiter disables spaces in user names too
@@ -1442,7 +1442,7 @@ filter_rule_dbg_print(filter_rule_t *rule)
 #define MAX_SITE_LEN 200
 
 int
-filter_passsite_set(opts_t *opts, UNUSED conn_opts_t *conn_opts, char *value, int line_num)
+filter_passsite_set(opts_t *opts, UNUSED conn_opts_t *conn_opts, char *value, unsigned int line_num)
 {
 #define MAX_PASSSITE_TOKENS 3
 
@@ -1583,7 +1583,7 @@ filter_macro_find(macro_t *macro, char *name)
 }
 
 int
-filter_macro_set(opts_t *opts, char *value, int line_num)
+filter_macro_set(opts_t *opts, char *value, unsigned int line_num)
 {
 #define MAX_MACRO_TOKENS 50
 
@@ -1656,7 +1656,7 @@ filter_macro_set(opts_t *opts, char *value, int line_num)
 }
 
 static int WUNRES
-filter_site_set(filter_rule_t *rule, const char *site, int line_num)
+filter_site_set(filter_rule_t *rule, const char *site, unsigned int line_num)
 {
 	// The for loop with strtok_r() does not output empty strings
 	// So, no need to check if the length of site > 0
@@ -1690,7 +1690,7 @@ filter_site_set(filter_rule_t *rule, const char *site, int line_num)
 }
 
 static int WUNRES
-filter_port_set(filter_rule_t *rule, const char *port, int line_num)
+filter_port_set(filter_rule_t *rule, const char *port, unsigned int line_num)
 {
 #define MAX_PORT_LEN 6
 
@@ -1735,7 +1735,7 @@ filter_is_all(const char *arg)
 }
 
 static int WUNRES
-filter_field_set(char **field, const char *arg, int line_num)
+filter_field_set(char **field, const char *arg, unsigned int line_num)
 {
 	// The for loop with strtok_r() does not output empty strings
 	// So, no need to check if the length of field > 0
@@ -1756,7 +1756,7 @@ filter_field_set(char **field, const char *arg, int line_num)
 }
 
 static int WUNRES
-filter_arg_index_inc(int i, int argc, char *last, int line_num)
+filter_arg_index_inc(int i, int argc, char *last, unsigned int line_num)
 {
 	if (i + 1 < argc) {
 		return i + 1;
@@ -1767,7 +1767,7 @@ filter_arg_index_inc(int i, int argc, char *last, int line_num)
 }
 
 static int WUNRES
-filter_rule_translate(opts_t *opts, const char *name, int argc, char **argv, int line_num)
+filter_rule_translate(opts_t *opts, const char *name, int argc, char **argv, unsigned int line_num)
 {
 	//(Divert|Split|Pass|Block|Match)
 	// ([from (
@@ -2020,13 +2020,13 @@ filter_rule_translate(opts_t *opts, const char *name, int argc, char **argv, int
 }
 
 static int WUNRES
-filter_rule_parse(opts_t *opts, conn_opts_t *conn_opts, const char *name, int argc, char **argv, int line_num);
+filter_rule_parse(opts_t *opts, conn_opts_t *conn_opts, const char *name, int argc, char **argv, unsigned int line_num);
 
 // Max = from(1) + user(2) + desc(2) + to(1) + sni(2) + port(2) + log(16 with macro)
 #define MAX_FILTER_RULE_TOKENS 26
 
 static int WUNRES
-filter_rule_macro_expand(opts_t *opts, conn_opts_t *conn_opts, const char *name, int argc, char **argv, int i, int line_num)
+filter_rule_macro_expand(opts_t *opts, conn_opts_t *conn_opts, const char *name, int argc, char **argv, int i, unsigned int line_num)
 {
 	if (argv[i][0] == '$') {
 		macro_t *macro;
@@ -2061,7 +2061,7 @@ filter_rule_macro_expand(opts_t *opts, conn_opts_t *conn_opts, const char *name,
 }
 
 static int WUNRES
-filter_rule_parse(opts_t *opts, conn_opts_t *conn_opts, const char *name, int argc, char **argv, int line_num)
+filter_rule_parse(opts_t *opts, conn_opts_t *conn_opts, const char *name, int argc, char **argv, unsigned int line_num)
 {
 	int done_all = 0;
 	int done_from = 0;
@@ -2252,7 +2252,7 @@ filter_rule_parse(opts_t *opts, conn_opts_t *conn_opts, const char *name, int ar
 }
 
 int
-filter_rule_set(opts_t *opts, conn_opts_t *conn_opts, const char *name, char *value, int line_num)
+filter_rule_set(opts_t *opts, conn_opts_t *conn_opts, const char *name, char *value, unsigned int line_num)
 {
 	char *argv[sizeof(char *) * MAX_FILTER_RULE_TOKENS];
 	int argc = 0;
@@ -2273,7 +2273,7 @@ filter_rule_set(opts_t *opts, conn_opts_t *conn_opts, const char *name, char *va
 }
 
 static int WUNRES
-filter_rule_struct_translate(filter_rule_t *rule, UNUSED conn_opts_t *conn_opts, const char *name, char *value, int line_num)
+filter_rule_struct_translate(filter_rule_t *rule, UNUSED conn_opts_t *conn_opts, const char *name, char *value, unsigned int line_num)
 {
 	if (equal(name, "Action")) {
 		if (equal(value, "Divert"))
@@ -2557,7 +2557,7 @@ filter_rule_struct_macro_expand(opts_t *opts, name_value_lines_t nvls[], int nvl
 
 static int WUNRES
 filter_rule_struct_parse(name_value_lines_t nvls[], int *nvls_size, conn_opts_t *conn_opts, const char *argv0,
-		char *name, char *value, int line_num, tmp_opts_t *tmp_opts, filter_parse_state_t *parse_state)
+		char *name, char *value, unsigned int line_num, tmp_opts_t *tmp_opts, filter_parse_state_t *parse_state)
 {
 	// Closing brace '}' is the only option without a value
 	// and only allowed in structured filtering rules and proxyspecs
@@ -2683,7 +2683,7 @@ filter_rule_struct_parse(name_value_lines_t nvls[], int *nvls_size, conn_opts_t 
 }
 
 int
-load_filterrule_struct(opts_t *opts, conn_opts_t *conn_opts, const char *argv0, int *line_num, FILE *f, tmp_opts_t *orig_tmp_opts)
+load_filterrule_struct(opts_t *opts, conn_opts_t *conn_opts, const char *argv0, unsigned int *line_num, FILE *f, tmp_opts_t *orig_tmp_opts)
 {
 	int retval = -1;
 	char *name, *value;

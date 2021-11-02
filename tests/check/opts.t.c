@@ -627,7 +627,7 @@ START_TEST(proxyspec_struct_parse_01)
 	memset(tmp_opts, 0, sizeof (tmp_opts_t));
 
 	FILE *f;
-	int line_num = 0;
+	unsigned int line_num = 0;
 
 	s =
 		"Proto https     # inline\n"
