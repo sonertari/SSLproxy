@@ -4179,12 +4179,12 @@ START_TEST(set_filter_struct_16)
 #ifndef WITHOUT_USERAUTH
 	fail_unless(!strcmp(s,
 		"filter rule 0: site=192.168.0.2, port=, ip=192.168.0.1, user=, desc=, exact=site||ip||, all=|||, action=||||match, log=connect|||||, apply to=dstip||||, precedence=3\n"
-		"  conn opts: tls11 -tls13>=tls10<=tls11|no_tls13|passthrough|LOW|TLS_AES_128_CCM_SHA256|prime192v1|http://example1.com/example1.crl|allow_wrong_host|https://192.168.0.12/userdblogin1.php|1200|2048"),
+		"  conn opts: tls11 -tls13>=tls10<=tls11|no_tls13|passthrough|LOW|TLS_AES_128_CCM_SHA256|prime192v1|http://example1.com/example1.crl|allow_wrong_host|https://192.168.0.12/userdblogin1.php|1200|reconnect_ssl|2048"),
 		"failed to parse rule: %s", s);
 #else /* WITHOUT_USERAUTH */
 	fail_unless(!strcmp(s,
 		"filter rule 0: site=192.168.0.2, port=, ip=192.168.0.1, exact=site||ip, all=||, action=||||match, log=connect|||||, apply to=dstip||||, precedence=3\n"
-		"  conn opts: tls11 -tls13>=tls10<=tls11|no_tls13|passthrough|LOW|TLS_AES_128_CCM_SHA256|prime192v1|http://example1.com/example1.crl|allow_wrong_host|2048"),
+		"  conn opts: tls11 -tls13>=tls10<=tls11|no_tls13|passthrough|LOW|TLS_AES_128_CCM_SHA256|prime192v1|http://example1.com/example1.crl|allow_wrong_host|reconnect_ssl|2048"),
 		"failed to parse rule: %s", s);
 #endif /* WITHOUT_USERAUTH */
 	free(s);
@@ -4205,7 +4205,7 @@ START_TEST(set_filter_struct_16)
 "  ip 0 192.168.0.1 (exact)=\n"
 "    ip exact:\n"
 "      0: 192.168.0.2 (exact, action=||||match, log=connect|||||, precedence=3\n"
-"        conn opts: tls11 -tls13>=tls10<=tls11|no_tls13|passthrough|LOW|TLS_AES_128_CCM_SHA256|prime192v1|no leafcrlurl|allow_wrong_host|https://192.168.0.12/userdblogin1.php|1200|2048)\n"
+"        conn opts: tls11 -tls13>=tls10<=tls11|no_tls13|passthrough|LOW|TLS_AES_128_CCM_SHA256|prime192v1|no leafcrlurl|allow_wrong_host|https://192.168.0.12/userdblogin1.php|1200|reconnect_ssl|2048)\n"
 "ip_filter_substring->\n"
 "filter_all->\n"), "failed to translate rule: %s", s);
 #else /* WITHOUT_USERAUTH */
@@ -4214,7 +4214,7 @@ START_TEST(set_filter_struct_16)
 "  ip 0 192.168.0.1 (exact)=\n"
 "    ip exact:\n"
 "      0: 192.168.0.2 (exact, action=||||match, log=connect|||||, precedence=3\n"
-"        conn opts: tls11 -tls13>=tls10<=tls11|no_tls13|passthrough|LOW|TLS_AES_128_CCM_SHA256|prime192v1|no leafcrlurl|allow_wrong_host|2048)\n"
+"        conn opts: tls11 -tls13>=tls10<=tls11|no_tls13|passthrough|LOW|TLS_AES_128_CCM_SHA256|prime192v1|no leafcrlurl|allow_wrong_host|reconnect_ssl|2048)\n"
 "ip_filter_substring->\n"
 "filter_all->\n"), "failed to translate rule: %s", s);
 #endif /* WITHOUT_USERAUTH */

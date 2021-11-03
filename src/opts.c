@@ -1050,7 +1050,7 @@ conn_opts_str(conn_opts_t *conn_opts)
 #ifndef WITHOUT_USERAUTH
 				 "%s|%s|%d"
 #endif /* !WITHOUT_USERAUTH */
-				 "%s|%d",
+				 "%s%s|%d",
 #if (OPENSSL_VERSION_NUMBER < 0x10100000L) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER < 0x20702000L)
 #ifdef HAVE_SSLV2
 	               (conn_opts->sslmethod == SSLv2_method) ? "ssl2" :
@@ -1184,6 +1184,7 @@ conn_opts_str(conn_opts_t *conn_opts)
 	             conn_opts->user_timeout,
 #endif /* !WITHOUT_USERAUTH */
 	             (conn_opts->validate_proto ? "|validate_proto" : ""),
+	             (conn_opts->reconnect_ssl ? "|reconnect_ssl" : ""),
 	             conn_opts->max_http_header_size
 	               ) < 0) {
 		return oom_return_na_null();
