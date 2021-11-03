@@ -210,8 +210,16 @@ filter_macro_free(opts_t *opts)
 static void
 filter_rule_free(filter_rule_t *rule)
 {
-	if (rule->site)
-		free(rule->site);
+	if (rule->dstip)
+		free(rule->dstip);
+	if (rule->sni)
+		free(rule->sni);
+	if (rule->cn)
+		free(rule->cn);
+	if (rule->host)
+		free(rule->host);
+	if (rule->uri)
+		free(rule->uri);
 	if (rule->port)
 		free(rule->port);
 	if (rule->ip)
@@ -473,13 +481,43 @@ filter_rule_copy(filter_rule_t *rule, const char *argv0, opts_t *opts)
 		}
 		r->exact_ip = rule->exact_ip;
 
-		if (rule->site) {
-			r->site = strdup(rule->site);
-			if (!r->site)
+		if (rule->dstip) {
+			r->dstip = strdup(rule->dstip);
+			if (!r->dstip)
 				return oom_return(argv0);
 		}
-		r->all_sites = rule->all_sites;
-		r->exact_site = rule->exact_site;
+		if (rule->sni) {
+			r->sni = strdup(rule->sni);
+			if (!r->sni)
+				return oom_return(argv0);
+		}
+		if (rule->cn) {
+			r->cn = strdup(rule->cn);
+			if (!r->cn)
+				return oom_return(argv0);
+		}
+		if (rule->host) {
+			r->host = strdup(rule->host);
+			if (!r->host)
+				return oom_return(argv0);
+		}
+		if (rule->uri) {
+			r->uri = strdup(rule->uri);
+			if (!r->uri)
+				return oom_return(argv0);
+		}
+
+		r->exact_dstip = rule->exact_dstip;
+		r->exact_sni = rule->exact_sni;
+		r->exact_cn = rule->exact_cn;
+		r->exact_host = rule->exact_host;
+		r->exact_uri = rule->exact_uri;
+
+		r->all_dstips = rule->all_dstips;
+		r->all_snis = rule->all_snis;
+		r->all_cns = rule->all_cns;
+		r->all_hosts = rule->all_hosts;
+		r->all_uris = rule->all_uris;
 
 		if (rule->port) {
 			r->port = strdup(rule->port);
@@ -488,12 +526,6 @@ filter_rule_copy(filter_rule_t *rule, const char *argv0, opts_t *opts)
 		}
 		r->all_ports = rule->all_ports;
 		r->exact_port = rule->exact_port;
-
-		r->dstip = rule->dstip;
-		r->sni = rule->sni;
-		r->cn = rule->cn;
-		r->host = rule->host;
-		r->uri = rule->uri;
 
 		// The action field is not a pointer, hence the direct assignment (copy)
 		r->action = rule->action;
@@ -568,6 +600,134 @@ out:
 	return s;
 }
 
+static char *
+filter_rule_site_str(filter_rule_t *rule, char *site, unsigned int exact_site, unsigned int all_sites, char *apply_to, int rule_num)
+{
+	char *s = NULL;
+
+	char *copts_str = conn_opts_str(rule->action.conn_opts);
+	if (!copts_str)
+		return oom_return_na_null();
+
+	char *rule_num_str = NULL;
+	if (rule_num >= 0) {
+		if (asprintf(&rule_num_str, " %d", rule_num) < 0)
+			goto err;
+	} else {
+		rule_num_str = strdup("");
+		if (!rule_num_str)
+			goto err;
+	}
+
+	if (asprintf(&s, "filter rule%s: %s=%s, dstport=%s, srcip=%s"
+#ifndef WITHOUT_USERAUTH
+		", user=%s, desc=%s"
+#endif /* !WITHOUT_USERAUTH */
+		", exact=%s|%s|%s"
+#ifndef WITHOUT_USERAUTH
+		"|%s|%s"
+#endif /* !WITHOUT_USERAUTH */
+		", all=%s|"
+#ifndef WITHOUT_USERAUTH
+		"%s|"
+#endif /* !WITHOUT_USERAUTH */
+		"%s|%s, action=%s|%s|%s|%s|%s, log=%s|%s|%s|%s|%s"
+#ifndef WITHOUT_MIRROR
+		"|%s"
+#endif /* !WITHOUT_MIRROR */
+		", precedence=%d"
+#ifdef DEBUG_PROXY
+		", line=%d"
+#endif /* DEBUG_PROXY */
+		"%s%s\n",
+		rule_num_str, apply_to, site, STRORNONE(rule->port), STRORNONE(rule->ip),
+#ifndef WITHOUT_USERAUTH
+		STRORNONE(rule->user), STRORNONE(rule->desc),
+#endif /* !WITHOUT_USERAUTH */
+		exact_site ? "site" : "", rule->exact_port ? "port" : "", rule->exact_ip ? "ip" : "",
+#ifndef WITHOUT_USERAUTH
+		rule->exact_user ? "user" : "", rule->exact_desc ? "desc" : "",
+#endif /* !WITHOUT_USERAUTH */
+		rule->all_conns ? "conns" : "",
+#ifndef WITHOUT_USERAUTH
+		rule->all_users ? "users" : "",
+#endif /* !WITHOUT_USERAUTH */
+		all_sites ? "sites" : "", rule->all_ports ? "ports" : "",
+		rule->action.divert ? "divert" : "", rule->action.split ? "split" : "", rule->action.pass ? "pass" : "", rule->action.block ? "block" : "", rule->action.match ? "match" : "",
+		rule->action.log_connect ? (rule->action.log_connect == 1 ? "!connect" : "connect") : "", rule->action.log_master ? (rule->action.log_master == 1 ? "!master" : "master") : "",
+		rule->action.log_cert ? (rule->action.log_cert == 1 ? "!cert" : "cert") : "", rule->action.log_content ? (rule->action.log_content == 1 ? "!content" : "content") : "",
+		rule->action.log_pcap ? (rule->action.log_pcap == 1 ? "!pcap" : "pcap") : "",
+#ifndef WITHOUT_MIRROR
+		rule->action.log_mirror ? (rule->action.log_mirror == 1 ? "!mirror" : "mirror") : "",
+#endif /* !WITHOUT_MIRROR */
+		rule->action.precedence,
+#ifdef DEBUG_PROXY
+		rule->action.line_num,
+#endif /* DEBUG_PROXY */
+		strlen(copts_str) ? "\n  " : "", copts_str) < 0) {
+		s = NULL;
+	}
+err:
+	if (rule_num_str)
+		free(rule_num_str);
+	free(copts_str);
+	return s;
+}
+
+static char *
+filter_rule_site_all_str(filter_rule_t *rule, int rule_num)
+{
+	char *s = NULL;
+
+	char *dstip = NULL;
+	char *sni = NULL;
+	char *cn = NULL;
+	char *host = NULL;
+	char *uri = NULL;
+
+	if (rule->dstip) {
+		dstip = filter_rule_site_str(rule, rule->dstip, rule->exact_dstip, rule->all_dstips, "dstip", rule_num);
+		if (!dstip)
+			goto err;
+	}
+	if (rule->sni) {
+		sni = filter_rule_site_str(rule, rule->sni, rule->exact_sni, rule->all_snis, "sni", rule_num);
+		if (!sni)
+			goto err;
+	}
+	if (rule->cn) {
+		cn = filter_rule_site_str(rule, rule->cn, rule->exact_cn, rule->all_cns, "cn", rule_num);
+		if (!cn)
+			goto err;
+	}
+	if (rule->host) {
+		host = filter_rule_site_str(rule, rule->host, rule->exact_host, rule->all_hosts, "host", rule_num);
+		if (!host)
+			goto err;
+	}
+	if (rule->uri) {
+		uri = filter_rule_site_str(rule, rule->uri, rule->exact_uri, rule->all_uris, "uri", rule_num);
+		if (!uri)
+			goto err;
+	}
+
+	if (asprintf(&s, "%s%s%s%s%s", STRORNONE(dstip), STRORNONE(sni), STRORNONE(cn), STRORNONE(host), STRORNONE(uri)) < 0) {
+		s = NULL;
+	}
+err:
+	if (dstip)
+		free(dstip);
+	if (sni)
+		free(sni);
+	if (cn)
+		free(cn);
+	if (host)
+		free(host);
+	if (uri)
+		free(uri);
+	return s;
+}
+
 char *
 filter_rule_str(filter_rule_t *rule)
 {
@@ -582,72 +742,15 @@ filter_rule_str(filter_rule_t *rule)
 
 	int count = 0;
 	while (rule) {
-		char *copts_str = conn_opts_str(rule->action.conn_opts);
-		if (!copts_str)
+		char *p = filter_rule_site_all_str(rule, count);
+		if (!p)
 			goto err;
 
-		char *p;
-		if (asprintf(&p, "site=%s, port=%s, ip=%s"
-#ifndef WITHOUT_USERAUTH
-				", user=%s, desc=%s"
-#endif /* !WITHOUT_USERAUTH */
-				", exact=%s|%s|%s"
-#ifndef WITHOUT_USERAUTH
-				"|%s|%s"
-#endif /* !WITHOUT_USERAUTH */
-				", all=%s"
-#ifndef WITHOUT_USERAUTH
-				"|%s"
-#endif /* !WITHOUT_USERAUTH */
-				"|%s|%s, action=%s|%s|%s|%s|%s, log=%s|%s|%s|%s|%s"
-#ifndef WITHOUT_MIRROR
-				"|%s"
-#endif /* !WITHOUT_MIRROR */
-				", apply to=%s|%s|%s|%s|%s, precedence=%d"
-#ifdef DEBUG_PROXY
-				", line=%d"
-#endif /* DEBUG_PROXY */
-				"%s%s",
-				rule->site, STRORNONE(rule->port), STRORNONE(rule->ip),
-#ifndef WITHOUT_USERAUTH
-				STRORNONE(rule->user), STRORNONE(rule->desc),
-#endif /* !WITHOUT_USERAUTH */
-				rule->exact_site ? "site" : "", rule->exact_port ? "port" : "", rule->exact_ip ? "ip" : "",
-#ifndef WITHOUT_USERAUTH
-				rule->exact_user ? "user" : "", rule->exact_desc ? "desc" : "",
-#endif /* !WITHOUT_USERAUTH */
-				rule->all_conns ? "conns" : "",
-#ifndef WITHOUT_USERAUTH
-				rule->all_users ? "users" : "",
-#endif /* !WITHOUT_USERAUTH */
-				rule->all_sites ? "sites" : "", rule->all_ports ? "ports" : "",
-				rule->action.divert ? "divert" : "", rule->action.split ? "split" : "", rule->action.pass ? "pass" : "", rule->action.block ? "block" : "", rule->action.match ? "match" : "",
-				rule->action.log_connect ? (rule->action.log_connect == 1 ? "!connect" : "connect") : "", rule->action.log_master ? (rule->action.log_master == 1 ? "!master" : "master") : "",
-				rule->action.log_cert ? (rule->action.log_cert == 1 ? "!cert" : "cert") : "", rule->action.log_content ? (rule->action.log_content == 1 ? "!content" : "content") : "",
-				rule->action.log_pcap ? (rule->action.log_pcap == 1 ? "!pcap" : "pcap") : "",
-#ifndef WITHOUT_MIRROR
-				rule->action.log_mirror ? (rule->action.log_mirror == 1 ? "!mirror" : "mirror") : "",
-#endif /* !WITHOUT_MIRROR */
-				rule->dstip ? "dstip" : "", rule->sni ? "sni" : "", rule->cn ? "cn" : "", rule->host ? "host" : "", rule->uri ? "uri" : "",
-				rule->action.precedence,
-#ifdef DEBUG_PROXY
-				rule->action.line_num,
-#endif /* DEBUG_PROXY */
-				strlen(copts_str) ? "\n  " : "", copts_str) < 0) {
-			if (copts_str)
-				free(copts_str);
-			goto err;
-		}
 		char *nfrs;
-		if (asprintf(&nfrs, "%s%sfilter rule %d: %s", 
-					STRORNONE(frs), NLORNONE(frs), count, p) < 0) {
-			if (copts_str)
-				free(copts_str);
+		if (asprintf(&nfrs, "%s%s", STRORNONE(frs), p) < 0) {
 			free(p);
 			goto err;
 		}
-		if (copts_str)
-			free(copts_str);
 		free(p);
 		if (frs)
 			free(frs);
@@ -1413,59 +1516,10 @@ out:
 static void
 filter_rule_dbg_print(filter_rule_t *rule)
 {
-	char *copts_str = conn_opts_str(rule->action.conn_opts);
-	if (!copts_str)
+	char *s = filter_rule_site_all_str(rule, -1);
+	if (!s)
 		return;
-
-	log_dbg_printf("Filter rule: site=%s, port=%s, ip=%s"
-#ifndef WITHOUT_USERAUTH
-		", user=%s, desc=%s"
-#endif /* !WITHOUT_USERAUTH */
-		", exact=%s|%s|%s"
-#ifndef WITHOUT_USERAUTH
-		"|%s|%s"
-#endif /* !WITHOUT_USERAUTH */
-		", all=%s|"
-#ifndef WITHOUT_USERAUTH
-		"%s|"
-#endif /* !WITHOUT_USERAUTH */
-		"%s|%s, action=%s|%s|%s|%s|%s, log=%s|%s|%s|%s|%s"
-#ifndef WITHOUT_MIRROR
-		"|%s"
-#endif /* !WITHOUT_MIRROR */
-		", apply to=%s|%s|%s|%s|%s, precedence=%d"
-#ifdef DEBUG_PROXY
-		", line=%d"
-#endif /* DEBUG_PROXY */
-		"%s%s\n",
-		rule->site, STRORNONE(rule->port), STRORNONE(rule->ip),
-#ifndef WITHOUT_USERAUTH
-		STRORNONE(rule->user), STRORNONE(rule->desc),
-#endif /* !WITHOUT_USERAUTH */
-		rule->exact_site ? "site" : "", rule->exact_port ? "port" : "", rule->exact_ip ? "ip" : "",
-#ifndef WITHOUT_USERAUTH
-		rule->exact_user ? "user" : "", rule->exact_desc ? "desc" : "",
-#endif /* !WITHOUT_USERAUTH */
-		rule->all_conns ? "conns" : "",
-#ifndef WITHOUT_USERAUTH
-		rule->all_users ? "users" : "",
-#endif /* !WITHOUT_USERAUTH */
-		rule->all_sites ? "sites" : "", rule->all_ports ? "ports" : "",
-		rule->action.divert ? "divert" : "", rule->action.split ? "split" : "", rule->action.pass ? "pass" : "", rule->action.block ? "block" : "", rule->action.match ? "match" : "",
-		rule->action.log_connect ? (rule->action.log_connect == 1 ? "!connect" : "connect") : "", rule->action.log_master ? (rule->action.log_master == 1 ? "!master" : "master") : "",
-		rule->action.log_cert ? (rule->action.log_cert == 1 ? "!cert" : "cert") : "", rule->action.log_content ? (rule->action.log_content == 1 ? "!content" : "content") : "",
-		rule->action.log_pcap ? (rule->action.log_pcap == 1 ? "!pcap" : "pcap") : "",
-#ifndef WITHOUT_MIRROR
-		rule->action.log_mirror ? (rule->action.log_mirror == 1 ? "!mirror" : "mirror") : "",
-#endif /* !WITHOUT_MIRROR */
-		rule->dstip ? "dstip" : "", rule->sni ? "sni" : "", rule->cn ? "cn" : "", rule->host ? "host" : "", rule->uri ? "uri" : "",
-		rule->action.precedence,
-#ifdef DEBUG_PROXY
-		rule->action.line_num,
-#endif /* DEBUG_PROXY */
-		strlen(copts_str) ? "\n  " : "", copts_str);
-
-	free(copts_str);
+	log_dbg_printf("%s", s);
 }
 #endif /* DEBUG_OPTS */
 
@@ -1511,20 +1565,30 @@ filter_passsite_set(opts_t *opts, UNUSED conn_opts_t *conn_opts, char *value, un
 		return -1;
 	}
 
+	unsigned int exact_site = 0;
+	unsigned int all_sites = 0;
 	if (argv[0][len - 1] == '*') {
-		rule->exact_site = 0;
+		exact_site = 0;
 		len--;
 		argv[0][len] = '\0';
 		// site == "*" ?
 		if (len == 0)
-			rule->all_sites = 1;
+			all_sites = 1;
 	} else {
-		rule->exact_site = 1;
+		exact_site = 1;
 	}
 
-	rule->site = strdup(argv[0]);
-	if (!rule->site)
+	rule->sni = strdup(argv[0]);
+	if (!rule->sni)
 		return oom_return_na();
+	rule->exact_sni = exact_site;
+	rule->all_snis = all_sites;
+
+	rule->cn = strdup(argv[0]);
+	if (!rule->cn)
+		return oom_return_na();
+	rule->exact_cn = exact_site;
+	rule->all_cns = all_sites;
 
 	// precedence can only go up not down
 	rule->action.precedence = 0;
@@ -1588,8 +1652,6 @@ filter_passsite_set(opts_t *opts, UNUSED conn_opts_t *conn_opts, char *value, un
 	}
 
 	rule->action.precedence++;
-	rule->sni = 1;
-	rule->cn = 1;
 	rule->action.pass = 1;
 
 	append_list(&opts->filter_rules, rule, filter_rule_t);
@@ -1685,8 +1747,8 @@ filter_macro_set(opts_t *opts, char *value, unsigned int line_num)
 	return 0;
 }
 
-static int WUNRES
-filter_site_set(filter_rule_t *rule, const char *site, unsigned int line_num)
+static char * WUNRES
+filter_site_set(filter_rule_t *rule, const char *name, const char *site, unsigned int line_num)
 {
 	// The for loop with strtok_r() does not output empty strings
 	// So, no need to check if the length of site > 0
@@ -1694,29 +1756,58 @@ filter_site_set(filter_rule_t *rule, const char *site, unsigned int line_num)
 
 	if (len > MAX_SITE_LEN) {
 		fprintf(stderr, "Filter site too long %zu > %d on line %d\n", len, MAX_SITE_LEN, line_num);
-		return -1;
+		return NULL;
 	}
 
 	// Don't modify site, site is reused in macro expansion
-	rule->site = strdup(site);
-	if (!rule->site)
-		return oom_return_na();
+	char *s = strdup(site);
+	if (!s)
+		return oom_return_na_null();
 
-	if (rule->site[len - 1] == '*') {
-		rule->exact_site = 0;
+	unsigned int exact_site = 0;
+	unsigned int all_sites = 0;
+	if (s[len - 1] == '*') {
+		exact_site = 0;
 		len--;
-		rule->site[len] = '\0';
+		s[len] = '\0';
 		// site == "*" ?
 		if (len == 0)
-			rule->all_sites = 1;
+			all_sites = 1;
 	} else {
-		rule->exact_site = 1;
+		exact_site = 1;
 	}
 
 	// redundant?
-	if (equal(rule->site, "*"))
-		rule->all_sites = 1;
-	return 0;
+	if (equal(s, "*"))
+		all_sites = 1;
+
+	if (equal(name, "ip") || equal(name, "DstIp")) {
+		rule->dstip = s;
+		rule->exact_dstip = exact_site;
+		rule->all_dstips = all_sites;
+	}
+	else if (equal(name, "sni") || equal(name, "SNI")) {
+		rule->sni = s;
+		rule->exact_sni = exact_site;
+		rule->all_snis = all_sites;
+	}
+	else if (equal(name, "cn") || equal(name, "CN")) {
+		rule->cn = s;
+		rule->exact_cn = exact_site;
+		rule->all_cns = all_sites;
+	}
+	else if (equal(name, "host") || equal(name, "Host")) {
+		rule->host = s;
+		rule->exact_host = exact_site;
+		rule->all_hosts = all_sites;
+	}
+	else if (equal(name, "uri") || equal(name, "URI")) {
+		rule->uri = s;
+		rule->exact_uri = exact_site;
+		rule->all_uris = all_sites;
+	}
+
+	return s;
 }
 
 static int WUNRES
@@ -1915,25 +2006,17 @@ filter_rule_translate(opts_t *opts, const char *name, int argc, char **argv, uns
 			if (equal(argv[i], "ip") || equal(argv[i], "sni") || equal(argv[i], "cn") || equal(argv[i], "host") || equal(argv[i], "uri") ||
 					equal(argv[i], "port")) {
 				if (equal(argv[i], "ip") || equal(argv[i], "sni") || equal(argv[i], "cn") || equal(argv[i], "host") || equal(argv[i], "uri")) {
-					if (equal(argv[i], "ip"))
-						rule->dstip = 1;
-					else if (equal(argv[i], "sni"))
-						rule->sni = 1;
-					else if (equal(argv[i], "cn"))
-						rule->cn = 1;
-					else if (equal(argv[i], "host"))
-						rule->host = 1;
-					else if (equal(argv[i], "uri"))
-						rule->uri = 1;
+					char *name = argv[i];
 
-					if ((i = filter_arg_index_inc(i, argc, argv[i], line_num)) == -1)
+					if ((i = filter_arg_index_inc(i, argc, name, line_num)) == -1)
+						return -1;
+
+					char *value = argv[i++];
+
+					if (!filter_site_set(rule, name, value, line_num))
 						return -1;
 
 					rule->action.precedence++;
-
-					if (filter_site_set(rule, argv[i++], line_num) == -1)
-						return -1;
-
 					done_site = 1;
 				}
 
@@ -2030,15 +2113,30 @@ filter_rule_translate(opts_t *opts, const char *name, int argc, char **argv, uns
 		rule->all_conns = 1;
 	}
 	if (!done_site) {
-		rule->site = strdup("");
-		if (!rule->site)
+		rule->dstip = strdup("");
+		if (!rule->dstip)
 			return oom_return_na();
-		rule->all_sites = 1;
-		rule->dstip = 1;
-		rule->sni = 1;
-		rule->cn = 1;
-		rule->host = 1;
-		rule->uri = 1;
+		rule->all_dstips = 1;
+
+		rule->sni = strdup("");
+		if (!rule->sni)
+			return oom_return_na();
+		rule->all_snis = 1;
+
+		rule->cn = strdup("");
+		if (!rule->cn)
+			return oom_return_na();
+		rule->all_cns = 1;
+
+		rule->host = strdup("");
+		if (!rule->host)
+			return oom_return_na();
+		rule->all_hosts = 1;
+
+		rule->uri = strdup("");
+		if (!rule->uri)
+			return oom_return_na();
+		rule->all_uris = 1;
 	}
 
 #ifdef DEBUG_PROXY
@@ -2384,20 +2482,7 @@ filter_rule_struct_translate(filter_rule_t *rule, UNUSED conn_opts_t *conn_opts,
 		}
 	}
 	else if (equal(name, "SNI") || equal(name, "CN") || equal(name, "Host") || equal(name, "URI") || equal(name, "DstIp")) {
-		if (equal(name, "SNI"))
-			rule->sni = 1;
-		else if (equal(name, "CN"))
-			rule->cn = 1;
-		else if (equal(name, "Host"))
-			rule->host = 1;
-		else if (equal(name, "URI"))
-			rule->uri = 1;
-		else if (equal(name, "DstIp"))
-			rule->dstip = 1;
-
-		rule->action.precedence++;
-
-		if (filter_site_set(rule, value, line_num) == -1)
+		if (!filter_site_set(rule, name, value, line_num))
 			return -1;
 	}
 	else if (equal(name, "DstPort")) {
@@ -2509,16 +2594,35 @@ filter_rule_struct_translate_nvls(opts_t *opts, name_value_lines_t nvls[], int n
 		) {
 		rule->all_conns = 1;
 	}
-	if (!rule->site) {
-		rule->site = strdup("");
-		if (!rule->site)
+	if (!rule->dstip && !rule->sni && !rule->cn && !rule->host && !rule->uri) {
+		rule->dstip = strdup("");
+		if (!rule->dstip)
 			return oom_return_na();
-		rule->all_sites = 1;
-		rule->dstip = 1;
-		rule->sni = 1;
-		rule->cn = 1;
-		rule->host = 1;
-		rule->uri = 1;
+		rule->all_dstips = 1;
+
+		rule->sni = strdup("");
+		if (!rule->sni)
+			return oom_return_na();
+		rule->all_snis = 1;
+
+		rule->cn = strdup("");
+		if (!rule->cn)
+			return oom_return_na();
+		rule->all_cns = 1;
+
+		rule->host = strdup("");
+		if (!rule->host)
+			return oom_return_na();
+		rule->all_hosts = 1;
+
+		rule->uri = strdup("");
+		if (!rule->uri)
+			return oom_return_na();
+		rule->all_uris = 1;
+	}
+	else {
+		// Increment precedence for dst site only once here, we allow for multi site struct rules
+		rule->action.precedence++;
 	}
 
 	// Increment precedence for log action only once here, if any specified, because otherwise
@@ -2670,19 +2774,11 @@ filter_rule_struct_parse(name_value_lines_t nvls[], int *nvls_size, conn_opts_t 
 			fprintf(stderr, "Error in conf: Only one SNI spec allowed '%s' on line %d\n", value, line_num);
 			return -1;
 		}
-		if (parse_state->cn || parse_state->host || parse_state->uri || parse_state->dstip) {
-			fprintf(stderr, "Error in conf: Only one of SNI, CN, Host, URI, and DstIp allowed '%s' on line %d\n", value, line_num);
-			return -1;
-		}
 		parse_state->sni = 1;
 	}
 	else if (equal(name, "CN")) {
 		if (parse_state->cn) {
 			fprintf(stderr, "Error in conf: Only one CN spec allowed '%s' on line %d\n", value, line_num);
-			return -1;
-		}
-		if (parse_state->sni || parse_state->host || parse_state->uri || parse_state->dstip) {
-			fprintf(stderr, "Error in conf: Only one of SNI, CN, Host, URI, and DstIp allowed '%s' on line %d\n", value, line_num);
 			return -1;
 		}
 		parse_state->cn = 1;
@@ -2692,10 +2788,6 @@ filter_rule_struct_parse(name_value_lines_t nvls[], int *nvls_size, conn_opts_t 
 			fprintf(stderr, "Error in conf: Only one Host spec allowed '%s' on line %d\n", value, line_num);
 			return -1;
 		}
-		if (parse_state->sni || parse_state->cn || parse_state->uri || parse_state->dstip) {
-			fprintf(stderr, "Error in conf: Only one of SNI, CN, Host, URI, and DstIp allowed '%s' on line %d\n", value, line_num);
-			return -1;
-		}
 		parse_state->host = 1;
 	}
 	else if (equal(name, "URI")) {
@@ -2703,19 +2795,11 @@ filter_rule_struct_parse(name_value_lines_t nvls[], int *nvls_size, conn_opts_t 
 			fprintf(stderr, "Error in conf: Only one URI spec allowed '%s' on line %d\n", value, line_num);
 			return -1;
 		}
-		if (parse_state->sni || parse_state->cn || parse_state->host || parse_state->dstip) {
-			fprintf(stderr, "Error in conf: Only one of SNI, CN, Host, URI, and DstIp allowed '%s' on line %d\n", value, line_num);
-			return -1;
-		}
 		parse_state->uri = 1;
 	}
 	else if (equal(name, "DstIp")) {
 		if (parse_state->dstip) {
 			fprintf(stderr, "Error in conf: Only one DstIp spec allowed '%s' on line %d\n", value, line_num);
-			return -1;
-		}
-		if (parse_state->sni || parse_state->cn || parse_state->host || parse_state->uri) {
-			fprintf(stderr, "Error in conf: Only one of SNI, CN, Host, URI, and DstIp allowed '%s' on line %d\n", value, line_num);
 			return -1;
 		}
 		parse_state->dstip = 1;
@@ -3049,34 +3133,34 @@ filter_site_substring_exact_match(ACMachine(char) *acm, char *s)
 }
 
 static filter_site_t *
-filter_site_find_exact(kbtree_t(site) *btree, ACMachine(char) *acm, filter_site_t *all, filter_rule_t *rule)
+filter_site_find_exact(kbtree_t(site) *btree, ACMachine(char) *acm, filter_site_t *all, char *s, unsigned int exact_site, unsigned int all_sites)
 {
-	if (rule->all_sites)
+	if (all_sites)
 		return all;
-	else if (rule->exact_site)
-		return filter_site_exact_match(btree, rule->site);
+	else if (exact_site)
+		return filter_site_exact_match(btree, s);
 	else
-		return filter_site_substring_exact_match(acm, rule->site);
+		return filter_site_substring_exact_match(acm, s);
 }
 
 static int NONNULL(3) WUNRES
-filter_site_add(kbtree_t(site) **btree, ACMachine(char) **acm, filter_site_t **all, filter_rule_t *rule, const char *argv0, tmp_opts_t *tmp_opts)
+filter_site_add(kbtree_t(site) **btree, ACMachine(char) **acm, filter_site_t **all, filter_rule_t *rule, char *s, unsigned int exact_site, unsigned int all_sites, const char *argv0, tmp_opts_t *tmp_opts)
 {
-	filter_site_t *site = filter_site_find_exact(*btree, *acm, *all, rule);
+	filter_site_t *site = filter_site_find_exact(*btree, *acm, *all, s, exact_site, all_sites);
 	if (!site) {
 		site = malloc(sizeof(filter_site_t));
 		if (!site)
 			return oom_return_na();
 		memset(site, 0, sizeof(filter_site_t));
 
-		site->site = strdup(rule->site);
+		site->site = strdup(s);
 		if (!site->site)
 			return oom_return_na();
 
-		if (rule->all_sites) {
+		if (all_sites) {
 			*all = site;
 		}
-		else if (rule->exact_site) {
+		else if (exact_site) {
 			if (!*btree)
 				if (!(*btree = kb_init(site, KB_DEFAULT_SIZE)))
 					return oom_return_na();
@@ -3094,8 +3178,8 @@ filter_site_add(kbtree_t(site) **btree, ACMachine(char) **acm, filter_site_t **a
 		}
 	}
 
-	site->all_sites = rule->all_sites;
-	site->exact = rule->exact_site;
+	site->all_sites = all_sites;
+	site->exact = exact_site;
 
 	// Do not override the specs of a site with a port rule
 	// Port rule is added as a new port under the same site
@@ -3152,23 +3236,23 @@ static int
 filter_sitelist_add(filter_list_t *list, filter_rule_t *rule, const char *argv0, tmp_opts_t *tmp_opts)
 {
 	if (rule->dstip) {
-		if (filter_site_add(&list->ip_btree, &list->ip_acm, &list->ip_all, rule, argv0, tmp_opts) == -1)
+		if (filter_site_add(&list->ip_btree, &list->ip_acm, &list->ip_all, rule, rule->dstip, rule->exact_dstip, rule->all_dstips, argv0, tmp_opts) == -1)
 			return -1;
 	}
 	if (rule->sni) {
-		if (filter_site_add(&list->sni_btree, &list->sni_acm, &list->sni_all, rule, argv0, tmp_opts) == -1)
+		if (filter_site_add(&list->sni_btree, &list->sni_acm, &list->sni_all, rule, rule->sni, rule->exact_sni, rule->all_snis, argv0, tmp_opts) == -1)
 			return -1;
 	}
 	if (rule->cn) {
-		if (filter_site_add(&list->cn_btree, &list->cn_acm, &list->cn_all, rule, argv0, tmp_opts) == -1)
+		if (filter_site_add(&list->cn_btree, &list->cn_acm, &list->cn_all, rule, rule->cn, rule->exact_cn, rule->all_cns, argv0, tmp_opts) == -1)
 			return -1;
 	}
 	if (rule->host) {
-		if (filter_site_add(&list->host_btree, &list->host_acm, &list->host_all, rule, argv0, tmp_opts) == -1)
+		if (filter_site_add(&list->host_btree, &list->host_acm, &list->host_all, rule, rule->host, rule->exact_host, rule->all_hosts, argv0, tmp_opts) == -1)
 			return -1;
 	}
 	if (rule->uri) {
-		if (filter_site_add(&list->uri_btree, &list->uri_acm, &list->uri_all, rule, argv0, tmp_opts) == -1)
+		if (filter_site_add(&list->uri_btree, &list->uri_acm, &list->uri_all, rule, rule->uri, rule->exact_uri, rule->all_uris, argv0, tmp_opts) == -1)
 			return -1;
 	}
 	return 0;

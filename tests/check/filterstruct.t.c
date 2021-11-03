@@ -2423,22 +2423,94 @@ START_TEST(set_filter_struct_07)
 	fail_unless(rv == 0, "failed to parse rule");
 
 	s = filter_rule_str(opts->filter_rules);
+	fail_unless(!strcmp(strstr(s, "filter rule 7: "),
+		"filter rule 7: dstip=, dstport=, srcip=, user=root, desc=, exact=|||user|, all=||sites|, action=||pass||, log=|||||, precedence=2\n"
+		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
+		"filter rule 7: sni=, dstport=, srcip=, user=root, desc=, exact=|||user|, all=||sites|, action=||pass||, log=|||||, precedence=2\n"
+		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
+		"filter rule 7: cn=, dstport=, srcip=, user=root, desc=, exact=|||user|, all=||sites|, action=||pass||, log=|||||, precedence=2\n"
+		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
+		"filter rule 7: host=, dstport=, srcip=, user=root, desc=, exact=|||user|, all=||sites|, action=||pass||, log=|||||, precedence=2\n"
+		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
+		"filter rule 7: uri=, dstport=, srcip=, user=root, desc=, exact=|||user|, all=||sites|, action=||pass||, log=|||||, precedence=2\n"
+		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
+		"filter rule 8: dstip=, dstport=, srcip=, user=, desc=, exact=||||, all=|users|sites|, action=divert||||, log=|||||, precedence=1\n"
+		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
+		"filter rule 8: sni=, dstport=, srcip=, user=, desc=, exact=||||, all=|users|sites|, action=divert||||, log=|||||, precedence=1\n"
+		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
+		"filter rule 8: cn=, dstport=, srcip=, user=, desc=, exact=||||, all=|users|sites|, action=divert||||, log=|||||, precedence=1\n"
+		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
+		"filter rule 8: host=, dstport=, srcip=, user=, desc=, exact=||||, all=|users|sites|, action=divert||||, log=|||||, precedence=1\n"
+		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
+		"filter rule 8: uri=, dstport=, srcip=, user=, desc=, exact=||||, all=|users|sites|, action=divert||||, log=|||||, precedence=1\n"
+		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
+		"filter rule 9: dstip=, dstport=, srcip=, user=, desc=, exact=||||, all=conns||sites|, action=||||match, log=connect|master|cert|content|pcap|mirror, precedence=1\n"
+		"filter rule 9: sni=, dstport=, srcip=, user=, desc=, exact=||||, all=conns||sites|, action=||||match, log=connect|master|cert|content|pcap|mirror, precedence=1\n"
+		"filter rule 9: cn=, dstport=, srcip=, user=, desc=, exact=||||, all=conns||sites|, action=||||match, log=connect|master|cert|content|pcap|mirror, precedence=1\n"
+		"filter rule 9: host=, dstport=, srcip=, user=, desc=, exact=||||, all=conns||sites|, action=||||match, log=connect|master|cert|content|pcap|mirror, precedence=1\n"
+		"filter rule 9: uri=, dstport=, srcip=, user=, desc=, exact=||||, all=conns||sites|, action=||||match, log=connect|master|cert|content|pcap|mirror, precedence=1\n"
+		),
+		"failed to parse rule: %s", strstr(s, "filter rule 7: "));
+
+	// Trim the tail
+	char *p = strstr(s, "filter rule 7: ");
+	*p = '\0';
+
+	fail_unless(!strcmp(strstr(s, "filter rule 5: "),
+		"filter rule 5: dstip=, dstport=, srcip=, user=, desc=, exact=||||, all=|users|sites|, action=||||match, log=|||||, precedence=1\n"
+		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
+		"filter rule 5: sni=, dstport=, srcip=, user=, desc=, exact=||||, all=|users|sites|, action=||||match, log=|||||, precedence=1\n"
+		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
+		"filter rule 5: cn=, dstport=, srcip=, user=, desc=, exact=||||, all=|users|sites|, action=||||match, log=|||||, precedence=1\n"
+		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
+		"filter rule 5: host=, dstport=, srcip=, user=, desc=, exact=||||, all=|users|sites|, action=||||match, log=|||||, precedence=1\n"
+		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
+		"filter rule 5: uri=, dstport=, srcip=, user=, desc=, exact=||||, all=|users|sites|, action=||||match, log=|||||, precedence=1\n"
+		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
+		"filter rule 6: dstip=, dstport=, srcip=, user=, desc=desc, exact=||||desc, all=|users|sites|, action=|split|||, log=|||||, precedence=2\n"
+		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
+		"filter rule 6: sni=, dstport=, srcip=, user=, desc=desc, exact=||||desc, all=|users|sites|, action=|split|||, log=|||||, precedence=2\n"
+		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
+		"filter rule 6: cn=, dstport=, srcip=, user=, desc=desc, exact=||||desc, all=|users|sites|, action=|split|||, log=|||||, precedence=2\n"
+		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
+		"filter rule 6: host=, dstport=, srcip=, user=, desc=desc, exact=||||desc, all=|users|sites|, action=|split|||, log=|||||, precedence=2\n"
+		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
+		"filter rule 6: uri=, dstport=, srcip=, user=, desc=desc, exact=||||desc, all=|users|sites|, action=|split|||, log=|||||, precedence=2\n"
+		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
+		),
+		"failed to parse rule: %s", strstr(s, "filter rule 5: "));
+
+	// Trim the tail
+	p = strstr(s, "filter rule 5: ");
+	*p = '\0';
+
 	fail_unless(!strcmp(s,
-		"filter rule 0: site=, port=, ip=, user=, desc=, exact=||||, all=conns||sites|, action=divert||||, log=|||||, apply to=dstip|sni|cn|host|uri, precedence=0\n"
-		"filter rule 1: site=, port=, ip=, user=, desc=, exact=||||, all=conns||sites|, action=|split|||, log=|||||, apply to=dstip|sni|cn|host|uri, precedence=0\n"
-		"filter rule 2: site=, port=, ip=, user=, desc=, exact=||||, all=conns||sites|, action=||pass||, log=|||||, apply to=dstip|sni|cn|host|uri, precedence=0\n"
-		"filter rule 3: site=192.168.0.1, port=, ip=, user=, desc=, exact=site||||, all=conns|||, action=|||block|, log=|||||, apply to=dstip||||, precedence=1\n"
-		"filter rule 4: site=, port=, ip=, user=, desc=, exact=||||, all=|users|sites|, action=|||block|, log=|||||, apply to=dstip|sni|cn|host|uri, precedence=1\n"
+		"filter rule 0: dstip=, dstport=, srcip=, user=, desc=, exact=||||, all=conns||sites|, action=divert||||, log=|||||, precedence=0\n"
+		"filter rule 0: sni=, dstport=, srcip=, user=, desc=, exact=||||, all=conns||sites|, action=divert||||, log=|||||, precedence=0\n"
+		"filter rule 0: cn=, dstport=, srcip=, user=, desc=, exact=||||, all=conns||sites|, action=divert||||, log=|||||, precedence=0\n"
+		"filter rule 0: host=, dstport=, srcip=, user=, desc=, exact=||||, all=conns||sites|, action=divert||||, log=|||||, precedence=0\n"
+		"filter rule 0: uri=, dstport=, srcip=, user=, desc=, exact=||||, all=conns||sites|, action=divert||||, log=|||||, precedence=0\n"
+		"filter rule 1: dstip=, dstport=, srcip=, user=, desc=, exact=||||, all=conns||sites|, action=|split|||, log=|||||, precedence=0\n"
+		"filter rule 1: sni=, dstport=, srcip=, user=, desc=, exact=||||, all=conns||sites|, action=|split|||, log=|||||, precedence=0\n"
+		"filter rule 1: cn=, dstport=, srcip=, user=, desc=, exact=||||, all=conns||sites|, action=|split|||, log=|||||, precedence=0\n"
+		"filter rule 1: host=, dstport=, srcip=, user=, desc=, exact=||||, all=conns||sites|, action=|split|||, log=|||||, precedence=0\n"
+		"filter rule 1: uri=, dstport=, srcip=, user=, desc=, exact=||||, all=conns||sites|, action=|split|||, log=|||||, precedence=0\n"
+		"filter rule 2: dstip=, dstport=, srcip=, user=, desc=, exact=||||, all=conns||sites|, action=||pass||, log=|||||, precedence=0\n"
+		"filter rule 2: sni=, dstport=, srcip=, user=, desc=, exact=||||, all=conns||sites|, action=||pass||, log=|||||, precedence=0\n"
+		"filter rule 2: cn=, dstport=, srcip=, user=, desc=, exact=||||, all=conns||sites|, action=||pass||, log=|||||, precedence=0\n"
+		"filter rule 2: host=, dstport=, srcip=, user=, desc=, exact=||||, all=conns||sites|, action=||pass||, log=|||||, precedence=0\n"
+		"filter rule 2: uri=, dstport=, srcip=, user=, desc=, exact=||||, all=conns||sites|, action=||pass||, log=|||||, precedence=0\n"
+		"filter rule 3: dstip=192.168.0.1, dstport=, srcip=, user=, desc=, exact=site||||, all=conns|||, action=|||block|, log=|||||, precedence=1\n"
+		"filter rule 4: dstip=, dstport=, srcip=, user=, desc=, exact=||||, all=|users|sites|, action=|||block|, log=|||||, precedence=1\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 5: site=, port=, ip=, user=, desc=, exact=||||, all=|users|sites|, action=||||match, log=|||||, apply to=dstip|sni|cn|host|uri, precedence=1\n"
+		"filter rule 4: sni=, dstport=, srcip=, user=, desc=, exact=||||, all=|users|sites|, action=|||block|, log=|||||, precedence=1\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 6: site=, port=, ip=, user=, desc=desc, exact=||||desc, all=|users|sites|, action=|split|||, log=|||||, apply to=dstip|sni|cn|host|uri, precedence=2\n"
+		"filter rule 4: cn=, dstport=, srcip=, user=, desc=, exact=||||, all=|users|sites|, action=|||block|, log=|||||, precedence=1\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 7: site=, port=, ip=, user=root, desc=, exact=|||user|, all=||sites|, action=||pass||, log=|||||, apply to=dstip|sni|cn|host|uri, precedence=2\n"
+		"filter rule 4: host=, dstport=, srcip=, user=, desc=, exact=||||, all=|users|sites|, action=|||block|, log=|||||, precedence=1\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 8: site=, port=, ip=, user=, desc=, exact=||||, all=|users|sites|, action=divert||||, log=|||||, apply to=dstip|sni|cn|host|uri, precedence=1\n"
+		"filter rule 4: uri=, dstport=, srcip=, user=, desc=, exact=||||, all=|users|sites|, action=|||block|, log=|||||, precedence=1\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 9: site=, port=, ip=, user=, desc=, exact=||||, all=conns||sites|, action=||||match, log=connect|master|cert|content|pcap|mirror, apply to=dstip|sni|cn|host|uri, precedence=1"
 		),
 		"failed to parse rule: %s", s);
 	free(s);
@@ -2483,7 +2555,7 @@ START_TEST(set_filter_struct_07)
 		), "failed to translate rule tail: %s", strstr(s, "user_filter_all->\n"));
 
 	// Trim the tail
-	char *p = strstr(s, "user_filter_all->\n");
+	p = strstr(s, "user_filter_all->\n");
 	*p = '\0';
 
 	fail_unless(!strcmp(s, "filter=>\n"
@@ -2625,31 +2697,31 @@ START_TEST(set_filter_struct_08)
 	s = filter_rule_str(opts->filter_rules);
 #ifndef WITHOUT_USERAUTH
 	fail_unless(!strcmp(s,
-		"filter rule 0: site=192.168.0.2, port=, ip=192.168.0.1, user=, desc=, exact=site||ip||, all=|||, action=divert||||, log=|||||, apply to=dstip||||, precedence=2\n"
-		"filter rule 1: site=192.168.0.2, port=, ip=192.168.0.1, user=, desc=, exact=site||ip||, all=|||, action=|split|||, log=connect|master|cert|content|pcap|mirror, apply to=dstip||||, precedence=3\n"
-		"filter rule 2: site=192.168.0.2, port=, ip=192.168.0.1, user=, desc=, exact=site||ip||, all=|||, action=||pass||, log=!connect||!cert||!pcap|, apply to=dstip||||, precedence=3\n"
-		"filter rule 3: site=192.168.0.2, port=, ip=192.168.0.1, user=, desc=, exact=site||ip||, all=|||, action=|||block|, log=|||||, apply to=dstip||||, precedence=2\n"
-		"filter rule 4: site=192.168.0.3, port=, ip=192.168.0.1, user=, desc=, exact=site||ip||, all=|||, action=||||match, log=|||||, apply to=dstip||||, precedence=2\n"
-		"filter rule 5: site=192.168.0.1, port=, ip=192.168.0.2, user=, desc=, exact=site||ip||, all=|||, action=||||match, log=|||||, apply to=dstip||||, precedence=2\n"
-		"filter rule 6: site=, port=, ip=192.168.0.2, user=, desc=, exact=||ip||, all=||sites|, action=||||match, log=|||||, apply to=dstip||||, precedence=2\n"
-		"filter rule 7: site=192.168.0., port=, ip=192.168.0.2, user=, desc=, exact=||ip||, all=|||, action=||||match, log=|||||, apply to=dstip||||, precedence=2\n"
-		"filter rule 8: site=192.168.0.3, port=, ip=192.168.0.2, user=, desc=, exact=site||ip||, all=|||, action=||||match, log=|||||, apply to=dstip||||, precedence=2\n"
-		"filter rule 9: site=192.168.0.1, port=, ip=192.168.1., user=, desc=, exact=site||||, all=|||, action=||||match, log=|||||, apply to=dstip||||, precedence=2\n"
-		"filter rule 10: site=192.168.3., port=, ip=192.168.2., user=, desc=, exact=||||, all=|||, action=||||match, log=|||||, apply to=dstip||||, precedence=2"),
+		"filter rule 0: dstip=192.168.0.2, dstport=, srcip=192.168.0.1, user=, desc=, exact=site||ip||, all=|||, action=divert||||, log=|||||, precedence=2\n"
+		"filter rule 1: dstip=192.168.0.2, dstport=, srcip=192.168.0.1, user=, desc=, exact=site||ip||, all=|||, action=|split|||, log=connect|master|cert|content|pcap|mirror, precedence=3\n"
+		"filter rule 2: dstip=192.168.0.2, dstport=, srcip=192.168.0.1, user=, desc=, exact=site||ip||, all=|||, action=||pass||, log=!connect||!cert||!pcap|, precedence=3\n"
+		"filter rule 3: dstip=192.168.0.2, dstport=, srcip=192.168.0.1, user=, desc=, exact=site||ip||, all=|||, action=|||block|, log=|||||, precedence=2\n"
+		"filter rule 4: dstip=192.168.0.3, dstport=, srcip=192.168.0.1, user=, desc=, exact=site||ip||, all=|||, action=||||match, log=|||||, precedence=2\n"
+		"filter rule 5: dstip=192.168.0.1, dstport=, srcip=192.168.0.2, user=, desc=, exact=site||ip||, all=|||, action=||||match, log=|||||, precedence=2\n"
+		"filter rule 6: dstip=, dstport=, srcip=192.168.0.2, user=, desc=, exact=||ip||, all=||sites|, action=||||match, log=|||||, precedence=2\n"
+		"filter rule 7: dstip=192.168.0., dstport=, srcip=192.168.0.2, user=, desc=, exact=||ip||, all=|||, action=||||match, log=|||||, precedence=2\n"
+		"filter rule 8: dstip=192.168.0.3, dstport=, srcip=192.168.0.2, user=, desc=, exact=site||ip||, all=|||, action=||||match, log=|||||, precedence=2\n"
+		"filter rule 9: dstip=192.168.0.1, dstport=, srcip=192.168.1., user=, desc=, exact=site||||, all=|||, action=||||match, log=|||||, precedence=2\n"
+		"filter rule 10: dstip=192.168.3., dstport=, srcip=192.168.2., user=, desc=, exact=||||, all=|||, action=||||match, log=|||||, precedence=2\n"),
 		"failed to parse rule: %s", s);
 #else /* WITHOUT_USERAUTH */
 	fail_unless(!strcmp(s,
-		"filter rule 0: site=192.168.0.2, port=, ip=192.168.0.1, exact=site||ip, all=||, action=divert||||, log=|||||, apply to=dstip||||, precedence=2\n"
-		"filter rule 1: site=192.168.0.2, port=, ip=192.168.0.1, exact=site||ip, all=||, action=|split|||, log=connect|master|cert|content|pcap|mirror, apply to=dstip||||, precedence=3\n"
-		"filter rule 2: site=192.168.0.2, port=, ip=192.168.0.1, exact=site||ip, all=||, action=||pass||, log=!connect||!cert||!pcap|, apply to=dstip||||, precedence=3\n"
-		"filter rule 3: site=192.168.0.2, port=, ip=192.168.0.1, exact=site||ip, all=||, action=|||block|, log=|||||, apply to=dstip||||, precedence=2\n"
-		"filter rule 4: site=192.168.0.3, port=, ip=192.168.0.1, exact=site||ip, all=||, action=||||match, log=|||||, apply to=dstip||||, precedence=2\n"
-		"filter rule 5: site=192.168.0.1, port=, ip=192.168.0.2, exact=site||ip, all=||, action=||||match, log=|||||, apply to=dstip||||, precedence=2\n"
-		"filter rule 6: site=, port=, ip=192.168.0.2, exact=||ip, all=|sites|, action=||||match, log=|||||, apply to=dstip||||, precedence=2\n"
-		"filter rule 7: site=192.168.0., port=, ip=192.168.0.2, exact=||ip, all=||, action=||||match, log=|||||, apply to=dstip||||, precedence=2\n"
-		"filter rule 8: site=192.168.0.3, port=, ip=192.168.0.2, exact=site||ip, all=||, action=||||match, log=|||||, apply to=dstip||||, precedence=2\n"
-		"filter rule 9: site=192.168.0.1, port=, ip=192.168.1., exact=site||, all=||, action=||||match, log=|||||, apply to=dstip||||, precedence=2\n"
-		"filter rule 10: site=192.168.3., port=, ip=192.168.2., exact=||, all=||, action=||||match, log=|||||, apply to=dstip||||, precedence=2"),
+		"filter rule 0: dstip=192.168.0.2, dstport=, srcip=192.168.0.1, exact=site||ip, all=||, action=divert||||, log=|||||, precedence=2\n"
+		"filter rule 1: dstip=192.168.0.2, dstport=, srcip=192.168.0.1, exact=site||ip, all=||, action=|split|||, log=connect|master|cert|content|pcap|mirror, precedence=3\n"
+		"filter rule 2: dstip=192.168.0.2, dstport=, srcip=192.168.0.1, exact=site||ip, all=||, action=||pass||, log=!connect||!cert||!pcap|, precedence=3\n"
+		"filter rule 3: dstip=192.168.0.2, dstport=, srcip=192.168.0.1, exact=site||ip, all=||, action=|||block|, log=|||||, precedence=2\n"
+		"filter rule 4: dstip=192.168.0.3, dstport=, srcip=192.168.0.1, exact=site||ip, all=||, action=||||match, log=|||||, precedence=2\n"
+		"filter rule 5: dstip=192.168.0.1, dstport=, srcip=192.168.0.2, exact=site||ip, all=||, action=||||match, log=|||||, precedence=2\n"
+		"filter rule 6: dstip=, dstport=, srcip=192.168.0.2, exact=||ip, all=|sites|, action=||||match, log=|||||, precedence=2\n"
+		"filter rule 7: dstip=192.168.0., dstport=, srcip=192.168.0.2, exact=||ip, all=||, action=||||match, log=|||||, precedence=2\n"
+		"filter rule 8: dstip=192.168.0.3, dstport=, srcip=192.168.0.2, exact=site||ip, all=||, action=||||match, log=|||||, precedence=2\n"
+		"filter rule 9: dstip=192.168.0.1, dstport=, srcip=192.168.1., exact=site||, all=||, action=||||match, log=|||||, precedence=2\n"
+		"filter rule 10: dstip=192.168.3., dstport=, srcip=192.168.2., exact=||, all=||, action=||||match, log=|||||, precedence=2\n"),
 		"failed to parse rule: %s", s);
 #endif /* WITHOUT_USERAUTH */
 	free(s);
@@ -2822,35 +2894,35 @@ START_TEST(set_filter_struct_09)
 	s = filter_rule_str(opts->filter_rules);
 #ifndef WITHOUT_USERAUTH
 	fail_unless(!strcmp(s,
-		"filter rule 0: site=192.168.0.2, port=443, ip=192.168.0.1, user=, desc=, exact=site|port|ip||, all=|||, action=divert||||, log=|||||, apply to=dstip||||, precedence=3\n"
-		"filter rule 1: site=192.168.0.2, port=443, ip=192.168.0.1, user=, desc=, exact=site|port|ip||, all=|||, action=|split|||, log=connect|master|cert|content|pcap|mirror, apply to=dstip||||, precedence=4\n"
-		"filter rule 2: site=192.168.0.2, port=443, ip=192.168.0.1, user=, desc=, exact=site|port|ip||, all=|||, action=||pass||, log=!connect||!cert||!pcap|, apply to=dstip||||, precedence=4\n"
-		"filter rule 3: site=192.168.0.2, port=443, ip=192.168.0.1, user=, desc=, exact=site|port|ip||, all=|||, action=|||block|, log=|||||, apply to=dstip||||, precedence=3\n"
-		"filter rule 4: site=192.168.0.3, port=, ip=192.168.0.1, user=, desc=, exact=site||ip||, all=|||, action=||||match, log=|||||!mirror, apply to=dstip||||, precedence=3\n"
-		"filter rule 5: site=192.168.0.3, port=443, ip=192.168.0.1, user=, desc=, exact=site|port|ip||, all=|||, action=||||match, log=|||||, apply to=dstip||||, precedence=3\n"
-		"filter rule 6: site=192.168.0.3, port=80, ip=192.168.0.1, user=, desc=, exact=site|port|ip||, all=|||, action=||||match, log=|||||, apply to=dstip||||, precedence=3\n"
-		"filter rule 7: site=192.168.0.1, port=443, ip=192.168.0.2, user=, desc=, exact=site|port|ip||, all=|||, action=||||match, log=|||||, apply to=dstip||||, precedence=3\n"
-		"filter rule 8: site=192.168.0.1, port=443, ip=192.168.1., user=, desc=, exact=site|port|||, all=|||, action=||||match, log=|||||, apply to=dstip||||, precedence=3\n"
-		"filter rule 9: site=192.168.3., port=443, ip=192.168.2., user=, desc=, exact=|port|||, all=|||, action=||||match, log=|||||, apply to=dstip||||, precedence=3\n"
-		"filter rule 10: site=192.168.0.1, port=, ip=192.168.0.2, user=, desc=, exact=site||ip||, all=|||ports, action=||||match, log=|||||, apply to=dstip||||, precedence=3\n"
-		"filter rule 11: site=192.168.0.1, port=80, ip=192.168.0.2, user=, desc=, exact=site||ip||, all=|||, action=||||match, log=|||||, apply to=dstip||||, precedence=3\n"
-		"filter rule 12: site=192.168.5., port=80, ip=192.168.4., user=, desc=, exact=||||, all=|||, action=||||match, log=|||||, apply to=dstip||||, precedence=3"),
+		"filter rule 0: dstip=192.168.0.2, dstport=443, srcip=192.168.0.1, user=, desc=, exact=site|port|ip||, all=|||, action=divert||||, log=|||||, precedence=3\n"
+		"filter rule 1: dstip=192.168.0.2, dstport=443, srcip=192.168.0.1, user=, desc=, exact=site|port|ip||, all=|||, action=|split|||, log=connect|master|cert|content|pcap|mirror, precedence=4\n"
+		"filter rule 2: dstip=192.168.0.2, dstport=443, srcip=192.168.0.1, user=, desc=, exact=site|port|ip||, all=|||, action=||pass||, log=!connect||!cert||!pcap|, precedence=4\n"
+		"filter rule 3: dstip=192.168.0.2, dstport=443, srcip=192.168.0.1, user=, desc=, exact=site|port|ip||, all=|||, action=|||block|, log=|||||, precedence=3\n"
+		"filter rule 4: dstip=192.168.0.3, dstport=, srcip=192.168.0.1, user=, desc=, exact=site||ip||, all=|||, action=||||match, log=|||||!mirror, precedence=3\n"
+		"filter rule 5: dstip=192.168.0.3, dstport=443, srcip=192.168.0.1, user=, desc=, exact=site|port|ip||, all=|||, action=||||match, log=|||||, precedence=3\n"
+		"filter rule 6: dstip=192.168.0.3, dstport=80, srcip=192.168.0.1, user=, desc=, exact=site|port|ip||, all=|||, action=||||match, log=|||||, precedence=3\n"
+		"filter rule 7: dstip=192.168.0.1, dstport=443, srcip=192.168.0.2, user=, desc=, exact=site|port|ip||, all=|||, action=||||match, log=|||||, precedence=3\n"
+		"filter rule 8: dstip=192.168.0.1, dstport=443, srcip=192.168.1., user=, desc=, exact=site|port|||, all=|||, action=||||match, log=|||||, precedence=3\n"
+		"filter rule 9: dstip=192.168.3., dstport=443, srcip=192.168.2., user=, desc=, exact=|port|||, all=|||, action=||||match, log=|||||, precedence=3\n"
+		"filter rule 10: dstip=192.168.0.1, dstport=, srcip=192.168.0.2, user=, desc=, exact=site||ip||, all=|||ports, action=||||match, log=|||||, precedence=3\n"
+		"filter rule 11: dstip=192.168.0.1, dstport=80, srcip=192.168.0.2, user=, desc=, exact=site||ip||, all=|||, action=||||match, log=|||||, precedence=3\n"
+		"filter rule 12: dstip=192.168.5., dstport=80, srcip=192.168.4., user=, desc=, exact=||||, all=|||, action=||||match, log=|||||, precedence=3\n"),
 		"failed to parse rule: %s", s);
 #else /* WITHOUT_USERAUTH */
 	fail_unless(!strcmp(s,
-		"filter rule 0: site=192.168.0.2, port=443, ip=192.168.0.1, exact=site|port|ip, all=||, action=divert||||, log=|||||, apply to=dstip||||, precedence=3\n"
-		"filter rule 1: site=192.168.0.2, port=443, ip=192.168.0.1, exact=site|port|ip, all=||, action=|split|||, log=connect|master|cert|content|pcap|mirror, apply to=dstip||||, precedence=4\n"
-		"filter rule 2: site=192.168.0.2, port=443, ip=192.168.0.1, exact=site|port|ip, all=||, action=||pass||, log=!connect||!cert||!pcap|, apply to=dstip||||, precedence=4\n"
-		"filter rule 3: site=192.168.0.2, port=443, ip=192.168.0.1, exact=site|port|ip, all=||, action=|||block|, log=|||||, apply to=dstip||||, precedence=3\n"
-		"filter rule 4: site=192.168.0.3, port=, ip=192.168.0.1, exact=site||ip, all=||, action=||||match, log=|||||!mirror, apply to=dstip||||, precedence=3\n"
-		"filter rule 5: site=192.168.0.3, port=443, ip=192.168.0.1, exact=site|port|ip, all=||, action=||||match, log=|||||, apply to=dstip||||, precedence=3\n"
-		"filter rule 6: site=192.168.0.3, port=80, ip=192.168.0.1, exact=site|port|ip, all=||, action=||||match, log=|||||, apply to=dstip||||, precedence=3\n"
-		"filter rule 7: site=192.168.0.1, port=443, ip=192.168.0.2, exact=site|port|ip, all=||, action=||||match, log=|||||, apply to=dstip||||, precedence=3\n"
-		"filter rule 8: site=192.168.0.1, port=443, ip=192.168.1., exact=site|port|, all=||, action=||||match, log=|||||, apply to=dstip||||, precedence=3\n"
-		"filter rule 9: site=192.168.3., port=443, ip=192.168.2., exact=|port|, all=||, action=||||match, log=|||||, apply to=dstip||||, precedence=3\n"
-		"filter rule 10: site=192.168.0.1, port=, ip=192.168.0.2, exact=site||ip, all=||ports, action=||||match, log=|||||, apply to=dstip||||, precedence=3\n"
-		"filter rule 11: site=192.168.0.1, port=80, ip=192.168.0.2, exact=site||ip, all=||, action=||||match, log=|||||, apply to=dstip||||, precedence=3\n"
-		"filter rule 12: site=192.168.5., port=80, ip=192.168.4., exact=||, all=||, action=||||match, log=|||||, apply to=dstip||||, precedence=3"),
+		"filter rule 0: dstip=192.168.0.2, dstport=443, srcip=192.168.0.1, exact=site|port|ip, all=||, action=divert||||, log=|||||, precedence=3\n"
+		"filter rule 1: dstip=192.168.0.2, dstport=443, srcip=192.168.0.1, exact=site|port|ip, all=||, action=|split|||, log=connect|master|cert|content|pcap|mirror, precedence=4\n"
+		"filter rule 2: dstip=192.168.0.2, dstport=443, srcip=192.168.0.1, exact=site|port|ip, all=||, action=||pass||, log=!connect||!cert||!pcap|, precedence=4\n"
+		"filter rule 3: dstip=192.168.0.2, dstport=443, srcip=192.168.0.1, exact=site|port|ip, all=||, action=|||block|, log=|||||, precedence=3\n"
+		"filter rule 4: dstip=192.168.0.3, dstport=, srcip=192.168.0.1, exact=site||ip, all=||, action=||||match, log=|||||!mirror, precedence=3\n"
+		"filter rule 5: dstip=192.168.0.3, dstport=443, srcip=192.168.0.1, exact=site|port|ip, all=||, action=||||match, log=|||||, precedence=3\n"
+		"filter rule 6: dstip=192.168.0.3, dstport=80, srcip=192.168.0.1, exact=site|port|ip, all=||, action=||||match, log=|||||, precedence=3\n"
+		"filter rule 7: dstip=192.168.0.1, dstport=443, srcip=192.168.0.2, exact=site|port|ip, all=||, action=||||match, log=|||||, precedence=3\n"
+		"filter rule 8: dstip=192.168.0.1, dstport=443, srcip=192.168.1., exact=site|port|, all=||, action=||||match, log=|||||, precedence=3\n"
+		"filter rule 9: dstip=192.168.3., dstport=443, srcip=192.168.2., exact=|port|, all=||, action=||||match, log=|||||, precedence=3\n"
+		"filter rule 10: dstip=192.168.0.1, dstport=, srcip=192.168.0.2, exact=site||ip, all=||ports, action=||||match, log=|||||, precedence=3\n"
+		"filter rule 11: dstip=192.168.0.1, dstport=80, srcip=192.168.0.2, exact=site||ip, all=||, action=||||match, log=|||||, precedence=3\n"
+		"filter rule 12: dstip=192.168.5., dstport=80, srcip=192.168.4., exact=||, all=||, action=||||match, log=|||||, precedence=3\n"),
 		"failed to parse rule: %s", s);
 #endif /* WITHOUT_USERAUTH */
 	free(s);
@@ -3039,28 +3111,28 @@ START_TEST(set_filter_struct_10)
 
 	s = filter_rule_str(opts->filter_rules);
 	fail_unless(!strcmp(s,
-		"filter rule 0: site=example.com, port=, ip=, user=root, desc=, exact=site|||user|, all=|||, action=divert||||, log=|||||, apply to=|sni|||, precedence=3\n"
+		"filter rule 0: sni=example.com, dstport=, srcip=, user=root, desc=, exact=site|||user|, all=|||, action=divert||||, log=|||||, precedence=3\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 1: site=example.com, port=, ip=, user=root, desc=, exact=site|||user|, all=|||, action=|split|||, log=connect|master|cert|content|pcap|mirror, apply to=|sni|||, precedence=4\n"
+		"filter rule 1: sni=example.com, dstport=, srcip=, user=root, desc=, exact=site|||user|, all=|||, action=|split|||, log=connect|master|cert|content|pcap|mirror, precedence=4\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 2: site=example.com, port=, ip=, user=root, desc=, exact=site|||user|, all=|||, action=||pass||, log=!connect||!cert||!pcap|, apply to=|sni|||, precedence=4\n"
+		"filter rule 2: sni=example.com, dstport=, srcip=, user=root, desc=, exact=site|||user|, all=|||, action=||pass||, log=!connect||!cert||!pcap|, precedence=4\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 3: site=example.com, port=, ip=, user=root, desc=, exact=site|||user|, all=|||, action=|||block|, log=|||||, apply to=|sni|||, precedence=3\n"
+		"filter rule 3: sni=example.com, dstport=, srcip=, user=root, desc=, exact=site|||user|, all=|||, action=|||block|, log=|||||, precedence=3\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 4: site=example2.com, port=, ip=, user=root, desc=, exact=site|||user|, all=|||, action=||||match, log=|||||, apply to=|sni|||, precedence=3\n"
+		"filter rule 4: sni=example2.com, dstport=, srcip=, user=root, desc=, exact=site|||user|, all=|||, action=||||match, log=|||||, precedence=3\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 5: site=example.com, port=, ip=, user=daemon, desc=, exact=site|||user|, all=|||, action=||||match, log=|||||, apply to=|sni|||, precedence=3\n"
+		"filter rule 5: sni=example.com, dstport=, srcip=, user=daemon, desc=, exact=site|||user|, all=|||, action=||||match, log=|||||, precedence=3\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 6: site=, port=, ip=, user=daemon, desc=, exact=|||user|, all=||sites|, action=||||match, log=|||||, apply to=|sni|||, precedence=3\n"
+		"filter rule 6: sni=, dstport=, srcip=, user=daemon, desc=, exact=|||user|, all=||sites|, action=||||match, log=|||||, precedence=3\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 7: site=.example.com, port=, ip=, user=daemon, desc=, exact=|||user|, all=|||, action=||||match, log=|||||, apply to=|sni|||, precedence=3\n"
+		"filter rule 7: sni=.example.com, dstport=, srcip=, user=daemon, desc=, exact=|||user|, all=|||, action=||||match, log=|||||, precedence=3\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 8: site=example3.com, port=, ip=, user=daemon, desc=, exact=site|||user|, all=|||, action=||||match, log=|||||, apply to=|sni|||, precedence=3\n"
+		"filter rule 8: sni=example3.com, dstport=, srcip=, user=daemon, desc=, exact=site|||user|, all=|||, action=||||match, log=|||||, precedence=3\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 9: site=example4.com, port=, ip=, user=admin1, desc=, exact=site||||, all=|||, action=||||match, log=|||||, apply to=|sni|||, precedence=3\n"
+		"filter rule 9: sni=example4.com, dstport=, srcip=, user=admin1, desc=, exact=site||||, all=|||, action=||||match, log=|||||, precedence=3\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 10: site=example5.com, port=, ip=, user=admin2, desc=, exact=site||||, all=|||, action=||||match, log=|||||, apply to=|sni|||, precedence=3\n"
-		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192"),
+		"filter rule 10: sni=example5.com, dstport=, srcip=, user=admin2, desc=, exact=site||||, all=|||, action=||||match, log=|||||, precedence=3\n"
+		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"),
 		"failed to parse rule: %s", s);
 	free(s);
 
@@ -3218,20 +3290,20 @@ START_TEST(set_filter_struct_11)
 	s = filter_rule_str(opts->filter_rules);
 
 	fail_unless(!strcmp(strstr(s, "filter rule 7: "),
-		"filter rule 7: site=example.com, port=, ip=, user=daemon, desc=, exact=site|||user|, all=|||ports, action=||||match, log=|||||, apply to=||cn||, precedence=4\n"
+		"filter rule 7: cn=example.com, dstport=, srcip=, user=daemon, desc=, exact=site|||user|, all=|||ports, action=||||match, log=|||||, precedence=4\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 8: site=, port=, ip=, user=daemon, desc=, exact=|||user|, all=||sites|ports, action=||||match, log=|||||, apply to=||cn||, precedence=4\n"
+		"filter rule 8: cn=, dstport=, srcip=, user=daemon, desc=, exact=|||user|, all=||sites|ports, action=||||match, log=|||||, precedence=4\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 9: site=.example.com, port=443, ip=, user=daemon, desc=, exact=|port||user|, all=|||, action=||||match, log=|||||, apply to=||cn||, precedence=4\n"
+		"filter rule 9: cn=.example.com, dstport=443, srcip=, user=daemon, desc=, exact=|port||user|, all=|||, action=||||match, log=|||||, precedence=4\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 10: site=.example.com, port=443, ip=, user=daemon, desc=, exact=|||user|, all=|||, action=||||match, log=|||||, apply to=||cn||, precedence=4\n"
+		"filter rule 10: cn=.example.com, dstport=443, srcip=, user=daemon, desc=, exact=|||user|, all=|||, action=||||match, log=|||||, precedence=4\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 11: site=example3.com, port=443, ip=, user=daemon, desc=, exact=site|port||user|, all=|||, action=||||match, log=|||||, apply to=||cn||, precedence=4\n"
+		"filter rule 11: cn=example3.com, dstport=443, srcip=, user=daemon, desc=, exact=site|port||user|, all=|||, action=||||match, log=|||||, precedence=4\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 12: site=example4.com, port=443, ip=, user=admin1, desc=, exact=site|port|||, all=|||, action=||||match, log=|||||, apply to=||cn||, precedence=4\n"
+		"filter rule 12: cn=example4.com, dstport=443, srcip=, user=admin1, desc=, exact=site|port|||, all=|||, action=||||match, log=|||||, precedence=4\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 13: site=example5.com, port=443, ip=, user=admin2, desc=, exact=site|port|||, all=|||, action=||||match, log=|||||, apply to=||cn||, precedence=4\n"
-		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192"),
+		"filter rule 13: cn=example5.com, dstport=443, srcip=, user=admin2, desc=, exact=site|port|||, all=|||, action=||||match, log=|||||, precedence=4\n"
+		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"),
 		"failed to parse rule tail: %s", strstr(s, "filter rule 7: "));
 
 	// Trim the tail
@@ -3239,19 +3311,19 @@ START_TEST(set_filter_struct_11)
 	*p = '\0';
 
 	fail_unless(!strcmp(s,
-		"filter rule 0: site=example.com, port=443, ip=, user=root, desc=, exact=site|port||user|, all=|||, action=divert||||, log=|||||, apply to=||cn||, precedence=4\n"
+		"filter rule 0: cn=example.com, dstport=443, srcip=, user=root, desc=, exact=site|port||user|, all=|||, action=divert||||, log=|||||, precedence=4\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 1: site=example.com, port=443, ip=, user=root, desc=, exact=site|port||user|, all=|||, action=|split|||, log=connect|master|cert|content|pcap|mirror, apply to=||cn||, precedence=5\n"
+		"filter rule 1: cn=example.com, dstport=443, srcip=, user=root, desc=, exact=site|port||user|, all=|||, action=|split|||, log=connect|master|cert|content|pcap|mirror, precedence=5\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 2: site=example.com, port=443, ip=, user=root, desc=, exact=site|port||user|, all=|||, action=||pass||, log=!connect||!cert||!pcap|, apply to=||cn||, precedence=5\n"
+		"filter rule 2: cn=example.com, dstport=443, srcip=, user=root, desc=, exact=site|port||user|, all=|||, action=||pass||, log=!connect||!cert||!pcap|, precedence=5\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 3: site=example.com, port=443, ip=, user=root, desc=, exact=site|port||user|, all=|||, action=|||block|, log=|||||, apply to=||cn||, precedence=4\n"
+		"filter rule 3: cn=example.com, dstport=443, srcip=, user=root, desc=, exact=site|port||user|, all=|||, action=|||block|, log=|||||, precedence=4\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 4: site=example2.com, port=443, ip=, user=root, desc=, exact=site|port||user|, all=|||, action=||||match, log=|||||, apply to=||cn||, precedence=4\n"
+		"filter rule 4: cn=example2.com, dstport=443, srcip=, user=root, desc=, exact=site|port||user|, all=|||, action=||||match, log=|||||, precedence=4\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 5: site=example.com, port=443, ip=, user=daemon, desc=, exact=site|port||user|, all=|||, action=||||match, log=|||||, apply to=||cn||, precedence=4\n"
+		"filter rule 5: cn=example.com, dstport=443, srcip=, user=daemon, desc=, exact=site|port||user|, all=|||, action=||||match, log=|||||, precedence=4\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 6: site=, port=443, ip=, user=daemon, desc=, exact=|port||user|, all=||sites|, action=||||match, log=|||||, apply to=||cn||, precedence=4\n"
+		"filter rule 6: cn=, dstport=443, srcip=, user=daemon, desc=, exact=|port||user|, all=||sites|, action=||||match, log=|||||, precedence=4\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"),
 		"failed to parse rule head: %s", s);
 	free(s);
@@ -3466,22 +3538,22 @@ START_TEST(set_filter_struct_12)
 	s = filter_rule_str(opts->filter_rules);
 
 	fail_unless(!strcmp(strstr(s, "filter rule 9: "),
-		"filter rule 9: site=example4.com, port=, ip=, user=admin1, desc=desc1, exact=site||||, all=|||, action=||||match, log=|||||, apply to=|||host|, precedence=4\n"
+		"filter rule 9: host=example4.com, dstport=, srcip=, user=admin1, desc=desc1, exact=site||||, all=|||, action=||||match, log=|||||, precedence=4\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 10: site=example5.com, port=, ip=, user=admin2, desc=desc2, exact=site||||, all=|||, action=||||match, log=|||||, apply to=|||host|, precedence=4\n"
+		"filter rule 10: host=example5.com, dstport=, srcip=, user=admin2, desc=desc2, exact=site||||, all=|||, action=||||match, log=|||||, precedence=4\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 11: site=example6.com, port=, ip=, user=daemon, desc=desc2, exact=site|||user|desc, all=|||, action=||||match, log=|||||, apply to=|||host|, precedence=4\n"
+		"filter rule 11: host=example6.com, dstport=, srcip=, user=daemon, desc=desc2, exact=site|||user|desc, all=|||, action=||||match, log=|||||, precedence=4\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 12: site=example7.com, port=, ip=, user=, desc=desc, exact=site||||desc, all=|users||, action=||||match, log=|||||, apply to=|||host|, precedence=3\n"
+		"filter rule 12: host=example7.com, dstport=, srcip=, user=, desc=desc, exact=site||||desc, all=|users||, action=||||match, log=|||||, precedence=3\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 13: site=, port=, ip=, user=, desc=desc, exact=||||desc, all=|users|sites|, action=||||match, log=|||||, apply to=|sni|||, precedence=3\n"
+		"filter rule 13: sni=, dstport=, srcip=, user=, desc=desc, exact=||||desc, all=|users|sites|, action=||||match, log=|||||, precedence=3\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 14: site=example8.com, port=, ip=, user=, desc=desc3, exact=site||||desc, all=|||, action=||||match, log=|||||, apply to=||||uri, precedence=3\n"
+		"filter rule 14: uri=example8.com, dstport=, srcip=, user=, desc=desc3, exact=site||||desc, all=|||, action=||||match, log=|||||, precedence=3\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 15: site=example9.com, port=, ip=, user=, desc=desc4, exact=site||||, all=|users||, action=||||match, log=|||||, apply to=|||host|, precedence=3\n"
+		"filter rule 15: host=example9.com, dstport=, srcip=, user=, desc=desc4, exact=site||||, all=|users||, action=||||match, log=|||||, precedence=3\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 16: site=example10.com, port=443, ip=, user=admin, desc=desc5, exact=||||, all=|||, action=||||match, log=|||||, apply to=|||host|, precedence=5\n"
-		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192"),
+		"filter rule 16: host=example10.com, dstport=443, srcip=, user=admin, desc=desc5, exact=||||, all=|||, action=||||match, log=|||||, precedence=5\n"
+		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"),
 		"failed to parse rule tail: %s", strstr(s, "filter rule 9: "));
 
 	// Trim the tail
@@ -3489,23 +3561,23 @@ START_TEST(set_filter_struct_12)
 	*p = '\0';
 
 	fail_unless(!strcmp(s,
-		"filter rule 0: site=example.com, port=, ip=, user=root, desc=desc, exact=site|||user|desc, all=|||, action=divert||||, log=|||||, apply to=|||host|, precedence=4\n"
+		"filter rule 0: host=example.com, dstport=, srcip=, user=root, desc=desc, exact=site|||user|desc, all=|||, action=divert||||, log=|||||, precedence=4\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 1: site=example.com, port=443, ip=, user=root, desc=desc, exact=site|port||user|desc, all=|||, action=|split|||, log=connect|master|cert|content|pcap|mirror, apply to=|||host|, precedence=6\n"
+		"filter rule 1: host=example.com, dstport=443, srcip=, user=root, desc=desc, exact=site|port||user|desc, all=|||, action=|split|||, log=connect|master|cert|content|pcap|mirror, precedence=6\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 2: site=example.com, port=, ip=, user=root, desc=desc, exact=site|||user|desc, all=|||, action=||pass||, log=!connect||!cert||!pcap|, apply to=|||host|, precedence=5\n"
+		"filter rule 2: host=example.com, dstport=, srcip=, user=root, desc=desc, exact=site|||user|desc, all=|||, action=||pass||, log=!connect||!cert||!pcap|, precedence=5\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 3: site=example.com, port=, ip=, user=root, desc=desc, exact=site|||user|desc, all=|||, action=|||block|, log=|||||, apply to=|||host|, precedence=4\n"
+		"filter rule 3: host=example.com, dstport=, srcip=, user=root, desc=desc, exact=site|||user|desc, all=|||, action=|||block|, log=|||||, precedence=4\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 4: site=example2.com, port=443, ip=, user=root, desc=desc, exact=site|port||user|desc, all=|||, action=||||match, log=|||||, apply to=|||host|, precedence=5\n"
+		"filter rule 4: host=example2.com, dstport=443, srcip=, user=root, desc=desc, exact=site|port||user|desc, all=|||, action=||||match, log=|||||, precedence=5\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 5: site=example.com, port=, ip=, user=daemon, desc=desc, exact=site|||user|desc, all=|||, action=||||match, log=|||||, apply to=|||host|, precedence=4\n"
+		"filter rule 5: host=example.com, dstport=, srcip=, user=daemon, desc=desc, exact=site|||user|desc, all=|||, action=||||match, log=|||||, precedence=4\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 6: site=, port=443, ip=, user=daemon, desc=desc, exact=|port||user|desc, all=||sites|, action=||||match, log=|||||, apply to=|||host|, precedence=5\n"
+		"filter rule 6: host=, dstport=443, srcip=, user=daemon, desc=desc, exact=|port||user|desc, all=||sites|, action=||||match, log=|||||, precedence=5\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 7: site=.example.com, port=, ip=, user=daemon, desc=desc, exact=|||user|desc, all=|||, action=||||match, log=|||||, apply to=|||host|, precedence=4\n"
+		"filter rule 7: host=.example.com, dstport=, srcip=, user=daemon, desc=desc, exact=|||user|desc, all=|||, action=||||match, log=|||||, precedence=4\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 8: site=example3.com, port=, ip=, user=daemon, desc=desc, exact=site|||user|desc, all=|||, action=||||match, log=|||||, apply to=|||host|, precedence=4\n"
+		"filter rule 8: host=example3.com, dstport=, srcip=, user=daemon, desc=desc, exact=site|||user|desc, all=|||, action=||||match, log=|||||, precedence=4\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"),
 		"failed to parse rule head: %s", s);
 
@@ -3653,41 +3725,41 @@ START_TEST(set_filter_struct_13)
 	s = filter_rule_str(opts->filter_rules);
 #ifndef WITHOUT_USERAUTH
 	fail_unless(!strcmp(s,
-		"filter rule 0: site=192.168.0.3, port=80, ip=192.168.0.1, user=, desc=, exact=site||ip||, all=|||, action=||||match, log=|!master||||, apply to=dstip||||, precedence=4\n"
-		"filter rule 1: site=192.168.0.3, port=80, ip=192.168.0.1, user=, desc=, exact=site||ip||, all=|||, action=||||match, log=||||!pcap|, apply to=dstip||||, precedence=4\n"
-		"filter rule 2: site=192.168.0.3, port=443, ip=192.168.0.1, user=, desc=, exact=site|port|ip||, all=|||, action=||||match, log=|!master||||, apply to=dstip||||, precedence=4\n"
-		"filter rule 3: site=192.168.0.3, port=443, ip=192.168.0.1, user=, desc=, exact=site|port|ip||, all=|||, action=||||match, log=||||!pcap|, apply to=dstip||||, precedence=4\n"
-		"filter rule 4: site=192.168.0.4, port=80, ip=192.168.0.1, user=, desc=, exact=||ip||, all=|||, action=||||match, log=|!master||||, apply to=dstip||||, precedence=4\n"
-		"filter rule 5: site=192.168.0.4, port=80, ip=192.168.0.1, user=, desc=, exact=||ip||, all=|||, action=||||match, log=||||!pcap|, apply to=dstip||||, precedence=4\n"
-		"filter rule 6: site=192.168.0.4, port=443, ip=192.168.0.1, user=, desc=, exact=|port|ip||, all=|||, action=||||match, log=|!master||||, apply to=dstip||||, precedence=4\n"
-		"filter rule 7: site=192.168.0.4, port=443, ip=192.168.0.1, user=, desc=, exact=|port|ip||, all=|||, action=||||match, log=||||!pcap|, apply to=dstip||||, precedence=4\n"
-		"filter rule 8: site=192.168.0.3, port=80, ip=192.168.0.2, user=, desc=, exact=site||||, all=|||, action=||||match, log=|!master||||, apply to=dstip||||, precedence=4\n"
-		"filter rule 9: site=192.168.0.3, port=80, ip=192.168.0.2, user=, desc=, exact=site||||, all=|||, action=||||match, log=||||!pcap|, apply to=dstip||||, precedence=4\n"
-		"filter rule 10: site=192.168.0.3, port=443, ip=192.168.0.2, user=, desc=, exact=site|port|||, all=|||, action=||||match, log=|!master||||, apply to=dstip||||, precedence=4\n"
-		"filter rule 11: site=192.168.0.3, port=443, ip=192.168.0.2, user=, desc=, exact=site|port|||, all=|||, action=||||match, log=||||!pcap|, apply to=dstip||||, precedence=4\n"
-		"filter rule 12: site=192.168.0.4, port=80, ip=192.168.0.2, user=, desc=, exact=||||, all=|||, action=||||match, log=|!master||||, apply to=dstip||||, precedence=4\n"
-		"filter rule 13: site=192.168.0.4, port=80, ip=192.168.0.2, user=, desc=, exact=||||, all=|||, action=||||match, log=||||!pcap|, apply to=dstip||||, precedence=4\n"
-		"filter rule 14: site=192.168.0.4, port=443, ip=192.168.0.2, user=, desc=, exact=|port|||, all=|||, action=||||match, log=|!master||||, apply to=dstip||||, precedence=4\n"
-		"filter rule 15: site=192.168.0.4, port=443, ip=192.168.0.2, user=, desc=, exact=|port|||, all=|||, action=||||match, log=||||!pcap|, apply to=dstip||||, precedence=4"),
+		"filter rule 0: dstip=192.168.0.3, dstport=80, srcip=192.168.0.1, user=, desc=, exact=site||ip||, all=|||, action=||||match, log=|!master||||, precedence=4\n"
+		"filter rule 1: dstip=192.168.0.3, dstport=80, srcip=192.168.0.1, user=, desc=, exact=site||ip||, all=|||, action=||||match, log=||||!pcap|, precedence=4\n"
+		"filter rule 2: dstip=192.168.0.3, dstport=443, srcip=192.168.0.1, user=, desc=, exact=site|port|ip||, all=|||, action=||||match, log=|!master||||, precedence=4\n"
+		"filter rule 3: dstip=192.168.0.3, dstport=443, srcip=192.168.0.1, user=, desc=, exact=site|port|ip||, all=|||, action=||||match, log=||||!pcap|, precedence=4\n"
+		"filter rule 4: dstip=192.168.0.4, dstport=80, srcip=192.168.0.1, user=, desc=, exact=||ip||, all=|||, action=||||match, log=|!master||||, precedence=4\n"
+		"filter rule 5: dstip=192.168.0.4, dstport=80, srcip=192.168.0.1, user=, desc=, exact=||ip||, all=|||, action=||||match, log=||||!pcap|, precedence=4\n"
+		"filter rule 6: dstip=192.168.0.4, dstport=443, srcip=192.168.0.1, user=, desc=, exact=|port|ip||, all=|||, action=||||match, log=|!master||||, precedence=4\n"
+		"filter rule 7: dstip=192.168.0.4, dstport=443, srcip=192.168.0.1, user=, desc=, exact=|port|ip||, all=|||, action=||||match, log=||||!pcap|, precedence=4\n"
+		"filter rule 8: dstip=192.168.0.3, dstport=80, srcip=192.168.0.2, user=, desc=, exact=site||||, all=|||, action=||||match, log=|!master||||, precedence=4\n"
+		"filter rule 9: dstip=192.168.0.3, dstport=80, srcip=192.168.0.2, user=, desc=, exact=site||||, all=|||, action=||||match, log=||||!pcap|, precedence=4\n"
+		"filter rule 10: dstip=192.168.0.3, dstport=443, srcip=192.168.0.2, user=, desc=, exact=site|port|||, all=|||, action=||||match, log=|!master||||, precedence=4\n"
+		"filter rule 11: dstip=192.168.0.3, dstport=443, srcip=192.168.0.2, user=, desc=, exact=site|port|||, all=|||, action=||||match, log=||||!pcap|, precedence=4\n"
+		"filter rule 12: dstip=192.168.0.4, dstport=80, srcip=192.168.0.2, user=, desc=, exact=||||, all=|||, action=||||match, log=|!master||||, precedence=4\n"
+		"filter rule 13: dstip=192.168.0.4, dstport=80, srcip=192.168.0.2, user=, desc=, exact=||||, all=|||, action=||||match, log=||||!pcap|, precedence=4\n"
+		"filter rule 14: dstip=192.168.0.4, dstport=443, srcip=192.168.0.2, user=, desc=, exact=|port|||, all=|||, action=||||match, log=|!master||||, precedence=4\n"
+		"filter rule 15: dstip=192.168.0.4, dstport=443, srcip=192.168.0.2, user=, desc=, exact=|port|||, all=|||, action=||||match, log=||||!pcap|, precedence=4\n"),
 		"failed to parse rule: %s", s);
 #else /* WITHOUT_USERAUTH */
 	fail_unless(!strcmp(s,
-		"filter rule 0: site=192.168.0.3, port=80, ip=192.168.0.1, exact=site||ip, all=||, action=||||match, log=|!master||||, apply to=dstip||||, precedence=4\n"
-		"filter rule 1: site=192.168.0.3, port=80, ip=192.168.0.1, exact=site||ip, all=||, action=||||match, log=||||!pcap|, apply to=dstip||||, precedence=4\n"
-		"filter rule 2: site=192.168.0.3, port=443, ip=192.168.0.1, exact=site|port|ip, all=||, action=||||match, log=|!master||||, apply to=dstip||||, precedence=4\n"
-		"filter rule 3: site=192.168.0.3, port=443, ip=192.168.0.1, exact=site|port|ip, all=||, action=||||match, log=||||!pcap|, apply to=dstip||||, precedence=4\n"
-		"filter rule 4: site=192.168.0.4, port=80, ip=192.168.0.1, exact=||ip, all=||, action=||||match, log=|!master||||, apply to=dstip||||, precedence=4\n"
-		"filter rule 5: site=192.168.0.4, port=80, ip=192.168.0.1, exact=||ip, all=||, action=||||match, log=||||!pcap|, apply to=dstip||||, precedence=4\n"
-		"filter rule 6: site=192.168.0.4, port=443, ip=192.168.0.1, exact=|port|ip, all=||, action=||||match, log=|!master||||, apply to=dstip||||, precedence=4\n"
-		"filter rule 7: site=192.168.0.4, port=443, ip=192.168.0.1, exact=|port|ip, all=||, action=||||match, log=||||!pcap|, apply to=dstip||||, precedence=4\n"
-		"filter rule 8: site=192.168.0.3, port=80, ip=192.168.0.2, exact=site||, all=||, action=||||match, log=|!master||||, apply to=dstip||||, precedence=4\n"
-		"filter rule 9: site=192.168.0.3, port=80, ip=192.168.0.2, exact=site||, all=||, action=||||match, log=||||!pcap|, apply to=dstip||||, precedence=4\n"
-		"filter rule 10: site=192.168.0.3, port=443, ip=192.168.0.2, exact=site|port|, all=||, action=||||match, log=|!master||||, apply to=dstip||||, precedence=4\n"
-		"filter rule 11: site=192.168.0.3, port=443, ip=192.168.0.2, exact=site|port|, all=||, action=||||match, log=||||!pcap|, apply to=dstip||||, precedence=4\n"
-		"filter rule 12: site=192.168.0.4, port=80, ip=192.168.0.2, exact=||, all=||, action=||||match, log=|!master||||, apply to=dstip||||, precedence=4\n"
-		"filter rule 13: site=192.168.0.4, port=80, ip=192.168.0.2, exact=||, all=||, action=||||match, log=||||!pcap|, apply to=dstip||||, precedence=4\n"
-		"filter rule 14: site=192.168.0.4, port=443, ip=192.168.0.2, exact=|port|, all=||, action=||||match, log=|!master||||, apply to=dstip||||, precedence=4\n"
-		"filter rule 15: site=192.168.0.4, port=443, ip=192.168.0.2, exact=|port|, all=||, action=||||match, log=||||!pcap|, apply to=dstip||||, precedence=4"),
+		"filter rule 0: dstip=192.168.0.3, dstport=80, srcip=192.168.0.1, exact=site||ip, all=||, action=||||match, log=|!master||||, precedence=4\n"
+		"filter rule 1: dstip=192.168.0.3, dstport=80, srcip=192.168.0.1, exact=site||ip, all=||, action=||||match, log=||||!pcap|, precedence=4\n"
+		"filter rule 2: dstip=192.168.0.3, dstport=443, srcip=192.168.0.1, exact=site|port|ip, all=||, action=||||match, log=|!master||||, precedence=4\n"
+		"filter rule 3: dstip=192.168.0.3, dstport=443, srcip=192.168.0.1, exact=site|port|ip, all=||, action=||||match, log=||||!pcap|, precedence=4\n"
+		"filter rule 4: dstip=192.168.0.4, dstport=80, srcip=192.168.0.1, exact=||ip, all=||, action=||||match, log=|!master||||, precedence=4\n"
+		"filter rule 5: dstip=192.168.0.4, dstport=80, srcip=192.168.0.1, exact=||ip, all=||, action=||||match, log=||||!pcap|, precedence=4\n"
+		"filter rule 6: dstip=192.168.0.4, dstport=443, srcip=192.168.0.1, exact=|port|ip, all=||, action=||||match, log=|!master||||, precedence=4\n"
+		"filter rule 7: dstip=192.168.0.4, dstport=443, srcip=192.168.0.1, exact=|port|ip, all=||, action=||||match, log=||||!pcap|, precedence=4\n"
+		"filter rule 8: dstip=192.168.0.3, dstport=80, srcip=192.168.0.2, exact=site||, all=||, action=||||match, log=|!master||||, precedence=4\n"
+		"filter rule 9: dstip=192.168.0.3, dstport=80, srcip=192.168.0.2, exact=site||, all=||, action=||||match, log=||||!pcap|, precedence=4\n"
+		"filter rule 10: dstip=192.168.0.3, dstport=443, srcip=192.168.0.2, exact=site|port|, all=||, action=||||match, log=|!master||||, precedence=4\n"
+		"filter rule 11: dstip=192.168.0.3, dstport=443, srcip=192.168.0.2, exact=site|port|, all=||, action=||||match, log=||||!pcap|, precedence=4\n"
+		"filter rule 12: dstip=192.168.0.4, dstport=80, srcip=192.168.0.2, exact=||, all=||, action=||||match, log=|!master||||, precedence=4\n"
+		"filter rule 13: dstip=192.168.0.4, dstport=80, srcip=192.168.0.2, exact=||, all=||, action=||||match, log=||||!pcap|, precedence=4\n"
+		"filter rule 14: dstip=192.168.0.4, dstport=443, srcip=192.168.0.2, exact=|port|, all=||, action=||||match, log=|!master||||, precedence=4\n"
+		"filter rule 15: dstip=192.168.0.4, dstport=443, srcip=192.168.0.2, exact=|port|, all=||, action=||||match, log=||||!pcap|, precedence=4\n"),
 		"failed to parse rule: %s", s);
 #endif /* WITHOUT_USERAUTH */
 	free(s);
@@ -3821,22 +3893,22 @@ START_TEST(set_filter_struct_14)
 	s = filter_rule_str(opts->filter_rules);
 
 	fail_unless(!strcmp(strstr(s, "filter rule 8: "),
-		"filter rule 8: site=site1, port=, ip=, user=admin, desc=desc1, exact=site||||desc, all=|||, action=||||match, log=connect|||||, apply to=|sni|||, precedence=5\n"
+		"filter rule 8: sni=site1, dstport=, srcip=, user=admin, desc=desc1, exact=site||||desc, all=|||, action=||||match, log=connect|||||, precedence=5\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 9: site=site1, port=, ip=, user=admin, desc=desc1, exact=site||||desc, all=|||, action=||||match, log=|||content||, apply to=|sni|||, precedence=5\n"
+		"filter rule 9: sni=site1, dstport=, srcip=, user=admin, desc=desc1, exact=site||||desc, all=|||, action=||||match, log=|||content||, precedence=5\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 10: site=site2, port=, ip=, user=admin, desc=desc1, exact=||||desc, all=|||, action=||||match, log=connect|||||, apply to=|sni|||, precedence=5\n"
+		"filter rule 10: sni=site2, dstport=, srcip=, user=admin, desc=desc1, exact=||||desc, all=|||, action=||||match, log=connect|||||, precedence=5\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 11: site=site2, port=, ip=, user=admin, desc=desc1, exact=||||desc, all=|||, action=||||match, log=|||content||, apply to=|sni|||, precedence=5\n"
+		"filter rule 11: sni=site2, dstport=, srcip=, user=admin, desc=desc1, exact=||||desc, all=|||, action=||||match, log=|||content||, precedence=5\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 12: site=site1, port=, ip=, user=admin, desc=desc2, exact=site||||, all=|||, action=||||match, log=connect|||||, apply to=|sni|||, precedence=5\n"
+		"filter rule 12: sni=site1, dstport=, srcip=, user=admin, desc=desc2, exact=site||||, all=|||, action=||||match, log=connect|||||, precedence=5\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 13: site=site1, port=, ip=, user=admin, desc=desc2, exact=site||||, all=|||, action=||||match, log=|||content||, apply to=|sni|||, precedence=5\n"
+		"filter rule 13: sni=site1, dstport=, srcip=, user=admin, desc=desc2, exact=site||||, all=|||, action=||||match, log=|||content||, precedence=5\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 14: site=site2, port=, ip=, user=admin, desc=desc2, exact=||||, all=|||, action=||||match, log=connect|||||, apply to=|sni|||, precedence=5\n"
+		"filter rule 14: sni=site2, dstport=, srcip=, user=admin, desc=desc2, exact=||||, all=|||, action=||||match, log=connect|||||, precedence=5\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 15: site=site2, port=, ip=, user=admin, desc=desc2, exact=||||, all=|||, action=||||match, log=|||content||, apply to=|sni|||, precedence=5\n"
-		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192"),
+		"filter rule 15: sni=site2, dstport=, srcip=, user=admin, desc=desc2, exact=||||, all=|||, action=||||match, log=|||content||, precedence=5\n"
+		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"),
 		"failed to parse rule tail: %s", strstr(s, "filter rule 8: "));
 
 	// Trim the tail
@@ -3844,21 +3916,21 @@ START_TEST(set_filter_struct_14)
 	*p = '\0';
 
 	fail_unless(!strcmp(s,
-		"filter rule 0: site=site1, port=, ip=, user=root, desc=desc1, exact=site|||user|desc, all=|||, action=||||match, log=connect|||||, apply to=|sni|||, precedence=5\n"
+		"filter rule 0: sni=site1, dstport=, srcip=, user=root, desc=desc1, exact=site|||user|desc, all=|||, action=||||match, log=connect|||||, precedence=5\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 1: site=site1, port=, ip=, user=root, desc=desc1, exact=site|||user|desc, all=|||, action=||||match, log=|||content||, apply to=|sni|||, precedence=5\n"
+		"filter rule 1: sni=site1, dstport=, srcip=, user=root, desc=desc1, exact=site|||user|desc, all=|||, action=||||match, log=|||content||, precedence=5\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 2: site=site2, port=, ip=, user=root, desc=desc1, exact=|||user|desc, all=|||, action=||||match, log=connect|||||, apply to=|sni|||, precedence=5\n"
+		"filter rule 2: sni=site2, dstport=, srcip=, user=root, desc=desc1, exact=|||user|desc, all=|||, action=||||match, log=connect|||||, precedence=5\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 3: site=site2, port=, ip=, user=root, desc=desc1, exact=|||user|desc, all=|||, action=||||match, log=|||content||, apply to=|sni|||, precedence=5\n"
+		"filter rule 3: sni=site2, dstport=, srcip=, user=root, desc=desc1, exact=|||user|desc, all=|||, action=||||match, log=|||content||, precedence=5\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 4: site=site1, port=, ip=, user=root, desc=desc2, exact=site|||user|, all=|||, action=||||match, log=connect|||||, apply to=|sni|||, precedence=5\n"
+		"filter rule 4: sni=site1, dstport=, srcip=, user=root, desc=desc2, exact=site|||user|, all=|||, action=||||match, log=connect|||||, precedence=5\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 5: site=site1, port=, ip=, user=root, desc=desc2, exact=site|||user|, all=|||, action=||||match, log=|||content||, apply to=|sni|||, precedence=5\n"
+		"filter rule 5: sni=site1, dstport=, srcip=, user=root, desc=desc2, exact=site|||user|, all=|||, action=||||match, log=|||content||, precedence=5\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 6: site=site2, port=, ip=, user=root, desc=desc2, exact=|||user|, all=|||, action=||||match, log=connect|||||, apply to=|sni|||, precedence=5\n"
+		"filter rule 6: sni=site2, dstport=, srcip=, user=root, desc=desc2, exact=|||user|, all=|||, action=||||match, log=connect|||||, precedence=5\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 7: site=site2, port=, ip=, user=root, desc=desc2, exact=|||user|, all=|||, action=||||match, log=|||content||, apply to=|sni|||, precedence=5\n"
+		"filter rule 7: sni=site2, dstport=, srcip=, user=root, desc=desc2, exact=|||user|, all=|||, action=||||match, log=|||content||, precedence=5\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"),
 		"failed to parse rule head: %s", s);
 
@@ -3973,22 +4045,22 @@ START_TEST(set_filter_struct_15)
 	s = filter_rule_str(opts->filter_rules);
 
 	fail_unless(!strcmp(strstr(s, "filter rule 8: "),
-		"filter rule 8: site=site1, port=80, ip=, user=admin, desc=desc1, exact=||||desc, all=|||, action=||||match, log=||||pcap|, apply to=||cn||, precedence=6\n"
+		"filter rule 8: cn=site1, dstport=80, srcip=, user=admin, desc=desc1, exact=||||desc, all=|||, action=||||match, log=||||pcap|, precedence=6\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 9: site=site1, port=, ip=, user=admin, desc=desc1, exact=||||desc, all=|||ports, action=||||match, log=||||pcap|, apply to=||cn||, precedence=6\n"
+		"filter rule 9: cn=site1, dstport=, srcip=, user=admin, desc=desc1, exact=||||desc, all=|||ports, action=||||match, log=||||pcap|, precedence=6\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 10: site=site2, port=80, ip=, user=admin, desc=desc1, exact=site||||desc, all=|||, action=||||match, log=||||pcap|, apply to=||cn||, precedence=6\n"
+		"filter rule 10: cn=site2, dstport=80, srcip=, user=admin, desc=desc1, exact=site||||desc, all=|||, action=||||match, log=||||pcap|, precedence=6\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 11: site=site2, port=, ip=, user=admin, desc=desc1, exact=site||||desc, all=|||ports, action=||||match, log=||||pcap|, apply to=||cn||, precedence=6\n"
+		"filter rule 11: cn=site2, dstport=, srcip=, user=admin, desc=desc1, exact=site||||desc, all=|||ports, action=||||match, log=||||pcap|, precedence=6\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 12: site=site1, port=80, ip=, user=admin, desc=desc2, exact=||||, all=|||, action=||||match, log=||||pcap|, apply to=||cn||, precedence=6\n"
+		"filter rule 12: cn=site1, dstport=80, srcip=, user=admin, desc=desc2, exact=||||, all=|||, action=||||match, log=||||pcap|, precedence=6\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 13: site=site1, port=, ip=, user=admin, desc=desc2, exact=||||, all=|||ports, action=||||match, log=||||pcap|, apply to=||cn||, precedence=6\n"
+		"filter rule 13: cn=site1, dstport=, srcip=, user=admin, desc=desc2, exact=||||, all=|||ports, action=||||match, log=||||pcap|, precedence=6\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 14: site=site2, port=80, ip=, user=admin, desc=desc2, exact=site||||, all=|||, action=||||match, log=||||pcap|, apply to=||cn||, precedence=6\n"
+		"filter rule 14: cn=site2, dstport=80, srcip=, user=admin, desc=desc2, exact=site||||, all=|||, action=||||match, log=||||pcap|, precedence=6\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 15: site=site2, port=, ip=, user=admin, desc=desc2, exact=site||||, all=|||ports, action=||||match, log=||||pcap|, apply to=||cn||, precedence=6\n"
-		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192"),
+		"filter rule 15: cn=site2, dstport=, srcip=, user=admin, desc=desc2, exact=site||||, all=|||ports, action=||||match, log=||||pcap|, precedence=6\n"
+		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"),
 		"failed to parse rule tail: %s", strstr(s, "filter rule 8: "));
 
 	// Trim the tail
@@ -3996,21 +4068,21 @@ START_TEST(set_filter_struct_15)
 	*p = '\0';
 
 	fail_unless(!strcmp(s,
-		"filter rule 0: site=site1, port=80, ip=, user=root, desc=desc1, exact=|||user|desc, all=|||, action=||||match, log=||||pcap|, apply to=||cn||, precedence=6\n"
+		"filter rule 0: cn=site1, dstport=80, srcip=, user=root, desc=desc1, exact=|||user|desc, all=|||, action=||||match, log=||||pcap|, precedence=6\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 1: site=site1, port=, ip=, user=root, desc=desc1, exact=|||user|desc, all=|||ports, action=||||match, log=||||pcap|, apply to=||cn||, precedence=6\n"
+		"filter rule 1: cn=site1, dstport=, srcip=, user=root, desc=desc1, exact=|||user|desc, all=|||ports, action=||||match, log=||||pcap|, precedence=6\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 2: site=site2, port=80, ip=, user=root, desc=desc1, exact=site|||user|desc, all=|||, action=||||match, log=||||pcap|, apply to=||cn||, precedence=6\n"
+		"filter rule 2: cn=site2, dstport=80, srcip=, user=root, desc=desc1, exact=site|||user|desc, all=|||, action=||||match, log=||||pcap|, precedence=6\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 3: site=site2, port=, ip=, user=root, desc=desc1, exact=site|||user|desc, all=|||ports, action=||||match, log=||||pcap|, apply to=||cn||, precedence=6\n"
+		"filter rule 3: cn=site2, dstport=, srcip=, user=root, desc=desc1, exact=site|||user|desc, all=|||ports, action=||||match, log=||||pcap|, precedence=6\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 4: site=site1, port=80, ip=, user=root, desc=desc2, exact=|||user|, all=|||, action=||||match, log=||||pcap|, apply to=||cn||, precedence=6\n"
+		"filter rule 4: cn=site1, dstport=80, srcip=, user=root, desc=desc2, exact=|||user|, all=|||, action=||||match, log=||||pcap|, precedence=6\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 5: site=site1, port=, ip=, user=root, desc=desc2, exact=|||user|, all=|||ports, action=||||match, log=||||pcap|, apply to=||cn||, precedence=6\n"
+		"filter rule 5: cn=site1, dstport=, srcip=, user=root, desc=desc2, exact=|||user|, all=|||ports, action=||||match, log=||||pcap|, precedence=6\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 6: site=site2, port=80, ip=, user=root, desc=desc2, exact=site|||user|, all=|||, action=||||match, log=||||pcap|, apply to=||cn||, precedence=6\n"
+		"filter rule 6: cn=site2, dstport=80, srcip=, user=root, desc=desc2, exact=site|||user|, all=|||, action=||||match, log=||||pcap|, precedence=6\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
-		"filter rule 7: site=site2, port=, ip=, user=root, desc=desc2, exact=site|||user|, all=|||ports, action=||||match, log=||||pcap|, apply to=||cn||, precedence=6\n"
+		"filter rule 7: cn=site2, dstport=, srcip=, user=root, desc=desc2, exact=site|||user|, all=|||ports, action=||||match, log=||||pcap|, precedence=6\n"
 		"  conn opts: negotiate>=tls10<=tls13|no ciphers|no ciphersuites|no ecdhcurve|no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"),
 		"failed to parse rule head: %s", s);
 
@@ -4178,13 +4250,13 @@ START_TEST(set_filter_struct_16)
 	s = filter_rule_str(opts->filter_rules);
 #ifndef WITHOUT_USERAUTH
 	fail_unless(!strcmp(s,
-		"filter rule 0: site=192.168.0.2, port=, ip=192.168.0.1, user=, desc=, exact=site||ip||, all=|||, action=||||match, log=connect|||||, apply to=dstip||||, precedence=3\n"
-		"  conn opts: tls11 -tls13>=tls10<=tls11|no_tls13|passthrough|LOW|TLS_AES_128_CCM_SHA256|prime192v1|http://example1.com/example1.crl|allow_wrong_host|https://192.168.0.12/userdblogin1.php|1200|reconnect_ssl|2048"),
+		"filter rule 0: dstip=192.168.0.2, dstport=, srcip=192.168.0.1, user=, desc=, exact=site||ip||, all=|||, action=||||match, log=connect|||||, precedence=3\n"
+		"  conn opts: tls11 -tls13>=tls10<=tls11|no_tls13|passthrough|LOW|TLS_AES_128_CCM_SHA256|prime192v1|http://example1.com/example1.crl|allow_wrong_host|https://192.168.0.12/userdblogin1.php|1200|reconnect_ssl|2048\n"),
 		"failed to parse rule: %s", s);
 #else /* WITHOUT_USERAUTH */
 	fail_unless(!strcmp(s,
-		"filter rule 0: site=192.168.0.2, port=, ip=192.168.0.1, exact=site||ip, all=||, action=||||match, log=connect|||||, apply to=dstip||||, precedence=3\n"
-		"  conn opts: tls11 -tls13>=tls10<=tls11|no_tls13|passthrough|LOW|TLS_AES_128_CCM_SHA256|prime192v1|http://example1.com/example1.crl|allow_wrong_host|reconnect_ssl|2048"),
+		"filter rule 0: dstip=192.168.0.2, dstport=, srcip=192.168.0.1, exact=site||ip, all=||, action=||||match, log=connect|||||, precedence=3\n"
+		"  conn opts: tls11 -tls13>=tls10<=tls11|no_tls13|passthrough|LOW|TLS_AES_128_CCM_SHA256|prime192v1|http://example1.com/example1.crl|allow_wrong_host|reconnect_ssl|2048\n"),
 		"failed to parse rule: %s", s);
 #endif /* WITHOUT_USERAUTH */
 	free(s);
@@ -4226,6 +4298,137 @@ START_TEST(set_filter_struct_16)
 }
 END_TEST
 
+#ifndef WITHOUT_USERAUTH
+START_TEST(set_filter_struct_17)
+{
+	char *s;
+	int rv;
+	opts_t *opts = opts_new();
+	conn_opts_t *conn_opts = conn_opts_new();
+
+	tmp_opts_t *tmp_opts = malloc(sizeof (tmp_opts_t));
+	memset(tmp_opts, 0, sizeof (tmp_opts_t));
+
+	s = strdup("$sites site1* site2");
+	rv = filter_macro_set(opts, s, 0);
+	fail_unless(rv == 0, "failed to set macro");
+	free(s);
+
+	FILE *f;
+	unsigned int line_num = 0;
+
+	s = "Action Match\n"
+		"SrcIp 192.168.0.1\n"
+
+		// Multi-site struct rule with macro
+		"DstIp 192.168.0.2\n"
+		"SNI example.com\n"
+		"CN example.com*\n"
+		"Host $sites\n"
+		"URI *\n"
+
+		"Log connect\n"
+		"ReconnectSSL yes\n"
+		"DenyOCSP no\n"
+		"Passthrough yes\n"
+		"CACert ../testproxy/ca.crt\n"
+		"CAKey ../testproxy/ca.key\n"
+		"ClientCert ../testproxy/ca2.crt\n"
+		"ClientKey ../testproxy/ca2.key\n"
+		"CAChain ../testproxy/server.crt\n"
+		"LeafCRLURL http://example1.com/example1.crl\n"
+		//"DHGroupParams /etc/sslproxy/dh.pem\n"
+		"ECDHCurve prime192v1\n"
+		"SSLCompression yes\n"
+		"ForceSSLProto tls11\n"
+		"DisableSSLProto tls13\n"
+		"EnableSSLProto tls1\n"
+		"MinSSLProto tls10\n"
+		"MaxSSLProto tls11\n"
+		"Ciphers LOW\n"
+		"CipherSuites TLS_AES_128_CCM_SHA256\n"
+		"RemoveHTTPAcceptEncoding no\n"
+		"RemoveHTTPReferer no\n"
+		"VerifyPeer no\n"
+		"AllowWrongHost yes\n"
+		"UserAuth no\n"
+		"UserTimeout 1200\n"
+		"UserAuthURL https://192.168.0.12/userdblogin1.php\n"
+		"ValidateProto no\n"
+		"MaxHTTPHeaderSize 2048\n"
+		"}";
+	f = fmemopen(s, strlen(s), "r");
+	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
+	fclose(f);
+	fail_unless(rv == 0, "failed to parse rule");
+
+	s = filter_rule_str(opts->filter_rules);
+	fail_unless(!strcmp(s,
+		"filter rule 0: dstip=192.168.0.2, dstport=, srcip=192.168.0.1, user=, desc=, exact=site||ip||, all=|||, action=||||match, log=connect|||||, precedence=3\n"
+		"  conn opts: tls11 -tls13>=tls10<=tls11|no_tls13|passthrough|LOW|TLS_AES_128_CCM_SHA256|prime192v1|http://example1.com/example1.crl|allow_wrong_host|https://192.168.0.12/userdblogin1.php|1200|reconnect_ssl|2048\n"
+		"filter rule 0: sni=example.com, dstport=, srcip=192.168.0.1, user=, desc=, exact=site||ip||, all=|||, action=||||match, log=connect|||||, precedence=3\n"
+		"  conn opts: tls11 -tls13>=tls10<=tls11|no_tls13|passthrough|LOW|TLS_AES_128_CCM_SHA256|prime192v1|http://example1.com/example1.crl|allow_wrong_host|https://192.168.0.12/userdblogin1.php|1200|reconnect_ssl|2048\n"
+		"filter rule 0: cn=example.com, dstport=, srcip=192.168.0.1, user=, desc=, exact=||ip||, all=|||, action=||||match, log=connect|||||, precedence=3\n"
+		"  conn opts: tls11 -tls13>=tls10<=tls11|no_tls13|passthrough|LOW|TLS_AES_128_CCM_SHA256|prime192v1|http://example1.com/example1.crl|allow_wrong_host|https://192.168.0.12/userdblogin1.php|1200|reconnect_ssl|2048\n"
+		"filter rule 0: host=site1, dstport=, srcip=192.168.0.1, user=, desc=, exact=||ip||, all=|||, action=||||match, log=connect|||||, precedence=3\n"
+		"  conn opts: tls11 -tls13>=tls10<=tls11|no_tls13|passthrough|LOW|TLS_AES_128_CCM_SHA256|prime192v1|http://example1.com/example1.crl|allow_wrong_host|https://192.168.0.12/userdblogin1.php|1200|reconnect_ssl|2048\n"
+		"filter rule 0: uri=, dstport=, srcip=192.168.0.1, user=, desc=, exact=||ip||, all=||sites|, action=||||match, log=connect|||||, precedence=3\n"
+		"  conn opts: tls11 -tls13>=tls10<=tls11|no_tls13|passthrough|LOW|TLS_AES_128_CCM_SHA256|prime192v1|http://example1.com/example1.crl|allow_wrong_host|https://192.168.0.12/userdblogin1.php|1200|reconnect_ssl|2048\n"
+		"filter rule 1: dstip=192.168.0.2, dstport=, srcip=192.168.0.1, user=, desc=, exact=site||ip||, all=|||, action=||||match, log=connect|||||, precedence=3\n"
+		"  conn opts: tls11 -tls13>=tls10<=tls11|no_tls13|passthrough|LOW|TLS_AES_128_CCM_SHA256|prime192v1|http://example1.com/example1.crl|allow_wrong_host|https://192.168.0.12/userdblogin1.php|1200|reconnect_ssl|2048\n"
+		"filter rule 1: sni=example.com, dstport=, srcip=192.168.0.1, user=, desc=, exact=site||ip||, all=|||, action=||||match, log=connect|||||, precedence=3\n"
+		"  conn opts: tls11 -tls13>=tls10<=tls11|no_tls13|passthrough|LOW|TLS_AES_128_CCM_SHA256|prime192v1|http://example1.com/example1.crl|allow_wrong_host|https://192.168.0.12/userdblogin1.php|1200|reconnect_ssl|2048\n"
+		"filter rule 1: cn=example.com, dstport=, srcip=192.168.0.1, user=, desc=, exact=||ip||, all=|||, action=||||match, log=connect|||||, precedence=3\n"
+		"  conn opts: tls11 -tls13>=tls10<=tls11|no_tls13|passthrough|LOW|TLS_AES_128_CCM_SHA256|prime192v1|http://example1.com/example1.crl|allow_wrong_host|https://192.168.0.12/userdblogin1.php|1200|reconnect_ssl|2048\n"
+		"filter rule 1: host=site2, dstport=, srcip=192.168.0.1, user=, desc=, exact=site||ip||, all=|||, action=||||match, log=connect|||||, precedence=3\n"
+		"  conn opts: tls11 -tls13>=tls10<=tls11|no_tls13|passthrough|LOW|TLS_AES_128_CCM_SHA256|prime192v1|http://example1.com/example1.crl|allow_wrong_host|https://192.168.0.12/userdblogin1.php|1200|reconnect_ssl|2048\n"
+		"filter rule 1: uri=, dstport=, srcip=192.168.0.1, user=, desc=, exact=||ip||, all=||sites|, action=||||match, log=connect|||||, precedence=3\n"
+		"  conn opts: tls11 -tls13>=tls10<=tls11|no_tls13|passthrough|LOW|TLS_AES_128_CCM_SHA256|prime192v1|http://example1.com/example1.crl|allow_wrong_host|https://192.168.0.12/userdblogin1.php|1200|reconnect_ssl|2048\n"),
+		"failed to parse rule: %s", s);
+	free(s);
+
+	opts->filter = filter_set(opts->filter_rules, "sslproxy", tmp_opts);
+
+	s = filter_str(opts->filter);
+	fail_unless(!strcmp(s, "filter=>\n"
+"userdesc_filter_exact->\n"
+"userdesc_filter_substring->\n"
+"user_filter_exact->\n"
+"user_filter_substring->\n"
+"desc_filter_exact->\n"
+"desc_filter_substring->\n"
+"user_filter_all->\n"
+"ip_filter_exact->\n"
+"  ip 0 192.168.0.1 (exact)=\n"
+"    ip exact:\n"
+"      0: 192.168.0.2 (exact, action=||||match, log=connect|||||, precedence=3\n"
+"        conn opts: tls11 -tls13>=tls10<=tls11|no_tls13|passthrough|LOW|TLS_AES_128_CCM_SHA256|prime192v1|no leafcrlurl|allow_wrong_host|https://192.168.0.12/userdblogin1.php|1200|reconnect_ssl|2048)\n"
+"    sni exact:\n"
+"      0: example.com (exact, action=||||match, log=connect|||||, precedence=3\n"
+"        conn opts: tls11 -tls13>=tls10<=tls11|no_tls13|passthrough|LOW|TLS_AES_128_CCM_SHA256|prime192v1|no leafcrlurl|allow_wrong_host|https://192.168.0.12/userdblogin1.php|1200|reconnect_ssl|2048)\n"
+"    cn substring:\n"
+"      0: example.com (substring, action=||||match, log=connect|||||, precedence=3\n"
+"        conn opts: tls11 -tls13>=tls10<=tls11|no_tls13|passthrough|LOW|TLS_AES_128_CCM_SHA256|prime192v1|no leafcrlurl|allow_wrong_host|https://192.168.0.12/userdblogin1.php|1200|reconnect_ssl|2048)\n"
+"    host exact:\n"
+"      0: site2 (exact, action=||||match, log=connect|||||, precedence=3\n"
+"        conn opts: tls11 -tls13>=tls10<=tls11|no_tls13|passthrough|LOW|TLS_AES_128_CCM_SHA256|prime192v1|no leafcrlurl|allow_wrong_host|https://192.168.0.12/userdblogin1.php|1200|reconnect_ssl|2048)\n"
+"    host substring:\n"
+"      0: site1 (substring, action=||||match, log=connect|||||, precedence=3\n"
+"        conn opts: tls11 -tls13>=tls10<=tls11|no_tls13|passthrough|LOW|TLS_AES_128_CCM_SHA256|prime192v1|no leafcrlurl|allow_wrong_host|https://192.168.0.12/userdblogin1.php|1200|reconnect_ssl|2048)\n"
+"    uri all:\n"
+"      0:  (all_sites, substring, action=||||match, log=connect|||||, precedence=3\n"
+"        conn opts: tls11 -tls13>=tls10<=tls11|no_tls13|passthrough|LOW|TLS_AES_128_CCM_SHA256|prime192v1|no leafcrlurl|allow_wrong_host|https://192.168.0.12/userdblogin1.php|1200|reconnect_ssl|2048)\n"
+"ip_filter_substring->\n"
+"filter_all->\n"), "failed to translate rule: %s", s);
+	free(s);
+
+	opts_free(opts);
+	conn_opts_free(conn_opts);
+	tmp_opts_free(tmp_opts);
+}
+END_TEST
+#endif /* !WITHOUT_USERAUTH */
+
 Suite *
 filter_struct_suite(void)
 {
@@ -4258,6 +4461,9 @@ filter_struct_suite(void)
 	tcase_add_test(tc, set_filter_struct_15);
 #endif /* !WITHOUT_USERAUTH */
 	tcase_add_test(tc, set_filter_struct_16);
+#ifndef WITHOUT_USERAUTH
+	tcase_add_test(tc, set_filter_struct_17);
+#endif /* !WITHOUT_USERAUTH */
 	suite_add_tcase(s, tc);
 
 	return s;

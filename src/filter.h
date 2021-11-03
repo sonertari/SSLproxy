@@ -138,21 +138,28 @@ typedef struct filter_rule {
 	unsigned int exact_ip : 1;    /* 1 for exact, 0 for substring match */
 	
 	// to: target filter
-	char *site;
-	unsigned int all_sites : 1;   /* 1 to match all sites == '*' */
-	unsigned int exact_site : 1;  /* 1 for exact, 0 for substring match */
+	char *dstip;
+	char *sni;
+	char *cn;
+	char *host;
+	char *uri;
+
+	unsigned int exact_dstip : 1; /* 1 for exact, 0 for substring match */
+	unsigned int exact_sni : 1;   /* 1 for exact, 0 for substring match */
+	unsigned int exact_cn : 1;    /* 1 for exact, 0 for substring match */
+	unsigned int exact_host : 1;  /* 1 for exact, 0 for substring match */
+	unsigned int exact_uri : 1;   /* 1 for exact, 0 for substring match */
+
+	unsigned int all_dstips : 1;  /* 1 to match all sites == '*' */
+	unsigned int all_snis : 1;    /* 1 to match all sites == '*' */
+	unsigned int all_cns : 1;     /* 1 to match all sites == '*' */
+	unsigned int all_hosts : 1;   /* 1 to match all sites == '*' */
+	unsigned int all_uris : 1;    /* 1 to match all sites == '*' */
 
 	// This is not for the src ip in the 'from' part of rules
 	char *port;
 	unsigned int all_ports : 1;   /* 1 to match all ports == '*' */
 	unsigned int exact_port : 1;  /* 1 for exact, 0 for substring match */
-
-	// Conn field to apply filter to
-	unsigned int dstip : 1;       /* 1 to apply to dst ip */
-	unsigned int sni : 1;         /* 1 to apply to sni */
-	unsigned int cn : 1;          /* 1 to apply to common names */
-	unsigned int host : 1;        /* 1 to apply to http host */
-	unsigned int uri : 1;         /* 1 to apply to http uri */
 
 	struct filter_action action;
 

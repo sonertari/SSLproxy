@@ -744,13 +744,14 @@ START_TEST(proxyspec_struct_parse_01)
 "opts= conn opts: tls12 -tls13>=tls11<=tls12|no sslcomp|no_tls13|deny_ocsp|MEDIUM:HIGH|TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256|prime256v1|http://example2.com/example2.crl|remove_http_accept_encoding|remove_http_referer|verify_peer|user_auth|https://192.168.0.13/userdblogin3.php|300|validate_proto|2048\n"
 "divert|daemon,root|daemon,root\n"
 "macro $ip = 127.0.0.1\n"
-"filter rule 0: site=example4.com, port=, ip=, user=, desc=, exact=site||||, all=conns|||, action=||pass||, log=|||||, apply to=|sni|cn||, precedence=1\n"
-"filter rule 1: site=127.0.0.1, port=9191, ip=127.0.0.1, user=, desc=, exact=site|port|ip||, all=|||, action=||||match, log=|||content||, apply to=dstip||||, precedence=4\n"
-"filter rule 2: site=127.0.0.1, port=9191, ip=127.0.0.1, user=, desc=, exact=site|port|ip||, all=|||, action=|||block|, log=|||content||, apply to=dstip||||, precedence=4\n"
-"filter rule 3: site=127.0.0.1, port=9191, ip=127.0.0.1, user=, desc=, exact=site|port|ip||, all=|||, action=||pass||, log=|||content||, apply to=dstip||||, precedence=4\n"
-"filter rule 4: site=127.0.0.1, port=9191, ip=127.0.0.1, user=, desc=, exact=site|port|ip||, all=|||, action=|split|||, log=|||content||, apply to=dstip||||, precedence=4\n"
-"filter rule 5: site=127.0.0.1, port=9191, ip=127.0.0.1, user=, desc=, exact=site|port|ip||, all=|||, action=divert||||, log=|||content||, apply to=dstip||||, precedence=4\n"
-"filter rule 6: site=192.168.0.2, port=, ip=192.168.0.1, user=, desc=, exact=site||ip||, all=|||, action=||||match, log=connect|||||, apply to=dstip||||, precedence=3\n"
+"filter rule 0: sni=example4.com, dstport=, srcip=, user=, desc=, exact=site||||, all=conns|||, action=||pass||, log=|||||, precedence=1\n"
+"filter rule 0: cn=example4.com, dstport=, srcip=, user=, desc=, exact=site||||, all=conns|||, action=||pass||, log=|||||, precedence=1\n"
+"filter rule 1: dstip=127.0.0.1, dstport=9191, srcip=127.0.0.1, user=, desc=, exact=site|port|ip||, all=|||, action=||||match, log=|||content||, precedence=4\n"
+"filter rule 2: dstip=127.0.0.1, dstport=9191, srcip=127.0.0.1, user=, desc=, exact=site|port|ip||, all=|||, action=|||block|, log=|||content||, precedence=4\n"
+"filter rule 3: dstip=127.0.0.1, dstport=9191, srcip=127.0.0.1, user=, desc=, exact=site|port|ip||, all=|||, action=||pass||, log=|||content||, precedence=4\n"
+"filter rule 4: dstip=127.0.0.1, dstport=9191, srcip=127.0.0.1, user=, desc=, exact=site|port|ip||, all=|||, action=|split|||, log=|||content||, precedence=4\n"
+"filter rule 5: dstip=127.0.0.1, dstport=9191, srcip=127.0.0.1, user=, desc=, exact=site|port|ip||, all=|||, action=divert||||, log=|||content||, precedence=4\n"
+"filter rule 6: dstip=192.168.0.2, dstport=, srcip=192.168.0.1, user=, desc=, exact=site||ip||, all=|||, action=||||match, log=connect|||||, precedence=3\n"
 "  conn opts: tls11 -tls13>=tls10<=tls11|no_tls13|passthrough|LOW|TLS_AES_128_CCM_SHA256|prime192v1|http://example1.com/example1.crl|allow_wrong_host|https://192.168.0.12/userdblogin1.php|1200|reconnect_ssl|2048\n"
 "filter=>\n"
 "userdesc_filter_exact->\n"
@@ -786,13 +787,14 @@ START_TEST(proxyspec_struct_parse_01)
 "opts= conn opts: tls12 -tls13>=tls11<=tls12|no sslcomp|no_tls13|deny_ocsp|MEDIUM:HIGH|TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256|prime256v1|http://example2.com/example2.crl|remove_http_accept_encoding|remove_http_referer|verify_peer|validate_proto|2048\n"
 "divert\n"
 "macro $ip = 127.0.0.1\n"
-"filter rule 0: site=example4.com, port=, ip=, exact=site||, all=conns||, action=||pass||, log=|||||, apply to=|sni|cn||, precedence=1\n"
-"filter rule 1: site=127.0.0.1, port=9191, ip=127.0.0.1, exact=site|port|ip, all=||, action=||||match, log=|||content||, apply to=dstip||||, precedence=4\n"
-"filter rule 2: site=127.0.0.1, port=9191, ip=127.0.0.1, exact=site|port|ip, all=||, action=|||block|, log=|||content||, apply to=dstip||||, precedence=4\n"
-"filter rule 3: site=127.0.0.1, port=9191, ip=127.0.0.1, exact=site|port|ip, all=||, action=||pass||, log=|||content||, apply to=dstip||||, precedence=4\n"
-"filter rule 4: site=127.0.0.1, port=9191, ip=127.0.0.1, exact=site|port|ip, all=||, action=|split|||, log=|||content||, apply to=dstip||||, precedence=4\n"
-"filter rule 5: site=127.0.0.1, port=9191, ip=127.0.0.1, exact=site|port|ip, all=||, action=divert||||, log=|||content||, apply to=dstip||||, precedence=4\n"
-"filter rule 6: site=192.168.0.2, port=, ip=192.168.0.1, exact=site||ip, all=||, action=||||match, log=connect|||||, apply to=dstip||||, precedence=3\n"
+"filter rule 0: sni=example4.com, dstport=, srcip=, exact=site||, all=conns||, action=||pass||, log=|||||, precedence=1\n"
+"filter rule 0: cn=example4.com, dstport=, srcip=, exact=site||, all=conns||, action=||pass||, log=|||||, precedence=1\n"
+"filter rule 1: dstip=127.0.0.1, dstport=9191, srcip=127.0.0.1, exact=site|port|ip, all=||, action=||||match, log=|||content||, precedence=4\n"
+"filter rule 2: dstip=127.0.0.1, dstport=9191, srcip=127.0.0.1, exact=site|port|ip, all=||, action=|||block|, log=|||content||, precedence=4\n"
+"filter rule 3: dstip=127.0.0.1, dstport=9191, srcip=127.0.0.1, exact=site|port|ip, all=||, action=||pass||, log=|||content||, precedence=4\n"
+"filter rule 4: dstip=127.0.0.1, dstport=9191, srcip=127.0.0.1, exact=site|port|ip, all=||, action=|split|||, log=|||content||, precedence=4\n"
+"filter rule 5: dstip=127.0.0.1, dstport=9191, srcip=127.0.0.1, exact=site|port|ip, all=||, action=divert||||, log=|||content||, precedence=4\n"
+"filter rule 6: dstip=192.168.0.2, dstport=, srcip=192.168.0.1, exact=site||ip, all=||, action=||||match, log=connect|||||, precedence=3\n"
 "  conn opts: tls11 -tls13>=tls10<=tls11|no_tls13|passthrough|LOW|TLS_AES_128_CCM_SHA256|prime192v1|http://example1.com/example1.crl|allow_wrong_host|reconnect_ssl|2048\n"
 "filter=>\n"
 "ip_filter_exact->\n"
@@ -844,7 +846,8 @@ START_TEST(opts_set_passsite_01)
 	UNUSED int rv = filter_passsite_set(opts, conn_opts, s, 0);
 	free(s);
 
-	fail_unless(!strcmp(opts->filter_rules->site, "example.com"), "site not example.com");
+	fail_unless(!strcmp(opts->filter_rules->sni, "example.com"), "site not example.com");
+	fail_unless(!strcmp(opts->filter_rules->cn, "example.com"), "site not example.com");
 	fail_unless(!opts->filter_rules->ip, "ip set");
 #ifndef WITHOUT_USERAUTH
 	fail_unless(!opts->filter_rules->user, "user set");
@@ -855,9 +858,13 @@ START_TEST(opts_set_passsite_01)
 
 	ps = filter_rule_str(opts->filter_rules);
 #ifndef WITHOUT_USERAUTH
-	fail_unless(!strcmp(ps, "filter rule 0: site=example.com, port=, ip=, user=, desc=, exact=site||||, all=conns|||, action=||pass||, log=|||||, apply to=|sni|cn||, precedence=1"), "failed parsing passite example.com: %s", ps);
+	fail_unless(!strcmp(ps, "filter rule 0: sni=example.com, dstport=, srcip=, user=, desc=, exact=site||||, all=conns|||, action=||pass||, log=|||||, precedence=1\n"
+		"filter rule 0: cn=example.com, dstport=, srcip=, user=, desc=, exact=site||||, all=conns|||, action=||pass||, log=|||||, precedence=1\n"),
+		"failed parsing passite example.com: %s", ps);
 #else /* WITHOUT_USERAUTH */
-	fail_unless(!strcmp(ps, "filter rule 0: site=example.com, port=, ip=, exact=site||, all=conns||, action=||pass||, log=|||||, apply to=|sni|cn||, precedence=1"), "failed parsing passite example.com: %s", ps);
+	fail_unless(!strcmp(ps, "filter rule 0: sni=example.com, dstport=, srcip=, exact=site||, all=conns||, action=||pass||, log=|||||, precedence=1\n"
+		"filter rule 0: cn=example.com, dstport=, srcip=, exact=site||, all=conns||, action=||pass||, log=|||||, precedence=1\n"),
+		"failed parsing passite example.com: %s", ps);
 #endif /* WITHOUT_USERAUTH */
 	free(ps);
 
@@ -876,7 +883,8 @@ START_TEST(opts_set_passsite_02)
 	UNUSED int rv = filter_passsite_set(opts, conn_opts, s, 0);
 	free(s);
 
-	fail_unless(!strcmp(opts->filter_rules->site, "example.com"), "site not example.com");
+	fail_unless(!strcmp(opts->filter_rules->sni, "example.com"), "site not example.com");
+	fail_unless(!strcmp(opts->filter_rules->cn, "example.com"), "site not example.com");
 	fail_unless(!strcmp(opts->filter_rules->ip, "192.168.0.1"), "ip not 192.168.0.1");
 #ifndef WITHOUT_USERAUTH
 	fail_unless(!opts->filter_rules->user, "user set");
@@ -887,9 +895,13 @@ START_TEST(opts_set_passsite_02)
 
 	ps = filter_rule_str(opts->filter_rules);
 #ifndef WITHOUT_USERAUTH
-	fail_unless(!strcmp(ps, "filter rule 0: site=example.com, port=, ip=192.168.0.1, user=, desc=, exact=site||||, all=|||, action=||pass||, log=|||||, apply to=|sni|cn||, precedence=2"), "failed parsing passite example.com 192.168.0.1: %s", ps);
+	fail_unless(!strcmp(ps, "filter rule 0: sni=example.com, dstport=, srcip=192.168.0.1, user=, desc=, exact=site||||, all=|||, action=||pass||, log=|||||, precedence=2\n"
+		"filter rule 0: cn=example.com, dstport=, srcip=192.168.0.1, user=, desc=, exact=site||||, all=|||, action=||pass||, log=|||||, precedence=2\n"),
+		"failed parsing passite example.com 192.168.0.1: %s", ps);
 #else /* WITHOUT_USERAUTH */
-	fail_unless(!strcmp(ps, "filter rule 0: site=example.com, port=, ip=192.168.0.1, exact=site||, all=||, action=||pass||, log=|||||, apply to=|sni|cn||, precedence=2"), "failed parsing passite example.com 192.168.0.1: %s", ps);
+	fail_unless(!strcmp(ps, "filter rule 0: sni=example.com, dstport=, srcip=192.168.0.1, exact=site||, all=||, action=||pass||, log=|||||, precedence=2\n"
+		"filter rule 0: cn=example.com, dstport=, srcip=192.168.0.1, exact=site||, all=||, action=||pass||, log=|||||, precedence=2\n"),
+		"failed parsing passite example.com 192.168.0.1: %s", ps);
 #endif /* !WITHOUT_USERAUTH */
 	free(ps);
 
@@ -911,7 +923,8 @@ START_TEST(opts_set_passsite_03)
 	UNUSED int rv = filter_passsite_set(opts, conn_opts, s, 0);
 	free(s);
 
-	fail_unless(!strcmp(opts->filter_rules->site, "example.com"), "site not example.com");
+	fail_unless(!strcmp(opts->filter_rules->sni, "example.com"), "site not example.com");
+	fail_unless(!strcmp(opts->filter_rules->cn, "example.com"), "site not example.com");
 	fail_unless(!opts->filter_rules->ip, "ip set");
 	fail_unless(!strcmp(opts->filter_rules->user, "root"), "user not root");
 	fail_unless(!opts->filter_rules->all_conns, "all_conns not 0");
@@ -919,7 +932,9 @@ START_TEST(opts_set_passsite_03)
 	fail_unless(!opts->filter_rules->next, "next set");
 
 	ps = filter_rule_str(opts->filter_rules);
-	fail_unless(!strcmp(ps, "filter rule 0: site=example.com, port=, ip=, user=root, desc=, exact=site||||, all=|||, action=||pass||, log=|||||, apply to=|sni|cn||, precedence=3"), "failed parsing passite example.com root: %s", ps);
+	fail_unless(!strcmp(ps, "filter rule 0: sni=example.com, dstport=, srcip=, user=root, desc=, exact=site||||, all=|||, action=||pass||, log=|||||, precedence=3\n"
+		"filter rule 0: cn=example.com, dstport=, srcip=, user=root, desc=, exact=site||||, all=|||, action=||pass||, log=|||||, precedence=3\n"),
+		"failed parsing passite example.com root: %s", ps);
 	free(ps);
 
 	opts_free(opts);
@@ -939,7 +954,8 @@ START_TEST(opts_set_passsite_04)
 	UNUSED int rv = filter_passsite_set(opts, conn_opts, s, 0);
 	free(s);
 
-	fail_unless(!strcmp(opts->filter_rules->site, "*.google.com"), "site not *.google.com");
+	fail_unless(!strcmp(opts->filter_rules->sni, "*.google.com"), "site not *.google.com");
+	fail_unless(!strcmp(opts->filter_rules->cn, "*.google.com"), "site not *.google.com");
 	fail_unless(!opts->filter_rules->ip, "ip set");
 	fail_unless(!opts->filter_rules->user, "user set");
 	fail_unless(!opts->filter_rules->all_conns, "all_conns not 0");
@@ -948,7 +964,9 @@ START_TEST(opts_set_passsite_04)
 	fail_unless(!opts->filter_rules->next, "next set");
 
 	ps = filter_rule_str(opts->filter_rules);
-	fail_unless(!strcmp(ps, "filter rule 0: site=*.google.com, port=, ip=, user=, desc=android, exact=site||||, all=|users||, action=||pass||, log=|||||, apply to=|sni|cn||, precedence=3"), "failed parsing passite *.google.com * android: %s", ps);
+	fail_unless(!strcmp(ps, "filter rule 0: sni=*.google.com, dstport=, srcip=, user=, desc=android, exact=site||||, all=|users||, action=||pass||, log=|||||, precedence=3\n"
+		"filter rule 0: cn=*.google.com, dstport=, srcip=, user=, desc=android, exact=site||||, all=|users||, action=||pass||, log=|||||, precedence=3\n"),
+		"failed parsing passite *.google.com * android: %s", ps);
 	free(ps);
 
 	opts_free(opts);
@@ -1006,17 +1024,25 @@ START_TEST(opts_set_passsite_05)
 	fail_unless(opts->filter_rules->next->next->next, "next->next->next not set");
 	fail_unless(opts->filter_rules->next->next->next->next, "next->next->next->next not set");
 	fail_unless(!opts->filter_rules->next->next->next->next->next, "next->next->next->next->next set");
-	fail_unless(!strcmp(ps, "filter rule 0: site=example.com, port=, ip=, user=, desc=, exact=site||||, all=conns|||, action=||pass||, log=|||||, apply to=|sni|cn||, precedence=1\n"
-		"filter rule 1: site=example.com, port=, ip=, user=, desc=, exact=site||||, all=|users||, action=||pass||, log=|||||, apply to=|sni|cn||, precedence=2\n"
-		"filter rule 2: site=example.com, port=, ip=192.168.0.1, user=, desc=, exact=site||||, all=|||, action=||pass||, log=|||||, apply to=|sni|cn||, precedence=2\n"
-		"filter rule 3: site=example.com, port=, ip=, user=root, desc=, exact=site||||, all=|||, action=||pass||, log=|||||, apply to=|sni|cn||, precedence=3\n"
-		"filter rule 4: site=*.google.com, port=, ip=, user=, desc=android, exact=site||||, all=|users||, action=||pass||, log=|||||, apply to=|sni|cn||, precedence=3"),
+	fail_unless(!strcmp(ps, "filter rule 0: sni=example.com, dstport=, srcip=, user=, desc=, exact=site||||, all=conns|||, action=||pass||, log=|||||, precedence=1\n"
+		"filter rule 0: cn=example.com, dstport=, srcip=, user=, desc=, exact=site||||, all=conns|||, action=||pass||, log=|||||, precedence=1\n"
+		"filter rule 1: sni=example.com, dstport=, srcip=, user=, desc=, exact=site||||, all=|users||, action=||pass||, log=|||||, precedence=2\n"
+		"filter rule 1: cn=example.com, dstport=, srcip=, user=, desc=, exact=site||||, all=|users||, action=||pass||, log=|||||, precedence=2\n"
+		"filter rule 2: sni=example.com, dstport=, srcip=192.168.0.1, user=, desc=, exact=site||||, all=|||, action=||pass||, log=|||||, precedence=2\n"
+		"filter rule 2: cn=example.com, dstport=, srcip=192.168.0.1, user=, desc=, exact=site||||, all=|||, action=||pass||, log=|||||, precedence=2\n"
+		"filter rule 3: sni=example.com, dstport=, srcip=, user=root, desc=, exact=site||||, all=|||, action=||pass||, log=|||||, precedence=3\n"
+		"filter rule 3: cn=example.com, dstport=, srcip=, user=root, desc=, exact=site||||, all=|||, action=||pass||, log=|||||, precedence=3\n"
+		"filter rule 4: sni=*.google.com, dstport=, srcip=, user=, desc=android, exact=site||||, all=|users||, action=||pass||, log=|||||, precedence=3\n"
+		"filter rule 4: cn=*.google.com, dstport=, srcip=, user=, desc=android, exact=site||||, all=|users||, action=||pass||, log=|||||, precedence=3\n"),
 		"failed parsing multiple passites: %s", ps);
 #else /* WITHOUT_USERAUTH */
 	fail_unless(!opts->filter_rules->next->next->next, "next->next->next set");
-	fail_unless(!strcmp(ps, "filter rule 0: site=example.com, port=, ip=, exact=site||, all=conns||, action=||pass||, log=|||||, apply to=|sni|cn||, precedence=1\n"
-		"filter rule 1: site=example.com, port=, ip=, exact=site||, all=conns||, action=||pass||, log=|||||, apply to=|sni|cn||, precedence=1\n"
-		"filter rule 2: site=example.com, port=, ip=192.168.0.1, exact=site||, all=||, action=||pass||, log=|||||, apply to=|sni|cn||, precedence=2"),
+	fail_unless(!strcmp(ps, "filter rule 0: sni=example.com, dstport=, srcip=, exact=site||, all=conns||, action=||pass||, log=|||||, precedence=1\n"
+		"filter rule 0: cn=example.com, dstport=, srcip=, exact=site||, all=conns||, action=||pass||, log=|||||, precedence=1\n"
+		"filter rule 1: sni=example.com, dstport=, srcip=, exact=site||, all=conns||, action=||pass||, log=|||||, precedence=1\n"
+		"filter rule 1: cn=example.com, dstport=, srcip=, exact=site||, all=conns||, action=||pass||, log=|||||, precedence=1\n"
+		"filter rule 2: sni=example.com, dstport=, srcip=192.168.0.1, exact=site||, all=||, action=||pass||, log=|||||, precedence=2\n"
+		"filter rule 2: cn=example.com, dstport=, srcip=192.168.0.1, exact=site||, all=||, action=||pass||, log=|||||, precedence=2\n"),
 		"failed parsing multiple passites: %s", ps);
 #endif /* WITHOUT_USERAUTH */
 	free(ps);

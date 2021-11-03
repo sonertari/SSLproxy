@@ -1243,7 +1243,7 @@ opts_str(opts_t *opts, conn_opts_t *conn_opts)
 #endif /* !WITHOUT_USERAUTH */
 				 strlen(ms) ? "\n" : "", ms,
 				 strlen(frs) ? "\n" : "", frs,
-				 strlen(fs) ? "\n" : "", fs) < 0) {
+				 (!strlen(frs) && strlen(fs)) ? "\n" : "", fs) < 0) {
 		s = NULL;
 	}
 out:
