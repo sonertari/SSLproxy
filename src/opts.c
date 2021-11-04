@@ -123,9 +123,7 @@ opts_load_cert_chain_key(const char *filename)
 conn_opts_t *
 conn_opts_new(void)
 {
-	conn_opts_t *conn_opts;
-
-	conn_opts = malloc(sizeof(conn_opts_t));
+	conn_opts_t *conn_opts = malloc(sizeof(conn_opts_t));
 	if (!conn_opts)
 		return oom_return_na_null();
 	memset(conn_opts, 0, sizeof(conn_opts_t));
@@ -192,9 +190,6 @@ global_new(void)
 void
 conn_opts_free(conn_opts_t *conn_opts)
 {
-	if (conn_opts->chain) {
-		sk_X509_pop_free(conn_opts->chain, X509_free);
-	}
 	if (conn_opts->clientcrt) {
 		X509_free(conn_opts->clientcrt);
 	}
@@ -206,6 +201,9 @@ conn_opts_free(conn_opts_t *conn_opts)
 	}
 	if (conn_opts->cakey) {
 		EVP_PKEY_free(conn_opts->cakey);
+	}
+	if (conn_opts->chain) {
+		sk_X509_pop_free(conn_opts->chain, X509_free);
 	}
 #ifndef OPENSSL_NO_DH
 	if (conn_opts->dh) {
@@ -229,7 +227,7 @@ conn_opts_free(conn_opts_t *conn_opts)
 	}
 #endif /* !WITHOUT_USERAUTH */
 
-	memset(conn_opts, 0, sizeof(opts_t));
+	memset(conn_opts, 0, sizeof(conn_opts_t));
 	free(conn_opts);
 }
 
@@ -551,7 +549,6 @@ conn_opts_copy(conn_opts_t *conn_opts, const char *argv0, tmp_opts_t *tmp_opts)
 	conn_opts_t *cops = conn_opts_new();
 	if (!cops)
 		return NULL;
-	memset(cops, 0, sizeof(conn_opts_t));
 
 	cops->sslcomp = conn_opts->sslcomp;
 #ifdef HAVE_SSLV2
@@ -648,7 +645,7 @@ conn_opts_copy(conn_opts_t *conn_opts, const char *argv0, tmp_opts_t *tmp_opts)
 }
 
 static opts_t * WUNRES
-global_opts_copy(global_t *global, const char *argv0)
+global_opts_copy(global_t *global, const char *argv0, tmp_opts_t *tmp_opts)
 {
 #ifdef DEBUG_OPTS
 	log_dbg_printf("Copy global opts\n");
@@ -672,7 +669,7 @@ global_opts_copy(global_t *global, const char *argv0)
 	if (filter_macro_copy(global->opts->macro, argv0, opts) == -1)
 		return oom_return_null(argv0);
 
-	if (filter_rule_copy(global->opts->filter_rules, argv0, opts) == -1)
+	if (filter_rule_copy(global->opts->filter_rules, argv0, opts, tmp_opts) == -1)
 		return oom_return_null(argv0);
 
 	return opts;
@@ -688,7 +685,7 @@ proxyspec_new(global_t *global, const char *argv0, tmp_opts_t *tmp_opts)
 	spec->conn_opts = conn_opts_copy(global->conn_opts, argv0, tmp_opts);
 	if (!spec->conn_opts)
 		return NULL;
-	spec->opts = global_opts_copy(global, argv0);
+	spec->opts = global_opts_copy(global, argv0, tmp_opts);
 	if (!spec->opts)
 		return NULL;
 	return spec;
@@ -1443,7 +1440,7 @@ opts_set_cakey(conn_opts_t *conn_opts, const char *argv0, const char *optarg, tm
 }
 
 int
-opts_set_chain(conn_opts_t *opts, const char *argv0, const char *optarg, tmp_opts_t *tmp_opts)
+opts_set_chain(conn_opts_t *conn_opts, const char *argv0, const char *optarg, tmp_opts_t *tmp_opts)
 {
 	if (tmp_opts) {
 		if (tmp_opts->chain_str)
@@ -1453,7 +1450,7 @@ opts_set_chain(conn_opts_t *opts, const char *argv0, const char *optarg, tmp_opt
 			return oom_return(argv0);
 	}
 
-	if (ssl_x509chain_load(NULL, &opts->chain, optarg) == -1) {
+	if (ssl_x509chain_load(NULL, &conn_opts->chain, optarg) == -1) {
 		fprintf(stderr, "%s: error loading chain from '%s':\n",
 		        argv0, optarg);
 		if (errno) {
@@ -1557,7 +1554,7 @@ opts_set_clientcrt(conn_opts_t *conn_opts, const char *argv0, const char *optarg
 }
 
 int
-opts_set_clientkey(conn_opts_t *opts, const char *argv0, const char *optarg, tmp_opts_t *tmp_opts)
+opts_set_clientkey(conn_opts_t *conn_opts, const char *argv0, const char *optarg, tmp_opts_t *tmp_opts)
 {
 	if (tmp_opts) {
 		if (tmp_opts->clientkey_str)
@@ -1567,10 +1564,10 @@ opts_set_clientkey(conn_opts_t *opts, const char *argv0, const char *optarg, tmp
 			return oom_return(argv0);
 	}
 
-	if (opts->clientkey)
-		EVP_PKEY_free(opts->clientkey);
-	opts->clientkey = ssl_key_load(optarg);
-	if (!opts->clientkey) {
+	if (conn_opts->clientkey)
+		EVP_PKEY_free(conn_opts->clientkey);
+	conn_opts->clientkey = ssl_key_load(optarg);
+	if (!conn_opts->clientkey) {
 		fprintf(stderr, "%s: error loading client key from '%s':\n",
 		        argv0, optarg);
 		if (errno) {

@@ -230,6 +230,8 @@ filter_rule_free(filter_rule_t *rule)
 	if (rule->desc)
 		free(rule->desc);
 #endif /* !WITHOUT_USERAUTH */
+	if (rule->action.conn_opts)
+		conn_opts_free(rule->action.conn_opts);
 	free(rule);
 }
 
@@ -446,7 +448,7 @@ filter_macro_copy(macro_t *macro, const char *argv0, opts_t *opts)
 }
 
 int
-filter_rule_copy(filter_rule_t *rule, const char *argv0, opts_t *opts)
+filter_rule_copy(filter_rule_t *rule, const char *argv0, opts_t *opts, tmp_opts_t *tmp_opts)
 {
 	while (rule) {
 		filter_rule_t *r = malloc(sizeof(filter_rule_t));
@@ -529,6 +531,13 @@ filter_rule_copy(filter_rule_t *rule, const char *argv0, opts_t *opts)
 
 		// The action field is not a pointer, hence the direct assignment (copy)
 		r->action = rule->action;
+
+		// But deep copy for conn_opts
+		if (rule->action.conn_opts) {
+			r->action.conn_opts = conn_opts_copy(rule->action.conn_opts, argv0, tmp_opts);
+			if (!r->action.conn_opts)
+				return oom_return(argv0);
+		}
 
 		append_list(&opts->filter_rules, r, filter_rule_t);
 
@@ -1520,6 +1529,7 @@ filter_rule_dbg_print(filter_rule_t *rule)
 	if (!s)
 		return;
 	log_dbg_printf("%s", s);
+	free(s);
 }
 #endif /* DEBUG_OPTS */
 
@@ -1742,7 +1752,11 @@ filter_macro_set(opts_t *opts, char *value, unsigned int line_num)
 	append_list(&opts->macro, macro, macro_t);
 
 #ifdef DEBUG_OPTS
-	log_dbg_printf("Macro: %s = %s\n", macro->name, filter_value_str(macro->value));
+	char *s = filter_value_str(macro->value);
+	if (!s)
+		return oom_return_na();
+	log_dbg_printf("Macro: %s = %s\n", macro->name, s);
+	free(s);
 #endif /* DEBUG_OPTS */
 	return 0;
 }

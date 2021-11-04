@@ -283,18 +283,18 @@ cert_t *opts_load_cert_chain_key(const char *) NONNULL(1);
 void opts_unset_divert(opts_t *) NONNULL(1);
 
 void proxyspec_free(proxyspec_t *);
-proxyspec_t *proxyspec_new(global_t *, const char *, tmp_opts_t *) MALLOC WUNRES;
+proxyspec_t *proxyspec_new(global_t *, const char *, tmp_opts_t *) MALLOC;
 int proxyspec_set_proto(proxyspec_t *, const char *) NONNULL(1,2) WUNRES;
 int proxyspec_parse(int *, char **[], const char *, global_t *, const char *, tmp_opts_t *) WUNRES;
 
 char *conn_opts_str(conn_opts_t *);
-char *proxyspec_str(proxyspec_t *) NONNULL(1) MALLOC WUNRES;
+char *proxyspec_str(proxyspec_t *) NONNULL(1) MALLOC;
 
-conn_opts_t *conn_opts_new(void) MALLOC WUNRES;
-opts_t *opts_new(void) MALLOC WUNRES;
+conn_opts_t *conn_opts_new(void) MALLOC;
+opts_t *opts_new(void) MALLOC;
 void opts_free(opts_t *) NONNULL(1);
 void conn_opts_free(conn_opts_t *);
-tmp_opts_t *tmp_opts_copy(tmp_opts_t *) NONNULL(1) MALLOC WUNRES;
+tmp_opts_t *tmp_opts_copy(tmp_opts_t *) NONNULL(1) MALLOC;
 conn_opts_t *conn_opts_copy(conn_opts_t *, const char *, tmp_opts_t *) WUNRES;
 int opts_set_cacrt(conn_opts_t *, const char *, const char *, tmp_opts_t *) NONNULL(1,2,3) WUNRES;
 int opts_set_cakey(conn_opts_t *, const char *, const char *, tmp_opts_t *) NONNULL(1,2,3) WUNRES;
