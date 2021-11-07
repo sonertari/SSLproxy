@@ -2492,6 +2492,13 @@ global_unset_statslog(global_t *global)
 static int WUNRES
 global_set_userdb_path(global_t *global, const char *argv0, const char *optarg)
 {
+	FILE *fd = fopen(optarg, "r");
+	if (!fd) {
+		log_err_level_printf(LOG_CRIT, "Error opening UserDB file '%s': %s\n", optarg, strerror(errno));
+		return -1;
+	}
+	fclose(fd);
+
 	if (global->userdb_path)
 		free(global->userdb_path);
 	global->userdb_path = strdup(optarg);
