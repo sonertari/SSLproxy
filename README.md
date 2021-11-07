@@ -66,7 +66,7 @@ route injection, /etc/hosts modification and so on.
 #### Proxy specifications
 
 SSLproxy supports three different types of proxy specifications, or proxyspecs 
-in short, which can be in divert or split style.
+for short, which can be in divert or split style.
 
 - Command line proxyspecs passed on the command line
 - One line proxyspecs in configuration files
@@ -80,9 +80,9 @@ The syntax of command line proxyspecs is as follows:
 	  [(targetaddr targetport|sni sniport|natengine)]
 
 The syntax of one line proxyspecs is the same as the command line proxyspecs, 
-except for the leading `Proxyspec` keyword:
+except for the leading `ProxySpec` keyword:
 
-	Proxyspec (tcp|ssl|http|https|pop3|pop3s|smtp|smtps|autossl)
+	ProxySpec (tcp|ssl|http|https|pop3|pop3s|smtp|smtps|autossl)
 	  listeningaddr listeningport
 	  [up:divertport [ua:divertaddr ra:returnaddr]]
 	  [(targetaddr targetport|sni sniport|natengine)]
@@ -90,7 +90,7 @@ except for the leading `Proxyspec` keyword:
 The syntax of structured proxyspecs is as follows, and they can configure 
 connection options too:
 
-	Proxyspec {
+	ProxySpec {
 	    Proto (tcp|ssl|http|https|pop3|pop3s|smtp|smtps|autossl)
 	    Addr listeningaddr    # inline
 	    Port listeningport    # comments
@@ -134,13 +134,15 @@ connection options too:
 	    ValidateProto (yes|no)
 	    MaxHTTPHeaderSize 8192
 
+	    # The DivertUsers, PassUsers, and PassSite options will be deprecated
 	    DivertUsers userlist
 	    PassUsers userlist
-
 	    PassSite rules
 
 	    Define $macro valuelist
-	    (Divert|Split|Pass|Block|Match) filtering rules
+
+	    (Divert|Split|Pass|Block|Match) one line filtering rules
+	    FilterRule {...} structured filtering rules
 	}
 
 For example, given the following command line proxyspec:
