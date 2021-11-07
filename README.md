@@ -63,9 +63,87 @@ spoofing, ND spoofing, DNS poisoning, deploying a rogue access point (e.g.
 using hostap mode), physical recabling, malicious VLAN reconfiguration or 
 route injection, /etc/hosts modification and so on.
 
-#### Proxy specification
+#### Proxy specifications
 
-For example, given the following proxy specification:
+SSLproxy supports three different types of proxy specifications, or proxyspecs 
+in short, which can be in divert or split style.
+
+- Command line proxyspecs passed on the command line
+- One line proxyspecs in configuration files
+- Structured proxyspecs in configuration files
+
+The syntax of command line proxyspecs is as follows:
+
+	(tcp|ssl|http|https|pop3|pop3s|smtp|smtps|autossl)
+	  listeningaddr listeningport
+	  [up:divertport [ua:divertaddr ra:returnaddr]]
+	  [(targetaddr targetport|sni sniport|natengine)]
+
+The syntax of one line proxyspecs is the same as the command line proxyspecs, 
+except for the leading `Proxyspec` keyword:
+
+	Proxyspec (tcp|ssl|http|https|pop3|pop3s|smtp|smtps|autossl)
+	  listeningaddr listeningport
+	  [up:divertport [ua:divertaddr ra:returnaddr]]
+	  [(targetaddr targetport|sni sniport|natengine)]
+
+The syntax of structured proxyspecs is as follows, and they can configure 
+connection options too:
+
+	Proxyspec {
+	    Proto (tcp|ssl|http|https|pop3|pop3s|smtp|smtps|autossl)
+	    Addr listeningaddr    # inline
+	    Port listeningport    # comments
+	    DivertPort divertport # allowed
+	    DivertAddr divertaddr
+	    ReturnAddr returnaddr
+	    TargetAddr targetaddr
+	    TargetPort targetport
+	    SNIPort sniport
+	    NatEngine natengine
+
+	    # Divert or split
+	    Divert (yes|no)
+
+	    # Connection options
+	    DenyOCSP (yes|no)
+	    Passthrough (yes|no)
+	    CACert ca.crt
+	    CAKey ca.key
+	    ClientCert client.crt
+	    ClientKey client.key
+	    CAChain chain.crt
+	    LeafCRLURL http://example.com/example.crl
+	    DHGroupParams dh.pem
+	    ECDHCurve prime256v1
+	    SSLCompression (yes|no)
+	    ForceSSLProto (ssl2|ssl3|tls10|tls11|tls12|tls13)
+	    DisableSSLProto (ssl2|ssl3|tls10|tls11|tls12|tls13)
+	    EnableSSLProto (ssl2|ssl3|tls10|tls11|tls12|tls13)
+	    MinSSLProto (ssl2|ssl3|tls10|tls11|tls12|tls13)
+	    MaxSSLProto (ssl2|ssl3|tls10|tls11|tls12|tls13)
+	    Ciphers MEDIUM:HIGH
+	    CipherSuites TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256
+	    RemoveHTTPAcceptEncoding (yes|no)
+	    RemoveHTTPReferer (yes|no)
+	    VerifyPeer (yes|no)
+	    AllowWrongHost (yes|no)
+	    UserAuth (yes|no)
+	    UserTimeout 300
+	    UserAuthURL https://192.168.0.1/userdblogin.php
+	    ValidateProto (yes|no)
+	    MaxHTTPHeaderSize 8192
+
+	    DivertUsers userlist
+	    PassUsers userlist
+
+	    PassSite rules
+
+	    Define $macro valuelist
+	    (Divert|Split|Pass|Block|Match) filtering rules
+	}
+
+For example, given the following command line proxyspec:
 
 	https 127.0.0.1 8443 up:8080
 
@@ -81,16 +159,14 @@ the SSLproxy line in the first packet in the connection.
 The response from the Server follows the same path back to the Client in 
 reverse order.
 
-Along with one line proxyspecs above, SSLproxy supports structured proxyspecs 
-to configure further options per proxyspec. It also supports split style 
-proxyspecs for split mode of operation similar to SSLsplit. See 
-sslproxy.conf(5) for structured proxyspecs, and the SSLsplit documentation for 
-split style proxyspecs.
+Split style proxyspecs configure for split mode of operation similar to 
+[SSLsplit](https://github.com/droe/sslsplit). See the SSLsplit documentation 
+for the details of split style proxyspecs.
 
 #### SSLproxy line
 
-A sample line SSLproxy inserts into the first packet in the connection is the 
-following:
+Given the example proxyspec above, a sample line SSLproxy inserts into the 
+first packet in the connection may be the following:
 
 	SSLproxy: [127.0.0.1]:34649,[192.168.3.24]:47286,[192.168.111.130]:443,s
 
@@ -106,7 +182,7 @@ respectively. This information is also important for the program, because it
 cannot reliably determine if the actual network traffic it is processing was 
 encrypted or not before being diverted to it.
 
-#### Listening program
+#### Listening programs
 
 The program that packets are diverted to should support this mode of operation.
 Specifically, it should be able to recognize the SSLproxy address in the first
@@ -118,6 +194,9 @@ You can use any software as a listening program as long as it supports this
 mode of operation. So existing or new software developed in any programming 
 language can be modified to be used with SSLproxy to inspect and/or modify any 
 or all parts of the packets diverted to it.
+
+Given the example proxyspec above, a listening program should be listening on 
+port 8080.
 
 You can offload the system SSLproxy is running on by diverting packets to 
 remote listening programs too. For example, given the following proxy 
@@ -317,7 +396,8 @@ The syntax of one line filtering rules is as follows:
 	        [[!]content] [[!]pcap] [[!]mirror] [$macro]|[!]*)]
 	  |*) [# comment]
 
-The syntax of structured filtering rules is as follows:
+The syntax of structured filtering rules is as follows, and they can configure 
+connection options too:
 
 	FilterRule {
 	    Action (Divert|Split|Pass|Block|Match)

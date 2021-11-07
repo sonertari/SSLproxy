@@ -100,44 +100,123 @@ running \fBsslproxy\fP.  Your options include running \fBsslproxy\fP on a
 legitimate router, ARP spoofing, ND spoofing, DNS poisoning, deploying a rogue 
 access point (e.g. using hostap mode), physical recabling, malicious VLAN 
 reconfiguration or route injection, /etc/hosts modification and so on.
-.SH 	Proxy specification
-For example, given the following proxy specification:
+.SH 	Proxy specifications
+SSLproxy supports three different types of proxy specifications, or proxyspecs 
+in short, which can be in divert or split style.
+.LP
+ - Command line proxyspecs passed on the command line
+ - One line proxyspecs in configuration files
+ - Structured proxyspecs in configuration files
+.LP
+The syntax of command line proxyspecs is as follows:
+.LP
+(tcp|ssl|http|https|pop3|pop3s|smtp|smtps|autossl)
+  listeningaddr listeningport
+  [up:divertport [ua:divertaddr ra:returnaddr]]
+  [(targetaddr targetport|sni sniport|natengine)]
+.LP
+The syntax of one line proxyspecs is the same as the command line proxyspecs, 
+except for the leading Proxyspec keyword:
+.LP
+Proxyspec (tcp|ssl|http|https|pop3|pop3s|smtp|smtps|autossl)
+  listeningaddr listeningport
+  [up:divertport [ua:divertaddr ra:returnaddr]]
+  [(targetaddr targetport|sni sniport|natengine)]
+.LP
+The syntax of structured proxyspecs is as follows, and they can configure 
+connection options too:
+.LP
+Proxyspec {
+    Proto (tcp|ssl|http|https|pop3|pop3s|smtp|smtps|autossl)
+    Addr listeningaddr    # inline
+    Port listeningport    # comments
+    DivertPort divertport # allowed
+    DivertAddr divertaddr
+    ReturnAddr returnaddr
+    TargetAddr targetaddr
+    TargetPort targetport
+    SNIPort sniport
+    NatEngine natengine
+
+    # Divert or split
+    Divert (yes|no)
+
+    # Connection options
+    DenyOCSP (yes|no)
+    Passthrough (yes|no)
+    CACert ca.crt
+    CAKey ca.key
+    ClientCert client.crt
+    ClientKey client.key
+    CAChain chain.crt
+    LeafCRLURL http://example.com/example.crl
+    DHGroupParams dh.pem
+    ECDHCurve prime256v1
+    SSLCompression (yes|no)
+    ForceSSLProto (ssl2|ssl3|tls10|tls11|tls12|tls13)
+    DisableSSLProto (ssl2|ssl3|tls10|tls11|tls12|tls13)
+    EnableSSLProto (ssl2|ssl3|tls10|tls11|tls12|tls13)
+    MinSSLProto (ssl2|ssl3|tls10|tls11|tls12|tls13)
+    MaxSSLProto (ssl2|ssl3|tls10|tls11|tls12|tls13)
+    Ciphers MEDIUM:HIGH
+    CipherSuites TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256
+    RemoveHTTPAcceptEncoding (yes|no)
+    RemoveHTTPReferer (yes|no)
+    VerifyPeer (yes|no)
+    AllowWrongHost (yes|no)
+    UserAuth (yes|no)
+    UserTimeout 300
+    UserAuthURL https://192.168.0.1/userdblogin.php
+    ValidateProto (yes|no)
+    MaxHTTPHeaderSize 8192
+
+    DivertUsers userlist
+    PassUsers userlist
+
+    PassSite rules
+
+    Define $macro valuelist
+    (Divert|Split|Pass|Block|Match) filtering rules
+.br
+}
+.LP
+For example, given the following command line proxyspec:
 .LP
 https 127.0.0.1 8443 up:8080
 .LP
-SSLproxy listens for HTTPS connections on 127.0.0.1:8443. Upon receiving a 
-connection from the Client, it decrypts and diverts the packets to a Program 
-listening on 127.0.0.1:8080. The default divert address is 127.0.0.1, which 
-can be configured by the ua option. After processing the packets, the Program 
-gives them back to SSLproxy listening on a dynamically assigned address, which 
-the Program obtains from the SSLproxy line in the first packet in the 
-connection. Then SSLproxy re-encrypts and sends the packets to the Server.
+ - SSLproxy listens for HTTPS connections on 127.0.0.1:8443.
+ - Upon receiving a connection from the Client, it decrypts and diverts the 
+packets to a Program listening on 127.0.0.1:8080. The default divert address 
+is 127.0.0.1, which can be configured by the ua option.
+ - After processing the packets, the Program gives them back to SSLproxy 
+listening on a dynamically assigned address, which the Program obtains from 
+the SSLproxy line in the first packet in the connection.
+ - Then SSLproxy re-encrypts and sends the packets to the Server.
 .LP
 The response from the Server follows the same path back to the Client in 
 reverse order.
 .LP
-Along with one line proxyspecs above, SSLproxy supports structured proxyspecs 
-to configure further options per proxyspec. It also supports split style 
-proxyspecs for split mode of operation similar to SSLsplit. See 
-sslproxy.conf(5) for structured proxyspecs, and the SSLsplit documentation for 
-split style proxyspecs.
+Split style proxyspecs configure for split mode of operation similar to 
+SSLsplit. See the SSLsplit documentation for the details of split style 
+proxyspecs.
 .SH 	SSLproxy line
-A sample line SSLproxy inserts into the first packet in the connection is the 
-following:
+Given the example proxyspec above, a sample line SSLproxy inserts into the 
+first packet in the connection may be the following:
 .LP
 SSLproxy: [127.0.0.1]:34649,[192.168.3.24]:47286,[192.168.111.130]:443,s
 .LP
-The first IP:port pair is a dynamically assigned address that SSLproxy expects 
-the program send the packets back to it. The second and third IP:port pairs 
-are the actual source and destination addresses of the connection 
-respectively. Since the program receives the packets from SSLproxy, it cannot 
-determine the source and destination addresses of the packets by itself, e.g 
-by asking the NAT engine, hence must rely on the information in the SSLproxy 
-line. The last letter is either s or p, for SSL/TLS encrypted or plain traffic 
+ - The first IP:port pair is a dynamically assigned address that SSLproxy 
+expects the program send the packets back to it.
+ - The second and third IP:port pairs are the actual source and destination 
+addresses of the connection respectively. Since the program receives the 
+packets from SSLproxy, it cannot determine the source and destination 
+addresses of the packets by itself, e.g by asking the NAT engine, hence must 
+rely on the information in the SSLproxy line.
+ - The last letter is either s or p, for SSL/TLS encrypted or plain traffic 
 respectively. This information is also important for the program, because it 
 cannot reliably determine if the actual network traffic it is processing was 
 encrypted or not before being diverted to it.
-.SH 	Listening program
+.SH 	Listening programs
 The program that packets are diverted to should support this mode of operation.
 Specifically, it should be able to recognize the SSLproxy address in the first
 packet, and give the first and subsequent packets back to SSLproxy listening 
@@ -149,16 +228,19 @@ mode of operation. So existing or new software developed in any programming
 language can be modified to be used with SSLproxy to inspect and/or modify any 
 or all parts of the packets diverted to it.
 .LP
+Given the example proxyspec above, a listening program should be listening on 
+port 8080.
+.LP
 You can offload the system SSLproxy is running on by diverting packets to 
 remote listening programs too. For example, given the following proxy 
 specification:
 .LP
 https 127.0.0.1 8443 up:8080 ua:192.168.0.1 ra:192.168.1.1
 .LP
-The ua option instructs SSLproxy to divert packets to 192.168.0.1:8080, 
-instead of 127.0.0.1:8080 as in the previous proxyspec example. Also, the ra 
-option instructs SSLproxy to listen for returned packets from the program on 
-192.168.1.1, instead of 127.0.0.1 as in the previous SSLproxy line.
+ - The ua option instructs SSLproxy to divert packets to 192.168.0.1:8080, 
+instead of 127.0.0.1:8080 as in the previous proxyspec example.
+ - The ra option instructs SSLproxy to listen for returned packets from the 
+program on 192.168.1.1, instead of 127.0.0.1 as in the previous SSLproxy line.
 .LP
 Accordingly, the SSLproxy line now becomes:
 .LP
@@ -311,7 +393,7 @@ effectively disabling SSL inspection and content logging of packets
 filter action
 .LP
 The syntax of one line filtering rules is as follows:
-
+.LP
 (Divert|Split|Pass|Block|Match)
  ([from (
      user (username[*]|$macro|*) [desc (desc[*]|$macro|*)]|
@@ -330,8 +412,9 @@ The syntax of one line filtering rules is as follows:
         [[!]content] [[!]pcap] [[!]mirror] [$macro]|[!]*)]
   |*) [# comment]
 .LP
-The syntax of structured filtering rules is as follows:
-
+The syntax of structured filtering rules is as follows, and they can configure 
+connection options too:
+.LP
 FilterRule {
     Action (Divert|Split|Pass|Block|Match)
 
@@ -381,6 +464,7 @@ FilterRule {
     UserAuthURL https://192.168.0.1/userdblogin.php
     ValidateProto (yes|no)
     MaxHTTPHeaderSize 8192
+.br
 }
 .LP
 The definition of which connections the filter action will be applied to is 

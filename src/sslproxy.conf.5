@@ -491,21 +491,21 @@ Addr
 .br
 Port
 .br
-Divert
+DivertPort
 .br
 DivertAddr
 .br
-DivertPort
-.br
 ReturnAddr
-.br
-NatEngine
-.br
-SNIPort
 .br
 TargetAddr
 .br
 TargetPort
+.br
+SNIPort
+.br
+NatEngine
+.br
+Divert
 .br
 DenyOCSP
 .br
@@ -553,10 +553,6 @@ AllowWrongHost
 .br
 UserAuth
 .br
-DivertUsers
-.br
-PassUsers
-.br
 UserTimeout
 .br
 UserAuthURL
@@ -565,11 +561,15 @@ ValidateProto
 .br
 MaxHTTPHeaderSize
 .br
+DivertUsers
+.br
+PassUsers
+.br
 PassSite
 .br
 Define
 .br
-Divert|Split|Pass|Block|Match filtering rules
+(Divert|Split|Pass|Block|Match) filtering rules
 .br
 \fB}\fR
 .br
