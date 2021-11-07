@@ -75,7 +75,7 @@ for short, which can be in divert or split style.
 The syntax of command line proxyspecs is as follows:
 
 	(tcp|ssl|http|https|pop3|pop3s|smtp|smtps|autossl)
-	  listeningaddr listeningport
+	  listenaddr listenport
 	  [up:divertport [ua:divertaddr ra:returnaddr]]
 	  [(targetaddr targetport|sni sniport|natengine)]
 
@@ -83,7 +83,7 @@ The syntax of one line proxyspecs is the same as the command line proxyspecs,
 except for the leading `ProxySpec` keyword:
 
 	ProxySpec (tcp|ssl|http|https|pop3|pop3s|smtp|smtps|autossl)
-	  listeningaddr listeningport
+	  listenaddr listenport
 	  [up:divertport [ua:divertaddr ra:returnaddr]]
 	  [(targetaddr targetport|sni sniport|natengine)]
 
@@ -92,8 +92,8 @@ connection options too:
 
 	ProxySpec {
 	    Proto (tcp|ssl|http|https|pop3|pop3s|smtp|smtps|autossl)
-	    Addr listeningaddr    # inline
-	    Port listeningport    # comments
+	    Addr listenaddr       # inline
+	    Port listenport       # comments
 	    DivertPort divertport # allowed
 	    DivertAddr divertaddr
 	    ReturnAddr returnaddr
