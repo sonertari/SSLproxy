@@ -4,22 +4,17 @@
 * Contact: lfarhi@sfr.fr
 *
 *  This file is free software: you can redistribute it and/or modify
-*  it under the terms of the GNU General Public License as published by
-*  the Free Software Foundation, either version 3 of the License, or
-*  (at your option) any later version.
+*  it under the terms of the GNU Lesser General Public License as published by
+*  the Free Software Foundation, version 3 of the License.
 *
 *  This file is distributed in the hope that it will be useful,
 *  but WITHOUT ANY WARRANTY; without even the implied warranty of
 *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-*  GNU General Public License for more details.
+*  GNU Lesser General Public License for more details.
 *
-*  You should have received a copy of the GNU General Public License
+*  You should have received a copy of the GNU Lesser General Public License
 *  along with this file.  If not, see <http://www.gnu.org/licenses/>.
 */
-
-/*
- * 2021-10-06: The developer has been contacted for a license change to the LGPL.
- */
 
 #ifndef __ACM_TEMPLATE__
 
@@ -340,7 +335,7 @@ struct _ac_machine_##T                               \
 __attribute__ ((unused)) ACMachine_##T *ACM_create_##T (EQ_##T##_TYPE eq,        \
                                       COPY_##T##_TYPE copier,  \
                                       DESTROY_##T##_TYPE dtor);  \
-struct __useless_struct_to_allow_trailing_semicolon__
+struct __useless_struct_to_allow_trailing_semicolon__##T##__
 // END DECLARE_ACM
 
 // BEGIN MACROS

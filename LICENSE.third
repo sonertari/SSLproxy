@@ -34,8 +34,7 @@ kbtree.h:
 aho_corasick_template*.h:
 
     Copyright 2017 Laurent Farhi
-    Licensed under the GPL-3.0.
+    Licensed under the LGPL-3.0.
     https://github.com/farhiongit/aho-corasick-1975
-    Note: The developer has been contacted for a license change to the LGPL.
 
 See the respective source and/or license files for details.
