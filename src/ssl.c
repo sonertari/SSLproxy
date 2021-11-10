@@ -603,6 +603,8 @@ ssl_ssl_masterkey_to_str(SSL *ssl)
 	unsigned char *k, *r;
 #if (OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER >= 0x20701000L)
 	unsigned char kbuf[48], rbuf[32];
+	memset(kbuf, 0, sizeof(kbuf));
+	memset(rbuf, 0, sizeof(rbuf));
 	k = &kbuf[0];
 	r = &rbuf[0];
 	SSL_SESSION_get_master_key(SSL_get0_session(ssl), k, sizeof(kbuf));
