@@ -982,11 +982,13 @@ main(int argc, char *argv[])
 		}
 	}
 
-	// Free filtering rules in linked lists, not needed anymore
-	// We use filter in conn handling, not filter_rules
+	// Free macros and filtering rules in linked lists, not needed anymore
+	// We use filter in conn handling, not macros and filter_rules
 	for (proxyspec_t *spec = global->spec; spec; spec = spec->next) {
+		filter_macro_free(spec->opts);
 		filter_rules_free(spec->opts);
 	}
+	filter_macro_free(global->opts);
 	filter_rules_free(global->opts);
 
 	/*

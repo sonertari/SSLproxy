@@ -239,10 +239,8 @@ opts_free(opts_t *opts)
 	filter_userlist_free(opts->passusers);
 #endif /* !WITHOUT_USERAUTH */
 
-	filter_macro_free(opts);
-
-	// No need to call filter_rules_free() here, filter rules are freed during startup
-	filter_rules_free(opts);
+	// No need to call filter_macro_free() or filter_rules_free() here,
+	// macros and filter rules are freed after setting filter rules during startup
 	filter_free(opts);
 
 	memset(opts, 0, sizeof(opts_t));
