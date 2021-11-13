@@ -1635,6 +1635,7 @@ opts_set_ecdhcurve(conn_opts_t *conn_opts, const char *argv0, const char *optarg
 }
 #endif /* !OPENSSL_NO_ECDH */
 
+#ifdef SSL_OP_NO_COMPRESSION
 static void
 opts_set_sslcomp(conn_opts_t *conn_opts)
 {
@@ -1646,6 +1647,7 @@ opts_unset_sslcomp(conn_opts_t *conn_opts)
 {
 	conn_opts->sslcomp = 0;
 }
+#endif /* SSL_OP_NO_COMPRESSION */
 
 int
 opts_set_ciphers(conn_opts_t *conn_opts, const char *argv0, const char *optarg)

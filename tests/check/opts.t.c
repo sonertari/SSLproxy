@@ -94,6 +94,22 @@ static char *argv14[] = {
 #define NATENGINE "pf"
 #endif
 
+#if (OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER))
+#ifdef HAVE_TLSV13
+#define SSL_PROTO_CONFIG_PROXYSPEC "tls12 -tls13>=tls11<=tls12|no sslcomp|no_tls13"
+#define SSL_PROTO_CONFIG_FILTERRULE "tls11 -tls13>=tls10<=tls11|no_tls13"
+#else
+#define SSL_PROTO_CONFIG_PROXYSPEC "tls12 -tls10>=tls11<=tls12|no sslcomp|no_tls10"
+#define SSL_PROTO_CONFIG_FILTERRULE "tls11>=tls10<=tls11"
+#endif /* HAVE_TLSV13 */
+#elif (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER >= 0x20702000L)
+#define SSL_PROTO_CONFIG_PROXYSPEC "tls12 -tls10>=tls11<=tls12|no sslcomp|no_tls10"
+#define SSL_PROTO_CONFIG_FILTERRULE "tls11>=tls10<=tls11"
+#else
+#define SSL_PROTO_CONFIG_PROXYSPEC "tls12 -tls10|no sslcomp|no_tls10"
+#define SSL_PROTO_CONFIG_FILTERRULE "tls11"
+#endif /* OPENSSL_VERSION_NUMBER >= 0x10100000L */
+
 START_TEST(proxyspec_parse_01)
 {
 	global_t *global = global_new();
@@ -660,8 +676,10 @@ START_TEST(proxyspec_struct_parse_01)
 #else
 		"DisableSSLProto tls1\n"
 #endif /* HAVE_TLSV13 */
+#if (OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER >= 0x20702000L)
 		"MinSSLProto tls11\n"
 		"MaxSSLProto tls12\n"
+#endif
 		"Ciphers MEDIUM:HIGH\n"
 		"CipherSuites TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256\n"
 		"RemoveHTTPAcceptEncoding yes\n"
@@ -712,8 +730,10 @@ START_TEST(proxyspec_struct_parse_01)
 			"DisableSSLProto tls1\n"
 #endif /* HAVE_TLSV13 */
 			"EnableSSLProto tls1\n"
+#if (OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER >= 0x20702000L)
 			"MinSSLProto tls10\n"
 			"MaxSSLProto tls11\n"
+#endif
 			"Ciphers LOW\n"
 			"CipherSuites TLS_AES_128_CCM_SHA256\n"
 			"RemoveHTTPAcceptEncoding no\n"
@@ -731,7 +751,7 @@ START_TEST(proxyspec_struct_parse_01)
 		"}";
 	f = fmemopen(s, strlen(s), "r");
 
-	close(2);
+//	close(2);
 
 	char *natengine = "pf";
 	rv = load_proxyspec_struct(global, "sslproxy", &natengine, &line_num, f, tmp_opts);
@@ -749,11 +769,7 @@ START_TEST(proxyspec_struct_parse_01)
 "sni 4444\n"
 "divert addr= [127.0.0.1]:8080\n"
 "return addr= [192.168.2.1]:0\n"
-#ifdef HAVE_TLSV13
-"opts= conn opts: tls12 -tls13>=tls11<=tls12|no sslcomp|no_tls13|deny_ocsp|MEDIUM:HIGH|TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256|prime256v1|http://example2.com/example2.crl|remove_http_accept_encoding|remove_http_referer|verify_peer|user_auth|https://192.168.0.13/userdblogin3.php|300|validate_proto|2048\n"
-#else
-"opts= conn opts: tls12 -tls10>=tls11<=tls12|no sslcomp|no_tls10|deny_ocsp|MEDIUM:HIGH|TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256|prime256v1|http://example2.com/example2.crl|remove_http_accept_encoding|remove_http_referer|verify_peer|user_auth|https://192.168.0.13/userdblogin3.php|300|validate_proto|2048\n"
-#endif /* HAVE_TLSV13 */
+"opts= conn opts: "SSL_PROTO_CONFIG_PROXYSPEC"|deny_ocsp|MEDIUM:HIGH|TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256|prime256v1|http://example2.com/example2.crl|remove_http_accept_encoding|remove_http_referer|verify_peer|user_auth|https://192.168.0.13/userdblogin3.php|300|validate_proto|2048\n"
 "divert|daemon,root|daemon,root\n"
 "macro $ip = 127.0.0.1\n"
 "filter rule 0: sni=example4.com, dstport=, srcip=, user=, desc=, exact=site||||, all=conns|||, action=||pass||, log=|||||, precedence=1\n"
@@ -764,11 +780,7 @@ START_TEST(proxyspec_struct_parse_01)
 "filter rule 4: dstip=127.0.0.1, dstport=9191, srcip=127.0.0.1, user=, desc=, exact=site|port|ip||, all=|||, action=|split|||, log=|||content||, precedence=4\n"
 "filter rule 5: dstip=127.0.0.1, dstport=9191, srcip=127.0.0.1, user=, desc=, exact=site|port|ip||, all=|||, action=divert||||, log=|||content||, precedence=4\n"
 "filter rule 6: dstip=192.168.0.2, dstport=, srcip=192.168.0.1, user=, desc=, exact=site||ip||, all=|||, action=||||match, log=connect|||||, precedence=3\n"
-#ifdef HAVE_TLSV13
-"  conn opts: tls11 -tls13>=tls10<=tls11|no_tls13|passthrough|LOW|TLS_AES_128_CCM_SHA256|prime192v1|http://example1.com/example1.crl|allow_wrong_host|https://192.168.0.12/userdblogin1.php|1200|reconnect_ssl|2048\n"
-#else
-"  conn opts: tls11>=tls10<=tls11|passthrough|LOW|TLS_AES_128_CCM_SHA256|prime192v1|http://example1.com/example1.crl|allow_wrong_host|https://192.168.0.12/userdblogin1.php|1200|reconnect_ssl|2048\n"
-#endif /* HAVE_TLSV13 */
+"  conn opts: "SSL_PROTO_CONFIG_FILTERRULE"|passthrough|LOW|TLS_AES_128_CCM_SHA256|prime192v1|http://example1.com/example1.crl|allow_wrong_host|https://192.168.0.12/userdblogin1.php|1200|reconnect_ssl|2048\n"
 "filter=>\n"
 "userdesc_filter_exact->\n"
 "userdesc_filter_substring->\n"
@@ -786,11 +798,7 @@ START_TEST(proxyspec_struct_parse_01)
 "  ip 1 192.168.0.1 (exact)=\n"
 "    ip exact:\n"
 "      0: 192.168.0.2 (exact, action=||||match, log=connect|||||, precedence=3\n"
-#ifdef HAVE_TLSV13
-"        conn opts: tls11 -tls13>=tls10<=tls11|no_tls13|passthrough|LOW|TLS_AES_128_CCM_SHA256|prime192v1|no leafcrlurl|allow_wrong_host|https://192.168.0.12/userdblogin1.php|1200|reconnect_ssl|2048)\n"
-#else
-"        conn opts: tls11>=tls10<=tls11|passthrough|LOW|TLS_AES_128_CCM_SHA256|prime192v1|no leafcrlurl|allow_wrong_host|https://192.168.0.12/userdblogin1.php|1200|reconnect_ssl|2048)\n"
-#endif /* HAVE_TLSV13 */
+"        conn opts: "SSL_PROTO_CONFIG_FILTERRULE"|passthrough|LOW|TLS_AES_128_CCM_SHA256|prime192v1|no leafcrlurl|allow_wrong_host|https://192.168.0.12/userdblogin1.php|1200|reconnect_ssl|2048)\n"
 "ip_filter_substring->\n"
 "filter_all->\n"
 "    sni exact:\n"
@@ -804,7 +812,7 @@ START_TEST(proxyspec_struct_parse_01)
 "sni 4444\n"
 "divert addr= [127.0.0.1]:8080\n"
 "return addr= [192.168.2.1]:0\n"
-"opts= conn opts: tls12 -tls13>=tls11<=tls12|no sslcomp|no_tls13|deny_ocsp|MEDIUM:HIGH|TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256|prime256v1|http://example2.com/example2.crl|remove_http_accept_encoding|remove_http_referer|verify_peer|validate_proto|2048\n"
+"opts= conn opts: "SSL_PROTO_CONFIG_PROXYSPEC"|no sslcomp|no_tls13|deny_ocsp|MEDIUM:HIGH|TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256|prime256v1|http://example2.com/example2.crl|remove_http_accept_encoding|remove_http_referer|verify_peer|validate_proto|2048\n"
 "divert\n"
 "macro $ip = 127.0.0.1\n"
 "filter rule 0: sni=example4.com, dstport=, srcip=, exact=site||, all=conns||, action=||pass||, log=|||||, precedence=1\n"
@@ -815,7 +823,7 @@ START_TEST(proxyspec_struct_parse_01)
 "filter rule 4: dstip=127.0.0.1, dstport=9191, srcip=127.0.0.1, exact=site|port|ip, all=||, action=|split|||, log=|||content||, precedence=4\n"
 "filter rule 5: dstip=127.0.0.1, dstport=9191, srcip=127.0.0.1, exact=site|port|ip, all=||, action=divert||||, log=|||content||, precedence=4\n"
 "filter rule 6: dstip=192.168.0.2, dstport=, srcip=192.168.0.1, exact=site||ip, all=||, action=||||match, log=connect|||||, precedence=3\n"
-"  conn opts: tls11 -tls13>=tls10<=tls11|no_tls13|passthrough|LOW|TLS_AES_128_CCM_SHA256|prime192v1|http://example1.com/example1.crl|allow_wrong_host|reconnect_ssl|2048\n"
+"  conn opts: "SSL_PROTO_CONFIG_FILTERRULE"|passthrough|LOW|TLS_AES_128_CCM_SHA256|prime192v1|http://example1.com/example1.crl|allow_wrong_host|reconnect_ssl|2048\n"
 "filter=>\n"
 "ip_filter_exact->\n"
 "  ip 0 127.0.0.1 (exact)=\n"
@@ -826,7 +834,7 @@ START_TEST(proxyspec_struct_parse_01)
 "  ip 1 192.168.0.1 (exact)=\n"
 "    ip exact:\n"
 "      0: 192.168.0.2 (exact, action=||||match, log=connect|||||, precedence=3\n"
-"        conn opts: tls11 -tls13>=tls10<=tls11|no_tls13|passthrough|LOW|TLS_AES_128_CCM_SHA256|prime192v1|no leafcrlurl|allow_wrong_host|reconnect_ssl|2048)\n"
+"        conn opts: "SSL_PROTO_CONFIG_FILTERRULE"|passthrough|LOW|TLS_AES_128_CCM_SHA256|prime192v1|no leafcrlurl|allow_wrong_host|reconnect_ssl|2048)\n"
 "ip_filter_substring->\n"
 "filter_all->\n"
 "    sni exact:\n"
