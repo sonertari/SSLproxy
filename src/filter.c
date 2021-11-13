@@ -1904,24 +1904,6 @@ filter_arg_index_inc(int i, int argc, char *last, unsigned int line_num)
 static int WUNRES
 filter_rule_translate(opts_t *opts, const char *name, int argc, char **argv, unsigned int line_num)
 {
-	//(Divert|Split|Pass|Block|Match)
-	// ([from (
-	//     user (username[*]|$macro|*) [desc (desc[*]|$macro|*)]|
-	//     desc (desc[*]|$macro|*)|
-	//     ip (clientip[*]|$macro|*)|
-	//     *)]
-	//  [to (
-	//     (sni (servername[*]|$macro|*)|
-	//      cn (commonname[*]|$macro|*)|
-	//      host (host[*]|$macro|*)|
-	//      uri (uri[*]|$macro|*)|
-	//      ip (serverip[*]|$macro|*)) [port (serverport[*]|$macro|*)]|
-	//     port (serverport[*]|$macro|*)|
-	//     *)]
-	//  [log ([[!]connect] [[!]master] [[!]cert]
-	//        [[!]content] [[!]pcap] [[!]mirror] [$macro]|[!]*)]
-	//  |*) [# comment]
-
 	filter_rule_t *rule = malloc(sizeof(filter_rule_t));
 	if (!rule)
 		return oom_return_na();

@@ -21,7 +21,8 @@
 	        DstPort (serverport[*]|$macro|*)
 
 	        # Multiple Log lines allowed
-	        Log ([!]connect|[!]master|[!]cert|[!]content|[!]pcap|[!]mirror|$macro|[!]*)
+	        Log ([[!]connect] [[!]master] [[!]cert]
+	             [[!]content] [[!]pcap] [[!]mirror] [$macro]|[!]*)
 
 	        ReconnectSSL (yes|no)
 
