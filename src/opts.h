@@ -148,11 +148,12 @@ typedef struct opts {
 	userlist_t *passusers;
 #endif /* !WITHOUT_USERAUTH */
 
-	// Used to store filter rules and to create filter
-	// Freed during startup after filter is created and debug printed
-	struct filter_rule *filter_rules;
-	struct filter *filter;
+	// Used to store macros and filter rules and to create the filter
+	// Freed during startup after the filter is created and debug printed
 	struct macro *macro;
+	struct filter_rule *filter_rules;
+
+	struct filter *filter;
 	global_t *global;
 } opts_t;
 

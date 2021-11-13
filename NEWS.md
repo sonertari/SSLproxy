@@ -1,5 +1,11 @@
 
 
+### SSLproxy 0.9.2 2021-11-13
+
+-   Update with the license change of the Aho Corasick library to the LGPL.
+-   Various fixes and improvements.
+
+
 ### SSLproxy 0.9.1 2021-11-07
 
 -   Add structured filtering rules:
