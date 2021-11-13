@@ -61,7 +61,8 @@ if [ ! -d "$HOME/opt/$SSL" ]; then
 	if [ "`uname`" = "Linux" ]; then
 		SSLOPTS="$SSLOPTS -Wl,-rpath=$HOME/opt/$SSL/lib"
 	fi
-	wget "$SSLURL" || exit 1
+	# Do not verify server cert due to expired Let's Encrypt cert
+	wget --no-check-certificate "$SSLURL" || exit 1
 	tar -xzvf "$SSL.tar.gz" || exit 1
 	cd "$SSL" || exit 1
 	./config shared \
