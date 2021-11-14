@@ -23,15 +23,16 @@ matrix:
       before_install:
         - sudo apt-get install -qq libssl-dev libevent-dev libnet1-dev libpcap-dev check
         - curl -f -L https://static.rust-lang.org/rustup.sh -O && sh rustup.sh -y && source $HOME/.cargo/env && cargo install testproxy
-    - os: linux
-      compiler: clang
-      env: FEATURES=-DWITHOUT_MIRROR SSL=ubuntu EVENT=ubuntu
-      cache:
-        directories:
-          - $HOME/.cargo
-      before_install:
-        - sudo apt-get install -qq libssl-dev libevent-dev check
-        - curl -f -L https://static.rust-lang.org/rustup.sh -O && sh rustup.sh -y && source $HOME/.cargo/env && cargo install testproxy
+# We cannot run unit tests with WITHOUT_MIRROR enabled, debug output for filter rules have mirror logging
+#    - os: linux
+#      compiler: clang
+#      env: FEATURES=-DWITHOUT_MIRROR SSL=ubuntu EVENT=ubuntu
+#      cache:
+#        directories:
+#          - $HOME/.cargo
+#      before_install:
+#        - sudo apt-get install -qq libssl-dev libevent-dev check
+#        - curl -f -L https://static.rust-lang.org/rustup.sh -O && sh rustup.sh -y && source $HOME/.cargo/env && cargo install testproxy
     - os: linux
       compiler: clang
       env: SSL=openssl-0.9.8zh EVENT=libevent-2.0.22
