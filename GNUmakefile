@@ -28,7 +28,7 @@ clean:
 
 travis: $(TARGET)
 	$(MAKE) travisunittest
-	$(MAKE) travise2etest
+#	$(MAKE) travise2etest
 
 travisunittest: $(TARGET)
 	$(MAKE) -C $(CHECKTESTSDIR) travis
