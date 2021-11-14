@@ -1,8 +1,9 @@
 
 
-### SSLproxy 0.9.2 2021-11-13
+### SSLproxy 0.9.2 2021-11-14
 
 -   Update with the license change of the Aho Corasick library to the LGPL.
+-   Migrate to travis-ci.com.
 -   Various fixes and improvements.
 
 

@@ -94,7 +94,7 @@ static char *argv14[] = {
 #define NATENGINE "pf"
 #endif
 
-#if (OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER))
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER >= 0x3040100fL)
 #ifdef HAVE_TLSV13
 #define SSL_PROTO_CONFIG_PROXYSPEC "tls13 -tls13>=tls11<=tls12|no sslcomp|no_tls13"
 #define SSL_PROTO_CONFIG_FILTERRULE "tls13 -tls13>=tls10<=tls11|no_tls13"
