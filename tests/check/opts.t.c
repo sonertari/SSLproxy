@@ -783,7 +783,7 @@ START_TEST(proxyspec_struct_parse_01)
 		"}";
 	f = fmemopen(s, strlen(s), "r");
 
-//	close(2);
+	close(2);
 
 	char *natengine = "pf";
 	rv = load_proxyspec_struct(global, "sslproxy", &natengine, &line_num, f, tmp_opts);
@@ -844,7 +844,7 @@ START_TEST(proxyspec_struct_parse_01)
 "sni 4444\n"
 "divert addr= [127.0.0.1]:8080\n"
 "return addr= [192.168.2.1]:0\n"
-"opts= conn opts: "SSL_PROTO_CONFIG_PROXYSPEC"|no sslcomp|no_tls13|deny_ocsp|MEDIUM:HIGH|TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256|"ECDH_PRIME1"http://example2.com/example2.crl|remove_http_accept_encoding|remove_http_referer|verify_peer|validate_proto|2048\n"
+"opts= conn opts: "SSL_PROTO_CONFIG_PROXYSPEC"|deny_ocsp|MEDIUM:HIGH|TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256|"ECDH_PRIME1"http://example2.com/example2.crl|remove_http_accept_encoding|remove_http_referer|verify_peer|validate_proto|2048\n"
 "divert\n"
 "macro $ip = 127.0.0.1\n"
 "filter rule 0: sni=example4.com, dstport=, srcip=, exact=site||, all=conns||, action=||pass||, log=|||||, precedence=1\n"

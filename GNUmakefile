@@ -28,7 +28,9 @@ clean:
 
 travis: $(TARGET)
 	$(MAKE) travisunittest
-#	$(MAKE) travise2etest
+	# The e2e tests with all of the openssl/libressl versions in .travis.yml run
+	# without any error locally, but fail on travis-ci.com now. So disable until fixed.
+	#$(MAKE) travise2etest
 
 travisunittest: $(TARGET)
 	$(MAKE) -C $(CHECKTESTSDIR) travis
