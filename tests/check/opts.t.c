@@ -105,6 +105,9 @@ static char *argv14[] = {
 #elif (OPENSSL_VERSION_NUMBER < 0x10000000L)
 #define SSL_PROTO_CONFIG_PROXYSPEC "tls10 -tls10|no_tls10"
 #define SSL_PROTO_CONFIG_FILTERRULE "tls10"
+#elif (OPENSSL_VERSION_NUMBER <= 0x1000013fL)
+#define SSL_PROTO_CONFIG_PROXYSPEC "tls10 -tls10|no sslcomp|no_tls10"
+#define SSL_PROTO_CONFIG_FILTERRULE "tls10"
 #elif (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER >= 0x20702000L)
 #define SSL_PROTO_CONFIG_PROXYSPEC "tls12 -tls10>=tls11<=tls12|no sslcomp|no_tls10"
 #define SSL_PROTO_CONFIG_FILTERRULE "tls12>=tls10<=tls11"
