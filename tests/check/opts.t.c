@@ -96,19 +96,40 @@ static char *argv14[] = {
 
 #if (OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER))
 #ifdef HAVE_TLSV13
-#define SSL_PROTO_CONFIG_PROXYSPEC "tls12 -tls13>=tls11<=tls12|no sslcomp|no_tls13"
-#define SSL_PROTO_CONFIG_FILTERRULE "tls11 -tls13>=tls10<=tls11|no_tls13"
+#define SSL_PROTO_CONFIG_PROXYSPEC "tls13 -tls13>=tls11<=tls12|no sslcomp|no_tls13"
+#define SSL_PROTO_CONFIG_FILTERRULE "tls13 -tls13>=tls10<=tls11|no_tls13"
 #else
 #define SSL_PROTO_CONFIG_PROXYSPEC "tls12 -tls10>=tls11<=tls12|no sslcomp|no_tls10"
-#define SSL_PROTO_CONFIG_FILTERRULE "tls11>=tls10<=tls11"
+#define SSL_PROTO_CONFIG_FILTERRULE "tls12>=tls10<=tls11"
 #endif /* HAVE_TLSV13 */
+#elif (OPENSSL_VERSION_NUMBER < 0x10000000L)
+#define SSL_PROTO_CONFIG_PROXYSPEC "tls10 -tls10|no_tls10"
+#define SSL_PROTO_CONFIG_FILTERRULE "tls10"
 #elif (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER >= 0x20702000L)
 #define SSL_PROTO_CONFIG_PROXYSPEC "tls12 -tls10>=tls11<=tls12|no sslcomp|no_tls10"
-#define SSL_PROTO_CONFIG_FILTERRULE "tls11>=tls10<=tls11"
+#define SSL_PROTO_CONFIG_FILTERRULE "tls12>=tls10<=tls11"
 #else
 #define SSL_PROTO_CONFIG_PROXYSPEC "tls12 -tls10|no sslcomp|no_tls10"
-#define SSL_PROTO_CONFIG_FILTERRULE "tls11"
+#define SSL_PROTO_CONFIG_FILTERRULE "tls12"
 #endif /* OPENSSL_VERSION_NUMBER >= 0x10100000L */
+
+#ifdef HAVE_TLSV13
+#define	FORCE_SSL_PROTO	"tls13"
+#elif defined(HAVE_TLSV12)
+#define	FORCE_SSL_PROTO	"tls12"
+#elif defined(HAVE_TLSV11)
+#define	FORCE_SSL_PROTO	"tls11"
+#else
+#define	FORCE_SSL_PROTO	"tls10"
+#endif
+
+#ifndef OPENSSL_NO_ECDH
+#define	ECDH_PRIME1 "prime256v1|"
+#define	ECDH_PRIME2 "prime192v1|"
+#else
+#define	ECDH_PRIME1 ""
+#define	ECDH_PRIME2 ""
+#endif /* !OPENSSL_NO_ECDH */
 
 START_TEST(proxyspec_parse_01)
 {
@@ -668,9 +689,13 @@ START_TEST(proxyspec_struct_parse_01)
 		"CAChain ../testproxy/server2.crt\n"
 		"LeafCRLURL http://example2.com/example2.crl\n"
 		"#DHGroupParams /etc/sslproxy/dh.pem\n"
+#ifndef OPENSSL_NO_ECDH
 		"ECDHCurve prime256v1\n"
+#endif /* !OPENSSL_NO_ECDH */
+#ifdef SSL_OP_NO_COMPRESSION
 		"SSLCompression no\n"
-		"ForceSSLProto tls12\n"
+#endif /* SSL_OP_NO_COMPRESSION */
+		"ForceSSLProto "FORCE_SSL_PROTO"\n"
 #ifdef HAVE_TLSV13
 		"DisableSSLProto tls13\n"
 #else
@@ -721,9 +746,13 @@ START_TEST(proxyspec_struct_parse_01)
 			"CAChain ../testproxy/server.crt\n"
 			"LeafCRLURL http://example1.com/example1.crl\n"
 			"#DHGroupParams /etc/sslproxy/dh.pem\n"
+#ifndef OPENSSL_NO_ECDH
 			"ECDHCurve prime192v1\n"
+#endif /* !OPENSSL_NO_ECDH */
+#ifdef SSL_OP_NO_COMPRESSION
 			"SSLCompression yes\n"
-			"ForceSSLProto tls11\n"
+#endif /* SSL_OP_NO_COMPRESSION */
+			"ForceSSLProto "FORCE_SSL_PROTO"\n"
 #ifdef HAVE_TLSV13
 			"DisableSSLProto tls13\n"
 #else
@@ -769,7 +798,7 @@ START_TEST(proxyspec_struct_parse_01)
 "sni 4444\n"
 "divert addr= [127.0.0.1]:8080\n"
 "return addr= [192.168.2.1]:0\n"
-"opts= conn opts: "SSL_PROTO_CONFIG_PROXYSPEC"|deny_ocsp|MEDIUM:HIGH|TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256|prime256v1|http://example2.com/example2.crl|remove_http_accept_encoding|remove_http_referer|verify_peer|user_auth|https://192.168.0.13/userdblogin3.php|300|validate_proto|2048\n"
+"opts= conn opts: "SSL_PROTO_CONFIG_PROXYSPEC"|deny_ocsp|MEDIUM:HIGH|TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256|"ECDH_PRIME1"http://example2.com/example2.crl|remove_http_accept_encoding|remove_http_referer|verify_peer|user_auth|https://192.168.0.13/userdblogin3.php|300|validate_proto|2048\n"
 "divert|daemon,root|daemon,root\n"
 "macro $ip = 127.0.0.1\n"
 "filter rule 0: sni=example4.com, dstport=, srcip=, user=, desc=, exact=site||||, all=conns|||, action=||pass||, log=|||||, precedence=1\n"
@@ -780,7 +809,7 @@ START_TEST(proxyspec_struct_parse_01)
 "filter rule 4: dstip=127.0.0.1, dstport=9191, srcip=127.0.0.1, user=, desc=, exact=site|port|ip||, all=|||, action=|split|||, log=|||content||, precedence=4\n"
 "filter rule 5: dstip=127.0.0.1, dstport=9191, srcip=127.0.0.1, user=, desc=, exact=site|port|ip||, all=|||, action=divert||||, log=|||content||, precedence=4\n"
 "filter rule 6: dstip=192.168.0.2, dstport=, srcip=192.168.0.1, user=, desc=, exact=site||ip||, all=|||, action=||||match, log=connect|||||, precedence=3\n"
-"  conn opts: "SSL_PROTO_CONFIG_FILTERRULE"|passthrough|LOW|TLS_AES_128_CCM_SHA256|prime192v1|http://example1.com/example1.crl|allow_wrong_host|https://192.168.0.12/userdblogin1.php|1200|reconnect_ssl|2048\n"
+"  conn opts: "SSL_PROTO_CONFIG_FILTERRULE"|passthrough|LOW|TLS_AES_128_CCM_SHA256|"ECDH_PRIME2"http://example1.com/example1.crl|allow_wrong_host|https://192.168.0.12/userdblogin1.php|1200|reconnect_ssl|2048\n"
 "filter=>\n"
 "userdesc_filter_exact->\n"
 "userdesc_filter_substring->\n"
@@ -798,7 +827,7 @@ START_TEST(proxyspec_struct_parse_01)
 "  ip 1 192.168.0.1 (exact)=\n"
 "    ip exact:\n"
 "      0: 192.168.0.2 (exact, action=||||match, log=connect|||||, precedence=3\n"
-"        conn opts: "SSL_PROTO_CONFIG_FILTERRULE"|passthrough|LOW|TLS_AES_128_CCM_SHA256|prime192v1|no leafcrlurl|allow_wrong_host|https://192.168.0.12/userdblogin1.php|1200|reconnect_ssl|2048)\n"
+"        conn opts: "SSL_PROTO_CONFIG_FILTERRULE"|passthrough|LOW|TLS_AES_128_CCM_SHA256|"ECDH_PRIME2"no leafcrlurl|allow_wrong_host|https://192.168.0.12/userdblogin1.php|1200|reconnect_ssl|2048)\n"
 "ip_filter_substring->\n"
 "filter_all->\n"
 "    sni exact:\n"
@@ -812,7 +841,7 @@ START_TEST(proxyspec_struct_parse_01)
 "sni 4444\n"
 "divert addr= [127.0.0.1]:8080\n"
 "return addr= [192.168.2.1]:0\n"
-"opts= conn opts: "SSL_PROTO_CONFIG_PROXYSPEC"|no sslcomp|no_tls13|deny_ocsp|MEDIUM:HIGH|TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256|prime256v1|http://example2.com/example2.crl|remove_http_accept_encoding|remove_http_referer|verify_peer|validate_proto|2048\n"
+"opts= conn opts: "SSL_PROTO_CONFIG_PROXYSPEC"|no sslcomp|no_tls13|deny_ocsp|MEDIUM:HIGH|TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256|"ECDH_PRIME1"http://example2.com/example2.crl|remove_http_accept_encoding|remove_http_referer|verify_peer|validate_proto|2048\n"
 "divert\n"
 "macro $ip = 127.0.0.1\n"
 "filter rule 0: sni=example4.com, dstport=, srcip=, exact=site||, all=conns||, action=||pass||, log=|||||, precedence=1\n"
@@ -823,7 +852,7 @@ START_TEST(proxyspec_struct_parse_01)
 "filter rule 4: dstip=127.0.0.1, dstport=9191, srcip=127.0.0.1, exact=site|port|ip, all=||, action=|split|||, log=|||content||, precedence=4\n"
 "filter rule 5: dstip=127.0.0.1, dstport=9191, srcip=127.0.0.1, exact=site|port|ip, all=||, action=divert||||, log=|||content||, precedence=4\n"
 "filter rule 6: dstip=192.168.0.2, dstport=, srcip=192.168.0.1, exact=site||ip, all=||, action=||||match, log=connect|||||, precedence=3\n"
-"  conn opts: "SSL_PROTO_CONFIG_FILTERRULE"|passthrough|LOW|TLS_AES_128_CCM_SHA256|prime192v1|http://example1.com/example1.crl|allow_wrong_host|reconnect_ssl|2048\n"
+"  conn opts: "SSL_PROTO_CONFIG_FILTERRULE"|passthrough|LOW|TLS_AES_128_CCM_SHA256|"ECDH_PRIME2"http://example1.com/example1.crl|allow_wrong_host|reconnect_ssl|2048\n"
 "filter=>\n"
 "ip_filter_exact->\n"
 "  ip 0 127.0.0.1 (exact)=\n"
@@ -834,7 +863,7 @@ START_TEST(proxyspec_struct_parse_01)
 "  ip 1 192.168.0.1 (exact)=\n"
 "    ip exact:\n"
 "      0: 192.168.0.2 (exact, action=||||match, log=connect|||||, precedence=3\n"
-"        conn opts: "SSL_PROTO_CONFIG_FILTERRULE"|passthrough|LOW|TLS_AES_128_CCM_SHA256|prime192v1|no leafcrlurl|allow_wrong_host|reconnect_ssl|2048)\n"
+"        conn opts: "SSL_PROTO_CONFIG_FILTERRULE"|passthrough|LOW|TLS_AES_128_CCM_SHA256|"ECDH_PRIME2"no leafcrlurl|allow_wrong_host|reconnect_ssl|2048)\n"
 "ip_filter_substring->\n"
 "filter_all->\n"
 "    sni exact:\n"
