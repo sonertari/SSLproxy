@@ -94,11 +94,11 @@ static char *argv14[] = {
 #define NATENGINE "pf"
 #endif
 
-#if OPENSSL_VERSION_NUMBER >= 0x10100000L || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER >= 0x3040100fL)
+#if (OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER >= 0x3040100fL)
 #ifdef HAVE_TLSV13
 #define SSL_PROTO_CONFIG_PROXYSPEC "tls13 -tls13>=tls11<=tls12|no sslcomp|no_tls13"
 #define SSL_PROTO_CONFIG_FILTERRULE "tls13 -tls13>=tls10<=tls11|no_tls13"
-#else
+#else // openssl-1.1.0l = 101000cf
 #define SSL_PROTO_CONFIG_PROXYSPEC "tls12 -tls10>=tls11<=tls12|no sslcomp|no_tls10"
 #define SSL_PROTO_CONFIG_FILTERRULE "tls12>=tls10<=tls11"
 #endif /* HAVE_TLSV13 */
@@ -111,7 +111,7 @@ static char *argv14[] = {
 #elif (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER >= 0x20702000L)
 #define SSL_PROTO_CONFIG_PROXYSPEC "tls12 -tls10>=tls11<=tls12|no sslcomp|no_tls10"
 #define SSL_PROTO_CONFIG_FILTERRULE "tls12>=tls10<=tls11"
-#else
+#else // openssl-1.0.2g = 1000207f, libressl 2.2.7 = 20000000|20020006
 #define SSL_PROTO_CONFIG_PROXYSPEC "tls12 -tls10|no sslcomp|no_tls10"
 #define SSL_PROTO_CONFIG_FILTERRULE "tls12"
 #endif /* OPENSSL_VERSION_NUMBER >= 0x10100000L */
