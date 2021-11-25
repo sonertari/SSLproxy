@@ -10,7 +10,8 @@ https://www.roe.ch/SSLsplit
 
 SSLproxy is a proxy for SSL/TLS encrypted network connections. It is intended 
 to be used for decrypting and diverting network traffic to other programs, such 
-as UTM services, for deep SSL inspection.
+as UTM services, for deep SSL inspection. But it can handle unencrypted 
+network traffic as well.
 
 [The UTMFW project](https://github.com/sonertari/UTMFW) uses SSLproxy to 
 decyrpt and feed network traffic into its UTM services: Web Filter, POP3 
@@ -54,7 +55,8 @@ protocol validation. Also, note that the implementation of proxy core in
 SSLproxy is different from the one in SSLsplit, for example the proxy core in 
 SSLproxy runs lockless, whereas SSLsplit implementation uses thread manager 
 level locks (which does not necessarily make sslproxy run faster than 
-sslsplit). In SSLproxy, split mode can be defined globally or per-proxyspec.
+sslsplit). In SSLproxy, split mode can be defined globally, per-proxyspec, or 
+per-connection using filtering rules.
 
 SSLproxy does not automagically redirect any network traffic.  To actually
 implement a proxy, you also need to redirect the traffic to the system running 
@@ -79,8 +81,8 @@ The syntax of command line proxyspecs is as follows:
 	  [up:divertport [ua:divertaddr ra:returnaddr]]
 	  [(targetaddr targetport|sni sniport|natengine)]
 
-The syntax of one line proxyspecs is the same as the command line proxyspecs, 
-except for the leading `ProxySpec` keyword:
+The syntax of one line proxyspecs is the same as the syntax of command line 
+proxyspecs, except for the leading `ProxySpec` keyword:
 
 	ProxySpec (tcp|ssl|http|https|pop3|pop3s|smtp|smtps|autossl)
 	  listenaddr listenport
@@ -175,11 +177,11 @@ first packet in the connection may be the following:
 - The first IP:port pair is a dynamically assigned address that SSLproxy 
 expects the program send the packets back to it.
 - The second and third IP:port pairs are the actual source and destination 
-addresses of the connection respectively. Since the program receives the 
+addresses of the connection, respectively. Since the program receives the 
 packets from SSLproxy, it cannot determine the source and destination 
 addresses of the packets by itself, e.g by asking the NAT engine, hence must 
 rely on the information in the SSLproxy line.
-- The last letter is either s or p, for SSL/TLS encrypted or plain traffic 
+- The last letter is either s or p, for SSL/TLS encrypted or plain traffic, 
 respectively. This information is also important for the program, because it 
 cannot reliably determine if the actual network traffic it is processing was 
 encrypted or not before being diverted to it.
@@ -189,7 +191,7 @@ encrypted or not before being diverted to it.
 The program that packets are diverted to should support this mode of operation.
 Specifically, it should be able to recognize the SSLproxy address in the first
 packet, and give the first and subsequent packets back to SSLproxy listening 
-on that address, instead of sending them to the original destination as it 
+on that address, instead of sending them to their original destination as it 
 normally would.
 
 You can use any software as a listening program as long as it supports this 
@@ -233,6 +235,7 @@ but not Encrypted SNI in TLS 1.3. It is able to work with RSA, DSA and ECDSA
 keys and DHE and ECDHE cipher suites.
 
 The following features of SSLproxy are IPv4 only:
+
 - Divert addresses for listening programs in proxyspecs
 - SSLproxy return addresses dynamically assigned to connections
 - IP addresses in the ua and ra options
@@ -258,10 +261,11 @@ the ConnIdleTimeout option.
 #### Protocol validation
 
 Protocol validation makes sure the traffic handled by a proxyspec is using the 
-protocol specified in that proxyspec. The ValidateProto option can be used to 
-enable global and/or per-proxyspec protocol validation. This feature currently 
-supports HTTP, POP3, and SMTP protocols. If a connection cannot pass protocol 
-validation, then it is terminated.
+protocol specified in that proxyspec. If a connection cannot pass protocol 
+validation, it is terminated. To enable protocol validation, the ValidateProto 
+option can be defined globally, per-proxyspec, or per-connection using 
+filtering rules. This feature currently supports HTTP, POP3, and SMTP 
+protocols.
 
 SSLproxy uses only client requests for protocol validation. However, it also 
 validates SMTP responses until it starts processing the packets from the 
@@ -287,14 +291,15 @@ the connection is terminated immediately. This is in contrast to SSLsplit,
 because in order to maximize the chances that a connection can be successfully
 split, SSLsplit accepts all certificates by default, including self-signed
 ones. See [The Risks of SSL Inspection](https://insights.sei.cmu.edu/cert/2015/03/the-risks-of-ssl-inspection.html)
-for the reasons of this difference. You can disable this feature by the 
+for the reasons for this difference. You can disable this feature by the 
 VerifyPeer option.
 
 #### Client certificates
 
 SSLproxy uses the certificate and key from the pemfiles configured by the 
 ClientCert and ClientKey options when the destination requests client 
-certificates. These options can be defined globally and/or per-proxyspec.
+certificates. These options can be defined globally, per-proxyspec, or 
+per-connection using filtering rules.
 
 Alternatively, you can use Pass filtering rules to pass through certain 
 destinations requesting client certificates.
@@ -349,7 +354,7 @@ the timeout period.
 
 If a description text is provided in the DESC field, it can be used with 
 filtering rules to treat the user logged in from different locations, i.e. 
-from different client IP addresses, separately.
+from different client IP addresses, differently.
 
 If the UserAuth option is enabled, the user owner of the connection is 
 appended at the end of the SSLproxy line, so that the listening program can 
@@ -362,10 +367,8 @@ only.
 
 ### Filtering rules
 
-SSLproxy supports one line and structured filtering rules.
-
 SSLproxy can divert, split, pass, block, or match connections based on 
-filtering rules. Filtering rules can be defined globally or per-proxyspec.
+filtering rules. Filtering rules can be defined globally and/or per-proxyspec.
 
 - `Divert` action diverts packets to listening program, allowing SSL inspection 
 by listening program and content logging of packets
@@ -375,8 +378,10 @@ allowing content logging of packets
 - `Pass` action passes the connection through by engaging passthrough mode, 
 effectively disabling SSL inspection and content logging of packets
 - `Block` action terminates the connection
-- `Match` action specifies log actions for the connection without changing its 
-filter action
+- `Match` action specifies log actions and/or connection options for the 
+connection without changing its filter action
+
+SSLproxy supports one line and structured filtering rules.
 
 The syntax of one line filtering rules is as follows:
 
@@ -453,9 +458,9 @@ connection options too:
 	    MaxHTTPHeaderSize 8192
 	}
 
-The definition of which connections the filter action will be applied to is 
-achieved by the `from` and `to` parts of filtering rule and by the proxyspec 
-that the rule is defined for.
+The specification of which connections the filtering rule will be applied to 
+is achieved by the `from` and `to` parts of filtering rule and by the 
+proxyspec that the rule is defined for.
 
 - The `from` part of a rule defines source filter based on client IP address, 
 user and/or description, or `*` for all.
@@ -514,13 +519,12 @@ can add a third filtering rule to that proxyspec:
 
 Note that the second example above is a filtering rule you can use to resolve 
 one of the certificate issues preventing the Facebook application on Android 
-smartphones to connect to the Internet behind sslproxy.
+smartphones to connect to the Internet from behind sslproxy.
 
 Filtering rules are applied based on certain precedence orders:
 
 - More specific rules have higher precedence. Log actions increase rule 
-precedence too, but this effects log actions only, not the precedence of 
-filter actions.
+precedence too.
 - The precedence of filter types is as HTTP > SSL > Dst Host. Because, the 
 application order of filter types is as Dst Host > SSL > HTTP, and a filter 
 type can override the actions of a preceding filter type.
@@ -573,7 +577,8 @@ the rule. The filter uses B-trees for exact string matching and Aho-Corasick
 machines for substring matching.
 
 The ordering of filtering rules is important. The ordering of from, to, and 
-log parts is not important. The ordering of log actions is not important.
+log parts of one line filtering rules is not important. The ordering of log 
+actions is not important.
 
 If the UserAuth option is disabled, only client IP addresses can be used in 
 the from part of filtering rules.
@@ -674,8 +679,8 @@ respective locations manually by setting `OPENSSL_BASE`, `LIBEVENT_BASE`,
 respective prefixes.
 
 You can override the default install prefix (`/usr/local`) by setting `PREFIX`.
-For more build options and build-time defaults see [`GNUmakefile`](GNUmakefile)
-and [`defaults.h`](defaults.h).
+For more build options and build-time defaults see [`main.mk`](Mk/main.mk)
+and [`defaults.h`](src/defaults.h).
 
 
 ## Documentation
@@ -689,7 +694,7 @@ security vulnerability disclosure.
 ## License
 
 SSLproxy is provided under a 2-clause BSD license.
-SSLproxy contains components licensed under the MIT and APSL licenses.
+SSLproxy contains components licensed under the MIT, APSL, and LGPL licenses.
 See [`LICENSE`](LICENSE), [`LICENSE.contrib`](LICENSE.contrib) and
 [`LICENSE.third`](LICENSE.third) as well as the respective source file headers
 for details.
