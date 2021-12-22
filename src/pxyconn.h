@@ -48,7 +48,11 @@
 #include <event2/bufferevent.h>
 
 #define WANT_CONNECT_LOG(ctx)	((ctx)->global->connectlog||!(ctx)->global->detach||(ctx)->global->statslog)
-#define WANT_CONTENT_LOG(ctx)	((ctx)->global->contentlog&&((ctx)->proto!=PROTO_PASSTHROUGH))
+#ifndef WITHOUT_MIRROR
+#define WANT_CONTENT_LOG(ctx)	(((ctx)->global->contentlog||(ctx)->global->pcaplog||(ctx)->global->mirrorif)&&((ctx)->proto!=PROTO_PASSTHROUGH))
+#else /* WITHOUT_MIRROR */
+#define WANT_CONTENT_LOG(ctx)	(((ctx)->global->contentlog||(ctx)->global->pcaplog)&&((ctx)->proto!=PROTO_PASSTHROUGH))
+#endif /* WITHOUT_MIRROR */
 
 #define SSLPROXY_KEY		"SSLproxy:"
 #define SSLPROXY_KEY_LEN	strlen(SSLPROXY_KEY)
