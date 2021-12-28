@@ -63,9 +63,9 @@ network traffic as well.
 The UTMFW project uses SSLproxy to decyrpt and feed network traffic into its 
 UTM services: Web Filter, POP3 Proxy, SMTP Proxy, and Inline IPS; and also 
 indirectly into Virus Scanner and Spam Filter through those UTM software. 
-Given that most of the Internet traffic is encrypted now, it wouldn't be 
-possible without SSLproxy to deeply inspect most of the network traffic 
-passing through UTMFW.
+Given that most of the Internet traffic is encrypted now, without SSLproxy it 
+wouldn't be possible to deeply inspect most of the network traffic passing 
+through UTMFW.
 .SH Mode of operation
 SSLproxy is designed to transparently terminate connections that are redirected
 to it using a network address translation engine. SSLproxy then terminates
@@ -88,13 +88,13 @@ communication occurs over networking sockets.
 SSLproxy supports split mode of operation similar to SSLsplit as well. In 
 split mode, packets are not diverted to listening programs, effectively making 
 SSLproxy behave similar to SSLsplit, but not exactly like it, because SSLproxy 
-has certain features non-existent in SSLsplit, such as user authentication and 
-protocol validation. Also, note that the implementation of proxy core in 
-SSLproxy is different from the one in SSLsplit, for example the proxy core in 
-SSLproxy runs lockless, whereas SSLsplit implementation uses thread manager 
-level locks (which does not necessarily make sslproxy run faster than 
-sslsplit). In SSLproxy, split mode can be defined globally, per-proxyspec, or 
-per-connection using filtering rules.
+has certain features non-existent in SSLsplit, such as user authentication, 
+protocol validation, and filtering rules. Also, note that the implementation 
+of the proxy core in SSLproxy is different from the one in SSLsplit; for 
+example, the proxy core in SSLproxy runs lockless, whereas SSLsplit 
+implementation uses a thread manager level lock (which does not necessarily 
+make sslproxy run faster than sslsplit). In SSLproxy, split mode can be 
+defined globally, per-proxyspec, or per-connection using filtering rules.
 .LP
 SSLproxy does not automagically redirect any network traffic.  To actually
 implement a proxy, you also need to redirect the traffic to the system 
@@ -144,8 +144,9 @@ ProxySpec {
     Divert (yes|no)
 
     # Connection options
-    DenyOCSP (yes|no)
     Passthrough (yes|no)
+
+    DenyOCSP (yes|no)
     CACert ca.crt
     CAKey ca.key
     ClientCert client.crt
@@ -162,15 +163,17 @@ ProxySpec {
     MaxSSLProto (ssl2|ssl3|tls10|tls11|tls12|tls13)
     Ciphers MEDIUM:HIGH
     CipherSuites TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256
-    RemoveHTTPAcceptEncoding (yes|no)
-    RemoveHTTPReferer (yes|no)
     VerifyPeer (yes|no)
     AllowWrongHost (yes|no)
+
+    RemoveHTTPAcceptEncoding (yes|no)
+    RemoveHTTPReferer (yes|no)
+    MaxHTTPHeaderSize 8192
+    ValidateProto (yes|no)
+
     UserAuth (yes|no)
     UserTimeout 300
     UserAuthURL https://192.168.0.1/userdblogin.php
-    ValidateProto (yes|no)
-    MaxHTTPHeaderSize 8192
 
     # The DivertUsers, PassUsers, and PassSite options will be deprecated
     DivertUsers userlist
@@ -204,7 +207,7 @@ Split style proxyspecs configure for split mode of operation similar to
 SSLsplit. See the SSLsplit documentation for the details of split style 
 proxyspecs.
 .SH 	SSLproxy line
-Given the example proxyspec above, a sample line SSLproxy inserts into the 
+Given the proxyspec example above, a sample line SSLproxy inserts into the 
 first packet in the connection may be the following:
 .LP
 SSLproxy: [127.0.0.1]:34649,[192.168.3.24]:47286,[192.168.111.130]:443,s
@@ -214,8 +217,8 @@ expects the program send the packets back to it.
  - The second and third IP:port pairs are the actual source and destination 
 addresses of the connection, respectively. Since the program receives the 
 packets from SSLproxy, it cannot determine the source and destination 
-addresses of the packets by itself, e.g by asking the NAT engine, hence must 
-rely on the information in the SSLproxy line.
+addresses of the packets by itself, for example by asking the NAT engine, 
+hence must rely on the information in the SSLproxy line.
  - The last letter is either s or p, for SSL/TLS encrypted or plain traffic, 
 respectively. This information is also important for the program, because it 
 cannot reliably determine if the actual network traffic it is processing was 
@@ -232,8 +235,7 @@ mode of operation. So existing or new software developed in any programming
 language can be modified to be used with SSLproxy to inspect and/or modify any 
 or all parts of the packets diverted to it.
 .LP
-Given the example proxyspec above, a listening program should be listening on 
-port 8080.
+Given the proxyspec example above, a program should be listening on port 8080.
 .LP
 You can offload the system SSLproxy is running on by diverting packets to 
 remote listening programs too. For example, given the following proxy 
@@ -246,9 +248,11 @@ instead of 127.0.0.1:8080 as in the previous proxyspec example.
  - The ra option instructs SSLproxy to listen for returned packets from the 
 program on 192.168.1.1, instead of 127.0.0.1 as in the previous SSLproxy line.
 .LP
-Accordingly, the SSLproxy line now becomes:
+Accordingly, the SSLproxy line now becomes (notice the first IP address):
 .LP
 SSLproxy: [192.168.1.1]:34649,[192.168.3.24]:47286,[192.168.111.130]:443,s
+.LP
+And a listening program should be running at address 192.168.0.1 on port 8080.
 .LP
 So, the listening program can be running on a machine anywhere in the world. 
 Since the packets between SSLproxy and the listening program are always 
@@ -313,7 +317,8 @@ the connection is terminated immediately. This is in contrast to SSLsplit,
 because in order to maximize the chances that a connection can be successfully
 split, SSLsplit accepts all certificates by default, including self-signed
 ones. See the risks of SSL inspection for the reasons for this difference. You 
-can disable this feature by the VerifyPeer option.
+can enable or disable this feature by the VerifyPeer option, which can be 
+defined globally, per-proxyspec, or per-connection using filtering rules.
 .SH 	Client certificates
 SSLproxy uses the certificate and key from the pemfiles configured by the 
 ClientCert and ClientKey options when the destination requests client 
@@ -339,7 +344,7 @@ CREATE TABLE USERS(
 );
 .LP
 SSLproxy does not create this users table or the database file by itself, nor 
-does it log users in or out. So the database file and the users table should 
+does it log users in or out. So the database file with the users table should 
 already exist at the location pointed to by the UserDBPath option. An external 
 program should log users in and out on the users table. The external program 
 should fill out all the fields in user records, except perhaps for the DESC 
@@ -353,8 +358,9 @@ to a login page configured by the UserAuthURL option.
  - If SSLproxy finds a user record for the client IP address in the users 
 table, it obtains the ethernet address of the client IP address from the arp 
 cache of the system, and compares it with the value in the user record for 
-that IP address. If the ethernet addresses do not match, the connection is 
-redirected to the login page.
+that IP address. If the client IP address is not in the arp cache, or the 
+ethernet addresses do not match, the connection is redirected to the login 
+page.
  - If the ethernet addresses match, SSLproxy compares the atime value in the 
 user record with the current system time. If the difference is greater than 
 the value configured by the UserTimeout option, the connection is redirected 
@@ -386,11 +392,11 @@ only.
 SSLproxy can divert, split, pass, block, or match connections based on filtering 
 rules. Filtering rules can be defined globally and/or per-proxyspec.
 .LP
- - Divert action diverts packets to listening program, allowing SSL inspection 
-by listening program and content logging of packets
- - Split action splits the connection but does not divert packets to listening 
-program, effectively disabling SSL inspection by listening program, but 
-allowing content logging of packets
+ - Divert action diverts packets to the listening program, allowing SSL 
+inspection by the listening program and content logging of packets
+ - Split action splits the connection but does not divert packets to the 
+listening program, effectively disabling SSL inspection by the listening 
+program, but allowing content logging of packets
  - Pass action passes the connection through by engaging passthrough mode, 
 effectively disabling SSL inspection and content logging of packets
  - Block action terminates the connection
@@ -445,8 +451,9 @@ FilterRule {
     ReconnectSSL (yes|no)
 
     # Connection options
-    DenyOCSP (yes|no)
     Passthrough (yes|no)
+
+    DenyOCSP (yes|no)
     CACert ca.crt
     CAKey ca.key
     ClientCert client.crt
@@ -463,20 +470,22 @@ FilterRule {
     MaxSSLProto (ssl2|ssl3|tls10|tls11|tls12|tls13)
     Ciphers MEDIUM:HIGH
     CipherSuites TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256
-    RemoveHTTPAcceptEncoding (yes|no)
-    RemoveHTTPReferer (yes|no)
     VerifyPeer (yes|no)
     AllowWrongHost (yes|no)
+
+    RemoveHTTPAcceptEncoding (yes|no)
+    RemoveHTTPReferer (yes|no)
+    MaxHTTPHeaderSize 8192
+    ValidateProto (yes|no)
+
     UserAuth (yes|no)
     UserTimeout 300
     UserAuthURL https://192.168.0.1/userdblogin.php
-    ValidateProto (yes|no)
-    MaxHTTPHeaderSize 8192
 .br
 }
 .LP
-The specification of which connections the filtering rule will be applied to 
-is achieved by the from and to parts of filtering rule and by the proxyspec 
+The specification of which connections a filtering rule will be applied to is 
+achieved by the from and to parts of the filtering rule and by the proxyspec 
 that the rule is defined for.
 .LP
  - The from part of a rule defines source filter based on client IP address, 
@@ -499,14 +508,14 @@ Log part of one line or structured filtering rules, respectively:
  - master enables logging of master keys
  - cert enables logging of generated certificates
  - content enables logging packet contents to content log file
- - pcap enables writing packets to pcap files
- - mirror enables mirroring packets to mirror interfaces or targets
+ - pcap enables writing packets to pcap file
+ - mirror enables mirroring packets to mirror interface or target
 .LP
 You can add a negation prefix ! to a log action to disable that logging.
 .LP
-Structured filtering rules can also specify all possible connection options to 
-be selectively applied to matching connections, not just per-proxyspec or 
-globally. One line filtering rules cannot specify connection options.
+Structured filtering rules can also specify connection options to be 
+selectively applied to matching connections, not just globally or 
+per-proxyspec. One line filtering rules cannot specify connection options.
 .LP
 For example, if the following rules are defined in a structured HTTPS proxyspec,
 .LP
@@ -557,6 +566,10 @@ precedence order of filter types. Or, the pass action of a rule with sni site
 field is taken before the split action of the same rule with cn site field, due 
 to the precedence order of site fields.
 .LP
+Pass and Block filter actions are deferred until the last moment they can be 
+applied to a connection, so that Divert and Split filter actions can override 
+them.
+.LP
 In terms of possible filter actions,
 .LP
  - Dst Host filtering rules can take all of the filter and log actions.
@@ -572,22 +585,25 @@ If no filtering rules are defined for a proxyspec, all log actions for that
 proxyspec are enabled. Otherwise, all log actions are disabled, and filtering 
 rules should enable them specifically.
 .LP
+To increase rule reuse, one or more of SNI, CN, Host, URI, and DstIp site 
+fields can be specified in the same structured filtering rule.
+.LP
 Connection options specified in a structured filtering rule can have any 
-effect only if the rule matches the connection before proxyspec or global 
-options are applied. Otherwise, the proxyspec or global connection options 
-already applied to a connection cannot be overriden by the connection options 
-specified in the matching structured filtering rule. For example, SSL/TLS 
-options of a connection cannot be changed after the SSL/TLS connection is 
-established. So, normally SSL type of rules cannot modify SSL/TLS options of a 
+effect only if the rule matches the connection before global or proxyspec 
+connection options are applied. Otherwise, the global or proxyspec connection 
+options already applied to a connection cannot be overriden by the connection 
+options specified in the matching structured filtering rule. For example, SSL 
+options of a connection cannot be changed after the SSL connection is 
+established. So, normally SSL type of rules cannot modify SSL options of a 
 connection, but you can use the ReconnectSSL option to reconnect the server 
-side of an SSL connection to enforce the SSL/TLS options in the SSL type of 
+side of an SSL connection to enforce the SSL options in the SSL type of 
 filtering rules. In other words, the ReconnectSSL option allows for using the 
-SNI and CN fields in stuctured filtering rules to match connections and change 
-their SSL configuration.
+SNI and CN fields in stuctured filtering rules to match SSL connections and 
+change their SSL configuration.
 .LP
 Macro expansion is supported. The Define option can be used for defining 
-macros to be used in filtering rules. Macro names must start with a $ char.
-The macro name must be followed by words separated with spaces.
+macros to be used in filtering rules. Macro names must start with a $ sign. 
+The macro name must be followed by words separated by spaces.
 .LP
 You can append an asterisk * to the fields in filtering rules for substring 
 matching. Otherwise, the filter searches for an exact match with the field in 
@@ -606,17 +622,17 @@ be written as Pass filtering rules. The PassSite option will be deprecated in
 favor of filtering rules in the future.
 .LP
 PassSite option allows certain SSL sites to be excluded from SSL inspection. 
-If a PassSite matches the SNI or common names in the SSL certificate of a 
-connection, that connection is passed through the proxy without being diverted 
+If a PassSite rule matches the SNI or Common Names in the SSL certificate of a 
+connection, the connection is passed through the proxy without being diverted 
 to the listening program. SSLproxy engages the Passthrough mode for that 
 purpose. For example, sites requiring client authentication can be added as 
-PassSite.
+PassSite rules.
 .LP
 Per-site filters can be defined using client IP addresses, users, and 
 description. If the UserAuth option is disabled, only client IP addresses can 
 be used in PassSite filters. Multiple sites can be defined, one on each line. 
-PassSite rules can search for exact or substring matches. PassSite rules do 
-not support macro expansion.
+PassSite rules can search for exact or substring matches, but do not support 
+macro expansion.
 .SH 	User control lists
 User control lists can be implemented using filtering rules. The DivertUsers 
 and PassUsers options will be deprecated in favor of filtering rules in the 
@@ -640,10 +656,10 @@ are diverted to listening programs.
 These user control lists can be defined globally or per-proxyspec. User 
 control lists do not support macro expansion.
 .SH Logging
-Logging options include traditional SSLproxy connect and content log files as
-well as PCAP files and mirroring decrypted traffic to a network interface.
-Additionally, certificates, master secrets and local process information can be
-logged. Filtering rules can selectively modify connection logging.
+Logging options include connect and content log files as well as PCAP files 
+and mirroring decrypted traffic to a network interface. Additionally, 
+certificates, master secrets and local process information can be logged. 
+Filtering rules can selectively modify connection logging.
 .SH OPTIONS
 .TP
 .B \-a \fIpemfile\fP
@@ -907,8 +923,11 @@ Otherwise, connections matching no certificate will be dropped, or if
 .B \-T \fIaddr\fP
 Mirror connection content as emulated packets to destination address \fIaddr\fP
 on the interface given by \fB-I\fP.  Only IPv4 target addresses are currently
-supported.  This option is not available if SSLproxy was built without
-mirroring support.
+supported. Also, only targets with ethernet address assigned can be used with 
+this option; for example, the loopback address 127.0.0.1 cannot be used as 
+target address. Not used if the target is irrelevant (e.g. mirror to dummy 
+device). This option is not available if SSLproxy was built without mirroring 
+support.
 .TP
 .B \-u \fIuser\fP
 Drop privileges after opening sockets and files by setting the real,

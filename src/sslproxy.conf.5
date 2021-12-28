@@ -68,16 +68,20 @@ proxyspecs can only make use of the options defined earlier.
 Use CA cert (and key) to sign forged certs. Equivalent to -c command line option.
 .TP
 \fBCAKey STRING\fR
-Use CA key (and cert) to sign forged certs. Equivalent to -k command line option.
+Use CA key (and cert) to sign forged certs. Equivalent to -k command line 
+option.
 .TP 
 \fBClientCert STRING\fR
-Use cert from pemfile when destination requests client certs. Equivalent to -a command line option.
+Use cert from pemfile when destination requests client certs. Equivalent to -a 
+command line option.
 .TP
 \fBClientKey STRING\fR
-Use key from pemfile when destination requests client certs. Equivalent to -b command line option.
+Use key from pemfile when destination requests client certs. Equivalent to -b 
+command line option.
 .TP
 \fBCAChain STRING\fR
-Use CA chain from pemfile (intermediate and root CA certs). Equivalent to -C command line option.
+Use CA chain from pemfile (intermediate and root CA certs). Equivalent to -C 
+command line option.
 .TP
 \fBLeafKey STRING\fR
 Use key from pemfile for leaf certs. Equivalent to -K command line option.
@@ -85,19 +89,25 @@ Use key from pemfile for leaf certs. Equivalent to -K command line option.
 Default: generate
 .TP
 \fBLeafCRLURL STRING\fR
-Use URL as CRL distribution point for all forged certs. Equivalent to -q command line option.
+Use URL as CRL distribution point for all forged certs. Equivalent to -q 
+command line option.
 .TP
 \fBLeafCertDir STRING\fR
-Use cert+chain+key PEM files from certdir to target all sites matching the common names (non-matching: generate if CA). Equivalent to -t command line option.
+Use cert+chain+key PEM files from certdir to target all sites matching the 
+common names (non-matching: generate if CA). Equivalent to -t command line 
+option.
 .TP
 \fBDefaultLeafCert STRING\fR
-Use cert+chain+key from PEM file for leaf certificates if there is no match in \fBLeafCertDir\fR. Equivalent to -A command line option.
+Use cert+chain+key from PEM file for leaf certificates if there is no match in 
+\fBLeafCertDir\fR. Equivalent to -A command line option.
 .TP
 \fBWriteGenCertsDir STRING\fR
-Write leaf key and only generated certificates to gendir. Equivalent to -w command line option.
+Write leaf key and only generated certificates to gendir. Equivalent to -w 
+command line option.
 .TP
 \fBWriteAllCertsDir STRING\fR
-Write leaf key and all certificates to gendir. Equivalent to -W command line option.
+Write leaf key and all certificates to gendir. Equivalent to -W command line 
+option.
 .TP
 \fBDenyOCSP BOOL\fR
 Deny all OCSP requests on all proxyspecs. Equivalent to -O command line option.
@@ -119,7 +129,8 @@ Use ECDH named curve. Equivalent to -G command line option.
 Default: prime256v1
 .TP
 \fBSSLCompression BOOL\fR
-Enable/disable SSL/TLS compression on all connections. Equivalent to -Z command line option.
+Enable/disable SSL/TLS compression on all connections. Equivalent to -Z 
+command line option.
 .TP
 \fBForceSSLProto STRING\fR
 Force SSL/TLS protocol version only. Equivalent to -r command line option.
@@ -179,49 +190,63 @@ Drop privileges to group. Equivalent to -m command line option.
 Default: Primary group of user
 .TP 
 \fBChroot STRING\fR
-chroot() to jaildir (impacts sni proxyspecs, see sslproxy(1)). Equivalent to -j command line option.
+chroot() to jaildir (impacts sni proxyspecs, see sslproxy(1)). Equivalent to 
+-j command line option.
 .TP 
 \fBPidFile STRING\fR
 Write pid to file. Equivalent to -p command line option.
 .TP 
 \fBConnectLog STRING\fR
-Connect log: log one line summary per connection to logfile. Equivalent to -l command line option.
+Connect log: log one line summary per connection to logfile. Equivalent to -l 
+command line option.
 .TP 
 \fBContentLog STRING\fR
-Content log: full data to file or named pipe (excludes ContentLogDir/ContentLogPathSpec). Equivalent to -L command line option.
+Content log: full data to file or named pipe (excludes 
+ContentLogDir/ContentLogPathSpec). Equivalent to -L command line option.
 .TP 
 \fBContentLogDir STRING\fR
-Content log: full data to separate files in dir (excludes ContentLog/ContentLogPathSpec). Equivalent to -S command line option.
+Content log: full data to separate files in dir (excludes 
+ContentLog/ContentLogPathSpec). Equivalent to -S command line option.
 .TP 
 \fBContentLogPathSpec STRING\fR
-Content log: full data to sep files with % subst (excludes ContentLog/ContentLogDir). Equivalent to -F command line option.
+Content log: full data to sep files with % subst (excludes 
+ContentLog/ContentLogDir). Equivalent to -F command line option.
 .TP 
 \fBLogProcInfo BOOL\fR
-Look up local process owning each connection for logging. Equivalent to -i command line option.
+Look up local process owning each connection for logging. Equivalent to -i 
+command line option.
 .TP 
 \fBPcapLog STRING\fR
-Pcap log: packets to pcapfile (excludes PcapLogDir/PcapLogPathSpec). Equivalent to -X command line option.
+Pcap log: packets to pcapfile (excludes PcapLogDir/PcapLogPathSpec). 
+Equivalent to -X command line option.
 .TP 
 \fBPcapLogDir STRING\fR
-Pcap log: packets to separate files in dir (excludes PcapLog/PcapLogPathSpec). Equivalent to -Y command line option.
+Pcap log: packets to separate files in dir (excludes PcapLog/PcapLogPathSpec). 
+Equivalent to -Y command line option.
 .TP 
 \fBPcapLogPathSpec STRING\fR
-Pcap log: packets to sep files with % subst (excludes PcapLog/PcapLogDir). Equivalent to -y command line option.
+Pcap log: packets to sep files with % subst (excludes PcapLog/PcapLogDir). 
+Equivalent to -y command line option.
 .TP 
 \fBMirrorIf STRING\fR
 Mirror packets to interface. Equivalent to -I command line option.
 .TP 
 \fBMirrorTarget STRING\fR
-Mirror packets to target address (used with MirrorIf). Equivalent to -T command line option. Not used if the target is irrelevant (e.g. mirror to dummy device)
+Mirror packets to target address (used with MirrorIf). Not used if the target 
+is irrelevant (e.g. mirror to dummy device). Equivalent to -T command line 
+option.
 .TP 
 \fBMasterKeyLog STRING\fR
-Log master keys to logfile in SSLKEYLOGFILE format. Equivalent to -M command line option.
+Log master keys to logfile in SSLKEYLOGFILE format. Equivalent to -M command 
+line option.
 .TP 
 \fBDaemon BOOL\fR
-Daemon mode: run in background, log error messages to syslog. Equivalent to -d command line option.
+Daemon mode: run in background, log error messages to syslog. Equivalent to -d 
+command line option.
 .TP 
 \fBDebug BOOL\fR
-Debug mode: run in foreground, log debug messages on stderr. Equivalent to -D command line option.
+Debug mode: run in foreground, log debug messages on stderr. Equivalent to -D 
+command line option.
 .TP 
 \fBDebugLevel NUMBER\fR
 Verbose debug level, 2-4.
@@ -311,8 +336,8 @@ Set open files limit, use 50-10000.
 Default: System-wide limit.
 .TP
 \fBDivert BOOL\fR
-Set divert or split mode of operation, globally or per-proxyspec.
-The Divert option is not equivalent to the command line -n option.
+Set divert or split mode of operation, globally or per-proxyspec. The Divert 
+option is not equivalent to the command line -n option.
 .br
 Default: yes
 .TP
@@ -351,12 +376,12 @@ inspection by listening program and content logging of packets.
 .TP
 \fBSplit STRING\fR
 Split filtering rule splits the connection but does not divert packets to 
-listening program, effectively disabling SSL inspection by listening program, but 
-allowing content logging of packets.
+listening program, effectively disabling SSL inspection by listening program, 
+but allowing content logging of packets.
 .TP
 \fBPass STRING\fR
-Pass filtering rule passes the connection through by engaging passthrough mode, 
-effectively disabling SSL inspection and content logging of packets.
+Pass filtering rule passes the connection through by engaging passthrough 
+mode, effectively disabling SSL inspection and content logging of packets.
 .TP
 \fBBlock STRING\fR
 Block filtering rule terminates the connection.
@@ -416,100 +441,9 @@ Log
 .br
 ReconnectSSL
 .br
-DenyOCSP
-.br
 Passthrough
 .br
-CACert
-.br
-CAKey
-.br
-ClientCert
-.br
-ClientKey
-.br
-CAChain
-.br
-LeafCRLURL
-.br
-DHGroupParams
-.br
-ECDHCurve
-.br
-SSLCompression (yes|no)
-.br
-ForceSSLProto
-.br
-DisableSSLProto
-.br
-EnableSSLProto
-.br
-MinSSLProto
-.br
-MaxSSLProto
-.br
-Ciphers
-.br
-CipherSuites
-.br
-RemoveHTTPAcceptEncoding
-.br
-RemoveHTTPReferer
-.br
-VerifyPeer
-.br
-AllowWrongHost
-.br
-UserAuth
-.br
-UserTimeout
-.br
-UserAuthURL
-.br
-ValidateProto
-.br
-MaxHTTPHeaderSize
-.br
-\fB}\fR
-.br
-Structured filtering rules can specify all possible connection options to be 
-selectively applied to matching connections, not just per-proxyspec or 
-globally. One line filtering rules cannot specify connection options.
-
-See sslproxy(1) for the details.
-.TP
-\fBProxySpec STRING\fR
-One line proxy specification: type listenaddr+port up:port ua:addr ra:addr. 
-The other options of one line proxyspecs are set to the global configuration 
-preceding them. Multiple specs are allowed, one on each line.
-.TP
-\fBProxySpec {\fR
-.br
-Proto
-.br
-Addr
-.br
-Port
-.br
-DivertPort
-.br
-DivertAddr
-.br
-ReturnAddr
-.br
-TargetAddr
-.br
-TargetPort
-.br
-SNIPort
-.br
-NatEngine
-.br
-Divert
-.br
 DenyOCSP
-.br
-Passthrough
 .br
 CACert
 .br
@@ -543,13 +477,17 @@ Ciphers
 .br
 CipherSuites
 .br
+VerifyPeer
+.br
+AllowWrongHost
+.br
 RemoveHTTPAcceptEncoding
 .br
 RemoveHTTPReferer
 .br
-VerifyPeer
+MaxHTTPHeaderSize
 .br
-AllowWrongHost
+ValidateProto
 .br
 UserAuth
 .br
@@ -557,9 +495,96 @@ UserTimeout
 .br
 UserAuthURL
 .br
-ValidateProto
+\fB}\fR
+.br
+Structured filtering rules can specify connection options to be selectively 
+applied to matching connections, not just per-proxyspec or globally. One line 
+filtering rules cannot specify connection options.
+
+See sslproxy(1) for the details.
+.TP
+\fBProxySpec STRING\fR
+One line proxy specification: type listenaddr+port up:port ua:addr ra:addr. 
+The other options of one line proxyspecs are set to the global configuration 
+preceding them. Multiple specs are allowed, one on each line.
+.TP
+\fBProxySpec {\fR
+.br
+Proto
+.br
+Addr
+.br
+Port
+.br
+DivertPort
+.br
+DivertAddr
+.br
+ReturnAddr
+.br
+TargetAddr
+.br
+TargetPort
+.br
+SNIPort
+.br
+NatEngine
+.br
+Divert
+.br
+Passthrough
+.br
+DenyOCSP
+.br
+CACert
+.br
+CAKey
+.br
+ClientCert
+.br
+ClientKey
+.br
+CAChain
+.br
+LeafCRLURL
+.br
+DHGroupParams
+.br
+ECDHCurve
+.br
+SSLCompression
+.br
+ForceSSLProto
+.br
+DisableSSLProto
+.br
+EnableSSLProto
+.br
+MinSSLProto
+.br
+MaxSSLProto
+.br
+Ciphers
+.br
+CipherSuites
+.br
+VerifyPeer
+.br
+AllowWrongHost
+.br
+RemoveHTTPAcceptEncoding
+.br
+RemoveHTTPReferer
 .br
 MaxHTTPHeaderSize
+.br
+ValidateProto
+.br
+UserAuth
+.br
+UserTimeout
+.br
+UserAuthURL
 .br
 DivertUsers
 .br
@@ -577,7 +602,7 @@ FilterRule {...} structured filtering rules
 .br
 
 Structured proxy specifications may consist of the options listed above. The 
-Addr and Port options are mandatory, and equivalent to listenaddr and port 
+Addr and Port options are mandatory, and equivalent to the listenaddr and port 
 options in one line proxyspecs, respectively. If an option is not specified, 
 the global default value is used.
 .SH "FILES"
