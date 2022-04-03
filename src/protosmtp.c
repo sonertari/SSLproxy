@@ -209,7 +209,7 @@ protosmtp_bev_readcb_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	}
 
 	evbuffer_add_buffer(outbuf, inbuf);
-	pxy_try_set_watermark(bev, ctx, ctx->src.bev);
+	ctx->protoctx->set_watermarkcb(bev, ctx, ctx->src.bev);
 }
 
 static void NONNULL(1,2)

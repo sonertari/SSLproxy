@@ -222,6 +222,62 @@ prototcp_init_conn(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 	pxy_conn_connect(ctx);
 }
 
+#ifdef DEBUG_PROXY
+char *bev_names[] = {
+	"src",
+	"dst",
+	"srvdst",
+	"NULL",
+	"UNKWN"
+};
+
+char *
+prototcp_get_event_name(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
+{
+	if (bev == ctx->src.bev) {
+		return bev_names[0];
+	} else if (bev == ctx->dst.bev) {
+		return bev_names[1];
+	} else if (bev == ctx->srvdst.bev) {
+		return bev_names[2];
+	} else if (bev == NULL) {
+		log_fine("event_name=NULL");
+		return bev_names[3];
+	} else {
+		log_fine("event_name=UNKWN");
+		return bev_names[4];
+	}
+}
+#endif /* DEBUG_PROXY */
+
+void
+prototcp_try_set_watermark(struct bufferevent *bev, pxy_conn_ctx_t *ctx, struct bufferevent *other)
+{
+	if (evbuffer_get_length(bufferevent_get_output(other)) >= OUTBUF_LIMIT) {
+		log_fine_va("%s", prototcp_get_event_name(bev, ctx));
+
+		/* temporarily disable data source;
+		 * set an appropriate watermark. */
+		bufferevent_setwatermark(other, EV_WRITE, OUTBUF_LIMIT/2, OUTBUF_LIMIT);
+		bufferevent_disable(bev, EV_READ);
+		ctx->thr->set_watermarks++;
+	}
+}
+
+void
+prototcp_try_unset_watermark(struct bufferevent *bev, pxy_conn_ctx_t *ctx, pxy_conn_desc_t *other)
+{
+	if (other->bev && !(bufferevent_get_enabled(other->bev) & EV_READ)) {
+		log_fine_va("%s", prototcp_get_event_name(bev, ctx));
+
+		/* data source temporarily disabled;
+		 * re-enable and reset watermark to 0. */
+		bufferevent_setwatermark(bev, EV_WRITE, 0, 0);
+		bufferevent_enable(other->bev, EV_READ);
+		ctx->thr->unset_watermarks++;
+	}
+}
+
 #ifndef WITHOUT_USERAUTH
 int
 prototcp_try_send_userauth_msg(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
@@ -297,7 +353,7 @@ prototcp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		return;
 	}
 
-	pxy_try_set_watermark(bev, ctx, ctx->dst.bev);
+	ctx->protoctx->set_watermarkcb(bev, ctx, ctx->dst.bev);
 }
 
 void
@@ -311,7 +367,7 @@ prototcp_bev_readcb_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	}
 
 	evbuffer_add_buffer(bufferevent_get_output(ctx->src.bev), bufferevent_get_input(bev));
-	pxy_try_set_watermark(bev, ctx, ctx->src.bev);
+	ctx->protoctx->set_watermarkcb(bev, ctx, ctx->src.bev);
 }
 
 static void NONNULL(1)
@@ -350,7 +406,7 @@ prototcp_bev_readcb_src_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ctx
 	} else {
 		evbuffer_add_buffer(outbuf, inbuf);
 	}
-	pxy_try_set_watermark(bev, ctx->conn, ctx->dst.bev);
+	ctx->protoctx->set_watermarkcb(bev, ctx->conn, ctx->dst.bev);
 }
 
 static void NONNULL(1)
@@ -364,7 +420,7 @@ prototcp_bev_readcb_dst_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ctx
 	}
 
 	evbuffer_add_buffer(bufferevent_get_output(ctx->src.bev), bufferevent_get_input(bev));
-	pxy_try_set_watermark(bev, ctx->conn, ctx->src.bev);
+	ctx->protoctx->set_watermarkcb(bev, ctx->conn, ctx->src.bev);
 }
 
 #ifndef WITHOUT_USERAUTH
@@ -425,7 +481,7 @@ prototcp_bev_writecb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		}
 		return;
 	}
-	pxy_try_unset_watermark(bev, ctx, &ctx->dst);
+	ctx->protoctx->unset_watermarkcb(bev, ctx, &ctx->dst);
 }
 
 void
@@ -440,7 +496,7 @@ prototcp_bev_writecb_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		}
 		return;
 	}
-	pxy_try_unset_watermark(bev, ctx, &ctx->src);
+	ctx->protoctx->unset_watermarkcb(bev, ctx, &ctx->src);
 }
 
 static void NONNULL(1)
@@ -455,7 +511,7 @@ prototcp_bev_writecb_src_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ct
 		}
 		return;
 	}
-	pxy_try_unset_watermark(bev, ctx->conn, &ctx->dst);
+	ctx->protoctx->unset_watermarkcb(bev, ctx->conn, &ctx->dst);
 }
 
 static void NONNULL(1)
@@ -470,7 +526,7 @@ prototcp_bev_writecb_dst_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ct
 		}
 		return;
 	}
-	pxy_try_unset_watermark(bev, ctx->conn, &ctx->src);
+	ctx->protoctx->unset_watermarkcb(bev, ctx->conn, &ctx->src);
 }
 
 int
@@ -896,6 +952,9 @@ prototcp_setup(pxy_conn_ctx_t *ctx)
 	ctx->protoctx->classify_usercb = pxy_classify_user;
 #endif /* !WITHOUT_USERAUTH */
 
+	ctx->protoctx->set_watermarkcb = prototcp_try_set_watermark;
+	ctx->protoctx->unset_watermarkcb = prototcp_try_unset_watermark;
+
 	return PROTO_TCP;
 }
 
@@ -908,6 +967,9 @@ prototcp_setup_child(pxy_conn_child_ctx_t *ctx)
 	ctx->protoctx->bev_readcb = prototcp_bev_readcb_child;
 	ctx->protoctx->bev_writecb = prototcp_bev_writecb_child;
 	ctx->protoctx->bev_eventcb = prototcp_bev_eventcb_child;
+
+	ctx->protoctx->set_watermarkcb = prototcp_try_set_watermark;
+	ctx->protoctx->unset_watermarkcb = prototcp_try_unset_watermark;
 
 	return PROTO_TCP;
 }

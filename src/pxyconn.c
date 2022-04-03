@@ -67,12 +67,6 @@
 #include <net/if_dl.h>
 #endif /* __OpenBSD__ */
 
-/*
- * Maximum size of data to buffer per connection direction before
- * temporarily stopping to read data from the other end.
- */
-#define OUTBUF_LIMIT	(128*1024)
-
 // getdtablecount() returns int, hence we don't use size_t here
 int descriptor_table_size = 0;
 
@@ -812,78 +806,6 @@ pxy_malloc_packet(size_t sz, pxy_conn_ctx_t *ctx)
 		return NULL;
 	}
 	return packet;
-}
-
-#ifdef DEBUG_PROXY
-char *bev_names[] = {
-	"src",
-	"dst",
-	"srvdst",
-	"NULL",
-	"UNKWN"
-};
-
-static char *
-pxy_get_event_name(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
-{
-	if (bev == ctx->src.bev) {
-		return bev_names[0];
-	} else if (bev == ctx->dst.bev) {
-		return bev_names[1];
-	} else if (bev == ctx->srvdst.bev) {
-		return bev_names[2];
-	} else if (bev == NULL) {
-		log_fine("event_name=NULL");
-		return bev_names[3];
-	} else {
-		log_fine("event_name=UNKWN");
-		return bev_names[4];
-	}
-}
-#endif /* DEBUG_PROXY */
-
-void
-pxy_try_set_watermark(struct bufferevent *bev, pxy_conn_ctx_t *ctx, struct bufferevent *other)
-{
-	struct bufferevent *ubev_other = bufferevent_get_underlying(other);
-	if (evbuffer_get_length(bufferevent_get_output(other)) >= OUTBUF_LIMIT ||
-			(ubev_other && evbuffer_get_length(bufferevent_get_output(ubev_other)) >= OUTBUF_LIMIT)) {
-		log_fine_va("%s", pxy_get_event_name(bev, ctx));
-
-		/* temporarily disable data source;
-		 * set an appropriate watermark. */
-		bufferevent_setwatermark(other, EV_WRITE, OUTBUF_LIMIT/2, OUTBUF_LIMIT);
-		bufferevent_disable(bev, EV_READ);
-
-		/* The watermark for ubev_other may be already set, see pxy_try_unset_watermark,
-		 * but getting is equally expensive as setting */
-		if (ubev_other)
-			bufferevent_setwatermark(ubev_other, EV_WRITE, OUTBUF_LIMIT/2, OUTBUF_LIMIT);
-
-		ctx->thr->set_watermarks++;
-	}
-}
-
-void
-pxy_try_unset_watermark(struct bufferevent *bev, pxy_conn_ctx_t *ctx, pxy_conn_desc_t *other)
-{
-	if (other->bev && !(bufferevent_get_enabled(other->bev) & EV_READ)) {
-		log_fine_va("%s", pxy_get_event_name(bev, ctx));
-
-		/* data source temporarily disabled;
-		 * re-enable and reset watermark to 0. */
-		bufferevent_setwatermark(bev, EV_WRITE, 0, 0);
-		bufferevent_enable(other->bev, EV_READ);
-
-		/* Do not reset the watermark for ubev without checking its buf len,
-		 * because the current write event may be due to the buf len of bev
-		 * falling below OUTBUF_LIMIT/2, not that of ubev */
-		struct bufferevent *ubev = bufferevent_get_underlying(bev);
-		if (ubev && evbuffer_get_length(bufferevent_get_output(ubev)) < OUTBUF_LIMIT/2)
-			bufferevent_setwatermark(ubev, EV_WRITE, 0, 0);
-
-		ctx->thr->unset_watermarks++;
-	}
 }
 
 void

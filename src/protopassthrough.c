@@ -154,7 +154,7 @@ protopassthrough_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	}
 
 	evbuffer_add_buffer(bufferevent_get_output(ctx->srvdst.bev), bufferevent_get_input(bev));
-	pxy_try_set_watermark(bev, ctx, ctx->srvdst.bev);
+	ctx->protoctx->set_watermarkcb(bev, ctx, ctx->srvdst.bev);
 }
 
 static void NONNULL(1)
@@ -169,7 +169,7 @@ protopassthrough_bev_readcb_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	}
 
 	evbuffer_add_buffer(bufferevent_get_output(ctx->src.bev), bufferevent_get_input(bev));
-	pxy_try_set_watermark(bev, ctx, ctx->src.bev);
+	ctx->protoctx->set_watermarkcb(bev, ctx, ctx->src.bev);
 }
 
 static void NONNULL(1)
@@ -191,7 +191,7 @@ protopassthrough_bev_writecb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		}
 		return;
 	}
-	pxy_try_unset_watermark(bev, ctx, &ctx->srvdst);
+	ctx->protoctx->unset_watermarkcb(bev, ctx, &ctx->srvdst);
 }
 
 static void NONNULL(1)
@@ -206,7 +206,7 @@ protopassthrough_bev_writecb_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx
 		}
 		return;
 	}
-	pxy_try_unset_watermark(bev, ctx, &ctx->src);
+	ctx->protoctx->unset_watermarkcb(bev, ctx, &ctx->src);
 }
 
 static void NONNULL(1,2)

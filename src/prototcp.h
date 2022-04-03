@@ -32,7 +32,19 @@
 
 #include "pxyconn.h"
 
+/*
+ * Maximum size of data to buffer per connection direction before
+ * temporarily stopping to read data from the other end.
+ */
+#define OUTBUF_LIMIT	(128*1024)
+
 void prototcp_init_conn(evutil_socket_t, short, void *);
+
+#ifdef DEBUG_PROXY
+char *prototcp_get_event_name(struct bufferevent *, pxy_conn_ctx_t *) NONNULL(2);
+#endif /* DEBUG_PROXY */
+void prototcp_try_set_watermark(struct bufferevent *, pxy_conn_ctx_t *, struct bufferevent *) NONNULL(1,2,3);
+void prototcp_try_unset_watermark(struct bufferevent *, pxy_conn_ctx_t *, pxy_conn_desc_t *) NONNULL(1,2,3);
 
 #ifndef WITHOUT_USERAUTH
 int prototcp_try_send_userauth_msg(struct bufferevent *, pxy_conn_ctx_t *) NONNULL(1,2);

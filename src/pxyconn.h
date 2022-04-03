@@ -64,6 +64,7 @@
 #define PROTOERROR_MSG		"Connection is terminated due to protocol error\r\n"
 #define PROTOERROR_MSG_LEN	strlen(PROTOERROR_MSG)
 
+typedef struct pxy_conn_desc pxy_conn_desc_t;
 typedef struct pxy_conn_child_ctx pxy_conn_child_ctx_t;
 
 typedef void (*init_conn_func_t)(evutil_socket_t,  short, void *);
@@ -83,6 +84,9 @@ typedef void (*proto_classify_user_func_t)(pxy_conn_ctx_t *);
 typedef void (*child_connect_func_t)(pxy_conn_child_ctx_t *);
 typedef void (*child_proto_free_func_t)(pxy_conn_child_ctx_t *);
 
+typedef void (*set_watermark_func_t)(struct bufferevent *, pxy_conn_ctx_t *, struct bufferevent *);
+typedef void (*unset_watermark_func_t)(struct bufferevent *, pxy_conn_ctx_t *, pxy_conn_desc_t *);
+
 typedef filter_action_t * (*proto_filter_func_t)(pxy_conn_ctx_t *, filter_list_t *);
 
 /*
@@ -93,12 +97,12 @@ typedef filter_action_t * (*proto_filter_func_t)(pxy_conn_ctx_t *, filter_list_t
  */
 
 /* single socket bufferevent descriptor */
-typedef struct pxy_conn_desc {
+struct pxy_conn_desc {
 	struct bufferevent *bev;
 	SSL *ssl;
 	unsigned int closed : 1;
 	bev_free_func_t free;
-} pxy_conn_desc_t;
+};
 
 enum conn_type {
 	CONN_TYPE_PARENT = 0,
@@ -167,6 +171,9 @@ struct proto_ctx {
 	proto_classify_user_func_t classify_usercb;
 #endif /* !WITHOUT_USERAUTH */
 
+	set_watermark_func_t set_watermarkcb;
+	unset_watermark_func_t unset_watermarkcb;
+
 	// For protocol specific fields, if any
 	void *arg;
 };
@@ -181,6 +188,9 @@ struct proto_child_ctx {
 	eventcb_func_t bev_eventcb;
 
 	child_proto_free_func_t proto_free;
+
+	set_watermark_func_t set_watermarkcb;
+	unset_watermark_func_t unset_watermarkcb;
 
 	// For protocol specific fields, if any
 	void *arg;
@@ -409,9 +419,6 @@ unsigned char *pxy_malloc_packet(size_t, pxy_conn_ctx_t *) MALLOC NONNULL(2) WUN
 
 int pxy_try_prepend_sslproxy_header(pxy_conn_ctx_t *ctx, struct evbuffer *, struct evbuffer *) NONNULL(1,2,3);
 void pxy_try_remove_sslproxy_header(pxy_conn_child_ctx_t *, unsigned char *, size_t *) NONNULL(1,2,3);
-
-void pxy_try_set_watermark(struct bufferevent *, pxy_conn_ctx_t *, struct bufferevent *) NONNULL(1,2,3);
-void pxy_try_unset_watermark(struct bufferevent *, pxy_conn_ctx_t *, pxy_conn_desc_t *) NONNULL(1,2,3);
 
 int pxy_try_close_conn_end(pxy_conn_desc_t *, pxy_conn_ctx_t *) NONNULL(1,2);
 

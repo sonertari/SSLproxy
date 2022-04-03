@@ -858,7 +858,7 @@ protohttp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		}
 	}
 
-	pxy_try_set_watermark(bev, ctx, ctx->dst.bev);
+	ctx->protoctx->set_watermarkcb(bev, ctx, ctx->dst.bev);
 }
 
 /*
@@ -1001,7 +1001,7 @@ protohttp_bev_readcb_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		log_finest_va("HTTP Response Body, size=%zu", evbuffer_get_length(inbuf));
 		evbuffer_add_buffer(outbuf, inbuf);
 	}
-	pxy_try_set_watermark(bev, ctx, ctx->src.bev);
+	ctx->protoctx->set_watermarkcb(bev, ctx, ctx->src.bev);
 }
 
 static void NONNULL(1)
@@ -1034,7 +1034,7 @@ protohttp_bev_readcb_src_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ct
 		log_finest_va("HTTP Request Body, size=%zu", evbuffer_get_length(inbuf));
 		evbuffer_add_buffer(outbuf, inbuf);
 	}
-	pxy_try_set_watermark(bev, ctx->conn, ctx->dst.bev);
+	ctx->protoctx->set_watermarkcb(bev, ctx->conn, ctx->dst.bev);
 }
 
 static void NONNULL(1)
@@ -1062,7 +1062,7 @@ protohttp_bev_readcb_dst_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ct
 		log_finest_va("HTTP Response Body, size=%zu", evbuffer_get_length(inbuf));
 		evbuffer_add_buffer(outbuf, inbuf);
 	}
-	pxy_try_set_watermark(bev, ctx->conn, ctx->src.bev);
+	ctx->protoctx->set_watermarkcb(bev, ctx->conn, ctx->src.bev);
 }
 
 static void NONNULL(1)
@@ -1133,7 +1133,7 @@ protohttp_bev_writecb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		}
 		return;
 	}
-	pxy_try_unset_watermark(bev, ctx, &ctx->dst);
+	ctx->protoctx->unset_watermarkcb(bev, ctx, &ctx->dst);
 }
 
 static void NONNULL(1)

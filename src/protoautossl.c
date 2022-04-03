@@ -146,6 +146,50 @@ protoautossl_conn_connect(pxy_conn_ctx_t *ctx)
 	return 0;
 }
 
+static void
+protoautossl_try_set_watermark(struct bufferevent *bev, pxy_conn_ctx_t *ctx, struct bufferevent *other)
+{
+	struct bufferevent *ubev_other = bufferevent_get_underlying(other);
+	if (evbuffer_get_length(bufferevent_get_output(other)) >= OUTBUF_LIMIT ||
+			(ubev_other && evbuffer_get_length(bufferevent_get_output(ubev_other)) >= OUTBUF_LIMIT)) {
+		log_fine_va("%s", prototcp_get_event_name(bev, ctx));
+
+		/* temporarily disable data source;
+		 * set an appropriate watermark. */
+		bufferevent_setwatermark(other, EV_WRITE, OUTBUF_LIMIT/2, OUTBUF_LIMIT);
+		bufferevent_disable(bev, EV_READ);
+
+		/* The watermark for ubev_other may be already set, see pxy_try_unset_watermark,
+		 * but getting is equally expensive as setting */
+		if (ubev_other)
+			bufferevent_setwatermark(ubev_other, EV_WRITE, OUTBUF_LIMIT/2, OUTBUF_LIMIT);
+
+		ctx->thr->set_watermarks++;
+	}
+}
+
+static void
+protoautossl_try_unset_watermark(struct bufferevent *bev, pxy_conn_ctx_t *ctx, pxy_conn_desc_t *other)
+{
+	if (other->bev && !(bufferevent_get_enabled(other->bev) & EV_READ)) {
+		log_fine_va("%s", prototcp_get_event_name(bev, ctx));
+
+		/* data source temporarily disabled;
+		 * re-enable and reset watermark to 0. */
+		bufferevent_setwatermark(bev, EV_WRITE, 0, 0);
+		bufferevent_enable(other->bev, EV_READ);
+
+		/* Do not reset the watermark for ubev without checking its buf len,
+		 * because the current write event may be due to the buf len of bev
+		 * falling below OUTBUF_LIMIT/2, not that of ubev */
+		struct bufferevent *ubev = bufferevent_get_underlying(bev);
+		if (ubev && evbuffer_get_length(bufferevent_get_output(ubev)) < OUTBUF_LIMIT/2)
+			bufferevent_setwatermark(ubev, EV_WRITE, 0, 0);
+
+		ctx->thr->unset_watermarks++;
+	}
+}
+
 static void NONNULL(1)
 protoautossl_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
@@ -183,7 +227,7 @@ protoautossl_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		return;
 	}
 
-	pxy_try_set_watermark(bev, ctx, ctx->dst.bev);
+	ctx->protoctx->set_watermarkcb(bev, ctx, ctx->dst.bev);
 }
 
 static void NONNULL(1)
@@ -206,7 +250,7 @@ protoautossl_bev_readcb_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	}
 
 	evbuffer_add_buffer(bufferevent_get_output(ctx->src.bev), bufferevent_get_input(bev));
-	pxy_try_set_watermark(bev, ctx, ctx->src.bev);
+	ctx->protoctx->set_watermarkcb(bev, ctx, ctx->src.bev);
 }
 
 static void NONNULL(1,2)
@@ -497,6 +541,9 @@ protoautossl_setup(pxy_conn_ctx_t *ctx)
 	ctx->protoctx->classify_usercb = protoautossl_classify_user;
 #endif /* !WITHOUT_USERAUTH */
 
+	ctx->protoctx->set_watermarkcb = protoautossl_try_set_watermark;
+	ctx->protoctx->unset_watermarkcb = protoautossl_try_unset_watermark;
+
 	ctx->protoctx->arg = malloc(sizeof(protoautossl_ctx_t));
 	if (!ctx->protoctx->arg) {
 		return PROTO_ERROR;
@@ -522,6 +569,9 @@ protoautossl_setup_child(pxy_conn_child_ctx_t *ctx)
 
 	ctx->protoctx->bev_writecb = prototcp_bev_writecb_child;
 	ctx->protoctx->bev_eventcb = protoautossl_bev_eventcb_child;
+
+	ctx->protoctx->set_watermarkcb = protoautossl_try_set_watermark;
+	ctx->protoctx->unset_watermarkcb = protoautossl_try_unset_watermark;
 
 	return PROTO_AUTOSSL;
 }
