@@ -44,6 +44,11 @@
 static unsigned long ssl_session_context = 0x31415926;
 #endif /* USE_SSL_SESSION_ID_CONTEXT */
 
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+#define ERR_GET_FUNC(x) 0
+#define ERR_func_error_string(x) ""
+#endif
+
 void
 protossl_log_ssl_error(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
