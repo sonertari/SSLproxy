@@ -845,13 +845,21 @@ pxy_get_event_name(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 void
 pxy_try_set_watermark(struct bufferevent *bev, pxy_conn_ctx_t *ctx, struct bufferevent *other)
 {
-	if (evbuffer_get_length(bufferevent_get_output(other)) >= OUTBUF_LIMIT) {
+	struct bufferevent *ubev_other = bufferevent_get_underlying(other);
+	if (evbuffer_get_length(bufferevent_get_output(other)) >= OUTBUF_LIMIT ||
+			(ubev_other && evbuffer_get_length(bufferevent_get_output(ubev_other)) >= OUTBUF_LIMIT)) {
 		log_fine_va("%s", pxy_get_event_name(bev, ctx));
 
 		/* temporarily disable data source;
 		 * set an appropriate watermark. */
 		bufferevent_setwatermark(other, EV_WRITE, OUTBUF_LIMIT/2, OUTBUF_LIMIT);
 		bufferevent_disable(bev, EV_READ);
+
+		/* The watermark for ubev_other may be already set, see pxy_try_unset_watermark,
+		 * but getting is equally expensive as setting */
+		if (ubev_other)
+			bufferevent_setwatermark(ubev_other, EV_WRITE, OUTBUF_LIMIT/2, OUTBUF_LIMIT);
+
 		ctx->thr->set_watermarks++;
 	}
 }
@@ -866,6 +874,14 @@ pxy_try_unset_watermark(struct bufferevent *bev, pxy_conn_ctx_t *ctx, pxy_conn_d
 		 * re-enable and reset watermark to 0. */
 		bufferevent_setwatermark(bev, EV_WRITE, 0, 0);
 		bufferevent_enable(other->bev, EV_READ);
+
+		/* Do not reset the watermark for ubev without checking its buf len,
+		 * because the current write event may be due to the buf len of bev
+		 * falling below OUTBUF_LIMIT/2, not that of ubev */
+		struct bufferevent *ubev = bufferevent_get_underlying(bev);
+		if (ubev && evbuffer_get_length(bufferevent_get_output(ubev)) < OUTBUF_LIMIT/2)
+			bufferevent_setwatermark(ubev, EV_WRITE, 0, 0);
+
 		ctx->thr->unset_watermarks++;
 	}
 }
