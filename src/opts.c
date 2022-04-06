@@ -969,7 +969,7 @@ proxyspec_parse(int *argc, char **argv[], const char *natengine, global_t *globa
 				} else
 				if (nat_exist(**argv)) {
 					/* natengine */
-					if (proxyspec_set_natengine(spec, natengine) == -1)
+					if (proxyspec_set_natengine(spec, **argv) == -1)
 						return -1;
 					state = 0;
 				} else {
