@@ -416,20 +416,7 @@ pxy_conn_free(pxy_conn_ctx_t *ctx, int by_requestor)
 		// If srvdst has been xferred to the first child conn, the child should free it, not the parent
 		if (ctx->divert && !ctx->srvdst_xferred) {
 			ctx->srvdst.free(ctx->srvdst.bev, ctx);
-		} else if (ctx->srvdst_xferred) {
-			// @see prototcp_setup_dst()
-			// It does not seem to happen with srvdst_xferred, but just to be safe we do the same for it too.
-			struct bufferevent *ubev = bufferevent_get_underlying(ctx->srvdst.bev);
-
-			bufferevent_setcb(ctx->srvdst.bev, NULL, NULL, NULL, NULL);
-			bufferevent_disable(ctx->srvdst.bev, EV_READ|EV_WRITE);
-
-			if (ubev) {
-				bufferevent_setcb(ubev, NULL, NULL, NULL, NULL);
-				bufferevent_disable(ubev, EV_READ|EV_WRITE);
-			}
 		}
-		// else if (!ctx->divert) {}
 		ctx->srvdst.bev = NULL;
 	}
 

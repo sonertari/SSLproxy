@@ -82,6 +82,7 @@ int prototcp_enable_src(pxy_conn_ctx_t *) NONNULL(1);
 void prototcp_bev_eventcb_srvdst(struct bufferevent *, short, pxy_conn_ctx_t *) NONNULL(1);
 
 int prototcp_setup_src(pxy_conn_ctx_t *) NONNULL(1);
+void prototcp_disable_events_srvdst(pxy_conn_ctx_t *) NONNULL(1);
 int prototcp_setup_dst(pxy_conn_ctx_t *) NONNULL(1);
 int prototcp_setup_srvdst(pxy_conn_ctx_t *) NONNULL(1);
 

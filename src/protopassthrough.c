@@ -84,16 +84,6 @@ protopassthrough_engage(pxy_conn_ctx_t *ctx)
 	// If srvdst has been xferred to the first child conn, the child should free it, not the parent
 	if (ctx->divert && !ctx->srvdst_xferred) {
 		ctx->srvdst.free(ctx->srvdst.bev, ctx);
-	} else /*if (!ctx->divert || ctx->srvdst_xferred)*/ {
-		struct bufferevent *ubev = bufferevent_get_underlying(ctx->srvdst.bev);
-
-		bufferevent_setcb(ctx->srvdst.bev, NULL, NULL, NULL, NULL);
-		bufferevent_disable(ctx->srvdst.bev, EV_READ|EV_WRITE);
-
-		if (ubev) {
-			bufferevent_setcb(ubev, NULL, NULL, NULL, NULL);
-			bufferevent_disable(ubev, EV_READ|EV_WRITE);
-		}
 	}
 	ctx->srvdst.bev = NULL;
 	ctx->srvdst.ssl = NULL;
