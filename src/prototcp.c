@@ -126,6 +126,23 @@ prototcp_setup_dst(pxy_conn_ctx_t *ctx)
 	} else {
 		// split mode
 		ctx->dst = ctx->srvdst;
+
+		// We reuse srvdst as dst or child dst, so srvdst == dst or child_dst.
+		// But if we don't NULL the callbacks of srvdst in split mode,
+		// we randomly but rarely get a second eof event for srvdst during conn termination (especially on arm64),
+		// which crashes us with signal 11 or 10, because the first eof event for dst frees the ctx.
+		// Note that we don't free anything here, but just disable callbacks and events.
+		// This seems to be an issue with libevent.
+		// @todo Why does libevent raise the same event again for an already disabled and freed conn end?
+		// Note again that srvdst == dst or child_dst here.
+		bufferevent_setcb(ctx->srvdst.bev, NULL, NULL, NULL, NULL);
+		bufferevent_disable(ctx->srvdst.bev, EV_READ|EV_WRITE);
+		struct bufferevent *ubev = bufferevent_get_underlying(ctx->srvdst.bev);
+		if (ubev) {
+			bufferevent_setcb(ubev, NULL, NULL, NULL, NULL);
+			bufferevent_disable(ubev, EV_READ|EV_WRITE);
+		}
+
 		bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
 		ctx->protoctx->bev_eventcb(ctx->dst.bev, BEV_EVENT_CONNECTED, ctx);
 	}
