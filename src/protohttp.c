@@ -229,7 +229,6 @@ protohttp_ocsp_is_valid_uri(const char *uri, pxy_conn_ctx_t *ctx)
 static void NONNULL(1,2)
 protohttp_ocsp_deny(pxy_conn_ctx_t *ctx, protohttp_ctx_t *http_ctx)
 {
-	struct evbuffer *inbuf, *outbuf;
 	static const char ocspresp[] =
 		"HTTP/1.0 200 OK\r\n"
 		"Content-Type: application/ocsp-response\r\n"
@@ -253,25 +252,17 @@ protohttp_ocsp_deny(pxy_conn_ctx_t *ctx, protohttp_ctx_t *http_ctx)
 	return;
 
 deny:
-	inbuf = bufferevent_get_input(ctx->src.bev);
-	outbuf = bufferevent_get_output(ctx->src.bev);
-
-	if (evbuffer_get_length(inbuf) > 0) {
-		evbuffer_drain(inbuf, evbuffer_get_length(inbuf));
-	}
+	pxy_try_discard_inbuf(ctx->src.bev);
 
 	// Do not send anything to the child conns
-	struct evbuffer *dst_outbuf = bufferevent_get_output(ctx->dst.bev);
-	if (evbuffer_get_length(dst_outbuf) > 0) {
-		evbuffer_drain(dst_outbuf, evbuffer_get_length(dst_outbuf));
-	}
+	pxy_try_discard_outbuf(ctx->dst.bev);
 
 	// Do not send duplicate OCSP denied responses
 	if (http_ctx->ocsp_denied)
 		return;
 
 	log_finer("Sending OCSP denied response");
-	evbuffer_add_printf(outbuf, ocspresp);
+	evbuffer_add_printf(bufferevent_get_output(ctx->src.bev), ocspresp);
 	http_ctx->ocsp_denied = 1;
 }
 
@@ -801,7 +792,7 @@ protohttp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	log_finest_va("ENTER, size=%zu", evbuffer_get_length(bufferevent_get_input(bev)));
 
 	if (ctx->dst.closed) {
-		pxy_discard_inbuf(bev);
+		pxy_try_discard_inbuf(bev);
 		return;
 	}
 
@@ -813,7 +804,7 @@ protohttp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	if (ctx->conn_opts->user_auth && !ctx->user) {
 		log_finest("Redirecting conn");
 		char *url = protohttp_get_url(inbuf, ctx);
-		pxy_discard_inbuf(bev);
+		pxy_try_discard_inbuf(bev);
 		if (url) {
 			evbuffer_add_printf(bufferevent_get_output(bev), redirect_url, ctx->conn_opts->user_auth_url, url);
 			free(url);
@@ -852,8 +843,8 @@ protohttp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		if (protohttp_validate(ctx) == -1) {
 			evbuffer_add(bufferevent_get_output(bev), proto_error, strlen(proto_error));
 			ctx->sent_protoerror_msg = 1;
-			pxy_discard_inbuf(bev);
-			evbuffer_drain(outbuf, evbuffer_get_length(outbuf));
+			pxy_try_discard_inbuf(bev);
+			pxy_try_discard_outbuf(ctx->dst.bev);
 			return;
 		}
 	}
@@ -983,7 +974,7 @@ protohttp_bev_readcb_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	log_finest_va("ENTER, size=%zu", evbuffer_get_length(bufferevent_get_input(bev)));
 
 	if (ctx->src.closed) {
-		pxy_discard_inbuf(bev);
+		pxy_try_discard_inbuf(bev);
 		return;
 	}
 
@@ -1016,7 +1007,7 @@ protohttp_bev_readcb_src_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ct
 	log_finest_va("ENTER, size=%zu", evbuffer_get_length(bufferevent_get_input(bev)));
 
 	if (ctx->dst.closed) {
-		pxy_discard_inbuf(bev);
+		pxy_try_discard_inbuf(bev);
 		return;
 	}
 
@@ -1043,7 +1034,7 @@ protohttp_bev_readcb_dst_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ct
 	log_finest_va("ENTER, size=%zu", evbuffer_get_length(bufferevent_get_input(bev)));
 		
 	if (ctx->src.closed) {
-		pxy_discard_inbuf(bev);
+		pxy_try_discard_inbuf(bev);
 		return;
 	}
 

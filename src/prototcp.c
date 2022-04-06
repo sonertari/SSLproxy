@@ -284,7 +284,7 @@ prototcp_try_send_userauth_msg(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 	if (ctx->conn_opts->user_auth && !ctx->user) {
 		log_finest("Sending userauth message");
-		pxy_discard_inbuf(bev);
+		pxy_try_discard_inbuf(bev);
 		evbuffer_add_printf(bufferevent_get_output(bev), USERAUTH_MSG, ctx->conn_opts->user_auth_url);
 		ctx->sent_userauth_msg = 1;
 		return 1;
@@ -294,7 +294,7 @@ prototcp_try_send_userauth_msg(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 #endif /* !WITHOUT_USERAUTH */
 
 static int NONNULL(1,2,3,4)
-prototcp_try_validate_proto(struct bufferevent *bev, pxy_conn_ctx_t *ctx, struct evbuffer *inbuf, struct evbuffer *outbuf)
+prototcp_try_validate_proto(struct bufferevent *bev, pxy_conn_ctx_t *ctx, struct evbuffer *inbuf, struct bufferevent *other)
 {
 	if (ctx->conn_opts->validate_proto && ctx->protoctx->validatecb && !ctx->protoctx->is_valid) {
 		size_t packet_size = evbuffer_get_length(inbuf);
@@ -310,10 +310,13 @@ prototcp_try_validate_proto(struct bufferevent *bev, pxy_conn_ctx_t *ctx, struct
 			// Send message to the client: outbuf of src
 			evbuffer_add(bufferevent_get_output(bev), PROTOERROR_MSG, PROTOERROR_MSG_LEN);
 			ctx->sent_protoerror_msg = 1;
+
 			// Discard packets from the client: inbuf of src
-			pxy_discard_inbuf(bev);
+			pxy_try_discard_inbuf(bev);
+
 			// Discard packets to the server: outbuf of dst
-			evbuffer_drain(outbuf, evbuffer_get_length(outbuf));
+			pxy_try_discard_outbuf(other);
+
 			free(packet);
 			return 1;
 		}
@@ -328,7 +331,7 @@ prototcp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	log_finest_va("ENTER, size=%zu", evbuffer_get_length(bufferevent_get_input(bev)));
 
 	if (ctx->dst.closed) {
-		pxy_discard_inbuf(bev);
+		pxy_try_discard_inbuf(bev);
 		return;
 	}
 
@@ -343,12 +346,11 @@ prototcp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	}
 
 	struct evbuffer *inbuf = bufferevent_get_input(bev);
-	struct evbuffer *outbuf = bufferevent_get_output(ctx->dst.bev);
-		
-	if (prototcp_try_validate_proto(bev, ctx, inbuf, outbuf) != 0) {
+	if (prototcp_try_validate_proto(bev, ctx, inbuf, ctx->dst.bev) != 0) {
 		return;
 	}
 
+	struct evbuffer *outbuf = bufferevent_get_output(ctx->dst.bev);
 	if (pxy_try_prepend_sslproxy_header(ctx, inbuf, outbuf) != 0) {
 		return;
 	}
@@ -362,7 +364,7 @@ prototcp_bev_readcb_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	log_finest_va("ENTER, size=%zu", evbuffer_get_length(bufferevent_get_input(bev)));
 
 	if (ctx->src.closed) {
-		pxy_discard_inbuf(bev);
+		pxy_try_discard_inbuf(bev);
 		return;
 	}
 
@@ -382,7 +384,7 @@ prototcp_bev_readcb_src_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ctx
 	log_finest_va("ENTER, size=%zu", evbuffer_get_length(bufferevent_get_input(bev)));
 
 	if (ctx->dst.closed) {
-		pxy_discard_inbuf(bev);
+		pxy_try_discard_inbuf(bev);
 		return;
 	}
 
@@ -415,7 +417,7 @@ prototcp_bev_readcb_dst_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ctx
 	log_finest_va("ENTER, size=%zu", evbuffer_get_length(bufferevent_get_input(bev)));
 
 	if (ctx->src.closed) {
-		pxy_discard_inbuf(bev);
+		pxy_try_discard_inbuf(bev);
 		return;
 	}
 
@@ -429,8 +431,10 @@ prototcp_try_close_unauth_conn(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 	if (ctx->conn_opts->user_auth && !ctx->user) {
 		size_t outbuflen = evbuffer_get_length(bufferevent_get_output(bev));
-		if (outbuflen > 0) {
-			log_finest_va("Not closing unauth conn, outbuflen=%zu", outbuflen);
+		struct bufferevent *ubev = bufferevent_get_underlying(bev);
+		if (outbuflen || (ubev && evbuffer_get_length(bufferevent_get_output(ubev)))) {
+			log_finest_va("Not closing unauth conn, outbuflen=%zu, ubev outbuflen=%zu",
+					outbuflen, ubev ? evbuffer_get_length(bufferevent_get_output(ubev)) : 0);
 		} else if (ctx->sent_userauth_msg) {
 			log_finest("Closing unauth conn");
 			pxy_conn_term(ctx, 1);
@@ -448,8 +452,10 @@ prototcp_try_close_protoerror_conn(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 	if (ctx->conn_opts->validate_proto && ctx->sent_protoerror_msg) {
 		size_t outbuflen = evbuffer_get_length(bufferevent_get_output(bev));
-		if (outbuflen > 0) {
-			log_finest_va("Not closing protoerror conn, outbuflen=%zu", outbuflen);
+		struct bufferevent *ubev = bufferevent_get_underlying(bev);
+		if (outbuflen || (ubev && evbuffer_get_length(bufferevent_get_output(ubev)))) {
+			log_finest_va("Not closing protoerror conn, outbuflen=%zu, ubev outbuflen=%zu",
+					outbuflen, ubev ? evbuffer_get_length(bufferevent_get_output(ubev)) : 0);
 		} else {
 			log_finest("Closing protoerror conn");
 			pxy_conn_term(ctx, 1);

@@ -132,10 +132,13 @@ protosmtp_try_validate_response(struct bufferevent *bev, pxy_conn_ctx_t *ctx, st
 			// Send message to the client: outbuf of src
 			evbuffer_add(outbuf, PROTOERROR_MSG, PROTOERROR_MSG_LEN);
 			ctx->sent_protoerror_msg = 1;
+
 			// Discard packets from the client: inbuf of src
-			pxy_discard_inbuf(ctx->src.bev);
+			pxy_try_discard_inbuf(ctx->src.bev);
+
 			// Discard packets to the server: outbuf of srvdst
-			evbuffer_drain(bufferevent_get_output(bev), evbuffer_get_length(bufferevent_get_output(bev)));
+			pxy_try_discard_outbuf(bev);
+
 			free(packet);
 			return -1;
 		}
@@ -204,7 +207,7 @@ protosmtp_bev_readcb_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	}
 
 	if (ctx->src.closed) {
-		pxy_discard_inbuf(bev);
+		pxy_try_discard_inbuf(bev);
 		return;
 	}
 

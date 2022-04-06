@@ -139,7 +139,7 @@ protopassthrough_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 
 	// Passthrough packets are transferred between src and srvdst
 	if (ctx->srvdst.closed) {
-		pxy_discard_inbuf(bev);
+		pxy_try_discard_inbuf(bev);
 		return;
 	}
 
@@ -164,7 +164,7 @@ protopassthrough_bev_readcb_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 
 	// Passthrough packets are transferred between src and srvdst
 	if (ctx->src.closed) {
-		pxy_discard_inbuf(bev);
+		pxy_try_discard_inbuf(bev);
 		return;
 	}
 

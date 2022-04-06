@@ -214,7 +214,7 @@ protoautossl_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	}
 
 	if (ctx->dst.closed) {
-		pxy_discard_inbuf(bev);
+		pxy_try_discard_inbuf(bev);
 		return;
 	}
 
@@ -245,7 +245,7 @@ protoautossl_bev_readcb_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	// as we do with the smtp protocol, @see protosmtp_bev_readcb_srvdst()
 
 	if (ctx->src.closed) {
-		pxy_discard_inbuf(bev);
+		pxy_try_discard_inbuf(bev);
 		return;
 	}
 
