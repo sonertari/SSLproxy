@@ -258,7 +258,7 @@ pxy_conn_free_child(pxy_conn_child_ctx_t *ctx)
 
 	// Save conn and srvdst_xferred before freeing ctx
 	pxy_conn_ctx_t *conn = ctx->conn;
-	unsigned int srvdst_xferred = ctx->srvdst_xferred;
+	unsigned int srvdst_xferred = conn->srvdst_xferred;
 
 	pxy_conn_detach_child(ctx);
 	pxy_conn_ctx_free_child(ctx);

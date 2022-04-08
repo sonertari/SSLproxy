@@ -205,9 +205,8 @@ prototcp_setup_dst_child(pxy_conn_child_ctx_t *ctx)
 {
 	if (!ctx->conn->srvdst_xferred) {
 		// Reuse srvdst of parent in the first child conn
-		ctx->conn->srvdst_xferred = 1;
-		ctx->srvdst_xferred = 1;
 		ctx->dst = ctx->conn->srvdst;
+		ctx->conn->srvdst_xferred = 1;
 
 		// See the comments in prototcp_setup_dst()
 		prototcp_disable_events_srvdst(ctx->conn);
