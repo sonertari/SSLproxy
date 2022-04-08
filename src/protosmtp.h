@@ -35,8 +35,8 @@ typedef struct protosmtp_ctx {
 	unsigned int seen_command_count;
 } protosmtp_ctx_t;
 
-int protosmtp_validate(pxy_conn_ctx_t *, char *, size_t) NONNULL(1,2);
-int protosmtp_validate_response(pxy_conn_ctx_t *, char *, size_t) NONNULL(1,2);
+int protosmtp_validate(pxy_conn_ctx_t *, char *, size_t) NONNULL(1,2) WUNRES;
+int protosmtp_validate_response(pxy_conn_ctx_t *, char *, size_t) NONNULL(1,2) WUNRES;
 
 protocol_t protosmtp_setup(pxy_conn_ctx_t *) NONNULL(1);
 protocol_t protosmtps_setup(pxy_conn_ctx_t *) NONNULL(1);

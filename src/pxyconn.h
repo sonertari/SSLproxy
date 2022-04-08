@@ -68,7 +68,7 @@ typedef struct pxy_conn_desc pxy_conn_desc_t;
 typedef struct pxy_conn_child_ctx pxy_conn_child_ctx_t;
 
 typedef void (*init_conn_func_t)(evutil_socket_t,  short, void *);
-typedef int (*connect_func_t)(pxy_conn_ctx_t *);
+typedef int (*connect_func_t)(pxy_conn_ctx_t *) NONNULL(1) WUNRES;
 
 typedef void (*callback_func_t)(struct bufferevent *, void *);
 typedef void (*eventcb_func_t)(struct bufferevent *, short, void *);
@@ -76,18 +76,18 @@ typedef void (*eventcb_func_t)(struct bufferevent *, short, void *);
 typedef void (*bev_free_func_t)(struct bufferevent *, pxy_conn_ctx_t *);
 
 typedef void (*proto_free_func_t)(pxy_conn_ctx_t *);
-typedef int (*proto_validate_func_t)(pxy_conn_ctx_t *, char *, size_t);
+typedef int (*proto_validate_func_t)(pxy_conn_ctx_t *, char *, size_t) NONNULL(1,2) WUNRES;
 #ifndef WITHOUT_USERAUTH
 typedef void (*proto_classify_user_func_t)(pxy_conn_ctx_t *);
 #endif /* !WITHOUT_USERAUTH */
 
-typedef int (*child_connect_func_t)(pxy_conn_child_ctx_t *);
+typedef int (*child_connect_func_t)(pxy_conn_child_ctx_t *) NONNULL(1) WUNRES;
 typedef void (*child_proto_free_func_t)(pxy_conn_child_ctx_t *);
 
 typedef void (*set_watermark_func_t)(struct bufferevent *, pxy_conn_ctx_t *, struct bufferevent *);
 typedef void (*unset_watermark_func_t)(struct bufferevent *, pxy_conn_ctx_t *, pxy_conn_desc_t *);
 
-typedef filter_action_t * (*proto_filter_func_t)(pxy_conn_ctx_t *, filter_list_t *);
+typedef filter_action_t * (*proto_filter_func_t)(pxy_conn_ctx_t *, filter_list_t *) NONNULL(1,2) WUNRES;
 
 /*
  * Proxy connection context state, describes a proxy connection
