@@ -87,7 +87,6 @@ int prototcp_setup_dst(pxy_conn_ctx_t *) NONNULL(1);
 int prototcp_setup_srvdst(pxy_conn_ctx_t *) NONNULL(1);
 
 int prototcp_setup_src_child(pxy_conn_child_ctx_t *) NONNULL(1);
-int prototcp_setup_dst_child(pxy_conn_child_ctx_t *) NONNULL(1) WUNRES;
 
 protocol_t prototcp_setup(pxy_conn_ctx_t *) NONNULL(1);
 protocol_t prototcp_setup_child(pxy_conn_child_ctx_t *) NONNULL(1);

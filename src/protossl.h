@@ -54,7 +54,6 @@ int protossl_setup_dst_ssl(pxy_conn_ctx_t *) NONNULL(1);
 int protossl_setup_dst_new_bev_ssl_connecting(pxy_conn_ctx_t *) NONNULL(1);
 int protossl_setup_dst_ssl_child(pxy_conn_child_ctx_t *) NONNULL(1);
 int protossl_setup_dst_new_bev_ssl_connecting_child(pxy_conn_child_ctx_t *) NONNULL(1) WUNRES;
-int protossl_setup_dst_child(pxy_conn_child_ctx_t *) NONNULL(1);
 
 int protossl_setup_srvdst(pxy_conn_ctx_t *ctx) NONNULL(1);
 

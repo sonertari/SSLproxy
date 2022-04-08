@@ -202,9 +202,12 @@ prototcp_setup_src_child(pxy_conn_child_ctx_t *ctx)
 	return 0;
 }
 
-int
-prototcp_setup_dst_child(pxy_conn_child_ctx_t *ctx)
+static int NONNULL(1) WUNRES
+prototcp_connect_child(pxy_conn_child_ctx_t *ctx)
 {
+	log_finest("ENTER");
+
+	/* create server-side socket and eventbuffer */
 	if (ctx->conn->srvdst.bev) {
 		// Reuse srvdst of parent in the first child conn
 		ctx->dst = ctx->conn->srvdst;
@@ -229,15 +232,6 @@ prototcp_setup_dst_child(pxy_conn_child_ctx_t *ctx)
 		ctx->dst.free = prototcp_bufferevent_free_and_close_fd;
 	}
 	return 0;
-}
-
-static int NONNULL(1) WUNRES
-prototcp_connect_child(pxy_conn_child_ctx_t *ctx)
-{
-	log_finest("ENTER");
-
-	/* create server-side socket and eventbuffer */
-	return prototcp_setup_dst_child(ctx);
 }
 
 void

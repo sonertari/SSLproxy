@@ -1526,8 +1526,11 @@ protossl_setup_dst_ssl_child(pxy_conn_child_ctx_t *ctx)
 }
 
 int
-protossl_setup_dst_child(pxy_conn_child_ctx_t *ctx)
+protossl_connect_child(pxy_conn_child_ctx_t *ctx)
 {
+	log_finest("ENTER");
+
+	/* create server-side socket and eventbuffer */
 	if (ctx->conn->srvdst.bev) {
 		// Reuse srvdst of parent in the first child conn
 		ctx->dst = ctx->conn->srvdst;
@@ -1557,15 +1560,6 @@ protossl_setup_dst_child(pxy_conn_child_ctx_t *ctx)
 		ctx->dst.free = protossl_bufferevent_free_and_close_fd;
 	}
 	return 0;
-}
-
-int
-protossl_connect_child(pxy_conn_child_ctx_t *ctx)
-{
-	log_finest("ENTER");
-
-	/* create server-side socket and eventbuffer */
-	return protossl_setup_dst_child(ctx);
 }
 
 static int NONNULL(1)
