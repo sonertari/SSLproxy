@@ -1528,17 +1528,20 @@ protossl_setup_dst_ssl_child(pxy_conn_child_ctx_t *ctx)
 int
 protossl_setup_dst_child(pxy_conn_child_ctx_t *ctx)
 {
-	if (!ctx->conn->srvdst_xferred) {
+	if (ctx->conn->srvdst.bev) {
 		// Reuse srvdst of parent in the first child conn
 		ctx->dst = ctx->conn->srvdst;
-		ctx->conn->srvdst_xferred = 1;
 
 		// See the comments in prototcp_setup_dst()
-		prototcp_disable_events_srvdst(ctx->conn);
+		prototcp_disable_srvdst(ctx->conn);
 
 		bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb_child, pxy_bev_writecb_child, pxy_bev_eventcb_child, ctx);
 		ctx->protoctx->bev_eventcb(ctx->dst.bev, BEV_EVENT_CONNECTED, ctx);
-	} else {
+
+		// Return 1 to signal the caller that we have reused srvdst as the dst of the first child conn
+		return 1;
+	}
+	else {
 		if (protossl_setup_dst_ssl_child(ctx) == -1) {
 			return -1;
 		}
@@ -1556,13 +1559,13 @@ protossl_setup_dst_child(pxy_conn_child_ctx_t *ctx)
 	return 0;
 }
 
-void
+int
 protossl_connect_child(pxy_conn_child_ctx_t *ctx)
 {
 	log_finest("ENTER");
 
 	/* create server-side socket and eventbuffer */
-	protossl_setup_dst_child(ctx);
+	return protossl_setup_dst_child(ctx);
 }
 
 static int NONNULL(1)

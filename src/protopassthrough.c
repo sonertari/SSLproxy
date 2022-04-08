@@ -82,20 +82,19 @@ protopassthrough_engage(pxy_conn_ctx_t *ctx)
 
 	// In split mode, srvdst is used as dst, so it should be freed as dst below
 	// If srvdst has been xferred to the first child conn, the child should free it, not the parent
-	if (ctx->divert && !ctx->srvdst_xferred) {
+	if (ctx->srvdst.bev) {
 		ctx->srvdst.free(ctx->srvdst.bev, ctx);
+		ctx->srvdst.bev = NULL;
 	}
-	ctx->srvdst.bev = NULL;
 	ctx->srvdst.ssl = NULL;
 	ctx->connected = 0;
 
-	// Close and free dst if open
 	// Make sure bev is not NULL, as dst may not have been initialized yet
-	if (!ctx->dst.closed && ctx->dst.bev) {
-		ctx->dst.closed = 1;
+	if (ctx->dst.bev) {
 		ctx->dst.free(ctx->dst.bev, ctx);
 		ctx->dst.bev = NULL;
 		ctx->dst_fd = 0;
+		ctx->dst.closed = 1;
 	}
 
 	// Free any/all data of the previous proto

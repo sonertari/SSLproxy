@@ -112,7 +112,7 @@ prototcp_setup_src(pxy_conn_ctx_t *ctx)
 }
 
 void
-prototcp_disable_events_srvdst(pxy_conn_ctx_t *ctx)
+prototcp_disable_srvdst(pxy_conn_ctx_t *ctx)
 {
 	bufferevent_setcb(ctx->srvdst.bev, NULL, NULL, NULL, NULL);
 	bufferevent_disable(ctx->srvdst.bev, EV_READ|EV_WRITE);
@@ -122,6 +122,8 @@ prototcp_disable_events_srvdst(pxy_conn_ctx_t *ctx)
 		bufferevent_setcb(ubev, NULL, NULL, NULL, NULL);
 		bufferevent_disable(ubev, EV_READ|EV_WRITE);
 	}
+	// Do not access srvdst.bev from this point on
+	ctx->srvdst.bev = NULL;
 }
 
 int
@@ -144,12 +146,12 @@ prototcp_setup_dst(pxy_conn_ctx_t *ctx)
 		// But if we don't NULL the callbacks of srvdst in split mode,
 		// we randomly but rarely get a second eof event for srvdst during conn termination (especially on arm64),
 		// which crashes us with signal 11 or 10, because the first eof event for dst frees the ctx.
-		// This does not seem to happen with srvdst_xferred, but just to be safe we do the same for it too.
+		// This does not seem to happen with srvdst xferred, but just to be safe we do the same for it too.
 		// Note that we don't free anything here, but just disable callbacks and events.
 		// This seems to be an issue with libevent.
 		// @todo Why does libevent raise the same event again for an already disabled and freed conn end?
 		// Note again that srvdst == dst or child_dst here.
-		prototcp_disable_events_srvdst(ctx);
+		prototcp_disable_srvdst(ctx);
 
 		bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
 		ctx->protoctx->bev_eventcb(ctx->dst.bev, BEV_EVENT_CONNECTED, ctx);
@@ -203,17 +205,20 @@ prototcp_setup_src_child(pxy_conn_child_ctx_t *ctx)
 int
 prototcp_setup_dst_child(pxy_conn_child_ctx_t *ctx)
 {
-	if (!ctx->conn->srvdst_xferred) {
+	if (ctx->conn->srvdst.bev) {
 		// Reuse srvdst of parent in the first child conn
 		ctx->dst = ctx->conn->srvdst;
-		ctx->conn->srvdst_xferred = 1;
 
 		// See the comments in prototcp_setup_dst()
-		prototcp_disable_events_srvdst(ctx->conn);
+		prototcp_disable_srvdst(ctx->conn);
 
 		bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb_child, pxy_bev_writecb_child, pxy_bev_eventcb_child, ctx);
 		ctx->protoctx->bev_eventcb(ctx->dst.bev, BEV_EVENT_CONNECTED, ctx);
-	} else {
+
+		// Return 1 to signal the caller that we have reused srvdst as the dst of the first child conn
+		return 1;
+	}
+	else {
 		ctx->dst.ssl = NULL;
 		ctx->dst.bev = prototcp_bufferevent_setup_child(ctx, -1);
 		if (!ctx->dst.bev) {
@@ -226,13 +231,13 @@ prototcp_setup_dst_child(pxy_conn_child_ctx_t *ctx)
 	return 0;
 }
 
-static void NONNULL(1)
+static int NONNULL(1) WUNRES
 prototcp_connect_child(pxy_conn_child_ctx_t *ctx)
 {
 	log_finest("ENTER");
 
 	/* create server-side socket and eventbuffer */
-	prototcp_setup_dst_child(ctx);
+	return prototcp_setup_dst_child(ctx);
 }
 
 void

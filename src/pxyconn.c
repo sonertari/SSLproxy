@@ -256,22 +256,15 @@ pxy_conn_free_child(pxy_conn_child_ctx_t *ctx)
 		ctx->dst.bev = NULL;
 	}
 
-	// Save conn and srvdst_xferred before freeing ctx
+	// Save conn before freeing ctx
 	pxy_conn_ctx_t *conn = ctx->conn;
-	unsigned int srvdst_xferred = conn->srvdst_xferred;
 
 	pxy_conn_detach_child(ctx);
 	pxy_conn_ctx_free_child(ctx);
 
 	// If there is no child left, free child_evcl asap by calling pxy_conn_free_children()
-	if (!conn->children) {
+	if (!conn->children)
 		pxy_conn_free_children(conn);
-	}
-
-	// If this is the first child, NULL srvdst.bev, so we don't try to access it from this point on
-	if (srvdst_xferred) {
-		conn->srvdst.bev = NULL;
-	}
 }
 
 void
@@ -414,9 +407,7 @@ pxy_conn_free(pxy_conn_ctx_t *ctx, int by_requestor)
 	if (ctx->srvdst.bev) {
 		// In split mode, srvdst is used as dst, so it should be freed as dst below
 		// If srvdst has been xferred to the first child conn, the child should free it, not the parent
-		if (ctx->divert && !ctx->srvdst_xferred) {
-			ctx->srvdst.free(ctx->srvdst.bev, ctx);
-		}
+		ctx->srvdst.free(ctx->srvdst.bev, ctx);
 		ctx->srvdst.bev = NULL;
 	}
 
@@ -1084,12 +1075,12 @@ pxy_listener_acceptcb_child(UNUSED struct evconnlistener *listener, evutil_socke
 	// @attention fd (child_ctx->fd) is different from child event listener fd (ctx->child_fd)
 	ctx->thr->max_fd = max(ctx->thr->max_fd, child_ctx->fd);
 	ctx->child_src_fd = child_ctx->fd;
-	
+
 	/* create server-side socket and eventbuffer */
 	// Children rely on the findings of parent
-	child_ctx->protoctx->connectcb(child_ctx);
+	int connect_retval = child_ctx->protoctx->connectcb(child_ctx);
 
-	if (ctx->term || ctx->enomem) {
+	if (connect_retval == -1 || ctx->term || ctx->enomem) {
 		goto out;
 	}
 
@@ -1097,14 +1088,15 @@ pxy_listener_acceptcb_child(UNUSED struct evconnlistener *listener, evutil_socke
 		log_dbg_printf("Child connecting to [%s]:%s\n", STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str));
 	}
 
-	/* initiate connection, except for the first child conn which uses the parent's srvdst as dst */
-	if (child_ctx->dst.bev != ctx->srvdst.bev) {
+	// initiate connection, except for the first child conn which uses the parent's srvdst as dst
+	// connectcb returns 1 if we have reused srvdst as the dst of the first child conn, and 0 for the other child conns
+	if (connect_retval == 0) {
 		if (bufferevent_socket_connect(child_ctx->dst.bev, (struct sockaddr *)&ctx->dstaddr, ctx->dstaddrlen) == -1) {
 			pxy_conn_term(ctx, 1);
 			goto out;
 		}
 	}
-	
+
 	child_ctx->dst_fd = bufferevent_getfd(child_ctx->dst.bev);
 	ctx->child_dst_fd = child_ctx->dst_fd;
 	ctx->thr->max_fd = max(ctx->thr->max_fd, child_ctx->dst_fd);

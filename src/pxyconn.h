@@ -81,7 +81,7 @@ typedef int (*proto_validate_func_t)(pxy_conn_ctx_t *, char *, size_t);
 typedef void (*proto_classify_user_func_t)(pxy_conn_ctx_t *);
 #endif /* !WITHOUT_USERAUTH */
 
-typedef void (*child_connect_func_t)(pxy_conn_child_ctx_t *);
+typedef int (*child_connect_func_t)(pxy_conn_child_ctx_t *);
 typedef void (*child_proto_free_func_t)(pxy_conn_child_ctx_t *);
 
 typedef void (*set_watermark_func_t)(struct bufferevent *, pxy_conn_ctx_t *, struct bufferevent *);
@@ -255,9 +255,6 @@ struct pxy_conn_ctx {
 	unsigned int term : 1;                     /* 0 until term requested */
 	unsigned int term_requestor : 1;          /* 1 client, 0 server side */
 
-	// srvdst_xferred flag is important not to access srvdst.bev
-	// after the first child is freed
-	unsigned int srvdst_xferred : 1;     /* 1 if srvdst xferred to child */
 	struct pxy_conn_desc srvdst;
 
 	struct event *ev;
