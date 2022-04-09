@@ -433,7 +433,10 @@ protoautossl_bev_eventcb_connected_dst(struct bufferevent *bev, pxy_conn_ctx_t *
 	if (!ctx->connected) {
 		ctx->connected = 1;
 		bufferevent_enable(bev, EV_READ|EV_WRITE);
-		bufferevent_enable(ctx->srvdst.bev, EV_READ);
+
+		// srvdst.bev is NULL in split mode
+		if (ctx->srvdst.bev)
+			bufferevent_enable(ctx->srvdst.bev, EV_READ);
 
 		protoautossl_enable_src(ctx);
 	}
