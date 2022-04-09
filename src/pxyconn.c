@@ -1756,13 +1756,13 @@ pxy_conn_connect(pxy_conn_ctx_t *ctx)
 		log_dbg_printf("Connecting to [%s]:%s\n", ctx->dsthost_str, ctx->dstport_str);
 	}
 
-	if (ctx->protoctx->connectcb(ctx) == -1) {
-		// The return value of -1 from connectcb indicates that there was a fatal error before event callbacks were set, so we can terminate the connection.
-		// Otherwise, it is up to the event callbacks to terminate the connection.
-		if (ctx->term || ctx->enomem) {
-			pxy_conn_free(ctx, ctx->term ? ctx->term_requestor : 1);
-			return;
-		}
+	int connect_retval = ctx->protoctx->connectcb(ctx);
+
+	// The return value of -1 from connectcb indicates that there was a fatal error before event callbacks were set, so we can terminate the connection.
+	// Otherwise, it is up to the event callbacks to terminate the connection.
+	if (connect_retval == -1 || ctx->term || ctx->enomem) {
+		pxy_conn_free(ctx, ctx->term ? ctx->term_requestor : 1);
+		return;
 	}
 
 	if (bufferevent_socket_connect(ctx->srvdst.bev, (struct sockaddr *)&ctx->dstaddr, ctx->dstaddrlen) == -1) {
