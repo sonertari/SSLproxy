@@ -1205,21 +1205,14 @@ protossl_bufferevent_setup_child(pxy_conn_child_ctx_t *ctx, evutil_socket_t fd, 
 }
 
 /*
- * Free bufferenvent and close underlying socket properly.
+ * Free bufferevent and close underlying socket properly.
  * For OpenSSL bufferevents, this will shutdown the SSL connection.
  */
 static void
 protossl_bufferevent_free_and_close_fd(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 	SSL *ssl = bufferevent_openssl_get_ssl(bev); /* does not inc refc */
-	struct bufferevent *ubev = bufferevent_get_underlying(bev);
-	evutil_socket_t fd;
-
-	if (ubev) {
-		fd = bufferevent_getfd(ubev);
-	} else {
-		fd = bufferevent_getfd(bev);
-	}
+	evutil_socket_t fd = bufferevent_getfd(bev);
 
 	log_finer_va("in=%zu, out=%zu, fd=%d", evbuffer_get_length(bufferevent_get_input(bev)), evbuffer_get_length(bufferevent_get_output(bev)), fd);
 
@@ -1238,20 +1231,11 @@ protossl_bufferevent_free_and_close_fd(struct bufferevent *bev, pxy_conn_ctx_t *
 	 * their sessions valid.  This strategy will fail if the socket
 	 * is not ready for writing, in which case this hack will lead
 	 * to an unclean shutdown and lost session on the other end.
-	 *
-	 * Note that in the case of autossl, the SSL object operates on
-	 * a BIO wrapper around the underlying bufferevent.
 	 */
 	SSL_set_shutdown(ssl, SSL_RECEIVED_SHUTDOWN);
 	SSL_shutdown(ssl);
 
 	bufferevent_disable(bev, EV_READ|EV_WRITE);
-	if (ubev) {
-		bufferevent_disable(ubev, EV_READ|EV_WRITE);
-		bufferevent_setfd(ubev, -1);
-		bufferevent_setcb(ubev, NULL, NULL, NULL, NULL);
-		bufferevent_free(ubev);
-	}
 	bufferevent_free(bev);
 
 	if (OPTS_DEBUG(ctx->global)) {
@@ -1632,54 +1616,6 @@ protossl_setup_src(pxy_conn_ctx_t *ctx)
 		return -1;
 	}
 	ctx->src.free = protossl_bufferevent_free_and_close_fd;
-	return 0;
-}
-
-int
-protossl_setup_src_new_bev_ssl_accepting(pxy_conn_ctx_t *ctx)
-{
-	ctx->src.bev = bufferevent_openssl_filter_new(ctx->thr->evbase, ctx->src.bev, ctx->src.ssl,
-			BUFFEREVENT_SSL_ACCEPTING, BEV_OPT_DEFER_CALLBACKS);
-	if (!ctx->src.bev) {
-		log_err_level_printf(LOG_CRIT, "Error creating src bufferevent\n");
-		SSL_free(ctx->src.ssl);
-		ctx->src.ssl = NULL;
-		pxy_conn_term(ctx, 1);
-		return -1;
-	}
-	ctx->src.free = protossl_bufferevent_free_and_close_fd;
-	return 0;
-}
-
-int
-protossl_setup_dst_new_bev_ssl_connecting(pxy_conn_ctx_t *ctx)
-{
-	ctx->dst.bev = bufferevent_openssl_filter_new(ctx->thr->evbase, ctx->dst.bev, ctx->dst.ssl,
-			BUFFEREVENT_SSL_CONNECTING, BEV_OPT_DEFER_CALLBACKS);
-	if (!ctx->dst.bev) {
-		log_err_level_printf(LOG_CRIT, "Error creating dst bufferevent\n");
-		SSL_free(ctx->dst.ssl);
-		ctx->dst.ssl = NULL;
-		pxy_conn_term(ctx, 1);
-		return -1;
-	}
-	ctx->dst.free = protossl_bufferevent_free_and_close_fd;
-	return 0;
-}
-
-int
-protossl_setup_dst_new_bev_ssl_connecting_child(pxy_conn_child_ctx_t *ctx)
-{
-	ctx->dst.bev = bufferevent_openssl_filter_new(ctx->conn->thr->evbase, ctx->dst.bev, ctx->dst.ssl,
-			BUFFEREVENT_SSL_CONNECTING, BEV_OPT_DEFER_CALLBACKS);
-	if (!ctx->dst.bev) {
-		log_err_level_printf(LOG_CRIT, "Error creating dst bufferevent\n");
-		SSL_free(ctx->dst.ssl);
-		ctx->dst.ssl = NULL;
-		pxy_conn_term(ctx->conn, 1);
-		return -1;
-	}
-	ctx->dst.free = protossl_bufferevent_free_and_close_fd;
 	return 0;
 }
 

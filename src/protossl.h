@@ -48,12 +48,9 @@ int protossl_enable_src(pxy_conn_ctx_t *) NONNULL(1);
 
 int protossl_setup_src_ssl_from_dst(pxy_conn_ctx_t *) NONNULL(1);
 int protossl_setup_src_ssl_from_child_dst(pxy_conn_child_ctx_t *) NONNULL(1);
-int protossl_setup_src_new_bev_ssl_accepting(pxy_conn_ctx_t *) NONNULL(1);
 
 int protossl_setup_dst_ssl(pxy_conn_ctx_t *) NONNULL(1);
-int protossl_setup_dst_new_bev_ssl_connecting(pxy_conn_ctx_t *) NONNULL(1);
 int protossl_setup_dst_ssl_child(pxy_conn_child_ctx_t *) NONNULL(1);
-int protossl_setup_dst_new_bev_ssl_connecting_child(pxy_conn_child_ctx_t *) NONNULL(1) WUNRES;
 
 int protossl_setup_srvdst(pxy_conn_ctx_t *ctx) NONNULL(1);
 

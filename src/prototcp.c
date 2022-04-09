@@ -83,7 +83,7 @@ prototcp_bufferevent_setup_child(pxy_conn_child_ctx_t *ctx, evutil_socket_t fd)
 }
 
 /*
- * Free bufferenvent and close underlying socket properly.
+ * Free bufferevent and close underlying socket properly.
  */
 static void
 prototcp_bufferevent_free_and_close_fd(struct bufferevent *bev, UNUSED pxy_conn_ctx_t *ctx)

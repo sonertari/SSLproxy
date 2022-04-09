@@ -42,13 +42,123 @@ struct protoautossl_ctx {
 	unsigned int clienthello_found : 1;      /* 1 if conn upgrade to SSL */
 };
 
+/*
+ * Free bufferevent and close underlying socket properly.
+ * For OpenSSL bufferevents, this will shutdown the SSL connection.
+ */
+static void
+protoautossl_bufferevent_free_and_close_fd(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
+{
+	SSL *ssl = bufferevent_openssl_get_ssl(bev); /* does not inc refc */
+	struct bufferevent *ubev = bufferevent_get_underlying(bev);
+	evutil_socket_t fd;
+
+	if (ubev) {
+		fd = bufferevent_getfd(ubev);
+	} else {
+		fd = bufferevent_getfd(bev);
+	}
+
+	log_finer_va("in=%zu (ubev in=%zu), out=%zu (ubev out=%zu), fd=%d",
+		evbuffer_get_length(bufferevent_get_input(bev)), ubev ? evbuffer_get_length(bufferevent_get_input(ubev)) : 0,
+		evbuffer_get_length(bufferevent_get_output(bev)), ubev ? evbuffer_get_length(bufferevent_get_output(ubev)) : 0, fd);
+
+	// @see https://stackoverflow.com/questions/31688709/knowing-all-callbacks-have-run-with-libevent-and-bufferevent-free
+	bufferevent_setcb(bev, NULL, NULL, NULL, NULL);
+
+	/*
+	 * See the comments in protossl_bufferevent_free_and_close_fd()
+	 *
+	 * Note that in the case of autossl, the SSL object operates on
+	 * a BIO wrapper around the underlying bufferevent.
+	 */
+	SSL_set_shutdown(ssl, SSL_RECEIVED_SHUTDOWN);
+	SSL_shutdown(ssl);
+
+	bufferevent_disable(bev, EV_READ|EV_WRITE);
+	if (ubev) {
+		bufferevent_disable(ubev, EV_READ|EV_WRITE);
+		bufferevent_setfd(ubev, -1);
+		bufferevent_setcb(ubev, NULL, NULL, NULL, NULL);
+		bufferevent_free(ubev);
+	}
+	bufferevent_free(bev);
+
+	if (OPTS_DEBUG(ctx->global)) {
+		char *str = ssl_ssl_state_to_str(ssl, "SSL_free() in state ", 1);
+		if (str)
+			log_dbg_print_free(str);
+	}
+#ifdef DEBUG_PROXY
+	char *str = ssl_ssl_state_to_str(ssl, "SSL_free() in state ", 0);
+	if (str) {
+		log_finer_va("fd=%d, %s", fd, str);
+		free(str);
+	}
+#endif /* DEBUG_PROXY */
+
+	SSL_free(ssl);
+	/* bufferevent_getfd() returns -1 if no file descriptor is associated
+	 * with the bufferevent */
+	if (fd >= 0)
+		evutil_closesocket(fd);
+}
+
+static int NONNULL(1) WUNRES
+protoautossl_setup_src_new_bev_ssl_accepting(pxy_conn_ctx_t *ctx)
+{
+	ctx->src.bev = bufferevent_openssl_filter_new(ctx->thr->evbase, ctx->src.bev, ctx->src.ssl,
+			BUFFEREVENT_SSL_ACCEPTING, BEV_OPT_DEFER_CALLBACKS);
+	if (!ctx->src.bev) {
+		log_err_level_printf(LOG_CRIT, "Error creating src bufferevent\n");
+		SSL_free(ctx->src.ssl);
+		ctx->src.ssl = NULL;
+		pxy_conn_term(ctx, 1);
+		return -1;
+	}
+	ctx->src.free = protoautossl_bufferevent_free_and_close_fd;
+	return 0;
+}
+
+static int NONNULL(1) WUNRES
+protoautossl_setup_dst_new_bev_ssl_connecting(pxy_conn_ctx_t *ctx)
+{
+	ctx->dst.bev = bufferevent_openssl_filter_new(ctx->thr->evbase, ctx->dst.bev, ctx->dst.ssl,
+			BUFFEREVENT_SSL_CONNECTING, BEV_OPT_DEFER_CALLBACKS);
+	if (!ctx->dst.bev) {
+		log_err_level_printf(LOG_CRIT, "Error creating dst bufferevent\n");
+		SSL_free(ctx->dst.ssl);
+		ctx->dst.ssl = NULL;
+		pxy_conn_term(ctx, 1);
+		return -1;
+	}
+	ctx->dst.free = protoautossl_bufferevent_free_and_close_fd;
+	return 0;
+}
+
+static int NONNULL(1) WUNRES
+protoautossl_setup_dst_new_bev_ssl_connecting_child(pxy_conn_child_ctx_t *ctx)
+{
+	ctx->dst.bev = bufferevent_openssl_filter_new(ctx->conn->thr->evbase, ctx->dst.bev, ctx->dst.ssl,
+			BUFFEREVENT_SSL_CONNECTING, BEV_OPT_DEFER_CALLBACKS);
+	if (!ctx->dst.bev) {
+		log_err_level_printf(LOG_CRIT, "Error creating dst bufferevent\n");
+		SSL_free(ctx->dst.ssl);
+		ctx->dst.ssl = NULL;
+		pxy_conn_term(ctx->conn, 1);
+		return -1;
+	}
+	ctx->dst.free = protoautossl_bufferevent_free_and_close_fd;
+	return 0;
+}
+
 static void NONNULL(1)
 protoautossl_upgrade_dst(pxy_conn_ctx_t *ctx)
 {
 	if (protossl_setup_dst_ssl(ctx) == -1) {
 		return;
 	}
-	if (protossl_setup_dst_new_bev_ssl_connecting(ctx) == -1) {
+	if (protoautossl_setup_dst_new_bev_ssl_connecting(ctx) == -1) {
 		return;
 	}
 	bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
@@ -60,7 +170,7 @@ protoautossl_upgrade_dst_child(pxy_conn_child_ctx_t *ctx)
 	if (protossl_setup_dst_ssl_child(ctx) == -1) {
 		return;
 	}
-	if (protossl_setup_dst_new_bev_ssl_connecting_child(ctx) == -1) {
+	if (protoautossl_setup_dst_new_bev_ssl_connecting_child(ctx) == -1) {
 		return;
 	}
 	bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb_child, pxy_bev_writecb_child, pxy_bev_eventcb_child, ctx);
@@ -296,7 +406,7 @@ protoautossl_enable_conn_src(pxy_conn_ctx_t *ctx)
 		return rv;
 	}
 	// Replace tcp src.bev with ssl version
-	if (protossl_setup_src_new_bev_ssl_accepting(ctx) == -1) {
+	if (protoautossl_setup_src_new_bev_ssl_accepting(ctx) == -1) {
 		return -1;
 	}
 #if LIBEVENT_VERSION_NUMBER >= 0x02010000
@@ -379,7 +489,7 @@ protoautossl_enable_conn_src_child(pxy_conn_child_ctx_t *ctx)
 		return rv;
 	}
 	// Replace tcp src.bev with ssl version
-	if (protossl_setup_src_new_bev_ssl_accepting(ctx->conn) == -1) {
+	if (protoautossl_setup_src_new_bev_ssl_accepting(ctx->conn) == -1) {
 		return -1;
 	}
 #if LIBEVENT_VERSION_NUMBER >= 0x02010000
