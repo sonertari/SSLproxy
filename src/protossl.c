@@ -1449,7 +1449,7 @@ protossl_setup_dst_ssl(pxy_conn_ctx_t *ctx)
 	return 0;
 }
 
-static int NONNULL(1)
+int
 protossl_setup_srvdst_ssl(pxy_conn_ctx_t *ctx)
 {
 	ctx->srvdst.ssl = protossl_dstssl_create(ctx);
@@ -1520,7 +1520,7 @@ protossl_connect_child(pxy_conn_child_ctx_t *ctx)
 		ctx->dst = ctx->conn->srvdst;
 
 		// See the comments in prototcp_setup_dst()
-		prototcp_disable_srvdst(ctx->conn);
+		ctx->conn->protoctx->disable_srvdstcb(ctx->conn);
 
 		bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb_child, pxy_bev_writecb_child, pxy_bev_eventcb_child, ctx);
 		ctx->protoctx->bev_eventcb(ctx->dst.bev, BEV_EVENT_CONNECTED, ctx);
@@ -1574,7 +1574,9 @@ protossl_setup_src_ssl_from_dst(pxy_conn_ctx_t *ctx)
 {
 	// @attention We cannot engage passthrough mode upon ssl errors on already enabled src
 	// This function is used by protoautossl only
-	if (ctx->src.ssl || (ctx->src.ssl = protossl_srcssl_create(ctx, ctx->dst.ssl))) {
+	// srvdst may or may not have been xfered to child, or it may be divert or split mode
+	// so make sure dst.ssl is not NULL
+	if (ctx->src.ssl || (ctx->src.ssl = protossl_srcssl_create(ctx, ctx->srvdst.ssl ? ctx->srvdst.ssl : ctx->dst.ssl))) {
 		return 0;
 	}
 	else if (ctx->term) {

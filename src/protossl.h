@@ -52,7 +52,8 @@ int protossl_setup_src_ssl_from_child_dst(pxy_conn_child_ctx_t *) NONNULL(1);
 int protossl_setup_dst_ssl(pxy_conn_ctx_t *) NONNULL(1);
 int protossl_setup_dst_ssl_child(pxy_conn_child_ctx_t *) NONNULL(1);
 
-int protossl_setup_srvdst(pxy_conn_ctx_t *ctx) NONNULL(1);
+int protossl_setup_srvdst_ssl(pxy_conn_ctx_t *) NONNULL(1);
+int protossl_setup_srvdst(pxy_conn_ctx_t *) NONNULL(1);
 
 void protossl_bev_eventcb_srvdst(struct bufferevent *, short, pxy_conn_ctx_t *) NONNULL(1);
 

@@ -111,9 +111,11 @@ prototcp_setup_src(pxy_conn_ctx_t *ctx)
 	return 0;
 }
 
-void
+static void NONNULL(1)
 prototcp_disable_srvdst(pxy_conn_ctx_t *ctx)
 {
+	log_finest("ENTER");
+
 	bufferevent_setcb(ctx->srvdst.bev, NULL, NULL, NULL, NULL);
 	bufferevent_disable(ctx->srvdst.bev, EV_READ|EV_WRITE);
 
@@ -151,7 +153,7 @@ prototcp_setup_dst(pxy_conn_ctx_t *ctx)
 		// This seems to be an issue with libevent.
 		// @todo Why does libevent raise the same event again for an already disabled and freed conn end?
 		// Note again that srvdst == dst or child_dst here.
-		prototcp_disable_srvdst(ctx);
+		ctx->protoctx->disable_srvdstcb(ctx);
 
 		bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
 		ctx->protoctx->bev_eventcb(ctx->dst.bev, BEV_EVENT_CONNECTED, ctx);
@@ -213,7 +215,7 @@ prototcp_connect_child(pxy_conn_child_ctx_t *ctx)
 		ctx->dst = ctx->conn->srvdst;
 
 		// See the comments in prototcp_setup_dst()
-		prototcp_disable_srvdst(ctx->conn);
+		ctx->conn->protoctx->disable_srvdstcb(ctx->conn);
 
 		bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb_child, pxy_bev_writecb_child, pxy_bev_eventcb_child, ctx);
 		ctx->protoctx->bev_eventcb(ctx->dst.bev, BEV_EVENT_CONNECTED, ctx);
@@ -988,6 +990,7 @@ prototcp_setup(pxy_conn_ctx_t *ctx)
 	ctx->protoctx->set_watermarkcb = prototcp_try_set_watermark;
 	ctx->protoctx->unset_watermarkcb = prototcp_try_unset_watermark;
 
+	ctx->protoctx->disable_srvdstcb = prototcp_disable_srvdst;
 	return PROTO_TCP;
 }
 

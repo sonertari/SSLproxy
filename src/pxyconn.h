@@ -87,6 +87,8 @@ typedef void (*child_proto_free_func_t)(pxy_conn_child_ctx_t *);
 typedef void (*set_watermark_func_t)(struct bufferevent *, pxy_conn_ctx_t *, struct bufferevent *);
 typedef void (*unset_watermark_func_t)(struct bufferevent *, pxy_conn_ctx_t *, pxy_conn_desc_t *);
 
+typedef void (*disable_srvdstcb)(pxy_conn_ctx_t *);
+
 typedef filter_action_t * (*proto_filter_func_t)(pxy_conn_ctx_t *, filter_list_t *) NONNULL(1,2) WUNRES;
 
 /*
@@ -173,6 +175,8 @@ struct proto_ctx {
 
 	set_watermark_func_t set_watermarkcb;
 	unset_watermark_func_t unset_watermarkcb;
+
+	disable_srvdstcb disable_srvdstcb;
 
 	// For protocol specific fields, if any
 	void *arg;
@@ -434,6 +438,7 @@ void pxy_conn_term(pxy_conn_ctx_t *, int) NONNULL(1);
 void pxy_conn_term_child(pxy_conn_child_ctx_t *) NONNULL(1);
 void pxy_conn_free_children(pxy_conn_ctx_t *) NONNULL(1);
 
+int pxy_set_sslproxy_header(pxy_conn_ctx_t *, int) NONNULL(1);
 int pxy_setup_child_listener(pxy_conn_ctx_t *) NONNULL(1);
 
 int pxy_bev_readcb_preexec_logging_and_stats(struct bufferevent *, pxy_conn_ctx_t *) NONNULL(1,2);

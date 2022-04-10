@@ -1153,44 +1153,8 @@ pxy_opensock_child(pxy_conn_ctx_t *ctx)
 }
 
 int
-pxy_setup_child_listener(pxy_conn_ctx_t *ctx)
+pxy_set_sslproxy_header(pxy_conn_ctx_t *ctx, int upgraded)
 {
-	if (!ctx->divert) {
-		// split mode
-		return 0;
-	}
-
-	// @attention Defer child setup and evcl creation until after parent init is complete, otherwise (1) causes multithreading issues (proxy_listener_acceptcb is
-	// running on a different thread from the conn, and we only have thrmgr mutex), and (2) we need to clean up less upon errors.
-	// Child evcls use the evbase of the parent thread, otherwise we would get multithreading issues.
-	// We don't need a privsep call to open a socket for child listener,
-	// because listener port of child conns are assigned by the system, hence are from non-privileged range above 1024
-	ctx->child_fd = pxy_opensock_child(ctx);
-	if (ctx->child_fd < 0) {
-		log_err_level_printf(LOG_CRIT, "Error opening child socket: %s (%i)\n", strerror(errno), errno);
-		log_fine_va("Error opening child socket: %s (%i)", strerror(errno), errno);
-		pxy_conn_term(ctx, 1);
-		return -1;
-	}
-	ctx->thr->max_fd = max(ctx->thr->max_fd, ctx->child_fd);
-
-	// @attention Do not pass NULL as user-supplied pointer
-	struct evconnlistener *child_evcl = evconnlistener_new(ctx->thr->evbase, pxy_listener_acceptcb_child, ctx, LEV_OPT_CLOSE_ON_FREE, 1024, ctx->child_fd);
-	if (!child_evcl) {
-		log_err_level_printf(LOG_CRIT, "Error creating child evconnlistener: %s\n", strerror(errno));
-		log_fine_va("Error creating child evconnlistener: %s", strerror(errno));
-
-		// @attention Close child fd separately, because child evcl does not exist yet, hence fd would not be closed by calling pxy_conn_free()
-		evutil_closesocket(ctx->child_fd);
-		pxy_conn_term(ctx, 1);
-		return -1;
-	}
-	ctx->child_evcl = child_evcl;
-
-	evconnlistener_set_error_cb(child_evcl, proxy_listener_errorcb);
-
-	log_finer_va("Finished setting up child listener, child_fd=%d", ctx->child_fd);
-
 	struct sockaddr_in child_listener_addr;
 	socklen_t child_listener_len = sizeof(child_listener_addr);
 
@@ -1244,7 +1208,7 @@ pxy_setup_child_listener(pxy_conn_ctx_t *ctx)
 #endif /* !WITHOUT_USERAUTH */
 			,
 			SSLPROXY_KEY, addr, port, STRORNONE(ctx->srchost_str), STRORNONE(ctx->srcport_str),
-			STRORNONE(ctx->dsthost_str), STRORNONE(ctx->dstport_str), ctx->spec->ssl ? "s":"p"
+			STRORNONE(ctx->dsthost_str), STRORNONE(ctx->dstport_str), ctx->spec->ssl || upgraded ? "s":"p"
 #ifndef WITHOUT_USERAUTH
 			, user_len ? "," : "", user_len ? ctx->user : ""
 #endif /* !WITHOUT_USERAUTH */
@@ -1254,7 +1218,50 @@ pxy_setup_child_listener(pxy_conn_ctx_t *ctx)
 		return -1;
 	}
 	log_finer_va("sslproxy_header= %s", ctx->sslproxy_header);
+
 	return 0;
+}
+
+int
+pxy_setup_child_listener(pxy_conn_ctx_t *ctx)
+{
+	if (!ctx->divert) {
+		// split mode
+		return 0;
+	}
+
+	// @attention Defer child setup and evcl creation until after parent init is complete, otherwise (1) causes multithreading issues (proxy_listener_acceptcb is
+	// running on a different thread from the conn, and we only have thrmgr mutex), and (2) we need to clean up less upon errors.
+	// Child evcls use the evbase of the parent thread, otherwise we would get multithreading issues.
+	// We don't need a privsep call to open a socket for child listener,
+	// because listener port of child conns are assigned by the system, hence are from non-privileged range above 1024
+	ctx->child_fd = pxy_opensock_child(ctx);
+	if (ctx->child_fd < 0) {
+		log_err_level_printf(LOG_CRIT, "Error opening child socket: %s (%i)\n", strerror(errno), errno);
+		log_fine_va("Error opening child socket: %s (%i)", strerror(errno), errno);
+		pxy_conn_term(ctx, 1);
+		return -1;
+	}
+	ctx->thr->max_fd = max(ctx->thr->max_fd, ctx->child_fd);
+
+	// @attention Do not pass NULL as user-supplied pointer
+	struct evconnlistener *child_evcl = evconnlistener_new(ctx->thr->evbase, pxy_listener_acceptcb_child, ctx, LEV_OPT_CLOSE_ON_FREE, 1024, ctx->child_fd);
+	if (!child_evcl) {
+		log_err_level_printf(LOG_CRIT, "Error creating child evconnlistener: %s\n", strerror(errno));
+		log_fine_va("Error creating child evconnlistener: %s", strerror(errno));
+
+		// @attention Close child fd separately, because child evcl does not exist yet, hence fd would not be closed by calling pxy_conn_free()
+		evutil_closesocket(ctx->child_fd);
+		pxy_conn_term(ctx, 1);
+		return -1;
+	}
+	ctx->child_evcl = child_evcl;
+
+	evconnlistener_set_error_cb(child_evcl, proxy_listener_errorcb);
+
+	log_finer_va("Finished setting up child listener, child_fd=%d", ctx->child_fd);
+
+	return pxy_set_sslproxy_header(ctx, 0);
 }
 
 int

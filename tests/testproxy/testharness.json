@@ -61,6 +61,13 @@
         "13": "filter_struct_testset_1.json",
         "14": "filter_struct_reconnect_testset_1.json"
       }
+    },
+    "6": {
+      "comment": "Autossl tests",
+      "testsets": {
+        "1": "autossl_testset_1.json",
+        "2": "autossl_testset_2.json"
+      }
     }
   }
 }

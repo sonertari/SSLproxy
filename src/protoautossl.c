@@ -136,6 +136,46 @@ protoautossl_setup_dst_new_bev_ssl_connecting(pxy_conn_ctx_t *ctx)
 	return 0;
 }
 
+static void NONNULL(1)
+protoautossl_upgrade_dst(pxy_conn_ctx_t *ctx)
+{
+	if (protossl_setup_dst_ssl(ctx) == -1) {
+		return;
+	}
+	if (protoautossl_setup_dst_new_bev_ssl_connecting(ctx) == -1) {
+		return;
+	}
+	bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
+}
+
+static int NONNULL(1) WUNRES
+protoautossl_setup_srvdst_new_bev_ssl_connecting(pxy_conn_ctx_t *ctx)
+{
+	ctx->srvdst.bev = bufferevent_openssl_filter_new(ctx->thr->evbase, ctx->srvdst.bev, ctx->srvdst.ssl,
+			BUFFEREVENT_SSL_CONNECTING, BEV_OPT_DEFER_CALLBACKS);
+	if (!ctx->srvdst.bev) {
+		log_err_level_printf(LOG_CRIT, "Error creating srvdst bufferevent\n");
+		SSL_free(ctx->srvdst.ssl);
+		ctx->srvdst.ssl = NULL;
+		pxy_conn_term(ctx, 1);
+		return -1;
+	}
+	ctx->srvdst.free = protoautossl_bufferevent_free_and_close_fd;
+	return 0;
+}
+
+static void NONNULL(1)
+protoautossl_upgrade_srvdst(pxy_conn_ctx_t *ctx)
+{
+	if (protossl_setup_srvdst_ssl(ctx) == -1) {
+		return;
+	}
+	if (protoautossl_setup_srvdst_new_bev_ssl_connecting(ctx) == -1) {
+		return;
+	}
+	bufferevent_setcb(ctx->srvdst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
+}
+
 static int NONNULL(1) WUNRES
 protoautossl_setup_dst_new_bev_ssl_connecting_child(pxy_conn_child_ctx_t *ctx)
 {
@@ -150,18 +190,6 @@ protoautossl_setup_dst_new_bev_ssl_connecting_child(pxy_conn_child_ctx_t *ctx)
 	}
 	ctx->dst.free = protoautossl_bufferevent_free_and_close_fd;
 	return 0;
-}
-
-static void NONNULL(1)
-protoautossl_upgrade_dst(pxy_conn_ctx_t *ctx)
-{
-	if (protossl_setup_dst_ssl(ctx) == -1) {
-		return;
-	}
-	if (protoautossl_setup_dst_new_bev_ssl_connecting(ctx) == -1) {
-		return;
-	}
-	bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
 }
 
 static void NONNULL(1)
@@ -216,13 +244,26 @@ protoautossl_peek_and_upgrade(pxy_conn_ctx_t *ctx)
 			if (ctx->divert) {
 				if (!ctx->children) {
 					// This means that there was no autossl handshake prior to ClientHello, e.g. no STARTTLS message
-					// This is perhaps the SSL handshake of a direct SSL connection, i.e. invalid protocol
-					log_err_level(LOG_CRIT, "No children setup yet, autossl protocol error");
-					return -1;
+					// This is perhaps the SSL handshake of a direct SSL connection
+					log_err_level(LOG_CRIT, "No children setup yet, upgrading srvdst");
+					protoautossl_upgrade_srvdst(ctx);
+					bufferevent_enable(ctx->srvdst.bev, EV_READ|EV_WRITE);
+				}
+				else {
+					// @attention Autossl protocol should never have multiple children.
+					log_err_level(LOG_CRIT, "Upgrading child dst");
+					protoautossl_upgrade_dst_child(ctx->children);
 				}
 
-				// @attention Autossl protocol should never have multiple children.
-				protoautossl_upgrade_dst_child(ctx->children);
+				// Change p in sslproxy_header to s
+				if (ctx->sslproxy_header) {
+					free(ctx->sslproxy_header);
+					ctx->sslproxy_header = NULL;
+					ctx->sslproxy_header_len = 0;
+					if (pxy_set_sslproxy_header(ctx, 1) == -1) {
+						return -1;
+					}
+				}
 			} else {
 				// srvdst == dst in split mode
 				protoautossl_upgrade_dst(ctx);
@@ -239,6 +280,19 @@ protoautossl_peek_and_upgrade(pxy_conn_ctx_t *ctx)
 		}
 	}
 	return 0;
+}
+
+static void NONNULL(1)
+protoautossl_disable_srvdst(pxy_conn_ctx_t *ctx)
+{
+	log_finest("ENTER");
+
+	// Do not disable underlying bevs in autossl
+	bufferevent_setcb(ctx->srvdst.bev, NULL, NULL, NULL, NULL);
+	bufferevent_disable(ctx->srvdst.bev, EV_READ|EV_WRITE);
+
+	// Do not access srvdst.bev from this point on
+	ctx->srvdst.bev = NULL;
 }
 
 static int NONNULL(1) WUNRES
@@ -415,11 +469,14 @@ protoautossl_enable_conn_src(pxy_conn_ctx_t *ctx)
 	bufferevent_setcb(ctx->src.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
 
 	// Save the ssl info for logging, srvdst == dst in split mode
-	ctx->sslctx->srvdst_ssl_version = strdup(SSL_get_version(ctx->dst.ssl));
-	ctx->sslctx->srvdst_ssl_cipher = strdup(SSL_get_cipher(ctx->dst.ssl));
+	ctx->sslctx->srvdst_ssl_version = strdup(SSL_get_version(ctx->srvdst.ssl ? ctx->srvdst.ssl : ctx->dst.ssl));
+	ctx->sslctx->srvdst_ssl_cipher = strdup(SSL_get_cipher(ctx->srvdst.ssl ? ctx->srvdst.ssl : ctx->dst.ssl));
 
 	// Now open the gates for a second time after autossl upgrade
 	bufferevent_enable(ctx->src.bev, EV_READ|EV_WRITE);
+
+	protoautossl_ctx_t *autossl_ctx = ctx->protoctx->arg;
+	autossl_ctx->clienthello_found = 0;
 	return 0;
 }
 
@@ -501,13 +558,16 @@ protoautossl_enable_conn_src_child(pxy_conn_child_ctx_t *ctx)
 	bufferevent_setcb(ctx->conn->src.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx->conn);
 
 	// srvdst is xferred to the first child conn, so save the ssl info for logging
-	ctx->conn->sslctx->srvdst_ssl_version = strdup(SSL_get_version(ctx->dst.ssl));
-	ctx->conn->sslctx->srvdst_ssl_cipher = strdup(SSL_get_cipher(ctx->dst.ssl));
+	ctx->conn->sslctx->srvdst_ssl_version = strdup(SSL_get_version(ctx->conn->srvdst.ssl ? ctx->conn->srvdst.ssl : ctx->dst.ssl));
+	ctx->conn->sslctx->srvdst_ssl_cipher = strdup(SSL_get_cipher(ctx->conn->srvdst.ssl ? ctx->conn->srvdst.ssl : ctx->dst.ssl));
 
 	log_finer_va("Enabling ssl src, %s", ctx->conn->sslproxy_header);
 
 	// Now open the gates for a second time after autossl upgrade
 	bufferevent_enable(ctx->conn->src.bev, EV_READ|EV_WRITE);
+
+	protoautossl_ctx_t *autossl_ctx = ctx->protoctx->arg;
+	autossl_ctx->clienthello_found = 0;
 	return 0;
 }
 
@@ -656,6 +716,8 @@ protoautossl_setup(pxy_conn_ctx_t *ctx)
 
 	ctx->protoctx->set_watermarkcb = protoautossl_try_set_watermark;
 	ctx->protoctx->unset_watermarkcb = protoautossl_try_unset_watermark;
+
+	ctx->protoctx->disable_srvdstcb = protoautossl_disable_srvdst;
 
 	ctx->protoctx->arg = malloc(sizeof(protoautossl_ctx_t));
 	if (!ctx->protoctx->arg) {
