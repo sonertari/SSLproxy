@@ -245,13 +245,13 @@ protoautossl_peek_and_upgrade(pxy_conn_ctx_t *ctx)
 				if (!ctx->children) {
 					// This means that there was no autossl handshake prior to ClientHello, e.g. no STARTTLS message
 					// This is perhaps the SSL handshake of a direct SSL connection
-					log_err_level(LOG_CRIT, "No children setup yet, upgrading srvdst");
+					log_fine("Upgrading srvdst, no child conn set up yet");
 					protoautossl_upgrade_srvdst(ctx);
 					bufferevent_enable(ctx->srvdst.bev, EV_READ|EV_WRITE);
 				}
 				else {
 					// @attention Autossl protocol should never have multiple children.
-					log_err_level(LOG_CRIT, "Upgrading child dst");
+					log_fine("Upgrading child dst");
 					protoautossl_upgrade_dst_child(ctx->children);
 				}
 
@@ -263,6 +263,9 @@ protoautossl_peek_and_upgrade(pxy_conn_ctx_t *ctx)
 					if (pxy_set_sslproxy_header(ctx, 1) == -1) {
 						return -1;
 					}
+				} else {
+					log_err_level(LOG_CRIT, "No sslproxy_header set up in divert mode in autossl");
+					return -1;
 				}
 			} else {
 				// srvdst == dst in split mode
@@ -566,7 +569,7 @@ protoautossl_enable_conn_src_child(pxy_conn_child_ctx_t *ctx)
 	// Now open the gates for a second time after autossl upgrade
 	bufferevent_enable(ctx->conn->src.bev, EV_READ|EV_WRITE);
 
-	protoautossl_ctx_t *autossl_ctx = ctx->protoctx->arg;
+	protoautossl_ctx_t *autossl_ctx = ctx->conn->protoctx->arg;
 	autossl_ctx->clienthello_found = 0;
 	return 0;
 }
