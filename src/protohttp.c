@@ -252,10 +252,10 @@ protohttp_ocsp_deny(pxy_conn_ctx_t *ctx, protohttp_ctx_t *http_ctx)
 	return;
 
 deny:
-	pxy_try_discard_inbuf(ctx->src.bev);
+	ctx->protoctx->discard_inbufcb(ctx->src.bev);
 
 	// Do not send anything to the child conns
-	pxy_try_discard_outbuf(ctx->dst.bev);
+	ctx->protoctx->discard_outbufcb(ctx->dst.bev);
 
 	// Do not send duplicate OCSP denied responses
 	if (http_ctx->ocsp_denied)
@@ -792,7 +792,7 @@ protohttp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	log_finest_va("ENTER, size=%zu", evbuffer_get_length(bufferevent_get_input(bev)));
 
 	if (ctx->dst.closed) {
-		pxy_try_discard_inbuf(bev);
+		ctx->protoctx->discard_inbufcb(bev);
 		return;
 	}
 
@@ -804,7 +804,7 @@ protohttp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	if (ctx->conn_opts->user_auth && !ctx->user) {
 		log_finest("Redirecting conn");
 		char *url = protohttp_get_url(inbuf, ctx);
-		pxy_try_discard_inbuf(bev);
+		ctx->protoctx->discard_inbufcb(bev);
 		if (url) {
 			evbuffer_add_printf(bufferevent_get_output(bev), redirect_url, ctx->conn_opts->user_auth_url, url);
 			free(url);
@@ -843,8 +843,8 @@ protohttp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		if (protohttp_validate(ctx) == -1) {
 			evbuffer_add(bufferevent_get_output(bev), proto_error, strlen(proto_error));
 			ctx->sent_protoerror_msg = 1;
-			pxy_try_discard_inbuf(bev);
-			pxy_try_discard_outbuf(ctx->dst.bev);
+			ctx->protoctx->discard_inbufcb(bev);
+			ctx->protoctx->discard_outbufcb(ctx->dst.bev);
 			return;
 		}
 	}
@@ -974,7 +974,7 @@ protohttp_bev_readcb_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	log_finest_va("ENTER, size=%zu", evbuffer_get_length(bufferevent_get_input(bev)));
 
 	if (ctx->src.closed) {
-		pxy_try_discard_inbuf(bev);
+		ctx->protoctx->discard_inbufcb(bev);
 		return;
 	}
 
@@ -1007,7 +1007,7 @@ protohttp_bev_readcb_src_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ct
 	log_finest_va("ENTER, size=%zu", evbuffer_get_length(bufferevent_get_input(bev)));
 
 	if (ctx->dst.closed) {
-		pxy_try_discard_inbuf(bev);
+		ctx->conn->protoctx->discard_inbufcb(bev);
 		return;
 	}
 
@@ -1025,7 +1025,7 @@ protohttp_bev_readcb_src_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ct
 		log_finest_va("HTTP Request Body, size=%zu", evbuffer_get_length(inbuf));
 		evbuffer_add_buffer(outbuf, inbuf);
 	}
-	ctx->protoctx->set_watermarkcb(bev, ctx->conn, ctx->dst.bev);
+	ctx->conn->protoctx->set_watermarkcb(bev, ctx->conn, ctx->dst.bev);
 }
 
 static void NONNULL(1)
@@ -1034,7 +1034,7 @@ protohttp_bev_readcb_dst_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ct
 	log_finest_va("ENTER, size=%zu", evbuffer_get_length(bufferevent_get_input(bev)));
 		
 	if (ctx->src.closed) {
-		pxy_try_discard_inbuf(bev);
+		ctx->conn->protoctx->discard_inbufcb(bev);
 		return;
 	}
 
@@ -1053,7 +1053,7 @@ protohttp_bev_readcb_dst_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ct
 		log_finest_va("HTTP Response Body, size=%zu", evbuffer_get_length(inbuf));
 		evbuffer_add_buffer(outbuf, inbuf);
 	}
-	ctx->protoctx->set_watermarkcb(bev, ctx->conn, ctx->src.bev);
+	ctx->conn->protoctx->set_watermarkcb(bev, ctx->conn, ctx->src.bev);
 }
 
 static void NONNULL(1)

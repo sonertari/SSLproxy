@@ -42,6 +42,26 @@ struct protoautossl_ctx {
 	unsigned int clienthello_found : 1;      /* 1 if conn upgrade to SSL */
 };
 
+#ifdef DEBUG_PROXY
+static void NONNULL(1,2,3)
+protoautossl_log_dbg_evbuf_info(pxy_conn_ctx_t *ctx, pxy_conn_desc_t *this, pxy_conn_desc_t *other)
+{
+	// This function is used by child conns too, they pass ctx->conn instead of ctx
+	if (OPTS_DEBUG(ctx->global)) {
+		prototcp_log_dbg_evbuf_info(ctx, &ctx->src, &ctx->dst);
+
+		struct bufferevent *ubev = bufferevent_get_underlying(this->bev);
+		struct bufferevent *ubev_other = other->closed ? NULL : bufferevent_get_underlying(other->bev);
+		if (ubev || ubev_other)
+			log_dbg_printf("underlying evbuffer size at EOF: i:%zu o:%zu i:%zu o:%zu\n",
+							ubev ? evbuffer_get_length(bufferevent_get_input(ubev)) : 0,
+							ubev ? evbuffer_get_length(bufferevent_get_output(ubev)) : 0,
+							ubev_other ? evbuffer_get_length(bufferevent_get_input(ubev_other)) : 0,
+							ubev_other ? evbuffer_get_length(bufferevent_get_output(ubev_other)) : 0);
+	}
+}
+#endif /* DEBUG_PROXY */
+
 /*
  * Free bufferevent and close underlying socket properly.
  * For OpenSSL bufferevents, this will shutdown the SSL connection.
@@ -285,19 +305,6 @@ protoautossl_peek_and_upgrade(pxy_conn_ctx_t *ctx)
 	return 0;
 }
 
-static void NONNULL(1)
-protoautossl_disable_srvdst(pxy_conn_ctx_t *ctx)
-{
-	log_finest("ENTER");
-
-	// Do not disable underlying bevs in autossl
-	bufferevent_setcb(ctx->srvdst.bev, NULL, NULL, NULL, NULL);
-	bufferevent_disable(ctx->srvdst.bev, EV_READ|EV_WRITE);
-
-	// Do not access srvdst.bev from this point on
-	ctx->srvdst.bev = NULL;
-}
-
 static int NONNULL(1) WUNRES
 protoautossl_conn_connect(pxy_conn_ctx_t *ctx)
 {
@@ -358,6 +365,38 @@ protoautossl_try_unset_watermark(struct bufferevent *bev, pxy_conn_ctx_t *ctx, p
 }
 
 static void NONNULL(1)
+protoautossl_try_discard_inbuf(struct bufferevent *bev)
+{
+	prototcp_try_discard_inbuf(bev);
+
+	struct bufferevent *ubev = bufferevent_get_underlying(bev);
+	if (ubev) {
+		struct evbuffer *ubev_inbuf = bufferevent_get_input(ubev);
+		size_t ubev_inbuf_size = evbuffer_get_length(ubev_inbuf);
+		if (ubev_inbuf_size) {
+			log_dbg_printf("Warning: Drained %zu bytes from inbuf underlying\n", ubev_inbuf_size);
+			evbuffer_drain(ubev_inbuf, ubev_inbuf_size);
+		}
+	}
+}
+
+static void NONNULL(1)
+protoautossl_try_discard_outbuf(struct bufferevent *bev)
+{
+	prototcp_try_discard_outbuf(bev);
+
+	struct bufferevent *ubev = bufferevent_get_underlying(bev);
+	if (ubev) {
+		struct evbuffer *ubev_outbuf = bufferevent_get_output(ubev);
+		size_t ubev_outbuf_size = evbuffer_get_length(ubev_outbuf);
+		if (ubev_outbuf_size) {
+			log_dbg_printf("Warning: Drained %zu bytes from outbuf underlying\n", ubev_outbuf_size);
+			evbuffer_drain(ubev_outbuf, ubev_outbuf_size);
+		}
+	}
+}
+
+static void NONNULL(1)
 protoautossl_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 	log_finest_va("ENTER, size=%zu", evbuffer_get_length(bufferevent_get_input(bev)));
@@ -381,7 +420,7 @@ protoautossl_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	}
 
 	if (ctx->dst.closed) {
-		pxy_try_discard_inbuf(bev);
+		ctx->protoctx->discard_inbufcb(bev);
 		return;
 	}
 
@@ -412,12 +451,29 @@ protoautossl_bev_readcb_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	// as we do with the smtp protocol, @see protosmtp_bev_readcb_srvdst()
 
 	if (ctx->src.closed) {
-		pxy_try_discard_inbuf(bev);
+		ctx->protoctx->discard_inbufcb(bev);
 		return;
 	}
 
 	evbuffer_add_buffer(bufferevent_get_output(ctx->src.bev), bufferevent_get_input(bev));
 	ctx->protoctx->set_watermarkcb(bev, ctx, ctx->src.bev);
+}
+
+static int NONNULL(1) WUNRES
+protoautossl_outbuf_has_data(struct bufferevent *bev
+#ifdef DEBUG_PROXY
+	, char *reason, pxy_conn_ctx_t *ctx
+#endif /* DEBUG_PROXY */
+	)
+{
+	size_t outbuflen = evbuffer_get_length(bufferevent_get_output(bev));
+	struct bufferevent *ubev = bufferevent_get_underlying(bev);
+	if (outbuflen || (ubev && evbuffer_get_length(bufferevent_get_output(ubev)))) {
+		log_finest_va("Not closing %s, outbuflen=%zu, ubev outbuflen=%zu", reason,
+				outbuflen, ubev ? evbuffer_get_length(bufferevent_get_output(ubev)) : 0);
+		return 1;
+	}
+	return 0;
 }
 
 static void NONNULL(1,2)
@@ -719,8 +775,12 @@ protoautossl_setup(pxy_conn_ctx_t *ctx)
 
 	ctx->protoctx->set_watermarkcb = protoautossl_try_set_watermark;
 	ctx->protoctx->unset_watermarkcb = protoautossl_try_unset_watermark;
-
-	ctx->protoctx->disable_srvdstcb = protoautossl_disable_srvdst;
+	ctx->protoctx->discard_inbufcb = protoautossl_try_discard_inbuf;
+	ctx->protoctx->discard_outbufcb = protoautossl_try_discard_outbuf;
+	ctx->protoctx->outbuf_has_datacb = protoautossl_outbuf_has_data;
+#ifdef DEBUG_PROXY
+	ctx->protoctx->log_dbg_evbuf_infocb = protoautossl_log_dbg_evbuf_info;
+#endif /* DEBUG_PROXY */
 
 	ctx->protoctx->arg = malloc(sizeof(protoautossl_ctx_t));
 	if (!ctx->protoctx->arg) {
@@ -747,9 +807,6 @@ protoautossl_setup_child(pxy_conn_child_ctx_t *ctx)
 
 	ctx->protoctx->bev_writecb = prototcp_bev_writecb_child;
 	ctx->protoctx->bev_eventcb = protoautossl_bev_eventcb_child;
-
-	ctx->protoctx->set_watermarkcb = protoautossl_try_set_watermark;
-	ctx->protoctx->unset_watermarkcb = protoautossl_try_unset_watermark;
 
 	return PROTO_AUTOSSL;
 }

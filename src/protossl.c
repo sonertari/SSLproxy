@@ -1520,7 +1520,7 @@ protossl_connect_child(pxy_conn_child_ctx_t *ctx)
 		ctx->dst = ctx->conn->srvdst;
 
 		// See the comments in prototcp_setup_dst()
-		ctx->conn->protoctx->disable_srvdstcb(ctx->conn);
+		prototcp_disable_srvdst(ctx->conn);
 
 		bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb_child, pxy_bev_writecb_child, pxy_bev_eventcb_child, ctx);
 		ctx->protoctx->bev_eventcb(ctx->dst.bev, BEV_EVENT_CONNECTED, ctx);

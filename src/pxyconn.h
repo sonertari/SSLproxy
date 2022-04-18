@@ -86,8 +86,16 @@ typedef void (*child_proto_free_func_t)(pxy_conn_child_ctx_t *);
 
 typedef void (*set_watermark_func_t)(struct bufferevent *, pxy_conn_ctx_t *, struct bufferevent *);
 typedef void (*unset_watermark_func_t)(struct bufferevent *, pxy_conn_ctx_t *, pxy_conn_desc_t *);
-
-typedef void (*disable_srvdstcb)(pxy_conn_ctx_t *);
+typedef void (*discard_inbuf_func_t)(struct bufferevent *) NONNULL(1);
+typedef void (*discard_outbuf_func_t)(struct bufferevent *) NONNULL(1);
+typedef int (*outbuf_has_data_func_t)(struct bufferevent *
+#ifdef DEBUG_PROXY
+	, char *, pxy_conn_ctx_t *
+#endif /* DEBUG_PROXY */
+	) NONNULL(1) WUNRES;
+#ifdef DEBUG_PROXY
+typedef void (*log_dbg_evbuf_info_func_t)(pxy_conn_ctx_t *, pxy_conn_desc_t *, pxy_conn_desc_t *) NONNULL(1,2,3);
+#endif /* DEBUG_PROXY */
 
 typedef filter_action_t * (*proto_filter_func_t)(pxy_conn_ctx_t *, filter_list_t *) NONNULL(1,2) WUNRES;
 
@@ -173,10 +181,15 @@ struct proto_ctx {
 	proto_classify_user_func_t classify_usercb;
 #endif /* !WITHOUT_USERAUTH */
 
+	// The following callback functions are for decoupling autossl code handling underlying bufs
 	set_watermark_func_t set_watermarkcb;
 	unset_watermark_func_t unset_watermarkcb;
-
-	disable_srvdstcb disable_srvdstcb;
+	discard_inbuf_func_t discard_inbufcb;
+	discard_outbuf_func_t discard_outbufcb;
+	outbuf_has_data_func_t outbuf_has_datacb;
+#ifdef DEBUG_PROXY
+	log_dbg_evbuf_info_func_t log_dbg_evbuf_infocb;
+#endif /* DEBUG_PROXY */
 
 	// For protocol specific fields, if any
 	void *arg;
@@ -192,9 +205,6 @@ struct proto_child_ctx {
 	eventcb_func_t bev_eventcb;
 
 	child_proto_free_func_t proto_free;
-
-	set_watermark_func_t set_watermarkcb;
-	unset_watermark_func_t unset_watermarkcb;
 
 	// For protocol specific fields, if any
 	void *arg;
@@ -412,9 +422,7 @@ int pxy_prepare_logging_local_procinfo(pxy_conn_ctx_t *) NONNULL(1);
 
 void pxy_log_connect_src(pxy_conn_ctx_t *) NONNULL(1);
 void pxy_log_connect_srvdst(pxy_conn_ctx_t *) NONNULL(1);
-
 void pxy_log_connect_nonhttp(pxy_conn_ctx_t *) NONNULL(1);
-void pxy_log_dbg_evbuf_info(pxy_conn_ctx_t *, pxy_conn_desc_t *, pxy_conn_desc_t *) NONNULL(1,2,3);
 
 unsigned char *pxy_malloc_packet(size_t, pxy_conn_ctx_t *) MALLOC NONNULL(2) WUNRES;
 
@@ -428,8 +436,6 @@ void pxy_try_disconnect_child(pxy_conn_child_ctx_t *, pxy_conn_desc_t *, pxy_con
 
 int pxy_try_consume_last_input(struct bufferevent *, pxy_conn_ctx_t *) NONNULL(1,2);
 int pxy_try_consume_last_input_child(struct bufferevent *, pxy_conn_child_ctx_t *) NONNULL(1,2);
-void pxy_try_discard_inbuf(struct bufferevent *) NONNULL(1);
-void pxy_try_discard_outbuf(struct bufferevent *) NONNULL(1);
 
 int pxy_conn_init(pxy_conn_ctx_t *) NONNULL(1);
 void pxy_conn_ctx_free(pxy_conn_ctx_t *, int) NONNULL(1);

@@ -753,30 +753,6 @@ pxy_log_dbg_disconnect_child(pxy_conn_child_ctx_t *ctx)
 	}
 }
 
-#ifdef DEBUG_PROXY
-void
-pxy_log_dbg_evbuf_info(pxy_conn_ctx_t *ctx, pxy_conn_desc_t *this, pxy_conn_desc_t *other)
-{
-	// This function is used by child conns too, they pass ctx->conn instead of ctx
-	if (OPTS_DEBUG(ctx->global)) {
-		log_dbg_printf("evbuffer size at EOF: i:%zu o:%zu i:%zu o:%zu\n",
-						evbuffer_get_length(bufferevent_get_input(this->bev)),
-						evbuffer_get_length(bufferevent_get_output(this->bev)),
-						other->closed ? 0 : evbuffer_get_length(bufferevent_get_input(other->bev)),
-						other->closed ? 0 : evbuffer_get_length(bufferevent_get_output(other->bev)));
-
-		struct bufferevent *ubev = bufferevent_get_underlying(this->bev);
-		struct bufferevent *ubev_other = other->closed ? NULL : bufferevent_get_underlying(other->bev);
-		if (ubev || ubev_other)
-			log_dbg_printf("underlying evbuffer size at EOF: i:%zu o:%zu i:%zu o:%zu\n",
-							ubev ? evbuffer_get_length(bufferevent_get_input(ubev)) : 0,
-							ubev ? evbuffer_get_length(bufferevent_get_output(ubev)) : 0,
-							ubev_other ? evbuffer_get_length(bufferevent_get_input(ubev_other)) : 0,
-							ubev_other ? evbuffer_get_length(bufferevent_get_output(ubev_other)) : 0);
-	}
-}
-#endif /* DEBUG_PROXY */
-
 unsigned char *
 pxy_malloc_packet(size_t sz, pxy_conn_ctx_t *ctx)
 {
@@ -786,48 +762,6 @@ pxy_malloc_packet(size_t sz, pxy_conn_ctx_t *ctx)
 		return NULL;
 	}
 	return packet;
-}
-
-void
-pxy_try_discard_inbuf(struct bufferevent *bev)
-{
-	struct evbuffer *inbuf = bufferevent_get_input(bev);
-	size_t inbuf_size = evbuffer_get_length(inbuf);
-	if (inbuf_size) {
-		log_dbg_printf("Warning: Drained %zu bytes from inbuf\n", inbuf_size);
-		evbuffer_drain(inbuf, inbuf_size);
-	}
-
-	struct bufferevent *ubev = bufferevent_get_underlying(bev);
-	if (ubev) {
-		struct evbuffer *ubev_inbuf = bufferevent_get_input(ubev);
-		size_t ubev_inbuf_size = evbuffer_get_length(ubev_inbuf);
-		if (ubev_inbuf_size) {
-			log_dbg_printf("Warning: Drained %zu bytes from inbuf underlying\n", ubev_inbuf_size);
-			evbuffer_drain(ubev_inbuf, ubev_inbuf_size);
-		}
-	}
-}
-
-void
-pxy_try_discard_outbuf(struct bufferevent *bev)
-{
-	struct evbuffer *outbuf = bufferevent_get_output(bev);
-	size_t outbuf_size = evbuffer_get_length(outbuf);
-	if (outbuf_size) {
-		log_dbg_printf("Warning: Drained %zu bytes from outbuf\n", outbuf_size);
-		evbuffer_drain(outbuf, outbuf_size);
-	}
-
-	struct bufferevent *ubev = bufferevent_get_underlying(bev);
-	if (ubev) {
-		struct evbuffer *ubev_outbuf = bufferevent_get_output(ubev);
-		size_t ubev_outbuf_size = evbuffer_get_length(ubev_outbuf);
-		if (ubev_outbuf_size) {
-			log_dbg_printf("Warning: Drained %zu bytes from outbuf underlying\n", ubev_outbuf_size);
-			evbuffer_drain(ubev_outbuf, ubev_outbuf_size);
-		}
-	}
 }
 
 #ifdef DEBUG_PROXY
@@ -1270,10 +1204,12 @@ pxy_try_close_conn_end(pxy_conn_desc_t *conn_end, pxy_conn_ctx_t *ctx)
 	/* if the other end is still open and doesn't have data
 	 * to send, close it, otherwise its writecb will close
 	 * it after writing what's left in the output buffer */
-	struct bufferevent *ubev = bufferevent_get_underlying(conn_end->bev);
-	if (evbuffer_get_length(bufferevent_get_output(conn_end->bev)) == 0 &&
-			(!ubev || evbuffer_get_length(bufferevent_get_output(ubev)) == 0)) {
-		log_finest("evbuffer_get_length(outbuf) == 0, terminate conn");
+	if (!ctx->protoctx->outbuf_has_datacb(conn_end->bev
+#ifdef DEBUG_PROXY
+		, "conn", ctx
+#endif /* DEBUG_PROXY */
+		)) {
+		log_finest("outbuflen == 0, terminate conn");
 		conn_end->free(conn_end->bev, ctx);
 		conn_end->bev = NULL;
 		conn_end->closed = 1;

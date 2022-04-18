@@ -38,6 +38,10 @@
  */
 #define OUTBUF_LIMIT	(128*1024)
 
+#ifdef DEBUG_PROXY
+void prototcp_log_dbg_evbuf_info(pxy_conn_ctx_t *, pxy_conn_desc_t *, pxy_conn_desc_t *) NONNULL(1,2,3);
+#endif /* DEBUG_PROXY */
+
 void prototcp_init_conn(evutil_socket_t, short, void *);
 
 #ifdef DEBUG_PROXY
@@ -45,6 +49,9 @@ char *prototcp_get_event_name(struct bufferevent *, pxy_conn_ctx_t *) NONNULL(2)
 #endif /* DEBUG_PROXY */
 void prototcp_try_set_watermark(struct bufferevent *, pxy_conn_ctx_t *, struct bufferevent *) NONNULL(1,2,3);
 void prototcp_try_unset_watermark(struct bufferevent *, pxy_conn_ctx_t *, pxy_conn_desc_t *) NONNULL(1,2,3);
+
+void prototcp_try_discard_inbuf(struct bufferevent *) NONNULL(1);
+void prototcp_try_discard_outbuf(struct bufferevent *) NONNULL(1);
 
 #ifndef WITHOUT_USERAUTH
 int prototcp_try_send_userauth_msg(struct bufferevent *, pxy_conn_ctx_t *) NONNULL(1,2);
@@ -82,6 +89,7 @@ int prototcp_enable_src(pxy_conn_ctx_t *) NONNULL(1);
 void prototcp_bev_eventcb_srvdst(struct bufferevent *, short, pxy_conn_ctx_t *) NONNULL(1);
 
 int prototcp_setup_src(pxy_conn_ctx_t *) NONNULL(1);
+void prototcp_disable_srvdst(pxy_conn_ctx_t *) NONNULL(1);
 int prototcp_setup_dst(pxy_conn_ctx_t *) NONNULL(1);
 int prototcp_setup_srvdst(pxy_conn_ctx_t *) NONNULL(1);
 

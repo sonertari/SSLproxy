@@ -128,7 +128,7 @@ protopassthrough_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 
 	// Passthrough packets are transferred between src and srvdst
 	if (ctx->srvdst.closed) {
-		pxy_try_discard_inbuf(bev);
+		ctx->protoctx->discard_inbufcb(bev);
 		return;
 	}
 
@@ -153,7 +153,7 @@ protopassthrough_bev_readcb_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 
 	// Passthrough packets are transferred between src and srvdst
 	if (ctx->src.closed) {
-		pxy_try_discard_inbuf(bev);
+		ctx->protoctx->discard_inbufcb(bev);
 		return;
 	}
 
@@ -268,7 +268,7 @@ protopassthrough_bev_eventcb_eof_src(struct bufferevent *bev, pxy_conn_ctx_t *ct
 {
 #ifdef DEBUG_PROXY
 	log_finest("ENTER");
-	pxy_log_dbg_evbuf_info(ctx, &ctx->src, &ctx->srvdst);
+	ctx->protoctx->log_dbg_evbuf_infocb(ctx, &ctx->src, &ctx->srvdst);
 #endif /* DEBUG_PROXY */
 
 	if (!ctx->connected) {
@@ -290,7 +290,7 @@ protopassthrough_bev_eventcb_eof_srvdst(struct bufferevent *bev, pxy_conn_ctx_t 
 {
 #ifdef DEBUG_PROXY
 	log_finest("ENTER");
-	pxy_log_dbg_evbuf_info(ctx, &ctx->srvdst, &ctx->src);
+	ctx->protoctx->log_dbg_evbuf_infocb(ctx, &ctx->srvdst, &ctx->src);
 #endif /* DEBUG_PROXY */
 
 	if (!ctx->connected) {

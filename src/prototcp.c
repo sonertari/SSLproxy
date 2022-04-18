@@ -33,6 +33,21 @@
 #include <sys/param.h>
 #include <string.h>
 
+#ifdef DEBUG_PROXY
+void
+prototcp_log_dbg_evbuf_info(pxy_conn_ctx_t *ctx, pxy_conn_desc_t *this, pxy_conn_desc_t *other)
+{
+	// This function is used by child conns too, they pass ctx->conn instead of ctx
+	if (OPTS_DEBUG(ctx->global)) {
+		log_dbg_printf("evbuffer size at EOF: i:%zu o:%zu i:%zu o:%zu\n",
+						evbuffer_get_length(bufferevent_get_input(this->bev)),
+						evbuffer_get_length(bufferevent_get_output(this->bev)),
+						other->closed ? 0 : evbuffer_get_length(bufferevent_get_input(other->bev)),
+						other->closed ? 0 : evbuffer_get_length(bufferevent_get_output(other->bev)));
+	}
+}
+#endif /* DEBUG_PROXY */
+
 /*
  * Set up a bufferevent structure for either a dst or src connection,
  * optionally with or without SSL.  Sets all callbacks, enables read
@@ -111,19 +126,15 @@ prototcp_setup_src(pxy_conn_ctx_t *ctx)
 	return 0;
 }
 
-static void NONNULL(1)
+void
 prototcp_disable_srvdst(pxy_conn_ctx_t *ctx)
 {
 	log_finest("ENTER");
 
+	// Do not disable underlying bevs in autossl
 	bufferevent_setcb(ctx->srvdst.bev, NULL, NULL, NULL, NULL);
 	bufferevent_disable(ctx->srvdst.bev, EV_READ|EV_WRITE);
 
-	struct bufferevent *ubev = bufferevent_get_underlying(ctx->srvdst.bev);
-	if (ubev) {
-		bufferevent_setcb(ubev, NULL, NULL, NULL, NULL);
-		bufferevent_disable(ubev, EV_READ|EV_WRITE);
-	}
 	// Do not access srvdst.bev from this point on
 	ctx->srvdst.bev = NULL;
 }
@@ -153,7 +164,7 @@ prototcp_setup_dst(pxy_conn_ctx_t *ctx)
 		// This seems to be an issue with libevent.
 		// @todo Why does libevent raise the same event again for an already disabled and freed conn end?
 		// Note again that srvdst == dst or child_dst here.
-		ctx->protoctx->disable_srvdstcb(ctx);
+		prototcp_disable_srvdst(ctx);
 
 		bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
 		ctx->protoctx->bev_eventcb(ctx->dst.bev, BEV_EVENT_CONNECTED, ctx);
@@ -215,7 +226,7 @@ prototcp_connect_child(pxy_conn_child_ctx_t *ctx)
 		ctx->dst = ctx->conn->srvdst;
 
 		// See the comments in prototcp_setup_dst()
-		ctx->conn->protoctx->disable_srvdstcb(ctx->conn);
+		prototcp_disable_srvdst(ctx->conn);
 
 		bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb_child, pxy_bev_writecb_child, pxy_bev_eventcb_child, ctx);
 		ctx->protoctx->bev_eventcb(ctx->dst.bev, BEV_EVENT_CONNECTED, ctx);
@@ -307,13 +318,35 @@ prototcp_try_unset_watermark(struct bufferevent *bev, pxy_conn_ctx_t *ctx, pxy_c
 	}
 }
 
+void
+prototcp_try_discard_inbuf(struct bufferevent *bev)
+{
+	struct evbuffer *inbuf = bufferevent_get_input(bev);
+	size_t inbuf_size = evbuffer_get_length(inbuf);
+	if (inbuf_size) {
+		log_dbg_printf("Warning: Drained %zu bytes from inbuf\n", inbuf_size);
+		evbuffer_drain(inbuf, inbuf_size);
+	}
+}
+
+void
+prototcp_try_discard_outbuf(struct bufferevent *bev)
+{
+	struct evbuffer *outbuf = bufferevent_get_output(bev);
+	size_t outbuf_size = evbuffer_get_length(outbuf);
+	if (outbuf_size) {
+		log_dbg_printf("Warning: Drained %zu bytes from outbuf\n", outbuf_size);
+		evbuffer_drain(outbuf, outbuf_size);
+	}
+}
+
 #ifndef WITHOUT_USERAUTH
 int
 prototcp_try_send_userauth_msg(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 	if (ctx->conn_opts->user_auth && !ctx->user) {
 		log_finest("Sending userauth message");
-		pxy_try_discard_inbuf(bev);
+		ctx->protoctx->discard_inbufcb(bev);
 		evbuffer_add_printf(bufferevent_get_output(bev), USERAUTH_MSG, ctx->conn_opts->user_auth_url);
 		ctx->sent_userauth_msg = 1;
 		return 1;
@@ -341,10 +374,10 @@ prototcp_try_validate_proto(struct bufferevent *bev, pxy_conn_ctx_t *ctx, struct
 			ctx->sent_protoerror_msg = 1;
 
 			// Discard packets from the client: inbuf of src
-			pxy_try_discard_inbuf(bev);
+			ctx->protoctx->discard_inbufcb(bev);
 
 			// Discard packets to the server: outbuf of dst
-			pxy_try_discard_outbuf(other);
+			ctx->protoctx->discard_outbufcb(other);
 
 			free(packet);
 			return 1;
@@ -360,7 +393,7 @@ prototcp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	log_finest_va("ENTER, size=%zu", evbuffer_get_length(bufferevent_get_input(bev)));
 
 	if (ctx->dst.closed) {
-		pxy_try_discard_inbuf(bev);
+		ctx->protoctx->discard_inbufcb(bev);
 		return;
 	}
 
@@ -393,7 +426,7 @@ prototcp_bev_readcb_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	log_finest_va("ENTER, size=%zu", evbuffer_get_length(bufferevent_get_input(bev)));
 
 	if (ctx->src.closed) {
-		pxy_try_discard_inbuf(bev);
+		ctx->protoctx->discard_inbufcb(bev);
 		return;
 	}
 
@@ -413,7 +446,7 @@ prototcp_bev_readcb_src_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ctx
 	log_finest_va("ENTER, size=%zu", evbuffer_get_length(bufferevent_get_input(bev)));
 
 	if (ctx->dst.closed) {
-		pxy_try_discard_inbuf(bev);
+		ctx->conn->protoctx->discard_inbufcb(bev);
 		return;
 	}
 
@@ -437,7 +470,7 @@ prototcp_bev_readcb_src_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ctx
 	} else {
 		evbuffer_add_buffer(outbuf, inbuf);
 	}
-	ctx->protoctx->set_watermarkcb(bev, ctx->conn, ctx->dst.bev);
+	ctx->conn->protoctx->set_watermarkcb(bev, ctx->conn, ctx->dst.bev);
 }
 
 static void NONNULL(1)
@@ -446,12 +479,27 @@ prototcp_bev_readcb_dst_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ctx
 	log_finest_va("ENTER, size=%zu", evbuffer_get_length(bufferevent_get_input(bev)));
 
 	if (ctx->src.closed) {
-		pxy_try_discard_inbuf(bev);
+		ctx->conn->protoctx->discard_inbufcb(bev);
 		return;
 	}
 
 	evbuffer_add_buffer(bufferevent_get_output(ctx->src.bev), bufferevent_get_input(bev));
-	ctx->protoctx->set_watermarkcb(bev, ctx->conn, ctx->src.bev);
+	ctx->conn->protoctx->set_watermarkcb(bev, ctx->conn, ctx->src.bev);
+}
+
+static int NONNULL(1) WUNRES
+prototcp_outbuf_has_data(struct bufferevent *bev
+#ifdef DEBUG_PROXY
+	, char *reason, pxy_conn_ctx_t *ctx
+#endif /* DEBUG_PROXY */
+	)
+{
+	size_t outbuflen = evbuffer_get_length(bufferevent_get_output(bev));
+	if (outbuflen) {
+		log_finest_va("Not closing %s, outbuflen=%zu", reason, outbuflen);
+		return 1;
+	}
+	return 0;
 }
 
 #ifndef WITHOUT_USERAUTH
@@ -459,11 +507,12 @@ int
 prototcp_try_close_unauth_conn(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 	if (ctx->conn_opts->user_auth && !ctx->user) {
-		size_t outbuflen = evbuffer_get_length(bufferevent_get_output(bev));
-		struct bufferevent *ubev = bufferevent_get_underlying(bev);
-		if (outbuflen || (ubev && evbuffer_get_length(bufferevent_get_output(ubev)))) {
-			log_finest_va("Not closing unauth conn, outbuflen=%zu, ubev outbuflen=%zu",
-					outbuflen, ubev ? evbuffer_get_length(bufferevent_get_output(ubev)) : 0);
+		if (ctx->protoctx->outbuf_has_datacb(bev
+#ifdef DEBUG_PROXY
+			, "unauth conn", ctx
+#endif /* DEBUG_PROXY */
+			)) {
+			// Nothing to do
 		} else if (ctx->sent_userauth_msg) {
 			log_finest("Closing unauth conn");
 			pxy_conn_term(ctx, 1);
@@ -480,11 +529,12 @@ int
 prototcp_try_close_protoerror_conn(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 	if (ctx->conn_opts->validate_proto && ctx->sent_protoerror_msg) {
-		size_t outbuflen = evbuffer_get_length(bufferevent_get_output(bev));
-		struct bufferevent *ubev = bufferevent_get_underlying(bev);
-		if (outbuflen || (ubev && evbuffer_get_length(bufferevent_get_output(ubev)))) {
-			log_finest_va("Not closing protoerror conn, outbuflen=%zu, ubev outbuflen=%zu",
-					outbuflen, ubev ? evbuffer_get_length(bufferevent_get_output(ubev)) : 0);
+		if (ctx->protoctx->outbuf_has_datacb(bev
+#ifdef DEBUG_PROXY
+			, "protoerror conn", ctx
+#endif /* DEBUG_PROXY */
+			)) {
+			// Nothing to do
 		} else {
 			log_finest("Closing protoerror conn");
 			pxy_conn_term(ctx, 1);
@@ -546,7 +596,7 @@ prototcp_bev_writecb_src_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ct
 		}
 		return;
 	}
-	ctx->protoctx->unset_watermarkcb(bev, ctx->conn, &ctx->dst);
+	ctx->conn->protoctx->unset_watermarkcb(bev, ctx->conn, &ctx->dst);
 }
 
 static void NONNULL(1)
@@ -561,7 +611,7 @@ prototcp_bev_writecb_dst_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ct
 		}
 		return;
 	}
-	ctx->protoctx->unset_watermarkcb(bev, ctx->conn, &ctx->src);
+	ctx->conn->protoctx->unset_watermarkcb(bev, ctx->conn, &ctx->src);
 }
 
 int
@@ -636,7 +686,7 @@ prototcp_bev_eventcb_eof_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
 	log_finest("ENTER");
-	pxy_log_dbg_evbuf_info(ctx, &ctx->src, &ctx->dst);
+	ctx->protoctx->log_dbg_evbuf_infocb(ctx, &ctx->src, &ctx->dst);
 #endif /* DEBUG_PROXY */
 
 	if (!ctx->connected) {
@@ -658,7 +708,7 @@ prototcp_bev_eventcb_eof_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 #ifdef DEBUG_PROXY
 	log_finest("ENTER");
-	pxy_log_dbg_evbuf_info(ctx, &ctx->dst, &ctx->src);
+	ctx->protoctx->log_dbg_evbuf_infocb(ctx, &ctx->dst, &ctx->src);
 #endif /* DEBUG_PROXY */
 
 	if (!ctx->connected) {
@@ -742,7 +792,7 @@ prototcp_bev_eventcb_eof_src_child(struct bufferevent *bev, pxy_conn_child_ctx_t
 {
 #ifdef DEBUG_PROXY
 	log_finest("ENTER");
-	pxy_log_dbg_evbuf_info(ctx->conn, &ctx->src, &ctx->dst);
+	ctx->conn->protoctx->log_dbg_evbuf_infocb(ctx->conn, &ctx->src, &ctx->dst);
 #endif /* DEBUG_PROXY */
 
 	// @todo How to handle the following case?
@@ -765,7 +815,7 @@ prototcp_bev_eventcb_eof_dst_child(struct bufferevent *bev, pxy_conn_child_ctx_t
 {
 #ifdef DEBUG_PROXY
 	log_finest("ENTER");
-	pxy_log_dbg_evbuf_info(ctx->conn, &ctx->dst, &ctx->src);
+	ctx->conn->protoctx->log_dbg_evbuf_infocb(ctx->conn, &ctx->dst, &ctx->src);
 #endif /* DEBUG_PROXY */
 
 	// @todo How to handle the following case?
@@ -989,8 +1039,13 @@ prototcp_setup(pxy_conn_ctx_t *ctx)
 
 	ctx->protoctx->set_watermarkcb = prototcp_try_set_watermark;
 	ctx->protoctx->unset_watermarkcb = prototcp_try_unset_watermark;
+	ctx->protoctx->discard_inbufcb = prototcp_try_discard_inbuf;
+	ctx->protoctx->discard_outbufcb = prototcp_try_discard_outbuf;
+	ctx->protoctx->outbuf_has_datacb = prototcp_outbuf_has_data;
+#ifdef DEBUG_PROXY
+	ctx->protoctx->log_dbg_evbuf_infocb = prototcp_log_dbg_evbuf_info;
+#endif /* DEBUG_PROXY */
 
-	ctx->protoctx->disable_srvdstcb = prototcp_disable_srvdst;
 	return PROTO_TCP;
 }
 
@@ -1003,9 +1058,6 @@ prototcp_setup_child(pxy_conn_child_ctx_t *ctx)
 	ctx->protoctx->bev_readcb = prototcp_bev_readcb_child;
 	ctx->protoctx->bev_writecb = prototcp_bev_writecb_child;
 	ctx->protoctx->bev_eventcb = prototcp_bev_eventcb_child;
-
-	ctx->protoctx->set_watermarkcb = prototcp_try_set_watermark;
-	ctx->protoctx->unset_watermarkcb = prototcp_try_unset_watermark;
 
 	return PROTO_TCP;
 }
