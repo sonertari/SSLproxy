@@ -161,28 +161,28 @@ matrix:
         - export OPENSSL_BASE="$HOME/opt/$SSL"
         - export LIBEVENT_BASE="$HOME/opt/$EVENT"
         - export LD_LIBRARY_PATH="$HOME/opt/$SSL/lib":"$HOME/opt/$EVENT/lib"
-#    - os: osx
-#      env: SSL=homebrew EVENT=homebrew
-#      cache:
-#        directories:
-#          - /usr/local/Cellar/openssl
-#          - /usr/local/opt/openssl
-#          - /usr/local/Cellar/libevent
-#          - /usr/local/opt/libevent
-#          - /usr/local/Cellar/libnet
-#          - /usr/local/opt/libnet
-#          - /usr/local/Cellar/libpcap
-#          - /usr/local/opt/libpcap
-#          - /usr/local/Cellar/check
-#          - /usr/local/opt/check
-#          # Disable travis testproxy tests on osx
-#          #- $HOME/.cargo
-#      before_install:
-#        - test -d /usr/local/opt/openssl/lib  || { rmdir /usr/local/opt/openssl; brew install openssl; }
-#        - test -d /usr/local/opt/libevent/lib || { rmdir /usr/local/opt/libevent; brew install libevent; }
-#        - test -d /usr/local/opt/libnet/lib   || { rmdir /usr/local/opt/libnet; brew install libnet; }
-#        - test -d /usr/local/opt/libpcap/lib  || { rmdir /usr/local/opt/libpcap; brew install --build-from-source libpcap; }
-#        - test -d /usr/local/opt/check/lib    || { rmdir /usr/local/opt/check; brew install check; }
-#        # Disable travis testproxy tests on osx
-#        #- curl -f -L https://static.rust-lang.org/rustup.sh -O && sh rustup.sh -y && source $HOME/.cargo/env && cargo install testproxy
-#      script: make && make travisunittest && ./src/sslproxy -V
+    - os: osx
+      env: SSL=homebrew EVENT=homebrew
+      cache:
+        directories:
+          - /usr/local/Cellar/openssl
+          - /usr/local/opt/openssl
+          - /usr/local/Cellar/libevent
+          - /usr/local/opt/libevent
+          - /usr/local/Cellar/libnet
+          - /usr/local/opt/libnet
+          - /usr/local/Cellar/libpcap
+          - /usr/local/opt/libpcap
+          - /usr/local/Cellar/check
+          - /usr/local/opt/check
+          # Disable travis testproxy tests on osx
+          #- $HOME/.cargo
+      before_install:
+        - test -d /usr/local/opt/openssl/lib  || { rmdir /usr/local/opt/openssl; brew install openssl; }
+        - test -d /usr/local/opt/libevent/lib || { rmdir /usr/local/opt/libevent; brew install libevent; }
+        - test -d /usr/local/opt/libnet/lib   || { rmdir /usr/local/opt/libnet; brew install libnet; }
+        - test -d /usr/local/opt/libpcap/lib  || { rmdir /usr/local/opt/libpcap; brew install --build-from-source libpcap; }
+        - test -d /usr/local/opt/check/lib    || { rmdir /usr/local/opt/check; brew install check; }
+        # Disable travis testproxy tests on osx
+        #- curl -f -L https://static.rust-lang.org/rustup.sh -O && sh rustup.sh -y && source $HOME/.cargo/env && cargo install testproxy
+      script: make && make travisunittest && ./src/sslproxy -V
