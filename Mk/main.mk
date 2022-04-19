@@ -156,15 +156,15 @@ XNU_METHOD=	uname
 XNU_VERSION=	$(shell uname -a|sed 's/^.*root:xnu-//g'|sed 's/~.*$$//')
 XNU_HAVE:=	$(XNU_VERSION)
 endif
-ifeq ($(wildcard xnu/xnu-$(XNU_VERSION)),)
+ifeq ($(wildcard $(PROJECT_ROOT)/xnu/xnu-$(XNU_VERSION)),)
 XNU_METHOD=	sw_vers
 XNU_VERSION=	$(shell awk '/^XNU_RELS.*\# $(OSX_VERSION)$$/ {print $$2}' $(PROJECT_ROOT)/xnu/GNUmakefile)
 endif
-ifeq ($(wildcard xnu/xnu-$(XNU_VERSION)),)
+ifeq ($(wildcard $(PROJECT_ROOT)/xnu/xnu-$(XNU_VERSION)),)
 XNU_METHOD=	fallback
 XNU_VERSION=	$(shell awk '/^XNU_RELS/ {print $$2}' $(PROJECT_ROOT)/xnu/GNUmakefile|tail -1)
 endif
-ifneq ($(wildcard xnu/xnu-$(XNU_VERSION)),)
+ifneq ($(wildcard $(PROJECT_ROOT)/xnu/xnu-$(XNU_VERSION)),)
 FEATURES+=	-DHAVE_PF
 PKG_CPPFLAGS+=	-I$(PROJECT_ROOT)/xnu/xnu-$(XNU_VERSION)
 BUILD_INFO+=	OSX:$(OSX_VERSION) XNU:$(XNU_VERSION):$(XNU_METHOD):$(XNU_HAVE)
