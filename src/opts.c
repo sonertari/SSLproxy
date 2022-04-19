@@ -817,8 +817,10 @@ proxyspec_set_target_addr(proxyspec_t *spec, char *addr, char *port, int af)
 		return -1;
 	}
 	/* explicit target address */
-	free(spec->natengine);
-	spec->natengine = NULL;
+	if (spec->natengine) {
+		free(spec->natengine);
+		spec->natengine = NULL;
+	}
 #ifdef DEBUG_OPTS
 	log_dbg_printf("TargetAddr: [%s]:%s\n", addr, port);
 #endif /* DEBUG_OPTS */
@@ -843,8 +845,10 @@ proxyspec_set_sni_port(proxyspec_t *spec, char *port)
 		return -1;
 	}
 	spec->dns = 1;
-	free(spec->natengine);
-	spec->natengine = NULL;
+	if (spec->natengine) {
+		free(spec->natengine);
+		spec->natengine = NULL;
+	}
 #ifdef DEBUG_OPTS
 	log_dbg_printf("SNIPort: %u\n", spec->sni_port);
 #endif /* DEBUG_OPTS */
@@ -856,8 +860,8 @@ proxyspec_set_natengine(proxyspec_t *spec, const char *natengine)
 {
 	// Double checks if called by proxyspec_parse()
 	if (nat_exist(natengine)) {
-		/* natengine */
-		free(spec->natengine);
+		if (spec->natengine)
+			free(spec->natengine);
 		spec->natengine = strdup(natengine);
 		if (!spec->natengine) {
 			fprintf(stderr, "Out of memory\n");
