@@ -1957,7 +1957,7 @@ get_client_ether(in_addr_t addr, pxy_conn_ctx_t *ctx)
 			found_entry++;
 		}
 
-		char *expire = NULL;
+		UNUSED char *expire = NULL;
 		if (rtm->rtm_flags & (RTF_PERMANENT_ARP | RTF_LOCAL)) {
 			expire = "permanent";
 		} else if (rtm->rtm_rmx.rmx_expire == 0) {
