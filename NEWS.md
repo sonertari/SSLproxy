@@ -1,5 +1,17 @@
 
 
+### SSLproxy 0.9.3 2022-05-02
+
+-   Implement a generic upgrade mechanism with autossl, without STARTTLS.
+-   Refactor and improve autossl and split mode.
+-   Fix watermarking for underlying buffers in autossl.
+-   Fix macOS header selection, update XNU headers for macOS, and re-enable osx
+    on Travis CI.
+-   Fix the natengine option passed in proxyspecs on command line.
+-   Fix enabling of pcap and mirror logging.
+-   Fix build errors with OpenSSL 3.x.
+
+
 ### SSLproxy 0.9.2 2021-11-14
 
 -   Update with the license change of the Aho Corasick library to the LGPL.
