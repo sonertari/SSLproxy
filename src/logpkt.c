@@ -419,11 +419,11 @@ logpkt_mirror_build(libnet_t *libnet,
 	libnet_ptag_t ptag;
 
 	ptag = libnet_build_tcp(src_addr->sa_family == AF_INET
-	                        ? CSIN(src_addr)->sin_port
-	                        : CSIN6(src_addr)->sin6_port,
+	                        ? hton(CSIN(src_addr)->sin_port)
+	                        : hton(CSIN6(src_addr)->sin6_port),
 	                        dst_addr->sa_family == AF_INET
-	                        ? CSIN(dst_addr)->sin_port
-	                        : CSIN6(dst_addr)->sin6_port,
+	                        ? hton(CSIN(dst_addr)->sin_port)
+	                        : hton(CSIN6(dst_addr)->sin6_port),
 	                        seq,
 	                        ack,
 	                        flags,
