@@ -2,8 +2,8 @@ PROJECT_ROOT= ../..
 TESTPROXY:= ~/.cargo/bin/testproxy
 
 TESTPROXY_VERSION=$(shell $(TESTPROXY) -V)
-ifneq ($(TESTPROXY_VERSION),testproxy 0.0.4)
-$(error Use Testproxy v0.0.4 with this version of SSLproxy, found $(TESTPROXY_VERSION))
+ifneq ($(TESTPROXY_VERSION),testproxy 0.0.5)
+$(error Use Testproxy v0.0.5 with this version of SSLproxy, found $(TESTPROXY_VERSION))
 endif
 
 ifeq ($(findstring -DWITHOUT_USERAUTH,$(shell $(PROJECT_ROOT)/src/sslproxy -V 2>&1 | grep "Features: ")),-DWITHOUT_USERAUTH)
@@ -27,10 +27,11 @@ test: SSLPROXY_CONF:=$(if $(TLS11),$(SSLPROXY_CONF),sslproxy_no_tls11.conf)
 test: SSLPROXY_COMMAND=$(PROJECT_ROOT)/src/sslproxy -f $(SSLPROXY_CONF) -o Debug=no -o Daemon=yes -o User=nobody
 test: TESTHARNESS=$(if $(TLS13),testharness.json,testharness_no_tls13.json)
 test: TESTHARNESS:=$(if $(TLS11),$(TESTHARNESS),testharness_no_tls11.json)
+#test: SKIP_TESTHARNESS=2
 test: buildsslproxy buildlp
 	sudo LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) ./lp/lp -f ./lp/lp.conf -o Debug=no -o Daemon=yes -o User=nobody
 	sudo LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) $(SSLPROXY_COMMAND)
-	$(TESTPROXY) -f $(TESTHARNESS) -l 4
+	$(TESTPROXY) -f $(TESTHARNESS) -l 4 --skip-test-harness $(SKIP_TESTHARNESS)
 	sudo pkill sslproxy
 	sudo pkill lp
 
