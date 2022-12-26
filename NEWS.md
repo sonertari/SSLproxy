@@ -1,5 +1,14 @@
 
 
+### SSLproxy 0.9.4 2022-12-26
+
+-   Fix byte order for ports in mirror trafic, thanks to piolug93.
+-   Fix unit tests with opaque x509 struct.
+-   Update testproxy version to 0.0.5.
+-   Fix warning for array subscript outside array bounds in function
+    declaration.
+
+
 ### SSLproxy 0.9.3 2022-05-02
 
 -   Implement a generic upgrade mechanism with autossl, without STARTTLS.
