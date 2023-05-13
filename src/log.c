@@ -760,7 +760,6 @@ log_content_open(log_content_ctx_t *ctx, global_t *global,
 		dsthost_clean = sys_ip46str_sanitize(dsthost);
 		if (!dsthost_clean) {
 			log_err_level_printf(LOG_CRIT, "Failed to sanitize dsthost\n");
-			free(srchost_clean);
 			goto errout;
 		}
 	}
