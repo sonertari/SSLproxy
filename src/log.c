@@ -367,7 +367,11 @@ log_connect_writecb(UNUSED int level, UNUSED void *fh, UNUSED unsigned long ctl,
 	size_t n;
 
 	time(&epoch);
-	utc = gmtime(&epoch);
+	if ((utc = gmtime(&epoch)) == NULL) {
+		log_err_level_printf(LOG_CRIT, "Failed to convert time: %s (%i)\n",
+		               strerror(errno), errno);
+		return -1;
+	}
 	n = strftime(timebuf, sizeof(timebuf), "%Y-%m-%d %H:%M:%S UTC ", utc);
 	if (n == 0) {
 		log_err_level_printf(LOG_CRIT, "Error from strftime(): buffer too small\n");
@@ -650,8 +654,11 @@ log_content_format_pathspec(const char *logspec,
 				struct tm *utc;
 
 				time(&epoch);
-				utc = gmtime(&epoch);
-				strftime(timebuf, sizeof(timebuf), iso8601, utc);
+				if ((utc = gmtime(&epoch)) == NULL) {
+					snprintf(timebuf, sizeof(timebuf), "gmtime error");
+				} else {
+					strftime(timebuf, sizeof(timebuf), iso8601, utc);
+				}
 
 				elem = timebuf;
 				elem_len = sizeof(timebuf);
@@ -1244,7 +1251,11 @@ log_content_file_single_prepcb(void *fh, unsigned long prepflags,
 	}
 	lb = head;
 	time(&epoch);
-	utc = gmtime(&epoch);
+	if ((utc = gmtime(&epoch)) == NULL) {
+		log_err_level_printf(LOG_CRIT, "Failed to convert time\n");
+		logbuf_free(lb);
+		return NULL;
+	}
 	lb->sz = strftime((char*)lb->buf, lb->sz, "%Y-%m-%d %H:%M:%S UTC ",
 	                  utc);
 
