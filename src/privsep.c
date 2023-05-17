@@ -232,6 +232,7 @@ privsep_server_openfile(const char *fn, int mkpath)
 		log_err_level_printf(LOG_CRIT, "Failed to seek on '%s': %s (%i)\n",
 		               fn, strerror(errno), errno);
 		errno = tmp;
+		close(fd);
 		return -1;
 	}
 	return fd;
