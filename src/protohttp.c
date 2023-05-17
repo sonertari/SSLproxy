@@ -152,7 +152,6 @@ protohttp_log_connect(pxy_conn_ctx_t *ctx)
 	}
 	if (ctx->global->connectlog) {
 		if (log_connect_print_free(msg) == -1) {
-			free(msg);
 			log_err_level_printf(LOG_WARNING, "Connection logging failed\n");
 		}
 	} else {

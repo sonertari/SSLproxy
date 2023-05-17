@@ -149,7 +149,6 @@ pxy_log_connect_tcp(pxy_conn_ctx_t *ctx)
 	}
 	if (ctx->opts->connectlog) {
 		if (log_connect_print_free(msg) == -1) {
-			free(msg);
 			log_err_level_printf(LOG_WARNING, "Connection logging failed\n");
 		}
 	} else {
