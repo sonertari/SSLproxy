@@ -380,6 +380,7 @@ sys_sockaddr_str(struct sockaddr *addr, socklen_t addrlen,
 		log_err_level_printf(LOG_CRIT, "Cannot get nameinfo for socket address: %s\n",
 		               gai_strerror(rv));
 		free(*serv);
+		*serv = NULL;
 		return -1;
 	}
 	hostsz = strlen(tmphost) + 1; /* including terminator */
@@ -387,6 +388,7 @@ sys_sockaddr_str(struct sockaddr *addr, socklen_t addrlen,
 	if (!*host) {
 		log_err_level_printf(LOG_CRIT, "Cannot allocate memory\n");
 		free(*serv);
+		*serv = NULL;
 		return -1;
 	}
 	memcpy(*host, tmphost, hostsz);
