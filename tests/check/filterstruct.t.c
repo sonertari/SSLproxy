@@ -83,62 +83,62 @@ START_TEST(set_filter_struct_01)
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 
 	s = "Action Divert\nSrcIp *\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nSrcIp *\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nSrcIp *\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nSrcIp *\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nSrcIp *\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	// "Divert to *" one line rule is equivalent to "Action Divert\n}" struct rule (so are the rules for the other actions)
 
@@ -146,31 +146,31 @@ START_TEST(set_filter_struct_01)
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nLog *\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nLog *\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nLog *\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nLog *\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	opts_free(opts);
 	conn_opts_free(conn_opts);
@@ -195,67 +195,67 @@ START_TEST(set_filter_struct_02)
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nSrcIp 192.168.0.1\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nSrcIp 192.168.0.1\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nSrcIp 192.168.0.1\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nSrcIp 192.168.0.1\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 
 	s = "Action Divert\nSrcIp 192.168.0.1*\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nSrcIp 192.168.0.1*\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nSrcIp 192.168.0.1*\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nSrcIp 192.168.0.1*\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nSrcIp 192.168.0.1*\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 
 	s = strdup("$macro 192.168.0.1 192.168.0.2 192.168.0.1* 192.168.0.2*");
 	rv = filter_macro_set(opts, s, 0);
-	fail_unless(rv == 0, "failed to set macro");
+	ck_assert_msg(rv == 0, "failed to set macro");
 	free(s);
 
 
@@ -263,31 +263,31 @@ START_TEST(set_filter_struct_02)
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nSrcIp $macro\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nSrcIp $macro\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nSrcIp $macro\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nSrcIp $macro\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	opts_free(opts);
 	conn_opts_free(conn_opts);
@@ -305,7 +305,7 @@ START_TEST(set_filter_struct_03)
 
 	s = strdup("$macro root daemon admin*");
 	rv = filter_macro_set(opts, s, 0);
-	fail_unless(rv == 0, "failed to set macro");
+	ck_assert_msg(rv == 0, "failed to set macro");
 	free(s);
 
 	close(2);
@@ -320,310 +320,310 @@ START_TEST(set_filter_struct_03)
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == -1, "failed to parse rule");
+	ck_assert_msg(rv == -1, "failed to parse rule");
 
 	s = "Action Split\nUser *\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == -1, "failed to parse rule");
+	ck_assert_msg(rv == -1, "failed to parse rule");
 
 	s = "Action Pass\nUser *\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == -1, "failed to parse rule");
+	ck_assert_msg(rv == -1, "failed to parse rule");
 
 	s = "Action Block\nUser *\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == -1, "failed to parse rule");
+	ck_assert_msg(rv == -1, "failed to parse rule");
 
 	s = "Action Match\nUser *\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == -1, "failed to parse rule");
+	ck_assert_msg(rv == -1, "failed to parse rule");
 
 
 	s = "Action Divert\nUser *\nDesc desc\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == -1, "failed to parse rule");
+	ck_assert_msg(rv == -1, "failed to parse rule");
 
 	s = "Action Split\nUser *\nDesc desc\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == -1, "failed to parse rule");
+	ck_assert_msg(rv == -1, "failed to parse rule");
 
 	s = "Action Pass\nUser *\nDesc desc\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == -1, "failed to parse rule");
+	ck_assert_msg(rv == -1, "failed to parse rule");
 
 	s = "Action Block\nUser *\nDesc desc\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == -1, "failed to parse rule");
+	ck_assert_msg(rv == -1, "failed to parse rule");
 
 	s = "Action Match\nUser *\nDesc desc\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == -1, "failed to parse rule");
+	ck_assert_msg(rv == -1, "failed to parse rule");
 
 
 	s = "Action Divert\nUser $macro\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == -1, "failed to parse rule");
+	ck_assert_msg(rv == -1, "failed to parse rule");
 
 	s = "Action Split\nUser $macro\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == -1, "failed to parse rule");
+	ck_assert_msg(rv == -1, "failed to parse rule");
 
 	s = "Action Pass\nUser $macro\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == -1, "failed to parse rule");
+	ck_assert_msg(rv == -1, "failed to parse rule");
 
 	s = "Action Block\nUser $macro\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == -1, "failed to parse rule");
+	ck_assert_msg(rv == -1, "failed to parse rule");
 
 	s = "Action Match\nUser $macro\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == -1, "failed to parse rule");
+	ck_assert_msg(rv == -1, "failed to parse rule");
 
 
 	s = "Action Divert\nUser $macro\nDesc desc\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == -1, "failed to parse rule");
+	ck_assert_msg(rv == -1, "failed to parse rule");
 
 	s = "Action Split\nUser $macro\nDesc desc\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == -1, "failed to parse rule");
+	ck_assert_msg(rv == -1, "failed to parse rule");
 
 	s = "Action Pass\nUser $macro\nDesc desc\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == -1, "failed to parse rule");
+	ck_assert_msg(rv == -1, "failed to parse rule");
 
 	s = "Action Block\nUser $macro\nDesc desc\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == -1, "failed to parse rule");
+	ck_assert_msg(rv == -1, "failed to parse rule");
 
 	s = "Action Match\nUser $macro\nDesc desc\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == -1, "failed to parse rule");
+	ck_assert_msg(rv == -1, "failed to parse rule");
 
 
 	s = "Action Divert\nUser $macro\nDesc $macro\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == -1, "failed to parse rule");
+	ck_assert_msg(rv == -1, "failed to parse rule");
 
 	s = "Action Split\nUser $macro\nDesc $macro\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == -1, "failed to parse rule");
+	ck_assert_msg(rv == -1, "failed to parse rule");
 
 	s = "Action Pass\nUser $macro\nDesc $macro\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == -1, "failed to parse rule");
+	ck_assert_msg(rv == -1, "failed to parse rule");
 
 	s = "Action Block\nUser $macro\nDesc $macro\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == -1, "failed to parse rule");
+	ck_assert_msg(rv == -1, "failed to parse rule");
 
 	s = "Action Match\nUser $macro\nDesc $macro\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == -1, "failed to parse rule");
+	ck_assert_msg(rv == -1, "failed to parse rule");
 
 
 	s = "Action Divert\nUser *\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nUser *\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nUser *\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nUser *\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nUser *\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 
 	s = "Action Divert\nUser *\nDesc desc\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nUser *\nDesc desc\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nUser *\nDesc desc\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nUser *\nDesc desc\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nUser *\nDesc desc\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 
 	s = "Action Divert\nUser $macro\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nUser $macro\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nUser $macro\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nUser $macro\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nUser $macro\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 
 	s = "Action Divert\nUser $macro\nDesc desc\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nUser $macro\nDesc desc\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nUser $macro\nDesc desc\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nUser $macro\nDesc desc\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nUser $macro\nDesc desc\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 
 	s = "Action Divert\nUser $macro\nDesc $macro\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nUser $macro\nDesc $macro\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nUser $macro\nDesc $macro\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nUser $macro\nDesc $macro\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nUser $macro\nDesc $macro\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	opts_free(opts);
 	conn_opts_free(conn_opts);
@@ -649,227 +649,227 @@ START_TEST(set_filter_struct_04)
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nDstIp *\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nDstIp *\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nDstIp *\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nDstIp *\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 
 	s = "Action Divert\nDstIp *\nDstPort *\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nDstIp *\nDstPort *\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nDstIp *\nDstPort *\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nDstIp *\nDstPort *\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nDstIp *\nDstPort *\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 
 	s = "Action Divert\nDstIp 192.168.0.1\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nDstIp 192.168.0.1\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nDstIp 192.168.0.1\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nDstIp 192.168.0.1\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nDstIp 192.168.0.1\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 
 	s = "Action Divert\nDstIp 192.168.0.1\nDstPort *\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nDstIp 192.168.0.1\nDstPort *\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nDstIp 192.168.0.1\nDstPort *\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nDstIp 192.168.0.1\nDstPort *\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nDstIp 192.168.0.1\nDstPort *\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 
 	s = "Action Divert\nDstIp *\nDstPort 443\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nDstIp *\nDstPort 443\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nDstIp *\nDstPort 443\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nDstIp *\nDstPort 443\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nDstIp *\nDstPort 443\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 
 	s = "Action Divert\nDstIp 192.168.0.1\nDstPort 443\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nDstIp 192.168.0.1\nDstPort 443\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nDstIp 192.168.0.1\nDstPort 443\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nDstIp 192.168.0.1\nDstPort 443\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nDstIp 192.168.0.1\nDstPort 443\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 
 	s = strdup("$macro1 192.168.0.1 192.168.0.2 192.168.0.1*");
 	rv = filter_macro_set(opts, s, 0);
-	fail_unless(rv == 0, "failed to set macro");
+	ck_assert_msg(rv == 0, "failed to set macro");
 	free(s);
 
 	s = strdup("$macro2 443 444 80*");
 	rv = filter_macro_set(opts, s, 0);
-	fail_unless(rv == 0, "failed to set macro");
+	ck_assert_msg(rv == 0, "failed to set macro");
 	free(s);
 
 	s = "Action Divert\nDstIp $macro1\nDstPort $macro2\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nDstIp $macro1\nDstPort $macro2\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nDstIp $macro1\nDstPort $macro2\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nDstIp $macro1\nDstPort $macro2\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nDstIp $macro1\nDstPort $macro2\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	opts_free(opts);
 	conn_opts_free(conn_opts);
@@ -892,12 +892,12 @@ START_TEST(set_filter_struct_05)
 
 	s = strdup("$macro example.com example*");
 	rv = filter_macro_set(opts, s, 0);
-	fail_unless(rv == 0, "failed to set macro");
+	ck_assert_msg(rv == 0, "failed to set macro");
 	free(s);
 
 	s = strdup("$macro2 443 444 80*");
 	rv = filter_macro_set(opts, s, 0);
-	fail_unless(rv == 0, "failed to set macro");
+	ck_assert_msg(rv == 0, "failed to set macro");
 	free(s);
 
 
@@ -905,806 +905,806 @@ START_TEST(set_filter_struct_05)
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nSNI *\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nSNI *\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nSNI *\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nSNI *\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 
 	s = "Action Divert\nSNI example.com\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nSNI example.com\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nSNI example.com\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nSNI example.com\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nSNI example.com\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 
 	s = "Action Divert\nSNI example.com\nDstPort 443\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nSNI example.com\nDstPort 443\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nSNI example.com\nDstPort 443\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nSNI example.com\nDstPort 443\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nSNI example.com\nDstPort 443\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 
 	s = "Action Divert\nSNI $macro\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nSNI $macro\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nSNI $macro\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nSNI $macro\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nSNI $macro\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 
 	s = "Action Divert\nSNI example.com\nDstPort $macro2\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nSNI example.com\nDstPort $macro2\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nSNI example.com\nDstPort $macro2\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nSNI example.com\nDstPort $macro2\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nSNI example.com\nDstPort $macro2\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 
 	s = "Action Divert\nSNI $macro\nDstPort $macro2\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nSNI $macro\nDstPort $macro2\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nSNI $macro\nDstPort $macro2\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nSNI $macro\nDstPort $macro2\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nSNI $macro\nDstPort $macro2\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 
 	s = "Action Divert\nCN *\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nCN *\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nCN *\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nCN *\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nCN *\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 
 	s = "Action Divert\nCN example.com\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nCN example.com\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nCN example.com\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nCN example.com\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nCN example.com\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 
 	s = "Action Divert\nCN example.com\nDstPort 443\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nCN example.com\nDstPort 443\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nCN example.com\nDstPort 443\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nCN example.com\nDstPort 443\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nCN example.com\nDstPort 443\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 
 	s = "Action Divert\nCN $macro\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nCN $macro\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nCN $macro\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nCN $macro\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nCN $macro\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 
 	s = "Action Divert\nCN example.com\nDstPort $macro2\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nCN example.com\nDstPort $macro2\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nCN example.com\nDstPort $macro2\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nCN example.com\nDstPort $macro2\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nCN example.com\nDstPort $macro2\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 
 	s = "Action Divert\nCN $macro\nDstPort $macro2\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nCN $macro\nDstPort $macro2\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nCN $macro\nDstPort $macro2\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nCN $macro\nDstPort $macro2\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nCN $macro\nDstPort $macro2\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 
 	s = "Action Divert\nHost *\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nHost *\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nHost *\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nHost *\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nHost *\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 
 	s = "Action Divert\nHost example.com\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nHost example.com\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nHost example.com\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nHost example.com\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nHost example.com\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 
 	s = "Action Divert\nHost example.com\nDstPort 443\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nHost example.com\nDstPort 443\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nHost example.com\nDstPort 443\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nHost example.com\nDstPort 443\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nHost example.com\nDstPort 443\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 
 	s = "Action Divert\nHost $macro\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nHost $macro\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nHost $macro\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nHost $macro\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nHost $macro\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 
 	s = "Action Divert\nHost example.com\nDstPort $macro2\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nHost example.com\nDstPort $macro2\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nHost example.com\nDstPort $macro2\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nHost example.com\nDstPort $macro2\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nHost example.com\nDstPort $macro2\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 
 	s = "Action Divert\nHost $macro\nDstPort $macro2\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nHost $macro\nDstPort $macro2\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nHost $macro\nDstPort $macro2\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nHost $macro\nDstPort $macro2\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nHost $macro\nDstPort $macro2\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 
 	s = "Action Divert\nURI *\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nURI *\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nURI *\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nURI *\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nURI *\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 
 	s = "Action Divert\nURI example.com\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nURI example.com\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nURI example.com\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nURI example.com\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nURI example.com\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 
 	s = "Action Divert\nURI example.com\nDstPort 443\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nURI example.com\nDstPort 443\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nURI example.com\nDstPort 443\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nURI example.com\nDstPort 443\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nURI example.com\nDstPort 443\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 
 	s = "Action Divert\nURI $macro\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nURI $macro\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nURI $macro\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nURI $macro\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nURI $macro\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 
 	s = "Action Divert\nURI example.com\nDstPort $macro2\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nURI example.com\nDstPort $macro2\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nURI example.com\nDstPort $macro2\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nURI example.com\nDstPort $macro2\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nURI example.com\nDstPort $macro2\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 
 	s = "Action Divert\nURI $macro\nDstPort $macro2\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nURI $macro\nDstPort $macro2\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nURI $macro\nDstPort $macro2\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nURI $macro\nDstPort $macro2\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nURI $macro\nDstPort $macro2\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 
 	s = "Action Divert\nDstPort 443\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nDstPort 443\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nDstPort 443\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nDstPort 443\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nDstPort 443\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 
 	s = "Action Divert\nDstPort $macro2\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nDstPort $macro2\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nDstPort $macro2\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nDstPort $macro2\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nDstPort $macro2\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	opts_free(opts);
 	conn_opts_free(conn_opts);
@@ -1729,650 +1729,650 @@ START_TEST(set_filter_struct_06)
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nLog *\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nLog *\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nLog *\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nLog *\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 
 	s = "Action Divert\nLog connect\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nLog connect\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nLog connect\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nLog connect\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nLog connect\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 
 	s = "Action Divert\nLog master\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nLog master\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nLog master\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nLog master\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nLog master\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 
 	s = "Action Divert\nLog cert\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nLog cert\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nLog cert\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nLog cert\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nLog cert\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 
 	s = "Action Divert\nLog content\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nLog content\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nLog content\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nLog content\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nLog content\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 
 	s = "Action Divert\nLog pcap\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nLog pcap\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nLog pcap\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nLog pcap\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nLog pcap\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 
 	s = "Action Divert\nLog mirror\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nLog mirror\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nLog mirror\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nLog mirror\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nLog mirror\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 
 	s = "Action Divert\nLog !*\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nLog !*\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nLog !*\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nLog !*\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nLog !*\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 
 	s = "Action Divert\nLog !connect\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nLog !connect\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nLog !connect\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nLog !connect\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nLog !connect\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 
 	s = "Action Divert\nLog !master\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nLog !master\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nLog !master\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nLog !master\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nLog !master\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 
 	s = "Action Divert\nLog !cert\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nLog !cert\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nLog !cert\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nLog !cert\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nLog !cert\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 
 	s = "Action Divert\nLog !content\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nLog !content\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nLog !content\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nLog !content\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nLog !content\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 
 	s = "Action Divert\nLog !pcap\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nLog !pcap\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nLog !pcap\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nLog !pcap\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nLog !pcap\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 
 	s = "Action Divert\nLog !mirror\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nLog !mirror\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nLog !mirror\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nLog !mirror\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nLog !mirror\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 
 	s = strdup("$macro connect master cert content pcap mirror");
 	rv = filter_macro_set(opts, s, 0);
-	fail_unless(rv == 0, "failed to set macro");
+	ck_assert_msg(rv == 0, "failed to set macro");
 	free(s);
 
 	s = "Action Divert\nLog $macro\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nLog $macro\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nLog $macro\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nLog $macro\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nLog $macro\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 
 	s = strdup("$macro2 !connect !master !cert !content !pcap !mirror");
 	rv = filter_macro_set(opts, s, 0);
-	fail_unless(rv == 0, "failed to set macro");
+	ck_assert_msg(rv == 0, "failed to set macro");
 	free(s);
 
 	s = "Action Divert\nLog $macro2\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nLog $macro2\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nLog $macro2\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nLog $macro2\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nLog $macro2\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 
 	s = strdup("$macro3 connect !master cert !content pcap !mirror");
 	rv = filter_macro_set(opts, s, 0);
-	fail_unless(rv == 0, "failed to set macro");
+	ck_assert_msg(rv == 0, "failed to set macro");
 	free(s);
 
 	s = "Action Divert\nLog $macro3\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nLog $macro3\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nLog $macro3\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nLog $macro3\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nLog $macro3\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 
 	s = strdup("$macro4 !connect master !cert content !pcap mirror");
 	rv = filter_macro_set(opts, s, 0);
-	fail_unless(rv == 0, "failed to set macro");
+	ck_assert_msg(rv == 0, "failed to set macro");
 	free(s);
 
 	s = "Action Divert\nLog $macro4\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nLog $macro4\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nLog $macro4\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nLog $macro4\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nLog $macro4\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 
 	s = strdup("$macro5 connect master cert !content !pcap !mirror");
 	rv = filter_macro_set(opts, s, 0);
-	fail_unless(rv == 0, "failed to set macro");
+	ck_assert_msg(rv == 0, "failed to set macro");
 	free(s);
 
 	s = "Action Divert\nLog $macro5\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nLog $macro5\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nLog $macro5\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nLog $macro5\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nLog $macro5\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 
 	s = strdup("$macro6 !connect !master !cert content pcap mirror");
 	rv = filter_macro_set(opts, s, 0);
-	fail_unless(rv == 0, "failed to set macro");
+	ck_assert_msg(rv == 0, "failed to set macro");
 	free(s);
 
 	s = "Action Divert\nLog $macro6\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nLog $macro6\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nLog $macro6\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nLog $macro6\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nLog $macro6\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	opts_free(opts);
 	conn_opts_free(conn_opts);
@@ -2398,65 +2398,65 @@ START_TEST(set_filter_struct_07)
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nSrcIp *\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	// Repeat to add the Pass action as in the filter.t.c tests
 	s = "Action Pass\nSrcIp *\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nSrcIp *\nDstIp 192.168.0.1\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Block\nUser *\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nDesc *\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nUser *\nDesc desc\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nUser root\nDesc *\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Divert\nUser *\nDesc *\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nLog *\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = filter_rule_str(opts->filter_rules);
-	fail_unless(!strcmp(strstr(s, "filter rule 7: "),
+	ck_assert_msg(!strcmp(strstr(s, "filter rule 7: "),
 		"filter rule 7: dstip=, dstport=, srcip=, user=root, desc=, exact=|||user|, all=||sites|, action=||pass||, log=|||||, precedence=2\n"
 		"  conn opts: negotiate"SSL_PROTO_CONFIG"|no ciphers|no ciphersuites|"ECDHCURVE"no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
 		"filter rule 7: sni=, dstport=, srcip=, user=root, desc=, exact=|||user|, all=||sites|, action=||pass||, log=|||||, precedence=2\n"
@@ -2489,7 +2489,7 @@ START_TEST(set_filter_struct_07)
 	char *p = strstr(s, "filter rule 7: ");
 	*p = '\0';
 
-	fail_unless(!strcmp(strstr(s, "filter rule 5: "),
+	ck_assert_msg(!strcmp(strstr(s, "filter rule 5: "),
 		"filter rule 5: dstip=, dstport=, srcip=, user=, desc=, exact=||||, all=|users|sites|, action=||||match, log=|||||, precedence=1\n"
 		"  conn opts: negotiate"SSL_PROTO_CONFIG"|no ciphers|no ciphersuites|"ECDHCURVE"no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
 		"filter rule 5: sni=, dstport=, srcip=, user=, desc=, exact=||||, all=|users|sites|, action=||||match, log=|||||, precedence=1\n"
@@ -2517,7 +2517,7 @@ START_TEST(set_filter_struct_07)
 	p = strstr(s, "filter rule 5: ");
 	*p = '\0';
 
-	fail_unless(!strcmp(s,
+	ck_assert_msg(!strcmp(s,
 		"filter rule 0: dstip=, dstport=, srcip=, user=, desc=, exact=||||, all=conns||sites|, action=divert||||, log=|||||, precedence=0\n"
 		"filter rule 0: sni=, dstport=, srcip=, user=, desc=, exact=||||, all=conns||sites|, action=divert||||, log=|||||, precedence=0\n"
 		"filter rule 0: cn=, dstport=, srcip=, user=, desc=, exact=||||, all=conns||sites|, action=divert||||, log=|||||, precedence=0\n"
@@ -2553,7 +2553,7 @@ START_TEST(set_filter_struct_07)
 
 	// check cannot test long strings, so divide s into head and tail
 	// Test the tail first, because we will trim the tail to test the head next
-	fail_unless(!strcmp(strstr(s, "user_filter_all->\n"),
+	ck_assert_msg(!strcmp(strstr(s, "user_filter_all->\n"),
 "user_filter_all->\n"
 "    ip all:\n"
 "      0:  (all_sites, substring, action=divert|||block|match, log=|||||, precedence=1\n"
@@ -2591,7 +2591,7 @@ START_TEST(set_filter_struct_07)
 	p = strstr(s, "user_filter_all->\n");
 	*p = '\0';
 
-	fail_unless(!strcmp(s, "filter=>\n"
+	ck_assert_msg(!strcmp(s, "filter=>\n"
 "userdesc_filter_exact->\n"
 "userdesc_filter_substring->\n"
 "user_filter_exact->\n"
@@ -2658,78 +2658,78 @@ START_TEST(set_filter_struct_08)
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nSrcIp 192.168.0.1\nDstIp 192.168.0.2\nLog connect master cert content pcap mirror\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nSrcIp 192.168.0.1\nDstIp 192.168.0.2\nLog !connect !cert !pcap\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	// Block action at precedence 1 is not applied to a site of the same rule at precedence 2 now
 	s = "Action Block\nSrcIp 192.168.0.1\nDstIp 192.168.0.2\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	// Add another target
 	s = "Action Match\nSrcIp 192.168.0.1\nDstIp 192.168.0.3\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	// Add another source
 	s = "Action Match\nSrcIp 192.168.0.2\nDstIp 192.168.0.1\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nSrcIp 192.168.0.2\nDstIp *\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	// Search substring (subnet?)
 	s = "Action Match\nSrcIp 192.168.0.2\nDstIp 192.168.0.*\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	// Add another target
 	s = "Action Match\nSrcIp 192.168.0.2\nDstIp 192.168.0.3\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	// Add substring src
 	s = "Action Match\nSrcIp 192.168.1.*\nDstIp 192.168.0.1\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	// Add substring src and target
 	s = "Action Match\nSrcIp 192.168.2.*\nDstIp 192.168.3.*\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = filter_rule_str(opts->filter_rules);
 #ifndef WITHOUT_USERAUTH
-	fail_unless(!strcmp(s,
+	ck_assert_msg(!strcmp(s,
 		"filter rule 0: dstip=192.168.0.2, dstport=, srcip=192.168.0.1, user=, desc=, exact=site||ip||, all=|||, action=divert||||, log=|||||, precedence=2\n"
 		"filter rule 1: dstip=192.168.0.2, dstport=, srcip=192.168.0.1, user=, desc=, exact=site||ip||, all=|||, action=|split|||, log=connect|master|cert|content|pcap|mirror, precedence=3\n"
 		"filter rule 2: dstip=192.168.0.2, dstport=, srcip=192.168.0.1, user=, desc=, exact=site||ip||, all=|||, action=||pass||, log=!connect||!cert||!pcap|, precedence=3\n"
@@ -2743,7 +2743,7 @@ START_TEST(set_filter_struct_08)
 		"filter rule 10: dstip=192.168.3., dstport=, srcip=192.168.2., user=, desc=, exact=||||, all=|||, action=||||match, log=|||||, precedence=2\n"),
 		"failed to parse rule: %s", s);
 #else /* WITHOUT_USERAUTH */
-	fail_unless(!strcmp(s,
+	ck_assert_msg(!strcmp(s,
 		"filter rule 0: dstip=192.168.0.2, dstport=, srcip=192.168.0.1, exact=site||ip, all=||, action=divert||||, log=|||||, precedence=2\n"
 		"filter rule 1: dstip=192.168.0.2, dstport=, srcip=192.168.0.1, exact=site||ip, all=||, action=|split|||, log=connect|master|cert|content|pcap|mirror, precedence=3\n"
 		"filter rule 2: dstip=192.168.0.2, dstport=, srcip=192.168.0.1, exact=site||ip, all=||, action=||pass||, log=!connect||!cert||!pcap|, precedence=3\n"
@@ -2763,7 +2763,7 @@ START_TEST(set_filter_struct_08)
 
 	s = filter_str(opts->filter);
 #ifndef WITHOUT_USERAUTH
-	fail_unless(!strcmp(s, "filter=>\n"
+	ck_assert_msg(!strcmp(s, "filter=>\n"
 "userdesc_filter_exact->\n"
 "userdesc_filter_substring->\n"
 "user_filter_exact->\n"
@@ -2793,7 +2793,7 @@ START_TEST(set_filter_struct_08)
 "      0: 192.168.3. (substring, action=||||match, log=|||||, precedence=2)\n"
 "filter_all->\n"), "failed to translate rule: %s", s);
 #else /* WITHOUT_USERAUTH */
-	fail_unless(!strcmp(s, "filter=>\n"
+	ck_assert_msg(!strcmp(s, "filter=>\n"
 "ip_filter_exact->\n"
 "  ip 0 192.168.0.1 (exact)=\n"
 "    ip exact:\n"
@@ -2841,92 +2841,92 @@ START_TEST(set_filter_struct_09)
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nSrcIp 192.168.0.1\nDstIp 192.168.0.2\nDstPort 443\nLog connect master cert content pcap mirror\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nSrcIp 192.168.0.1\nDstIp 192.168.0.2\nDstPort 443\nLog !connect !cert !pcap\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	// Block action at precedence 2 is not applied to a port of the same rule at precedence 3 now
 	s = "Action Block\nSrcIp 192.168.0.1\nDstIp 192.168.0.2\nDstPort 443\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	// Add another target, the following port rules should not change this site rule
 	s = "Action Match\nSrcIp 192.168.0.1\nDstIp 192.168.0.3\nLog !mirror\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	// Add another target port
 	s = "Action Match\nSrcIp 192.168.0.1\nDstIp 192.168.0.3\nDstPort 443\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	// Add another target port
 	s = "Action Match\nSrcIp 192.168.0.1\nDstIp 192.168.0.3\nDstPort 80\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	// Add another source
 	s = "Action Match\nSrcIp 192.168.0.2\nDstIp 192.168.0.1\nDstPort 443\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	// Add substring source
 	s = "Action Match\nSrcIp 192.168.1.*\nDstIp 192.168.0.1\nDstPort 443\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	// Add substring source and target
 	s = "Action Match\nSrcIp 192.168.2.*\nDstIp 192.168.3.*\nDstPort 443\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nSrcIp 192.168.0.2\nDstIp 192.168.0.1\nDstPort *\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	// Search substring
 	s = "Action Match\nSrcIp 192.168.0.2\nDstIp 192.168.0.1\nDstPort 80*\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	// Add substring source, target, and port
 	s = "Action Match\nSrcIp 192.168.4.*\nDstIp 192.168.5.*\nDstPort 80*\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = filter_rule_str(opts->filter_rules);
 #ifndef WITHOUT_USERAUTH
-	fail_unless(!strcmp(s,
+	ck_assert_msg(!strcmp(s,
 		"filter rule 0: dstip=192.168.0.2, dstport=443, srcip=192.168.0.1, user=, desc=, exact=site|port|ip||, all=|||, action=divert||||, log=|||||, precedence=3\n"
 		"filter rule 1: dstip=192.168.0.2, dstport=443, srcip=192.168.0.1, user=, desc=, exact=site|port|ip||, all=|||, action=|split|||, log=connect|master|cert|content|pcap|mirror, precedence=4\n"
 		"filter rule 2: dstip=192.168.0.2, dstport=443, srcip=192.168.0.1, user=, desc=, exact=site|port|ip||, all=|||, action=||pass||, log=!connect||!cert||!pcap|, precedence=4\n"
@@ -2942,7 +2942,7 @@ START_TEST(set_filter_struct_09)
 		"filter rule 12: dstip=192.168.5., dstport=80, srcip=192.168.4., user=, desc=, exact=||||, all=|||, action=||||match, log=|||||, precedence=3\n"),
 		"failed to parse rule: %s", s);
 #else /* WITHOUT_USERAUTH */
-	fail_unless(!strcmp(s,
+	ck_assert_msg(!strcmp(s,
 		"filter rule 0: dstip=192.168.0.2, dstport=443, srcip=192.168.0.1, exact=site|port|ip, all=||, action=divert||||, log=|||||, precedence=3\n"
 		"filter rule 1: dstip=192.168.0.2, dstport=443, srcip=192.168.0.1, exact=site|port|ip, all=||, action=|split|||, log=connect|master|cert|content|pcap|mirror, precedence=4\n"
 		"filter rule 2: dstip=192.168.0.2, dstport=443, srcip=192.168.0.1, exact=site|port|ip, all=||, action=||pass||, log=!connect||!cert||!pcap|, precedence=4\n"
@@ -2964,7 +2964,7 @@ START_TEST(set_filter_struct_09)
 
 	s = filter_str(opts->filter);
 #ifndef WITHOUT_USERAUTH
-	fail_unless(!strcmp(s, "filter=>\n"
+	ck_assert_msg(!strcmp(s, "filter=>\n"
 "userdesc_filter_exact->\n"
 "userdesc_filter_substring->\n"
 "user_filter_exact->\n"
@@ -3009,7 +3009,7 @@ START_TEST(set_filter_struct_09)
 "          0: 80 (substring, action=||||match, log=|||||, precedence=3)\n"
 "filter_all->\n"), "failed to translate rule: %s", s);
 #else /* WITHOUT_USERAUTH */
-	fail_unless(!strcmp(s, "filter=>\n"
+	ck_assert_msg(!strcmp(s, "filter=>\n"
 "ip_filter_exact->\n"
 "  ip 0 192.168.0.1 (exact)=\n"
 "    ip exact:\n"
@@ -3073,77 +3073,77 @@ START_TEST(set_filter_struct_10)
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nUser root\nSNI example.com\nLog connect master cert content pcap mirror\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	// Move UserAuth up once at each new rule
 	s = "Action Pass\nUser root\nSNI example.com\nUserAuth yes\nLog !connect !cert !pcap\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	// Block action at precedence 2 is not applied to a site of the same rule at precedence 4 now
 	s = "Action Block\nUser root\nUserAuth yes\nSNI example.com\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	// Add another target
 	s = "Action Match\nUserAuth yes\nUser root\nSNI example2.com\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	// Add another source
 	s = "UserAuth yes\nAction Match\nUser daemon\nSNI example.com\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nUser daemon\nSNI *\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	// Search substring (subdomain?)
 	s = "Action Match\nUser daemon\nSNI .example.com*\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	// Add another target
 	s = "Action Match\nUser daemon\nSNI example3.com\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	// Add substring source
 	s = "Action Match\nUser admin1*\nSNI example4.com\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nUser admin2*\nSNI example5.com\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = filter_rule_str(opts->filter_rules);
-	fail_unless(!strcmp(s,
+	ck_assert_msg(!strcmp(s,
 		"filter rule 0: sni=example.com, dstport=, srcip=, user=root, desc=, exact=site|||user|, all=|||, action=divert||||, log=|||||, precedence=3\n"
 		"  conn opts: negotiate"SSL_PROTO_CONFIG"|no ciphers|no ciphersuites|"ECDHCURVE"no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
 		"filter rule 1: sni=example.com, dstport=, srcip=, user=root, desc=, exact=site|||user|, all=|||, action=|split|||, log=connect|master|cert|content|pcap|mirror, precedence=4\n"
@@ -3172,7 +3172,7 @@ START_TEST(set_filter_struct_10)
 	opts->filter = filter_set(opts->filter_rules, "sslproxy", tmp_opts);
 
 	s = filter_str(opts->filter);
-	fail_unless(!strcmp(s, "filter=>\n"
+	ck_assert_msg(!strcmp(s, "filter=>\n"
 "userdesc_filter_exact->\n"
 "userdesc_filter_substring->\n"
 "user_filter_exact->\n"
@@ -3234,95 +3234,95 @@ START_TEST(set_filter_struct_11)
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nUser root\nCN example.com\nDstPort 443\nUserAuth yes\nLog connect master cert content pcap mirror\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nUser root\nCN example.com\nDstPort 443\nUserAuth yes\nLog !connect !cert !pcap\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	// Block action at precedence 3 is not applied to a site of the same rule at precedence 5 now
 	s = "Action Block\nUser root\nCN example.com\nDstPort 443\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	// Add another target
 	s = "Action Match\nUser root\nCN example2.com\nDstPort 443\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	// Add another source
 	s = "Action Match\nUser daemon\nCN example.com\nDstPort 443\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nUser daemon\nCN *\nDstPort 443\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nUser daemon\nCN example.com\nDstPort *\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nUser daemon\nCN *\nDstPort *\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	// Search substring (subdomain?)
 	s = "Action Match\nUser daemon\nCN .example.com*\nDstPort 443\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nUser daemon\nCN .example.com*\nDstPort 443*\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	// Add another target
 	s = "Action Match\nUser daemon\nCN example3.com\nDstPort 443\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	// Add substring source
 	s = "Action Match\nUser admin1*\nCN example4.com\nDstPort 443\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nUser admin2*\nCN example5.com\nDstPort 443\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = filter_rule_str(opts->filter_rules);
 
-	fail_unless(!strcmp(strstr(s, "filter rule 7: "),
+	ck_assert_msg(!strcmp(strstr(s, "filter rule 7: "),
 		"filter rule 7: cn=example.com, dstport=, srcip=, user=daemon, desc=, exact=site|||user|, all=|||ports, action=||||match, log=|||||, precedence=4\n"
 		"  conn opts: negotiate"SSL_PROTO_CONFIG"|no ciphers|no ciphersuites|"ECDHCURVE"no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
 		"filter rule 8: cn=, dstport=, srcip=, user=daemon, desc=, exact=|||user|, all=||sites|ports, action=||||match, log=|||||, precedence=4\n"
@@ -3343,7 +3343,7 @@ START_TEST(set_filter_struct_11)
 	char *p = strstr(s, "filter rule 7: ");
 	*p = '\0';
 
-	fail_unless(!strcmp(s,
+	ck_assert_msg(!strcmp(s,
 		"filter rule 0: cn=example.com, dstport=443, srcip=, user=root, desc=, exact=site|port||user|, all=|||, action=divert||||, log=|||||, precedence=4\n"
 		"  conn opts: negotiate"SSL_PROTO_CONFIG"|no ciphers|no ciphersuites|"ECDHCURVE"no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
 		"filter rule 1: cn=example.com, dstport=443, srcip=, user=root, desc=, exact=site|port||user|, all=|||, action=|split|||, log=connect|master|cert|content|pcap|mirror, precedence=5\n"
@@ -3365,7 +3365,7 @@ START_TEST(set_filter_struct_11)
 
 	s = filter_str(opts->filter);
 
-	fail_unless(!strcmp(strstr(s, "user_filter_substring->\n"),
+	ck_assert_msg(!strcmp(strstr(s, "user_filter_substring->\n"),
 "user_filter_substring->\n"
 "  user 0 admin1 (substring)=\n"
 "    cn exact:\n"
@@ -3390,7 +3390,7 @@ START_TEST(set_filter_struct_11)
 	p = strstr(s, "user_filter_substring->\n");
 	*p = '\0';
 
-	fail_unless(!strcmp(s, "filter=>\n"
+	ck_assert_msg(!strcmp(s, "filter=>\n"
 "userdesc_filter_exact->\n"
 "userdesc_filter_substring->\n"
 "user_filter_exact->\n"
@@ -3460,117 +3460,117 @@ START_TEST(set_filter_struct_12)
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Split\nUser root\nDesc desc\nHost example.com\nDstPort 443\nLog connect master cert content pcap mirror\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Pass\nUser root\nDesc desc\nHost example.com\nLog !connect !cert !pcap\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	// Block action at precedence 2 is not applied to a site of the same rule at precedence 5 now
 	s = "Action Block\nUser root\nDesc desc\nHost example.com\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	// Add another target
 	s = "Action Match\nUser root\nDesc desc\nHost example2.com\nDstPort 443\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	// Add another source
 	s = "Action Match\nUser daemon\nDesc desc\nHost example.com\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nUser daemon\nDesc desc\nHost *\nDstPort 443\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	// Search substring (subdomain?)
 	s = "Action Match\nUser daemon\nDesc desc\nHost .example.com*\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	// Add another target
 	s = "Action Match\nUser daemon\nDesc desc\nHost example3.com\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	// Add substring source
 	s = "Action Match\nUser admin1*\nDesc desc1*\nHost example4.com\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nUser admin2*\nDesc desc2*\nHost example5.com\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	// Add another desc
 	s = "Action Match\nUser daemon\nDesc desc2\nHost example6.com\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	// Add all users
 	s = "Action Match\nUser *\nDesc desc\nHost example7.com\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	// Add all users all sni sites
 	s = "Action Match\nUser *\nDesc desc\nSNI *\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	// Add another desc
 	s = "Action Match\nDesc desc3\nURI example8.com\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nUser *\nDesc desc4*\nHost example9.com\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = "Action Match\nUser admin*\nDesc desc5*\nHost example10.com*\nDstPort 443*\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = filter_rule_str(opts->filter_rules);
 
-	fail_unless(!strcmp(strstr(s, "filter rule 9: "),
+	ck_assert_msg(!strcmp(strstr(s, "filter rule 9: "),
 		"filter rule 9: host=example4.com, dstport=, srcip=, user=admin1, desc=desc1, exact=site||||, all=|||, action=||||match, log=|||||, precedence=4\n"
 		"  conn opts: negotiate"SSL_PROTO_CONFIG"|no ciphers|no ciphersuites|"ECDHCURVE"no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
 		"filter rule 10: host=example5.com, dstport=, srcip=, user=admin2, desc=desc2, exact=site||||, all=|||, action=||||match, log=|||||, precedence=4\n"
@@ -3593,7 +3593,7 @@ START_TEST(set_filter_struct_12)
 	char *p = strstr(s, "filter rule 9: ");
 	*p = '\0';
 
-	fail_unless(!strcmp(s,
+	ck_assert_msg(!strcmp(s,
 		"filter rule 0: host=example.com, dstport=, srcip=, user=root, desc=desc, exact=site|||user|desc, all=|||, action=divert||||, log=|||||, precedence=4\n"
 		"  conn opts: negotiate"SSL_PROTO_CONFIG"|no ciphers|no ciphersuites|"ECDHCURVE"no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
 		"filter rule 1: host=example.com, dstport=443, srcip=, user=root, desc=desc, exact=site|port||user|desc, all=|||, action=|split|||, log=connect|master|cert|content|pcap|mirror, precedence=6\n"
@@ -3620,7 +3620,7 @@ START_TEST(set_filter_struct_12)
 
 	s = filter_str(opts->filter);
 
-	fail_unless(!strcmp(strstr(s, "userdesc_filter_substring->\n"),
+	ck_assert_msg(!strcmp(strstr(s, "userdesc_filter_substring->\n"),
 "userdesc_filter_substring->\n"
 " user 0 admin (substring)=\n"
 "  desc substring:\n"
@@ -3670,7 +3670,7 @@ START_TEST(set_filter_struct_12)
 	p = strstr(s, "userdesc_filter_substring->\n");
 	*p = '\0';
 
-	fail_unless(!strcmp(s, "filter=>\n"
+	ck_assert_msg(!strcmp(s, "filter=>\n"
 "userdesc_filter_exact->\n"
 " user 0 daemon (exact)=\n"
 "  desc exact:\n"
@@ -3731,33 +3731,33 @@ START_TEST(set_filter_struct_13)
 
 	s = strdup("$ips 192.168.0.1 192.168.0.2*");
 	rv = filter_macro_set(opts, s, 0);
-	fail_unless(rv == 0, "failed to set macro");
+	ck_assert_msg(rv == 0, "failed to set macro");
 	free(s);
 
 	s = strdup("$dstips 192.168.0.3 192.168.0.4*");
 	rv = filter_macro_set(opts, s, 0);
-	fail_unless(rv == 0, "failed to set macro");
+	ck_assert_msg(rv == 0, "failed to set macro");
 	free(s);
 
 	s = strdup("$ports 80* 443");
 	rv = filter_macro_set(opts, s, 0);
-	fail_unless(rv == 0, "failed to set macro");
+	ck_assert_msg(rv == 0, "failed to set macro");
 	free(s);
 
 	s = strdup("$logs !master !pcap");
 	rv = filter_macro_set(opts, s, 0);
-	fail_unless(rv == 0, "failed to set macro");
+	ck_assert_msg(rv == 0, "failed to set macro");
 	free(s);
 
 	s = "Action Match\nSrcIp $ips\nDstIp $dstips\nDstPort $ports\nLog $logs\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = filter_rule_str(opts->filter_rules);
 #ifndef WITHOUT_USERAUTH
-	fail_unless(!strcmp(s,
+	ck_assert_msg(!strcmp(s,
 		"filter rule 0: dstip=192.168.0.3, dstport=80, srcip=192.168.0.1, user=, desc=, exact=site||ip||, all=|||, action=||||match, log=|!master||||, precedence=4\n"
 		"filter rule 1: dstip=192.168.0.3, dstport=80, srcip=192.168.0.1, user=, desc=, exact=site||ip||, all=|||, action=||||match, log=||||!pcap|, precedence=4\n"
 		"filter rule 2: dstip=192.168.0.3, dstport=443, srcip=192.168.0.1, user=, desc=, exact=site|port|ip||, all=|||, action=||||match, log=|!master||||, precedence=4\n"
@@ -3776,7 +3776,7 @@ START_TEST(set_filter_struct_13)
 		"filter rule 15: dstip=192.168.0.4, dstport=443, srcip=192.168.0.2, user=, desc=, exact=|port|||, all=|||, action=||||match, log=||||!pcap|, precedence=4\n"),
 		"failed to parse rule: %s", s);
 #else /* WITHOUT_USERAUTH */
-	fail_unless(!strcmp(s,
+	ck_assert_msg(!strcmp(s,
 		"filter rule 0: dstip=192.168.0.3, dstport=80, srcip=192.168.0.1, exact=site||ip, all=||, action=||||match, log=|!master||||, precedence=4\n"
 		"filter rule 1: dstip=192.168.0.3, dstport=80, srcip=192.168.0.1, exact=site||ip, all=||, action=||||match, log=||||!pcap|, precedence=4\n"
 		"filter rule 2: dstip=192.168.0.3, dstport=443, srcip=192.168.0.1, exact=site|port|ip, all=||, action=||||match, log=|!master||||, precedence=4\n"
@@ -3801,7 +3801,7 @@ START_TEST(set_filter_struct_13)
 
 	s = filter_str(opts->filter);
 #ifndef WITHOUT_USERAUTH
-	fail_unless(!strcmp(s, "filter=>\n"
+	ck_assert_msg(!strcmp(s, "filter=>\n"
 "userdesc_filter_exact->\n"
 "userdesc_filter_substring->\n"
 "user_filter_exact->\n"
@@ -3839,7 +3839,7 @@ START_TEST(set_filter_struct_13)
 "          0: 80 (substring, action=||||match, log=|!master|||!pcap|, precedence=4)\n"
 "filter_all->\n"), "failed to translate rule: %s", s);
 #else /* WITHOUT_USERAUTH */
-	fail_unless(!strcmp(s, "filter=>\n"
+	ck_assert_msg(!strcmp(s, "filter=>\n"
 "ip_filter_exact->\n"
 "  ip 0 192.168.0.1 (exact)=\n"
 "    ip exact:\n"
@@ -3894,17 +3894,17 @@ START_TEST(set_filter_struct_14)
 
 	s = strdup("$users root admin*");
 	rv = filter_macro_set(opts, s, 0);
-	fail_unless(rv == 0, "failed to set macro");
+	ck_assert_msg(rv == 0, "failed to set macro");
 	free(s);
 
 	s = strdup("$descs desc1 desc2*");
 	rv = filter_macro_set(opts, s, 0);
-	fail_unless(rv == 0, "failed to set macro");
+	ck_assert_msg(rv == 0, "failed to set macro");
 	free(s);
 
 	s = strdup("$sites site1 site2*");
 	rv = filter_macro_set(opts, s, 0);
-	fail_unless(rv == 0, "failed to set macro");
+	ck_assert_msg(rv == 0, "failed to set macro");
 	free(s);
 
 	// check errors out if we add all log actions to the macro:
@@ -3914,18 +3914,18 @@ START_TEST(set_filter_struct_14)
 	// so use 2 log actions only
 	s = strdup("$logs connect content");
 	rv = filter_macro_set(opts, s, 0);
-	fail_unless(rv == 0, "failed to set macro");
+	ck_assert_msg(rv == 0, "failed to set macro");
 	free(s);
 
 	s = "Action Match\nUser $users\nDesc $descs\nSNI $sites\nLog $logs\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = filter_rule_str(opts->filter_rules);
 
-	fail_unless(!strcmp(strstr(s, "filter rule 8: "),
+	ck_assert_msg(!strcmp(strstr(s, "filter rule 8: "),
 		"filter rule 8: sni=site1, dstport=, srcip=, user=admin, desc=desc1, exact=site||||desc, all=|||, action=||||match, log=connect|||||, precedence=5\n"
 		"  conn opts: negotiate"SSL_PROTO_CONFIG"|no ciphers|no ciphersuites|"ECDHCURVE"no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
 		"filter rule 9: sni=site1, dstport=, srcip=, user=admin, desc=desc1, exact=site||||desc, all=|||, action=||||match, log=|||content||, precedence=5\n"
@@ -3948,7 +3948,7 @@ START_TEST(set_filter_struct_14)
 	char *p = strstr(s, "filter rule 8: ");
 	*p = '\0';
 
-	fail_unless(!strcmp(s,
+	ck_assert_msg(!strcmp(s,
 		"filter rule 0: sni=site1, dstport=, srcip=, user=root, desc=desc1, exact=site|||user|desc, all=|||, action=||||match, log=connect|||||, precedence=5\n"
 		"  conn opts: negotiate"SSL_PROTO_CONFIG"|no ciphers|no ciphersuites|"ECDHCURVE"no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
 		"filter rule 1: sni=site1, dstport=, srcip=, user=root, desc=desc1, exact=site|||user|desc, all=|||, action=||||match, log=|||content||, precedence=5\n"
@@ -3972,7 +3972,7 @@ START_TEST(set_filter_struct_14)
 	opts->filter = filter_set(opts->filter_rules, "sslproxy", tmp_opts);
 
 	s = filter_str(opts->filter);
-	fail_unless(!strcmp(s, "filter=>\n"
+	ck_assert_msg(!strcmp(s, "filter=>\n"
 "userdesc_filter_exact->\n"
 " user 0 root (exact)=\n"
 "  desc exact:\n"
@@ -4040,23 +4040,23 @@ START_TEST(set_filter_struct_15)
 
 	s = strdup("$users root admin*");
 	rv = filter_macro_set(opts, s, 0);
-	fail_unless(rv == 0, "failed to set macro");
+	ck_assert_msg(rv == 0, "failed to set macro");
 	free(s);
 
 	s = strdup("$descs desc1 desc2*");
 	rv = filter_macro_set(opts, s, 0);
-	fail_unless(rv == 0, "failed to set macro");
+	ck_assert_msg(rv == 0, "failed to set macro");
 	free(s);
 
 	s = strdup("$sites site1* site2");
 	rv = filter_macro_set(opts, s, 0);
-	fail_unless(rv == 0, "failed to set macro");
+	ck_assert_msg(rv == 0, "failed to set macro");
 	free(s);
 
 	// Syntactically right, but semantically redundant/useless
 	s = strdup("$ports 80* *");
 	rv = filter_macro_set(opts, s, 0);
-	fail_unless(rv == 0, "failed to set macro");
+	ck_assert_msg(rv == 0, "failed to set macro");
 	free(s);
 
 	// check errors out if we add all log actions to the macro:
@@ -4066,18 +4066,18 @@ START_TEST(set_filter_struct_15)
 	// so use 1 log action only
 	s = strdup("$logs pcap");
 	rv = filter_macro_set(opts, s, 0);
-	fail_unless(rv == 0, "failed to set macro");
+	ck_assert_msg(rv == 0, "failed to set macro");
 	free(s);
 
 	s = "Action Match\nUser $users\nDesc $descs\nCN $sites\nDstPort $ports\nLog $logs\nUserAuth yes\n}";
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = filter_rule_str(opts->filter_rules);
 
-	fail_unless(!strcmp(strstr(s, "filter rule 8: "),
+	ck_assert_msg(!strcmp(strstr(s, "filter rule 8: "),
 		"filter rule 8: cn=site1, dstport=80, srcip=, user=admin, desc=desc1, exact=||||desc, all=|||, action=||||match, log=||||pcap|, precedence=6\n"
 		"  conn opts: negotiate"SSL_PROTO_CONFIG"|no ciphers|no ciphersuites|"ECDHCURVE"no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
 		"filter rule 9: cn=site1, dstport=, srcip=, user=admin, desc=desc1, exact=||||desc, all=|||ports, action=||||match, log=||||pcap|, precedence=6\n"
@@ -4100,7 +4100,7 @@ START_TEST(set_filter_struct_15)
 	char *p = strstr(s, "filter rule 8: ");
 	*p = '\0';
 
-	fail_unless(!strcmp(s,
+	ck_assert_msg(!strcmp(s,
 		"filter rule 0: cn=site1, dstport=80, srcip=, user=root, desc=desc1, exact=|||user|desc, all=|||, action=||||match, log=||||pcap|, precedence=6\n"
 		"  conn opts: negotiate"SSL_PROTO_CONFIG"|no ciphers|no ciphersuites|"ECDHCURVE"no leafcrlurl|remove_http_referer|verify_peer|user_auth|no user_auth_url|300|8192\n"
 		"filter rule 1: cn=site1, dstport=, srcip=, user=root, desc=desc1, exact=|||user|desc, all=|||ports, action=||||match, log=||||pcap|, precedence=6\n"
@@ -4125,7 +4125,7 @@ START_TEST(set_filter_struct_15)
 
 	s = filter_str(opts->filter);
 
-	fail_unless(!strcmp(strstr(s, "userdesc_filter_substring->\n"),
+	ck_assert_msg(!strcmp(strstr(s, "userdesc_filter_substring->\n"),
 "userdesc_filter_substring->\n"
 " user 0 admin (substring)=\n"
 "  desc exact:\n"
@@ -4177,7 +4177,7 @@ START_TEST(set_filter_struct_15)
 	p = strstr(s, "userdesc_filter_substring->\n");
 	*p = '\0';
 
-	fail_unless(!strcmp(s, "filter=>\n"
+	ck_assert_msg(!strcmp(s, "filter=>\n"
 "userdesc_filter_exact->\n"
 " user 0 root (exact)=\n"
 "  desc exact:\n"
@@ -4284,16 +4284,16 @@ START_TEST(set_filter_struct_16)
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = filter_rule_str(opts->filter_rules);
 #ifndef WITHOUT_USERAUTH
-	fail_unless(!strcmp(s,
+	ck_assert_msg(!strcmp(s,
 		"filter rule 0: dstip=192.168.0.2, dstport=, srcip=192.168.0.1, user=, desc=, exact=site||ip||, all=|||, action=||||match, log=connect|||||, precedence=3\n"
 		"  conn opts: "SSL_PROTO_CONFIG_FILTERRULE"|passthrough|LOW|TLS_AES_128_CCM_SHA256|"ECDH_PRIME2"http://example1.com/example1.crl|allow_wrong_host|https://192.168.0.12/userdblogin1.php|1200|reconnect_ssl|2048\n"),
 		"failed to parse rule: %s", s);
 #else /* WITHOUT_USERAUTH */
-	fail_unless(!strcmp(s,
+	ck_assert_msg(!strcmp(s,
 		"filter rule 0: dstip=192.168.0.2, dstport=, srcip=192.168.0.1, exact=site||ip, all=||, action=||||match, log=connect|||||, precedence=3\n"
 		"  conn opts: "SSL_PROTO_CONFIG_FILTERRULE"|passthrough|LOW|TLS_AES_128_CCM_SHA256|"ECDH_PRIME2"http://example1.com/example1.crl|allow_wrong_host|reconnect_ssl|2048\n"),
 		"failed to parse rule: %s", s);
@@ -4304,7 +4304,7 @@ START_TEST(set_filter_struct_16)
 
 	s = filter_str(opts->filter);
 #ifndef WITHOUT_USERAUTH
-	fail_unless(!strcmp(s, "filter=>\n"
+	ck_assert_msg(!strcmp(s, "filter=>\n"
 "userdesc_filter_exact->\n"
 "userdesc_filter_substring->\n"
 "user_filter_exact->\n"
@@ -4320,7 +4320,7 @@ START_TEST(set_filter_struct_16)
 "ip_filter_substring->\n"
 "filter_all->\n"), "failed to translate rule: %s", s);
 #else /* WITHOUT_USERAUTH */
-	fail_unless(!strcmp(s, "filter=>\n"
+	ck_assert_msg(!strcmp(s, "filter=>\n"
 "ip_filter_exact->\n"
 "  ip 0 192.168.0.1 (exact)=\n"
 "    ip exact:\n"
@@ -4350,7 +4350,7 @@ START_TEST(set_filter_struct_17)
 
 	s = strdup("$sites site1* site2");
 	rv = filter_macro_set(opts, s, 0);
-	fail_unless(rv == 0, "failed to set macro");
+	ck_assert_msg(rv == 0, "failed to set macro");
 	free(s);
 
 	FILE *f;
@@ -4405,10 +4405,10 @@ START_TEST(set_filter_struct_17)
 	f = fmemopen(s, strlen(s), "r");
 	rv = load_filterrule_struct(opts, conn_opts, "sslproxy", &line_num, f, tmp_opts);
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse rule");
+	ck_assert_msg(rv == 0, "failed to parse rule");
 
 	s = filter_rule_str(opts->filter_rules);
-	fail_unless(!strcmp(s,
+	ck_assert_msg(!strcmp(s,
 		"filter rule 0: dstip=192.168.0.2, dstport=, srcip=192.168.0.1, user=, desc=, exact=site||ip||, all=|||, action=||||match, log=connect|||||, precedence=3\n"
 		"  conn opts: "SSL_PROTO_CONFIG_FILTERRULE"|passthrough|LOW|TLS_AES_128_CCM_SHA256|"ECDH_PRIME2"http://example1.com/example1.crl|allow_wrong_host|https://192.168.0.12/userdblogin1.php|1200|reconnect_ssl|2048\n"
 		"filter rule 0: sni=example.com, dstport=, srcip=192.168.0.1, user=, desc=, exact=site||ip||, all=|||, action=||||match, log=connect|||||, precedence=3\n"
@@ -4435,7 +4435,7 @@ START_TEST(set_filter_struct_17)
 	opts->filter = filter_set(opts->filter_rules, "sslproxy", tmp_opts);
 
 	s = filter_str(opts->filter);
-	fail_unless(!strcmp(s, "filter=>\n"
+	ck_assert_msg(!strcmp(s, "filter=>\n"
 "userdesc_filter_exact->\n"
 "userdesc_filter_substring->\n"
 "user_filter_exact->\n"

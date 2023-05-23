@@ -146,19 +146,19 @@ START_TEST(proxyspec_parse_01)
 
 	UNUSED int rv = proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_opts);
 	spec = global->spec;
-	fail_unless(!!spec, "failed to parse spec");
-	fail_unless(spec->ssl, "not SSL");
-	fail_unless(spec->http, "not HTTP");
-	fail_unless(!spec->upgrade, "Upgrade");
-	fail_unless(spec->listen_addrlen == sizeof(struct sockaddr_in),
+	ck_assert_msg(!!spec, "failed to parse spec");
+	ck_assert_msg(spec->ssl, "not SSL");
+	ck_assert_msg(spec->http, "not HTTP");
+	ck_assert_msg(!spec->upgrade, "Upgrade");
+	ck_assert_msg(spec->listen_addrlen == sizeof(struct sockaddr_in),
 	            "not IPv4 listen addr");
-	fail_unless(spec->connect_addrlen == sizeof(struct sockaddr_in),
+	ck_assert_msg(spec->connect_addrlen == sizeof(struct sockaddr_in),
 	            "not IPv4 connect addr");
-	fail_unless(!spec->sni_port, "SNI port is set");
-	fail_unless(!spec->natengine, "natengine is set");
-	fail_unless(!spec->natlookup, "natlookup() is set");
-	fail_unless(!spec->natsocket, "natsocket() is set");
-	fail_unless(!spec->next, "next is set");
+	ck_assert_msg(!spec->sni_port, "SNI port is set");
+	ck_assert_msg(!spec->natengine, "natengine is set");
+	ck_assert_msg(!spec->natlookup, "natlookup() is set");
+	ck_assert_msg(!spec->natsocket, "natsocket() is set");
+	ck_assert_msg(!spec->next, "next is set");
 	global_free(global);
 	tmp_opts_free(tmp_opts);
 }
@@ -177,19 +177,19 @@ START_TEST(proxyspec_parse_02)
 
 	UNUSED int rv = proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_opts);
 	spec = global->spec;
-	fail_unless(!!spec, "failed to parse spec");
-	fail_unless(spec->ssl, "not SSL");
-	fail_unless(spec->http, "not HTTP");
-	fail_unless(!spec->upgrade, "Upgrade");
-	fail_unless(spec->listen_addrlen == sizeof(struct sockaddr_in6),
+	ck_assert_msg(!!spec, "failed to parse spec");
+	ck_assert_msg(spec->ssl, "not SSL");
+	ck_assert_msg(spec->http, "not HTTP");
+	ck_assert_msg(!spec->upgrade, "Upgrade");
+	ck_assert_msg(spec->listen_addrlen == sizeof(struct sockaddr_in6),
 	            "not IPv6 listen addr");
-	fail_unless(spec->connect_addrlen == sizeof(struct sockaddr_in6),
+	ck_assert_msg(spec->connect_addrlen == sizeof(struct sockaddr_in6),
 	            "not IPv6 connect addr");
-	fail_unless(!spec->sni_port, "SNI port is set");
-	fail_unless(!spec->natengine, "natengine is set");
-	fail_unless(!spec->natlookup, "natlookup() is set");
-	fail_unless(!spec->natsocket, "natsocket() is set");
-	fail_unless(!spec->next, "next is set");
+	ck_assert_msg(!spec->sni_port, "SNI port is set");
+	ck_assert_msg(!spec->natengine, "natengine is set");
+	ck_assert_msg(!spec->natlookup, "natlookup() is set");
+	ck_assert_msg(!spec->natsocket, "natsocket() is set");
+	ck_assert_msg(!spec->next, "next is set");
 	global_free(global);
 	tmp_opts_free(tmp_opts);
 }
@@ -209,31 +209,31 @@ START_TEST(proxyspec_parse_03)
 	close(2);
 
 	int rv = proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_opts);
-	fail_unless(rv == -1, "failed to reject spec");
+	ck_assert_msg(rv == -1, "failed to reject spec");
 
 	argc = 5;
 	rv = proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_opts);
-	fail_unless(rv == -1, "failed to reject spec");
+	ck_assert_msg(rv == -1, "failed to reject spec");
 
 	argc = 5;
 	argv = argv07;
 	rv = proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_opts);
-	fail_unless(rv == -1, "failed to reject spec");
+	ck_assert_msg(rv == -1, "failed to reject spec");
 
 	argc = 5;
 	argv = argv06;
 	rv = proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_opts);
-	fail_unless(rv == -1, "failed to reject spec");
+	ck_assert_msg(rv == -1, "failed to reject spec");
 
 	argc = 5;
 	argv = argv08;
 	rv = proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_opts);
-	fail_unless(rv == -1, "failed to reject spec");
+	ck_assert_msg(rv == -1, "failed to reject spec");
 
 	argc = 6;
 	argv = argv13;
 	rv = proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_opts);
-	fail_unless(rv == -1, "failed to reject spec");
+	ck_assert_msg(rv == -1, "failed to reject spec");
 
 	global_free(global);
 	tmp_opts_free(tmp_opts);
@@ -252,19 +252,19 @@ START_TEST(proxyspec_parse_04)
 
 	UNUSED int rv = proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_opts);
 	spec = global->spec;
-	fail_unless(!!spec, "failed to parse spec");
-	fail_unless(!spec->ssl, "SSL");
-	fail_unless(spec->http, "not HTTP");
-	fail_unless(!spec->upgrade, "Upgrade");
-	fail_unless(spec->listen_addrlen == sizeof(struct sockaddr_in),
+	ck_assert_msg(!!spec, "failed to parse spec");
+	ck_assert_msg(!spec->ssl, "SSL");
+	ck_assert_msg(spec->http, "not HTTP");
+	ck_assert_msg(!spec->upgrade, "Upgrade");
+	ck_assert_msg(spec->listen_addrlen == sizeof(struct sockaddr_in),
 	            "not IPv4 listen addr");
-	fail_unless(spec->connect_addrlen == sizeof(struct sockaddr_in),
+	ck_assert_msg(spec->connect_addrlen == sizeof(struct sockaddr_in),
 	            "not IPv4 connect addr");
-	fail_unless(!spec->sni_port, "SNI port is set");
-	fail_unless(!spec->natengine, "natengine is set");
-	fail_unless(!spec->natlookup, "natlookup() is set");
-	fail_unless(!spec->natsocket, "natsocket() is set");
-	fail_unless(!spec->next, "next is set");
+	ck_assert_msg(!spec->sni_port, "SNI port is set");
+	ck_assert_msg(!spec->natengine, "natengine is set");
+	ck_assert_msg(!spec->natlookup, "natlookup() is set");
+	ck_assert_msg(!spec->natsocket, "natsocket() is set");
+	ck_assert_msg(!spec->next, "next is set");
 	global_free(global);
 	tmp_opts_free(tmp_opts);
 }
@@ -282,19 +282,19 @@ START_TEST(proxyspec_parse_05)
 
 	UNUSED int rv = proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_opts);
 	spec = global->spec;
-	fail_unless(!!spec, "failed to parse spec");
-	fail_unless(spec->ssl, "not SSL");
-	fail_unless(!spec->http, "HTTP");
-	fail_unless(!spec->upgrade, "Upgrade");
-	fail_unless(spec->listen_addrlen == sizeof(struct sockaddr_in),
+	ck_assert_msg(!!spec, "failed to parse spec");
+	ck_assert_msg(spec->ssl, "not SSL");
+	ck_assert_msg(!spec->http, "HTTP");
+	ck_assert_msg(!spec->upgrade, "Upgrade");
+	ck_assert_msg(spec->listen_addrlen == sizeof(struct sockaddr_in),
 	            "not IPv4 listen addr");
-	fail_unless(spec->connect_addrlen == sizeof(struct sockaddr_in),
+	ck_assert_msg(spec->connect_addrlen == sizeof(struct sockaddr_in),
 	            "not IPv4 connect addr");
-	fail_unless(!spec->sni_port, "SNI port is set");
-	fail_unless(!spec->natengine, "natengine is set");
-	fail_unless(!spec->natlookup, "natlookup() is set");
-	fail_unless(!spec->natsocket, "natsocket() is set");
-	fail_unless(!spec->next, "next is set");
+	ck_assert_msg(!spec->sni_port, "SNI port is set");
+	ck_assert_msg(!spec->natengine, "natengine is set");
+	ck_assert_msg(!spec->natlookup, "natlookup() is set");
+	ck_assert_msg(!spec->natsocket, "natsocket() is set");
+	ck_assert_msg(!spec->next, "next is set");
 	global_free(global);
 	tmp_opts_free(tmp_opts);
 }
@@ -312,19 +312,19 @@ START_TEST(proxyspec_parse_06)
 
 	UNUSED int rv = proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_opts);
 	spec = global->spec;
-	fail_unless(!!spec, "failed to parse spec");
-	fail_unless(!spec->ssl, "SSL");
-	fail_unless(!spec->http, "HTTP");
-	fail_unless(!spec->upgrade, "Upgrade");
-	fail_unless(spec->listen_addrlen == sizeof(struct sockaddr_in),
+	ck_assert_msg(!!spec, "failed to parse spec");
+	ck_assert_msg(!spec->ssl, "SSL");
+	ck_assert_msg(!spec->http, "HTTP");
+	ck_assert_msg(!spec->upgrade, "Upgrade");
+	ck_assert_msg(spec->listen_addrlen == sizeof(struct sockaddr_in),
 	            "not IPv4 listen addr");
-	fail_unless(spec->connect_addrlen == sizeof(struct sockaddr_in),
+	ck_assert_msg(spec->connect_addrlen == sizeof(struct sockaddr_in),
 	            "not IPv4 connect addr");
-	fail_unless(!spec->sni_port, "SNI port is set");
-	fail_unless(!spec->natengine, "natengine is set");
-	fail_unless(!spec->natlookup, "natlookup() is set");
-	fail_unless(!spec->natsocket, "natsocket() is set");
-	fail_unless(!spec->next, "next is set");
+	ck_assert_msg(!spec->sni_port, "SNI port is set");
+	ck_assert_msg(!spec->natengine, "natengine is set");
+	ck_assert_msg(!spec->natlookup, "natlookup() is set");
+	ck_assert_msg(!spec->natsocket, "natsocket() is set");
+	ck_assert_msg(!spec->next, "next is set");
 	global_free(global);
 	tmp_opts_free(tmp_opts);
 }
@@ -342,18 +342,18 @@ START_TEST(proxyspec_parse_07)
 
 	UNUSED int rv = proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_opts);
 	spec = global->spec;
-	fail_unless(!!spec, "failed to parse spec");
-	fail_unless(spec->ssl, "not SSL");
-	fail_unless(spec->http, "not HTTP");
-	fail_unless(!spec->upgrade, "Upgrade");
-	fail_unless(spec->listen_addrlen == sizeof(struct sockaddr_in),
+	ck_assert_msg(!!spec, "failed to parse spec");
+	ck_assert_msg(spec->ssl, "not SSL");
+	ck_assert_msg(spec->http, "not HTTP");
+	ck_assert_msg(!spec->upgrade, "Upgrade");
+	ck_assert_msg(spec->listen_addrlen == sizeof(struct sockaddr_in),
 	            "not IPv4 listen addr");
-	fail_unless(!spec->connect_addrlen, "connect addr set");
-	fail_unless(spec->sni_port == 443, "SNI port is not set");
-	fail_unless(!spec->natengine, "natengine is set");
-	fail_unless(!spec->natlookup, "natlookup() is set");
-	fail_unless(!spec->natsocket, "natsocket() is set");
-	fail_unless(!spec->next, "next is set");
+	ck_assert_msg(!spec->connect_addrlen, "connect addr set");
+	ck_assert_msg(spec->sni_port == 443, "SNI port is not set");
+	ck_assert_msg(!spec->natengine, "natengine is set");
+	ck_assert_msg(!spec->natlookup, "natlookup() is set");
+	ck_assert_msg(!spec->natsocket, "natsocket() is set");
+	ck_assert_msg(!spec->next, "next is set");
 	global_free(global);
 	tmp_opts_free(tmp_opts);
 }
@@ -371,19 +371,19 @@ START_TEST(proxyspec_parse_08)
 
 	UNUSED int rv = proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_opts);
 	spec = global->spec;
-	fail_unless(!!spec, "failed to parse spec");
-	fail_unless(spec->ssl, "not SSL");
-	fail_unless(spec->http, "not HTTP");
-	fail_unless(!spec->upgrade, "Upgrade");
-	fail_unless(spec->listen_addrlen == sizeof(struct sockaddr_in),
+	ck_assert_msg(!!spec, "failed to parse spec");
+	ck_assert_msg(spec->ssl, "not SSL");
+	ck_assert_msg(spec->http, "not HTTP");
+	ck_assert_msg(!spec->upgrade, "Upgrade");
+	ck_assert_msg(spec->listen_addrlen == sizeof(struct sockaddr_in),
 	            "not IPv4 listen addr");
-	fail_unless(!spec->connect_addrlen, "connect addr set");
-	fail_unless(!spec->sni_port, "SNI port is set");
-	fail_unless(!!spec->natengine, "natengine not set");
-	fail_unless(!strcmp(spec->natengine, NATENGINE), "natengine mismatch");
-	fail_unless(!spec->natlookup, "natlookup() is set");
-	fail_unless(!spec->natsocket, "natsocket() is set");
-	fail_unless(!spec->next, "next is set");
+	ck_assert_msg(!spec->connect_addrlen, "connect addr set");
+	ck_assert_msg(!spec->sni_port, "SNI port is set");
+	ck_assert_msg(!!spec->natengine, "natengine not set");
+	ck_assert_msg(!strcmp(spec->natengine, NATENGINE), "natengine mismatch");
+	ck_assert_msg(!spec->natlookup, "natlookup() is set");
+	ck_assert_msg(!spec->natsocket, "natsocket() is set");
+	ck_assert_msg(!spec->next, "next is set");
 	global_free(global);
 	tmp_opts_free(tmp_opts);
 }
@@ -402,30 +402,30 @@ START_TEST(proxyspec_parse_09)
 
 	UNUSED int rv = proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_opts);
 	spec = global->spec;
-	fail_unless(!!spec, "failed to parse spec");
-	fail_unless(spec->ssl, "not SSL");
-	fail_unless(spec->http, "not HTTP");
-	fail_unless(!spec->upgrade, "Upgrade");
-	fail_unless(spec->listen_addrlen == sizeof(struct sockaddr_in6),
+	ck_assert_msg(!!spec, "failed to parse spec");
+	ck_assert_msg(spec->ssl, "not SSL");
+	ck_assert_msg(spec->http, "not HTTP");
+	ck_assert_msg(!spec->upgrade, "Upgrade");
+	ck_assert_msg(spec->listen_addrlen == sizeof(struct sockaddr_in6),
 	            "not IPv6 listen addr");
-	fail_unless(spec->connect_addrlen == sizeof(struct sockaddr_in6),
+	ck_assert_msg(spec->connect_addrlen == sizeof(struct sockaddr_in6),
 	            "not IPv6 connect addr");
-	fail_unless(!spec->sni_port, "SNI port is set");
-	fail_unless(!spec->natengine, "natengine is set");
-	fail_unless(!spec->natlookup, "natlookup() is set");
-	fail_unless(!spec->natsocket, "natsocket() is set");
-	fail_unless(!!spec->next, "next is not set");
-	fail_unless(spec->next->ssl, "not SSL");
-	fail_unless(spec->next->http, "not HTTP");
-	fail_unless(!spec->next->upgrade, "Upgrade");
-	fail_unless(spec->next->listen_addrlen == sizeof(struct sockaddr_in),
+	ck_assert_msg(!spec->sni_port, "SNI port is set");
+	ck_assert_msg(!spec->natengine, "natengine is set");
+	ck_assert_msg(!spec->natlookup, "natlookup() is set");
+	ck_assert_msg(!spec->natsocket, "natsocket() is set");
+	ck_assert_msg(!!spec->next, "next is not set");
+	ck_assert_msg(spec->next->ssl, "not SSL");
+	ck_assert_msg(spec->next->http, "not HTTP");
+	ck_assert_msg(!spec->next->upgrade, "Upgrade");
+	ck_assert_msg(spec->next->listen_addrlen == sizeof(struct sockaddr_in),
 	            "not IPv4 listen addr");
-	fail_unless(spec->next->connect_addrlen == sizeof(struct sockaddr_in),
+	ck_assert_msg(spec->next->connect_addrlen == sizeof(struct sockaddr_in),
 	            "not IPv4 connect addr");
-	fail_unless(!spec->next->sni_port, "SNI port is set");
-	fail_unless(!spec->next->natengine, "natengine is set");
-	fail_unless(!spec->next->natlookup, "natlookup() is set");
-	fail_unless(!spec->next->natsocket, "natsocket() is set");
+	ck_assert_msg(!spec->next->sni_port, "SNI port is set");
+	ck_assert_msg(!spec->next->natengine, "natengine is set");
+	ck_assert_msg(!spec->next->natlookup, "natlookup() is set");
+	ck_assert_msg(!spec->next->natsocket, "natsocket() is set");
 	global_free(global);
 	tmp_opts_free(tmp_opts);
 }
@@ -443,31 +443,31 @@ START_TEST(proxyspec_parse_10)
 
 	UNUSED int rv = proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_opts);
 	spec = global->spec;
-	fail_unless(!!spec, "failed to parse spec");
-	fail_unless(spec->ssl, "not SSL");
-	fail_unless(spec->http, "not HTTP");
-	fail_unless(!spec->upgrade, "Upgrade");
-	fail_unless(spec->listen_addrlen == sizeof(struct sockaddr_in6),
+	ck_assert_msg(!!spec, "failed to parse spec");
+	ck_assert_msg(spec->ssl, "not SSL");
+	ck_assert_msg(spec->http, "not HTTP");
+	ck_assert_msg(!spec->upgrade, "Upgrade");
+	ck_assert_msg(spec->listen_addrlen == sizeof(struct sockaddr_in6),
 	            "not IPv6 listen addr");
-	fail_unless(!spec->connect_addrlen, "connect addr set");
-	fail_unless(!spec->sni_port, "SNI port is set");
-	fail_unless(!!spec->natengine, "natengine not set");
-	fail_unless(!strcmp(spec->natengine, NATENGINE), "natengine mismatch");
-	fail_unless(!spec->natlookup, "natlookup() is set");
-	fail_unless(!spec->natsocket, "natsocket() is set");
-	fail_unless(!!spec->next, "next is not set");
-	fail_unless(spec->next->ssl, "not SSL");
-	fail_unless(spec->next->http, "not HTTP");
-	fail_unless(!spec->next->upgrade, "Upgrade");
-	fail_unless(spec->next->listen_addrlen == sizeof(struct sockaddr_in),
+	ck_assert_msg(!spec->connect_addrlen, "connect addr set");
+	ck_assert_msg(!spec->sni_port, "SNI port is set");
+	ck_assert_msg(!!spec->natengine, "natengine not set");
+	ck_assert_msg(!strcmp(spec->natengine, NATENGINE), "natengine mismatch");
+	ck_assert_msg(!spec->natlookup, "natlookup() is set");
+	ck_assert_msg(!spec->natsocket, "natsocket() is set");
+	ck_assert_msg(!!spec->next, "next is not set");
+	ck_assert_msg(spec->next->ssl, "not SSL");
+	ck_assert_msg(spec->next->http, "not HTTP");
+	ck_assert_msg(!spec->next->upgrade, "Upgrade");
+	ck_assert_msg(spec->next->listen_addrlen == sizeof(struct sockaddr_in),
 	            "not IPv4 listen addr");
-	fail_unless(!spec->next->connect_addrlen, "connect addr set");
-	fail_unless(!spec->next->sni_port, "SNI port is set");
-	fail_unless(!!spec->next->natengine, "natengine not set");
-	fail_unless(!strcmp(spec->next->natengine, NATENGINE),
+	ck_assert_msg(!spec->next->connect_addrlen, "connect addr set");
+	ck_assert_msg(!spec->next->sni_port, "SNI port is set");
+	ck_assert_msg(!!spec->next->natengine, "natengine not set");
+	ck_assert_msg(!strcmp(spec->next->natengine, NATENGINE),
 	            "natengine mismatch");
-	fail_unless(!spec->next->natlookup, "natlookup() is set");
-	fail_unless(!spec->next->natsocket, "natsocket() is set");
+	ck_assert_msg(!spec->next->natlookup, "natlookup() is set");
+	ck_assert_msg(!spec->next->natsocket, "natsocket() is set");
 	global_free(global);
 	tmp_opts_free(tmp_opts);
 }
@@ -486,18 +486,18 @@ START_TEST(proxyspec_parse_11)
 
 	UNUSED int rv = proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_opts);
 	spec = global->spec;
-	fail_unless(!!spec, "failed to parse spec");
-	fail_unless(!spec->ssl, "SSL");
-	fail_unless(!spec->http, "HTTP");
-	fail_unless(spec->upgrade, "not Upgrade");
-	fail_unless(spec->listen_addrlen == sizeof(struct sockaddr_in),
+	ck_assert_msg(!!spec, "failed to parse spec");
+	ck_assert_msg(!spec->ssl, "SSL");
+	ck_assert_msg(!spec->http, "HTTP");
+	ck_assert_msg(spec->upgrade, "not Upgrade");
+	ck_assert_msg(spec->listen_addrlen == sizeof(struct sockaddr_in),
 	            "not IPv4 listen addr");
-	fail_unless(!spec->connect_addrlen, "connect addr set");
-	fail_unless(!spec->sni_port, "SNI port is set");
-	fail_unless(!!spec->natengine, "natengine is not set");
-	fail_unless(!spec->natlookup, "natlookup() is set");
-	fail_unless(!spec->natsocket, "natsocket() is set");
-	fail_unless(!spec->next, "next is set");
+	ck_assert_msg(!spec->connect_addrlen, "connect addr set");
+	ck_assert_msg(!spec->sni_port, "SNI port is set");
+	ck_assert_msg(!!spec->natengine, "natengine is not set");
+	ck_assert_msg(!spec->natlookup, "natlookup() is set");
+	ck_assert_msg(!spec->natsocket, "natsocket() is set");
+	ck_assert_msg(!spec->next, "next is set");
 	global_free(global);
 	tmp_opts_free(tmp_opts);
 }
@@ -515,30 +515,30 @@ START_TEST(proxyspec_parse_12)
 
 	UNUSED int rv = proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_opts);
 	spec = global->spec;
-	fail_unless(!!spec, "failed to parse spec");
-	fail_unless(spec->ssl, "not SSL");
-	fail_unless(spec->http, "not HTTP");
-	fail_unless(!spec->upgrade, "Upgrade");
-	fail_unless(spec->listen_addrlen == sizeof(struct sockaddr_in),
+	ck_assert_msg(!!spec, "failed to parse spec");
+	ck_assert_msg(spec->ssl, "not SSL");
+	ck_assert_msg(spec->http, "not HTTP");
+	ck_assert_msg(!spec->upgrade, "Upgrade");
+	ck_assert_msg(spec->listen_addrlen == sizeof(struct sockaddr_in),
 	            "not IPv4 listen addr");
-	fail_unless(spec->connect_addrlen == sizeof(struct sockaddr_in),
+	ck_assert_msg(spec->connect_addrlen == sizeof(struct sockaddr_in),
 	            "not IPv4 connect addr");
-	fail_unless(!spec->sni_port, "SNI port is set");
-	fail_unless(!spec->natengine, "natengine is set");
-	fail_unless(!spec->natlookup, "natlookup() is set");
-	fail_unless(!spec->natsocket, "natsocket() is set");
-	fail_unless(!!spec->next, "next is not set");
-	fail_unless(!spec->next->ssl, "SSL");
-	fail_unless(!spec->next->http, "HTTP");
-	fail_unless(spec->next->upgrade, "not Upgrade");
-	fail_unless(spec->next->listen_addrlen == sizeof(struct sockaddr_in),
+	ck_assert_msg(!spec->sni_port, "SNI port is set");
+	ck_assert_msg(!spec->natengine, "natengine is set");
+	ck_assert_msg(!spec->natlookup, "natlookup() is set");
+	ck_assert_msg(!spec->natsocket, "natsocket() is set");
+	ck_assert_msg(!!spec->next, "next is not set");
+	ck_assert_msg(!spec->next->ssl, "SSL");
+	ck_assert_msg(!spec->next->http, "HTTP");
+	ck_assert_msg(spec->next->upgrade, "not Upgrade");
+	ck_assert_msg(spec->next->listen_addrlen == sizeof(struct sockaddr_in),
 	            "not IPv4 listen addr");
-	fail_unless(spec->next->connect_addrlen == sizeof(struct sockaddr_in),
+	ck_assert_msg(spec->next->connect_addrlen == sizeof(struct sockaddr_in),
 	            "not IPv4 connect addr");
-	fail_unless(!spec->next->sni_port, "SNI port is set");
-	fail_unless(!spec->next->natengine, "natengine is set");
-	fail_unless(!spec->next->natlookup, "natlookup() is set");
-	fail_unless(!spec->next->natsocket, "natsocket() is set");
+	ck_assert_msg(!spec->next->sni_port, "SNI port is set");
+	ck_assert_msg(!spec->next->natengine, "natengine is set");
+	ck_assert_msg(!spec->next->natlookup, "natlookup() is set");
+	ck_assert_msg(!spec->next->natsocket, "natsocket() is set");
 	global_free(global);
 	tmp_opts_free(tmp_opts);
 }
@@ -556,29 +556,29 @@ START_TEST(proxyspec_parse_13)
 
 	UNUSED int rv = proxyspec_parse(&argc, &argv, NATENGINE, global, "sslproxy", tmp_opts);
 	spec = global->spec;
-	fail_unless(!!spec, "failed to parse spec");
-	fail_unless(!spec->ssl, "SSL");
-	fail_unless(!spec->http, "HTTP");
-	fail_unless(spec->upgrade, "not Upgrade");
-	fail_unless(spec->listen_addrlen == sizeof(struct sockaddr_in),
+	ck_assert_msg(!!spec, "failed to parse spec");
+	ck_assert_msg(!spec->ssl, "SSL");
+	ck_assert_msg(!spec->http, "HTTP");
+	ck_assert_msg(spec->upgrade, "not Upgrade");
+	ck_assert_msg(spec->listen_addrlen == sizeof(struct sockaddr_in),
 	            "not IPv4 listen addr");
-	fail_unless(spec->connect_addrlen == sizeof(struct sockaddr_in),
+	ck_assert_msg(spec->connect_addrlen == sizeof(struct sockaddr_in),
 	            "not IPv4 connect addr");
-	fail_unless(!spec->sni_port, "SNI port is set");
-	fail_unless(!spec->natengine, "natengine is set");
-	fail_unless(!spec->natlookup, "natlookup() is set");
-	fail_unless(!spec->natsocket, "natsocket() is set");
-	fail_unless(!!spec->next, "next is not set");
-	fail_unless(spec->next->ssl, "not SSL");
-	fail_unless(spec->next->http, "not HTTP");
-	fail_unless(!spec->next->upgrade, "Upgrade");
-	fail_unless(spec->next->listen_addrlen == sizeof(struct sockaddr_in),
+	ck_assert_msg(!spec->sni_port, "SNI port is set");
+	ck_assert_msg(!spec->natengine, "natengine is set");
+	ck_assert_msg(!spec->natlookup, "natlookup() is set");
+	ck_assert_msg(!spec->natsocket, "natsocket() is set");
+	ck_assert_msg(!!spec->next, "next is not set");
+	ck_assert_msg(spec->next->ssl, "not SSL");
+	ck_assert_msg(spec->next->http, "not HTTP");
+	ck_assert_msg(!spec->next->upgrade, "Upgrade");
+	ck_assert_msg(spec->next->listen_addrlen == sizeof(struct sockaddr_in),
 	            "not IPv4 listen addr");
-	fail_unless(!spec->next->connect_addrlen, "connect addr set");
-	fail_unless(!spec->next->sni_port, "SNI port is set");
-	fail_unless(!!spec->next->natengine, "natengine is not set");
-	fail_unless(!spec->next->natlookup, "natlookup() is set");
-	fail_unless(!spec->next->natsocket, "natsocket() is set");
+	ck_assert_msg(!spec->next->connect_addrlen, "connect addr set");
+	ck_assert_msg(!spec->next->sni_port, "SNI port is set");
+	ck_assert_msg(!!spec->next->natengine, "natengine is not set");
+	ck_assert_msg(!spec->next->natlookup, "natlookup() is set");
+	ck_assert_msg(!spec->next->natsocket, "natsocket() is set");
 	global_free(global);
 	tmp_opts_free(tmp_opts);
 }
@@ -590,67 +590,67 @@ START_TEST(proxyspec_set_proto_01)
 	proxyspec_t *spec  = proxyspec_new(global, "sslproxy", NULL);
 
 	UNUSED int rv = proxyspec_set_proto(spec, "tcp");
-	fail_unless(!spec->ssl, "ssl set in tcp spec");
-	fail_unless(!spec->http, "http set in tcp spec");
-	fail_unless(!spec->upgrade, "upgrade set in tcp spec");
-	fail_unless(!spec->pop3, "pop3 set in tcp spec");
-	fail_unless(!spec->smtp, "smtp set in tcp spec");
+	ck_assert_msg(!spec->ssl, "ssl set in tcp spec");
+	ck_assert_msg(!spec->http, "http set in tcp spec");
+	ck_assert_msg(!spec->upgrade, "upgrade set in tcp spec");
+	ck_assert_msg(!spec->pop3, "pop3 set in tcp spec");
+	ck_assert_msg(!spec->smtp, "smtp set in tcp spec");
 
 	rv = proxyspec_set_proto(spec, "ssl");
-	fail_unless(spec->ssl, "ssl not set in ssl spec");
-	fail_unless(!spec->http, "http set in ssl spec");
-	fail_unless(!spec->upgrade, "upgrade set in ssl spec");
-	fail_unless(!spec->pop3, "pop3 set in ssl spec");
-	fail_unless(!spec->smtp, "smtp set in ssl spec");
+	ck_assert_msg(spec->ssl, "ssl not set in ssl spec");
+	ck_assert_msg(!spec->http, "http set in ssl spec");
+	ck_assert_msg(!spec->upgrade, "upgrade set in ssl spec");
+	ck_assert_msg(!spec->pop3, "pop3 set in ssl spec");
+	ck_assert_msg(!spec->smtp, "smtp set in ssl spec");
 
 	rv = proxyspec_set_proto(spec, "http");
-	fail_unless(!spec->ssl, "ssl set in http spec");
-	fail_unless(spec->http, "http not set in http spec");
-	fail_unless(!spec->upgrade, "upgrade set in http spec");
-	fail_unless(!spec->pop3, "pop3 set in http spec");
-	fail_unless(!spec->smtp, "smtp set in http spec");
+	ck_assert_msg(!spec->ssl, "ssl set in http spec");
+	ck_assert_msg(spec->http, "http not set in http spec");
+	ck_assert_msg(!spec->upgrade, "upgrade set in http spec");
+	ck_assert_msg(!spec->pop3, "pop3 set in http spec");
+	ck_assert_msg(!spec->smtp, "smtp set in http spec");
 
 	rv = proxyspec_set_proto(spec, "https");
-	fail_unless(spec->ssl, "ssl not set in https spec");
-	fail_unless(spec->http, "http not set in https spec");
-	fail_unless(!spec->upgrade, "upgrade set in https spec");
-	fail_unless(!spec->pop3, "pop3 set in https spec");
-	fail_unless(!spec->smtp, "smtp set in https spec");
+	ck_assert_msg(spec->ssl, "ssl not set in https spec");
+	ck_assert_msg(spec->http, "http not set in https spec");
+	ck_assert_msg(!spec->upgrade, "upgrade set in https spec");
+	ck_assert_msg(!spec->pop3, "pop3 set in https spec");
+	ck_assert_msg(!spec->smtp, "smtp set in https spec");
 
 	rv = proxyspec_set_proto(spec, "autossl");
-	fail_unless(!spec->ssl, "ssl set in autossl spec");
-	fail_unless(!spec->http, "http set in autossl spec");
-	fail_unless(spec->upgrade, "upgrade not set in autossl spec");
-	fail_unless(!spec->pop3, "pop3 set in autossl spec");
-	fail_unless(!spec->smtp, "smtp set in autossl spec");
+	ck_assert_msg(!spec->ssl, "ssl set in autossl spec");
+	ck_assert_msg(!spec->http, "http set in autossl spec");
+	ck_assert_msg(spec->upgrade, "upgrade not set in autossl spec");
+	ck_assert_msg(!spec->pop3, "pop3 set in autossl spec");
+	ck_assert_msg(!spec->smtp, "smtp set in autossl spec");
 
 	rv = proxyspec_set_proto(spec, "pop3");
-	fail_unless(!spec->ssl, "ssl set in pop3 spec");
-	fail_unless(!spec->http, "http set in pop3 spec");
-	fail_unless(!spec->upgrade, "upgrade set in pop3 spec");
-	fail_unless(spec->pop3, "pop3 not set in pop3 spec");
-	fail_unless(!spec->smtp, "smtp set in pop3 spec");
+	ck_assert_msg(!spec->ssl, "ssl set in pop3 spec");
+	ck_assert_msg(!spec->http, "http set in pop3 spec");
+	ck_assert_msg(!spec->upgrade, "upgrade set in pop3 spec");
+	ck_assert_msg(spec->pop3, "pop3 not set in pop3 spec");
+	ck_assert_msg(!spec->smtp, "smtp set in pop3 spec");
 
 	rv = proxyspec_set_proto(spec, "pop3s");
-	fail_unless(spec->ssl, "ssl not set in pop3s spec");
-	fail_unless(!spec->http, "http set in pop3s spec");
-	fail_unless(!spec->upgrade, "upgrade set in pop3s spec");
-	fail_unless(spec->pop3, "pop3 not set in pop3s spec");
-	fail_unless(!spec->smtp, "smtp set in pop3s spec");
+	ck_assert_msg(spec->ssl, "ssl not set in pop3s spec");
+	ck_assert_msg(!spec->http, "http set in pop3s spec");
+	ck_assert_msg(!spec->upgrade, "upgrade set in pop3s spec");
+	ck_assert_msg(spec->pop3, "pop3 not set in pop3s spec");
+	ck_assert_msg(!spec->smtp, "smtp set in pop3s spec");
 
 	rv = proxyspec_set_proto(spec, "smtp");
-	fail_unless(!spec->ssl, "ssl set in smtp spec");
-	fail_unless(!spec->http, "http set in smtp spec");
-	fail_unless(!spec->upgrade, "upgrade set in smtp spec");
-	fail_unless(!spec->pop3, "pop3 set in smtp spec");
-	fail_unless(spec->smtp, "smtp not set in smtp spec");
+	ck_assert_msg(!spec->ssl, "ssl set in smtp spec");
+	ck_assert_msg(!spec->http, "http set in smtp spec");
+	ck_assert_msg(!spec->upgrade, "upgrade set in smtp spec");
+	ck_assert_msg(!spec->pop3, "pop3 set in smtp spec");
+	ck_assert_msg(spec->smtp, "smtp not set in smtp spec");
 
 	rv = proxyspec_set_proto(spec, "smtps");
-	fail_unless(spec->ssl, "ssl not set in smtps spec");
-	fail_unless(!spec->http, "http set in smtps spec");
-	fail_unless(!spec->upgrade, "upgrade set in smtps spec");
-	fail_unless(!spec->pop3, "pop3 set in smtps spec");
-	fail_unless(spec->smtp, "smtp not set in smtps spec");
+	ck_assert_msg(spec->ssl, "ssl not set in smtps spec");
+	ck_assert_msg(!spec->http, "http set in smtps spec");
+	ck_assert_msg(!spec->upgrade, "upgrade set in smtps spec");
+	ck_assert_msg(!spec->pop3, "pop3 set in smtps spec");
+	ck_assert_msg(spec->smtp, "smtp not set in smtps spec");
 
 	proxyspec_free(spec);
 	global_free(global);
@@ -789,14 +789,14 @@ START_TEST(proxyspec_struct_parse_01)
 	rv = load_proxyspec_struct(global, "sslproxy", &natengine, &line_num, f, tmp_opts);
 
 	fclose(f);
-	fail_unless(rv == 0, "failed to parse proxyspec");
+	ck_assert_msg(rv == 0, "failed to parse proxyspec");
 
 	global->spec->opts->filter = filter_set(global->spec->opts->filter_rules, "sslproxy", tmp_opts);
 
 	s = proxyspec_str(global->spec);
 
 #ifndef WITHOUT_USERAUTH
-	fail_unless(!strcmp(s,
+	ck_assert_msg(!strcmp(s,
 "listen=[127.0.0.1]:8213 ssl|http \n"
 "sni 4444\n"
 "divert addr= [127.0.0.1]:8080\n"
@@ -839,7 +839,7 @@ START_TEST(proxyspec_struct_parse_01)
 "      0: example4.com (exact, action=||pass||, log=|||||, precedence=1)\n"),
 		"failed to parse proxyspec: %s", s);
 #else /* WITHOUT_USERAUTH */
-	fail_unless(!strcmp(s,
+	ck_assert_msg(!strcmp(s,
 "listen=[127.0.0.1]:8213 ssl|http \n"
 "sni 4444\n"
 "divert addr= [127.0.0.1]:8080\n"
@@ -887,11 +887,11 @@ START_TEST(opts_debug_01)
 	global_t *global = global_new();
 
 	global->debug = 0;
-	fail_unless(!global->debug, "plain 0");
-	fail_unless(!OPTS_DEBUG(global), "macro 0");
+	ck_assert_msg(!global->debug, "plain 0");
+	ck_assert_msg(!OPTS_DEBUG(global), "macro 0");
 	global->debug = 1;
-	fail_unless(!!global->debug, "plain 1");
-	fail_unless(!!OPTS_DEBUG(global), "macro 1");
+	ck_assert_msg(!!global->debug, "plain 1");
+	ck_assert_msg(!!OPTS_DEBUG(global), "macro 1");
 	global_free(global);
 }
 END_TEST
@@ -906,23 +906,23 @@ START_TEST(opts_set_passsite_01)
 	UNUSED int rv = filter_passsite_set(opts, conn_opts, s, 0);
 	free(s);
 
-	fail_unless(!strcmp(opts->filter_rules->sni, "example.com"), "site not example.com");
-	fail_unless(!strcmp(opts->filter_rules->cn, "example.com"), "site not example.com");
-	fail_unless(!opts->filter_rules->ip, "ip set");
+	ck_assert_msg(!strcmp(opts->filter_rules->sni, "example.com"), "site not example.com");
+	ck_assert_msg(!strcmp(opts->filter_rules->cn, "example.com"), "site not example.com");
+	ck_assert_msg(!opts->filter_rules->ip, "ip set");
 #ifndef WITHOUT_USERAUTH
-	fail_unless(!opts->filter_rules->user, "user set");
-	fail_unless(opts->filter_rules->all_conns, "all_conns not 1");
-	fail_unless(!opts->filter_rules->desc, "desc set");
+	ck_assert_msg(!opts->filter_rules->user, "user set");
+	ck_assert_msg(opts->filter_rules->all_conns, "all_conns not 1");
+	ck_assert_msg(!opts->filter_rules->desc, "desc set");
 #endif /* !WITHOUT_USERAUTH */
-	fail_unless(!opts->filter_rules->next, "next set");
+	ck_assert_msg(!opts->filter_rules->next, "next set");
 
 	ps = filter_rule_str(opts->filter_rules);
 #ifndef WITHOUT_USERAUTH
-	fail_unless(!strcmp(ps, "filter rule 0: sni=example.com, dstport=, srcip=, user=, desc=, exact=site||||, all=conns|||, action=||pass||, log=|||||, precedence=1\n"
+	ck_assert_msg(!strcmp(ps, "filter rule 0: sni=example.com, dstport=, srcip=, user=, desc=, exact=site||||, all=conns|||, action=||pass||, log=|||||, precedence=1\n"
 		"filter rule 0: cn=example.com, dstport=, srcip=, user=, desc=, exact=site||||, all=conns|||, action=||pass||, log=|||||, precedence=1\n"),
 		"failed parsing passite example.com: %s", ps);
 #else /* WITHOUT_USERAUTH */
-	fail_unless(!strcmp(ps, "filter rule 0: sni=example.com, dstport=, srcip=, exact=site||, all=conns||, action=||pass||, log=|||||, precedence=1\n"
+	ck_assert_msg(!strcmp(ps, "filter rule 0: sni=example.com, dstport=, srcip=, exact=site||, all=conns||, action=||pass||, log=|||||, precedence=1\n"
 		"filter rule 0: cn=example.com, dstport=, srcip=, exact=site||, all=conns||, action=||pass||, log=|||||, precedence=1\n"),
 		"failed parsing passite example.com: %s", ps);
 #endif /* WITHOUT_USERAUTH */
@@ -943,23 +943,23 @@ START_TEST(opts_set_passsite_02)
 	UNUSED int rv = filter_passsite_set(opts, conn_opts, s, 0);
 	free(s);
 
-	fail_unless(!strcmp(opts->filter_rules->sni, "example.com"), "site not example.com");
-	fail_unless(!strcmp(opts->filter_rules->cn, "example.com"), "site not example.com");
-	fail_unless(!strcmp(opts->filter_rules->ip, "192.168.0.1"), "ip not 192.168.0.1");
+	ck_assert_msg(!strcmp(opts->filter_rules->sni, "example.com"), "site not example.com");
+	ck_assert_msg(!strcmp(opts->filter_rules->cn, "example.com"), "site not example.com");
+	ck_assert_msg(!strcmp(opts->filter_rules->ip, "192.168.0.1"), "ip not 192.168.0.1");
 #ifndef WITHOUT_USERAUTH
-	fail_unless(!opts->filter_rules->user, "user set");
-	fail_unless(!opts->filter_rules->all_conns, "all_conns not 0");
-	fail_unless(!opts->filter_rules->desc, "desc set");
+	ck_assert_msg(!opts->filter_rules->user, "user set");
+	ck_assert_msg(!opts->filter_rules->all_conns, "all_conns not 0");
+	ck_assert_msg(!opts->filter_rules->desc, "desc set");
 #endif /* !WITHOUT_USERAUTH */
-	fail_unless(!opts->filter_rules->next, "next set");
+	ck_assert_msg(!opts->filter_rules->next, "next set");
 
 	ps = filter_rule_str(opts->filter_rules);
 #ifndef WITHOUT_USERAUTH
-	fail_unless(!strcmp(ps, "filter rule 0: sni=example.com, dstport=, srcip=192.168.0.1, user=, desc=, exact=site||||, all=|||, action=||pass||, log=|||||, precedence=2\n"
+	ck_assert_msg(!strcmp(ps, "filter rule 0: sni=example.com, dstport=, srcip=192.168.0.1, user=, desc=, exact=site||||, all=|||, action=||pass||, log=|||||, precedence=2\n"
 		"filter rule 0: cn=example.com, dstport=, srcip=192.168.0.1, user=, desc=, exact=site||||, all=|||, action=||pass||, log=|||||, precedence=2\n"),
 		"failed parsing passite example.com 192.168.0.1: %s", ps);
 #else /* WITHOUT_USERAUTH */
-	fail_unless(!strcmp(ps, "filter rule 0: sni=example.com, dstport=, srcip=192.168.0.1, exact=site||, all=||, action=||pass||, log=|||||, precedence=2\n"
+	ck_assert_msg(!strcmp(ps, "filter rule 0: sni=example.com, dstport=, srcip=192.168.0.1, exact=site||, all=||, action=||pass||, log=|||||, precedence=2\n"
 		"filter rule 0: cn=example.com, dstport=, srcip=192.168.0.1, exact=site||, all=||, action=||pass||, log=|||||, precedence=2\n"),
 		"failed parsing passite example.com 192.168.0.1: %s", ps);
 #endif /* !WITHOUT_USERAUTH */
@@ -983,16 +983,16 @@ START_TEST(opts_set_passsite_03)
 	UNUSED int rv = filter_passsite_set(opts, conn_opts, s, 0);
 	free(s);
 
-	fail_unless(!strcmp(opts->filter_rules->sni, "example.com"), "site not example.com");
-	fail_unless(!strcmp(opts->filter_rules->cn, "example.com"), "site not example.com");
-	fail_unless(!opts->filter_rules->ip, "ip set");
-	fail_unless(!strcmp(opts->filter_rules->user, "root"), "user not root");
-	fail_unless(!opts->filter_rules->all_conns, "all_conns not 0");
-	fail_unless(!opts->filter_rules->desc, "desc set");
-	fail_unless(!opts->filter_rules->next, "next set");
+	ck_assert_msg(!strcmp(opts->filter_rules->sni, "example.com"), "site not example.com");
+	ck_assert_msg(!strcmp(opts->filter_rules->cn, "example.com"), "site not example.com");
+	ck_assert_msg(!opts->filter_rules->ip, "ip set");
+	ck_assert_msg(!strcmp(opts->filter_rules->user, "root"), "user not root");
+	ck_assert_msg(!opts->filter_rules->all_conns, "all_conns not 0");
+	ck_assert_msg(!opts->filter_rules->desc, "desc set");
+	ck_assert_msg(!opts->filter_rules->next, "next set");
 
 	ps = filter_rule_str(opts->filter_rules);
-	fail_unless(!strcmp(ps, "filter rule 0: sni=example.com, dstport=, srcip=, user=root, desc=, exact=site||||, all=|||, action=||pass||, log=|||||, precedence=3\n"
+	ck_assert_msg(!strcmp(ps, "filter rule 0: sni=example.com, dstport=, srcip=, user=root, desc=, exact=site||||, all=|||, action=||pass||, log=|||||, precedence=3\n"
 		"filter rule 0: cn=example.com, dstport=, srcip=, user=root, desc=, exact=site||||, all=|||, action=||pass||, log=|||||, precedence=3\n"),
 		"failed parsing passite example.com root: %s", ps);
 	free(ps);
@@ -1014,17 +1014,17 @@ START_TEST(opts_set_passsite_04)
 	UNUSED int rv = filter_passsite_set(opts, conn_opts, s, 0);
 	free(s);
 
-	fail_unless(!strcmp(opts->filter_rules->sni, "*.google.com"), "site not *.google.com");
-	fail_unless(!strcmp(opts->filter_rules->cn, "*.google.com"), "site not *.google.com");
-	fail_unless(!opts->filter_rules->ip, "ip set");
-	fail_unless(!opts->filter_rules->user, "user set");
-	fail_unless(!opts->filter_rules->all_conns, "all_conns not 0");
-	fail_unless(opts->filter_rules->all_users, "all_users not 1");
-	fail_unless(!strcmp(opts->filter_rules->desc, "android"), "desc not android");
-	fail_unless(!opts->filter_rules->next, "next set");
+	ck_assert_msg(!strcmp(opts->filter_rules->sni, "*.google.com"), "site not *.google.com");
+	ck_assert_msg(!strcmp(opts->filter_rules->cn, "*.google.com"), "site not *.google.com");
+	ck_assert_msg(!opts->filter_rules->ip, "ip set");
+	ck_assert_msg(!opts->filter_rules->user, "user set");
+	ck_assert_msg(!opts->filter_rules->all_conns, "all_conns not 0");
+	ck_assert_msg(opts->filter_rules->all_users, "all_users not 1");
+	ck_assert_msg(!strcmp(opts->filter_rules->desc, "android"), "desc not android");
+	ck_assert_msg(!opts->filter_rules->next, "next set");
 
 	ps = filter_rule_str(opts->filter_rules);
-	fail_unless(!strcmp(ps, "filter rule 0: sni=*.google.com, dstport=, srcip=, user=, desc=android, exact=site||||, all=|users||, action=||pass||, log=|||||, precedence=3\n"
+	ck_assert_msg(!strcmp(ps, "filter rule 0: sni=*.google.com, dstport=, srcip=, user=, desc=android, exact=site||||, all=|users||, action=||pass||, log=|||||, precedence=3\n"
 		"filter rule 0: cn=*.google.com, dstport=, srcip=, user=, desc=android, exact=site||||, all=|users||, action=||pass||, log=|||||, precedence=3\n"),
 		"failed parsing passite *.google.com * android: %s", ps);
 	free(ps);
@@ -1046,20 +1046,20 @@ START_TEST(opts_set_passsite_05)
 	s = strdup("example.com");
 	UNUSED int rv = filter_passsite_set(opts, conn_opts, s, 0);
 	free(s);
-	fail_unless(!opts->filter_rules->next, "next set");
+	ck_assert_msg(!opts->filter_rules->next, "next set");
 
 	s = strdup("example.com *");
 	rv = filter_passsite_set(opts, conn_opts, s, 1);
 	free(s);
-	fail_unless(opts->filter_rules->next, "next not set");
-	fail_unless(!opts->filter_rules->next->next, "next->next set");
+	ck_assert_msg(opts->filter_rules->next, "next not set");
+	ck_assert_msg(!opts->filter_rules->next->next, "next->next set");
 
 	s = strdup("example.com 192.168.0.1");
 	rv = filter_passsite_set(opts, conn_opts, s, 2);
 	free(s);
-	fail_unless(opts->filter_rules->next, "next not set");
-	fail_unless(opts->filter_rules->next->next, "next->next not set");
-	fail_unless(!opts->filter_rules->next->next->next, "next->next->next set");
+	ck_assert_msg(opts->filter_rules->next, "next not set");
+	ck_assert_msg(opts->filter_rules->next->next, "next->next not set");
+	ck_assert_msg(!opts->filter_rules->next->next->next, "next->next->next set");
 
 #ifndef WITHOUT_USERAUTH
 	conn_opts->user_auth = 1;
@@ -1068,23 +1068,23 @@ START_TEST(opts_set_passsite_05)
 	s = strdup("example.com root");
 	rv = filter_passsite_set(opts, conn_opts, s, 3);
 	free(s);
-	fail_unless(opts->filter_rules->next, "next not set");
-	fail_unless(opts->filter_rules->next->next, "next->next not set");
-	fail_unless(opts->filter_rules->next->next->next, "next->next->next not set");
-	fail_unless(!opts->filter_rules->next->next->next->next, "next->next->next->next set");
+	ck_assert_msg(opts->filter_rules->next, "next not set");
+	ck_assert_msg(opts->filter_rules->next->next, "next->next not set");
+	ck_assert_msg(opts->filter_rules->next->next->next, "next->next->next not set");
+	ck_assert_msg(!opts->filter_rules->next->next->next->next, "next->next->next->next set");
 
 	s = strdup("*.google.com * android");
 	rv = filter_passsite_set(opts, conn_opts, s, 4);
 	free(s);
 #endif /* !WITHOUT_USERAUTH */
 	ps = filter_rule_str(opts->filter_rules);
-	fail_unless(opts->filter_rules->next, "next not set");
-	fail_unless(opts->filter_rules->next->next, "next->next not set");
+	ck_assert_msg(opts->filter_rules->next, "next not set");
+	ck_assert_msg(opts->filter_rules->next->next, "next->next not set");
 #ifndef WITHOUT_USERAUTH
-	fail_unless(opts->filter_rules->next->next->next, "next->next->next not set");
-	fail_unless(opts->filter_rules->next->next->next->next, "next->next->next->next not set");
-	fail_unless(!opts->filter_rules->next->next->next->next->next, "next->next->next->next->next set");
-	fail_unless(!strcmp(ps, "filter rule 0: sni=example.com, dstport=, srcip=, user=, desc=, exact=site||||, all=conns|||, action=||pass||, log=|||||, precedence=1\n"
+	ck_assert_msg(opts->filter_rules->next->next->next, "next->next->next not set");
+	ck_assert_msg(opts->filter_rules->next->next->next->next, "next->next->next->next not set");
+	ck_assert_msg(!opts->filter_rules->next->next->next->next->next, "next->next->next->next->next set");
+	ck_assert_msg(!strcmp(ps, "filter rule 0: sni=example.com, dstport=, srcip=, user=, desc=, exact=site||||, all=conns|||, action=||pass||, log=|||||, precedence=1\n"
 		"filter rule 0: cn=example.com, dstport=, srcip=, user=, desc=, exact=site||||, all=conns|||, action=||pass||, log=|||||, precedence=1\n"
 		"filter rule 1: sni=example.com, dstport=, srcip=, user=, desc=, exact=site||||, all=|users||, action=||pass||, log=|||||, precedence=2\n"
 		"filter rule 1: cn=example.com, dstport=, srcip=, user=, desc=, exact=site||||, all=|users||, action=||pass||, log=|||||, precedence=2\n"
@@ -1096,8 +1096,8 @@ START_TEST(opts_set_passsite_05)
 		"filter rule 4: cn=*.google.com, dstport=, srcip=, user=, desc=android, exact=site||||, all=|users||, action=||pass||, log=|||||, precedence=3\n"),
 		"failed parsing multiple passites: %s", ps);
 #else /* WITHOUT_USERAUTH */
-	fail_unless(!opts->filter_rules->next->next->next, "next->next->next set");
-	fail_unless(!strcmp(ps, "filter rule 0: sni=example.com, dstport=, srcip=, exact=site||, all=conns||, action=||pass||, log=|||||, precedence=1\n"
+	ck_assert_msg(!opts->filter_rules->next->next->next, "next->next->next set");
+	ck_assert_msg(!strcmp(ps, "filter rule 0: sni=example.com, dstport=, srcip=, exact=site||, all=conns||, action=||pass||, log=|||||, precedence=1\n"
 		"filter rule 0: cn=example.com, dstport=, srcip=, exact=site||, all=conns||, action=||pass||, log=|||||, precedence=1\n"
 		"filter rule 1: sni=example.com, dstport=, srcip=, exact=site||, all=conns||, action=||pass||, log=|||||, precedence=1\n"
 		"filter rule 1: cn=example.com, dstport=, srcip=, exact=site||, all=conns||, action=||pass||, log=|||||, precedence=1\n"
@@ -1117,16 +1117,16 @@ START_TEST(opts_is_yesno_01)
 	int yes;
 
 	yes = is_yesno("yes");
-	fail_unless(yes == 1, "failed yes");
+	ck_assert_msg(yes == 1, "failed yes");
 
 	yes = is_yesno("ye");
-	fail_unless(yes == -1, "failed ye");
+	ck_assert_msg(yes == -1, "failed ye");
 
 	yes = is_yesno("yes1");
-	fail_unless(yes == -1, "failed yes1");
+	ck_assert_msg(yes == -1, "failed yes1");
 
 	yes = is_yesno("");
-	fail_unless(yes == -1, "failed empty string");
+	ck_assert_msg(yes == -1, "failed empty string");
 }
 END_TEST
 
@@ -1135,13 +1135,13 @@ START_TEST(opts_is_yesno_02)
 	int yes;
 
 	yes = is_yesno("no");
-	fail_unless(yes == 0, "failed no");
+	ck_assert_msg(yes == 0, "failed no");
 
 	yes = is_yesno("n");
-	fail_unless(yes == -1, "failed n");
+	ck_assert_msg(yes == -1, "failed n");
 
 	yes = is_yesno("no1");
-	fail_unless(yes == -1, "failed no1");
+	ck_assert_msg(yes == -1, "failed no1");
 }
 END_TEST
 
@@ -1153,16 +1153,16 @@ START_TEST(opts_get_name_value_01)
 
 	name = strdup("Name Value");
 	retval = get_name_value(name, &value, ' ', 0);
-	fail_unless(!strcmp(name, "Name"), "failed parsing name");
-	fail_unless(!strcmp(value, "Value"), "failed parsing value");
-	fail_unless(retval == 0, "failed parsing name value");
+	ck_assert_msg(!strcmp(name, "Name"), "failed parsing name");
+	ck_assert_msg(!strcmp(value, "Value"), "failed parsing value");
+	ck_assert_msg(retval == 0, "failed parsing name value");
 	free(name);
 
 	name = strdup("Name  Value");
 	retval = get_name_value(name, &value, ' ', 0);
-	fail_unless(!strcmp(name, "Name"), "failed parsing name");
-	fail_unless(!strcmp(value, "Value"), "failed parsing value");
-	fail_unless(retval == 0, "failed parsing name value");
+	ck_assert_msg(!strcmp(name, "Name"), "failed parsing name");
+	ck_assert_msg(!strcmp(value, "Value"), "failed parsing value");
+	ck_assert_msg(retval == 0, "failed parsing name value");
 	free(name);
 
 	close(2);
@@ -1172,23 +1172,23 @@ START_TEST(opts_get_name_value_01)
 	// So we don't actually need a test for " Name Value", or similar
 	name = strdup(" Name Value");
 	retval = get_name_value(name, &value, ' ', 0);
-	fail_unless(!strcmp(name, ""), "failed parsing name");
-	fail_unless(!strcmp(value, ""), "failed parsing value");
-	fail_unless(retval == -1, "failed rejecting leading white space, empty name");
+	ck_assert_msg(!strcmp(name, ""), "failed parsing name");
+	ck_assert_msg(!strcmp(value, ""), "failed parsing value");
+	ck_assert_msg(retval == -1, "failed rejecting leading white space, empty name");
 	free(name);
 
 	name = strdup("Name Value ");
 	retval = get_name_value(name, &value, ' ', 0);
-	fail_unless(!strcmp(name, "Name"), "failed parsing name");
-	fail_unless(!strcmp(value, "Value"), "failed parsing value");
-	fail_unless(retval == 0, "failed parsing name value");
+	ck_assert_msg(!strcmp(name, "Name"), "failed parsing name");
+	ck_assert_msg(!strcmp(value, "Value"), "failed parsing value");
+	ck_assert_msg(retval == 0, "failed parsing name value");
 	free(name);
 
 	name = strdup("Name=Value");
 	retval = get_name_value(name, &value, '=', 0);
-	fail_unless(!strcmp(name, "Name"), "failed parsing name");
-	fail_unless(!strcmp(value, "Value"), "failed parsing value");
-	fail_unless(retval == 0, "failed parsing name value");
+	ck_assert_msg(!strcmp(name, "Name"), "failed parsing name");
+	ck_assert_msg(!strcmp(value, "Value"), "failed parsing value");
+	ck_assert_msg(retval == 0, "failed parsing name value");
 	free(name);
 
 	// Leading white space must be handled by the caller
@@ -1196,88 +1196,88 @@ START_TEST(opts_get_name_value_01)
 	// So we don't actually need a test for " Name Value", or similar
 	name = strdup(" Name=Value");
 	retval = get_name_value(name, &value, ' ', 0);
-	fail_unless(!strcmp(name, ""), "failed parsing name");
-	fail_unless(!strcmp(value, ""), "failed parsing value");
-	fail_unless(retval == -1, "failed rejecting leading white space, empty name");
+	ck_assert_msg(!strcmp(name, ""), "failed parsing name");
+	ck_assert_msg(!strcmp(value, ""), "failed parsing value");
+	ck_assert_msg(retval == -1, "failed rejecting leading white space, empty name");
 	free(name);
 
 	name = strdup("Name=Value ");
 	retval = get_name_value(name, &value, '=', 0);
-	fail_unless(!strcmp(name, "Name"), "failed parsing name");
-	fail_unless(!strcmp(value, "Value"), "failed parsing value");
-	fail_unless(retval == 0, "failed parsing name value");
+	ck_assert_msg(!strcmp(name, "Name"), "failed parsing name");
+	ck_assert_msg(!strcmp(value, "Value"), "failed parsing value");
+	ck_assert_msg(retval == 0, "failed parsing name value");
 	free(name);
 
 	name = strdup("Name = Value");
 	retval = get_name_value(name, &value, '=', 0);
-	fail_unless(!strcmp(name, "Name"), "failed parsing name");
-	fail_unless(!strcmp(value, "Value"), "failed parsing value");
-	fail_unless(retval == 0, "failed parsing name value");
+	ck_assert_msg(!strcmp(name, "Name"), "failed parsing name");
+	ck_assert_msg(!strcmp(value, "Value"), "failed parsing value");
+	ck_assert_msg(retval == 0, "failed parsing name value");
 	free(name);
 
 	name = strdup("Name = Value ");
 	retval = get_name_value(name, &value, '=', 0);
-	fail_unless(!strcmp(name, "Name"), "failed parsing name");
-	fail_unless(!strcmp(value, "Value"), "failed parsing value");
-	fail_unless(retval == 0, "failed parsing name value");
+	ck_assert_msg(!strcmp(name, "Name"), "failed parsing name");
+	ck_assert_msg(!strcmp(value, "Value"), "failed parsing value");
+	ck_assert_msg(retval == 0, "failed parsing name value");
 	free(name);
 
 	// Name without value, e.g. '}' char is used for marking the end of structured proxyspecs
 	// so do not reject any form of just name, return success
 	name = strdup("Name");
 	retval = get_name_value(name, &value, ' ', 0);
-	fail_unless(!strcmp(name, "Name"), "failed parsing name");
-	fail_unless(!strcmp(value, ""), "failed parsing value");
-	fail_unless(retval == 0, "failed parsing just name");
+	ck_assert_msg(!strcmp(name, "Name"), "failed parsing name");
+	ck_assert_msg(!strcmp(value, ""), "failed parsing value");
+	ck_assert_msg(retval == 0, "failed parsing just name");
 	free(name);
 
 	name = strdup("Name ");
 	retval = get_name_value(name, &value, ' ', 0);
-	fail_unless(!strcmp(name, "Name"), "failed parsing name");
-	fail_unless(!strcmp(value, ""), "failed parsing value");
-	fail_unless(retval == 0, "failed parsing name empty value");
+	ck_assert_msg(!strcmp(name, "Name"), "failed parsing name");
+	ck_assert_msg(!strcmp(value, ""), "failed parsing value");
+	ck_assert_msg(retval == 0, "failed parsing name empty value");
 	free(name);
 
 	name = strdup("Name  ");
 	retval = get_name_value(name, &value, ' ', 0);
-	fail_unless(!strcmp(name, "Name"), "failed parsing name");
-	fail_unless(!strcmp(value, ""), "failed parsing value");
-	fail_unless(retval == 0, "failed parsing name empty value");
+	ck_assert_msg(!strcmp(name, "Name"), "failed parsing name");
+	ck_assert_msg(!strcmp(value, ""), "failed parsing value");
+	ck_assert_msg(retval == 0, "failed parsing name empty value");
 	free(name);
 
 	name = strdup("Name");
 	retval = get_name_value(name, &value, '=', 0);
-	fail_unless(!strcmp(name, "Name"), "failed parsing name");
-	fail_unless(!strcmp(value, ""), "failed parsing value");
-	fail_unless(retval == 0, "failed parsing name empty value");
+	ck_assert_msg(!strcmp(name, "Name"), "failed parsing name");
+	ck_assert_msg(!strcmp(value, ""), "failed parsing value");
+	ck_assert_msg(retval == 0, "failed parsing name empty value");
 	free(name);
 
 	name = strdup("Name=");
 	retval = get_name_value(name, &value, '=', 0);
-	fail_unless(!strcmp(name, "Name"), "failed parsing name");
-	fail_unless(!strcmp(value, ""), "failed parsing value");
-	fail_unless(retval == 0, "failed parsing name empty value");
+	ck_assert_msg(!strcmp(name, "Name"), "failed parsing name");
+	ck_assert_msg(!strcmp(value, ""), "failed parsing value");
+	ck_assert_msg(retval == 0, "failed parsing name empty value");
 	free(name);
 
 	name = strdup("Name= ");
 	retval = get_name_value(name, &value, '=', 0);
-	fail_unless(!strcmp(name, "Name"), "failed parsing name");
-	fail_unless(!strcmp(value, ""), "failed parsing value");
-	fail_unless(retval == 0, "failed parsing name empty value");
+	ck_assert_msg(!strcmp(name, "Name"), "failed parsing name");
+	ck_assert_msg(!strcmp(value, ""), "failed parsing value");
+	ck_assert_msg(retval == 0, "failed parsing name empty value");
 	free(name);
 
 	name = strdup("Name =");
 	retval = get_name_value(name, &value, '=', 0);
-	fail_unless(!strcmp(name, "Name"), "failed parsing name");
-	fail_unless(!strcmp(value, ""), "failed parsing value");
-	fail_unless(retval == 0, "failed parsing name empty value");
+	ck_assert_msg(!strcmp(name, "Name"), "failed parsing name");
+	ck_assert_msg(!strcmp(value, ""), "failed parsing value");
+	ck_assert_msg(retval == 0, "failed parsing name empty value");
 	free(name);
 
 	name = strdup("Name = ");
 	retval = get_name_value(name, &value, '=', 0);
-	fail_unless(!strcmp(name, "Name"), "failed parsing name");
-	fail_unless(!strcmp(value, ""), "failed parsing value");
-	fail_unless(retval == 0, "failed parsing name empty value");
+	ck_assert_msg(!strcmp(name, "Name"), "failed parsing name");
+	ck_assert_msg(!strcmp(value, ""), "failed parsing value");
+	ck_assert_msg(retval == 0, "failed parsing name empty value");
 	free(name);
 }
 END_TEST

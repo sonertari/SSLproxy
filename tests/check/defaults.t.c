@@ -41,7 +41,7 @@
 
 START_TEST(defaults_dropuser_01)
 {
-	fail_unless(0 == sys_privdrop(DFLT_DROPUSER, NULL, NULL),
+	ck_assert_msg(0 == sys_privdrop(DFLT_DROPUSER, NULL, NULL),
 	            "privdrop failed");
 }
 END_TEST
@@ -53,11 +53,11 @@ END_TEST
  */
 START_TEST(defaults_dropuser_02)
 {
-	fail_unless(0 == system(CONNECT_CMD),
+	ck_assert_msg(0 == system(CONNECT_CMD),
 	            "connect failed for user running tests");
-	fail_unless(0 == sys_privdrop(DFLT_DROPUSER, NULL, NULL),
+	ck_assert_msg(0 == sys_privdrop(DFLT_DROPUSER, NULL, NULL),
 	            "privdrop failed");
-	fail_unless(0 == system(CONNECT_CMD),
+	ck_assert_msg(0 == system(CONNECT_CMD),
 	            "connect failed for default dropuser " DFLT_DROPUSER);
 }
 END_TEST

@@ -90,11 +90,11 @@ START_TEST(protohttp_validate_01)
 	http_ctx->seen_keyword_count = 1;
 	int rv = protohttp_validate(ctx);
 
-	fail_unless(rv == 0, "wrong return value");
-	fail_unless(http_ctx->not_valid == 0, "wrong not_valid");
-	fail_unless(http_ctx->seen_keyword_count == 1, "wrong seen_keyword_count");
-	fail_unless(ctx->protoctx->is_valid == 1, "wrong is_valid");
-	fail_unless(http_ctx->seen_bytes == 0, "wrong seen_bytes");
+	ck_assert_msg(rv == 0, "wrong return value");
+	ck_assert_msg(http_ctx->not_valid == 0, "wrong not_valid");
+	ck_assert_msg(http_ctx->seen_keyword_count == 1, "wrong seen_keyword_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 1, "wrong is_valid");
+	ck_assert_msg(http_ctx->seen_bytes == 0, "wrong seen_bytes");
 
 	proto_free(ctx);
 }
@@ -109,11 +109,11 @@ START_TEST(protohttp_validate_02)
 	http_ctx->http_method = strdup("GET");
 	int rv = protohttp_validate(ctx);
 
-	fail_unless(rv == 0, "wrong return value");
-	fail_unless(http_ctx->not_valid == 0, "wrong not_valid");
-	fail_unless(http_ctx->seen_keyword_count == 1, "wrong seen_keyword_count");
-	fail_unless(ctx->protoctx->is_valid == 1, "wrong is_valid");
-	fail_unless(http_ctx->seen_bytes == 0, "wrong seen_bytes");
+	ck_assert_msg(rv == 0, "wrong return value");
+	ck_assert_msg(http_ctx->not_valid == 0, "wrong not_valid");
+	ck_assert_msg(http_ctx->seen_keyword_count == 1, "wrong seen_keyword_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 1, "wrong is_valid");
+	ck_assert_msg(http_ctx->seen_bytes == 0, "wrong seen_bytes");
 
 	proto_free(ctx);
 }
@@ -127,11 +127,11 @@ START_TEST(protohttp_validate_03)
 	http_ctx->http_method = strdup("GET");
 	int rv = protohttp_validate(ctx);
 
-	fail_unless(rv == 0, "wrong return value");
-	fail_unless(http_ctx->not_valid == 0, "wrong not_valid");
-	fail_unless(http_ctx->seen_keyword_count == 0, "wrong seen_keyword_count");
-	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
-	fail_unless(http_ctx->seen_bytes == 0, "wrong seen_bytes");
+	ck_assert_msg(rv == 0, "wrong return value");
+	ck_assert_msg(http_ctx->not_valid == 0, "wrong not_valid");
+	ck_assert_msg(http_ctx->seen_keyword_count == 0, "wrong seen_keyword_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 0, "wrong is_valid");
+	ck_assert_msg(http_ctx->seen_bytes == 0, "wrong seen_bytes");
 
 	proto_free(ctx);
 }
@@ -145,11 +145,11 @@ START_TEST(protohttp_validate_04)
 	http_ctx->http_method = strdup("GET1");
 	int rv = protohttp_validate(ctx);
 
-	fail_unless(rv == -1, "wrong return value");
-	fail_unless(http_ctx->not_valid == 1, "wrong not_valid");
-	fail_unless(http_ctx->seen_keyword_count == 0, "wrong seen_keyword_count");
-	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
-	fail_unless(http_ctx->seen_bytes == 0, "wrong seen_bytes");
+	ck_assert_msg(rv == -1, "wrong return value");
+	ck_assert_msg(http_ctx->not_valid == 1, "wrong not_valid");
+	ck_assert_msg(http_ctx->seen_keyword_count == 0, "wrong seen_keyword_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 0, "wrong is_valid");
+	ck_assert_msg(http_ctx->seen_bytes == 0, "wrong seen_bytes");
 
 	proto_free(ctx);
 }
@@ -164,29 +164,29 @@ START_TEST(protohttp_validate_05)
 	http_ctx->http_method = strdup("GET1");
 	int rv = protohttp_validate(ctx);
 
-	fail_unless(rv == -1, "wrong return value");
-	fail_unless(http_ctx->not_valid == 1, "wrong not_valid");
-	fail_unless(http_ctx->seen_keyword_count == 1, "wrong seen_keyword_count");
-	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
-	fail_unless(http_ctx->seen_bytes == 0, "wrong seen_bytes");
+	ck_assert_msg(rv == -1, "wrong return value");
+	ck_assert_msg(http_ctx->not_valid == 1, "wrong not_valid");
+	ck_assert_msg(http_ctx->seen_keyword_count == 1, "wrong seen_keyword_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 0, "wrong is_valid");
+	ck_assert_msg(http_ctx->seen_bytes == 0, "wrong seen_bytes");
 
 	rv = protohttp_validate(ctx);
 
-	fail_unless(rv == -1, "wrong return value");
-	fail_unless(http_ctx->not_valid == 1, "wrong not_valid");
-	fail_unless(http_ctx->seen_keyword_count == 1, "wrong seen_keyword_count");
-	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
-	fail_unless(http_ctx->seen_bytes == 0, "wrong seen_bytes");
+	ck_assert_msg(rv == -1, "wrong return value");
+	ck_assert_msg(http_ctx->not_valid == 1, "wrong not_valid");
+	ck_assert_msg(http_ctx->seen_keyword_count == 1, "wrong seen_keyword_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 0, "wrong is_valid");
+	ck_assert_msg(http_ctx->seen_bytes == 0, "wrong seen_bytes");
 
 	free(http_ctx->http_method);
 	http_ctx->http_method = strdup("GET");
 	rv = protohttp_validate(ctx);
 
-	fail_unless(rv == -1, "wrong return value");
-	fail_unless(http_ctx->not_valid == 1, "wrong not_valid");
-	fail_unless(http_ctx->seen_keyword_count == 1, "wrong seen_keyword_count");
-	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
-	fail_unless(http_ctx->seen_bytes == 0, "wrong seen_bytes");
+	ck_assert_msg(rv == -1, "wrong return value");
+	ck_assert_msg(http_ctx->not_valid == 1, "wrong not_valid");
+	ck_assert_msg(http_ctx->seen_keyword_count == 1, "wrong seen_keyword_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 0, "wrong is_valid");
+	ck_assert_msg(http_ctx->seen_bytes == 0, "wrong seen_bytes");
 
 	proto_free(ctx);
 }
@@ -201,19 +201,19 @@ START_TEST(protohttp_validate_06)
 	http_ctx->http_method = strdup("GET");
 	int rv = protohttp_validate(ctx);
 
-	fail_unless(rv == 0, "wrong return value");
-	fail_unless(http_ctx->not_valid == 0, "wrong not_valid");
-	fail_unless(http_ctx->seen_keyword_count == 1, "wrong seen_keyword_count");
-	fail_unless(ctx->protoctx->is_valid == 1, "wrong is_valid");
-	fail_unless(http_ctx->seen_bytes == 0, "wrong seen_bytes");
+	ck_assert_msg(rv == 0, "wrong return value");
+	ck_assert_msg(http_ctx->not_valid == 0, "wrong not_valid");
+	ck_assert_msg(http_ctx->seen_keyword_count == 1, "wrong seen_keyword_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 1, "wrong is_valid");
+	ck_assert_msg(http_ctx->seen_bytes == 0, "wrong seen_bytes");
 
 	rv = protohttp_validate(ctx);
 
-	fail_unless(rv == 0, "wrong return value");
-	fail_unless(http_ctx->not_valid == 0, "wrong not_valid");
-	fail_unless(http_ctx->seen_keyword_count == 1, "wrong seen_keyword_count");
-	fail_unless(ctx->protoctx->is_valid == 1, "wrong is_valid");
-	fail_unless(http_ctx->seen_bytes == 0, "wrong seen_bytes");
+	ck_assert_msg(rv == 0, "wrong return value");
+	ck_assert_msg(http_ctx->not_valid == 0, "wrong not_valid");
+	ck_assert_msg(http_ctx->seen_keyword_count == 1, "wrong seen_keyword_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 1, "wrong is_valid");
+	ck_assert_msg(http_ctx->seen_bytes == 0, "wrong seen_bytes");
 
 	// Normally we don't call protohttp_validate() if ctx->protoctx->is_valid is set,
 	// So both not_valid and is_valid are set.
@@ -222,11 +222,11 @@ START_TEST(protohttp_validate_06)
 	http_ctx->http_method = strdup("GET1");
 	rv = protohttp_validate(ctx);
 
-	fail_unless(rv == -1, "wrong return value");
-	fail_unless(http_ctx->not_valid == 1, "wrong not_valid");
-	fail_unless(http_ctx->seen_keyword_count == 1, "wrong seen_keyword_count");
-	fail_unless(ctx->protoctx->is_valid == 1, "wrong is_valid");
-	fail_unless(http_ctx->seen_bytes == 0, "wrong seen_bytes");
+	ck_assert_msg(rv == -1, "wrong return value");
+	ck_assert_msg(http_ctx->not_valid == 1, "wrong not_valid");
+	ck_assert_msg(http_ctx->seen_keyword_count == 1, "wrong seen_keyword_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 1, "wrong is_valid");
+	ck_assert_msg(http_ctx->seen_bytes == 0, "wrong seen_bytes");
 
 	proto_free(ctx);
 }
@@ -240,11 +240,11 @@ START_TEST(protohttp_validate_07)
 	http_ctx->seen_bytes = 8193;
 	int rv = protohttp_validate(ctx);
 
-	fail_unless(rv == -1, "wrong return value");
-	fail_unless(http_ctx->not_valid == 1, "wrong not_valid");
-	fail_unless(http_ctx->seen_keyword_count == 0, "wrong seen_keyword_count");
-	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
-	fail_unless(http_ctx->seen_bytes == 8193, "wrong seen_bytes");
+	ck_assert_msg(rv == -1, "wrong return value");
+	ck_assert_msg(http_ctx->not_valid == 1, "wrong not_valid");
+	ck_assert_msg(http_ctx->seen_keyword_count == 0, "wrong seen_keyword_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 0, "wrong is_valid");
+	ck_assert_msg(http_ctx->seen_bytes == 8193, "wrong seen_bytes");
 
 	proto_free(ctx);
 }
@@ -259,11 +259,11 @@ START_TEST(protohttp_validate_08)
 	http_ctx->seen_keyword_count = 1;
 	int rv = protohttp_validate(ctx);
 
-	fail_unless(rv == 0, "wrong return value");
-	fail_unless(http_ctx->not_valid == 0, "wrong not_valid");
-	fail_unless(http_ctx->seen_keyword_count == 1, "wrong seen_keyword_count");
-	fail_unless(ctx->protoctx->is_valid == 1, "wrong is_valid");
-	fail_unless(http_ctx->seen_bytes == 8193, "wrong seen_bytes");
+	ck_assert_msg(rv == 0, "wrong return value");
+	ck_assert_msg(http_ctx->not_valid == 0, "wrong not_valid");
+	ck_assert_msg(http_ctx->seen_keyword_count == 1, "wrong seen_keyword_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 1, "wrong is_valid");
+	ck_assert_msg(http_ctx->seen_bytes == 8193, "wrong seen_bytes");
 
 	proto_free(ctx);
 }
@@ -278,11 +278,11 @@ START_TEST(protohttp_validate_09)
 	http_ctx->http_method = strdup("GET");
 	int rv = protohttp_validate(ctx);
 
-	fail_unless(rv == -1, "wrong return value");
-	fail_unless(http_ctx->not_valid == 1, "wrong not_valid");
-	fail_unless(http_ctx->seen_keyword_count == 0, "wrong seen_keyword_count");
-	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
-	fail_unless(http_ctx->seen_bytes == 8193, "wrong seen_bytes");
+	ck_assert_msg(rv == -1, "wrong return value");
+	ck_assert_msg(http_ctx->not_valid == 1, "wrong not_valid");
+	ck_assert_msg(http_ctx->seen_keyword_count == 0, "wrong seen_keyword_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 0, "wrong is_valid");
+	ck_assert_msg(http_ctx->seen_bytes == 8193, "wrong seen_bytes");
 
 	proto_free(ctx);
 }
@@ -298,11 +298,11 @@ START_TEST(protohttp_validate_10)
 	http_ctx->http_method = strdup("GET");
 	int rv = protohttp_validate(ctx);
 
-	fail_unless(rv == 0, "wrong return value");
-	fail_unless(http_ctx->not_valid == 0, "wrong not_valid");
-	fail_unless(http_ctx->seen_keyword_count == 1, "wrong seen_keyword_count");
-	fail_unless(ctx->protoctx->is_valid == 1, "wrong is_valid");
-	fail_unless(http_ctx->seen_bytes == 8193, "wrong seen_bytes");
+	ck_assert_msg(rv == 0, "wrong return value");
+	ck_assert_msg(http_ctx->not_valid == 0, "wrong not_valid");
+	ck_assert_msg(http_ctx->seen_keyword_count == 1, "wrong seen_keyword_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 1, "wrong is_valid");
+	ck_assert_msg(http_ctx->seen_bytes == 8193, "wrong seen_bytes");
 
 	proto_free(ctx);
 }
@@ -316,26 +316,26 @@ START_TEST(protopop3_validate_01)
 	char array01[] = {'C', 'A', 'P', 'A'};
 	int rv = protopop3_validate(ctx, array01, sizeof(array01));
 
-	fail_unless(rv == 0, "wrong return value");
-	fail_unless(pop3_ctx->not_valid == 0, "wrong not_valid");
-	fail_unless(pop3_ctx->seen_command_count == 1, "wrong seen_command_count");
-	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
+	ck_assert_msg(rv == 0, "wrong return value");
+	ck_assert_msg(pop3_ctx->not_valid == 0, "wrong not_valid");
+	ck_assert_msg(pop3_ctx->seen_command_count == 1, "wrong seen_command_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 0, "wrong is_valid");
 
 	char array02[] = {'U', 'S', 'E', 'R', ' ', 's', 'o', 'n', 'e', 'r'};
 	rv = protopop3_validate(ctx, array02, sizeof(array02));
 
-	fail_unless(rv == 0, "wrong return value");
-	fail_unless(pop3_ctx->not_valid == 0, "wrong not_valid");
-	fail_unless(pop3_ctx->seen_command_count == 2, "wrong seen_command_count");
-	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
+	ck_assert_msg(rv == 0, "wrong return value");
+	ck_assert_msg(pop3_ctx->not_valid == 0, "wrong not_valid");
+	ck_assert_msg(pop3_ctx->seen_command_count == 2, "wrong seen_command_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 0, "wrong is_valid");
 
 	char array03[] = {'P', 'A', 'S', 'S', ' ', 's', 'o', 'n', 'e', 'r'};
 	rv = protopop3_validate(ctx, array03, sizeof(array03));
 
-	fail_unless(rv == 0, "wrong return value");
-	fail_unless(pop3_ctx->not_valid == 0, "wrong not_valid");
-	fail_unless(pop3_ctx->seen_command_count == 3, "wrong seen_command_count");
-	fail_unless(ctx->protoctx->is_valid == 1, "wrong is_valid");
+	ck_assert_msg(rv == 0, "wrong return value");
+	ck_assert_msg(pop3_ctx->not_valid == 0, "wrong not_valid");
+	ck_assert_msg(pop3_ctx->seen_command_count == 3, "wrong seen_command_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 1, "wrong is_valid");
 
 	// Normally we don't call protopop3_validate() if ctx->protoctx->is_valid is set,
 	// so pop3_ctx->seen_command_count never goes above 3.
@@ -343,10 +343,10 @@ START_TEST(protopop3_validate_01)
 	char array04[] = {'Q', 'U', 'I', 'T'};
 	rv = protopop3_validate(ctx, array04, sizeof(array04));
 
-	fail_unless(rv == 0, "wrong return value");
-	fail_unless(pop3_ctx->not_valid == 0, "wrong not_valid");
-	fail_unless(pop3_ctx->seen_command_count == 4, "wrong seen_command_count");
-	fail_unless(ctx->protoctx->is_valid == 1, "wrong is_valid");
+	ck_assert_msg(rv == 0, "wrong return value");
+	ck_assert_msg(pop3_ctx->not_valid == 0, "wrong not_valid");
+	ck_assert_msg(pop3_ctx->seen_command_count == 4, "wrong seen_command_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 1, "wrong is_valid");
 
 	proto_free(ctx);
 }
@@ -360,10 +360,10 @@ START_TEST(protopop3_validate_02)
 	char array01[] = {'C', 'A', 'P'};
 	int rv = protopop3_validate(ctx, array01, sizeof(array01));
 
-	fail_unless(rv == -1, "wrong return value");
-	fail_unless(pop3_ctx->not_valid == 1, "wrong not_valid");
-	fail_unless(pop3_ctx->seen_command_count == 0, "wrong seen_command_count");
-	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
+	ck_assert_msg(rv == -1, "wrong return value");
+	ck_assert_msg(pop3_ctx->not_valid == 1, "wrong not_valid");
+	ck_assert_msg(pop3_ctx->seen_command_count == 0, "wrong seen_command_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 0, "wrong is_valid");
 
 	proto_free(ctx);
 }
@@ -377,18 +377,18 @@ START_TEST(protopop3_validate_03)
 	char array01[] = {'C', 'A', 'P', 'A'};
 	int rv = protopop3_validate(ctx, array01, sizeof(array01));
 
-	fail_unless(rv == 0, "wrong return value");
-	fail_unless(pop3_ctx->not_valid == 0, "wrong not_valid");
-	fail_unless(pop3_ctx->seen_command_count == 1, "wrong seen_command_count");
-	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
+	ck_assert_msg(rv == 0, "wrong return value");
+	ck_assert_msg(pop3_ctx->not_valid == 0, "wrong not_valid");
+	ck_assert_msg(pop3_ctx->seen_command_count == 1, "wrong seen_command_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 0, "wrong is_valid");
 
 	char array02[] = {'U', 'S', 'E', ' ', 's', 'o', 'n', 'e', 'r'};
 	rv = protopop3_validate(ctx, array02, sizeof(array02));
 
-	fail_unless(rv == -1, "wrong return value");
-	fail_unless(pop3_ctx->not_valid == 1, "wrong not_valid");
-	fail_unless(pop3_ctx->seen_command_count == 1, "wrong seen_command_count");
-	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
+	ck_assert_msg(rv == -1, "wrong return value");
+	ck_assert_msg(pop3_ctx->not_valid == 1, "wrong not_valid");
+	ck_assert_msg(pop3_ctx->seen_command_count == 1, "wrong seen_command_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 0, "wrong is_valid");
 
 	proto_free(ctx);
 }
@@ -402,26 +402,26 @@ START_TEST(protopop3_validate_04)
 	char array01[] = {'C', 'A', 'P', 'A'};
 	int rv = protopop3_validate(ctx, array01, sizeof(array01));
 
-	fail_unless(rv == 0, "wrong return value");
-	fail_unless(pop3_ctx->not_valid == 0, "wrong not_valid");
-	fail_unless(pop3_ctx->seen_command_count == 1, "wrong seen_command_count");
-	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
+	ck_assert_msg(rv == 0, "wrong return value");
+	ck_assert_msg(pop3_ctx->not_valid == 0, "wrong not_valid");
+	ck_assert_msg(pop3_ctx->seen_command_count == 1, "wrong seen_command_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 0, "wrong is_valid");
 
 	char array02[] = {'U', 'S', 'E', 'R', ' ', 's', 'o', 'n', 'e', 'r'};
 	rv = protopop3_validate(ctx, array02, sizeof(array02));
 
-	fail_unless(rv == 0, "wrong return value");
-	fail_unless(pop3_ctx->not_valid == 0, "wrong not_valid");
-	fail_unless(pop3_ctx->seen_command_count == 2, "wrong seen_command_count");
-	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
+	ck_assert_msg(rv == 0, "wrong return value");
+	ck_assert_msg(pop3_ctx->not_valid == 0, "wrong not_valid");
+	ck_assert_msg(pop3_ctx->seen_command_count == 2, "wrong seen_command_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 0, "wrong is_valid");
 
 	char array03[] = {'P', 'A', 'S', ' ', 's', 'o', 'n', 'e', 'r'};
 	rv = protopop3_validate(ctx, array03, sizeof(array03));
 
-	fail_unless(rv == -1, "wrong return value");
-	fail_unless(pop3_ctx->not_valid == 1, "wrong not_valid");
-	fail_unless(pop3_ctx->seen_command_count == 2, "wrong seen_command_count");
-	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
+	ck_assert_msg(rv == -1, "wrong return value");
+	ck_assert_msg(pop3_ctx->not_valid == 1, "wrong not_valid");
+	ck_assert_msg(pop3_ctx->seen_command_count == 2, "wrong seen_command_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 0, "wrong is_valid");
 
 	proto_free(ctx);
 }
@@ -435,26 +435,26 @@ START_TEST(protopop3_validate_05)
 	char array01[] = {'C', 'A', 'P', 'A'};
 	int rv = protopop3_validate(ctx, array01, sizeof(array01));
 
-	fail_unless(rv == 0, "wrong return value");
-	fail_unless(pop3_ctx->not_valid == 0, "wrong not_valid");
-	fail_unless(pop3_ctx->seen_command_count == 1, "wrong seen_command_count");
-	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
+	ck_assert_msg(rv == 0, "wrong return value");
+	ck_assert_msg(pop3_ctx->not_valid == 0, "wrong not_valid");
+	ck_assert_msg(pop3_ctx->seen_command_count == 1, "wrong seen_command_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 0, "wrong is_valid");
 
 	char array02[] = {'U', 'S', 'E', 'R', ' ', 's', 'o', 'n', 'e', 'r'};
 	rv = protopop3_validate(ctx, array02, sizeof(array02));
 
-	fail_unless(rv == 0, "wrong return value");
-	fail_unless(pop3_ctx->not_valid == 0, "wrong not_valid");
-	fail_unless(pop3_ctx->seen_command_count == 2, "wrong seen_command_count");
-	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
+	ck_assert_msg(rv == 0, "wrong return value");
+	ck_assert_msg(pop3_ctx->not_valid == 0, "wrong not_valid");
+	ck_assert_msg(pop3_ctx->seen_command_count == 2, "wrong seen_command_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 0, "wrong is_valid");
 
 	char array03[] = {'P', 'A', 'S', 'S', ' ', 's', 'o', 'n', 'e', 'r'};
 	rv = protopop3_validate(ctx, array03, sizeof(array03));
 
-	fail_unless(rv == 0, "wrong return value");
-	fail_unless(pop3_ctx->not_valid == 0, "wrong not_valid");
-	fail_unless(pop3_ctx->seen_command_count == 3, "wrong seen_command_count");
-	fail_unless(ctx->protoctx->is_valid == 1, "wrong is_valid");
+	ck_assert_msg(rv == 0, "wrong return value");
+	ck_assert_msg(pop3_ctx->not_valid == 0, "wrong not_valid");
+	ck_assert_msg(pop3_ctx->seen_command_count == 3, "wrong seen_command_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 1, "wrong is_valid");
 
 	// Normally we don't call protopop3_validate() if ctx->protoctx->is_valid is set,
 	// So both not_valid and is_valid are set.
@@ -462,18 +462,18 @@ START_TEST(protopop3_validate_05)
 	char array04[] = {'Q', 'U', 'I'};
 	rv = protopop3_validate(ctx, array04, sizeof(array04));
 
-	fail_unless(rv == -1, "wrong return value");
-	fail_unless(pop3_ctx->not_valid == 1, "wrong not_valid");
-	fail_unless(pop3_ctx->seen_command_count == 3, "wrong seen_command_count");
-	fail_unless(ctx->protoctx->is_valid == 1, "wrong is_valid");
+	ck_assert_msg(rv == -1, "wrong return value");
+	ck_assert_msg(pop3_ctx->not_valid == 1, "wrong not_valid");
+	ck_assert_msg(pop3_ctx->seen_command_count == 3, "wrong seen_command_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 1, "wrong is_valid");
 
 	// Again, this is for testing purposes only.
 	rv = protopop3_validate(ctx, array04, sizeof(array04));
 
-	fail_unless(rv == -1, "wrong return value");
-	fail_unless(pop3_ctx->not_valid == 1, "wrong not_valid");
-	fail_unless(pop3_ctx->seen_command_count == 3, "wrong seen_command_count");
-	fail_unless(ctx->protoctx->is_valid == 1, "wrong is_valid");
+	ck_assert_msg(rv == -1, "wrong return value");
+	ck_assert_msg(pop3_ctx->not_valid == 1, "wrong not_valid");
+	ck_assert_msg(pop3_ctx->seen_command_count == 3, "wrong seen_command_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 1, "wrong is_valid");
 
 	proto_free(ctx);
 }
@@ -487,17 +487,17 @@ START_TEST(protopop3_validate_06)
 	char array01[] = {'C', 'A', 'P'};
 	int rv = protopop3_validate(ctx, array01, sizeof(array01));
 
-	fail_unless(rv == -1, "wrong return value");
-	fail_unless(pop3_ctx->not_valid == 1, "wrong not_valid");
-	fail_unless(pop3_ctx->seen_command_count == 0, "wrong seen_command_count");
-	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
+	ck_assert_msg(rv == -1, "wrong return value");
+	ck_assert_msg(pop3_ctx->not_valid == 1, "wrong not_valid");
+	ck_assert_msg(pop3_ctx->seen_command_count == 0, "wrong seen_command_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 0, "wrong is_valid");
 
 	rv = protopop3_validate(ctx, array01, sizeof(array01));
 
-	fail_unless(rv == -1, "wrong return value");
-	fail_unless(pop3_ctx->not_valid == 1, "wrong not_valid");
-	fail_unless(pop3_ctx->seen_command_count == 0, "wrong seen_command_count");
-	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
+	ck_assert_msg(rv == -1, "wrong return value");
+	ck_assert_msg(pop3_ctx->not_valid == 1, "wrong not_valid");
+	ck_assert_msg(pop3_ctx->seen_command_count == 0, "wrong seen_command_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 0, "wrong is_valid");
 
 	proto_free(ctx);
 }
@@ -511,26 +511,26 @@ START_TEST(protosmtp_validate_01)
 	char array01[] = {'E', 'H', 'L', 'O'};
 	int rv = protosmtp_validate(ctx, array01, sizeof(array01));
 
-	fail_unless(rv == 0, "wrong return value");
-	fail_unless(smtp_ctx->not_valid == 0, "wrong not_valid");
-	fail_unless(smtp_ctx->seen_command_count == 1, "wrong seen_command_count");
-	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
+	ck_assert_msg(rv == 0, "wrong return value");
+	ck_assert_msg(smtp_ctx->not_valid == 0, "wrong not_valid");
+	ck_assert_msg(smtp_ctx->seen_command_count == 1, "wrong seen_command_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 0, "wrong is_valid");
 
 	char array02[] = {'A', 'U', 'T', 'H', ' ', 's', 'o', 'n', 'e', 'r'};
 	rv = protosmtp_validate(ctx, array02, sizeof(array02));
 
-	fail_unless(rv == 0, "wrong return value");
-	fail_unless(smtp_ctx->not_valid == 0, "wrong not_valid");
-	fail_unless(smtp_ctx->seen_command_count == 2, "wrong seen_command_count");
-	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
+	ck_assert_msg(rv == 0, "wrong return value");
+	ck_assert_msg(smtp_ctx->not_valid == 0, "wrong not_valid");
+	ck_assert_msg(smtp_ctx->seen_command_count == 2, "wrong seen_command_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 0, "wrong is_valid");
 
 	char array03[] = {'M', 'A', 'I', 'L', ' ', 's', 'o', 'n', 'e', 'r'};
 	rv = protosmtp_validate(ctx, array03, sizeof(array03));
 
-	fail_unless(rv == 0, "wrong return value");
-	fail_unless(smtp_ctx->not_valid == 0, "wrong not_valid");
-	fail_unless(smtp_ctx->seen_command_count == 3, "wrong seen_command_count");
-	fail_unless(ctx->protoctx->is_valid == 1, "wrong is_valid");
+	ck_assert_msg(rv == 0, "wrong return value");
+	ck_assert_msg(smtp_ctx->not_valid == 0, "wrong not_valid");
+	ck_assert_msg(smtp_ctx->seen_command_count == 3, "wrong seen_command_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 1, "wrong is_valid");
 
 	// Normally we don't call protosmtp_validate() if ctx->protoctx->is_valid is set,
 	// so smtp_ctx->seen_command_count never goes above 3.
@@ -538,10 +538,10 @@ START_TEST(protosmtp_validate_01)
 	char array04[] = {'Q', 'U', 'I', 'T'};
 	rv = protosmtp_validate(ctx, array04, sizeof(array04));
 
-	fail_unless(rv == 0, "wrong return value");
-	fail_unless(smtp_ctx->not_valid == 0, "wrong not_valid");
-	fail_unless(smtp_ctx->seen_command_count == 4, "wrong seen_command_count");
-	fail_unless(ctx->protoctx->is_valid == 1, "wrong is_valid");
+	ck_assert_msg(rv == 0, "wrong return value");
+	ck_assert_msg(smtp_ctx->not_valid == 0, "wrong not_valid");
+	ck_assert_msg(smtp_ctx->seen_command_count == 4, "wrong seen_command_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 1, "wrong is_valid");
 
 	proto_free(ctx);
 }
@@ -555,10 +555,10 @@ START_TEST(protosmtp_validate_02)
 	char array01[] = {'E', 'H', 'L'};
 	int rv = protosmtp_validate(ctx, array01, sizeof(array01));
 
-	fail_unless(rv == -1, "wrong return value");
-	fail_unless(smtp_ctx->not_valid == 1, "wrong not_valid");
-	fail_unless(smtp_ctx->seen_command_count == 0, "wrong seen_command_count");
-	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
+	ck_assert_msg(rv == -1, "wrong return value");
+	ck_assert_msg(smtp_ctx->not_valid == 1, "wrong not_valid");
+	ck_assert_msg(smtp_ctx->seen_command_count == 0, "wrong seen_command_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 0, "wrong is_valid");
 
 	proto_free(ctx);
 }
@@ -572,18 +572,18 @@ START_TEST(protosmtp_validate_03)
 	char array01[] = {'E', 'H', 'L', 'O'};
 	int rv = protosmtp_validate(ctx, array01, sizeof(array01));
 
-	fail_unless(rv == 0, "wrong return value");
-	fail_unless(smtp_ctx->not_valid == 0, "wrong not_valid");
-	fail_unless(smtp_ctx->seen_command_count == 1, "wrong seen_command_count");
-	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
+	ck_assert_msg(rv == 0, "wrong return value");
+	ck_assert_msg(smtp_ctx->not_valid == 0, "wrong not_valid");
+	ck_assert_msg(smtp_ctx->seen_command_count == 1, "wrong seen_command_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 0, "wrong is_valid");
 
 	char array02[] = {'A', 'U', 'T', ' ', 's', 'o', 'n', 'e', 'r'};
 	rv = protosmtp_validate(ctx, array02, sizeof(array02));
 
-	fail_unless(rv == -1, "wrong return value");
-	fail_unless(smtp_ctx->not_valid == 1, "wrong not_valid");
-	fail_unless(smtp_ctx->seen_command_count == 1, "wrong seen_command_count");
-	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
+	ck_assert_msg(rv == -1, "wrong return value");
+	ck_assert_msg(smtp_ctx->not_valid == 1, "wrong not_valid");
+	ck_assert_msg(smtp_ctx->seen_command_count == 1, "wrong seen_command_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 0, "wrong is_valid");
 
 	proto_free(ctx);
 }
@@ -597,26 +597,26 @@ START_TEST(protosmtp_validate_04)
 	char array01[] = {'E', 'H', 'L', 'O'};
 	int rv = protosmtp_validate(ctx, array01, sizeof(array01));
 
-	fail_unless(rv == 0, "wrong return value");
-	fail_unless(smtp_ctx->not_valid == 0, "wrong not_valid");
-	fail_unless(smtp_ctx->seen_command_count == 1, "wrong seen_command_count");
-	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
+	ck_assert_msg(rv == 0, "wrong return value");
+	ck_assert_msg(smtp_ctx->not_valid == 0, "wrong not_valid");
+	ck_assert_msg(smtp_ctx->seen_command_count == 1, "wrong seen_command_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 0, "wrong is_valid");
 
 	char array02[] = {'A', 'U', 'T', 'H', ' ', 's', 'o', 'n', 'e', 'r'};
 	rv = protosmtp_validate(ctx, array02, sizeof(array02));
 
-	fail_unless(rv == 0, "wrong return value");
-	fail_unless(smtp_ctx->not_valid == 0, "wrong not_valid");
-	fail_unless(smtp_ctx->seen_command_count == 2, "wrong seen_command_count");
-	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
+	ck_assert_msg(rv == 0, "wrong return value");
+	ck_assert_msg(smtp_ctx->not_valid == 0, "wrong not_valid");
+	ck_assert_msg(smtp_ctx->seen_command_count == 2, "wrong seen_command_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 0, "wrong is_valid");
 
 	char array03[] = {'M', 'A', 'I', ' ', 's', 'o', 'n', 'e', 'r'};
 	rv = protosmtp_validate(ctx, array03, sizeof(array03));
 
-	fail_unless(rv == -1, "wrong return value");
-	fail_unless(smtp_ctx->not_valid == 1, "wrong not_valid");
-	fail_unless(smtp_ctx->seen_command_count == 2, "wrong seen_command_count");
-	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
+	ck_assert_msg(rv == -1, "wrong return value");
+	ck_assert_msg(smtp_ctx->not_valid == 1, "wrong not_valid");
+	ck_assert_msg(smtp_ctx->seen_command_count == 2, "wrong seen_command_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 0, "wrong is_valid");
 
 	proto_free(ctx);
 }
@@ -630,26 +630,26 @@ START_TEST(protosmtp_validate_05)
 	char array01[] = {'E', 'H', 'L', 'O'};
 	int rv = protosmtp_validate(ctx, array01, sizeof(array01));
 
-	fail_unless(rv == 0, "wrong return value");
-	fail_unless(smtp_ctx->not_valid == 0, "wrong not_valid");
-	fail_unless(smtp_ctx->seen_command_count == 1, "wrong seen_command_count");
-	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
+	ck_assert_msg(rv == 0, "wrong return value");
+	ck_assert_msg(smtp_ctx->not_valid == 0, "wrong not_valid");
+	ck_assert_msg(smtp_ctx->seen_command_count == 1, "wrong seen_command_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 0, "wrong is_valid");
 
 	char array02[] = {'A', 'U', 'T', 'H', ' ', 's', 'o', 'n', 'e', 'r'};
 	rv = protosmtp_validate(ctx, array02, sizeof(array02));
 
-	fail_unless(rv == 0, "wrong return value");
-	fail_unless(smtp_ctx->not_valid == 0, "wrong not_valid");
-	fail_unless(smtp_ctx->seen_command_count == 2, "wrong seen_command_count");
-	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
+	ck_assert_msg(rv == 0, "wrong return value");
+	ck_assert_msg(smtp_ctx->not_valid == 0, "wrong not_valid");
+	ck_assert_msg(smtp_ctx->seen_command_count == 2, "wrong seen_command_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 0, "wrong is_valid");
 
 	char array03[] = {'M', 'A', 'I', 'L', ' ', 's', 'o', 'n', 'e', 'r'};
 	rv = protosmtp_validate(ctx, array03, sizeof(array03));
 
-	fail_unless(rv == 0, "wrong return value");
-	fail_unless(smtp_ctx->not_valid == 0, "wrong not_valid");
-	fail_unless(smtp_ctx->seen_command_count == 3, "wrong seen_command_count");
-	fail_unless(ctx->protoctx->is_valid == 1, "wrong is_valid");
+	ck_assert_msg(rv == 0, "wrong return value");
+	ck_assert_msg(smtp_ctx->not_valid == 0, "wrong not_valid");
+	ck_assert_msg(smtp_ctx->seen_command_count == 3, "wrong seen_command_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 1, "wrong is_valid");
 
 	// Normally we don't call protosmtp_validate() if ctx->protoctx->is_valid is set,
 	// So both not_valid and is_valid are set.
@@ -657,18 +657,18 @@ START_TEST(protosmtp_validate_05)
 	char array04[] = {'Q', 'U', 'I'};
 	rv = protosmtp_validate(ctx, array04, sizeof(array04));
 
-	fail_unless(rv == -1, "wrong return value");
-	fail_unless(smtp_ctx->not_valid == 1, "wrong not_valid");
-	fail_unless(smtp_ctx->seen_command_count == 3, "wrong seen_command_count");
-	fail_unless(ctx->protoctx->is_valid == 1, "wrong is_valid");
+	ck_assert_msg(rv == -1, "wrong return value");
+	ck_assert_msg(smtp_ctx->not_valid == 1, "wrong not_valid");
+	ck_assert_msg(smtp_ctx->seen_command_count == 3, "wrong seen_command_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 1, "wrong is_valid");
 
 	// Again, this is for testing purposes only.
 	rv = protosmtp_validate(ctx, array04, sizeof(array04));
 
-	fail_unless(rv == -1, "wrong return value");
-	fail_unless(smtp_ctx->not_valid == 1, "wrong not_valid");
-	fail_unless(smtp_ctx->seen_command_count == 3, "wrong seen_command_count");
-	fail_unless(ctx->protoctx->is_valid == 1, "wrong is_valid");
+	ck_assert_msg(rv == -1, "wrong return value");
+	ck_assert_msg(smtp_ctx->not_valid == 1, "wrong not_valid");
+	ck_assert_msg(smtp_ctx->seen_command_count == 3, "wrong seen_command_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 1, "wrong is_valid");
 
 	proto_free(ctx);
 }
@@ -682,17 +682,17 @@ START_TEST(protosmtp_validate_06)
 	char array01[] = {'E', 'H', 'L'};
 	int rv = protosmtp_validate(ctx, array01, sizeof(array01));
 
-	fail_unless(rv == -1, "wrong return value");
-	fail_unless(smtp_ctx->not_valid == 1, "wrong not_valid");
-	fail_unless(smtp_ctx->seen_command_count == 0, "wrong seen_command_count");
-	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
+	ck_assert_msg(rv == -1, "wrong return value");
+	ck_assert_msg(smtp_ctx->not_valid == 1, "wrong not_valid");
+	ck_assert_msg(smtp_ctx->seen_command_count == 0, "wrong seen_command_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 0, "wrong is_valid");
 
 	rv = protosmtp_validate(ctx, array01, sizeof(array01));
 
-	fail_unless(rv == -1, "wrong return value");
-	fail_unless(smtp_ctx->not_valid == 1, "wrong not_valid");
-	fail_unless(smtp_ctx->seen_command_count == 0, "wrong seen_command_count");
-	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
+	ck_assert_msg(rv == -1, "wrong return value");
+	ck_assert_msg(smtp_ctx->not_valid == 1, "wrong not_valid");
+	ck_assert_msg(smtp_ctx->seen_command_count == 0, "wrong seen_command_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 0, "wrong is_valid");
 
 	proto_free(ctx);
 }
@@ -706,10 +706,10 @@ START_TEST(protosmtp_validate_response_01)
 	char array01[] = {'2', '2', '0', ' ', 's', 'm', 't', 'p'};
 	int rv = protosmtp_validate_response(ctx, array01, sizeof(array01));
 
-	fail_unless(rv == 0, "wrong return value");
-	fail_unless(smtp_ctx->not_valid == 0, "wrong not_valid");
-	fail_unless(smtp_ctx->seen_command_count == 0, "wrong seen_command_count");
-	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
+	ck_assert_msg(rv == 0, "wrong return value");
+	ck_assert_msg(smtp_ctx->not_valid == 0, "wrong not_valid");
+	ck_assert_msg(smtp_ctx->seen_command_count == 0, "wrong seen_command_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 0, "wrong is_valid");
 
 	proto_free(ctx);
 }
@@ -723,10 +723,10 @@ START_TEST(protosmtp_validate_response_02)
 	char array01[] = {'1', '9', '9', ' ', 's', 'm', 't', 'p'};
 	int rv = protosmtp_validate_response(ctx, array01, sizeof(array01));
 
-	fail_unless(rv == -1, "wrong return value");
-	fail_unless(smtp_ctx->not_valid == 1, "wrong not_valid");
-	fail_unless(smtp_ctx->seen_command_count == 0, "wrong seen_command_count");
-	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
+	ck_assert_msg(rv == -1, "wrong return value");
+	ck_assert_msg(smtp_ctx->not_valid == 1, "wrong not_valid");
+	ck_assert_msg(smtp_ctx->seen_command_count == 0, "wrong seen_command_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 0, "wrong is_valid");
 
 	proto_free(ctx);
 }
@@ -740,10 +740,10 @@ START_TEST(protosmtp_validate_response_03)
 	char array01[] = {'6', '0', '0', ' ', 's', 'm', 't', 'p'};
 	int rv = protosmtp_validate_response(ctx, array01, sizeof(array01));
 
-	fail_unless(rv == -1, "wrong return value");
-	fail_unless(smtp_ctx->not_valid == 1, "wrong not_valid");
-	fail_unless(smtp_ctx->seen_command_count == 0, "wrong seen_command_count");
-	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
+	ck_assert_msg(rv == -1, "wrong return value");
+	ck_assert_msg(smtp_ctx->not_valid == 1, "wrong not_valid");
+	ck_assert_msg(smtp_ctx->seen_command_count == 0, "wrong seen_command_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 0, "wrong is_valid");
 
 	proto_free(ctx);
 }
@@ -757,19 +757,19 @@ START_TEST(protosmtp_validate_response_04)
 	char array01[] = {'2', '2', '0', ' ', 's', 'm', 't', 'p'};
 	int rv = protosmtp_validate_response(ctx, array01, sizeof(array01));
 
-	fail_unless(rv == 0, "wrong return value");
-	fail_unless(smtp_ctx->not_valid == 0, "wrong not_valid");
-	fail_unless(smtp_ctx->seen_command_count == 0, "wrong seen_command_count");
-	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
+	ck_assert_msg(rv == 0, "wrong return value");
+	ck_assert_msg(smtp_ctx->not_valid == 0, "wrong not_valid");
+	ck_assert_msg(smtp_ctx->seen_command_count == 0, "wrong seen_command_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 0, "wrong is_valid");
 
 	rv = protosmtp_validate_response(ctx, array01, sizeof(array01));
 
 	// Normally we don't call protosmtp_validate_response() more than once.
 	// This is for testing purposes only.
-	fail_unless(rv == 0, "wrong return value");
-	fail_unless(smtp_ctx->not_valid == 0, "wrong not_valid");
-	fail_unless(smtp_ctx->seen_command_count == 0, "wrong seen_command_count");
-	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
+	ck_assert_msg(rv == 0, "wrong return value");
+	ck_assert_msg(smtp_ctx->not_valid == 0, "wrong not_valid");
+	ck_assert_msg(smtp_ctx->seen_command_count == 0, "wrong seen_command_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 0, "wrong is_valid");
 
 	// Normally we don't call protosmtp_validate_response() more than once,
 	// but smtp_ctx->not_valid should be set to 1.
@@ -777,10 +777,10 @@ START_TEST(protosmtp_validate_response_04)
 	char array02[] = {'1', '9', '9', ' ', 's', 'm', 't', 'p'};
 	rv = protosmtp_validate_response(ctx, array02, sizeof(array02));
 
-	fail_unless(rv == -1, "wrong return value");
-	fail_unless(smtp_ctx->not_valid == 1, "wrong not_valid");
-	fail_unless(smtp_ctx->seen_command_count == 0, "wrong seen_command_count");
-	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
+	ck_assert_msg(rv == -1, "wrong return value");
+	ck_assert_msg(smtp_ctx->not_valid == 1, "wrong not_valid");
+	ck_assert_msg(smtp_ctx->seen_command_count == 0, "wrong seen_command_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 0, "wrong is_valid");
 
 	proto_free(ctx);
 }
@@ -794,19 +794,19 @@ START_TEST(protosmtp_validate_response_05)
 	char array01[] = {'1', '9', '9', ' ', 's', 'm', 't', 'p'};
 	int rv = protosmtp_validate_response(ctx, array01, sizeof(array01));
 
-	fail_unless(rv == -1, "wrong return value");
-	fail_unless(smtp_ctx->not_valid == 1, "wrong not_valid");
-	fail_unless(smtp_ctx->seen_command_count == 0, "wrong seen_command_count");
-	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
+	ck_assert_msg(rv == -1, "wrong return value");
+	ck_assert_msg(smtp_ctx->not_valid == 1, "wrong not_valid");
+	ck_assert_msg(smtp_ctx->seen_command_count == 0, "wrong seen_command_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 0, "wrong is_valid");
 
 	// Normally we don't call protosmtp_validate_response() more than once.
 	// This is for testing purposes only.
 	rv = protosmtp_validate_response(ctx, array01, sizeof(array01));
 
-	fail_unless(rv == -1, "wrong return value");
-	fail_unless(smtp_ctx->not_valid == 1, "wrong not_valid");
-	fail_unless(smtp_ctx->seen_command_count == 0, "wrong seen_command_count");
-	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
+	ck_assert_msg(rv == -1, "wrong return value");
+	ck_assert_msg(smtp_ctx->not_valid == 1, "wrong not_valid");
+	ck_assert_msg(smtp_ctx->seen_command_count == 0, "wrong seen_command_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 0, "wrong is_valid");
 
 	// Normally we don't call protosmtp_validate_response() more than once,
 	// but smtp_ctx->not_valid should remain 1.
@@ -814,10 +814,10 @@ START_TEST(protosmtp_validate_response_05)
 	char array02[] = {'2', '2', '0', ' ', 's', 'm', 't', 'p'};
 	rv = protosmtp_validate_response(ctx, array02, sizeof(array02));
 
-	fail_unless(rv == -1, "wrong return value");
-	fail_unless(smtp_ctx->not_valid == 1, "wrong not_valid");
-	fail_unless(smtp_ctx->seen_command_count == 0, "wrong seen_command_count");
-	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
+	ck_assert_msg(rv == -1, "wrong return value");
+	ck_assert_msg(smtp_ctx->not_valid == 1, "wrong not_valid");
+	ck_assert_msg(smtp_ctx->seen_command_count == 0, "wrong seen_command_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 0, "wrong is_valid");
 
 	proto_free(ctx);
 }
@@ -831,10 +831,10 @@ START_TEST(protosmtp_validate_response_06)
 	char array01[] = {'2', '2', '0', '0', ' ', 's', 'm', 't', 'p'};
 	int rv = protosmtp_validate_response(ctx, array01, sizeof(array01));
 
-	fail_unless(rv == -1, "wrong return value");
-	fail_unless(smtp_ctx->not_valid == 1, "wrong not_valid");
-	fail_unless(smtp_ctx->seen_command_count == 0, "wrong seen_command_count");
-	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
+	ck_assert_msg(rv == -1, "wrong return value");
+	ck_assert_msg(smtp_ctx->not_valid == 1, "wrong not_valid");
+	ck_assert_msg(smtp_ctx->seen_command_count == 0, "wrong seen_command_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 0, "wrong is_valid");
 
 	proto_free(ctx);
 }
@@ -848,10 +848,10 @@ START_TEST(protosmtp_validate_response_07)
 	char array01[] = {'1', '9', '9', '9', ' ', 's', 'm', 't', 'p'};
 	int rv = protosmtp_validate_response(ctx, array01, sizeof(array01));
 
-	fail_unless(rv == -1, "wrong return value");
-	fail_unless(smtp_ctx->not_valid == 1, "wrong not_valid");
-	fail_unless(smtp_ctx->seen_command_count == 0, "wrong seen_command_count");
-	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
+	ck_assert_msg(rv == -1, "wrong return value");
+	ck_assert_msg(smtp_ctx->not_valid == 1, "wrong not_valid");
+	ck_assert_msg(smtp_ctx->seen_command_count == 0, "wrong seen_command_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 0, "wrong is_valid");
 
 	proto_free(ctx);
 }
@@ -865,10 +865,10 @@ START_TEST(protosmtp_validate_response_08)
 	char array01[] = {'6', '0', '0', '0', ' ', 's', 'm', 't', 'p'};
 	int rv = protosmtp_validate_response(ctx, array01, sizeof(array01));
 
-	fail_unless(rv == -1, "wrong return value");
-	fail_unless(smtp_ctx->not_valid == 1, "wrong not_valid");
-	fail_unless(smtp_ctx->seen_command_count == 0, "wrong seen_command_count");
-	fail_unless(ctx->protoctx->is_valid == 0, "wrong is_valid");
+	ck_assert_msg(rv == -1, "wrong return value");
+	ck_assert_msg(smtp_ctx->not_valid == 1, "wrong not_valid");
+	ck_assert_msg(smtp_ctx->seen_command_count == 0, "wrong seen_command_count");
+	ck_assert_msg(ctx->protoctx->is_valid == 0, "wrong is_valid");
 
 	proto_free(ctx);
 }
