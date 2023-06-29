@@ -247,7 +247,7 @@ privsep_server_opensock_verify(global_t *global, void *arg)
 		if (spec == arg)
 			return 0;
 	}
-	return 1;
+	return -1;
 }
 
 static int WUNRES
