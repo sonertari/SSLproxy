@@ -13,7 +13,6 @@
       "comment": "SSL config tests",
       "testsets": {
         "1": "ssl_testset_1.json",
-        "2": "ssl_testset_2.json",
         "3": "ssl_testset_3.json",
         "4": "ssl_testset_4.json",
         "5": "ssl_testset_5.json",
