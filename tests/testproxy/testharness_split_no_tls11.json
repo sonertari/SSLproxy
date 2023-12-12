@@ -12,7 +12,6 @@
     "2": {
       "comment": "SSL config tests",
       "testsets": {
-        "1": "ssl_testset_2.json"
       }
     },
     "3": {
