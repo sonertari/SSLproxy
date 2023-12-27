@@ -222,7 +222,11 @@ protosmtp_bev_eventcb_connected_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx
 
 	ctx->connected = 1;
 	bufferevent_enable(bev, EV_READ|EV_WRITE);
-	bufferevent_enable(ctx->srvdst.bev, EV_READ);
+
+	// srvdst is disabled in split mode, see prototcp_setup_dst()
+	if (ctx->srvdst.bev) {
+		bufferevent_enable(ctx->srvdst.bev, EV_READ);
+	}
 
 	if (ctx->proto == PROTO_SMTP) {
 		prototcp_enable_src(ctx);
