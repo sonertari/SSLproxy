@@ -22,11 +22,15 @@ buildlp:
 test: SSL_PROTOS=$(shell $(PROJECT_ROOT)/src/sslproxy -V 2>&1 | grep "SSL/TLS protocol availability")
 test: TLS11=$(findstring tls11,$(SSL_PROTOS))
 test: TLS13=$(findstring tls13,$(SSL_PROTOS))
+test: OPENSSL=$(shell $(PROJECT_ROOT)/src/sslproxy -V 2>&1 | grep "compiled against OpenSSL")
+test: OPENSSL3=$(findstring "OpenSSL 3.",$(OPENSSL))
 test: SSLPROXY_CONF=$(if $(TLS13),sslproxy.conf,sslproxy_no_tls13.conf)
 test: SSLPROXY_CONF:=$(if $(TLS11),$(SSLPROXY_CONF),sslproxy_no_tls11.conf)
+test: SSLPROXY_CONF:=$(if $(OPENSSL3),$(SSLPROXY_CONF),sslproxy_openssl3.conf)
 test: SSLPROXY_COMMAND=$(PROJECT_ROOT)/src/sslproxy -f $(SSLPROXY_CONF) -o Debug=no -o Daemon=yes -o User=nobody
 test: TESTHARNESS=$(if $(TLS13),testharness.json,testharness_no_tls13.json)
 test: TESTHARNESS:=$(if $(TLS11),$(TESTHARNESS),testharness_no_tls11.json)
+test: TESTHARNESS:=$(if $(OPENSSL3),$(TESTHARNESS),testharness_openssl3.json)
 #test: SKIP_TESTHARNESS=2
 test: buildsslproxy buildlp
 	sudo LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) ./lp/lp -f ./lp/lp.conf -o Debug=no -o Daemon=yes -o User=nobody
@@ -38,11 +42,15 @@ test: buildsslproxy buildlp
 test_split: SSL_PROTOS=$(shell $(PROJECT_ROOT)/src/sslproxy -V 2>&1 | grep "SSL/TLS protocol availability")
 test_split: TLS11=$(findstring tls11,$(SSL_PROTOS))
 test_split: TLS13=$(findstring tls13,$(SSL_PROTOS))
+test_split: OPENSSL=$(shell $(PROJECT_ROOT)/src/sslproxy -V 2>&1 | grep "compiled against OpenSSL")
+test_split: OPENSSL3=$(findstring "OpenSSL 3.",$(OPENSSL))
 test_split: SSLPROXY_CONF=$(if $(TLS13),sslproxy.conf,sslproxy_no_tls13.conf)
 test_split: SSLPROXY_CONF:=$(if $(TLS11),$(SSLPROXY_CONF),sslproxy_no_tls11.conf)
+test_split: SSLPROXY_CONF:=$(if $(OPENSSL3),$(SSLPROXY_CONF),sslproxy_openssl3.conf)
 test_split: SSLPROXY_COMMAND=$(PROJECT_ROOT)/src/sslproxy -n -f $(SSLPROXY_CONF) -o Debug=no -o Daemon=yes -o User=nobody
 test_split: TESTHARNESS=$(if $(TLS13),testharness_split.json,testharness_split_no_tls13.json)
 test_split: TESTHARNESS:=$(if $(TLS11),$(TESTHARNESS),testharness_split_no_tls11.json)
+test_split: TESTHARNESS:=$(if $(OPENSSL3),$(TESTHARNESS),testharness_split_openssl3.json)
 test_split: buildsslproxy buildlp
 	sudo LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) ./lp/lp -f ./lp/lp.conf -o Debug=no -o Daemon=yes -o User=nobody
 	sudo LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) $(SSLPROXY_COMMAND)
