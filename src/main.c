@@ -3,7 +3,7 @@
  * https://www.roe.ch/SSLsplit
  *
  * Copyright (c) 2009-2019, Daniel Roethlisberger <daniel@roe.ch>.
- * Copyright (c) 2017-2022, Soner Tari <sonertari@gmail.com>.
+ * Copyright (c) 2017-2024, Soner Tari <sonertari@gmail.com>.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -99,7 +99,7 @@ main_version(void)
 		fprintf(stderr, "---------------------------------------"
 		                "---------------------------------------\n");
 	}
-	fprintf(stderr, "Copyright (c) 2017-2022, Soner Tari <sonertari@gmail.com>\n");
+	fprintf(stderr, "Copyright (c) 2017-2024, Soner Tari <sonertari@gmail.com>\n");
 	fprintf(stderr, "https://github.com/sonertari/SSLproxy\n");
 	fprintf(stderr, "Copyright (c) 2009-2019, "
 	                "Daniel Roethlisberger <daniel@roe.ch>\n");
