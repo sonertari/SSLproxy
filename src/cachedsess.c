@@ -211,7 +211,8 @@ cachedsess_mkkey(const struct sockaddr *addr, UNUSED const socklen_t addrlen,
 		return NULL;
 	memcpy(db->buf, tmp.buf, tmp.sz);
 	memcpy(db->buf + tmp.sz, (char*)&port, sizeof(port));
-	memcpy(db->buf + tmp.sz + sizeof(port), sni, snilen);
+	if (sni)
+		memcpy(db->buf + tmp.sz + sizeof(port), sni, snilen);
 	return db;
 }
 

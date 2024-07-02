@@ -1684,8 +1684,10 @@ ssl_x509_names(X509 *crt)
 
 	count = (altnames ? sk_GENERAL_NAME_num(altnames) : 0) + (cn ? 2 : 1);
 	res = malloc(count * sizeof(char*));
-	if (!res)
+	if (!res) {
+		free(cn);
 		return NULL;
+	}
 	p = res;
 	if (cn)
 		*(p++) = cn;
