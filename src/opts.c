@@ -77,14 +77,14 @@ oom_return_null(const char *argv0)
 }
 
 int
-oom_return_na()
+oom_return_na(void)
 {
 	fprintf(stderr, "Out of memory\n");
 	return -1;
 }
 
 void *
-oom_return_na_null()
+oom_return_na_null(void)
 {
 	fprintf(stderr, "Out of memory\n");
 	return NULL;

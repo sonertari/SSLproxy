@@ -276,8 +276,8 @@ typedef struct userdbkeys {
 
 int oom_return(const char *) WUNRES;
 void *oom_return_null(const char *) WUNRES;
-int oom_return_na() WUNRES;
-void *oom_return_na_null() WUNRES;
+int oom_return_na(void) WUNRES;
+void *oom_return_na_null(void) WUNRES;
 
 cert_t *opts_load_cert_chain_key(const char *) NONNULL(1);
 

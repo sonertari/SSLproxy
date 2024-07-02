@@ -927,6 +927,8 @@ static int
 check_fd_usage(
 #ifdef DEBUG_PROXY
 	pxy_conn_ctx_t *ctx
+#else
+	void
 #endif /* DEBUG_PROXY */
 	)
 {
