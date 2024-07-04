@@ -1,24 +1,31 @@
 
 
+### SSLproxy 0.9.6 2024-07-04
+
+-   Fix clang-static-analysis warnings, thanks to @disaykin.
+-   Use clock_gettime() instead of gettimeofday(), thanks to @disaykin.
+-   Fix deprecation warnings for function declarations without a prototype.
+
+
 ### SSLproxy 0.9.5 2024-02-18
 
--   Fix possible double free of host and serv variables, thanks to @disaykin
--   Fix possible integer overflow, thanks to @disaykin
--   Close fds only once, thanks to @disaykin
--   Fix memory leak, thanks to @disaykin
--   Handle ftell error, thanks to @disaykin
--   Fix mismatched call arguments, thanks to @disaykin
--   Fix memory leak in case of cert key mismatch, thanks to @disaykin
--   Fix file descriptor leak, thanks to @disaykin
--   Handle partial write, thanks to @disaykin
--   Handle return value of gmtime(), thanks to @disaykin
--   Fix double free bugs, thanks to @disaykin
-	- Bugs found by Svace static analyzer
--   Fix possible segfault in proto smtp in split mode
--   Fix retval of privsep_server_opensock_verify(), thanks to @Qbog
--   Fix header-size calculation in IPv6 packet mirroring, thanks to @matoro
--   Fix e2e tests with openssl 3
--   Replace deprecated fail_unless() with ck_assert_msg() in unit tests
+-   Fix possible double free of host and serv variables, thanks to @disaykin.
+-   Fix possible integer overflow, thanks to @disaykin.
+-   Close fds only once, thanks to @disaykin.
+-   Fix memory leak, thanks to @disaykin.
+-   Handle ftell error, thanks to @disaykin.
+-   Fix mismatched call arguments, thanks to @disaykin.
+-   Fix memory leak in case of cert key mismatch, thanks to @disaykin.
+-   Fix file descriptor leak, thanks to @disaykin.
+-   Handle partial write, thanks to @disaykin.
+-   Handle return value of gmtime(), thanks to @disaykin.
+-   Fix double free bugs, thanks to @disaykin.
+	- Bugs found by Svace static analyzer.
+-   Fix possible segfault in proto smtp in split mode.
+-   Fix retval of privsep_server_opensock_verify(), thanks to @Qbog.
+-   Fix header-size calculation in IPv6 packet mirroring, thanks to @matoro.
+-   Fix e2e tests with openssl 3.
+-   Replace deprecated fail_unless() with ck_assert_msg() in unit tests.
 
 
 ### SSLproxy 0.9.4 2022-12-26
