@@ -83,12 +83,20 @@ protopop3_validate(pxy_conn_ctx_t *ctx, char *packet, size_t packet_size)
 	return 0;
 }
 
+static void NONNULL(1)
+protopop3_free(pxy_conn_ctx_t *ctx)
+{
+	protopop3_ctx_t *pop3_ctx = ctx->protoctx->arg;
+	free(pop3_ctx);
+}
+
 // @attention Called by thrmgr thread
 protocol_t
 protopop3_setup(pxy_conn_ctx_t *ctx)
 {
 	ctx->protoctx->proto = PROTO_POP3;
 
+	ctx->protoctx->proto_free = protopop3_free;
 	ctx->protoctx->validatecb = protopop3_validate;
 
 	ctx->protoctx->arg = malloc(sizeof(protopop3_ctx_t));
@@ -98,6 +106,13 @@ protopop3_setup(pxy_conn_ctx_t *ctx)
 	memset(ctx->protoctx->arg, 0, sizeof(protopop3_ctx_t));
 
 	return PROTO_POP3;
+}
+
+static void NONNULL(1)
+protopop3s_free(pxy_conn_ctx_t *ctx)
+{
+	protopop3_free(ctx);
+	protossl_free(ctx);
 }
 
 // @attention Called by thrmgr thread
@@ -111,7 +126,7 @@ protopop3s_setup(pxy_conn_ctx_t *ctx)
 	
 	ctx->protoctx->bev_eventcb = protossl_bev_eventcb;
 
-	ctx->protoctx->proto_free = protossl_free;
+	ctx->protoctx->proto_free = protopop3s_free;
 	ctx->protoctx->validatecb = protopop3_validate;
 
 	ctx->protoctx->arg = malloc(sizeof(protopop3_ctx_t));

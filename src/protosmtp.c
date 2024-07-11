@@ -299,6 +299,13 @@ protosmtps_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 	}
 }
 
+static void NONNULL(1)
+protosmtp_free(pxy_conn_ctx_t *ctx)
+{
+	protosmtp_ctx_t *smtp_ctx = ctx->protoctx->arg;
+	free(smtp_ctx);
+}
+
 // @attention Called by thrmgr thread
 protocol_t
 protosmtp_setup(pxy_conn_ctx_t *ctx)
@@ -310,6 +317,7 @@ protosmtp_setup(pxy_conn_ctx_t *ctx)
 	ctx->protoctx->bev_readcb = protosmtp_bev_readcb;
 	ctx->protoctx->bev_eventcb = protosmtp_bev_eventcb;
 
+	ctx->protoctx->proto_free = protosmtp_free;
 	ctx->protoctx->validatecb = protosmtp_validate;
 
 	ctx->protoctx->arg = malloc(sizeof(protosmtp_ctx_t));
@@ -319,6 +327,13 @@ protosmtp_setup(pxy_conn_ctx_t *ctx)
 	memset(ctx->protoctx->arg, 0, sizeof(protosmtp_ctx_t));
 
 	return PROTO_SMTP;
+}
+
+static void NONNULL(1)
+protosmtps_free(pxy_conn_ctx_t *ctx)
+{
+	protosmtp_free(ctx);
+	protossl_free(ctx);
 }
 
 // @attention Called by thrmgr thread
@@ -333,7 +348,7 @@ protosmtps_setup(pxy_conn_ctx_t *ctx)
 	ctx->protoctx->bev_readcb = protosmtp_bev_readcb;
 	ctx->protoctx->bev_eventcb = protosmtps_bev_eventcb;
 
-	ctx->protoctx->proto_free = protossl_free;
+	ctx->protoctx->proto_free = protosmtps_free;
 	ctx->protoctx->validatecb = protosmtp_validate;
 
 	ctx->protoctx->arg = malloc(sizeof(protosmtp_ctx_t));
