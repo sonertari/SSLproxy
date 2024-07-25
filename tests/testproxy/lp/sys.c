@@ -364,34 +364,30 @@ sys_sockaddr_str(struct sockaddr *addr, socklen_t addrlen,
                  char **host, char **serv)
 {
 	char tmphost[INET6_ADDRSTRLEN];
+	char tmpserv[6]; /* max decimal digits of short plus terminator */
 	int rv;
-	size_t hostsz;
 
-	*serv = malloc(6); /* max decimal digits of short plus terminator */
-	if (!*serv) {
-		log_err_level_printf(LOG_CRIT, "Cannot allocate memory\n");
-		return -1;
-	}
 	rv = getnameinfo(addr, addrlen,
 	                 tmphost, sizeof(tmphost),
-	                 *serv, 6,
+	                 tmpserv, sizeof(tmpserv),
 	                 NI_NUMERICHOST | NI_NUMERICSERV);
 	if (rv != 0) {
 		log_err_level_printf(LOG_CRIT, "Cannot get nameinfo for socket address: %s\n",
 		               gai_strerror(rv));
-		free(*serv);
-		*serv = NULL;
 		return -1;
 	}
-	hostsz = strlen(tmphost) + 1; /* including terminator */
-	*host = malloc(hostsz);
+	*serv = strdup(tmpserv);
+	if (!*serv) {
+		log_err_level_printf(LOG_CRIT, "Cannot allocate memory\n");
+		return -1;
+	}
+	*host = strdup(tmphost);
 	if (!*host) {
 		log_err_level_printf(LOG_CRIT, "Cannot allocate memory\n");
 		free(*serv);
 		*serv = NULL;
 		return -1;
 	}
-	memcpy(*host, tmphost, hostsz);
 	return 0;
 }
 
