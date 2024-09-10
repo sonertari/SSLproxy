@@ -1017,7 +1017,7 @@ static void
 sys_rand_seed(void) {
 	struct timespec seed;
 
-	if (clock_gettime(CLOCK_MONOTONIC, &seed) == -1) {
+	if (clock_gettime(CLOCK_REALTIME, &seed) == -1) {
 		srandom((unsigned)time(NULL));
 	} else {
 		srandom((unsigned)(seed.tv_sec ^ seed.tv_nsec));
