@@ -301,7 +301,7 @@ logpkt_pcap_write(const uint8_t *pkt, size_t pktsz, int fd)
 	pcap_rec_hdr_t rec_hdr;
 	struct timespec tv;
 
-	if (clock_gettime(CLOCK_MONOTONIC, &tv) == -1)
+	if (clock_gettime(CLOCK_REALTIME, &tv) == -1)
 	{
 		log_err_printf("Error getting current time: %s\n",
 		               strerror(errno));
