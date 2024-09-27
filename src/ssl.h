@@ -227,7 +227,7 @@ void ssl_dh_refcount_inc(DH *) NONNULL(1);
 #endif /* !OPENSSL_NO_DH */
 
 #ifndef OPENSSL_NO_EC
-EC_KEY * ssl_ec_by_name(const char *) MALLOC;
+int ssl_ec_nid_by_name(const char *);
 #endif /* !OPENSSL_NO_EC */
 
 EVP_PKEY * ssl_key_load(const char *) NONNULL(1) MALLOC;

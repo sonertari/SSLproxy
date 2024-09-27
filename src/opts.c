@@ -1622,14 +1622,12 @@ opts_set_dh(conn_opts_t *conn_opts, const char *argv0, const char *optarg, tmp_o
 int
 opts_set_ecdhcurve(conn_opts_t *conn_opts, const char *argv0, const char *optarg)
 {
-	EC_KEY *ec;
 	if (conn_opts->ecdhcurve)
 		free(conn_opts->ecdhcurve);
-	if (!(ec = ssl_ec_by_name(optarg))) {
+	if (ssl_ec_nid_by_name(optarg) == NID_undef) {
 		fprintf(stderr, "%s: unknown curve '%s'\n", argv0, optarg);
 		return -1;
 	}
-	EC_KEY_free(ec);
 	conn_opts->ecdhcurve = strdup(optarg);
 	if (!conn_opts->ecdhcurve)
 		return oom_return(argv0);
