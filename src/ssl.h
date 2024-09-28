@@ -228,7 +228,6 @@ DH *
 EVP_PKEY *
 #endif /* OPENSSL_VERSION_NUMBER >= 0x30000000L */
 ssl_dh_load(const char *) NONNULL(1) MALLOC;
-void ssl_dh_refcount_inc(DH *) NONNULL(1);
 #endif /* !OPENSSL_NO_DH */
 
 #ifndef OPENSSL_NO_EC
