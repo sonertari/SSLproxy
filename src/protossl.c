@@ -408,28 +408,29 @@ protossl_srcsslctx_create(pxy_conn_ctx_t *ctx, X509 *crt, STACK_OF(X509) *chain,
 #endif /* !OPENSSL_NO_DH */
 #ifndef OPENSSL_NO_ECDH
 	int nid = ssl_ec_nid_by_name(ctx->conn_opts->ecdhcurve);
-	if (nid != NID_undef) {
-		int rv = 0;
+	if (nid == NID_undef) {
+		log_dbg_printf("failed setting ecdh curve, unknown nid: %d\n", nid);
+		SSL_CTX_free(sslctx);
+		return NULL;
+	}
+	int rv = 0;
 #if OPENSSL_VERSION_NUMBER < 0x30000000L || defined(LIBRESSL_VERSION_NUMBER)
-		EC_KEY *ecdh = EC_KEY_new_by_curve_name(nid);
-		if (ecdh) {
-			rv = SSL_CTX_set_tmp_ecdh(sslctx, ecdh);
-			EC_KEY_free(ecdh);
-		}
-		else {
-			log_dbg_printf("failed setting ecdh curve: %ld\n", ERR_get_error());
-			return NULL;
-		}
-#else /* OPENSSL_VERSION_NUMBER >= 0x30000000L */
-		rv = SSL_CTX_set1_groups(sslctx, &nid, 1);
-#endif /* OPENSSL_VERSION_NUMBER >= 0x30000000L */
-		if (!rv) {
-			log_dbg_printf("failed setting ecdh curve: %ld\n", ERR_get_error());
-			return NULL;
-		}
+	EC_KEY *ecdh = EC_KEY_new_by_curve_name(nid);
+	if (ecdh) {
+		rv = SSL_CTX_set_tmp_ecdh(sslctx, ecdh);
+		EC_KEY_free(ecdh);
 	}
 	else {
-		log_dbg_printf("failed setting ecdh curve, unknown nid: %d\n", nid);
+		log_dbg_printf("failed setting ecdh curve, cannot create ecdh: %ld\n", ERR_get_error());
+		SSL_CTX_free(sslctx);
+		return NULL;
+	}
+#else /* OPENSSL_VERSION_NUMBER >= 0x30000000L */
+	rv = SSL_CTX_set1_groups(sslctx, &nid, 1);
+#endif /* OPENSSL_VERSION_NUMBER >= 0x30000000L */
+	if (!rv) {
+		log_dbg_printf("failed setting ecdh curve: %ld\n", ERR_get_error());
+		SSL_CTX_free(sslctx);
 		return NULL;
 	}
 #endif /* !OPENSSL_NO_ECDH */
