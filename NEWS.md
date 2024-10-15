@@ -1,5 +1,22 @@
 
 
+### SSLproxy 0.9.7 2024-10-15
+
+-   Fix deprecation warnings with OpenSSL 3.x for
+	- DH_free()
+	- DH config
+	- ECDH config
+	- RSA functions
+	- Engines
+-   Remove unused ssl_dh_refcount_inc()
+-   Fix memleak, develop proto_free functions for pop3 and smtp, fixes issue
+    #72 reported by @applehxb
+-   Fix possible memleak and use after free for srchost_clean
+-   Use strdup instead of strlen+malloc+memcpy in sys_sockaddr_str(), thanks to
+    @disaykin
+-   Use CLOCK_REALTIME to fix pcap timestamp, issue #78
+
+
 ### SSLproxy 0.9.6 2024-07-04
 
 -   Fix clang-static-analysis warnings, thanks to @disaykin.
