@@ -111,12 +111,18 @@ typedef struct conn_opts {
 	int minsslversion;
 	int maxsslversion;
 #endif /* OPENSSL_VERSION_NUMBER >= 0x10100000L */
+	char *cacrt_str;
 	X509 *cacrt;
+	char *cakey_str;
 	EVP_PKEY *cakey;
+	char *chain_str;
 	STACK_OF(X509) *chain;
+	char *clientcrt_str;
 	X509 *clientcrt;
+	char *clientkey_str;
 	EVP_PKEY *clientkey;
 #ifndef OPENSSL_NO_DH
+	char *dh_str;
 #if OPENSSL_VERSION_NUMBER < 0x30000000L || defined(LIBRESSL_VERSION_NUMBER)
 	DH *dh;
 #else /* OPENSSL_VERSION_NUMBER >= 0x30000000L */

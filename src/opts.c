@@ -191,22 +191,44 @@ global_new(void)
 void
 conn_opts_free(conn_opts_t *conn_opts)
 {
+	if (conn_opts->clientcrt_str) {
+		free(conn_opts->clientcrt_str);
+	}
 	if (conn_opts->clientcrt) {
 		X509_free(conn_opts->clientcrt);
+	}
+
+	if (conn_opts->clientkey_str) {
+		free(conn_opts->clientkey_str);
 	}
 	if (conn_opts->clientkey) {
 		EVP_PKEY_free(conn_opts->clientkey);
 	}
+
+	if (conn_opts->cacrt_str) {
+		free(conn_opts->cacrt_str);
+	}
 	if (conn_opts->cacrt) {
 		X509_free(conn_opts->cacrt);
 	}
+
+	if (conn_opts->cakey_str) {
+		free(conn_opts->cakey_str);
+	}
 	if (conn_opts->cakey) {
 		EVP_PKEY_free(conn_opts->cakey);
+	}
+
+	if (conn_opts->chain_str) {
+		free(conn_opts->chain_str);
 	}
 	if (conn_opts->chain) {
 		sk_X509_pop_free(conn_opts->chain, X509_free);
 	}
 #ifndef OPENSSL_NO_DH
+	if (conn_opts->dh_str) {
+		free(conn_opts->dh_str);
+	}
 	if (conn_opts->dh) {
 #if OPENSSL_VERSION_NUMBER < 0x30000000L || defined(LIBRESSL_VERSION_NUMBER)
 		DH_free(conn_opts->dh);
@@ -594,32 +616,85 @@ conn_opts_copy(conn_opts_t *conn_opts, const char *argv0, tmp_opts_t *tmp_opts)
 
 	// Pass NULL as tmp_opts param, so we don't reassign the var to itself
 	// That would be harmless but incorrect
-	if (tmp_opts && tmp_opts->chain_str) {
+	if (conn_opts->chain_str) {
+		if ((cops->chain_str = strdup(conn_opts->chain_str)) == NULL)
+			return oom_return_null(argv0);
+		if (opts_set_chain(cops, argv0, conn_opts->chain_str, NULL) == -1)
+			return NULL;
+	}
+	else if (tmp_opts && tmp_opts->chain_str) {
+		if ((cops->chain_str = strdup(tmp_opts->chain_str)) == NULL)
+			return oom_return_null(argv0);
 		if (opts_set_chain(cops, argv0, tmp_opts->chain_str, NULL) == -1)
 			return NULL;
 	}
+
 	if (tmp_opts && tmp_opts->leafcrlurl_str) {
 		if (opts_set_leafcrlurl(cops, argv0, tmp_opts->leafcrlurl_str, NULL) == -1)
 			return NULL;
 	}
-	if (tmp_opts && tmp_opts->cacrt_str) {
+
+	if (conn_opts->cacrt_str) {
+		if ((cops->cacrt_str = strdup(conn_opts->cacrt_str)) == NULL)
+			return oom_return_null(argv0);
+		if (opts_set_cacrt(cops, argv0, conn_opts->cacrt_str, NULL) == -1)
+			return NULL;
+	}
+	else if (tmp_opts && tmp_opts->cacrt_str) {
+		if ((cops->cacrt_str = strdup(tmp_opts->cacrt_str)) == NULL)
+			return oom_return_null(argv0);
 		if (opts_set_cacrt(cops, argv0, tmp_opts->cacrt_str, NULL) == -1)
 			return NULL;
 	}
-	if (tmp_opts && tmp_opts->cakey_str) {
+
+	if (conn_opts->cakey_str) {
+		if ((cops->cakey_str = strdup(conn_opts->cakey_str)) == NULL)
+			return oom_return_null(argv0);
+		if (opts_set_cakey(cops, argv0, conn_opts->cakey_str, NULL) == -1)
+			return NULL;
+	}
+	else if (tmp_opts && tmp_opts->cakey_str) {
+		if ((cops->cakey_str = strdup(tmp_opts->cakey_str)) == NULL)
+			return oom_return_null(argv0);
 		if (opts_set_cakey(cops, argv0, tmp_opts->cakey_str, NULL) == -1)
 			return NULL;
 	}
-	if (tmp_opts && tmp_opts->clientcrt_str) {
+
+	if (conn_opts->clientcrt_str) {
+		if ((cops->clientcrt_str = strdup(conn_opts->clientcrt_str)) == NULL)
+			return oom_return_null(argv0);
+		if (opts_set_clientcrt(cops, argv0, conn_opts->clientcrt_str, NULL) == -1)
+			return NULL;
+	}
+	else if (tmp_opts && tmp_opts->clientcrt_str) {
+		if ((cops->clientcrt_str = strdup(tmp_opts->clientcrt_str)) == NULL)
+			return oom_return_null(argv0);
 		if (opts_set_clientcrt(cops, argv0, tmp_opts->clientcrt_str, NULL) == -1)
 			return NULL;
 	}
-	if (tmp_opts && tmp_opts->clientkey_str) {
+
+	if (conn_opts->clientkey_str) {
+		if ((cops->clientkey_str = strdup(conn_opts->clientkey_str)) == NULL)
+			return oom_return_null(argv0);
+		if (opts_set_clientkey(cops, argv0, conn_opts->clientkey_str, NULL) == -1)
+			return NULL;
+	}
+	else if (tmp_opts && tmp_opts->clientkey_str) {
+		if ((cops->clientkey_str = strdup(tmp_opts->clientkey_str)) == NULL)
+			return oom_return_null(argv0);
 		if (opts_set_clientkey(cops, argv0, tmp_opts->clientkey_str, NULL) == -1)
 			return NULL;
 	}
 #ifndef OPENSSL_NO_DH
-	if (tmp_opts && tmp_opts->dh_str) {
+	if (conn_opts->dh_str) {
+		if ((cops->dh_str = strdup(conn_opts->dh_str)) == NULL)
+			return oom_return_null(argv0);
+		if (opts_set_dh(cops, argv0, conn_opts->dh_str, NULL) == -1)
+			return NULL;
+	}
+	else if (tmp_opts && tmp_opts->dh_str) {
+		if ((cops->dh_str = strdup(tmp_opts->dh_str)) == NULL)
+			return oom_return_null(argv0);
 		if (opts_set_dh(cops, argv0, tmp_opts->dh_str, NULL) == -1)
 			return NULL;
 	}
@@ -2553,14 +2628,24 @@ set_conn_opts_option(conn_opts_t *conn_opts, const char *argv0,
 	}
 
 	if (equal(name, "CACert")) {
+		if ((conn_opts->cacrt_str = strdup(value)) == NULL)
+			return oom_return(argv0);
 		return opts_set_cacrt(conn_opts, argv0, value, tmp_opts);
 	} else if (equal(name, "CAKey")) {
+		if ((conn_opts->cakey_str = strdup(value)) == NULL)
+			return oom_return(argv0);
 		return opts_set_cakey(conn_opts, argv0, value, tmp_opts);
 	} else if (equal(name, "ClientCert")) {
+		if ((conn_opts->clientcrt_str = strdup(value)) == NULL)
+			return oom_return(argv0);
 		return opts_set_clientcrt(conn_opts, argv0, value, tmp_opts);
 	} else if (equal(name, "ClientKey")) {
+		if ((conn_opts->clientkey_str = strdup(value)) == NULL)
+			return oom_return(argv0);
 		return opts_set_clientkey(conn_opts, argv0, value, tmp_opts);
 	} else if (equal(name, "CAChain")) {
+		if ((conn_opts->chain_str = strdup(value)) == NULL)
+			return oom_return(argv0);
 		return opts_set_chain(conn_opts, argv0, value, tmp_opts);
 	} else if (equal(name, "LeafCRLURL")) {
 		return opts_set_leafcrlurl(conn_opts, argv0, value, tmp_opts);
@@ -2582,6 +2667,8 @@ set_conn_opts_option(conn_opts_t *conn_opts, const char *argv0,
 #endif /* DEBUG_OPTS */
 #ifndef OPENSSL_NO_DH
 	} else if (equal(name, "DHGroupParams")) {
+		if ((conn_opts->dh_str = strdup(value)) == NULL)
+			return oom_return(argv0);
 		return opts_set_dh(conn_opts, argv0, value, tmp_opts);
 #endif /* !OPENSSL_NO_DH */
 #ifndef OPENSSL_NO_ECDH

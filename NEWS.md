@@ -14,7 +14,7 @@
 -   Fix possible memleak and use after free for srchost_clean
 -   Use strdup instead of strlen+malloc+memcpy in sys_sockaddr_str(), thanks to
     @disaykin
--   Use CLOCK_REALTIME to fix pcap timestamp, issue #78
+-   Use CLOCK_REALTIME to fix pcap timestamp, issue #78 thanks to @mdulaney
 
 
 ### SSLproxy 0.9.6 2024-07-04
