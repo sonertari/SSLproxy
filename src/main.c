@@ -666,19 +666,12 @@ main(int argc, char *argv[])
 		// and global options are copied into proxyspecs and then into struct filter rules anyway
 		for (proxyspec_t *spec = global->spec; spec; spec = spec->next) {
 			if (spec->ssl || spec->upgrade) {
-				// Either the proxyspec itself or all of the filtering rules copied into or defined in the proxyspec must have a complete SSL/TLS configuration
+				// SSL proxyspecs should always have a complete SSL/TLS configuration, even if their filter rules have complete SSL/TLS configuration,
+				// because it is very difficult, if not impossible, to check the coverage of filter rules to make sure we have complete SSL/TLS configuration
+				// if no filter rules matches, in which case sslproxy can crash
 				if (main_check_opts(spec->opts, spec->conn_opts, argv0, "ProxySpec") == -1) {
-					if (!spec->opts->filter_rules)
-						exit(EXIT_FAILURE);
-
-					filter_rule_t *rule = spec->opts->filter_rules;
-					while (rule) {
-						if (!rule->action.conn_opts || (main_check_opts(spec->opts, rule->action.conn_opts, argv0, "FilterRule") == -1)) {
-							fprintf(stderr, "%s: no or incomplete SSL/TLS configuration in ProxySpec and/or FilterRule.\n", argv0);
-							exit(EXIT_FAILURE);
-						}
-						rule = rule->next;
-					}
+					fprintf(stderr, "%s: no or incomplete SSL/TLS configuration in ProxySpec.\n", argv0);
+					exit(EXIT_FAILURE);
 				}
 			}
 		}
