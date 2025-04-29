@@ -11,7 +11,8 @@ endif
 ifeq ($(UNAME_S),Darwin)
 SUFFIX:=	dylib
 #CFLAGS+=	-arch i386
-CFLAGS+=	-arch x86_64
+#CFLAGS+=	-arch x86_64
+#CFLAGS+=	-arch arm64
 else
 SUFFIX:=	so
 endif
