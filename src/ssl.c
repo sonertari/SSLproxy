@@ -3,6 +3,7 @@
  * https://www.roe.ch/SSLsplit
  *
  * Copyright (c) 2009-2019, Daniel Roethlisberger <daniel@roe.ch>.
+ * Copyright (c) 2017-2025, Soner Tari <sonertari@gmail.com>.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -2166,7 +2167,7 @@ ssl_tls_clienthello_parse(const unsigned char *buf, ssize_t sz, int search,
 		 * updated for TLS 1.3 once that is standardized and still
 		 * compatible with this parser; remember to also update the
 		 * inner version check below */
-		if (p[0] != 0x03 || p[1] > 0x03)
+		if (p[0] != 0x03 || p[1] > 0x04)
 			continue;
 		p += 2; n -= 2;
 
@@ -2218,7 +2219,7 @@ ssl_tls_clienthello_parse(const unsigned char *buf, ssize_t sz, int search,
 			continue;
 		DBG_printf("clienthello version %02x %02x\n", p[0], p[1]);
 		/* inner version check, see outer one above */
-		if (p[0] != 0x03 || p[1] > 0x03)
+		if (p[0] != 0x03 || p[1] > 0x04)
 			continue;
 		p += 2; n -= 2;
 

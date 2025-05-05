@@ -3,7 +3,7 @@
  * https://www.roe.ch/SSLsplit
  *
  * Copyright (c) 2009-2019, Daniel Roethlisberger <daniel@roe.ch>.
- * Copyright (c) 2017-2024, Soner Tari <sonertari@gmail.com>.
+ * Copyright (c) 2017-2025, Soner Tari <sonertari@gmail.com>.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -1353,7 +1353,7 @@ protossl_fd_readcb(evutil_socket_t fd, UNUSED short what, void *arg)
 	// Child connections will use the sni info obtained by the parent conn
 	/* for SSL, peek ClientHello and parse SNI from it */
 
-	unsigned char buf[1024];
+	unsigned char buf[2048];
 	ssize_t n;
 	const unsigned char *chello;
 	int rv;
