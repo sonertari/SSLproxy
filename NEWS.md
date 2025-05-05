@@ -1,5 +1,20 @@
 
 
+### SSLproxy 0.9.8 2025-05-05
+
+-   Force SSL/TLS configuration in SSL proxyspecs
+	SSL proxyspecs should always have a complete SSL/TLS configuration, even
+	if their filter rules have complete SSL/TLS configuration, because it is
+	very difficult, if not impossible, to check the coverage of filter rules
+	to make sure we have complete SSL/TLS configuration if no filter rule
+	matches, in which case sslproxy may crash
+-   Fix crash if no global ca crt/key specified, issue #80 reported by
+	@pranavbhalerao
+-   Fix ClientHello parser for TLS 1.3, issue #84 reported by @GhostNaix
+-   Fix unit tests on arm64 macOS, issue #81 reported by @jmayer
+-   Suppress deprecation warnings for engines in unit tests with OpenSSL 3.x
+
+
 ### SSLproxy 0.9.7 2024-10-15
 
 -   Fix deprecation warnings with OpenSSL 3.x for

@@ -3,7 +3,7 @@
  * https://www.roe.ch/SSLsplit
  *
  * Copyright (c) 2009-2019, Daniel Roethlisberger <daniel@roe.ch>.
- * Copyright (c) 2017-2024, Soner Tari <sonertari@gmail.com>.
+ * Copyright (c) 2017-2025, Soner Tari <sonertari@gmail.com>.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -99,7 +99,7 @@ main_version(void)
 		fprintf(stderr, "---------------------------------------"
 		                "---------------------------------------\n");
 	}
-	fprintf(stderr, "Copyright (c) 2017-2024, Soner Tari <sonertari@gmail.com>\n");
+	fprintf(stderr, "Copyright (c) 2017-2025, Soner Tari <sonertari@gmail.com>\n");
 	fprintf(stderr, "https://github.com/sonertari/SSLproxy\n");
 	fprintf(stderr, "Copyright (c) 2009-2019, "
 	                "Daniel Roethlisberger <daniel@roe.ch>\n");
@@ -668,7 +668,7 @@ main(int argc, char *argv[])
 			if (spec->ssl || spec->upgrade) {
 				// SSL proxyspecs should always have a complete SSL/TLS configuration, even if their filter rules have complete SSL/TLS configuration,
 				// because it is very difficult, if not impossible, to check the coverage of filter rules to make sure we have complete SSL/TLS configuration
-				// if no filter rules matches, in which case sslproxy can crash
+				// if no filter rule matches, in which case sslproxy may crash
 				if (main_check_opts(spec->opts, spec->conn_opts, argv0, "ProxySpec") == -1) {
 					fprintf(stderr, "%s: no or incomplete SSL/TLS configuration in ProxySpec.\n", argv0);
 					exit(EXIT_FAILURE);

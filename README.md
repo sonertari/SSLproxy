@@ -1,6 +1,6 @@
 # SSLproxy - transparent SSL/TLS proxy for decrypting and diverting network traffic to other programs for deep SSL inspection
 
-Copyright (C) 2017-2024, [Soner Tari](mailto:sonertari@gmail.com).
+Copyright (C) 2017-2025, [Soner Tari](mailto:sonertari@gmail.com).
 https://github.com/sonertari/SSLproxy
 
 Copyright (C) 2009-2019, [Daniel Roethlisberger](//daniel.roe.ch/).

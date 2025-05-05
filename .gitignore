@@ -27,6 +27,7 @@
 
 /nbproject/
 /tests/testproxy/lp/nbproject/
+/.vscode/
 
 # CVS default ignores begin
 tags
