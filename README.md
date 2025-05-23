@@ -14,11 +14,11 @@ as UTM services, for deep SSL inspection. But it can handle unencrypted
 network traffic as well.
 
 [The UTMFW project](https://github.com/sonertari/UTMFW) uses SSLproxy to 
-decyrpt and feed network traffic into its UTM services: Web Filter, POP3 
-Proxy, SMTP Proxy, and Inline IPS; and also indirectly into Virus Scanner and 
-Spam Filter through those UTM software. Given that most of the Internet 
-traffic is encrypted now, without SSLproxy it wouldn't be possible to deeply 
-inspect most of the network traffic passing through UTMFW.
+decrypt and feed network traffic into its UTM services: Web Filter, POP3 Proxy, 
+SMTP Proxy, and Inline IPS; and also indirectly into Virus Scanner and Spam 
+Filter through those UTM software. Given that most of the Internet traffic is 
+encrypted now, without SSLproxy it wouldn't be possible to deeply inspect most 
+of the network traffic passing through UTMFW.
 
 See [this presentation](https://drive.google.com/open?id=12YaGIGs0-xfpqMNAY3rzUbIyed-Tso8W) 
 for a summary of SSL interception and potential issues with middleboxes that 
@@ -50,7 +50,7 @@ communication occurs over networking sockets.
 SSLproxy supports split mode of operation similar to SSLsplit as well. In 
 split mode, packets are not diverted to listening programs, effectively making 
 SSLproxy behave similar to SSLsplit, but not exactly like it, because SSLproxy 
-has certain features non-existent in SSLsplit, such as user authentication, 
+has certain features nonexistent in SSLsplit, such as user authentication, 
 protocol validation, and filtering rules. Also, note that the implementation 
 of the proxy core in SSLproxy is different from the one in SSLsplit; for 
 example, the proxy core in SSLproxy runs lockless, whereas SSLsplit 
@@ -253,7 +253,7 @@ normally prevent MitM attacks or make them more difficult. SSLproxy can deny
 OCSP requests in a generic way. For HTTP and HTTPS connections, SSLproxy
 mangles headers to prevent server-instructed public key pinning (HPKP), avoid
 strict transport security restrictions (HSTS), avoid Certificate Transparency
-enforcement (Expect-CT) and prevent switching to QUIC/SPDY, HTTP/2 or
+enforcement (Expect-CT), and prevent switching to QUIC/SPDY, HTTP/2 or
 WebSockets (Upgrade, Alternate Protocols). HTTP compression, encodings and
 keep-alive are disabled to make the logs more readable.
 
@@ -349,7 +349,7 @@ user record with the current system time. If the difference is greater than
 the value configured by the UserTimeout option, the connection is redirected 
 to the login page.
 
-If the connection passes all these checks, SSLproxy proceeds with establishing 
+If the connection passes all those checks, SSLproxy proceeds with establishing 
 the connection.
 
 The atime of the IP address in the users table is updated with the system time 
@@ -358,7 +358,7 @@ using a privsep command, it is expensive. So, to reduce the frequency of such
 updates, it is deferred until after the user idle time is more than half of 
 the timeout period.
 
-If a description text is provided in the DESC field, it can be used with 
+If a description text is provided in the DESC field, it can be used in 
 filtering rules to treat the user logged in from different locations, i.e. 
 from different client IP addresses, differently.
 
