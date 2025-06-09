@@ -1,3 +1,5 @@
+[![Build and Test](https://github.com/sonertari/SSLproxy/actions/workflows/ci.yml/badge.svg)](https://github.com/sonertari/SSLproxy/actions/workflows/ci.yml)
+
 # SSLproxy - transparent SSL/TLS proxy for decrypting and diverting network traffic to other programs for deep SSL inspection
 
 Copyright (C) 2017-2025, [Soner Tari](mailto:sonertari@gmail.com).
