@@ -25,3 +25,6 @@ jobs:
 
     - name: Run unit tests
       run: make unittest
+
+    - name: Print version
+      run: src/sslproxy -V
