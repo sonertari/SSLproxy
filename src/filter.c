@@ -83,18 +83,23 @@ filter_userlist_copy(userlist_t *userlist, const char *argv0, userlist_t **ul)
 	while (userlist) {
 		userlist_t *du = malloc(sizeof(userlist_t));
 		if (!du)
-			return oom_return(argv0);
+			goto err;
 		memset(du, 0, sizeof(userlist_t));
 
 		du->user = strdup(userlist->user);
-		if (!du->user)
-			return oom_return(argv0);
+		if (!du->user) {
+			free(du);
+			goto err;
+		}
 
 		append_list(ul, du, userlist_t);
 
 		userlist = userlist->next;
 	}
 	return 0;
+
+err:
+	return oom_return(argv0);
 }
 
 char *
@@ -416,26 +421,29 @@ filter_free(opts_t *opts)
 int
 filter_macro_copy(macro_t *macro, const char *argv0, opts_t *opts)
 {
+	macro_t *m = NULL;
 	while (macro) {
-		macro_t *m = malloc(sizeof(macro_t));
+		m = malloc(sizeof(macro_t));
 		if (!m)
-			return oom_return(argv0);
+			goto err;
 		memset(m, 0, sizeof(macro_t));
 
 		m->name = strdup(macro->name);
 		if (!m->name)
-			return oom_return(argv0);
+			goto err_free_m;
 
 		value_t *value = macro->value;
 		while (value) {
 			value_t *v = malloc(sizeof(value_t));
 			if (!v)
-				return oom_return(argv0);
+				goto err_free_m;
 			memset(v, 0, sizeof(value_t));
 
 			v->value = strdup(value->value);
-			if (!v->value)
-				return oom_return(argv0);
+			if (!v->value) {
+				free(v);
+				goto err_free_m;
+			}
 
 			append_list(&m->value, v, value_t);
 			value = value->next;
@@ -445,15 +453,26 @@ filter_macro_copy(macro_t *macro, const char *argv0, opts_t *opts)
 		macro = macro->next;
 	}
 	return 0;
+
+err_free_m:
+	if (m) {
+		if (m->name)
+			free(m->name);
+		filter_value_free(m->value);
+		free(m);
+	}
+err:
+	return oom_return(argv0);
 }
 
 int
 filter_rule_copy(filter_rule_t *rule, const char *argv0, opts_t *opts, tmp_opts_t *tmp_opts)
 {
+	filter_rule_t *r = NULL;
 	while (rule) {
-		filter_rule_t *r = malloc(sizeof(filter_rule_t));
+		r = malloc(sizeof(filter_rule_t));
 		if (!r)
-			return oom_return(argv0);
+			goto err;
 		memset(r, 0, sizeof(filter_rule_t));
 
 		r->all_conns = rule->all_conns;
@@ -464,14 +483,14 @@ filter_rule_copy(filter_rule_t *rule, const char *argv0, opts_t *opts, tmp_opts_
 		if (rule->user) {
 			r->user = strdup(rule->user);
 			if (!r->user)
-				return oom_return(argv0);
+				goto err_free_r;
 		}
 		r->exact_user = rule->exact_user;
 
 		if (rule->desc) {
 			r->desc = strdup(rule->desc);
 			if (!r->desc)
-				return oom_return(argv0);
+				goto err_free_r;
 		}
 		r->exact_desc = rule->exact_desc;
 #endif /* !WITHOUT_USERAUTH */
@@ -479,34 +498,34 @@ filter_rule_copy(filter_rule_t *rule, const char *argv0, opts_t *opts, tmp_opts_
 		if (rule->ip) {
 			r->ip = strdup(rule->ip);
 			if (!r->ip)
-				return oom_return(argv0);
+				goto err_free_r;
 		}
 		r->exact_ip = rule->exact_ip;
 
 		if (rule->dstip) {
 			r->dstip = strdup(rule->dstip);
 			if (!r->dstip)
-				return oom_return(argv0);
+				goto err_free_r;
 		}
 		if (rule->sni) {
 			r->sni = strdup(rule->sni);
 			if (!r->sni)
-				return oom_return(argv0);
+				goto err_free_r;
 		}
 		if (rule->cn) {
 			r->cn = strdup(rule->cn);
 			if (!r->cn)
-				return oom_return(argv0);
+				goto err_free_r;
 		}
 		if (rule->host) {
 			r->host = strdup(rule->host);
 			if (!r->host)
-				return oom_return(argv0);
+				goto err_free_r;
 		}
 		if (rule->uri) {
 			r->uri = strdup(rule->uri);
 			if (!r->uri)
-				return oom_return(argv0);
+				goto err_free_r;
 		}
 
 		r->exact_dstip = rule->exact_dstip;
@@ -524,7 +543,7 @@ filter_rule_copy(filter_rule_t *rule, const char *argv0, opts_t *opts, tmp_opts_
 		if (rule->port) {
 			r->port = strdup(rule->port);
 			if (!r->port)
-				return oom_return(argv0);
+				goto err_free_r;
 		}
 		r->all_ports = rule->all_ports;
 		r->exact_port = rule->exact_port;
@@ -536,7 +555,7 @@ filter_rule_copy(filter_rule_t *rule, const char *argv0, opts_t *opts, tmp_opts_
 		if (rule->action.conn_opts) {
 			r->action.conn_opts = conn_opts_copy(rule->action.conn_opts, argv0, tmp_opts);
 			if (!r->action.conn_opts)
-				return oom_return(argv0);
+				goto err_free_r;
 		}
 
 		append_list(&opts->filter_rules, r, filter_rule_t);
@@ -544,6 +563,11 @@ filter_rule_copy(filter_rule_t *rule, const char *argv0, opts_t *opts, tmp_opts_
 		rule = rule->next;
 	}
 	return 0;
+
+err_free_r:
+	filter_rule_free(r);
+err:
+	return oom_return(argv0);
 }
 
 static char *
@@ -1572,7 +1596,7 @@ filter_passsite_set(opts_t *opts, UNUSED conn_opts_t *conn_opts, char *value, un
 
 	if (len > MAX_SITE_LEN) {
 		fprintf(stderr, "Filter site too long %zu > %d on line %d\n", len, MAX_SITE_LEN, line_num);
-		return -1;
+		goto err;
 	}
 
 	unsigned int exact_site = 0;
@@ -1590,13 +1614,13 @@ filter_passsite_set(opts_t *opts, UNUSED conn_opts_t *conn_opts, char *value, un
 
 	rule->sni = strdup(argv[0]);
 	if (!rule->sni)
-		return oom_return_na();
+		goto err;
 	rule->exact_sni = exact_site;
 	rule->all_snis = all_sites;
 
 	rule->cn = strdup(argv[0]);
 	if (!rule->cn)
-		return oom_return_na();
+		goto err;
 	rule->exact_cn = exact_site;
 	rule->all_cns = all_sites;
 
@@ -1618,12 +1642,12 @@ filter_passsite_set(opts_t *opts, UNUSED conn_opts_t *conn_opts, char *value, un
 		} else if (sys_isuser(argv[1])) {
 			if (!conn_opts->user_auth) {
 				fprintf(stderr, "User filter requires user auth on line %d\n", line_num);
-				return -1;
+				goto err;
 			}
 			rule->action.precedence += 2;
 			rule->user = strdup(argv[1]);
 			if (!rule->user)
-				return oom_return_na();
+				goto err;
 #else /* !WITHOUT_USERAUTH */
 			// Apply filter rule to all conns, if USERAUTH is disabled, ip == '*'
 			rule->all_conns = 1;
@@ -1632,7 +1656,7 @@ filter_passsite_set(opts_t *opts, UNUSED conn_opts_t *conn_opts, char *value, un
 			rule->action.precedence++;
 			rule->ip = strdup(argv[1]);
 			if (!rule->ip)
-				return oom_return_na();
+				goto err;
 		}
 	}
 
@@ -1647,17 +1671,17 @@ filter_passsite_set(opts_t *opts, UNUSED conn_opts_t *conn_opts, char *value, un
 					rule->ip,
 #endif /* !WITHOUT_USERAUTH */
 					line_num);
-			return -1;
+			goto err;
 		}
 #ifndef WITHOUT_USERAUTH
 		if (!conn_opts->user_auth) {
 			fprintf(stderr, "Keyword filter requires user auth on line %d\n", line_num);
-			return -1;
+			goto err;
 		}
 		rule->action.precedence++;
 		rule->desc = strdup(argv[2]);
 		if (!rule->desc)
-			return oom_return_na();
+			goto err;
 #endif /* !WITHOUT_USERAUTH */
 	}
 
@@ -1670,6 +1694,22 @@ filter_passsite_set(opts_t *opts, UNUSED conn_opts_t *conn_opts, char *value, un
 	filter_rule_dbg_print(rule);
 #endif /* DEBUG_OPTS */
 	return 0;
+
+err:
+	if (rule) {
+		if (rule->sni)
+			free(rule->sni);
+		if (rule->cn)
+			free(rule->cn);
+		if (rule->user)
+			free(rule->user);
+		if (rule->desc)
+			free(rule->desc);
+		if (rule->ip)
+			free(rule->ip);
+		free(rule);
+	}
+	return oom_return_na();
 }
 
 static macro_t *
@@ -1727,24 +1767,26 @@ filter_macro_set(opts_t *opts, char *value, unsigned int line_num)
 
 	macro->name = strdup(argv[0]);
 	if (!macro->name)
-		return oom_return_na();
+		goto err;
 
 	int i = 1;
 	while (i < argc) {
 		// Do not allow macro within macro, no recursive macro definitions
 		if (argv[i][0] == '$') {
 			fprintf(stderr, "Invalid macro value '%s' on line %d\n", argv[i], line_num);
-			return -1;
+			goto err;
 		}
 
 		value_t *v = malloc(sizeof(value_t));
 		if (!v)
-			return oom_return_na();
+			goto err;
 		memset(v, 0, sizeof(value_t));
 
 		v->value = strdup(argv[i++]);
-		if (!v->value)
-			return oom_return_na();
+		if (!v->value) {
+			free(v);
+			goto err;
+		}
 
 		append_list(&macro->value, v, value_t);
 	}
@@ -1759,6 +1801,15 @@ filter_macro_set(opts_t *opts, char *value, unsigned int line_num)
 	free(s);
 #endif /* DEBUG_OPTS */
 	return 0;
+
+err:
+	if (macro) {
+		if (macro->name)
+			free(macro->name);
+		filter_value_free(macro->value);
+		free(macro);
+	}
+	return oom_return_na();
 }
 
 static char * WUNRES
@@ -1932,7 +1983,7 @@ filter_rule_translate(opts_t *opts, const char *name, int argc, char **argv, uns
 		}
 		else if (equal(argv[i], "from")) {
 			if ((i = filter_arg_index_inc(i, argc, argv[i], line_num)) == -1)
-				return -1;
+				goto err;
 #ifndef WITHOUT_USERAUTH
 			if (equal(argv[i], "user") || equal(argv[i], "desc")) {
 				// The existence of user or desc should increment precedence, all_users or not
@@ -1941,14 +1992,14 @@ filter_rule_translate(opts_t *opts, const char *name, int argc, char **argv, uns
 
 				if (equal(argv[i], "user")) {
 					if ((i = filter_arg_index_inc(i, argc, argv[i], line_num)) == -1)
-						return -1;
+						goto err;
 
 					rule->all_users = filter_is_all(argv[i]);
 
 					if (!rule->all_users) {
 						rule->exact_user = filter_is_exact(argv[i]);
 						if (filter_field_set(&rule->user, argv[i], line_num) == -1)
-							return -1;
+							goto err;
 						rule->action.precedence++;
 					}
 					i++;
@@ -1956,7 +2007,7 @@ filter_rule_translate(opts_t *opts, const char *name, int argc, char **argv, uns
 
 				if (i < argc && equal(argv[i], "desc")) {
 					if ((i = filter_arg_index_inc(i, argc, argv[i], line_num)) == -1)
-						return -1;
+						goto err;
 
 					if (filter_is_all(argv[i])) {
 						if (!rule->user) {
@@ -1966,7 +2017,7 @@ filter_rule_translate(opts_t *opts, const char *name, int argc, char **argv, uns
 					else {
 						rule->exact_desc = filter_is_exact(argv[i]);
 						if (filter_field_set(&rule->desc, argv[i], line_num) == -1)
-							return -1;
+							goto err;
 						rule->action.precedence++;
 					}
 					i++;
@@ -1978,14 +2029,14 @@ filter_rule_translate(opts_t *opts, const char *name, int argc, char **argv, uns
 #endif /* !WITHOUT_USERAUTH */
 			if (equal(argv[i], "ip")) {
 				if ((i = filter_arg_index_inc(i, argc, argv[i], line_num)) == -1)
-					return -1;
+					goto err;
 
 				rule->all_conns = filter_is_all(argv[i]);
 
 				if (!rule->all_conns) {
 					rule->exact_ip = filter_is_exact(argv[i]);
 					if (filter_field_set(&rule->ip, argv[i], line_num) == -1)
-						return -1;
+						goto err;
 					rule->action.precedence++;
 				}
 				i++;
@@ -1997,7 +2048,7 @@ filter_rule_translate(opts_t *opts, const char *name, int argc, char **argv, uns
 		}
 		else if (equal(argv[i], "to")) {
 			if ((i = filter_arg_index_inc(i, argc, argv[i], line_num)) == -1)
-				return -1;
+				goto err;
 
 			if (equal(argv[i], "ip") || equal(argv[i], "sni") || equal(argv[i], "cn") || equal(argv[i], "host") || equal(argv[i], "uri") ||
 					equal(argv[i], "port")) {
@@ -2005,12 +2056,12 @@ filter_rule_translate(opts_t *opts, const char *name, int argc, char **argv, uns
 					char *name = argv[i];
 
 					if ((i = filter_arg_index_inc(i, argc, name, line_num)) == -1)
-						return -1;
+						goto err;
 
 					char *value = argv[i++];
 
 					if (!filter_site_set(rule, name, value, line_num))
-						return -1;
+						goto err;
 
 					rule->action.precedence++;
 					done_site = 1;
@@ -2018,12 +2069,12 @@ filter_rule_translate(opts_t *opts, const char *name, int argc, char **argv, uns
 
 				if (i < argc && equal(argv[i], "port")) {
 					if ((i = filter_arg_index_inc(i, argc, argv[i], line_num)) == -1)
-						return -1;
+						goto err;
 
 					rule->action.precedence++;
 
 					if (filter_port_set(rule, argv[i++], line_num) == -1)
-						return -1;
+						goto err;
 				}
 			}
 			else if (equal(argv[i], "*")) {
@@ -2032,7 +2083,7 @@ filter_rule_translate(opts_t *opts, const char *name, int argc, char **argv, uns
 		}
 		else if (equal(argv[i], "log")) {
 			if ((i = filter_arg_index_inc(i, argc, argv[i], line_num)) == -1)
-				return -1;
+				goto err;
 
 			// Log actions increase rule precedence too, but this effects log actions only, not the precedence of filter actions
 			rule->action.precedence++;
@@ -2111,27 +2162,27 @@ filter_rule_translate(opts_t *opts, const char *name, int argc, char **argv, uns
 	if (!done_site) {
 		rule->dstip = strdup("");
 		if (!rule->dstip)
-			return oom_return_na();
+			goto err;
 		rule->all_dstips = 1;
 
 		rule->sni = strdup("");
 		if (!rule->sni)
-			return oom_return_na();
+			goto err;
 		rule->all_snis = 1;
 
 		rule->cn = strdup("");
 		if (!rule->cn)
-			return oom_return_na();
+			goto err;
 		rule->all_cns = 1;
 
 		rule->host = strdup("");
 		if (!rule->host)
-			return oom_return_na();
+			goto err;
 		rule->all_hosts = 1;
 
 		rule->uri = strdup("");
 		if (!rule->uri)
-			return oom_return_na();
+			goto err;
 		rule->all_uris = 1;
 	}
 
@@ -2145,6 +2196,10 @@ filter_rule_translate(opts_t *opts, const char *name, int argc, char **argv, uns
 	filter_rule_dbg_print(rule);
 #endif /* DEBUG_OPTS */
 	return 0;
+
+err:
+	filter_rule_free(rule);
+	return oom_return_na();
 }
 
 static int WUNRES
@@ -3009,7 +3064,7 @@ filter_port_add(filter_site_t *site, filter_rule_t *rule, const char *argv0, tmp
 
 		port->port = strdup(rule->port);
 		if (!port->port)
-			return oom_return_na();
+			goto err;
 
 		if (rule->all_ports) {
 			site->port_all = port;
@@ -3017,14 +3072,14 @@ filter_port_add(filter_site_t *site, filter_rule_t *rule, const char *argv0, tmp
 		else if (rule->exact_port) {
 			if (!site->port_btree)
 				if (!(site->port_btree = kb_init(port, KB_DEFAULT_SIZE)))
-					return oom_return_na();
+					goto err;
 
 			kb_put(port, site->port_btree, port);
 		}
 		else {
 			if (!site->port_acm)
 				if (!(site->port_acm = ACM_create(char)))
-					return oom_return_na();
+					goto err;
 
 			Keyword(char) k;
 			ACM_KEYWORD_SET(k, port->port, strlen(port->port));
@@ -3068,7 +3123,7 @@ filter_port_add(filter_site_t *site, filter_rule_t *rule, const char *argv0, tmp
 				conn_opts_free(port->action.conn_opts);
 			port->action.conn_opts = conn_opts_copy(rule->action.conn_opts, argv0, tmp_opts);
 			if (!port->action.conn_opts)
-				return oom_return_na();
+				goto err;
 		}
 
 		port->action.precedence = rule->action.precedence;
@@ -3077,6 +3132,14 @@ filter_port_add(filter_site_t *site, filter_rule_t *rule, const char *argv0, tmp
 #endif /* DEBUG_PROXY */
 	}
 	return 0;
+
+err:
+	if (port) {
+		if (port->port)
+			free(port->port);
+		free(port);
+	}
+	return oom_return_na();
 }
 
 filter_site_t *
@@ -3151,7 +3214,7 @@ filter_site_add(kbtree_t(site) **btree, ACMachine(char) **acm, filter_site_t **a
 
 		site->site = strdup(s);
 		if (!site->site)
-			return oom_return_na();
+			goto err;
 
 		if (all_sites) {
 			*all = site;
@@ -3159,14 +3222,14 @@ filter_site_add(kbtree_t(site) **btree, ACMachine(char) **acm, filter_site_t **a
 		else if (exact_site) {
 			if (!*btree)
 				if (!(*btree = kb_init(site, KB_DEFAULT_SIZE)))
-					return oom_return_na();
+					goto err;
 
 			kb_put(site, *btree, site);
 		}
 		else {
 			if (!*acm)
 				if (!(*acm = ACM_create(char)))
-					return oom_return_na();
+					goto err;
 
 			Keyword(char) k;
 			ACM_KEYWORD_SET(k, site->site, strlen(site->site));
@@ -3182,7 +3245,7 @@ filter_site_add(kbtree_t(site) **btree, ACMachine(char) **acm, filter_site_t **a
 	// hence 'if else', not just 'if'
 	if (rule->port) {
 		if (filter_port_add(site, rule, argv0, tmp_opts) == -1)
-			return -1;
+			goto err;
 	}
 	// Do not override the specs of site rules at higher precedence
 	// precedence can only go up not down
@@ -3217,7 +3280,7 @@ filter_site_add(kbtree_t(site) **btree, ACMachine(char) **acm, filter_site_t **a
 				conn_opts_free(site->action.conn_opts);
 			site->action.conn_opts = conn_opts_copy(rule->action.conn_opts, argv0, tmp_opts);
 			if (!site->action.conn_opts)
-				return oom_return_na();
+				goto err;
 		}
 
 		site->action.precedence = rule->action.precedence;
@@ -3226,6 +3289,14 @@ filter_site_add(kbtree_t(site) **btree, ACMachine(char) **acm, filter_site_t **a
 #endif /* DEBUG_PROXY */
 	}
 	return 0;
+
+err:
+	if (site) {
+		if (site->site)
+			free(site->site);
+		free(site);
+	}
+	return oom_return_na();
 }
 
 static int
@@ -3319,26 +3390,26 @@ filter_ip_get(filter_t *filter, filter_rule_t *rule)
 
 		ip->list = malloc(sizeof(filter_list_t));
 		if (!ip->list)
-			return oom_return_na_null();
+			goto err;
 		memset(ip->list, 0, sizeof(filter_list_t));
 
 		ip->ip = strdup(rule->ip);
 		if (!ip->ip)
-			return oom_return_na_null();
+			goto err;
 
 		ip->exact = rule->exact_ip;
 
 		if (rule->exact_ip) {
 			if (!filter->ip_btree)
 				if (!(filter->ip_btree = kb_init(ip, KB_DEFAULT_SIZE)))
-					return oom_return_na_null();
+					goto err;
 
 			kb_put(ip, filter->ip_btree, ip);
 		}
 		else {
 			if (!filter->ip_acm)
 				if (!(filter->ip_acm = ACM_create(char)))
-					return oom_return_na_null();
+					goto err;
 
 			Keyword(char) k;
 			ACM_KEYWORD_SET(k, ip->ip, strlen(ip->ip));
@@ -3346,6 +3417,16 @@ filter_ip_get(filter_t *filter, filter_rule_t *rule)
 		}
 	}
 	return ip;
+
+err:
+	if (ip) {
+		if (ip->list)
+			free(ip->list);
+		if (ip->ip)
+			free(ip->ip);
+		free(ip);
+	}
+	return oom_return_na_null();
 }
 
 #ifndef WITHOUT_USERAUTH
@@ -3414,12 +3495,12 @@ filter_desc_get(filter_t *filter, filter_user_t *user, filter_rule_t *rule)
 
 		desc->list = malloc(sizeof(filter_list_t));
 		if (!desc->list)
-			return oom_return_na_null();
+			goto err;
 		memset(desc->list, 0, sizeof(filter_list_t));
 
 		desc->desc = strdup(rule->desc);
 		if (!desc->desc)
-			return oom_return_na_null();
+			goto err;
 
 		desc->exact = rule->exact_desc;
 
@@ -3427,7 +3508,7 @@ filter_desc_get(filter_t *filter, filter_user_t *user, filter_rule_t *rule)
 			kbtree_t(desc) **btree = user ? &user->desc_btree : &filter->desc_btree;
 			if (!*btree)
 				if (!(*btree = kb_init(desc, KB_DEFAULT_SIZE)))
-					return oom_return_na_null();
+					goto err;
 
 			kb_put(desc, *btree, desc);
 		}
@@ -3435,7 +3516,7 @@ filter_desc_get(filter_t *filter, filter_user_t *user, filter_rule_t *rule)
 			ACMachine(char) **acm = user ? &user->desc_acm : &filter->desc_acm;
 			if (!*acm)
 				if (!(*acm = ACM_create(char)))
-					return oom_return_na_null();
+					goto err;
 
 			Keyword(char) k;
 			ACM_KEYWORD_SET(k, desc->desc, strlen(desc->desc));
@@ -3443,6 +3524,16 @@ filter_desc_get(filter_t *filter, filter_user_t *user, filter_rule_t *rule)
 		}
 	}
 	return desc;
+
+err:
+	if (desc) {
+		if (desc->list)
+			free(desc->list);
+		if (desc->desc)
+			free(desc->desc);
+		free(desc);
+	}
+	return oom_return_na_null();
 }
 
 filter_user_t *
@@ -3510,26 +3601,26 @@ filter_user_get(filter_t *filter, filter_rule_t *rule)
 
 		user->list = malloc(sizeof(filter_list_t));
 		if (!user->list)
-			return oom_return_na_null();
+			goto err;
 		memset(user->list, 0, sizeof(filter_list_t));
 
 		user->user = strdup(rule->user);
 		if (!user->user)
-			return oom_return_na_null();
+			goto err;
 
 		user->exact = rule->exact_user;
 
 		if (rule->exact_user) {
 			if (!filter->user_btree)
 				if (!(filter->user_btree = kb_init(user, KB_DEFAULT_SIZE)))
-					return oom_return_na_null();
+					goto err;
 
 			kb_put(user, filter->user_btree, user);
 		}
 		else {
 			if (!filter->user_acm)
 				if (!(filter->user_acm = ACM_create(char)))
-					return oom_return_na_null();
+					goto err;
 
 			Keyword(char) k;
 			ACM_KEYWORD_SET(k, user->user, strlen(user->user));
@@ -3537,6 +3628,16 @@ filter_user_get(filter_t *filter, filter_rule_t *rule)
 		}
 	}
 	return user;
+
+err:
+	if (user) {
+		if (user->list)
+			free(user->list);
+		if (user->user)
+			free(user->user);
+		free(user);
+	}
+	return oom_return_na_null();
 }
 #endif /* WITHOUT_USERAUTH */
 
@@ -3555,14 +3656,21 @@ filter_set(filter_rule_t *rule, const char *argv0, tmp_opts_t *tmp_opts)
 
 #ifndef WITHOUT_USERAUTH
 	filter->all_user = malloc(sizeof(filter_list_t));
-	if (!filter->all_user)
+	if (!filter->all_user) {
+		free(filter);
 		return oom_return_na_null();
+	}
 	memset(filter->all_user, 0, sizeof(filter_list_t));
 #endif /* WITHOUT_USERAUTH */
 
 	filter->all = malloc(sizeof(filter_list_t));
-	if (!filter->all)
+	if (!filter->all) {
+#ifndef WITHOUT_USERAUTH
+		free(filter->all_user);
+#endif
+		free(filter);
 		return oom_return_na_null();
+	}
 	memset(filter->all, 0, sizeof(filter_list_t));
 
 	while (rule) {
@@ -3570,46 +3678,56 @@ filter_set(filter_rule_t *rule, const char *argv0, tmp_opts_t *tmp_opts)
 		if (rule->user) {
 			filter_user_t *user = filter_user_get(filter, rule);
 			if (!user)
-				return NULL;
+				goto err;
 			if (rule->desc) {
 				filter_desc_t *desc = filter_desc_get(filter, user, rule);
 				if (!desc)
-					return NULL;
+					goto err;
 				if (filter_sitelist_add(desc->list, rule, argv0, tmp_opts) == -1)
-					return NULL;
+					goto err;
 			}
 			else {
 				if (filter_sitelist_add(user->list, rule, argv0, tmp_opts) == -1)
-					return NULL;
+					goto err;
 			}
 		}
 		else if (rule->desc) {
 			filter_desc_t *desc = filter_desc_get(filter, NULL, rule);
 			if (!desc)
-				return NULL;
+				goto err;
 			if (filter_sitelist_add(desc->list, rule, argv0, tmp_opts) == -1)
-				return NULL;
+				goto err;
 		}
 		else if (rule->all_users) {
 			if (filter_sitelist_add(filter->all_user, rule, argv0, tmp_opts) == -1)
-				return NULL;
+				goto err;
 		}
 		else
 #endif /* WITHOUT_USERAUTH */
 		if (rule->ip) {
-			 filter_ip_t *ip = filter_ip_get(filter, rule);
+			filter_ip_t *ip = filter_ip_get(filter, rule);
 			if (!ip)
-				return NULL;
+				goto err;
 			if (filter_sitelist_add(ip->list, rule, argv0, tmp_opts) == -1)
-				return NULL;
+				goto err;
 		}
 		else if (rule->all_conns) {
 			if (filter_sitelist_add(filter->all, rule, argv0, tmp_opts) == -1)
-				return NULL;
+				goto err;
 		}
 		rule = rule->next;
 	}
 	return filter;
+
+err:
+#ifndef WITHOUT_USERAUTH
+	if (filter->all_user)
+		filter_list_free(filter->all_user);
+#endif
+	if (filter->all)
+		filter_list_free(filter->all);
+	free(filter);
+	return NULL;
 }
 
 /* vim: set noet ft=c: */
