@@ -83,10 +83,8 @@
 
 # UserAuth feature is supported on OpenBSD and Linux only
 ifneq ($(filter -DWITHOUT_USERAUTH,$(FEATURES)),-DWITHOUT_USERAUTH)
-ifneq ($(shell uname),OpenBSD)
-ifneq ($(shell uname),Linux)
+ifeq ($(filter $(shell uname),OpenBSD Linux),)
 FEATURES+=	-DWITHOUT_USERAUTH
-endif
 endif
 endif
 
