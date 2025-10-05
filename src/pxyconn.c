@@ -615,6 +615,12 @@ pxy_prepare_logging_local_procinfo(pxy_conn_ctx_t *ctx)
 }
 #endif /* HAVE_LOCAL_PROCINFO */
 
+static int check_fd_usage(
+#ifdef DEBUG_PROXY
+	pxy_conn_ctx_t *ctx
+#endif /* DEBUG_PROXY */
+);
+
 static int
 pxy_prepare_logging(pxy_conn_ctx_t *ctx)
 {
@@ -627,6 +633,16 @@ pxy_prepare_logging(pxy_conn_ctx_t *ctx)
 	}
 #endif /* HAVE_LOCAL_PROCINFO */
 	if (WANT_CONTENT_LOG(ctx)) {
+		if (check_fd_usage(
+#ifdef DEBUG_PROXY
+				ctx
+#endif /* DEBUG_PROXY */
+				) == -1) {
+				ctx->enomem = 1;
+				pxy_conn_term(ctx, 1);
+				return -1;
+		}
+
 		if (log_content_open(&ctx->logctx, ctx->global,
 							 (struct sockaddr *)&ctx->srcaddr,
 							 ctx->srcaddrlen,
