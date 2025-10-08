@@ -1,0 +1,65 @@
+{
+  "comment": "Tests for SSLproxy header at top",
+  "configs": {
+    "1": {
+      "proto": {
+        "proto": "tcp"
+      },
+      "client": {
+        "ip": "127.0.0.1",
+        "port": "8216"
+      },
+      "server": {
+        "ip": "127.0.0.1",
+        "port": "9216"
+      }
+    },
+    "2": {
+      "proto": {
+        "proto": "ssl",
+        "crt": "server.crt",
+        "key": "server.key"
+      },
+      "client": {
+        "ip": "127.0.0.1",
+        "port": "8217"
+      },
+      "server": {
+        "ip": "127.0.0.1",
+        "port": "9217"
+      }
+    }
+  },
+  "tests": {
+    "1": {
+      "comment": "Removes any extra SSLproxy line at top, and appends Connection: close",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "SSLproxy: sslproxy\r\nSSLproxy: sslproxy\r\nGET / HTTP/1.1\r\nHost: example.com\r\n\r\n"
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": "GET / HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n"
+        }
+      }
+    },
+    "2": {
+      "comment": "Removes all extra SSLproxy lines anywhere",
+      "states": {
+        "1": {
+          "testend": "client",
+          "cmd": "send",
+          "payload": "SSLproxy: sslproxy\r\nSSLproxy: sslproxy\r\nGET / HTTP/1.1\r\nHost: example.com\r\nSSLproxy: sslproxy\r\nSSLproxy: sslproxy\r\n\r\n"
+        },
+        "2": {
+          "testend": "server",
+          "cmd": "recv",
+          "payload": "GET / HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n"
+        }
+      }
+    }
+  }
+}

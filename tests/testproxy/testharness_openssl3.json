@@ -6,7 +6,8 @@
       "testsets": {
         "1": "http_testset_1.json",
         "2": "http_testset_2.json",
-        "3": "http_testset_3.json"
+        "3": "http_testset_3.json",
+        "4": "http_testset_4.json"
       }
     },
     "2": {

@@ -132,6 +132,7 @@ connection options too:
 	    VerifyPeer (yes|no)
 	    AllowWrongHost (yes|no)
 
+	    SSLProxyHeaderAtTop (yes|no)
 	    RemoveHTTPAcceptEncoding (yes|no)
 	    RemoveHTTPReferer (yes|no)
 	    MaxHTTPHeaderSize 8192
@@ -459,6 +460,7 @@ connection options too:
 	    VerifyPeer (yes|no)
 	    AllowWrongHost (yes|no)
 
+	    SSLProxyHeaderAtTop (yes|no)
 	    RemoveHTTPAcceptEncoding (yes|no)
 	    RemoveHTTPReferer (yes|no)
 	    MaxHTTPHeaderSize 8192
