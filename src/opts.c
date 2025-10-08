@@ -602,6 +602,7 @@ conn_opts_copy(conn_opts_t *conn_opts, const char *argv0, tmp_opts_t *tmp_opts)
 	cops->minsslversion = conn_opts->minsslversion;
 	cops->maxsslversion = conn_opts->maxsslversion;
 #endif /* OPENSSL_VERSION_NUMBER >= 0x10100000L */
+	cops->sslproxy_header_at_top = conn_opts->sslproxy_header_at_top;
 	cops->remove_http_accept_encoding = conn_opts->remove_http_accept_encoding;
 	cops->remove_http_referer = conn_opts->remove_http_referer;
 	cops->verify_peer = conn_opts->verify_peer;
@@ -1125,7 +1126,7 @@ conn_opts_str(conn_opts_t *conn_opts)
 #ifndef OPENSSL_NO_ECDH
 				 "|%s"
 #endif /* !OPENSSL_NO_ECDH */
-				 "|%s%s%s%s%s"
+				 "|%s%s%s%s%s%s"
 #ifndef WITHOUT_USERAUTH
 				 "%s|%s|%d"
 #endif /* !WITHOUT_USERAUTH */
@@ -1253,6 +1254,7 @@ conn_opts_str(conn_opts_t *conn_opts)
 	             (conn_opts->ecdhcurve ? conn_opts->ecdhcurve : "no ecdhcurve"),
 #endif /* !OPENSSL_NO_ECDH */
 	             (conn_opts->leafcrlurl ? conn_opts->leafcrlurl : "no leafcrlurl"),
+	             (conn_opts->sslproxy_header_at_top ? "|sslproxy_header_at_top" : ""),
 	             (conn_opts->remove_http_accept_encoding ? "|remove_http_accept_encoding" : ""),
 	             (conn_opts->remove_http_referer ? "|remove_http_referer" : ""),
 	             (conn_opts->verify_peer ? "|verify_peer" : ""),
@@ -1979,6 +1981,18 @@ opts_set_max_proto(UNUSED conn_opts_t *conn_opts, const char *argv0, const char 
 	log_dbg_printf("MaxSSLProto: %s\n", optarg);
 #endif /* DEBUG_OPTS */
 	return 0;
+}
+
+static void
+opts_set_sslproxy_header_at_top(conn_opts_t *conn_opts)
+{
+	conn_opts->sslproxy_header_at_top = 1;
+}
+
+static void
+opts_unset_sslproxy_header_at_top(conn_opts_t *conn_opts)
+{
+	conn_opts->sslproxy_header_at_top = 0;
 }
 
 static void
@@ -2768,6 +2782,14 @@ set_conn_opts_option(conn_opts_t *conn_opts, const char *argv0,
 		yes ? opts_set_allow_wrong_host(conn_opts) : opts_unset_allow_wrong_host(conn_opts);
 #ifdef DEBUG_OPTS
 		log_dbg_printf("AllowWrongHost: %u\n", conn_opts->allow_wrong_host);
+#endif /* DEBUG_OPTS */
+	} else if (equal(name, "SSLProxyHeaderAtTop")) {
+		yes = check_value_yesno(value, "SSLProxyHeaderAtTop", line_num);
+		if (yes == -1)
+			return -1;
+		yes ? opts_set_sslproxy_header_at_top(conn_opts) : opts_unset_sslproxy_header_at_top(conn_opts);
+#ifdef DEBUG_OPTS
+		log_dbg_printf("SSLProxyHeaderAtTop: %u\n", conn_opts->sslproxy_header_at_top);
 #endif /* DEBUG_OPTS */
 	} else if (equal(name, "RemoveHTTPAcceptEncoding")) {
 		yes = check_value_yesno(value, "RemoveHTTPAcceptEncoding", line_num);

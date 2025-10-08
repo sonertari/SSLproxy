@@ -279,6 +279,11 @@ protohttp_filter_request_header_line(const char *line, protohttp_ctx_t *http_ctx
 	/* parse information for connect log */
 	if (!http_ctx->http_method) {
 		/* first line */
+		if (!strncasecmp(line, SSLPROXY_KEY, SSLPROXY_KEY_LEN)) {
+			// Remove any SSLproxy line, parent or child
+			return NULL;
+		}
+
 		char *space1, *space2;
 
 		space1 = strchr(line, ' ');
@@ -588,12 +593,24 @@ protohttp_apply_filter(pxy_conn_ctx_t *ctx)
 	return rv;
 }
 
+static void NONNULL(1,2)
+protohttp_insert_sslproxyline(struct evbuffer *outbuf, pxy_conn_ctx_t *ctx)
+{
+	ctx->sent_sslproxy_header = 1;
+	log_finer_va(ctx->conn_opts->sslproxy_header_at_top ? "TOPINSERT= %s" : "INSERT= %s", ctx->sslproxy_header);
+	evbuffer_add_printf(outbuf, "%s\r\n", ctx->sslproxy_header);
+}
+
 static int WUNRES NONNULL(1,2,3,5)
 protohttp_filter_request_header(struct evbuffer *inbuf, struct evbuffer *outbuf, protohttp_ctx_t *http_ctx, enum conn_type type, pxy_conn_ctx_t *ctx)
 {
 	char *line;
 
 	while (!http_ctx->seen_req_header && (line = evbuffer_readln(inbuf, NULL, EVBUFFER_EOL_CRLF))) {
+		if ((type == CONN_TYPE_PARENT) && ctx->divert && !ctx->sent_sslproxy_header && ctx->conn_opts->sslproxy_header_at_top) {
+			protohttp_insert_sslproxyline(outbuf, ctx);
+		}
+
 		log_finest_va("%s", line);
 
 		char *replace = protohttp_filter_request_header_line(line, http_ctx, type, ctx);
@@ -611,10 +628,8 @@ protohttp_filter_request_header(struct evbuffer *inbuf, struct evbuffer *outbuf,
 		}
 		free(line);
 
-		if ((type == CONN_TYPE_PARENT) && ctx->divert && !ctx->sent_sslproxy_header) {
-			ctx->sent_sslproxy_header = 1;
-			log_finer_va("INSERT= %s", ctx->sslproxy_header);
-			evbuffer_add_printf(outbuf, "%s\r\n", ctx->sslproxy_header);
+		if ((type == CONN_TYPE_PARENT) && ctx->divert && !ctx->sent_sslproxy_header && !ctx->conn_opts->sslproxy_header_at_top) {
+			protohttp_insert_sslproxyline(outbuf, ctx);
 		}
 	}
 

@@ -133,6 +133,10 @@ typedef struct conn_opts {
 	char *ecdhcurve;
 #endif /* !OPENSSL_NO_ECDH */
 	char *leafcrlurl;
+	// Inserts SSLproxy header at the top of the HTTP request
+	// instead of after the first line, expected to help with Suricata integration
+	// Default is 0 (insert after the first line)
+	unsigned int sslproxy_header_at_top: 1;
 	unsigned int remove_http_accept_encoding: 1;
 	unsigned int remove_http_referer: 1;
 	unsigned int verify_peer: 1;
