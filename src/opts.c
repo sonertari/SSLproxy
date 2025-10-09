@@ -2628,22 +2628,32 @@ set_conn_opts_option(conn_opts_t *conn_opts, const char *argv0,
 	}
 
 	if (equal(name, "CACert")) {
+		if (conn_opts->cacrt_str)
+			free(conn_opts->cacrt_str);
 		if ((conn_opts->cacrt_str = strdup(value)) == NULL)
 			return oom_return(argv0);
 		return opts_set_cacrt(conn_opts, argv0, value, tmp_opts);
 	} else if (equal(name, "CAKey")) {
+		if (conn_opts->cakey_str)
+			free(conn_opts->cakey_str);
 		if ((conn_opts->cakey_str = strdup(value)) == NULL)
 			return oom_return(argv0);
 		return opts_set_cakey(conn_opts, argv0, value, tmp_opts);
 	} else if (equal(name, "ClientCert")) {
+		if (conn_opts->clientcrt_str)
+			free(conn_opts->clientcrt_str);
 		if ((conn_opts->clientcrt_str = strdup(value)) == NULL)
 			return oom_return(argv0);
 		return opts_set_clientcrt(conn_opts, argv0, value, tmp_opts);
 	} else if (equal(name, "ClientKey")) {
+		if (conn_opts->clientkey_str)
+			free(conn_opts->clientkey_str);
 		if ((conn_opts->clientkey_str = strdup(value)) == NULL)
 			return oom_return(argv0);
 		return opts_set_clientkey(conn_opts, argv0, value, tmp_opts);
 	} else if (equal(name, "CAChain")) {
+		if (conn_opts->chain_str)
+			free(conn_opts->chain_str);
 		if ((conn_opts->chain_str = strdup(value)) == NULL)
 			return oom_return(argv0);
 		return opts_set_chain(conn_opts, argv0, value, tmp_opts);
@@ -2667,6 +2677,8 @@ set_conn_opts_option(conn_opts_t *conn_opts, const char *argv0,
 #endif /* DEBUG_OPTS */
 #ifndef OPENSSL_NO_DH
 	} else if (equal(name, "DHGroupParams")) {
+		if (conn_opts->dh_str)
+			free(conn_opts->dh_str);
 		if ((conn_opts->dh_str = strdup(value)) == NULL)
 			return oom_return(argv0);
 		return opts_set_dh(conn_opts, argv0, value, tmp_opts);
