@@ -441,12 +441,6 @@ protoautossl_bev_readcb_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 	log_finest_va("ENTER, size=%zu", evbuffer_get_length(bufferevent_get_input(bev)));
 
-#ifndef WITHOUT_USERAUTH
-	if (prototcp_try_send_userauth_msg(ctx->src.bev, ctx)) {
-		return;
-	}
-#endif /* !WITHOUT_USERAUTH */
-
 	// @todo We should validate the response from the server to protect the client,
 	// as we do with the smtp protocol, @see protosmtp_bev_readcb_srvdst()
 
@@ -454,6 +448,12 @@ protoautossl_bev_readcb_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		ctx->protoctx->discard_inbufcb(bev);
 		return;
 	}
+
+#ifndef WITHOUT_USERAUTH
+	if (prototcp_try_send_userauth_msg(ctx->src.bev, ctx)) {
+		return;
+	}
+#endif /* !WITHOUT_USERAUTH */
 
 	evbuffer_add_buffer(bufferevent_get_output(ctx->src.bev), bufferevent_get_input(bev));
 	ctx->protoctx->set_watermarkcb(bev, ctx, ctx->src.bev);

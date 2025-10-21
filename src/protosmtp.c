@@ -182,9 +182,15 @@ protosmtp_bev_readcb_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 	log_finest_va("ENTER, size=%zu", evbuffer_get_length(bufferevent_get_input(bev)));
 
+	// TODO: Do we need to check src.bev here?
 	// Make sure src.bev exists
 	if (!ctx->src.bev) {
 		log_finest("src.bev does not exist");
+		return;
+	}
+
+	if (ctx->src.closed) {
+		ctx->protoctx->discard_inbufcb(bev);
 		return;
 	}
 
@@ -203,11 +209,6 @@ protosmtp_bev_readcb_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	// at which time we xfer srvdst to the first child conn and effectively disable this readcb,
 	// hence start diverting packets to the listening program
 	if (protosmtp_try_validate_response(bev, ctx, inbuf, outbuf) != 0) {
-		return;
-	}
-
-	if (ctx->src.closed) {
-		ctx->protoctx->discard_inbufcb(bev);
 		return;
 	}
 
