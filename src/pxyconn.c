@@ -1439,11 +1439,11 @@ pxy_bev_writecb_child(struct bufferevent *bev, void *arg)
 	}
 }
 
-static int NONNULL(1,3)
+static void NONNULL(1,3)
 pxy_bev_eventcb_postexec_logging_and_stats(struct bufferevent *bev, short events, pxy_conn_ctx_t *ctx)
 {
 	if (ctx->term || ctx->enomem) {
-		return -1;
+		return;
 	}
 
 	if (events & BEV_EVENT_CONNECTED) {
@@ -1454,7 +1454,7 @@ pxy_bev_eventcb_postexec_logging_and_stats(struct bufferevent *bev, short events
 				pxy_log_connect_src(ctx);
 			} else if (ctx->connected) {
 				if (pxy_prepare_logging(ctx) == -1) {
-					return -1;
+					return;
 				}
 				// Doesn't log connect if proto is http, http proto does its own connect logging
 				pxy_log_connect_srvdst(ctx);
@@ -1476,7 +1476,6 @@ pxy_bev_eventcb_postexec_logging_and_stats(struct bufferevent *bev, short events
 			}
 		}
 	}
-	return 0;
 }
 
 /*
