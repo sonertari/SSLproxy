@@ -107,6 +107,9 @@ prototcp_bufferevent_free_and_close_fd(struct bufferevent *bev, UNUSED pxy_conn_
 
 	log_finer_va("in=%zu, out=%zu, fd=%d", evbuffer_get_length(bufferevent_get_input(bev)), evbuffer_get_length(bufferevent_get_output(bev)), fd);
 
+	bufferevent_disable(bev, EV_READ|EV_WRITE);
+	bufferevent_setcb(bev, NULL, NULL, NULL, NULL);
+
 	bufferevent_free(bev);
 	if (fd >= 0)
 		evutil_closesocket(fd);
@@ -132,8 +135,8 @@ prototcp_disable_srvdst(pxy_conn_ctx_t *ctx)
 	log_finest("ENTER");
 
 	// Do not disable underlying bevs in autossl
-	bufferevent_setcb(ctx->srvdst.bev, NULL, NULL, NULL, NULL);
 	bufferevent_disable(ctx->srvdst.bev, EV_READ|EV_WRITE);
+	bufferevent_setcb(ctx->srvdst.bev, NULL, NULL, NULL, NULL);
 
 	// Do not access srvdst.bev from this point on
 	ctx->srvdst.bev = NULL;
