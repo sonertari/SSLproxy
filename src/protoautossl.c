@@ -84,6 +84,7 @@ protoautossl_bufferevent_free_and_close_fd(struct bufferevent *bev, pxy_conn_ctx
 		evbuffer_get_length(bufferevent_get_output(bev)), ubev ? evbuffer_get_length(bufferevent_get_output(ubev)) : 0, fd);
 
 	// @see https://stackoverflow.com/questions/31688709/knowing-all-callbacks-have-run-with-libevent-and-bufferevent-free
+	bufferevent_disable(bev, EV_READ|EV_WRITE);
 	bufferevent_setcb(bev, NULL, NULL, NULL, NULL);
 
 	/*
@@ -95,11 +96,10 @@ protoautossl_bufferevent_free_and_close_fd(struct bufferevent *bev, pxy_conn_ctx
 	SSL_set_shutdown(ssl, SSL_RECEIVED_SHUTDOWN);
 	SSL_shutdown(ssl);
 
-	bufferevent_disable(bev, EV_READ|EV_WRITE);
 	if (ubev) {
 		bufferevent_disable(ubev, EV_READ|EV_WRITE);
-		bufferevent_setfd(ubev, -1);
 		bufferevent_setcb(ubev, NULL, NULL, NULL, NULL);
+		bufferevent_setfd(ubev, -1);
 		bufferevent_free(ubev);
 	}
 	bufferevent_free(bev);

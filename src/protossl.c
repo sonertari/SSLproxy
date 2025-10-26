@@ -1257,6 +1257,7 @@ protossl_bufferevent_free_and_close_fd(struct bufferevent *bev, pxy_conn_ctx_t *
 	SSL_shutdown(ssl);
 
 	bufferevent_disable(bev, EV_READ|EV_WRITE);
+	bufferevent_setcb(bev, NULL, NULL, NULL, NULL);
 	bufferevent_free(bev);
 
 	if (OPTS_DEBUG(ctx->global)) {
