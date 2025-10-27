@@ -145,26 +145,25 @@ include $(PROJECT_ROOT)/Mk/xcode.mk
 ifneq ($(wildcard /usr/include/libproc.h),)
 FEATURES+=	-DHAVE_DARWIN_LIBPROC
 endif
-OSX_VERSION=	$(shell sw_vers -productVersion)
+OSX_VERSION:=	$(shell sw_vers -productVersion)
+XNU_HAVE:=	$(shell uname -a|sed 's/^.*root:xnu-//g'|sed 's/~.*$$//')
 ifneq ($(XNU_VERSION),)
 XNU_METHOD=	override
-XNU_HAVE=	$(shell uname -a|sed 's/^.*root:xnu-//g'|sed 's/~.*$$//')
 else
 XNU_METHOD=	uname
-XNU_VERSION=	$(shell uname -a|sed 's/^.*root:xnu-//g'|sed 's/~.*$$//')
-XNU_HAVE:=	$(XNU_VERSION)
+XNU_VERSION=	$(XNU_HAVE)
 endif
 ifeq ($(wildcard $(PROJECT_ROOT)/xnu/xnu-$(XNU_VERSION)),)
 XNU_METHOD=	sw_vers
-XNU_VERSION=	$(shell awk '/^XNU_RELS.*\# $(OSX_VERSION)$$/ {print $$2}' $(PROJECT_ROOT)/xnu/GNUmakefile)
+XNU_VERSION:=	$(shell awk '/^XNU_RELS.*\# $(OSX_VERSION)$$/ {print $$2}' $(PROJECT_ROOT)/xnu/GNUmakefile)
 endif
 ifeq ($(wildcard $(PROJECT_ROOT)/xnu/xnu-$(XNU_VERSION)),)
 XNU_METHOD=	fallback
-XNU_VERSION=	$(shell awk '/^XNU_RELS/ {print $$2}' $(PROJECT_ROOT)/xnu/GNUmakefile|tail -1)
+XNU_VERSION:=	$(shell awk '/^XNU_RELS/ {print $$2}' $(PROJECT_ROOT)/xnu/GNUmakefile|tail -1)
 endif
 ifneq ($(wildcard $(PROJECT_ROOT)/xnu/xnu-$(XNU_VERSION)),)
 FEATURES+=	-DHAVE_PF
-PKG_CPPFLAGS+=	-I$(PROJECT_ROOT)/xnu/xnu-$(XNU_VERSION)
+CPPFLAGS+=	-I$(PROJECT_ROOT)/xnu/xnu-$(XNU_VERSION)
 BUILD_INFO+=	OSX:$(OSX_VERSION) XNU:$(XNU_VERSION):$(XNU_METHOD):$(XNU_HAVE)
 endif
 endif
@@ -374,6 +373,10 @@ $(error dependency 'libnet' not found; \
 endif
 endif
 
+PKG_CFLAGS:=
+PKG_CPPFLAGS:=
+PKG_LDFLAGS:=
+PKG_LIBS:=
 ifdef OPENSSL_FOUND
 PKG_CPPFLAGS+=	-I$(OPENSSL_FOUND)/include
 ifneq ($(findstring openssl-3.,$(OPENSSL_FOUND)),openssl-3.)
@@ -413,6 +416,11 @@ PKG_LDFLAGS+=	-L$(SQLITE_FOUND)/lib
 PKG_LIBS+=	-lsqlite3
 endif
 endif
+
+TPKG_CFLAGS:=
+TPKG_CPPFLAGS:=
+TPKG_LDFLAGS:=
+TPKG_LIBS:=
 ifdef CHECK_FOUND
 TPKG_CPPFLAGS+=	-I$(CHECK_FOUND)/include
 TPKG_LDFLAGS+=	-L$(CHECK_FOUND)/lib
