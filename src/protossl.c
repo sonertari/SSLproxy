@@ -1354,7 +1354,7 @@ protossl_fd_readcb(evutil_socket_t fd, UNUSED short what, void *arg)
 	// Child connections will use the sni info obtained by the parent conn
 	/* for SSL, peek ClientHello and parse SNI from it */
 
-	unsigned char buf[2048];
+	unsigned char buf[4096];
 	ssize_t n;
 	const unsigned char *chello;
 	int rv;
