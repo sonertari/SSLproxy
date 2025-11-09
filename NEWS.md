@@ -1,5 +1,28 @@
 
 
+### SSLproxy 0.9.9 2025-11-09
+
+-   Fix fd leak, do not setup dst again in autossl, issue #88 reported by 
+	@victorjulien
+-   Fix memory leak in config load, reported by valgrind
+-   Disable r/w cbs and clear all cbs before all bufferevent_free() calls
+	Also, disable the events first, then clear the callbacks, for conventional 
+	pattern
+-   Check fd usage before content logging, issue #88 reported by @victorjulien
+	This change is expected to prevent sslproxy to crash if it runs out of fds 
+	while content logging
+-   Make sure the other conn end not closed before using it
+-   Increase sizes of bufs used in ClientHello parsing as a defensive measure 
+	against modern TLS handshake sizes, suggested by @dpward
+-   Use unused retvals from functions in autossl
+-   Remove unused return value
+-   Fix recursive expansion in main.mk, thanks to @dpward
+-   Improve error handling and memory leak prevention in filter.c, for 
+	correctness, suggested and mostly implemented by Copilot
+-   Simplify platform check in main.mk for UserAuth feature
+-   Print version after unit tests in GitHub Actions
+
+
 ### SSLproxy 0.9.8 2025-05-05
 
 -   Force SSL/TLS configuration in SSL proxyspecs
