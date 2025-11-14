@@ -1701,10 +1701,12 @@ err:
 			free(rule->sni);
 		if (rule->cn)
 			free(rule->cn);
+#ifndef WITHOUT_USERAUTH
 		if (rule->user)
 			free(rule->user);
 		if (rule->desc)
 			free(rule->desc);
+#endif /* !WITHOUT_USERAUTH */
 		if (rule->ip)
 			free(rule->ip);
 		free(rule);
