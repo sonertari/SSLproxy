@@ -312,7 +312,7 @@ struct _acm_vtable_##T                               \
   int (*unregister_keyword) (ACMachine_##T * machine, Keyword_##T keyword);                                   \
   size_t (*nb_keywords) (const ACMachine_##T * machine);                                                      \
   void (*foreach_keyword) (const ACMachine_##T * machine, void (*operator) (MatchHolder_##T, void *));        \
-  void (*release) (const ACMachine_##T * machine);                                                            \
+  void (*release) (ACMachine_##T * machine);                                                            \
   const ACState_##T * (*reset) (const ACMachine_##T * machine);                                               \
   void (*print) (ACMachine_##T * machine, FILE * stream, PRINT_##T##_TYPE printer);                           \
 };                                                   \
