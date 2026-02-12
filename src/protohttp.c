@@ -28,6 +28,7 @@
  */
 
 #include "protohttp.h"
+#include "protohttp2.h"
 #include "prototcp.h"
 #include "protossl.h"
 #include "protopassthrough.h"
@@ -39,7 +40,7 @@
 #include <string.h>
 #include <event2/bufferevent.h>
 
-static void NONNULL(1)
+void NONNULL(1)
 protohttp_log_connect(pxy_conn_ctx_t *ctx)
 {
 	if (!ctx->log_connect)
@@ -588,7 +589,7 @@ protohttp_apply_filter(pxy_conn_ctx_t *ctx)
 	return rv;
 }
 
-static int WUNRES NONNULL(1,2,3,5)
+int WUNRES NONNULL(1,2,3,5)
 protohttp_filter_request_header(struct evbuffer *inbuf, struct evbuffer *outbuf, protohttp_ctx_t *http_ctx, enum conn_type type, pxy_conn_ctx_t *ctx)
 {
 	char *line;
@@ -1140,6 +1141,59 @@ protohttp_bev_writecb(struct bufferevent *bev, void *arg)
 	}
 }
 
+
+void
+protohttps_bev_eventcb(struct bufferevent *bev, short events, void *arg)
+{
+	pxy_conn_ctx_t *ctx = arg;
+
+	if (events & BEV_EVENT_ERROR) {
+		protossl_log_ssl_error(bev, ctx);
+	}
+
+	if (bev == ctx->src.bev) {
+		prototcp_bev_eventcb_src(bev, events, ctx);
+	} else if (bev == ctx->dst.bev) {
+		protossl_bev_eventcb_dst(bev, events, ctx);
+	} else if (bev == ctx->srvdst.bev) {
+		protossl_bev_eventcb_srvdst(bev, events, ctx);
+
+		if (events & BEV_EVENT_CONNECTED) {
+			if (ctx->sslctx->h2) {
+				protohttp2_setup(ctx);
+			}
+		}
+	} else {
+		log_err_printf("protohttps_bev_eventcb: UNKWN conn end\n");
+	}
+}
+
+void
+protohttps_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
+{
+	pxy_conn_child_ctx_t *ctx = arg;
+	log_finest("ENTER");
+
+	if (events & BEV_EVENT_ERROR) {
+		protossl_log_ssl_error(bev, ctx->conn);
+	}
+
+	if (bev == ctx->src.bev) {
+		prototcp_bev_eventcb_src_child(bev, events, ctx);
+	} else if (bev == ctx->dst.bev) {
+		prototcp_bev_eventcb_dst_child(bev, events, ctx);
+
+		if (events & BEV_EVENT_CONNECTED) {
+			if (ctx->conn->sslctx->h2) {
+				bufferevent_disable(ctx->src.bev, EV_READ|EV_WRITE);
+				protohttp2_setup_child(ctx);
+			}
+		}
+	} else {
+		log_err_printf("protohttps_bev_eventcb_child: UNKWN conn end\n");
+	}
+}
+
 static void NONNULL(1)
 protohttp_free_ctx(protohttp_ctx_t *http_ctx)
 {
@@ -1174,14 +1228,14 @@ protohttp_free(pxy_conn_ctx_t *ctx)
 	protohttp_free_ctx(http_ctx);
 }
 
-static void NONNULL(1)
+void NONNULL(1)
 protohttps_free(pxy_conn_ctx_t *ctx)
 {
 	protohttp_free(ctx);
 	protossl_free(ctx);
 }
 
-static void NONNULL(1)
+void NONNULL(1)
 protohttp_free_child(pxy_conn_child_ctx_t *ctx)
 {
 	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
@@ -1217,7 +1271,7 @@ protohttps_setup(pxy_conn_ctx_t *ctx)
 
 	ctx->protoctx->bev_readcb = protohttp_bev_readcb;
 	ctx->protoctx->bev_writecb = protohttp_bev_writecb;
-	ctx->protoctx->bev_eventcb = protossl_bev_eventcb;
+	ctx->protoctx->bev_eventcb = protohttps_bev_eventcb;
 
 	ctx->protoctx->proto_free = protohttps_free;
 
@@ -1262,7 +1316,7 @@ protohttps_setup_child(pxy_conn_child_ctx_t *ctx)
 	ctx->protoctx->connectcb = protossl_connect_child;
 
 	ctx->protoctx->bev_readcb = protohttp_bev_readcb_child;
-	ctx->protoctx->bev_eventcb = protossl_bev_eventcb_child;
+	ctx->protoctx->bev_eventcb = protohttps_bev_eventcb_child;
 
 	ctx->protoctx->proto_free = protohttp_free_child;
 

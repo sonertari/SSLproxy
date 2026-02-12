@@ -131,6 +131,7 @@ typedef enum protocol {
 	PROTO_AUTOSSL,
 	PROTO_TCP,
 	PROTO_SSL,
+	PROTO_HTTP2,
 } protocol_t;
 
 typedef struct ssl_ctx ssl_ctx_t;
@@ -151,6 +152,7 @@ struct ssl_ctx {
 	unsigned int have_sslerr : 1;           /* 1 if we have an ssl error */
 	// Set after reconnecting srvdst to enforce the SSL options in matching struct filtering rule
 	unsigned int reconnected : 1;     /* 1 if we have reconnected srvdst */
+	unsigned int h2 : 1;                     /* 1 if alpn upgraded to h2 */
 
 	/* server name indicated by client in SNI TLS extension */
 	char *sni;

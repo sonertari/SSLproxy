@@ -29,6 +29,7 @@
 
 #include "protossl.h"
 #include "prototcp.h"
+#include "protohttp2.h"
 #include "protopassthrough.h"
 
 #include "cachemgr.h"
@@ -270,6 +271,45 @@ protossl_ossl_sessget_cb(UNUSED SSL *ssl, const unsigned char *id, int idlen, in
 	return sess;
 }
 
+#ifndef OPENSSL_NO_TLSEXT
+static int
+protossl_alpn_select_cb(UNUSED SSL *ssl, const unsigned char **out, unsigned char *outlen,
+                        const unsigned char *in, unsigned int inlen, void *arg)
+{
+	pxy_conn_ctx_t *ctx = arg;
+
+	log_finest("ALPN select callback");
+
+	if (SSL_select_next_proto((unsigned char **)out, outlen,
+	                          (unsigned char *)"\x02h2\x08http/1.1", 12,
+	                          in, inlen) == OPENSSL_NPN_NEGOTIATED) {
+		if (OPTS_DEBUG(ctx->global)) {
+			log_dbg_printf("ALPN selected: %.*s\n", *outlen, *out);
+		}
+		// If h2 is selected, we might want to switch protocol here or later
+		// implementation detail: check *out
+		return SSL_TLSEXT_ERR_OK;
+	}
+	
+	return SSL_TLSEXT_ERR_NOACK;
+}
+
+static void
+protossl_check_and_enable_h2(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
+{
+	const unsigned char *data = NULL;
+	unsigned int len = 0;
+
+	SSL_get0_alpn_selected(bufferevent_openssl_get_ssl(bev), &data, &len);
+	if (data && len == 2 && memcmp(data, "h2", 2) == 0) {
+		log_dbg_printf("H2 negotiated via ALPN, switching to PROTO_HTTP2\n");
+		ctx->sslctx->h2 = 1;
+		// protohttp2_setup(ctx);
+		// bufferevent_setcb(bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
+	}
+}
+#endif /* !OPENSSL_NO_TLSEXT */
+
 /*
  * Set SSL_CTX options that are the same for incoming and outgoing SSL_CTX.
  */
@@ -394,6 +434,9 @@ protossl_srcsslctx_create(pxy_conn_ctx_t *ctx, X509 *crt, STACK_OF(X509) *chain,
 #ifndef OPENSSL_NO_TLSEXT
 	SSL_CTX_set_tlsext_servername_callback(sslctx, protossl_ossl_servername_cb);
 	SSL_CTX_set_tlsext_servername_arg(sslctx, ctx);
+	
+	// Add ALPN callback for server-side (src)
+	SSL_CTX_set_alpn_select_cb(sslctx, protossl_alpn_select_cb, ctx);
 #endif /* !OPENSSL_NO_TLSEXT */
 #ifndef OPENSSL_NO_DH
 	if (ctx->conn_opts->dh) {
@@ -1138,6 +1181,12 @@ protossl_dstssl_create(pxy_conn_ctx_t *ctx)
 	if (ctx->sslctx->sni) {
 		SSL_set_tlsext_host_name(ssl, ctx->sslctx->sni);
 	}
+
+	if (SSL_set_alpn_protos(ssl, (const unsigned char *)"\x02h2\x08http/1.1", 12) != 0) {
+		log_dbg_printf("failed to set ALPN protos\n");
+		SSL_free(ssl);
+		return NULL;
+	}
 #endif /* !OPENSSL_NO_TLSEXT */
 
 #ifdef SSL_MODE_RELEASE_BUFFERS
@@ -1697,6 +1746,10 @@ protossl_bev_eventcb_connected_srvdst(UNUSED struct bufferevent *bev, pxy_conn_c
 		return;
 	}
 
+#ifndef OPENSSL_NO_TLSEXT
+	protossl_check_and_enable_h2(bev, ctx);
+#endif /* !OPENSSL_NO_TLSEXT */
+
 	// Set src ssl up early to apply SSL filter,
 	// this is the last moment we can take divert or split action
 	if (protossl_setup_src_ssl(ctx) != 0) {
@@ -1739,7 +1792,7 @@ protossl_bev_eventcb_error_srvdst(UNUSED struct bufferevent *bev, pxy_conn_ctx_t
 	}
 }
 
-static void NONNULL(1)
+void NONNULL(1)
 protossl_bev_eventcb_dst(struct bufferevent *bev, short events, pxy_conn_ctx_t *ctx)
 {
 	if (events & BEV_EVENT_CONNECTED) {

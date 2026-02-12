@@ -33,10 +33,10 @@
 #include "pxyconn.h"
 
 typedef struct protohttp_ctx {
-	unsigned int seen_req_header : 1; /* 0 until request header complete */
-	unsigned int seen_resp_header : 1;  /* 0 until response hdr complete */
-	unsigned int sent_http_conn_close : 1;   /* 0 until Conn: close sent */
-	unsigned int ocsp_denied : 1;                /* 1 if OCSP was denied */
+	unsigned int seen_req_header : 1;      /* 0 until request header complete */
+	unsigned int seen_resp_header : 1;     /* 0 until response hdr complete */
+	unsigned int sent_http_conn_close : 1; /* 0 until Conn: close sent */
+	unsigned int ocsp_denied : 1;          /* 1 if OCSP was denied */
 
 	/* log strings from HTTP request */
 	char *http_method;
@@ -52,9 +52,18 @@ typedef struct protohttp_ctx {
 	unsigned int not_valid : 1;    /* 1 if cannot find HTTP on first line */
 	unsigned int seen_keyword_count;
 	long long unsigned int seen_bytes;
+
+	// For h2 specific fields, if upgraded
+	void *arg;
 } protohttp_ctx_t;
 
+void protohttp_log_connect(pxy_conn_ctx_t *ctx) NONNULL(1);
+
+int protohttp_filter_request_header(struct evbuffer *, struct evbuffer *, protohttp_ctx_t *, enum conn_type, pxy_conn_ctx_t *) WUNRES NONNULL(1,2,3,5);
 int protohttp_validate(pxy_conn_ctx_t *) NONNULL(1);
+
+void protohttps_free(pxy_conn_ctx_t *) NONNULL(1);
+void protohttp_free_child(pxy_conn_child_ctx_t *) NONNULL(1);
 
 protocol_t protohttp_setup(pxy_conn_ctx_t *) NONNULL(1);
 protocol_t protohttps_setup(pxy_conn_ctx_t *) NONNULL(1);

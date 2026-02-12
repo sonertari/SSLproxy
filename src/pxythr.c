@@ -300,7 +300,7 @@ pxy_thr_timer_cb(UNUSED evutil_socket_t fd, UNUSED short what, UNUSED void *arg)
 {
 	pxy_thr_ctx_t *tctx = arg;
 
-	log_finest_main_va("thr=%d, load=%zu, to=%u", tctx->id, tctx->load, tctx->timeout_count);
+	// log_finest_main_va("thr=%d, load=%zu, to=%u", tctx->id, tctx->load, tctx->timeout_count);
 
 	pxy_conn_ctx_t *expired = NULL;
 	pxy_thr_get_expired_conns(tctx, &expired);
