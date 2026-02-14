@@ -17,9 +17,9 @@ nghttpd -v -d . 10443 tests/testproxy/server.key tests/testproxy/server.crt > ng
 NG_PID=$!
 echo "Started nghttpd with PID $NG_PID"
 
-# Start SSLproxy with ssl proxyspec with ALPN support (allows for H2 upgrade only)
+# Start SSLproxy with https proxyspec with ALPN support (allows for H2 upgrades)
 # Listen on 8080, divert to 9080, backend SSL H2 to 10443, do not verify peer, and log decrypted packets to h2.pcap
-./src/sslproxy -D4 -c tests/testproxy/ca.crt -k tests/testproxy/ca.key -oVerifyPeer=no -X h2.pcap ssl 127.0.0.1 8080 up:9080 127.0.0.1 10443 > sslproxy.log 2>&1 &
+./src/sslproxy -D4 -c tests/testproxy/ca.crt -k tests/testproxy/ca.key -oVerifyPeer=no -X h2.pcap https 127.0.0.1 8080 up:9080 127.0.0.1 10443 > sslproxy.log 2>&1 &
 PROXY_PID=$!
 echo "Started SSLproxy with PID $PROXY_PID"
 

@@ -588,10 +588,60 @@ protohttp_apply_filter(pxy_conn_ctx_t *ctx)
 	return rv;
 }
 
+static void
+protohttp_try_remove_sslproxy_header(pxy_conn_ctx_t *ctx, unsigned char *packet, size_t *packet_size)
+{
+	// XXX: Duplicate of pxy_try_remove_sslproxy_header(), to pass pxy_conn_ctx_t
+	// @attention Cannot use string manipulation functions; we are dealing with binary arrays here, not NULL-terminated strings
+	unsigned char *pos = memmem(packet, *packet_size, ctx->conn->sslproxy_header, ctx->conn->sslproxy_header_len);
+	if (pos) {
+		log_finer("REMOVE");
+		memmove(pos, pos + ctx->conn->sslproxy_header_len + 2, *packet_size - (pos - packet) - (ctx->conn->sslproxy_header_len + 2));
+		*packet_size -= ctx->conn->sslproxy_header_len + 2;
+	}
+}
+
 static int WUNRES NONNULL(1,2,3,5)
 protohttp_filter_request_header(struct evbuffer *inbuf, struct evbuffer *outbuf, protohttp_ctx_t *http_ctx, enum conn_type type, pxy_conn_ctx_t *ctx)
 {
 	char *line;
+
+	struct evbuffer_ptr posptr;
+	memset(&posptr, 0, sizeof(posptr));
+
+	if (ctx->sslctx && !ctx->sslctx->h2) {
+		posptr = evbuffer_search_eol(inbuf, NULL, NULL, EVBUFFER_EOL_CRLF);
+	}
+
+	if ((ctx->sslctx && ctx->sslctx->h2) || posptr.pos == -1) {
+		if (posptr.pos == -1) {
+			log_finest("No CRLF in request header");
+		}
+		else {
+			log_finest("H2 request header");
+		}
+
+		if ((type == CONN_TYPE_PARENT) && ctx->divert && !ctx->sent_sslproxy_header) {
+			if (pxy_try_prepend_sslproxy_header(ctx, inbuf, outbuf) != 0) {
+				return -1;
+			}
+			ctx->sent_sslproxy_header = 1;
+		}
+		else {
+			size_t packet_size = evbuffer_get_length(inbuf);
+			unsigned char *packet = pxy_malloc_packet(packet_size, ctx->conn);
+			if (!packet) {
+				return -1;
+			}
+
+			evbuffer_remove(inbuf, packet, packet_size);
+			protohttp_try_remove_sslproxy_header(ctx->conn, packet, &packet_size);
+			evbuffer_add(outbuf, packet, packet_size);
+			free(packet);
+		}
+		http_ctx->seen_req_header = 1;
+		return 0;
+	}
 
 	while (!http_ctx->seen_req_header && (line = evbuffer_readln(inbuf, NULL, EVBUFFER_EOL_CRLF))) {
 		log_finest_va("%s", line);
@@ -651,6 +701,23 @@ protohttp_get_url(struct evbuffer *inbuf, pxy_conn_ctx_t *ctx)
 	char *path = NULL;
 	char *host = NULL;
 	char *url = NULL;
+
+	struct evbuffer_ptr posptr;
+	memset(&posptr, 0, sizeof(posptr));
+
+	if (ctx->sslctx && !ctx->sslctx->h2) {
+		posptr = evbuffer_search_eol(inbuf, NULL, NULL, EVBUFFER_EOL_CRLF);
+	}
+
+	if ((ctx->sslctx && ctx->sslctx->h2) || posptr.pos == -1) {
+		if (posptr.pos == -1) {
+			log_finest("No CRLF in header");
+		}
+		else {
+			log_finest("H2 header");
+		}
+		return url;
+	}
 
 	while ((!host || !path) && (line = evbuffer_readln(inbuf, NULL, EVBUFFER_EOL_CRLF))) {
 		log_finest_va("%s", line);
@@ -938,6 +1005,26 @@ static void NONNULL(1,2,3,4)
 protohttp_filter_response_header(struct evbuffer *inbuf, struct evbuffer *outbuf, protohttp_ctx_t *http_ctx, pxy_conn_ctx_t *ctx)
 {
 	char *line;
+
+	struct evbuffer_ptr posptr;
+	memset(&posptr, 0, sizeof(posptr));
+
+	if (ctx->sslctx && !ctx->sslctx->h2) {
+		posptr = evbuffer_search_eol(inbuf, NULL, NULL, EVBUFFER_EOL_CRLF);
+	}
+
+	if ((ctx->sslctx && ctx->sslctx->h2) || posptr.pos == -1) {
+		if (posptr.pos == -1) {
+			log_finest("No CRLF in response header");
+		}
+		else {
+			log_finest("H2 response header");
+		}
+		evbuffer_add_buffer(outbuf, inbuf);
+
+		http_ctx->seen_resp_header = 1;
+		return;
+	}
 
 	while (!http_ctx->seen_resp_header && (line = evbuffer_readln(inbuf, NULL, EVBUFFER_EOL_CRLF))) {
 		log_finest_va("%s", line);

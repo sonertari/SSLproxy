@@ -151,6 +151,7 @@ struct ssl_ctx {
 	unsigned int have_sslerr : 1;           /* 1 if we have an ssl error */
 	// Set after reconnecting srvdst to enforce the SSL options in matching struct filtering rule
 	unsigned int reconnected : 1;     /* 1 if we have reconnected srvdst */
+	unsigned int h2 : 1;                     /* 1 if alpn upgraded to h2 */
 
 	/* server name indicated by client in SNI TLS extension */
 	char *sni;
