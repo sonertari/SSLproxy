@@ -328,6 +328,7 @@ protossl_alpn_select_cb(UNUSED SSL *ssl, const unsigned char **out, unsigned cha
 	                          (unsigned char *)"\x02h2", 3,
 	                          in, inlen) == OPENSSL_NPN_NEGOTIATED) {
 		log_fine_va("ALPN selected: %.*s", *outlen, *out);
+		ctx->sslctx->h2 = 1;
 		return SSL_TLSEXT_ERR_OK;
 	}
 
@@ -1241,7 +1242,7 @@ protossl_dstssl_create(pxy_conn_ctx_t *ctx)
 		SSL_set_tlsext_host_name(ssl, ctx->sslctx->sni);
 	}
 
-	if (SSL_set_alpn_protos(ssl, (const unsigned char *)"\x02h2", 3) != 0) {
+	if (SSL_set_alpn_protos(ssl, (const unsigned char *)"\x02h2\x08http/1.1", 12) != 0) {
 		log_dbg_printf("failed to set ALPN protos\n");
 		SSL_free(ssl);
 		return NULL;
