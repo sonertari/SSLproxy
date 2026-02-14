@@ -106,7 +106,7 @@ DEBUG_CFLAGS?=	-g
 #FEATURES+=	-DPURIFY
 
 # Define to add proxy state machine debugging; dump state in debug mode.
-#FEATURES+=	-DDEBUG_PROXY
+FEATURES+=	-DDEBUG_PROXY
 
 # Define to add certificate debugging; dump all certificates in debug mode.
 #FEATURES+=	-DDEBUG_CERTIFICATE
