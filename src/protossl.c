@@ -270,6 +270,39 @@ protossl_ossl_sessget_cb(UNUSED SSL *ssl, const unsigned char *id, int idlen, in
 	return sess;
 }
 
+#ifndef OPENSSL_NO_TLSEXT
+static int
+protossl_alpn_select_cb(UNUSED SSL *ssl, const unsigned char **out, unsigned char *outlen,
+                        const unsigned char *in, unsigned int inlen, void *arg)
+{
+	UNUSED pxy_conn_ctx_t *ctx = arg;
+	log_finest("ENTER");
+
+	if (SSL_select_next_proto((unsigned char **)out, outlen,
+	                          (unsigned char *)"\x02h2", 3,
+	                          in, inlen) == OPENSSL_NPN_NEGOTIATED) {
+		log_fine_va("ALPN selected: %.*s", *outlen, *out);
+		return SSL_TLSEXT_ERR_OK;
+	}
+
+	return SSL_TLSEXT_ERR_NOACK;
+}
+
+static void
+protossl_check_h2_enabled(struct bufferevent *bev, UNUSED pxy_conn_ctx_t *ctx)
+{
+	const unsigned char *data = NULL;
+	unsigned int len = 0;
+
+	log_finest("ENTER");
+
+	SSL_get0_alpn_selected(bufferevent_openssl_get_ssl(bev), &data, &len);
+	if (data && len == 2 && memcmp(data, "h2", 2) == 0) {
+		log_fine("H2 negotiated via ALPN");
+	}
+}
+#endif /* !OPENSSL_NO_TLSEXT */
+
 /*
  * Set SSL_CTX options that are the same for incoming and outgoing SSL_CTX.
  */
@@ -394,6 +427,9 @@ protossl_srcsslctx_create(pxy_conn_ctx_t *ctx, X509 *crt, STACK_OF(X509) *chain,
 #ifndef OPENSSL_NO_TLSEXT
 	SSL_CTX_set_tlsext_servername_callback(sslctx, protossl_ossl_servername_cb);
 	SSL_CTX_set_tlsext_servername_arg(sslctx, ctx);
+
+	// Add ALPN callback
+	SSL_CTX_set_alpn_select_cb(sslctx, protossl_alpn_select_cb, ctx);
 #endif /* !OPENSSL_NO_TLSEXT */
 #ifndef OPENSSL_NO_DH
 	if (ctx->conn_opts->dh) {
@@ -1138,6 +1174,12 @@ protossl_dstssl_create(pxy_conn_ctx_t *ctx)
 	if (ctx->sslctx->sni) {
 		SSL_set_tlsext_host_name(ssl, ctx->sslctx->sni);
 	}
+
+	if (SSL_set_alpn_protos(ssl, (const unsigned char *)"\x02h2", 3) != 0) {
+		log_dbg_printf("failed to set ALPN protos\n");
+		SSL_free(ssl);
+		return NULL;
+	}
 #endif /* !OPENSSL_NO_TLSEXT */
 
 #ifdef SSL_MODE_RELEASE_BUFFERS
@@ -1696,6 +1738,10 @@ protossl_bev_eventcb_connected_srvdst(UNUSED struct bufferevent *bev, pxy_conn_c
 		// We never reach here, since we defer pass and block actions
 		return;
 	}
+
+#ifndef OPENSSL_NO_TLSEXT
+	protossl_check_h2_enabled(bev, ctx);
+#endif /* !OPENSSL_NO_TLSEXT */
 
 	// Set src ssl up early to apply SSL filter,
 	// this is the last moment we can take divert or split action
