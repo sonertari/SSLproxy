@@ -275,7 +275,8 @@ int ssl_session_is_valid(SSL_SESSION *) NONNULL(1);
 int ssl_is_ocspreq(const unsigned char *, size_t) NONNULL(1) WUNRES;
 
 int ssl_tls_clienthello_parse(const unsigned char *, ssize_t, int,
-                              const unsigned char **, char **)
+                              const unsigned char **, char **,
+                              unsigned char **, size_t *)
     NONNULL(1,4) WUNRES;
 int ssl_dnsname_match(const char *, size_t, const char *, size_t)
     NONNULL(1,3) WUNRES;

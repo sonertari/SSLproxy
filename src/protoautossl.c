@@ -259,7 +259,8 @@ protoautossl_peek_and_upgrade(pxy_conn_ctx_t *ctx)
 	/* peek the buffer */
 	inbuf = bufferevent_get_input(ctx->src.bev);
 	if (evbuffer_peek(inbuf, 4096, 0, vec_out, 1)) {
-		if (ssl_tls_clienthello_parse(vec_out[0].iov_base, vec_out[0].iov_len, 0, &chello, &ctx->sslctx->sni) == 0) {
+		if (ssl_tls_clienthello_parse(vec_out[0].iov_base, vec_out[0].iov_len, 0, &chello, &ctx->sslctx->sni,
+                                      &ctx->sslctx->alpn_protos, &ctx->sslctx->alpn_protos_len) == 0) {
 			if (OPTS_DEBUG(ctx->global)) {
 				log_dbg_printf("Peek found ClientHello\n");
 			}
