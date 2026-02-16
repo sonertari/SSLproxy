@@ -1994,6 +1994,47 @@ len3(uint8_t p0, uint8_t p1, uint8_t p2) {
 	return (uint32_t)p2 + ((uint32_t)p1 << 8) + ((uint32_t)p0 << 16);
 }
 
+#ifdef DEBUG_CLIENTHELLO_PARSER
+#define DBG_printf(...) log_dbg_printf("ClientHello parser: " __VA_ARGS__)
+#else /* !DEBUG_CLIENTHELLO_PARSER */
+#define DBG_printf(...) 
+#endif /* !DEBUG_CLIENTHELLO_PARSER */
+
+/*
+ * Converts an array of strings into OpenSSL ALPN wire format.
+ * Returns a newly allocated buffer and sets *len.
+ * The caller must free() the returned buffer.
+ */
+unsigned char *
+ssl_alpn_protos_to_wire(char **alpn_protos, int alpn_count, size_t *len)
+{
+    size_t total_len = 0;
+
+    // 1. Calculate total length needed (1 byte for length + string length)
+    for (int i = 0; i < alpn_count; i++) {
+        total_len += 1 + strlen(alpn_protos[i]);
+    }
+
+    unsigned char *wire = malloc(total_len);
+    if (!wire) return NULL;
+
+    unsigned char *p = wire;
+    for (int i = 0; i < alpn_count; i++) {
+        size_t plen = strlen(alpn_protos[i]);
+        if (plen > 255) continue; // ALPN names cannot exceed 255 bytes
+
+        DBG_printf("ssl_alpn_protos_to_wire: alpn_protos[%d]=%.*s\n", i, (int)plen, alpn_protos[i]);
+
+        *p++ = (unsigned char)plen;   // Pack length byte
+        memcpy(p, alpn_protos[i], plen); // Pack string
+        p += plen;
+    }
+
+    *len = total_len;
+    DBG_printf("ssl_alpn_protos_to_wire: wire=%.*s\n", (int)total_len, wire);
+    return wire;
+}
+
 /*
  * Ugly hack to manually parse a clientHello message from a memory buffer.
  * This is needed in order to be able to support SNI and STARTTLS.
@@ -2043,17 +2084,18 @@ len3(uint8_t p0, uint8_t p1, uint8_t p2) {
  */
 int
 ssl_tls_clienthello_parse(const unsigned char *buf, ssize_t sz, int search,
-                          const unsigned char **clienthello, char **servername)
+                          const unsigned char **clienthello, char **servername,
+                          unsigned char **alpn_wire, size_t *alpn_wire_len)
 {
-#ifdef DEBUG_CLIENTHELLO_PARSER
-#define DBG_printf(...) log_dbg_printf("ClientHello parser: " __VA_ARGS__)
-#else /* !DEBUG_CLIENTHELLO_PARSER */
-#define DBG_printf(...) 
-#endif /* !DEBUG_CLIENTHELLO_PARSER */
 	const unsigned char *p = buf;
 	ssize_t n = sz;
 
 	*clienthello = NULL;
+	*alpn_wire = NULL;
+	*alpn_wire_len = 0;
+
+	char **alpn_protos = NULL;
+	int alpn_count = 0;
 
 	DBG_printf("parsing buffer of sz %zd\n", sz);
 
@@ -2341,6 +2383,58 @@ ssl_tls_clienthello_parse(const unsigned char *buf, ssize_t sz, int search,
 				}
 				break;
 			}
+			case 16: { /* Application-Layer Protocol Negotiation (ALPN) */
+				ssize_t extn = extlen;
+				const unsigned char *extp = p;
+
+				if (extn < 2)
+					goto continue_search;
+
+				ssize_t alpn_list_len = len2(extp[0], extp[1]);
+				extp += 2;
+				extn -= 2;
+
+				if (alpn_list_len != extn)
+					goto continue_search;
+
+				/* Count protocols first to allocate array */
+				int count = 0;
+				const unsigned char *count_p = extp;
+				ssize_t count_n = extn;
+				while (count_n > 0) {
+					unsigned char plen = *count_p;
+					if (plen + 1 > count_n) break;
+					count++;
+					count_p += plen + 1;
+					count_n -= plen + 1;
+				}
+
+				if (count > 0) {
+					alpn_protos = malloc(sizeof(char *) * count);
+					alpn_count = count;
+					for (int i = 0; i < count; i++) {
+						unsigned char plen = *extp;
+						extp++;
+						alpn_protos[i] = malloc(plen + 1);
+						if (!alpn_protos[i]) {
+							for (int j = 0; j < i; j++) {
+								free(alpn_protos[j]);
+							}
+							free(alpn_protos);
+							alpn_protos = NULL;
+							alpn_count = 0;
+							goto continue_search;
+						}
+						memcpy(alpn_protos[i], extp, plen);
+						alpn_protos[i][plen] = '\0';
+						extp += plen;
+						DBG_printf("Parsed ALPN: %s\n", alpn_protos[i]);
+					}
+					*alpn_wire = ssl_alpn_protos_to_wire(alpn_protos, alpn_count, alpn_wire_len);
+					DBG_printf("ALPN wire= %.*s\n", (int)*alpn_wire_len, *alpn_wire);
+				}
+				break;
+			}
 			default:
 				DBG_printf("skipped\n");
 				break;
@@ -2363,6 +2457,12 @@ done_parsing:
 		DBG_printf("===> Match: rv 0, *clienthello set\n");
 		if (servername)
 			*servername = sn;
+		if (alpn_protos) {
+			for (int i = 0; i < alpn_count; i++) {
+				free(alpn_protos[i]);
+			}
+			free(alpn_protos);
+		}
 		return 0;
 continue_search:
 		if (sn)

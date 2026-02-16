@@ -317,24 +317,50 @@ protossl_ossl_sessget_cb(UNUSED SSL *ssl, const unsigned char *id, int idlen, in
 }
 
 #ifndef OPENSSL_NO_TLSEXT
+/*
+ * This callback is used to negotiate with the client the protocol negotiated with the server.
+ * This callback fires twice, hence idempotent.
+ */
 static int
 protossl_alpn_select_cb(UNUSED SSL *ssl, const unsigned char **out, unsigned char *outlen,
                         const unsigned char *in, unsigned int inlen, void *arg)
 {
 	UNUSED pxy_conn_ctx_t *ctx = arg;
-	log_finest("ENTER");
+	log_finest_va("ENTER in=%.*s",inlen, in);
+
+	unsigned char *server = (unsigned char *)"\x08http/1.1";
+	if (ctx->sslctx->h2) {
+		log_fine_va("Will offer client the h2 proto negotiated with server: client protos=%.*s", inlen, in);
+		server = (unsigned char *)"\x02h2";
+	}
+	else {
+		log_fine_va("Will offer client the http/1.1 proto negotiated with server: client protos=%.*s", inlen, in);
+	}
 
 	if (SSL_select_next_proto((unsigned char **)out, outlen,
-	                          (unsigned char *)"\x02h2", 3,
-	                          in, inlen) == OPENSSL_NPN_NEGOTIATED) {
-		log_fine_va("ALPN selected: %.*s", *outlen, *out);
-		ctx->sslctx->h2 = 1;
+                               in, inlen,
+                               server, strlen((char *)server)) == OPENSSL_NPN_NEGOTIATED) {
+
+		log_fine_va("ALPN with client selected proto=%.*s", *outlen, *out);
+
+		if (*outlen == 2 && memcmp(*out, "h2", 2) == 0) {
+			log_fine("Selected h2 via ALPN with client");
+			ctx->sslctx->h2 = 1;
+		} else if (*outlen == 8 && memcmp(*out, "http/1.1", 8) == 0) {
+			log_fine("Selected http1.1 via ALPN with client");
+			ctx->sslctx->h2 = 0;
+		}
+
 		return SSL_TLSEXT_ERR_OK;
 	}
 
 	return SSL_TLSEXT_ERR_NOACK;
 }
 
+/*
+ * This function is used to check if the negotiated protocol with the server is h2,
+ * and if so, set the flag in sslctx to offer h2 to client in ALPN select callback.
+ */
 static void
 protossl_check_h2_enabled(struct bufferevent *bev, UNUSED pxy_conn_ctx_t *ctx)
 {
@@ -344,9 +370,21 @@ protossl_check_h2_enabled(struct bufferevent *bev, UNUSED pxy_conn_ctx_t *ctx)
 	log_finest("ENTER");
 
 	SSL_get0_alpn_selected(bufferevent_openssl_get_ssl(bev), &data, &len);
+
+	ctx->sslctx->h2 = 0;
+
 	if (data && len == 2 && memcmp(data, "h2", 2) == 0) {
-		log_fine("H2 negotiated via ALPN");
+		log_fine("SSLproxy negotiated h2 via ALPN with server (will offer this to client)");
+		ctx->sslctx->h2 = 1;
 	}
+	else if (data && len == 8 && memcmp(data, "http/1.1", 8) == 0) {
+		log_fine("SSLproxy negotiated http1.1 via ALPN with server (will offer this to client)");
+	}
+	else {
+		log_fine_va("SSLproxy could not negotiate client's protocols %.*s via ALPN with server (connection will be closed by server or client)",
+			ctx->sslctx->alpn_protos ? (int)ctx->sslctx->alpn_protos_len : 1, ctx->sslctx->alpn_protos ? (char *)ctx->sslctx->alpn_protos : "-");
+	}
+
 }
 #endif /* !OPENSSL_NO_TLSEXT */
 
@@ -481,8 +519,13 @@ protossl_srcsslctx_create(pxy_conn_ctx_t *ctx, X509 *crt, STACK_OF(X509) *chain,
 	SSL_CTX_set_tlsext_servername_callback(sslctx, protossl_ossl_servername_cb);
 	SSL_CTX_set_tlsext_servername_arg(sslctx, ctx);
 
-	// Add ALPN callback
-	SSL_CTX_set_alpn_select_cb(sslctx, protossl_alpn_select_cb, ctx);
+	if (ctx->sslctx->alpn_protos_len > 0) {
+		log_dbg_printf("Set ALPN callback to negotiate with client\n");
+		SSL_CTX_set_alpn_select_cb(sslctx, protossl_alpn_select_cb, ctx);
+	}
+	else {
+		log_dbg_printf("Will not negotiate ALPN with client since no client ALPN protocols were found\n");
+	}
 #endif /* !OPENSSL_NO_TLSEXT */
 #ifndef OPENSSL_NO_DH
 	if (ctx->conn_opts->dh) {
@@ -1231,6 +1274,20 @@ protossl_dstssl_create(pxy_conn_ctx_t *ctx)
 		return NULL;
 	}
 
+	if (ctx->sslctx->alpn_protos_len > 0) {
+		log_dbg_printf("Will negotiate with server ALPN protocols supported by client= %.*s\n", (int)ctx->sslctx->alpn_protos_len, ctx->sslctx->alpn_protos);
+
+		// TODO: Should we call SSL_set_alpn_protos() instead?
+		if (SSL_CTX_set_alpn_protos(sslctx, (const unsigned char *)ctx->sslctx->alpn_protos, ctx->sslctx->alpn_protos_len) != 0) {
+			log_dbg_printf("failed to set ALPN protos\n");
+			SSL_CTX_free(sslctx);
+			return NULL;
+		}
+	}
+	else {
+		log_dbg_printf("Client did not provide ALPN protocols to negotiate\n");
+	}
+
 	ssl = SSL_new(sslctx);
 	SSL_CTX_free(sslctx); /* SSL_new() increments refcount */
 	if (!ssl) {
@@ -1242,11 +1299,6 @@ protossl_dstssl_create(pxy_conn_ctx_t *ctx)
 		SSL_set_tlsext_host_name(ssl, ctx->sslctx->sni);
 	}
 
-	if (SSL_set_alpn_protos(ssl, (const unsigned char *)"\x02h2\x08http/1.1", 12) != 0) {
-		log_dbg_printf("failed to set ALPN protos\n");
-		SSL_free(ssl);
-		return NULL;
-	}
 #endif /* !OPENSSL_NO_TLSEXT */
 
 #ifdef SSL_MODE_RELEASE_BUFFERS
@@ -1407,6 +1459,9 @@ protossl_free(pxy_conn_ctx_t *ctx)
 	if (ctx->sslctx->sni) {
 		free(ctx->sslctx->sni);
 	}
+	if (ctx->sslctx->alpn_protos) {
+		free(ctx->sslctx->alpn_protos);
+	}
 	if (ctx->sslctx->srvdst_ssl_version) {
 		free(ctx->sslctx->srvdst_ssl_version);
 	}
@@ -1481,7 +1536,7 @@ protossl_fd_readcb(evutil_socket_t fd, UNUSED short what, void *arg)
 		goto out;
 	}
 
-	rv = ssl_tls_clienthello_parse(buf, n, 0, &chello, &ctx->sslctx->sni);
+	rv = ssl_tls_clienthello_parse(buf, n, 0, &chello, &ctx->sslctx->sni, &ctx->sslctx->alpn_protos, &ctx->sslctx->alpn_protos_len);
 	if ((rv == 1) && !chello) {
 		log_err_printf("Peeking did not yield a (truncated) ClientHello message, aborting connection\n");
 		log_fine("Peeking did not yield a (truncated) ClientHello message, aborting connection");
@@ -1819,7 +1874,12 @@ protossl_bev_eventcb_connected_srvdst(UNUSED struct bufferevent *bev, pxy_conn_c
 	}
 
 #ifndef OPENSSL_NO_TLSEXT
-	protossl_check_h2_enabled(bev, ctx);
+	if (ctx->sslctx->alpn_protos_len > 0) {
+		protossl_check_h2_enabled(bev, ctx);
+	}
+	else {
+		log_dbg_printf("Will not check ALPN protocols enabled with server, client did not provide ALPN protocols to negotiate\n");
+	}
 #endif /* !OPENSSL_NO_TLSEXT */
 
 	// Set src ssl up early to apply SSL filter,
