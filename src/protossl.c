@@ -279,21 +279,15 @@ static int
 protossl_alpn_select_cb(UNUSED SSL *ssl, const unsigned char **out, unsigned char *outlen,
                         const unsigned char *in, unsigned int inlen, void *arg)
 {
-	UNUSED pxy_conn_ctx_t *ctx = arg;
-	log_finest_va("ENTER in=%.*s",inlen, in);
+	pxy_conn_ctx_t *ctx = arg;
+	log_finest("ENTER");
 
-	unsigned char *server = (unsigned char *)"\x08http/1.1";
-	if (ctx->sslctx->h2) {
-		log_fine_va("Will offer client the h2 proto negotiated with server: client protos=%.*s", inlen, in);
-		server = (unsigned char *)"\x02h2";
-	}
-	else {
-		log_fine_va("Will offer client the http/1.1 proto negotiated with server: client protos=%.*s", inlen, in);
-	}
+	log_fine_va("Will offer client the proto selected by server=%.*s, client protos=%.*s",
+		(int)ctx->sslctx->alpn_selected_len, ctx->sslctx->alpn_selected, inlen, in);
 
 	if (SSL_select_next_proto((unsigned char **)out, outlen,
-                               in, inlen,
-                               server, strlen((char *)server)) == OPENSSL_NPN_NEGOTIATED) {
+                               ctx->sslctx->alpn_selected, ctx->sslctx->alpn_selected_len,
+                               in, inlen) == OPENSSL_NPN_NEGOTIATED) {
 
 		log_fine_va("ALPN with client selected proto=%.*s", *outlen, *out);
 
@@ -301,8 +295,11 @@ protossl_alpn_select_cb(UNUSED SSL *ssl, const unsigned char **out, unsigned cha
 			log_fine("Selected h2 via ALPN with client");
 			ctx->sslctx->h2 = 1;
 		} else if (*outlen == 8 && memcmp(*out, "http/1.1", 8) == 0) {
-			log_fine("Selected http1.1 via ALPN with client");
+			log_fine("Selected http/1.1 via ALPN with client");
 			ctx->sslctx->h2 = 0;
+		}
+		else {
+			log_fine_va("Selected protocol %.*s via ALPN with client", *outlen, *out);
 		}
 
 		return SSL_TLSEXT_ERR_OK;
@@ -316,7 +313,7 @@ protossl_alpn_select_cb(UNUSED SSL *ssl, const unsigned char **out, unsigned cha
  * and if so, set the flag in sslctx to offer h2 to client in ALPN select callback.
  */
 static void
-protossl_check_h2_enabled(struct bufferevent *bev, UNUSED pxy_conn_ctx_t *ctx)
+protossl_check_h2_enabled(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
 	const unsigned char *data = NULL;
 	unsigned int len = 0;
@@ -325,18 +322,32 @@ protossl_check_h2_enabled(struct bufferevent *bev, UNUSED pxy_conn_ctx_t *ctx)
 
 	SSL_get0_alpn_selected(bufferevent_openssl_get_ssl(bev), &data, &len);
 
+	if (data && len > 0) {
+		ctx->sslctx->alpn_selected = malloc(len + 1);
+		if (!ctx->sslctx->alpn_selected)
+			return;
+		ctx->sslctx->alpn_selected[0] = (unsigned char)len; // Pack length byte for ALPN wire format
+		memcpy(ctx->sslctx->alpn_selected + 1, data, len);
+		ctx->sslctx->alpn_selected_len = len + 1;
+	}
+
+	log_fine_va("Proto negotiated using client's supported protos and selected via ALPN with server: %.*s (will offer this to client, if not empty)",
+		ctx->sslctx->alpn_selected_len > 0 ? (int)ctx->sslctx->alpn_selected_len : 1,
+		ctx->sslctx->alpn_selected_len > 0 ? (char *)ctx->sslctx->alpn_selected : "-");
+
 	ctx->sslctx->h2 = 0;
 
 	if (data && len == 2 && memcmp(data, "h2", 2) == 0) {
-		log_fine("SSLproxy negotiated h2 via ALPN with server (will offer this to client)");
+		log_fine("Negotiated h2 via ALPN with server");
 		ctx->sslctx->h2 = 1;
 	}
 	else if (data && len == 8 && memcmp(data, "http/1.1", 8) == 0) {
-		log_fine("SSLproxy negotiated http1.1 via ALPN with server (will offer this to client)");
+		log_fine("Negotiated http/1.1 via ALPN with server");
 	}
 	else {
-		log_fine_va("SSLproxy could not negotiate client's protocols %.*s via ALPN with server (connection will be closed by server or client)",
-			ctx->sslctx->alpn_protos ? (int)ctx->sslctx->alpn_protos_len : 1, ctx->sslctx->alpn_protos ? (char *)ctx->sslctx->alpn_protos : "-");
+		log_fine_va("Negotiated client's protocols %.*s via ALPN with server (connection may be closed by server, if no overlap)",
+			ctx->sslctx->alpn_protos_len > 0 ? (int)ctx->sslctx->alpn_protos_len : 1,
+			ctx->sslctx->alpn_protos_len > 0 ? (char *)ctx->sslctx->alpn_protos : "-");
 	}
 
 }
@@ -1395,6 +1406,9 @@ protossl_free(pxy_conn_ctx_t *ctx)
 	}
 	if (ctx->sslctx->alpn_protos) {
 		free(ctx->sslctx->alpn_protos);
+	}
+	if (ctx->sslctx->alpn_selected) {
+		free(ctx->sslctx->alpn_selected);
 	}
 	if (ctx->sslctx->srvdst_ssl_version) {
 		free(ctx->sslctx->srvdst_ssl_version);

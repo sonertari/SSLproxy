@@ -155,9 +155,14 @@ struct ssl_ctx {
 
 	/* server name indicated by client in SNI TLS extension */
 	char *sni;
+
 	/* protos supported by client in ALPN TLS extension */
 	unsigned char *alpn_protos;
 	size_t alpn_protos_len;
+
+	/* proto negotiated with server via ALPN (using alpn_protos), in wire format */
+	unsigned char *alpn_selected;
+	size_t alpn_selected_len;
 
 	X509 *origcrt;
 

@@ -2005,7 +2005,7 @@ len3(uint8_t p0, uint8_t p1, uint8_t p2) {
  * Returns a newly allocated buffer and sets *len.
  * The caller must free() the returned buffer.
  */
-unsigned char *
+unsigned char * NONNULL(1,3) MALLOC
 ssl_alpn_protos_to_wire(char **alpn_protos, int alpn_count, size_t *len)
 {
     size_t total_len = 0;
