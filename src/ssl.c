@@ -1994,6 +1994,41 @@ len3(uint8_t p0, uint8_t p1, uint8_t p2) {
 	return (uint32_t)p2 + ((uint32_t)p1 << 8) + ((uint32_t)p0 << 16);
 }
 
+#define WIRE_DBG_BUFS 4
+#define WIRE_DBG_MAX  256
+
+const char *
+ssl_wire_to_printable(const unsigned char *wire, size_t len)
+{
+    // Static array of buffers to allow multiple calls in one printf()
+	static __thread char bufs[WIRE_DBG_BUFS][WIRE_DBG_MAX];
+	static __thread int idx = 0;
+
+    // Select the next buffer in the circle
+    char *buf = bufs[idx];
+    idx = (idx + 1) % WIRE_DBG_BUFS;
+
+    if (!wire || len == 0) return "-";
+
+    size_t out_pos = 0;
+    size_t in_pos = 0;
+
+    while (in_pos < len && out_pos < WIRE_DBG_MAX - 1) {
+        unsigned char plen = wire[in_pos++];
+
+		// Format the length in brackets for readability
+        int printed = snprintf(buf + out_pos, WIRE_DBG_MAX - out_pos, "[%u]", plen);
+        out_pos += (printed > 0) ? printed : 0;
+
+        // Copy the protocol string itself
+        for (unsigned char i = 0; i < plen && in_pos < len && out_pos < WIRE_DBG_MAX - 1; i++) {
+            buf[out_pos++] = wire[in_pos++];
+        }
+    }
+    buf[out_pos] = '\0'; // Ensure null termination
+    return buf;
+}
+
 #ifdef DEBUG_CLIENTHELLO_PARSER
 #define DBG_printf(...) log_dbg_printf("ClientHello parser: " __VA_ARGS__)
 #else /* !DEBUG_CLIENTHELLO_PARSER */
@@ -2010,7 +2045,7 @@ ssl_alpn_protos_to_wire(char **alpn_protos, int alpn_count, size_t *len)
 {
     size_t total_len = 0;
 
-    // 1. Calculate total length needed (1 byte for length + string length)
+    // Calculate total length needed (1 byte for length + string length)
     for (int i = 0; i < alpn_count; i++) {
         total_len += 1 + strlen(alpn_protos[i]);
     }
@@ -2031,7 +2066,7 @@ ssl_alpn_protos_to_wire(char **alpn_protos, int alpn_count, size_t *len)
     }
 
     *len = total_len;
-    DBG_printf("ssl_alpn_protos_to_wire: wire=%.*s\n", (int)total_len, wire);
+    DBG_printf("ssl_alpn_protos_to_wire: wire=%s\n", ssl_wire_to_printable(wire, total_len));
     return wire;
 }
 
@@ -2428,10 +2463,10 @@ ssl_tls_clienthello_parse(const unsigned char *buf, ssize_t sz, int search,
 						memcpy(alpn_protos[i], extp, plen);
 						alpn_protos[i][plen] = '\0';
 						extp += plen;
-						DBG_printf("Parsed ALPN: %s\n", alpn_protos[i]);
+						DBG_printf("Parsed ALPN proto: %s\n", alpn_protos[i]);
 					}
 					*alpn_wire = ssl_alpn_protos_to_wire(alpn_protos, alpn_count, alpn_wire_len);
-					DBG_printf("ALPN wire= %.*s\n", (int)*alpn_wire_len, *alpn_wire);
+					DBG_printf("ALPN protos in ClientHello: %s\n", ssl_wire_to_printable(*alpn_wire, *alpn_wire_len));
 				}
 				break;
 			}
