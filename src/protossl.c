@@ -1271,8 +1271,10 @@ protossl_dstssl_create(pxy_conn_ctx_t *ctx)
 	}
 
 	if (ctx->sslctx->alpn_protos_len > 0) {
+#ifdef DEBUG_PROXY
 		log_dbg_printf("Will negotiate ALPN protos with server, using client protos: %s\n",
 			ssl_wire_to_printable(ctx->sslctx->alpn_protos, ctx->sslctx->alpn_protos_len));
+#endif /* DEBUG_PROXY */
 
 		// TODO: Should we call SSL_set_alpn_protos() instead?
 		if (SSL_CTX_set_alpn_protos(sslctx, (const unsigned char *)ctx->sslctx->alpn_protos, ctx->sslctx->alpn_protos_len) != 0) {
