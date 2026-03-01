@@ -29,6 +29,9 @@
 
 #include "opts.h"
 #include "filter.h"
+#ifndef WITHOUT_ICAP
+#include "icap.h"
+#endif /* !WITHOUT_ICAP */
 
 #include "sys.h"
 #include "log.h"
@@ -146,6 +149,13 @@ conn_opts_new(void)
 	conn_opts->user_timeout = 300;
 #endif /* !WITHOUT_USERAUTH */
 	conn_opts->max_http_header_size = 8192;
+#ifndef WITHOUT_ICAP
+	conn_opts->icap_chain = NULL;                 /* Disabled by default */
+	conn_opts->icap_preview_size = 4096;          /* 4KB default preview */
+	conn_opts->icap_max_body_size = 1048576;      /* Max body to send to ICAP service at once, 1MB default */
+	conn_opts->icap_timeout = 30000;              /* 30 seconds by default */
+	conn_opts->icap_fail_open = ICAP_FAIL_CLOSED; /* Fail block by default */
+#endif /* !WITHOUT_ICAP */
 	return conn_opts;
 }
 
@@ -254,6 +264,12 @@ conn_opts_free(conn_opts_t *conn_opts)
 	}
 #endif /* !WITHOUT_USERAUTH */
 
+#ifndef WITHOUT_ICAP
+	if (conn_opts->icap_chain) {
+		icap_service_free(conn_opts->icap_chain);
+	}
+#endif /* !WITHOUT_ICAP */
+
 	memset(conn_opts, 0, sizeof(conn_opts_t));
 	free(conn_opts);
 }
@@ -347,6 +363,12 @@ tmp_opts_free(tmp_opts_t *tmp_opts)
 		free(tmp_opts->dh_str);
 		tmp_opts->dh_str = NULL;
 	}
+#ifndef WITHOUT_ICAP
+	if (tmp_opts->icap_chain) {
+		icap_service_free(tmp_opts->icap_chain);
+		tmp_opts->icap_chain = NULL;
+	}
+#endif /* !WITHOUT_ICAP */
 	free(tmp_opts);
 }
 
@@ -555,6 +577,11 @@ tmp_opts_copy(tmp_opts_t *src_tmp_opts)
 		tmp_opts->leafcrlurl_str = strdup(src_tmp_opts->leafcrlurl_str);
 	if (src_tmp_opts->dh_str)
 		tmp_opts->dh_str = strdup(src_tmp_opts->dh_str);
+#ifndef WITHOUT_ICAP
+	if (src_tmp_opts->icap_chain) {
+		tmp_opts->icap_chain = icap_service_copy(src_tmp_opts->icap_chain);
+	}
+#endif /* !WITHOUT_ICAP */
 	tmp_opts->split = src_tmp_opts->split;
 	tmp_opts->include = src_tmp_opts->include;
 #ifdef DEBUG_PROXY
@@ -700,6 +727,16 @@ conn_opts_copy(conn_opts_t *conn_opts, const char *argv0, tmp_opts_t *tmp_opts)
 			return NULL;
 	}
 #endif /* !OPENSSL_NO_DH */
+#ifndef WITHOUT_ICAP
+	if (conn_opts->icap_chain) {
+		if ((cops->icap_chain = icap_service_copy(conn_opts->icap_chain)) == NULL)
+			return oom_return_null(argv0);
+	}
+	else if (tmp_opts && tmp_opts->icap_chain) {
+		if ((cops->icap_chain = icap_service_copy(tmp_opts->icap_chain)) == NULL)
+			return oom_return_null(argv0);
+	}
+#endif /* !WITHOUT_ICAP */
 #ifndef OPENSSL_NO_ECDH
 	if (conn_opts->ecdhcurve) {
 		if (opts_set_ecdhcurve(cops, argv0, conn_opts->ecdhcurve) == -1)
@@ -2807,6 +2844,57 @@ set_conn_opts_option(conn_opts_t *conn_opts, const char *argv0,
 #ifdef DEBUG_OPTS
 		log_dbg_printf("StripClientHello: %u\n", conn_opts->stripclienthello);
 #endif /* DEBUG_OPTS */
+#ifndef WITHOUT_ICAP
+	} else if (equal(name, "Icap")) {
+		if (icap_chain_parse_spec(conn_opts, value) < 0) {
+			fprintf(stderr, "Invalid Icap spec '%s' on line %d\n", value, line_num);
+			return -1;
+		}
+#ifdef DEBUG_OPTS
+		log_dbg_printf("Icap spec parsed: '%s'\n", value);
+#endif /* DEBUG_OPTS */
+	} else if (equal(name, "IcapMaxBodySize")) {
+		size_t i = atoi(value);
+		if (i <= 16777216) {  /* 0-16MB */
+			conn_opts->icap_max_body_size = i;
+		} else {
+			fprintf(stderr, "Invalid IcapMaxBodySize %s on line %d, use 0-16777216\n", value, line_num);
+			return -1;
+		}
+#ifdef DEBUG_OPTS
+		log_dbg_printf("IcapMaxBodySize: %zu\n", conn_opts->icap_max_body_size);
+#endif /* DEBUG_OPTS */
+	} else if (equal(name, "IcapTimeout")) {
+		unsigned int i = atoi(value);
+		if (i <= 60000) {  /* 0-60 seconds (in milliseconds) */
+			conn_opts->icap_timeout = i;
+		} else {
+			fprintf(stderr, "Invalid IcapTimeout %s on line %d, use 0-60000\n", value, line_num);
+			return -1;
+		}
+#ifdef DEBUG_OPTS
+		log_dbg_printf("IcapTimeout: %u\n", conn_opts->icap_timeout);
+#endif /* DEBUG_OPTS */
+	} else if (equal(name, "IcapPreviewSize")) {
+		size_t i = atoi(value);
+		if (i <= 16777216) {  /* 0-16MB */
+			conn_opts->icap_preview_size = i;
+		} else {
+			fprintf(stderr, "Invalid IcapPreviewSize %s on line %d, use 0-16777216\n", value, line_num);
+			return -1;
+		}
+#ifdef DEBUG_OPTS
+		log_dbg_printf("IcapPreviewSize: %zu\n", conn_opts->icap_preview_size);
+#endif /* DEBUG_OPTS */
+	} else if (equal(name, "IcapFailOpen")) {
+		yes = check_value_yesno(value, "IcapFailOpen", line_num);
+		if (yes == -1)
+			return -1;
+		conn_opts->icap_fail_open = yes;
+#ifdef DEBUG_OPTS
+		log_dbg_printf("IcapFailOpen: %u\n", conn_opts->icap_fail_open);
+#endif /* DEBUG_OPTS */
+#endif /* !WITHOUT_ICAP */
 	}
 	else {
 		// Unknown conn_opts option, but may not be an error, so return 1, instead of -1

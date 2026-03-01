@@ -33,6 +33,7 @@
 typedef struct protosmtp_ctx {
 	unsigned int not_valid : 1;
 	unsigned int seen_command_count;
+	unsigned int in_data : 1;
 } protosmtp_ctx_t;
 
 int protosmtp_validate(pxy_conn_ctx_t *, char *, size_t) NONNULL(1,2) WUNRES;

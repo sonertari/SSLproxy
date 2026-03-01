@@ -60,6 +60,10 @@ void protossl_bev_eventcb_srvdst(struct bufferevent *, short, pxy_conn_ctx_t *) 
 void protossl_bev_eventcb(struct bufferevent *, short, void *) NONNULL(1);
 void protossl_bev_eventcb_child(struct bufferevent *, short, void *) NONNULL(1);
 
+#ifndef WITHOUT_ICAP
+void protossl_icap_resume(struct bufferevent *, void *) NONNULL(1,2);
+#endif /* !WITHOUT_ICAP */
+
 protocol_t protossl_setup(pxy_conn_ctx_t *) NONNULL(1);
 protocol_t protossl_setup_child(pxy_conn_child_ctx_t *) NONNULL(1);
 

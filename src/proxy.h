@@ -36,6 +36,9 @@
 #include <sys/syslog.h>
 
 typedef struct proxy_ctx proxy_ctx_t;
+#ifndef WITHOUT_ICAP
+typedef struct icap_ctx icap_ctx_t;
+#endif /* !WITHOUT_ICAP */
 
 /*
  * Listener context.

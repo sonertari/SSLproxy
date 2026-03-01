@@ -88,6 +88,13 @@ FEATURES+=	-DWITHOUT_USERAUTH
 endif
 endif
 
+### ICAP Client
+
+# Define to disable support for ICAP.
+# With ICAP enabled, SSLproxy can send ICAP requests to ICAP services 
+# configured for content adaptation.
+#FEATURES+=	-DWITHOUT_ICAP
+
 ### Debugging
 
 # These flags are added to CFLAGS iff building from a git repo.

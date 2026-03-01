@@ -147,6 +147,15 @@ typedef struct conn_opts {
 	unsigned int reconnect_ssl : 1;
 	unsigned int max_http_header_size;
 	unsigned int stripclienthello : 1;
+
+#ifndef WITHOUT_ICAP
+	/* ICAP configuration chain */
+	struct icap_service *icap_chain;
+	unsigned int icap_fail_open : 1;    /* 0: block on ICAP error, 1: pass through */
+	size_t icap_max_body_size;          /* Max body size to send to ICAP; 0 = disabled */
+	unsigned int icap_timeout;          /* Timeout in milliseconds */
+	size_t icap_preview_size;           /* Preview slice size in bytes; 0 = preview disabled */
+#endif /* !WITHOUT_ICAP */
 } conn_opts_t;
 
 typedef struct opts {
@@ -218,6 +227,9 @@ typedef struct tmp_opts {
 #ifdef DEBUG_PROXY
 	unsigned int line_num;
 #endif /* DEBUG_PROXY */
+#ifndef WITHOUT_ICAP
+	struct icap_service *icap_chain;
+#endif /* !WITHOUT_ICAP */
 } tmp_opts_t;
 
 struct global {

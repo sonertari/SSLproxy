@@ -1,7 +1,7 @@
 /*-
  * SSLproxy - transparent SSL/TLS proxy
  *
- * Copyright (c) 2017-2025, Soner Tari <sonertari@gmail.com>.
+ * Copyright (c) 2017-2026, Soner Tari <sonertari@gmail.com>.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -26,7 +26,11 @@
  */
 
 #include "protopop3.h"
+#include "prototcp.h"
 #include "protossl.h"
+#ifndef WITHOUT_ICAP
+#include "icap.h"
+#endif /* !WITHOUT_ICAP */
 #include "util.h"
 
 #include <string.h>
@@ -83,6 +87,90 @@ protopop3_validate(pxy_conn_ctx_t *ctx, char *packet, size_t packet_size)
 	return 0;
 }
 
+static void NONNULL(1,2)
+protopop3_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
+{
+	struct evbuffer *inbuf = bufferevent_get_input(bev);
+	struct evbuffer *outbuf = bufferevent_get_output(ctx->dst.bev);
+
+#ifndef WITHOUT_ICAP
+	protopop3_ctx_t *pop3_ctx = ctx->protoctx->arg;
+
+	// Client -> Server: wait for RETR command to start sending ICAP requests
+	if (icap_enabled(ctx) && !pop3_ctx->in_retr) {
+		size_t len = evbuffer_get_length(inbuf);
+		char *data = malloc(len + 1);
+		if (data) {
+			evbuffer_copyout(inbuf, data, len);
+			data[len] = '\0';
+			if (strcasestr(data, "RETR ")) {
+				pop3_ctx->in_retr = 1;
+				log_finest("POP3 RETR command detected");
+			}
+			free(data);
+		}
+	}
+
+	if (!icap_enabled(ctx) || !pop3_ctx->in_retr) {
+#endif /* !WITHOUT_ICAP */
+		evbuffer_add_buffer(outbuf, inbuf);
+#ifndef WITHOUT_ICAP
+	}
+	else {
+		icap_process_data(inbuf, outbuf, ctx, ctx->src.icap_ctx, 1);
+	}
+#endif /* !WITHOUT_ICAP */
+
+	ctx->protoctx->set_watermarkcb(bev, ctx, ctx->dst.bev);
+}
+
+static void NONNULL(1,2)
+protopop3_bev_readcb_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
+{
+	struct evbuffer *inbuf = bufferevent_get_input(bev);
+	struct evbuffer *outbuf = bufferevent_get_output(ctx->src.bev);
+
+#ifndef WITHOUT_ICAP
+	protopop3_ctx_t *pop3_ctx = ctx->protoctx->arg;
+
+	// Server -> Client: wait for the end of message in RETR response to stop sending ICAP requests
+	if (icap_enabled(ctx) && pop3_ctx->in_retr) {
+		struct evbuffer_ptr ptr = evbuffer_search(inbuf, "\r\n.\r\n", 5, NULL);
+		if (ptr.pos != -1) {
+			log_finest("POP3 RETR response ended");
+			pop3_ctx->in_retr = 0;
+		}
+	}
+
+	if (!icap_enabled(ctx) || !pop3_ctx->in_retr) {
+#endif /* !WITHOUT_ICAP */
+		evbuffer_add_buffer(outbuf, inbuf);
+#ifndef WITHOUT_ICAP
+	}
+	else {
+		icap_process_data(inbuf, outbuf, ctx, ctx->dst.icap_ctx, 0);
+	}
+#endif /* !WITHOUT_ICAP */
+
+	ctx->protoctx->set_watermarkcb(bev, ctx, ctx->src.bev);
+}
+
+static void NONNULL(1)
+protopop3_bev_readcb(struct bufferevent *bev, void *arg)
+{
+	pxy_conn_ctx_t *ctx = arg;
+
+	if (bev == ctx->src.bev) {
+		protopop3_bev_readcb_src(bev, ctx);
+	} else if (bev == ctx->dst.bev) {
+		protopop3_bev_readcb_dst(bev, ctx);
+	} else if (bev == ctx->srvdst.bev) {
+		prototcp_bev_readcb_srvdst(bev, ctx);
+	} else {
+		log_err_printf("protopop3_bev_readcb: UNKWN conn end\n");
+	}
+}
+
 static void NONNULL(1)
 protopop3_free(pxy_conn_ctx_t *ctx)
 {
@@ -98,6 +186,7 @@ protopop3_setup(pxy_conn_ctx_t *ctx)
 
 	ctx->protoctx->proto_free = protopop3_free;
 	ctx->protoctx->validatecb = protopop3_validate;
+	ctx->protoctx->bev_readcb = protopop3_bev_readcb;
 
 	ctx->protoctx->arg = malloc(sizeof(protopop3_ctx_t));
 	if (!ctx->protoctx->arg) {
@@ -128,6 +217,7 @@ protopop3s_setup(pxy_conn_ctx_t *ctx)
 
 	ctx->protoctx->proto_free = protopop3s_free;
 	ctx->protoctx->validatecb = protopop3_validate;
+	ctx->protoctx->bev_readcb = protopop3_bev_readcb;
 
 	ctx->protoctx->arg = malloc(sizeof(protopop3_ctx_t));
 	if (!ctx->protoctx->arg) {

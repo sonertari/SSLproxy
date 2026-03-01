@@ -29,6 +29,9 @@
 
 #include "pxyconn.h"
 
+#ifndef WITHOUT_ICAP
+#include "icap.h"
+#endif /* !WITHOUT_ICAP */
 #include "prototcp.h"
 #include "protossl.h"
 #include "protohttp.h"
@@ -369,6 +372,11 @@ pxy_conn_ctx_free(pxy_conn_ctx_t *ctx, int by_requestor)
 	if (ctx->sslproxy_header) {
 		free(ctx->sslproxy_header);
 	}
+#ifndef WITHOUT_ICAP
+	if (ctx->icap_meta_header) {
+		free(ctx->icap_meta_header);
+	}
+#endif /* !WITHOUT_ICAP */
 	// If the proto doesn't have special args, proto_free() callback is NULL
 	if (ctx->protoctx->proto_free) {
 		ctx->protoctx->proto_free(ctx);
@@ -394,7 +402,14 @@ pxy_conn_free(pxy_conn_ctx_t *ctx, int by_requestor)
 {
 	log_finest("ENTER");
 
-	// We always assign NULL to bevs after freeing them
+	// Always assign NULL after freeing
+#ifndef WITHOUT_ICAP
+	if (ctx->src.icap_ctx) {
+		icap_ctx_free(ctx->src.icap_ctx);
+		ctx->src.icap_ctx = NULL;
+	}
+#endif /* !WITHOUT_ICAP */
+
 	if (ctx->src.bev) {
 		ctx->src.free(ctx->src.bev, ctx);
 		ctx->src.bev = NULL;
@@ -407,10 +422,22 @@ pxy_conn_free(pxy_conn_ctx_t *ctx, int by_requestor)
 	if (ctx->srvdst.bev) {
 		// In split mode, srvdst is used as dst, so it should be freed as dst below
 		// If srvdst has been xferred to the first child conn, the child should free it, not the parent
+#ifndef WITHOUT_ICAP
+		if (ctx->srvdst.icap_ctx) {
+			icap_ctx_free(ctx->srvdst.icap_ctx);
+			ctx->srvdst.icap_ctx = NULL;
+		}
+#endif /* !WITHOUT_ICAP */
 		ctx->srvdst.free(ctx->srvdst.bev, ctx);
 		ctx->srvdst.bev = NULL;
 	}
 
+#ifndef WITHOUT_ICAP
+	if (ctx->dst.icap_ctx) {
+		icap_ctx_free(ctx->dst.icap_ctx);
+		ctx->dst.icap_ctx = NULL;
+	}
+#endif /* !WITHOUT_ICAP */
 	if (ctx->dst.bev) {
 		ctx->dst.free(ctx->dst.bev, ctx);
 		ctx->dst.bev = NULL;
@@ -797,10 +824,11 @@ pxy_insert_sslproxy_header(pxy_conn_ctx_t *ctx, unsigned char *packet, size_t *p
 #endif /* DEBUG_PROXY */
 
 int
-pxy_try_prepend_sslproxy_header(pxy_conn_ctx_t *ctx, struct evbuffer *inbuf, struct evbuffer *outbuf)
+pxy_try_prepend_sslproxy_header(pxy_conn_ctx_t *ctx, struct evbuffer *inbuf, UNUSED struct evbuffer *outbuf)
 {
 	log_finer("ENTER");
 
+	// @attention Add the modified packet back to inbuf
 	if (ctx->divert && !ctx->sent_sslproxy_header) {
 #ifdef DEBUG_PROXY
 		size_t packet_size = evbuffer_get_length(inbuf);
@@ -815,21 +843,19 @@ pxy_try_prepend_sslproxy_header(pxy_conn_ctx_t *ctx, struct evbuffer *inbuf, str
 		log_finest_va("ORIG packet, size=%zu:\n%.*s", packet_size, (int)packet_size, packet);
 
 		pxy_insert_sslproxy_header(ctx, packet, &packet_size);
-		evbuffer_add(outbuf, packet, packet_size);
+		evbuffer_add(inbuf, packet, packet_size);
 
 		log_finest_va("NEW packet, size=%zu:\n%.*s", packet_size, (int)packet_size, packet);
 
 		free(packet);
-	}
-	else {
-		evbuffer_add_buffer(outbuf, inbuf);
-	}
 #else /* DEBUG_PROXY */
-		evbuffer_add_printf(outbuf, "%s\r\n", ctx->sslproxy_header);
+		struct evbuffer *tmp = evbuffer_new();
+		evbuffer_add_printf(tmp, "%s\r\n", ctx->sslproxy_header);
+		evbuffer_prepend_buffer(inbuf, tmp);
+		evbuffer_free(tmp);
+#endif /* !DEBUG_PROXY */
 		ctx->sent_sslproxy_header = 1;
 	}
-	evbuffer_add_buffer(outbuf, inbuf);
-#endif /* !DEBUG_PROXY */
 	return 0;
 }
 
@@ -1172,7 +1198,11 @@ pxy_set_sslproxy_header(pxy_conn_ctx_t *ctx, int upgraded)
 	}
 	log_finer_va("sslproxy_header= %s", ctx->sslproxy_header);
 
+#ifndef WITHOUT_ICAP
+	return icap_set_extended_headers(ctx, upgraded);
+#else /* WITHOUT_ICAP */
 	return 0;
+#endif /* !WITHOUT_ICAP */
 }
 
 int
@@ -1180,7 +1210,11 @@ pxy_setup_child_listener(pxy_conn_ctx_t *ctx)
 {
 	if (!ctx->divert) {
 		// split mode
+#ifndef WITHOUT_ICAP
+		return icap_set_extended_headers(ctx, 0);
+#else /* WITHOUT_ICAP */
 		return 0;
+#endif /* !WITHOUT_ICAP */
 	}
 
 	// @attention Defer child setup and evcl creation until after parent init is complete, otherwise (1) causes multithreading issues (proxy_listener_acceptcb is

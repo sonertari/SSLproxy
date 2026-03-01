@@ -1,9 +1,8 @@
 /*-
- * SSLsplit - transparent SSL/TLS interception
- * https://www.roe.ch/SSLsplit
+ * SSLproxy
  *
+ * Copyright (c) 2017-2026, Soner Tari <sonertari@gmail.com>.
  * Copyright (c) 2009-2019, Daniel Roethlisberger <daniel@roe.ch>.
- * Copyright (c) 2017-2025, Soner Tari <sonertari@gmail.com>.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -31,6 +30,10 @@
 #include "prototcp.h"
 #include "protossl.h"
 #include "protopassthrough.h"
+
+#ifndef WITHOUT_ICAP
+#include "icap.h"
+#endif /* !WITHOUT_ICAP */
 
 #include "util.h"
 #include "base64.h"
@@ -635,10 +638,7 @@ protohttp_filter_request_header(struct evbuffer *inbuf, struct evbuffer *outbuf,
 		}
 
 		/* no data left after parsing headers? */
-		if (evbuffer_get_length(inbuf) == 0) {
-			return 0;
-		}
-		evbuffer_add_buffer(outbuf, inbuf);
+		log_finest_va("Buffer length after parsing headers: %zu", evbuffer_get_length(inbuf));
 	}
 	return 0;
 }
@@ -830,12 +830,34 @@ protohttp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	/* request header munging */
 	if (!http_ctx->seen_req_header) {
 		log_finest_va("HTTP Request Header, size=%zu", evbuffer_get_length(inbuf));
-		if (protohttp_filter_request_header(inbuf, outbuf, http_ctx, ctx->type, ctx) == -1) {
+
+		// Use a local pointer to the output buffer
+		struct evbuffer *outbuf_ptr = outbuf;
+#ifndef WITHOUT_ICAP
+		if (icap_enabled(ctx)) {
+			outbuf_ptr = ctx->src.icap_ctx->hdr;
+		}
+#endif /* !WITHOUT_ICAP */
+
+		if (protohttp_filter_request_header(inbuf, outbuf_ptr, http_ctx, ctx->type, ctx) == -1) {
 			return;
 		}
-	} else {
+	}
+
+	// There may or may not be data left after parsing headers, but we should send ICAP requests for HTTP headers accumulated too
+	if (http_ctx->seen_req_header) {
 		log_finest_va("HTTP Request Body, size=%zu", evbuffer_get_length(inbuf));
-		evbuffer_add_buffer(outbuf, inbuf);
+#ifndef WITHOUT_ICAP
+		if (!icap_enabled(ctx)) {
+#endif /* !WITHOUT_ICAP */
+			evbuffer_add_buffer(outbuf, inbuf);
+#ifndef WITHOUT_ICAP
+		}
+		else {
+			// icap_ctx may not have been initialized yet, hence we pass ctx and reqmod too
+			icap_process_data(inbuf, outbuf, ctx, ctx->src.icap_ctx, 1);
+		}
+#endif /* !WITHOUT_ICAP */
 	}
 
 	if (ctx->conn_opts->validate_proto && !ctx->protoctx->is_valid) {
@@ -848,6 +870,9 @@ protohttp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		}
 	}
 
+	// TODO: Watermarking may not be needed if ICAP is enabled, because we disable reads on the source side until ICAP is done.
+	// So we should not have too much data buffered on the source side if ICAP is enabled.
+	// But we may still want to use watermarking to avoid buffering too much data on the destination side if the client is slow in receiving data.
 	ctx->protoctx->set_watermarkcb(bev, ctx, ctx->dst.bev);
 }
 
@@ -958,13 +983,8 @@ protohttp_filter_response_header(struct evbuffer *inbuf, struct evbuffer *outbuf
 		free(line);
 	}
 
-	if (http_ctx->seen_resp_header) {
-		/* no data left after parsing headers? */
-		if (evbuffer_get_length(inbuf) == 0) {
-			return;
-		}
-		evbuffer_add_buffer(outbuf, inbuf);
-	}
+	/* no data left after parsing headers? */
+	log_finest_va("Buffer length after parsing headers: %zu", evbuffer_get_length(inbuf));
 }
 
 static void NONNULL(1)
@@ -983,14 +1003,39 @@ protohttp_bev_readcb_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 
 	if (!http_ctx->seen_resp_header) {
 		log_finest_va("HTTP Response Header, size=%zu", evbuffer_get_length(inbuf));
-		protohttp_filter_response_header(inbuf, outbuf, http_ctx, ctx);
+
+		// Use a local pointer to the output buffer
+		struct evbuffer *outbuf_ptr = outbuf;
+#ifndef WITHOUT_ICAP
+		if (icap_enabled(ctx)) {
+			outbuf_ptr = ctx->dst.icap_ctx->hdr;
+		}
+#endif /* !WITHOUT_ICAP */
+
+		protohttp_filter_response_header(inbuf, outbuf_ptr, http_ctx, ctx);
 		if (ctx->enomem) {
 			return;
 		}
-	} else {
-		log_finest_va("HTTP Response Body, size=%zu", evbuffer_get_length(inbuf));
-		evbuffer_add_buffer(outbuf, inbuf);
 	}
+
+	// There may or may not be data left after parsing headers, but we should send ICAP requests for HTTP headers accumulated too
+	if (http_ctx->seen_resp_header) {
+		log_finest_va("HTTP Response Body, size=%zu", evbuffer_get_length(inbuf));
+#ifndef WITHOUT_ICAP
+		if (!icap_enabled(ctx)) {
+#endif /* !WITHOUT_ICAP */
+			evbuffer_add_buffer(outbuf, inbuf);
+#ifndef WITHOUT_ICAP
+		}
+		else {
+			icap_process_data(inbuf, outbuf, ctx, ctx->dst.icap_ctx, 0);
+		}
+#endif /* !WITHOUT_ICAP */
+	}
+
+	// TODO: Watermarking may not be needed if ICAP is enabled, because we disable reads on the source side until ICAP is done.
+	// So we should not have too much data buffered on the source side if ICAP is enabled.
+	// But we may still want to use watermarking to avoid buffering too much data on the destination side if the client is slow in receiving data.
 	ctx->protoctx->set_watermarkcb(bev, ctx, ctx->src.bev);
 }
 
@@ -1020,10 +1065,13 @@ protohttp_bev_readcb_src_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ct
 		if (protohttp_filter_request_header(inbuf, outbuf, http_ctx, ctx->type, ctx->conn) == -1) {
 			return;
 		}
-	} else {
+	}
+
+	if (http_ctx->seen_req_header && evbuffer_get_length(inbuf) > 0) {
 		log_finest_va("HTTP Request Body, size=%zu", evbuffer_get_length(inbuf));
 		evbuffer_add_buffer(outbuf, inbuf);
 	}
+
 	ctx->conn->protoctx->set_watermarkcb(bev, ctx->conn, ctx->dst.bev);
 }
 
@@ -1048,10 +1096,13 @@ protohttp_bev_readcb_dst_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ct
 		if (ctx->conn->enomem) {
 			return;
 		}
-	} else {
+	}
+
+	if (http_ctx->seen_resp_header && evbuffer_get_length(inbuf) > 0) {
 		log_finest_va("HTTP Response Body, size=%zu", evbuffer_get_length(inbuf));
 		evbuffer_add_buffer(outbuf, inbuf);
 	}
+
 	ctx->conn->protoctx->set_watermarkcb(bev, ctx->conn, ctx->src.bev);
 }
 
@@ -1123,7 +1174,18 @@ protohttp_bev_writecb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		}
 		return;
 	}
-	ctx->protoctx->unset_watermarkcb(bev, ctx, &ctx->dst);
+
+#ifndef WITHOUT_ICAP
+	// TODO: Watermarking may not be needed if ICAP is enabled, because we disable reads on the source side until ICAP is done.
+	// So we should not have too much data buffered on the source side if ICAP is enabled.
+	// But we may still want to use watermarking to avoid buffering too much data on the destination side if the client is slow in receiving data.
+	// TODO: Should we wait for both src and dst icap to be done before unsetting watermarkcb, or dst only?
+	if (!icap_enabled(ctx) || (ctx->src.icap_ctx->done && ctx->dst.icap_ctx->done)) {
+#endif /* !WITHOUT_ICAP */
+		ctx->protoctx->unset_watermarkcb(bev, ctx, &ctx->dst);
+#ifndef WITHOUT_ICAP
+	}
+#endif /* !WITHOUT_ICAP */
 }
 
 static void NONNULL(1)

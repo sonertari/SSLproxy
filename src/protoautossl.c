@@ -30,6 +30,9 @@
 #include "protoautossl.h"
 #include "prototcp.h"
 #include "protossl.h"
+#ifndef WITHOUT_ICAP
+#include "icap.h"
+#endif /* !WITHOUT_ICAP */
 
 #include <string.h>
 #include <sys/param.h>
@@ -306,6 +309,10 @@ protoautossl_peek_and_upgrade(pxy_conn_ctx_t *ctx)
 					return -1;
 				}
 			} else {
+#ifndef WITHOUT_ICAP
+				icap_set_extended_headers(ctx, 1);
+#endif /* !WITHOUT_ICAP */
+
 				// srvdst == dst in split mode
 				if (protoautossl_upgrade_dst(ctx) == -1) {
 					return -1;
@@ -453,6 +460,17 @@ protoautossl_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		return;
 	}
 
+#ifndef WITHOUT_ICAP
+	if (!icap_enabled(ctx)) {
+#endif /* !WITHOUT_ICAP */
+		evbuffer_add_buffer(outbuf, inbuf);
+#ifndef WITHOUT_ICAP
+	}
+	else {
+		icap_process_data(inbuf, outbuf, ctx, ctx->src.icap_ctx, 1);
+	}
+#endif /* !WITHOUT_ICAP */
+
 	ctx->protoctx->set_watermarkcb(bev, ctx, ctx->dst.bev);
 }
 
@@ -475,7 +493,20 @@ protoautossl_bev_readcb_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	}
 #endif /* !WITHOUT_USERAUTH */
 
-	evbuffer_add_buffer(bufferevent_get_output(ctx->src.bev), bufferevent_get_input(bev));
+	struct evbuffer *inbuf = bufferevent_get_input(bev);
+	struct evbuffer *outbuf = bufferevent_get_output(ctx->src.bev);
+
+#ifndef WITHOUT_ICAP
+	if (!icap_enabled(ctx)) {
+#endif /* !WITHOUT_ICAP */
+		evbuffer_add_buffer(outbuf, inbuf);
+#ifndef WITHOUT_ICAP
+	}
+	else {
+		icap_process_data(inbuf, outbuf, ctx, ctx->srvdst.icap_ctx, 0);
+	}
+#endif /* !WITHOUT_ICAP */
+
 	ctx->protoctx->set_watermarkcb(bev, ctx, ctx->src.bev);
 }
 

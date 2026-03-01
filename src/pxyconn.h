@@ -112,6 +112,9 @@ struct pxy_conn_desc {
 	SSL *ssl;
 	unsigned int closed : 1;
 	bev_free_func_t free;
+#ifndef WITHOUT_ICAP
+	icap_ctx_t *icap_ctx;
+#endif /* !WITHOUT_ICAP */
 };
 
 enum conn_type {
@@ -307,6 +310,12 @@ struct pxy_conn_ctx {
 	char *sslproxy_header;
 	size_t sslproxy_header_len;
 	unsigned int sent_sslproxy_header : 1; /* 1 to prevent inserting SSLproxy header twice */
+
+	// Extended ICAP headers
+#ifndef WITHOUT_ICAP
+	char *icap_meta_header;
+	size_t icap_meta_header_len;
+#endif /* !WITHOUT_ICAP */
 
 #ifdef DEBUG_PROXY
 	// Listening programs may create multiple child connections, such as Squid http proxy

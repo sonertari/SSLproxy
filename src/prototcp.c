@@ -29,6 +29,9 @@
 
 #include "prototcp.h"
 #include "protopassthrough.h"
+#ifndef WITHOUT_ICAP
+#include "icap.h"
+#endif /* !WITHOUT_ICAP */
 
 #include <sys/param.h>
 #include <string.h>
@@ -118,10 +121,22 @@ prototcp_bufferevent_free_and_close_fd(struct bufferevent *bev, UNUSED pxy_conn_
 int
 prototcp_setup_src(pxy_conn_ctx_t *ctx)
 {
+#ifndef WITHOUT_ICAP
+	ctx->src.icap_ctx = icap_init();
+	if (!ctx->src.icap_ctx) {
+		pxy_conn_term(ctx, 1);
+		return -1;
+	}
+#endif /* !WITHOUT_ICAP */
+
 	ctx->src.ssl = NULL;
 	ctx->src.bev = prototcp_bufferevent_setup(ctx, ctx->fd);
 	if (!ctx->src.bev) {
 		log_err_level_printf(LOG_CRIT, "Error creating src bufferevent\n");
+#ifndef WITHOUT_ICAP
+		icap_ctx_free(ctx->src.icap_ctx);
+		ctx->src.icap_ctx = NULL;
+#endif /* !WITHOUT_ICAP */
 		pxy_conn_term(ctx, 1);
 		return -1;
 	}
@@ -146,10 +161,21 @@ int
 prototcp_setup_dst(pxy_conn_ctx_t *ctx)
 {
 	if (ctx->divert) {
+#ifndef WITHOUT_ICAP
+		ctx->dst.icap_ctx = icap_init();
+		if (!ctx->dst.icap_ctx) {
+			pxy_conn_term(ctx, 1);
+			return -1;
+		}
+#endif /* !WITHOUT_ICAP */
 		ctx->dst.ssl = NULL;
 		ctx->dst.bev = prototcp_bufferevent_setup(ctx, -1);
 		if (!ctx->dst.bev) {
 			log_err_level_printf(LOG_CRIT, "Error creating parent dst\n");
+#ifndef WITHOUT_ICAP
+			icap_ctx_free(ctx->dst.icap_ctx);
+			ctx->dst.icap_ctx = NULL;
+#endif /* !WITHOUT_ICAP */
 			pxy_conn_term(ctx, 1);
 			return -1;
 		}
@@ -178,10 +204,22 @@ prototcp_setup_dst(pxy_conn_ctx_t *ctx)
 int
 prototcp_setup_srvdst(pxy_conn_ctx_t *ctx)
 {
+#ifndef WITHOUT_ICAP
+	ctx->srvdst.icap_ctx = icap_init();
+	if (!ctx->srvdst.icap_ctx) {
+		pxy_conn_term(ctx, 1);
+		return -1;
+	}
+#endif /* !WITHOUT_ICAP */
+
 	ctx->srvdst.ssl = NULL;
 	ctx->srvdst.bev = prototcp_bufferevent_setup(ctx, -1);
 	if (!ctx->srvdst.bev) {
 		log_err_level_printf(LOG_CRIT, "Error creating srvdst\n");
+#ifndef WITHOUT_ICAP
+		icap_ctx_free(ctx->srvdst.icap_ctx);
+		ctx->srvdst.icap_ctx = NULL;
+#endif /* !WITHOUT_ICAP */
 		pxy_conn_term(ctx, 1);
 		return -1;
 	}
@@ -400,6 +438,9 @@ prototcp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		return;
 	}
 
+	struct evbuffer *inbuf = bufferevent_get_input(bev);
+	struct evbuffer *outbuf = bufferevent_get_output(ctx->dst.bev);
+
 #ifndef WITHOUT_USERAUTH
 	if (prototcp_try_send_userauth_msg(bev, ctx)) {
 		return;
@@ -410,15 +451,24 @@ prototcp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		return;
 	}
 
-	struct evbuffer *inbuf = bufferevent_get_input(bev);
 	if (prototcp_try_validate_proto(bev, ctx, inbuf, ctx->dst.bev) != 0) {
 		return;
 	}
 
-	struct evbuffer *outbuf = bufferevent_get_output(ctx->dst.bev);
 	if (pxy_try_prepend_sslproxy_header(ctx, inbuf, outbuf) != 0) {
 		return;
 	}
+
+#ifndef WITHOUT_ICAP
+	if (!icap_enabled(ctx)) {
+#endif /* !WITHOUT_ICAP */
+		evbuffer_add_buffer(outbuf, inbuf);
+#ifndef WITHOUT_ICAP
+	}
+	else {
+		icap_process_data(inbuf, outbuf, ctx, ctx->src.icap_ctx, 1);
+	}
+#endif /* !WITHOUT_ICAP */
 
 	ctx->protoctx->set_watermarkcb(bev, ctx, ctx->dst.bev);
 }
@@ -433,11 +483,24 @@ prototcp_bev_readcb_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		return;
 	}
 
-	evbuffer_add_buffer(bufferevent_get_output(ctx->src.bev), bufferevent_get_input(bev));
+	struct evbuffer *inbuf = bufferevent_get_input(bev);
+	struct evbuffer *outbuf = bufferevent_get_output(ctx->src.bev);
+
+#ifndef WITHOUT_ICAP
+	if (!icap_enabled(ctx)) {
+#endif /* !WITHOUT_ICAP */
+		evbuffer_add_buffer(outbuf, inbuf);
+#ifndef WITHOUT_ICAP
+	}
+	else {
+		icap_process_data(inbuf, outbuf, ctx, ctx->dst.icap_ctx, 0);
+	}
+#endif /* !WITHOUT_ICAP */
+
 	ctx->protoctx->set_watermarkcb(bev, ctx, ctx->src.bev);
 }
 
-static void NONNULL(1)
+void NONNULL(1)
 prototcp_bev_readcb_srvdst(UNUSED struct bufferevent *bev, UNUSED pxy_conn_ctx_t *ctx)
 {
 	log_err_level(LOG_ERR, "readcb called on srvdst");
@@ -569,7 +632,13 @@ prototcp_bev_writecb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		}
 		return;
 	}
-	ctx->protoctx->unset_watermarkcb(bev, ctx, &ctx->dst);
+#ifndef WITHOUT_ICAP
+	if (!icap_enabled(ctx) || (ctx->src.icap_ctx->done && ctx->dst.icap_ctx->done)) {
+#endif /* !WITHOUT_ICAP */
+		ctx->protoctx->unset_watermarkcb(bev, ctx, &ctx->dst);
+#ifndef WITHOUT_ICAP
+	}
+#endif /* !WITHOUT_ICAP */
 }
 
 void
@@ -936,7 +1005,7 @@ prototcp_bev_eventcb_dst_child(struct bufferevent *bev, short events, pxy_conn_c
 	}
 }
 
-static void NONNULL(1)
+void NONNULL(1)
 prototcp_bev_readcb(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;

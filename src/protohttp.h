@@ -1,9 +1,8 @@
 /*-
- * SSLsplit - transparent SSL/TLS interception
- * https://www.roe.ch/SSLsplit
+ * SSLproxy
  *
+ * Copyright (c) 2017-2026, Soner Tari <sonertari@gmail.com>.
  * Copyright (c) 2009-2019, Daniel Roethlisberger <daniel@roe.ch>.
- * Copyright (c) 2017-2025, Soner Tari <sonertari@gmail.com>.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without

@@ -28,10 +28,12 @@
 #include "protosmtp.h"
 #include "prototcp.h"
 #include "protossl.h"
+#ifndef WITHOUT_ICAP
+#include "icap.h"
+#endif /* !WITHOUT_ICAP */
 #include "util.h"
 
 #include <string.h>
-
 // Size = 25
 static char *protosmtp_commands[] = { "EHLO", "HELO", "AUTH", "MAIL", "MAIL FROM", "RCPT", "RCPT TO", "DATA", "SEND", "RSET", "QUIT", "ATRN", "ETRN", "TURN",
 	"SAML", "SOML", "EXPN", "NOOP", "HELP", "ONEX", "BDAT", "BURL", "SUBMITTER", "VERB", "VRFY" };
@@ -237,14 +239,103 @@ protosmtp_bev_eventcb_connected_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx
 }
 
 static void NONNULL(1)
+protosmtp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
+{
+	struct evbuffer *inbuf = bufferevent_get_input(bev);
+	struct evbuffer *outbuf = bufferevent_get_output(ctx->dst.bev);
+
+#ifndef WITHOUT_ICAP
+	protosmtp_ctx_t *smtp_ctx = ctx->protoctx->arg;
+
+	// Detect start and end of SMTP DATA phase to send ICAP requests
+	if (icap_enabled(ctx) && !smtp_ctx->in_data) {
+		if (!smtp_ctx->in_data) {
+			size_t len = evbuffer_get_length(inbuf);
+			char *data = malloc(len + 1);
+			if (data) {
+				evbuffer_copyout(inbuf, data, len);
+				data[len] = '\0';
+				if (strcasestr(data, "DATA\r\n")) {
+					smtp_ctx->in_data = 1;
+					log_finest("SMTP DATA mode started");
+				}
+				free(data);
+			}
+		} else {
+			struct evbuffer_ptr ptr = evbuffer_search(inbuf, "\r\n.\r\n", 5, NULL);
+			if (ptr.pos != -1) {
+				log_finest("SMTP DATA mode ended");
+				smtp_ctx->in_data = 0;
+			}
+		}
+	}
+
+	if (!icap_enabled(ctx) || !smtp_ctx->in_data) {
+#endif /* !WITHOUT_ICAP */
+		evbuffer_add_buffer(outbuf, inbuf);
+#ifndef WITHOUT_ICAP
+	}
+	else {
+		icap_process_data(inbuf, outbuf, ctx, ctx->src.icap_ctx, 1);
+	}
+#endif /* !WITHOUT_ICAP */
+
+	ctx->protoctx->set_watermarkcb(bev, ctx, ctx->dst.bev);
+
+}
+
+static void NONNULL(1)
+protosmtp_bev_readcb_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
+{
+	struct evbuffer *inbuf = bufferevent_get_input(bev);
+	struct evbuffer *outbuf = bufferevent_get_output(ctx->src.bev);
+
+#ifndef WITHOUT_ICAP
+	protosmtp_ctx_t *smtp_ctx = ctx->protoctx->arg;
+
+	// Detect start and end of SMTP DATA phase to send ICAP requests
+	if (!smtp_ctx->in_data) {
+		size_t len = evbuffer_get_length(inbuf);
+		char *data = malloc(len + 1);
+		if (data) {
+			evbuffer_copyout(inbuf, data, len);
+			data[len] = '\0';
+			if (strcasestr(data, "DATA\r\n")) {
+				smtp_ctx->in_data = 1;
+				log_finest("SMTP DATA mode started");
+			}
+			free(data);
+		}
+	} else {
+		struct evbuffer_ptr ptr = evbuffer_search(inbuf, "\r\n.\r\n", 5, NULL);
+		if (ptr.pos != -1) {
+			log_finest("SMTP DATA mode ended");
+			smtp_ctx->in_data = 0;
+		}
+	}
+
+	if (!icap_enabled(ctx) || !smtp_ctx->in_data) {
+#endif /* !WITHOUT_ICAP */
+		evbuffer_add_buffer(outbuf, inbuf);
+#ifndef WITHOUT_ICAP
+	}
+	else {
+		icap_process_data(inbuf, outbuf, ctx, ctx->dst.icap_ctx, 0);
+	}
+#endif /* !WITHOUT_ICAP */
+
+	ctx->protoctx->set_watermarkcb(bev, ctx, ctx->src.bev);
+}
+
+static void NONNULL(1)
 protosmtp_bev_readcb(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
 
 	if (bev == ctx->src.bev) {
-		prototcp_bev_readcb_src(bev, ctx);
+		protosmtp_bev_readcb_src(bev, ctx);
 	} else if (bev == ctx->dst.bev) {
-		prototcp_bev_readcb_dst(bev, ctx);
+		protosmtp_bev_readcb_dst(bev, ctx);
 	} else if (bev == ctx->srvdst.bev) {
 		protosmtp_bev_readcb_srvdst(bev, ctx);
 	} else {
