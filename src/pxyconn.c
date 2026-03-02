@@ -373,8 +373,8 @@ pxy_conn_ctx_free(pxy_conn_ctx_t *ctx, int by_requestor)
 		free(ctx->sslproxy_header);
 	}
 #ifndef WITHOUT_ICAP
-	if (ctx->icap_meta_header) {
-		free(ctx->icap_meta_header);
+	if (ctx->icap_extended_headers) {
+		free(ctx->icap_extended_headers);
 	}
 #endif /* !WITHOUT_ICAP */
 	// If the proto doesn't have special args, proto_free() callback is NULL

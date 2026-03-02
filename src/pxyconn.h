@@ -313,8 +313,8 @@ struct pxy_conn_ctx {
 
 	// Extended ICAP headers
 #ifndef WITHOUT_ICAP
-	char *icap_meta_header;
-	size_t icap_meta_header_len;
+	char *icap_extended_headers;
+	size_t icap_extended_headers_len;
 #endif /* !WITHOUT_ICAP */
 
 #ifdef DEBUG_PROXY

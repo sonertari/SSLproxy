@@ -167,6 +167,8 @@ icap_service_copy(icap_service_t *chain)
 		svc->type = chain->type;
 		svc->icap_fail_open = chain->icap_fail_open;
 		svc->conn_fail_open = chain->conn_fail_open;
+		svc->timeout = chain->timeout;
+		svc->preview_size = chain->preview_size;
 		svc->next = NULL;
 		
 		if (!new_chain) new_chain = svc;
@@ -180,8 +182,8 @@ icap_service_copy(icap_service_t *chain)
 
 /*
  * Parse an ICAP service specification string
- * Format: icap://<host>:<port>/<path>,<type>,<mode>,<conn_mode>
- * Example: icap://127.0.0.1:1344/av,parallel,open,open
+ * Format: icap://<host>:<port>/<path>,<type>,<mode>,<conn_mode>,<timeout>,<preview>
+ * Example: icap://127.0.0.1:1344/echo,parallel,open,open,30,4096
  */
 int NONNULL(1, 2)
 icap_chain_parse_spec(conn_opts_t *conn_opts, const char *spec)
@@ -195,29 +197,34 @@ icap_chain_parse_spec(conn_opts_t *conn_opts, const char *spec)
 	svc->port = 1344;
 	svc->type = ICAP_SERVICE_SERIAL_MODIFYING;
 	svc->icap_fail_open = conn_opts->icap_fail_open;
-	svc->conn_fail_open = conn_opts->conn_fail_open;
+	svc->conn_fail_open = conn_opts->icap_conn_fail_open;
+	svc->timeout = conn_opts->icap_timeout;
+	svc->preview_size = conn_opts->icap_preview_size;
 
 	/* Make a local copy to tokenize */
 	char *spec_copy = strdup(spec);
 	if (!spec_copy) {
-		free(svc);
-		return -1;
+		goto err;
 	}
 
 	char *uri = strtok(spec_copy, ",");
 	char *type = strtok(NULL, ",");
 	char *mode = strtok(NULL, ",");
 	char *conn_mode = strtok(NULL, ",");
+	char *timeout = strtok(NULL, ",");
+	char *preview = strtok(NULL, ",");
+	char *trailing = strtok(NULL, ",");
 
 	if (!uri) {
 		log_err_printf("ICAP Config Error: Missing URI in spec '%s'\n", spec);
-		free(spec_copy);
-		free(svc);
-		return -1;
+		goto err;
 	}
 
 	/* Parse URI: icap://<host>:<port>/<path> */
 	svc->uri = strdup(uri);
+	if (!svc->uri) {
+		goto err;
+	}
 
 	char *host_start = NULL;
 	if (strncmp(uri, "icap://", 7) == 0) {
@@ -226,26 +233,34 @@ icap_chain_parse_spec(conn_opts_t *conn_opts, const char *spec)
 		host_start = uri + 8;
 	} else {
 		log_err_printf("ICAP Config Error: URI must start with icap:// or icaps://\n");
-		free(svc->uri);
-		free(spec_copy);
-		free(svc);
-		return -1;
+		goto err;
 	}
 
 	/* isolate host and port from path */
 	char *path_start = strchr(host_start, '/');
 	if (path_start) {
 		*path_start = '\0'; /* Temporarily terminate host:port part */
+		svc->path = strdup(path_start + 1);
+		if (!svc->path) {
+			log_err_printf("ICAP Config Error: Invalid path '%s'\n", path_start + 1);
+			goto err;
+		}
 	}
 
 	char *port_delim = strchr(host_start, ':');
 	if (port_delim) {
 		*port_delim = '\0';
 		svc->port = atoi(port_delim + 1);
-		if (svc->port <= 0 || svc->port > 65535) svc->port = 1344;
+		if (svc->port <= 0 || svc->port > 65535) {
+			log_err_printf("ICAP Config Error: Invalid port '%s'\n", port_delim + 1);
+			goto err;
+		}
 	}
 	
 	svc->server = strdup(host_start);
+	if (!svc->server) {
+		goto err;
+	}
 
 	/* Parse Type */
 	if (type) {
@@ -254,7 +269,8 @@ icap_chain_parse_spec(conn_opts_t *conn_opts, const char *spec)
 		} else if (strcasecmp(type, "serial") == 0) {
 			svc->type = ICAP_SERVICE_SERIAL_MODIFYING;
 		} else {
-			log_err_printf("ICAP Config Warning: Unknown type '%s', defaulting to serial\n", type);
+			log_err_printf("ICAP Config Error: Unknown type '%s'\n", type);
+			goto err;
 		}
 	}
 
@@ -265,8 +281,8 @@ icap_chain_parse_spec(conn_opts_t *conn_opts, const char *spec)
 		} else if (strcasecmp(mode, "open") == 0) {
 			svc->icap_fail_open = ICAP_FAIL_OPEN;
 		} else {
-			log_err_printf("ICAP Config Warning: Unknown fail mode '%s', defaulting to %s\n",
-				mode, svc->icap_fail_open == ICAP_FAIL_CLOSE ? "fail-close" : "fail-open");
+			log_err_printf("ICAP Config Error: Unknown fail mode '%s'\n", mode);
+			goto err;
 		}
 	}
 
@@ -277,9 +293,34 @@ icap_chain_parse_spec(conn_opts_t *conn_opts, const char *spec)
 		} else if (strcasecmp(conn_mode, "open") == 0) {
 			svc->conn_fail_open = ICAP_FAIL_OPEN;
 		} else {
-			log_err_printf("ICAP Config Warning: Unknown fail mode '%s', defaulting to %s\n",
-				conn_mode, svc->conn_fail_open == ICAP_FAIL_CLOSE ? "fail-close" : "fail-open");
+			log_err_printf("ICAP Config Error: Unknown fail mode '%s'\n", conn_mode);
+			goto err;
 		}
+	}
+
+	if (timeout) {
+		int value = atoi(timeout);
+		if (value >= 0 && value <= 60) {
+			svc->timeout = value;
+		} else {
+			log_err_printf("ICAP Config Error: Invalid timeout '%s'\n", timeout);
+			goto err;
+		}
+	}
+
+	if (preview) {
+		int value = atoi(preview);
+		if (value >= 0 && value <= 16777216) {
+			svc->preview_size = value;
+		} else {
+			log_err_printf("ICAP Config Error: Invalid preview size '%s'\n", preview);
+			goto err;
+		}
+	}
+
+	if (trailing) {
+		log_err_printf("ICAP Config Error: Extra fields in spec '%s'\n", spec);
+		goto err;
 	}
 
 	free(spec_copy);
@@ -294,6 +335,13 @@ icap_chain_parse_spec(conn_opts_t *conn_opts, const char *spec)
 	}
 
 	return 0;
+err:
+	if (svc->uri) free(svc->uri);
+	if (svc->server) free(svc->server);
+	if (svc->path) free(svc->path);
+	if (spec_copy) free(spec_copy);
+	free(svc);
+	return -1;
 }
 
 void NONNULL(1)
@@ -334,7 +382,7 @@ icap_set_extended_headers(pxy_conn_ctx_t *ctx, int upgraded)
 #endif /* !WITHOUT_USERAUTH */
 
 	// Estimate string length
-	ctx->icap_meta_header_len = snprintf(NULL, 0,
+	ctx->icap_extended_headers_len = snprintf(NULL, 0,
 		"X-Src: [%s]:%s\r\n"
 		"X-Dst: [%s]:%s\r\n"
 		"X-Proto: %s\r\n"
@@ -343,13 +391,13 @@ icap_set_extended_headers(pxy_conn_ctx_t *ctx, int upgraded)
 		STRORNONE(ctx->dsthost_str), STRORNONE(ctx->dstport_str),
 		proto, user_hdr);
 
-	ctx->icap_meta_header = malloc(ctx->icap_meta_header_len + 1);
-	if (!ctx->icap_meta_header) {
+	ctx->icap_extended_headers = malloc(ctx->icap_extended_headers_len + 1);
+	if (!ctx->icap_extended_headers) {
 		icap_conn_term(ctx);
 		return -1;
 	}
 
-	if (snprintf(ctx->icap_meta_header, ctx->icap_meta_header_len + 1,
+	if (snprintf(ctx->icap_extended_headers, ctx->icap_extended_headers_len + 1,
 		"X-Src: [%s]:%s\r\n"
 		"X-Dst: [%s]:%s\r\n"
 		"X-Proto: %s\r\n"
@@ -380,8 +428,6 @@ icap_connect(icap_ctx_t *icap_ctx)
 	icap_ctx->server = strdup(ctx->conn_opts->icap_chain->server);
 	icap_ctx->port = ctx->conn_opts->icap_chain->port;
 	
-	icap_ctx->timeout = ctx->conn_opts->icap_timeout;
-	icap_ctx->preview_size = ctx->conn_opts->icap_preview_size;
 	icap_ctx->max_body_size = ctx->conn_opts->icap_max_body_size;
 
 	icap_ctx->state = ICAP_STATE_CONNECTING;
@@ -444,7 +490,7 @@ icap_service_connect(icap_ctx_t *icap_ctx, icap_service_t *svc)
 	bufferevent_setwatermark(bev, EV_READ, 0, 0);
 
 	struct timeval tv;
-	tv.tv_sec = icap_ctx->timeout;
+	tv.tv_sec = svc->timeout;
 	tv.tv_usec = 0;
 	bufferevent_set_timeouts(bev, &tv, &tv);
 
@@ -550,14 +596,14 @@ icap_disconnect(icap_ctx_t *icap_ctx, icap_service_ctx_t *service_ctx, icap_serv
 
 	if (icap_ctx->state == ICAP_STATE_ERROR) {
 		if (ctx) log_finest_va("ICAP in error state, conn_opts conn_fail_open=%s, conn_opts icap_fail_open=%s, svc type=%s, svc conn_fail_open=%s, svc icap_fail_open=%s, parallel_service_count=%d",
-			ctx ? (ctx->conn_opts->conn_fail_open == ICAP_FAIL_CLOSE ? "fail-close" : "fail-open") : "-",
+			ctx ? (ctx->conn_opts->icap_conn_fail_open == ICAP_FAIL_CLOSE ? "fail-close" : "fail-open") : "-",
 			ctx ? (ctx->conn_opts->icap_fail_open == ICAP_FAIL_CLOSE ? "fail-close" : "fail-open") : "-",
 			svc ? (svc->type == ICAP_SERVICE_SERIAL_MODIFYING ? "ICAP_SERVICE_SERIAL_MODIFYING" : "ICAP_SERVICE_PARALLEL_INSPECT") : "-",
 			svc ? (svc->conn_fail_open == ICAP_FAIL_CLOSE ? "fail-close" : "fail-open") : "-",
 			svc ? (svc->icap_fail_open == ICAP_FAIL_CLOSE ? "fail-close" : "fail-open") : "-",
 			icap_ctx->parallel_service_count);
 		else log_dbg_printf("ICAP in error state, conn_opts conn_fail_open=%s, conn_opts icap_fail_open=%s, svc type=%s, svc conn_fail_open=%s, svc icap_fail_open=%s, parallel_service_count=%d\n",
-			ctx ? (ctx->conn_opts->conn_fail_open == ICAP_FAIL_CLOSE ? "fail-close" : "fail-open") : "-",
+			ctx ? (ctx->conn_opts->icap_conn_fail_open == ICAP_FAIL_CLOSE ? "fail-close" : "fail-open") : "-",
 			ctx ? (ctx->conn_opts->icap_fail_open == ICAP_FAIL_CLOSE ? "fail-close" : "fail-open") : "-",
 			svc ? (svc->type == ICAP_SERVICE_SERIAL_MODIFYING ? "ICAP_SERVICE_SERIAL_MODIFYING" : "ICAP_SERVICE_PARALLEL_INSPECT") : "-",
 			svc ? (svc->conn_fail_open == ICAP_FAIL_CLOSE ? "fail-close" : "fail-open") : "-",
@@ -565,7 +611,7 @@ icap_disconnect(icap_ctx_t *icap_ctx, icap_service_ctx_t *service_ctx, icap_serv
 			icap_ctx->parallel_service_count);
 
 		// Connection fail mode
-		if ((!svc && ctx->conn_opts->conn_fail_open == ICAP_FAIL_CLOSE)
+		if ((!svc && ctx->conn_opts->icap_conn_fail_open == ICAP_FAIL_CLOSE)
 			|| (svc && svc->type == ICAP_SERVICE_SERIAL_MODIFYING && svc->conn_fail_open == ICAP_FAIL_CLOSE)
 			// The last parallel service reaching here determines the fail-open behavior
 			// Note that we don't resume flow unless all parallel services have reached here, so we wait until the last one to decide
@@ -640,23 +686,23 @@ icap_disconnect(icap_ctx_t *icap_ctx, icap_service_ctx_t *service_ctx, icap_serv
 }
 
 static int NONNULL(1)
-icap_preview_enabled(icap_ctx_t *icap_ctx)
+icap_preview_enabled(icap_service_t *svc)
 {
-	return icap_ctx->preview_size > 0;
+	return svc->preview_size > 0;
 }
 
 /*
  * Extract modified payload from 200 OK response and update icap_ctx->body
  */
 static int
-icap_extract_200_ok(icap_ctx_t *icap_ctx, struct evbuffer *input)
+icap_extract_200_ok(icap_ctx_t *icap_ctx, struct evbuffer *input, icap_service_ctx_t *service_ctx)
 {
 	char *line;
 	int is_body = 0;
 	int is_veto = 0;
 	size_t body_offset = 0;
 	size_t header_offset = 0;
-	
+
 	UNUSED pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
 
 	/* Parse ICAP Headers to find Encapsulated offsets and Veto detection */
@@ -810,7 +856,7 @@ icap_extract_200_ok(icap_ctx_t *icap_ctx, struct evbuffer *input)
 			while (chunk_size > 0 && evbuffer_get_length(input) > 0) {
 				size_t avail = evbuffer_get_length(input);
 
-				if (icap_preview_enabled(icap_ctx)) {
+				if (icap_preview_enabled(service_ctx->svc)) {
 					struct evbuffer_ptr term_ptr = evbuffer_search(input, "\r\n0; ieof", 9, NULL);
 					if (term_ptr.pos != -1 && (size_t)term_ptr.pos < chunk_size) {
 						log_finest("Detected merged ieof terminator inside data chunk");
@@ -967,7 +1013,7 @@ icap_bev_readcb(struct bufferevent *bev, void *arg)
 			evbuffer_drain(input, evbuffer_get_length(input));
 		} else if (strstr(status_line, "ICAP/1.0 200")) {
 			log_finest("ICAP 200 OK - body modified, extracting...");
-			if (icap_extract_200_ok(icap_ctx, input) < 0) {
+			if (icap_extract_200_ok(icap_ctx, input, service_ctx) < 0) {
 				log_finest("ICAP failed to extract modified body");
 				icap_ctx->state = ICAP_STATE_ERROR;
 				evbuffer_drain(input, evbuffer_get_length(input));
@@ -1085,20 +1131,20 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 	char preview_hdr[64] = "";
 	
 	/* Add Preview header if configured */
-	if (icap_preview_enabled(icap_ctx) && body_len > icap_ctx->preview_size) {
-		snprintf(preview_hdr, sizeof(preview_hdr), "Preview: %zu\r\n", icap_ctx->preview_size);
-		log_finest_va("Adding Preview header: %zu bytes", icap_ctx->preview_size);
+	if (icap_preview_enabled(service_ctx->svc) && body_len > service_ctx->svc->preview_size) {
+		snprintf(preview_hdr, sizeof(preview_hdr), "Preview: %zu\r\n", service_ctx->svc->preview_size);
+		log_finest_va("Adding Preview header: %zu bytes", service_ctx->svc->preview_size);
 	}
 	
 	snprintf(icap_hdr_str, sizeof(icap_hdr_str),
-		"%s icap://%s/echo ICAP/1.0\r\n"
+		"%s icap://%s/%s ICAP/1.0\r\n"
 		"Host: %s\r\n"
 		"User-Agent: SSLproxy\r\n"
 		"Allow: 204\r\n"
 		"%s"
 		"Encapsulated: %s\r\n",
 		icap_ctx->reqmod ? "REQMOD" : "RESPMOD",
-		service_ctx->svc->server, service_ctx->svc->server, preview_hdr, encapsulated_hdr
+		service_ctx->svc->server, service_ctx->svc->path ? service_ctx->svc->path : "", service_ctx->svc->server, preview_hdr, encapsulated_hdr
 		);
 	
 	log_finest_va("Generated ICAP Header start: %s", icap_hdr_str);
@@ -1108,8 +1154,8 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 	icap_add_standard_x_headers(ctx, icap_ctx->icap_buf);
 	
 	/* Add custom ICAP meta headers if any */
-	if (ctx->icap_meta_header) {
-		evbuffer_add(icap_ctx->icap_buf, ctx->icap_meta_header, strlen(ctx->icap_meta_header));
+	if (ctx->icap_extended_headers) {
+		evbuffer_add(icap_ctx->icap_buf, ctx->icap_extended_headers, strlen(ctx->icap_extended_headers));
 	}
 	
 	/* Final CRLF to end headers */
@@ -1135,9 +1181,9 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 		if (chunk_buf) {
 			size_t chunk_len = body_len;
 
-			if (icap_preview_enabled(icap_ctx) && body_len > icap_ctx->preview_size) {
+			if (icap_preview_enabled(service_ctx->svc) && body_len > service_ctx->svc->preview_size) {
 				service_ctx->read_state = ICAP_READ_STATE_PREVIEW_RESPONSE;
-				chunk_len = body_len < icap_ctx->preview_size ? body_len : icap_ctx->preview_size;
+				chunk_len = body_len < service_ctx->svc->preview_size ? body_len : service_ctx->svc->preview_size;
 				log_finest_va("Sending body preview to ICAP server, body=%zu, preview=%zu", body_len, chunk_len);
 			} else {
 				log_finest_va("Sending body chunk to ICAP server, body=%zu", body_len);
@@ -1319,12 +1365,12 @@ icap_trigger(pxy_conn_ctx_t *ctx, icap_ctx_t *icap_ctx, int reqmod)
  * Send remaining body data after 100 Continue response
  */
 static void
-icap_send_remainder(icap_service_ctx_t *svc_ctx)
+icap_send_remainder(icap_service_ctx_t *service_ctx)
 {
-	icap_ctx_t *icap_ctx = svc_ctx->icap_ctx;
-	UNUSED pxy_conn_ctx_t *ctx = svc_ctx->icap_ctx->conn_ctx;
+	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
+	UNUSED pxy_conn_ctx_t *ctx = service_ctx->icap_ctx->conn_ctx;
 	
-	UNUSED struct evbuffer *input = bufferevent_get_input(svc_ctx->bev);
+	UNUSED struct evbuffer *input = bufferevent_get_input(service_ctx->bev);
 	size_t body_len = evbuffer_get_length(icap_ctx->body);
 
 	log_finest_va("ENTER for %s, body_len=%zu, inbuf=%zu", icap_ctx->reqmod ? "REQMOD" : "RESPMOD", body_len, evbuffer_get_length(input));
@@ -1342,11 +1388,11 @@ icap_send_remainder(icap_service_ctx_t *svc_ctx)
 		evbuffer_add_printf(chunk_buf, "%zx\r\n", body_len);
 		
 		struct evbuffer_ptr pos;
-		size_t remainder_len = body_len - icap_ctx->preview_size;
+		size_t remainder_len = body_len - service_ctx->svc->preview_size;
 
 		// 1. Initialize the pointer to the start
 		// 2. Advance it to the preview_size offset
-		if (evbuffer_ptr_set(icap_ctx->body, &pos, icap_ctx->preview_size, EVBUFFER_PTR_SET) < 0) {
+		if (evbuffer_ptr_set(icap_ctx->body, &pos, service_ctx->svc->preview_size, EVBUFFER_PTR_SET) < 0) {
 			log_finest("Failed to set buffer pointer for ICAP remainder");
 			return;
 		}
@@ -1367,11 +1413,11 @@ icap_send_remainder(icap_service_ctx_t *svc_ctx)
 		// evbuffer_add_printf(chunk_buf, "0\r\n\r\n");
 		evbuffer_add_printf(chunk_buf, "0; ieof\r\n\r\n");
 		
-		bufferevent_write_buffer(svc_ctx->bev, chunk_buf);
+		bufferevent_write_buffer(service_ctx->bev, chunk_buf);
 		evbuffer_free(chunk_buf);
 	}
 	
-	svc_ctx->read_state = ICAP_READ_STATE_WAIT_BODY;
+	service_ctx->read_state = ICAP_READ_STATE_WAIT_BODY;
 }
 
 static void NONNULL(1,2,3,4)

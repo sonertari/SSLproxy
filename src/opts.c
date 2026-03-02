@@ -150,12 +150,12 @@ conn_opts_new(void)
 #endif /* !WITHOUT_USERAUTH */
 	conn_opts->max_http_header_size = 8192;
 #ifndef WITHOUT_ICAP
-	conn_opts->icap_chain = NULL;                 /* Disabled by default */
-	conn_opts->icap_preview_size = 4096;          /* 4KB default preview */
-	conn_opts->icap_max_body_size = 1048576;      /* Max body to send to ICAP service at once, 1MB default */
-	conn_opts->icap_timeout = 30;                 /* 30 seconds by default */
-	conn_opts->icap_fail_open = ICAP_FAIL_CLOSE;  /* Fail stop by default */
-	conn_opts->conn_fail_open = ICAP_FAIL_CLOSE;  /* Fail block by default */
+	conn_opts->icap_chain = NULL;                     /* Disabled by default */
+	conn_opts->icap_preview_size = 4096;              /* 4KB default preview */
+	conn_opts->icap_max_body_size = 1048576;          /* Max body to send to ICAP service at once, 1MB default */
+	conn_opts->icap_timeout = 30;                     /* 30 seconds by default */
+	conn_opts->icap_fail_open = ICAP_FAIL_CLOSE;      /* Fail stop by default */
+	conn_opts->icap_conn_fail_open = ICAP_FAIL_CLOSE; /* Fail block by default */
 #endif /* !WITHOUT_ICAP */
 	return conn_opts;
 }
@@ -2899,9 +2899,9 @@ set_conn_opts_option(conn_opts_t *conn_opts, const char *argv0,
 		yes = check_value_yesno(value, "IcapConnFailOpen", line_num);
 		if (yes == -1)
 			return -1;
-		conn_opts->conn_fail_open = yes;
+		conn_opts->icap_conn_fail_open = yes;
 #ifdef DEBUG_OPTS
-		log_dbg_printf("IcapConnFailOpen: %u\n", conn_opts->conn_fail_open);
+		log_dbg_printf("IcapConnFailOpen: %u\n", conn_opts->icap_conn_fail_open);
 #endif /* DEBUG_OPTS */
 #endif /* !WITHOUT_ICAP */
 	}

@@ -53,9 +53,12 @@ typedef struct icap_service {
 	char *server;                        /* ICAP server hostname/IP */
 	int port;                            /* ICAP server port */
 	char *uri;                           /* Full ICAP URI (e.g. icap://127.0.0.1/echo) */
+	char *path;                          /* Path component of the ICAP URI (e.g. /echo) */
 	icap_service_type_t type : 1;        /* Modifying vs Inspect */
 	icap_fail_mode_t icap_fail_open : 1; /* 0: stop, 1: next service in chain on service error */
 	icap_fail_mode_t conn_fail_open : 1; /* 0: block, 1: pass through conn on service error */
+	unsigned int timeout;                /* Timeout in seconds */
+	size_t preview_size;                 /* Preview slice size in bytes; 0 = preview disabled */
 
 	struct icap_service *next;           /* Linked list for configuration */
 } icap_service_t;
@@ -99,10 +102,8 @@ struct icap_ctx {
 	char *server;                     /* ICAP server hostname */
 	int port;                         /* ICAP server port */
 
-	// TODO: Make these service specific options, instead of global per connection options
-	unsigned int timeout;             /* Timeout in seconds */
+	// TODO: Can we make this a service specific option?
 	size_t max_body_size;             /* Max body size; 0 = disabled */
-	size_t preview_size;              /* Bytes in the preview window; 0 = disabled */
 
 	/* Buffers for ICAP protocol */
 	struct evbuffer *icap_buf;        /* ICAP protocol buffer */
