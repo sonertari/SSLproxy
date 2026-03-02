@@ -45,18 +45,19 @@ typedef enum icap_service_type {
 } icap_service_type_t;
 
 typedef enum icap_fail_mode {
-	ICAP_FAIL_CLOSED = 0,
+	ICAP_FAIL_CLOSE = 0,
 	ICAP_FAIL_OPEN
 } icap_fail_mode_t;
 
 typedef struct icap_service {
-	char *server;                   /* ICAP server hostname/IP */
-	int port;                       /* ICAP server port */
-	char *uri;                      /* Full ICAP URI (e.g. icap://127.0.0.1/echo) */
-	icap_service_type_t type : 1;   /* Modifying vs Inspect */
-	icap_fail_mode_t fail_mode : 1; /* 0: block, 1: pass through */
+	char *server;                        /* ICAP server hostname/IP */
+	int port;                            /* ICAP server port */
+	char *uri;                           /* Full ICAP URI (e.g. icap://127.0.0.1/echo) */
+	icap_service_type_t type : 1;        /* Modifying vs Inspect */
+	icap_fail_mode_t icap_fail_open : 1; /* 0: stop, 1: next service in chain on service error */
+	icap_fail_mode_t conn_fail_open : 1; /* 0: block, 1: pass through conn on service error */
 
-	struct icap_service *next;     /* Linked list for configuration */
+	struct icap_service *next;           /* Linked list for configuration */
 } icap_service_t;
 
 /*
@@ -85,6 +86,8 @@ typedef enum {
     ICAP_READ_STATE_PREVIEW_RESPONSE, /* Waiting for 100/204 after preview chunk */
 } icap_response_state_t;
 
+typedef struct icap_service_ctx icap_service_ctx_t;
+
 /*
  * ICAP context - per-connection state for ICAP processing
  */
@@ -92,17 +95,14 @@ struct icap_ctx {
 	/* Current state */
 	icap_state_t state;
 
-	/* Connection to ICAP server */
-	struct bufferevent *bev;
-
 	/* ICAP server configuration */
-	char *server;                    /* ICAP server hostname */
-	int port;                        /* ICAP server port */
+	char *server;                     /* ICAP server hostname */
+	int port;                         /* ICAP server port */
 
-	/* Processing options */
-	unsigned int timeout;             /* Timeout in ms */
-	unsigned int fail_open : 1;       /* 0: block, 1: pass through */
+	// TODO: Make these service specific options, instead of global per connection options
+	unsigned int timeout;             /* Timeout in seconds */
 	size_t max_body_size;             /* Max body size; 0 = disabled */
+	size_t preview_size;              /* Bytes in the preview window; 0 = disabled */
 
 	/* Buffers for ICAP protocol */
 	struct evbuffer *icap_buf;        /* ICAP protocol buffer */
@@ -122,22 +122,23 @@ struct icap_ctx {
 
 	/* Chain State Tracking */
 	icap_service_t *current_service;  /* Pointer to the current active service in the chain */
-	int parallel_pending_count;       /* Tracks how many parallel requests are actively running */
-	int parallel_idx;                 /* Next parallel service index */
-
-	icap_response_state_t read_state; /* Read state for serial services */
-
+	icap_service_ctx_t *serial_ctx;   /* Context for the active serial service, if any */
+	int parallel_service_count;       /* Number of parallel services currently active */
 #define ICAP_MAX_PARALLEL 8           /* Concurrent connections to parallel services */
-	struct bufferevent *parallel_bevs[ICAP_MAX_PARALLEL];
-	icap_service_t *parallel_svcs[ICAP_MAX_PARALLEL];
-	icap_response_state_t parallel_read_state[ICAP_MAX_PARALLEL];
+	icap_service_ctx_t *parallel_ctx[ICAP_MAX_PARALLEL];
 
 	/* Veto */
 	unsigned int is_veto : 1;         /* 1 if ICAP server vetoed the transaction */
 	struct evbuffer *veto_page;       /* The block page body to inject to the client */
+};
 
-	/* Preview Mode */
-	size_t preview_size;              /* Bytes in the preview window; 0 = disabled */
+struct icap_service_ctx {
+	icap_ctx_t *icap_ctx;             /* ICAP context for this service */
+	struct icap_service *svc;         /* ICAP service config */
+	struct bufferevent *bev;          /* bufferevent for this service */
+	icap_response_state_t read_state; /* Read state */
+	icap_service_type_t type : 1;     /* Modifying vs Inspect */
+	int idx;                          /* Index in parallel array if parallel service */
 };
 
 /*
@@ -146,12 +147,6 @@ struct icap_ctx {
 icap_ctx_t *icap_ctx_new(void) MALLOC;
 void icap_ctx_free(icap_ctx_t *);
 icap_ctx_t *icap_init(void);
-
-/*
- * ICAP connection management
- */
-int icap_connect(icap_ctx_t *) NONNULL(1);
-int icap_disconnect(icap_ctx_t *) NONNULL(1);
 
 /*
  * ICAP chain orchestration

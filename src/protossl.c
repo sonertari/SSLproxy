@@ -1909,7 +1909,6 @@ protossl_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 	}
 }
 
-// @attention Called by thrmgr thread
 protocol_t
 protossl_setup(pxy_conn_ctx_t *ctx)
 {

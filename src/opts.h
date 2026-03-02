@@ -151,9 +151,10 @@ typedef struct conn_opts {
 #ifndef WITHOUT_ICAP
 	/* ICAP configuration chain */
 	struct icap_service *icap_chain;
-	unsigned int icap_fail_open : 1;    /* 0: block on ICAP error, 1: pass through */
+	unsigned int icap_fail_open : 1;    /* 0: stop, 1: continue with next service on ICAP error */
+	unsigned int conn_fail_open : 1;    /* 0: block, 1: pass through on ICAP error */
 	size_t icap_max_body_size;          /* Max body size to send to ICAP; 0 = disabled */
-	unsigned int icap_timeout;          /* Timeout in milliseconds */
+	unsigned int icap_timeout;          /* Timeout in seconds */
 	size_t icap_preview_size;           /* Preview slice size in bytes; 0 = preview disabled */
 #endif /* !WITHOUT_ICAP */
 } conn_opts_t;

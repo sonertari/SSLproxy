@@ -1250,7 +1250,6 @@ protohttp_free_child(pxy_conn_child_ctx_t *ctx)
 	protohttp_free_ctx(http_ctx);
 }
 
-// @attention Called by thrmgr thread
 protocol_t
 protohttp_setup(pxy_conn_ctx_t *ctx)
 {
