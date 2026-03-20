@@ -115,9 +115,51 @@ protossl_log_ssl_error(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	}
 }
 
+#if OPENSSL_VERSION_NUMBER >= 0x10101000L && !defined(LIBRESSL_VERSION_NUMBER)
+/*
+ * OpenSSL keylog callback for TLS key export (all versions).
+ * Required for TLS 1.3 where the CLIENT_RANDOM method is not available.
+ * Logs key material immediately in SSLKEYLOGFILE format.
+ *
+ * Note: this does not check per-connection log_master filter rules because
+ * the filter decision may not yet be made when the callback fires (the
+ * upstream TLS handshake completes before protossl_apply_filter() runs).
+ * Keys are logged for all connections when -M is enabled globally.
+ */
+static void
+protossl_keylog_callback(const SSL *ssl, const char *line)
+{
+	(void)ssl;
+	if (!masterkey_log || !line)
+		return;
+	size_t len = strlen(line);
+	char *logline = malloc(len + 2);
+	if (!logline) {
+		log_err_level_printf(LOG_WARNING,
+		    "Failed to allocate memory for keylog line\n");
+		return;
+	}
+	memcpy(logline, line, len);
+	logline[len] = '\n';
+	logline[len + 1] = '\0';
+	if (log_masterkey_print_free(logline) == -1) {
+		log_err_level_printf(LOG_WARNING,
+		    "Failed to write master key log entry\n");
+	}
+}
+#endif /* OPENSSL_VERSION_NUMBER >= 0x10101000L */
+
 int
 protossl_log_masterkey(pxy_conn_ctx_t *ctx, pxy_conn_desc_t *this)
 {
+#if OPENSSL_VERSION_NUMBER >= 0x10101000L && !defined(LIBRESSL_VERSION_NUMBER)
+	/* When the keylog callback is available, it handles all TLS versions
+	 * including TLS 1.2 CLIENT_RANDOM. Skip the legacy path to avoid
+	 * duplicate entries in the master key log. */
+	(void)ctx;
+	(void)this;
+	return 0;
+#else
 	// XXX: Remove ssl check? But the caller function is called by non-ssl protos.
 	if (this->ssl) {
 		/* log master key */
@@ -134,6 +176,7 @@ protossl_log_masterkey(pxy_conn_ctx_t *ctx, pxy_conn_desc_t *this)
 		}
 	}
 	return 0;
+#endif /* OPENSSL_VERSION_NUMBER >= 0x10101000L */
 }
 
 /* forward declaration of OpenSSL callbacks */
@@ -358,6 +401,12 @@ protossl_srcsslctx_create(pxy_conn_ctx_t *ctx, X509 *crt, STACK_OF(X509) *chain,
 	}
 
 	protossl_sslctx_setoptions(sslctx, ctx);
+
+#if OPENSSL_VERSION_NUMBER >= 0x10101000L && !defined(LIBRESSL_VERSION_NUMBER)
+	if (ctx->global->masterkeylog) {
+		SSL_CTX_set_keylog_callback(sslctx, protossl_keylog_callback);
+	}
+#endif
 
 #if (OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER >= 0x20702000L)
 	if (ctx->conn_opts->minsslversion) {
@@ -1084,6 +1133,12 @@ protossl_dstssl_create(pxy_conn_ctx_t *ctx)
 	}
 
 	protossl_sslctx_setoptions(sslctx, ctx);
+
+#if OPENSSL_VERSION_NUMBER >= 0x10101000L && !defined(LIBRESSL_VERSION_NUMBER)
+	if (ctx->global->masterkeylog) {
+		SSL_CTX_set_keylog_callback(sslctx, protossl_keylog_callback);
+	}
+#endif
 
 #if (OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER >= 0x20702000L)
 	if (ctx->conn_opts->minsslversion) {
