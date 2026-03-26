@@ -134,6 +134,7 @@ connection options too:
 
 	    RemoveHTTPAcceptEncoding (yes|no)
 	    RemoveHTTPReferer (yes|no)
+	    StripClientHello (yes|no)
 	    MaxHTTPHeaderSize 8192
 	    ValidateProto (yes|no)
 
@@ -461,6 +462,7 @@ connection options too:
 
 	    RemoveHTTPAcceptEncoding (yes|no)
 	    RemoveHTTPReferer (yes|no)
+	    StripClientHello (yes|no)
 	    MaxHTTPHeaderSize 8192
 	    ValidateProto (yes|no)
 

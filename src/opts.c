@@ -613,6 +613,7 @@ conn_opts_copy(conn_opts_t *conn_opts, const char *argv0, tmp_opts_t *tmp_opts)
 	cops->validate_proto = conn_opts->validate_proto;
 	cops->reconnect_ssl = conn_opts->reconnect_ssl;
 	cops->max_http_header_size = conn_opts->max_http_header_size;
+	cops->stripclienthello = conn_opts->stripclienthello;
 
 	// Pass NULL as tmp_opts param, so we don't reassign the var to itself
 	// That would be harmless but incorrect
@@ -1129,7 +1130,7 @@ conn_opts_str(conn_opts_t *conn_opts)
 #ifndef WITHOUT_USERAUTH
 				 "%s|%s|%d"
 #endif /* !WITHOUT_USERAUTH */
-				 "%s%s|%d",
+				 "%s%s%s|%d",
 #if (OPENSSL_VERSION_NUMBER < 0x10100000L) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER < 0x20702000L)
 #ifdef HAVE_SSLV2
 	               (conn_opts->sslmethod == SSLv2_method) ? "ssl2" :
@@ -1264,6 +1265,7 @@ conn_opts_str(conn_opts_t *conn_opts)
 #endif /* !WITHOUT_USERAUTH */
 	             (conn_opts->validate_proto ? "|validate_proto" : ""),
 	             (conn_opts->reconnect_ssl ? "|reconnect_ssl" : ""),
+	             (conn_opts->stripclienthello ? "|stripclienthello" : ""),
 	             conn_opts->max_http_header_size
 	               ) < 0) {
 		return oom_return_na_null();
@@ -1603,6 +1605,18 @@ void
 opts_unset_passthrough(conn_opts_t *conn_opts)
 {
 	conn_opts->passthrough = 0;
+}
+
+void
+opts_set_stripclienthello(conn_opts_t *conn_opts)
+{
+	conn_opts->stripclienthello = 1;
+}
+
+void
+opts_unset_stripclienthello(conn_opts_t *conn_opts)
+{
+	conn_opts->stripclienthello = 0;
 }
 
 int
@@ -2784,6 +2798,14 @@ set_conn_opts_option(conn_opts_t *conn_opts, const char *argv0,
 		yes ? opts_set_remove_http_referer(conn_opts) : opts_unset_remove_http_referer(conn_opts);
 #ifdef DEBUG_OPTS
 		log_dbg_printf("RemoveHTTPReferer: %u\n", conn_opts->remove_http_referer);
+#endif /* DEBUG_OPTS */
+	} else if (equal(name, "StripClientHello")) {
+		yes = check_value_yesno(value, "StripClientHello", line_num);
+		if (yes == -1)
+			return -1;
+		yes ? opts_set_stripclienthello(conn_opts) : opts_unset_stripclienthello(conn_opts);
+#ifdef DEBUG_OPTS
+		log_dbg_printf("StripClientHello: %u\n", conn_opts->stripclienthello);
 #endif /* DEBUG_OPTS */
 	}
 	else {
