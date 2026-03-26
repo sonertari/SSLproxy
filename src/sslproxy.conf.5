@@ -281,6 +281,14 @@ Remove HTTP header line for Referer.
 .br
 Default: yes
 .TP
+\fBStripClientHello BOOL\fR
+Strip ClientHello messages from content, PCAP, and mirror logs during autossl mode.
+When a connection is upgraded from plain TCP to SSL/TLS in autossl mode,
+the initial cleartext ClientHello message sent by the client is stripped
+from the logs to prevent polluting them with the SSL handshake.
+.br
+Default: no
+.TP
 \fBVerifyPeer BOOL\fR
 Verify peer using default certificates.
 .br
@@ -485,6 +493,8 @@ RemoveHTTPAcceptEncoding
 .br
 RemoveHTTPReferer
 .br
+StripClientHello
+.br
 MaxHTTPHeaderSize
 .br
 ValidateProto
@@ -575,6 +585,8 @@ AllowWrongHost
 RemoveHTTPAcceptEncoding
 .br
 RemoveHTTPReferer
+.br
+StripClientHello
 .br
 MaxHTTPHeaderSize
 .br

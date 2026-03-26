@@ -1323,6 +1323,20 @@ pxy_bev_readcb_preexec_logging_and_stats(struct bufferevent *bev, pxy_conn_ctx_t
 		}
 
 		if (WANT_CONTENT_LOG(ctx->conn)) {
+                        if (ctx->conn_opts->stripclienthello && ctx->proto == PROTO_AUTOSSL && bev == ctx->src.bev) {
+                                if (protoautossl_is_searching(ctx)) {
+                                        size_t inbuf_len = evbuffer_get_length(inbuf);
+                                        size_t pullup_len = inbuf_len > 4096 ? 4096 : inbuf_len;
+                                        unsigned char *data = evbuffer_pullup(inbuf, pullup_len);
+                                        if (data) {
+                                                const unsigned char *chello = NULL;
+                                                int rv = ssl_tls_clienthello_parse(data, pullup_len, 0, &chello, NULL);
+                                                if (rv == 0 || (rv == 1 && chello != NULL)) {
+                                                        return 0;
+                                                }
+                                        }
+                                }
+                        }
 			// HTTP content logging at this point may record certain header lines twice, if we have not seen all headers yet
 			return pxy_log_content_inbuf(ctx, inbuf, (bev == ctx->src.bev));
 		}
@@ -1371,6 +1385,20 @@ pxy_bev_readcb_preexec_logging_and_stats_child(struct bufferevent *bev, pxy_conn
 	}
 
 	if (WANT_CONTENT_LOG(ctx->conn)) {
+                if (ctx->conn->conn_opts->stripclienthello && ctx->conn->proto == PROTO_AUTOSSL && bev == ctx->src.bev) {
+                        if (protoautossl_is_searching(ctx->conn)) {
+                                size_t inbuf_len = evbuffer_get_length(inbuf);
+                                size_t pullup_len = inbuf_len > 4096 ? 4096 : inbuf_len;
+                                unsigned char *data = evbuffer_pullup(inbuf, pullup_len);
+                                if (data) {
+                                        const unsigned char *chello = NULL;
+                                        int rv = ssl_tls_clienthello_parse(data, pullup_len, 0, &chello, NULL);
+                                        if (rv == 0 || (rv == 1 && chello != NULL)) {
+                                                return 0;
+                                        }
+                                }
+                        }
+                }
 		return pxy_log_content_inbuf(ctx->conn, inbuf, (bev == ctx->src.bev));
 	}
 	return 0;

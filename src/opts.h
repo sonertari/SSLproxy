@@ -146,6 +146,7 @@ typedef struct conn_opts {
 	// Used with struct filtering rules only
 	unsigned int reconnect_ssl : 1;
 	unsigned int max_http_header_size;
+	unsigned int stripclienthello : 1;
 } conn_opts_t;
 
 typedef struct opts {
@@ -313,6 +314,8 @@ int opts_set_chain(conn_opts_t *, const char *, const char *, tmp_opts_t *) NONN
 int opts_set_leafcrlurl(conn_opts_t *, const char *, const char *, tmp_opts_t *) NONNULL(1,2,3) WUNRES;
 void opts_set_deny_ocsp(conn_opts_t *) NONNULL(1);
 void opts_set_passthrough(conn_opts_t *) NONNULL(1);
+void opts_set_stripclienthello(conn_opts_t *) NONNULL(1);
+void opts_unset_stripclienthello(conn_opts_t *) NONNULL(1);
 int opts_set_clientcrt(conn_opts_t *, const char *, const char *, tmp_opts_t *) NONNULL(1,2,3) WUNRES;
 int opts_set_clientkey(conn_opts_t *, const char *, const char *, tmp_opts_t *) NONNULL(1,2,3) WUNRES;
 #ifndef OPENSSL_NO_DH

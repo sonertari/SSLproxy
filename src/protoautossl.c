@@ -42,6 +42,17 @@ struct protoautossl_ctx {
 	unsigned int clienthello_found : 1;      /* 1 if conn upgrade to SSL */
 };
 
+int
+protoautossl_is_searching(pxy_conn_ctx_t *ctx)
+{
+       protoautossl_ctx_t *autossl_ctx;
+       if (!ctx->protoctx) {
+               return 0;
+       }
+       autossl_ctx = ctx->protoctx->arg;
+       return autossl_ctx && autossl_ctx->clienthello_search;
+}
+
 #ifdef DEBUG_PROXY
 static void NONNULL(1,2,3)
 protoautossl_log_dbg_evbuf_info(pxy_conn_ctx_t *ctx, pxy_conn_desc_t *this, pxy_conn_desc_t *other)
