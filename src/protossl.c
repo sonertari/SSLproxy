@@ -1604,6 +1604,12 @@ protossl_setup_src_ssl_from_dst(pxy_conn_ctx_t *ctx)
 	else if (ctx->term) {
 		return -1;
 	}
+	else if (!ctx->enomem && (ctx->pass || ctx->conn_opts->passthrough)) {
+		log_err_level_printf(LOG_WARNING, "Falling back to passthrough\n");
+		protopassthrough_engage(ctx);
+		// report protocol change by returning 1
+		return 1;
+	}
 	pxy_conn_term(ctx, 1);
 	return -1;
 }
@@ -1618,6 +1624,12 @@ protossl_setup_src_ssl_from_child_dst(pxy_conn_child_ctx_t *ctx)
 	}
 	else if (ctx->conn->term) {
 		return -1;
+	}
+	else if (!ctx->conn->enomem && (ctx->conn->pass || ctx->conn->conn_opts->passthrough)) {
+		log_err_level_printf(LOG_WARNING, "Falling back to passthrough\n");
+		protopassthrough_engage(ctx->conn);
+		// report protocol change by returning 1
+		return 1;
 	}
 	pxy_conn_term(ctx->conn, 1);
 	return -1;

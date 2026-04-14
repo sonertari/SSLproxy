@@ -258,8 +258,13 @@ protopassthrough_bev_eventcb_connected_srvdst(struct bufferevent *bev, pxy_conn_
 	bufferevent_enable(bev, EV_READ|EV_WRITE);
 
 	// Do not re-enable src if it is already enabled, e.g. in autossl
-	if (!ctx->src.bev && protopassthrough_enable_src(ctx) == -1) {
-		return;
+	if (!ctx->src.bev) {
+		if (protopassthrough_enable_src(ctx) == -1) {
+			return;
+		}
+	} else if (evbuffer_get_length(bufferevent_get_input(ctx->src.bev)) > 0) {
+		log_finer("src inbuf len > 0, calling bev_readcb for src");
+		ctx->protoctx->bev_readcb(ctx->src.bev, ctx);
 	}
 }
 
