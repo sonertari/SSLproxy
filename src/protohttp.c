@@ -835,7 +835,7 @@ protohttp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		struct evbuffer *outbuf_ptr = outbuf;
 #ifndef WITHOUT_ICAP
 		if (icap_enabled(ctx)) {
-			outbuf_ptr = ctx->src.icap_ctx->hdr;
+			outbuf_ptr = icap_get_first_service_in_hdr(ctx, 1);
 		}
 #endif /* !WITHOUT_ICAP */
 
@@ -855,7 +855,7 @@ protohttp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		}
 		else {
 			// icap_ctx may not have been initialized yet, hence we pass ctx and reqmod too
-			icap_process_data(inbuf, outbuf, ctx, ctx->src.icap_ctx, 1);
+			icap_process_data(inbuf, ctx, 1);
 		}
 #endif /* !WITHOUT_ICAP */
 	}
@@ -1008,7 +1008,7 @@ protohttp_bev_readcb_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		struct evbuffer *outbuf_ptr = outbuf;
 #ifndef WITHOUT_ICAP
 		if (icap_enabled(ctx)) {
-			outbuf_ptr = ctx->dst.icap_ctx->hdr;
+			outbuf_ptr = icap_get_first_service_in_hdr(ctx, 0);
 		}
 #endif /* !WITHOUT_ICAP */
 
@@ -1028,7 +1028,7 @@ protohttp_bev_readcb_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 #ifndef WITHOUT_ICAP
 		}
 		else {
-			icap_process_data(inbuf, outbuf, ctx, ctx->dst.icap_ctx, 0);
+			icap_process_data(inbuf, ctx, 0);
 		}
 #endif /* !WITHOUT_ICAP */
 	}
@@ -1180,7 +1180,7 @@ protohttp_bev_writecb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	// So we should not have too much data buffered on the source side if ICAP is enabled.
 	// But we may still want to use watermarking to avoid buffering too much data on the destination side if the client is slow in receiving data.
 	// TODO: Should we wait for both src and dst icap to be done before unsetting watermarkcb, or dst only?
-	if (!icap_enabled(ctx) || (ctx->src.icap_ctx->done && ctx->dst.icap_ctx->done)) {
+	if (!icap_enabled(ctx)) {
 #endif /* !WITHOUT_ICAP */
 		ctx->protoctx->unset_watermarkcb(bev, ctx, &ctx->dst);
 #ifndef WITHOUT_ICAP

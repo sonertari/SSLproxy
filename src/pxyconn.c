@@ -343,6 +343,13 @@ pxy_conn_ctx_free(pxy_conn_ctx_t *ctx, int by_requestor)
 
 	pxy_thr_detach(ctx);
 
+#ifndef WITHOUT_ICAP
+	if (ctx->icap_ctx) {
+		icap_ctx_free(ctx->icap_ctx);
+		ctx->icap_ctx = NULL;
+	}
+#endif /* !WITHOUT_ICAP */
+
 	if (ctx->srchost_str) {
 		free(ctx->srchost_str);
 	}
@@ -372,11 +379,6 @@ pxy_conn_ctx_free(pxy_conn_ctx_t *ctx, int by_requestor)
 	if (ctx->sslproxy_header) {
 		free(ctx->sslproxy_header);
 	}
-#ifndef WITHOUT_ICAP
-	if (ctx->icap_extended_headers) {
-		free(ctx->icap_extended_headers);
-	}
-#endif /* !WITHOUT_ICAP */
 	// If the proto doesn't have special args, proto_free() callback is NULL
 	if (ctx->protoctx->proto_free) {
 		ctx->protoctx->proto_free(ctx);
@@ -403,13 +405,6 @@ pxy_conn_free(pxy_conn_ctx_t *ctx, int by_requestor)
 	log_finest("ENTER");
 
 	// Always assign NULL after freeing
-#ifndef WITHOUT_ICAP
-	if (ctx->src.icap_ctx) {
-		icap_ctx_free(ctx->src.icap_ctx);
-		ctx->src.icap_ctx = NULL;
-	}
-#endif /* !WITHOUT_ICAP */
-
 	if (ctx->src.bev) {
 		ctx->src.free(ctx->src.bev, ctx);
 		ctx->src.bev = NULL;
@@ -422,22 +417,10 @@ pxy_conn_free(pxy_conn_ctx_t *ctx, int by_requestor)
 	if (ctx->srvdst.bev) {
 		// In split mode, srvdst is used as dst, so it should be freed as dst below
 		// If srvdst has been xferred to the first child conn, the child should free it, not the parent
-#ifndef WITHOUT_ICAP
-		if (ctx->srvdst.icap_ctx) {
-			icap_ctx_free(ctx->srvdst.icap_ctx);
-			ctx->srvdst.icap_ctx = NULL;
-		}
-#endif /* !WITHOUT_ICAP */
 		ctx->srvdst.free(ctx->srvdst.bev, ctx);
 		ctx->srvdst.bev = NULL;
 	}
 
-#ifndef WITHOUT_ICAP
-	if (ctx->dst.icap_ctx) {
-		icap_ctx_free(ctx->dst.icap_ctx);
-		ctx->dst.icap_ctx = NULL;
-	}
-#endif /* !WITHOUT_ICAP */
 	if (ctx->dst.bev) {
 		ctx->dst.free(ctx->dst.bev, ctx);
 		ctx->dst.bev = NULL;
@@ -1199,7 +1182,7 @@ pxy_set_sslproxy_header(pxy_conn_ctx_t *ctx, int upgraded)
 	log_finer_va("sslproxy_header= %s", ctx->sslproxy_header);
 
 #ifndef WITHOUT_ICAP
-	return icap_set_extended_headers(ctx, upgraded);
+	return icap_set_extended_headers(ctx->icap_ctx, upgraded);
 #else /* WITHOUT_ICAP */
 	return 0;
 #endif /* !WITHOUT_ICAP */
@@ -1211,7 +1194,7 @@ pxy_setup_child_listener(pxy_conn_ctx_t *ctx)
 	if (!ctx->divert) {
 		// split mode
 #ifndef WITHOUT_ICAP
-		return icap_set_extended_headers(ctx, 0);
+		return icap_set_extended_headers(ctx->icap_ctx, 0);
 #else /* WITHOUT_ICAP */
 		return 0;
 #endif /* !WITHOUT_ICAP */

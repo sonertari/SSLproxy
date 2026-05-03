@@ -310,7 +310,7 @@ protoautossl_peek_and_upgrade(pxy_conn_ctx_t *ctx)
 				}
 			} else {
 #ifndef WITHOUT_ICAP
-				icap_set_extended_headers(ctx, 1);
+				icap_set_extended_headers(ctx->icap_ctx, 1);
 #endif /* !WITHOUT_ICAP */
 
 				// srvdst == dst in split mode
@@ -467,7 +467,7 @@ protoautossl_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 #ifndef WITHOUT_ICAP
 	}
 	else {
-		icap_process_data(inbuf, outbuf, ctx, ctx->src.icap_ctx, 1);
+		icap_process_data(inbuf, ctx, 1);
 	}
 #endif /* !WITHOUT_ICAP */
 
@@ -503,7 +503,7 @@ protoautossl_bev_readcb_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 #ifndef WITHOUT_ICAP
 	}
 	else {
-		icap_process_data(inbuf, outbuf, ctx, ctx->srvdst.icap_ctx, 0);
+		icap_process_data(inbuf, ctx, 0);
 	}
 #endif /* !WITHOUT_ICAP */
 

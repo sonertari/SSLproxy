@@ -85,13 +85,6 @@ protopassthrough_engage(pxy_conn_ctx_t *ctx)
 
 	// In split mode, srvdst is used as dst, so it should be freed as dst below
 	// If srvdst has been xferred to the first child conn, the child should free it, not the parent
-#ifndef WITHOUT_ICAP
-	if (ctx->srvdst.icap_ctx) {
-		icap_ctx_free(ctx->srvdst.icap_ctx);
-		ctx->srvdst.icap_ctx = NULL;
-	}
-#endif /* !WITHOUT_ICAP */
-
 	if (ctx->srvdst.bev) {
 		ctx->srvdst.free(ctx->srvdst.bev, ctx);
 		ctx->srvdst.bev = NULL;
@@ -100,13 +93,6 @@ protopassthrough_engage(pxy_conn_ctx_t *ctx)
 	ctx->connected = 0;
 
 	// Make sure not NULL, as dst may not have been initialized yet
-#ifndef WITHOUT_ICAP
-	if (ctx->dst.icap_ctx) {
-		icap_ctx_free(ctx->dst.icap_ctx);
-		ctx->dst.icap_ctx = NULL;
-	}
-#endif /* !WITHOUT_ICAP */
-
 	if (ctx->dst.bev) {
 		ctx->dst.free(ctx->dst.bev, ctx);
 		ctx->dst.bev = NULL;

@@ -835,12 +835,6 @@ protossl_reconnect_srvdst(pxy_conn_ctx_t *ctx)
 	// Reconnect only once
 	ctx->sslctx->reconnected = 1;
 
-#ifndef WITHOUT_ICAP
-	if (ctx->srvdst.icap_ctx) {
-		icap_ctx_free(ctx->srvdst.icap_ctx);
-		ctx->srvdst.icap_ctx = NULL;
-	}
-#endif /* !WITHOUT_ICAP */
 	ctx->srvdst.free(ctx->srvdst.bev, ctx);
 	ctx->srvdst.bev = NULL;
 	ctx->srvdst.ssl = NULL;
@@ -1550,19 +1544,7 @@ protossl_setup_srvdst_ssl(pxy_conn_ctx_t *ctx)
 int
 protossl_setup_srvdst(pxy_conn_ctx_t *ctx)
 {
-#ifndef WITHOUT_ICAP
-	ctx->srvdst.icap_ctx = icap_init();
-	if (!ctx->srvdst.icap_ctx) {
-		pxy_conn_term(ctx, 1);
-		return -1;
-	}
-#endif /* !WITHOUT_ICAP */
-
 	if (protossl_setup_srvdst_ssl(ctx) == -1) {
-#ifndef WITHOUT_ICAP
-		icap_ctx_free(ctx->srvdst.icap_ctx);
-		ctx->srvdst.icap_ctx = NULL;
-#endif /* !WITHOUT_ICAP */
 		return -1;
 	}
 
@@ -1571,10 +1553,6 @@ protossl_setup_srvdst(pxy_conn_ctx_t *ctx)
 		log_err_level_printf(LOG_CRIT, "Error creating srvdst\n");
 		SSL_free(ctx->srvdst.ssl);
 		ctx->srvdst.ssl = NULL;
-#ifndef WITHOUT_ICAP
-		icap_ctx_free(ctx->srvdst.icap_ctx);
-		ctx->srvdst.icap_ctx = NULL;
-#endif /* !WITHOUT_ICAP */
 		pxy_conn_term(ctx, 1);
 		return -1;
 	}
@@ -1718,20 +1696,8 @@ protossl_setup_src_ssl_from_child_dst(pxy_conn_child_ctx_t *ctx)
 static int NONNULL(1)
 protossl_setup_src(pxy_conn_ctx_t *ctx)
 {
-#ifndef WITHOUT_ICAP
-	ctx->src.icap_ctx = icap_init();
-	if (!ctx->src.icap_ctx) {
-		pxy_conn_term(ctx, 1);
-		return -1;
-	}
-#endif /* !WITHOUT_ICAP */
-
 	int rv;
 	if ((rv = protossl_setup_src_ssl(ctx)) != 0) {
-#ifndef WITHOUT_ICAP
-		icap_ctx_free(ctx->src.icap_ctx);
-		ctx->src.icap_ctx = NULL;
-#endif /* !WITHOUT_ICAP */
 		return rv;
 	}
 
@@ -1740,10 +1706,6 @@ protossl_setup_src(pxy_conn_ctx_t *ctx)
 		log_err_level_printf(LOG_CRIT, "Error creating src bufferevent\n");
 		SSL_free(ctx->src.ssl);
 		ctx->src.ssl = NULL;
-#ifndef WITHOUT_ICAP
-		icap_ctx_free(ctx->src.icap_ctx);
-		ctx->src.icap_ctx = NULL;
-#endif /* !WITHOUT_ICAP */
 		pxy_conn_term(ctx, 1);
 		return -1;
 	}

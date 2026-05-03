@@ -31,6 +31,7 @@
 #include "privsep.h"
 #include "pxythrmgr.h"
 #include "pxyconn.h"
+#include "icap.h"
 
 #include "prototcp.h"
 #include "protossl.h"
@@ -196,6 +197,15 @@ proxy_conn_ctx_new(evutil_socket_t fd,
 #ifndef WITHOUT_USERAUTH
 	ctx->clisock = clisock;
 #endif /* !WITHOUT_USERAUTH */
+
+#ifndef WITHOUT_ICAP
+	ctx->icap_ctx = icap_init(ctx);
+	if (!ctx->icap_ctx) {
+		log_finest("Failed to initialize ICAP context");
+		free(ctx);
+		return NULL;
+	}
+#endif /* !WITHOUT_ICAP */
 
 #ifdef HAVE_LOCAL_PROCINFO
 	ctx->lproc.pid = -1;

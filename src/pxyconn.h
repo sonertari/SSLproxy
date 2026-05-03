@@ -112,9 +112,6 @@ struct pxy_conn_desc {
 	SSL *ssl;
 	unsigned int closed : 1;
 	bev_free_func_t free;
-#ifndef WITHOUT_ICAP
-	icap_ctx_t *icap_ctx;
-#endif /* !WITHOUT_ICAP */
 };
 
 enum conn_type {
@@ -311,10 +308,8 @@ struct pxy_conn_ctx {
 	size_t sslproxy_header_len;
 	unsigned int sent_sslproxy_header : 1; /* 1 to prevent inserting SSLproxy header twice */
 
-	// Extended ICAP headers
 #ifndef WITHOUT_ICAP
-	char *icap_extended_headers;
-	size_t icap_extended_headers_len;
+	icap_ctx_t *icap_ctx;
 #endif /* !WITHOUT_ICAP */
 
 #ifdef DEBUG_PROXY

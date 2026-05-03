@@ -121,22 +121,10 @@ prototcp_bufferevent_free_and_close_fd(struct bufferevent *bev, UNUSED pxy_conn_
 int
 prototcp_setup_src(pxy_conn_ctx_t *ctx)
 {
-#ifndef WITHOUT_ICAP
-	ctx->src.icap_ctx = icap_init();
-	if (!ctx->src.icap_ctx) {
-		pxy_conn_term(ctx, 1);
-		return -1;
-	}
-#endif /* !WITHOUT_ICAP */
-
 	ctx->src.ssl = NULL;
 	ctx->src.bev = prototcp_bufferevent_setup(ctx, ctx->fd);
 	if (!ctx->src.bev) {
 		log_err_level_printf(LOG_CRIT, "Error creating src bufferevent\n");
-#ifndef WITHOUT_ICAP
-		icap_ctx_free(ctx->src.icap_ctx);
-		ctx->src.icap_ctx = NULL;
-#endif /* !WITHOUT_ICAP */
 		pxy_conn_term(ctx, 1);
 		return -1;
 	}
@@ -161,21 +149,10 @@ int
 prototcp_setup_dst(pxy_conn_ctx_t *ctx)
 {
 	if (ctx->divert) {
-#ifndef WITHOUT_ICAP
-		ctx->dst.icap_ctx = icap_init();
-		if (!ctx->dst.icap_ctx) {
-			pxy_conn_term(ctx, 1);
-			return -1;
-		}
-#endif /* !WITHOUT_ICAP */
 		ctx->dst.ssl = NULL;
 		ctx->dst.bev = prototcp_bufferevent_setup(ctx, -1);
 		if (!ctx->dst.bev) {
 			log_err_level_printf(LOG_CRIT, "Error creating parent dst\n");
-#ifndef WITHOUT_ICAP
-			icap_ctx_free(ctx->dst.icap_ctx);
-			ctx->dst.icap_ctx = NULL;
-#endif /* !WITHOUT_ICAP */
 			pxy_conn_term(ctx, 1);
 			return -1;
 		}
@@ -204,22 +181,10 @@ prototcp_setup_dst(pxy_conn_ctx_t *ctx)
 int
 prototcp_setup_srvdst(pxy_conn_ctx_t *ctx)
 {
-#ifndef WITHOUT_ICAP
-	ctx->srvdst.icap_ctx = icap_init();
-	if (!ctx->srvdst.icap_ctx) {
-		pxy_conn_term(ctx, 1);
-		return -1;
-	}
-#endif /* !WITHOUT_ICAP */
-
 	ctx->srvdst.ssl = NULL;
 	ctx->srvdst.bev = prototcp_bufferevent_setup(ctx, -1);
 	if (!ctx->srvdst.bev) {
 		log_err_level_printf(LOG_CRIT, "Error creating srvdst\n");
-#ifndef WITHOUT_ICAP
-		icap_ctx_free(ctx->srvdst.icap_ctx);
-		ctx->srvdst.icap_ctx = NULL;
-#endif /* !WITHOUT_ICAP */
 		pxy_conn_term(ctx, 1);
 		return -1;
 	}
@@ -466,7 +431,7 @@ prototcp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 #ifndef WITHOUT_ICAP
 	}
 	else {
-		icap_process_data(inbuf, outbuf, ctx, ctx->src.icap_ctx, 1);
+		icap_process_data(inbuf, ctx, 1);
 	}
 #endif /* !WITHOUT_ICAP */
 
@@ -493,7 +458,7 @@ prototcp_bev_readcb_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 #ifndef WITHOUT_ICAP
 	}
 	else {
-		icap_process_data(inbuf, outbuf, ctx, ctx->dst.icap_ctx, 0);
+		icap_process_data(inbuf, ctx, 0);
 	}
 #endif /* !WITHOUT_ICAP */
 
@@ -633,7 +598,7 @@ prototcp_bev_writecb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		return;
 	}
 #ifndef WITHOUT_ICAP
-	if (!icap_enabled(ctx) || (ctx->src.icap_ctx->done && ctx->dst.icap_ctx->done)) {
+	if (!icap_enabled(ctx)) {
 #endif /* !WITHOUT_ICAP */
 		ctx->protoctx->unset_watermarkcb(bev, ctx, &ctx->dst);
 #ifndef WITHOUT_ICAP
@@ -765,6 +730,12 @@ prototcp_bev_eventcb_eof_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		log_err_level(LOG_WARNING, "EOF on outbound connection before connection establishment");
 		ctx->dst.closed = 1;
 	} else if (!ctx->dst.closed) {
+#ifndef WITHOUT_ICAP
+		if (icap_enabled(ctx) && !icap_is_finished(ctx)) {
+			log_finest("ICAP not finished yet, do not terminate conn");
+			return;
+		}
+#endif /* !WITHOUT_ICAP */
 		log_finest("!dst.closed, terminate conn");
 		if (pxy_try_consume_last_input(bev, ctx) == -1) {
 			return;
@@ -787,6 +758,12 @@ prototcp_bev_eventcb_eof_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		log_err_level(LOG_WARNING, "EOF on outbound connection before connection establishment");
 		ctx->src.closed = 1;
 	} else if (!ctx->src.closed) {
+#ifndef WITHOUT_ICAP
+		if (icap_enabled(ctx) && !icap_is_finished(ctx)) {
+			log_finest("ICAP not finished yet, do not terminate conn");
+			return;
+		}
+#endif /* !WITHOUT_ICAP */
 		log_finest("!src.closed, terminate conn");
 		if (pxy_try_consume_last_input(bev, ctx) == -1) {
 			return;
