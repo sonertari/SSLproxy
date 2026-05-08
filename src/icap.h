@@ -39,11 +39,6 @@
 /*
  * ICAP Service Configuration
  */
-typedef enum icap_service_type {
-	ICAP_SERVICE_MODIFY = 0,
-	ICAP_SERVICE_INSPECT
-} icap_service_type_t;
-
 typedef enum icap_fail_mode {
 	ICAP_FAIL_CLOSE = 0,
 	ICAP_FAIL_OPEN
@@ -55,7 +50,6 @@ typedef struct icap_service {
 	char *uri;                           /* Full ICAP URI (e.g. icap://127.0.0.1/echo) */
 	char *reqmod;                        /* REQMOD path component of the ICAP URI (e.g. /reqmod) */
 	char *respmod;                       /* RESPMOD path component of the ICAP URI (e.g. /respmod) */
-	icap_service_type_t type : 1;        /* Modifying vs Inspect */
 	icap_fail_mode_t icap_fail_open : 1; /* 0: stop, 1: next service in chain on service error */
 	icap_fail_mode_t conn_fail_open : 1; /* 0: block, 1: pass through conn on service error */
 	unsigned int timeout;                /* Timeout in seconds */
@@ -84,7 +78,8 @@ struct icap_ctx {
 	pxy_conn_ctx_t *conn_ctx;
 
 	unsigned int is_veto : 1;         /* 1 if ICAP server vetoed the transaction */
-	struct evbuffer *veto_page;       /* The block page body to inject to the client */
+	unsigned int sent_veto_page : 1;  /* 1 if veto page sent to client */
+	struct evbuffer *veto_page;       /* The block page to inject to the client */
 
 	unsigned int reqmod : 1;          /* 1: reqmod or respmod */
 
@@ -123,7 +118,7 @@ typedef struct icap_service_state {
 	struct evbuffer *out_body;
 	unsigned int has_body : 1;
 	size_t body_offset;
-	unsigned int null_body : 1; /* Whether body is null based on header info */
+	unsigned int null_body : 1;       /* Whether body is null based on header info */
 	size_t sent_body_size;
 	size_t header_offset;
 	size_t remaining_chunk_size;
@@ -135,6 +130,10 @@ typedef struct icap_service_state {
 	unsigned int content_complete : 1;
 
 	unsigned int wait_preview_continue : 1;
+	unsigned int detected_204 : 1;    /* Whether 204 detected in ICAP response */
+	unsigned int detected_206 : 1;    /* Whether 206 detected in ICAP response */
+	size_t use_original_body;         /* Offset of unmodified body indicated by use-original-body extension with 206 */
+	size_t body_chunk_len_206;        /* Body chunk length in use-original-body extension with 206 */
 } icap_service_state_t;
 
 struct icap_service_ctx {

@@ -318,7 +318,17 @@ protohttp_filter_request_header_line(const char *line, protohttp_ctx_t *http_ctx
 		/* not first line */
 		char *newhdr;
 
-		if (!http_ctx->http_host && !strncasecmp(line, "Host:", 5)) {
+		if (!strncasecmp(line, "Content-Length:", 15)) {
+			if (http_ctx->http_content_length) {
+				free(http_ctx->http_content_length);
+			}
+			http_ctx->http_content_length =
+				strdup(util_skipws(line + 15));
+			if (!http_ctx->http_content_length) {
+				ctx->enomem = 1;
+				return NULL;
+			}
+		} else if (!http_ctx->http_host && !strncasecmp(line, "Host:", 5)) {
 			http_ctx->http_host = strdup(util_skipws(line + 5));
 			if (!http_ctx->http_host) {
 				ctx->enomem = 1;
@@ -922,8 +932,10 @@ protohttp_filter_response_header_line(const char *line, protohttp_ctx_t *http_ct
 		}
 	} else {
 		/* not first line */
-		if (!http_ctx->http_content_length &&
-		    !strncasecmp(line, "Content-Length:", 15)) {
+		if (!strncasecmp(line, "Content-Length:", 15)) {
+			if (http_ctx->http_content_length) {
+				free(http_ctx->http_content_length);
+			}
 			http_ctx->http_content_length =
 				strdup(util_skipws(line + 15));
 			if (!http_ctx->http_content_length) {

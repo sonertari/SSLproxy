@@ -234,6 +234,30 @@ log_dbg_level_printf(int level, const char *function, int thrid, long long unsig
 	return log_dbg_print_free(logbuf);
 }
 
+int
+log_dbg_level_icap_printf(int level, const char *function, int thrid, long long unsigned int id, evutil_socket_t fd, evutil_socket_t child_fd, int sid, int rqm, const char *fmt, ...)
+{
+	va_list ap;
+	char *buf;
+	int rv;
+
+	if (dbg_mode == LOG_DBG_MODE_NONE || dbg_mode < level)
+		return 0;
+
+	va_start(ap, fmt);
+	rv = vasprintf(&buf, fmt, ap);
+	va_end(ap);
+	if (rv < 0)
+		return -1;
+
+	char *logbuf;
+	rv = asprintf(&logbuf, "[%s] [%d.%llu fd=%d cfd=%d sid=%d rqm=%d] %s: %s\n", log_dbg_mode_names[level], thrid, id, fd, child_fd, sid, rqm, function, buf);
+	free(buf);
+	if (rv < 0)
+		return -1;
+	return log_dbg_print_free(logbuf);
+}
+
 void
 log_dbg_mode(int mode)
 {

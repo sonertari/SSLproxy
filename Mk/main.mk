@@ -126,6 +126,9 @@ DEBUG_CFLAGS?=	-g
 # Define to add diagnostic output for debugging option parsing.
 #FEATURES+=	-DDEBUG_OPTS
 
+# Define to add ICAP debugging; dump ICAP state in debug mode.
+#FEATURES+=	-DDEBUG_ICAP
+
 # When debugging OpenSSL related issues, make sure you use a debug build of
 # OpenSSL and consider enabling its debugging options -DREF_PRINT -DREF_CHECK
 # for debugging reference counting of OpenSSL objects and/or

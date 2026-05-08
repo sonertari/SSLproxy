@@ -42,6 +42,7 @@ void log_err_mode(int);
 
 int log_dbg_printf(const char *, ...) PRINTF(1,2);
 int log_dbg_level_printf(int, const char *, int, long long unsigned int, evutil_socket_t, evutil_socket_t, const char *, ...) PRINTF(7,8);
+int log_dbg_level_icap_printf(int, const char *, int, long long unsigned int, evutil_socket_t, evutil_socket_t, int, int, const char *, ...) PRINTF(9,10);
 int log_dbg_print_free(char *);
 int log_dbg_write_free(void *, size_t);
 void log_dbg_mode(int);
@@ -103,6 +104,37 @@ void log_dbg_mode(int);
 #define log_finest(str) ((void)0)
 #define log_finest_va(format_str, ...) ((void)0)
 #endif /* !DEBUG_PROXY */
+
+#ifndef WITHOUT_ICAP
+#ifdef DEBUG_ICAP
+// FINE
+#define log_fine_icap(str) \
+		log_dbg_level_icap_printf(LOG_DBG_MODE_FINE, __FUNCTION__, ctx->conn->thr ? ctx->conn->thr->id : 0, ctx->conn->id, ctx->conn->fd, ctx->conn->child_fd, service_ctx->idx, ctx->icap_ctx->reqmod, (str))
+#define log_fine_icap_va(format_str, ...) \
+		log_dbg_level_icap_printf(LOG_DBG_MODE_FINE, __FUNCTION__, ctx->conn->thr ? ctx->conn->thr->id : 0, ctx->conn->id, ctx->conn->fd, ctx->conn->child_fd, service_ctx->idx, ctx->icap_ctx->reqmod, (format_str), __VA_ARGS__)
+
+// FINER
+#define log_finer_icap(str) \
+		log_dbg_level_icap_printf(LOG_DBG_MODE_FINER, __FUNCTION__, ctx->conn->thr ? ctx->conn->thr->id : 0, ctx->conn->id, ctx->conn->fd, ctx->conn->child_fd, service_ctx->idx, ctx->icap_ctx->reqmod, (str))
+#define log_finer_icap_va(format_str, ...) \
+		log_dbg_level_icap_printf(LOG_DBG_MODE_FINER, __FUNCTION__, ctx->conn->thr ? ctx->conn->thr->id : 0, ctx->conn->id, ctx->conn->fd, ctx->conn->child_fd, service_ctx->idx, ctx->icap_ctx->reqmod, (format_str), __VA_ARGS__)
+
+// FINEST
+#define log_finest_icap(str) \
+		log_dbg_level_icap_printf(LOG_DBG_MODE_FINEST, __FUNCTION__, ctx->conn->thr ? ctx->conn->thr->id : 0, ctx->conn->id, ctx->conn->fd, ctx->conn->child_fd, service_ctx->idx, ctx->icap_ctx->reqmod, (str))
+#define log_finest_icap_va(format_str, ...) \
+		log_dbg_level_icap_printf(LOG_DBG_MODE_FINEST, __FUNCTION__, ctx->conn->thr ? ctx->conn->thr->id : 0, ctx->conn->id, ctx->conn->fd, ctx->conn->child_fd, service_ctx->idx, ctx->icap_ctx->reqmod, (format_str), __VA_ARGS__)
+#else /* !DEBUG_ICAP */
+#define log_fine_icap(str) ((void)0)
+#define log_fine_icap_va(format_str, ...) ((void)0)
+
+#define log_finer_icap(str) ((void)0)
+#define log_finer_icap_va(format_str, ...) ((void)0)
+
+#define log_finest_icap(str) ((void)0)
+#define log_finest_icap_va(format_str, ...) ((void)0)
+#endif /* !DEBUG_ICAP */
+#endif /* !WITHOUT_ICAP */
 
 #define log_err_level(level, str) { log_err_level_printf((level), (str"\n")); log_fine((str)); }
 

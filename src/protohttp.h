@@ -30,7 +30,6 @@
 #define PROTOHTTP_H
 
 #include "pxyconn.h"
-
 typedef struct protohttp_ctx {
 	unsigned int seen_req_header : 1; /* 0 until request header complete */
 	unsigned int seen_resp_header : 1;  /* 0 until response hdr complete */

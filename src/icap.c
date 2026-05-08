@@ -32,6 +32,7 @@
 #include "opts.h"
 #include "pxyconn.h"
 #include "protohttp.h"
+#include "util.h"
 
 #include <event2/buffer.h>
 #include <event2/bufferevent.h>
@@ -119,10 +120,15 @@ icap_evbuffer_readline(struct evbuffer *input, size_t *eol_len)
 {
 	size_t eol_sz = 0;
 	struct evbuffer_ptr ptr = evbuffer_search_eol(input, NULL, &eol_sz, EVBUFFER_EOL_CRLF);
-	if (ptr.pos < 0)
-		return NULL;
 
-	size_t line_len = (size_t)ptr.pos;
+	size_t line_len = 0;
+	if (ptr.pos < 0) {
+		line_len = evbuffer_get_length(input);
+	}
+	else {
+		line_len = (size_t)ptr.pos;
+	}
+
 	char *line = malloc(line_len + 1);
 	if (!line)
 		return NULL;
@@ -140,7 +146,7 @@ static void NONNULL(1)
 icap_service_ctx_free(icap_service_ctx_t *service_ctx)
 {
 	UNUSED pxy_conn_ctx_t *ctx = service_ctx->icap_ctx->conn_ctx;
-	log_finest_va("ENTER, idx=%d", service_ctx->idx);
+	log_finest_icap_va("ENTER, idx=%d", service_ctx->idx);
 
 	if (service_ctx->src.in_hdr) {
 		evbuffer_free(service_ctx->src.in_hdr);
@@ -298,6 +304,29 @@ err:
 	return NULL;
 }
 
+static void NONNULL(1)
+icap_conn_term(pxy_conn_ctx_t *ctx)
+{
+	log_finest("ENTER");
+
+	// ATTENTION: Do not set term, we free icap_ctx before firing the eof event below, so eof eventcb will terminate the connection
+	// otherwise, we cannot flush the remaining data
+	// pxy_conn_term(ctx, 1);
+
+	// ATTENTION: Trigger eof event for the other side to ensure any pending data is flushed out
+	if (ctx->src.bev) {
+		// pxy_bev_eventcb(ctx->src.bev, BEV_EVENT_EOF, ctx);
+		pxy_bev_eventcb(ctx->dst.bev, BEV_EVENT_EOF, ctx);
+	}
+	else if (ctx->dst.bev) {
+		// pxy_bev_eventcb(ctx->dst.bev, BEV_EVENT_EOF, ctx);
+		pxy_bev_eventcb(ctx->src.bev, BEV_EVENT_EOF, ctx);
+	}
+	else {
+		log_finest("No bev to trigger eventcb with BEV_EVENT_EOF");
+	}
+}
+
 void
 icap_ctx_free(icap_ctx_t *icap_ctx)
 {
@@ -326,6 +355,8 @@ icap_ctx_free(icap_ctx_t *icap_ctx)
 	pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
 	free(icap_ctx);
 	ctx->icap_ctx = NULL;
+
+	icap_conn_term(ctx);
 }
 
 static icap_ctx_t *
@@ -411,7 +442,6 @@ icap_service_copy(icap_service_t *chain)
 		svc->uri = chain->uri ? strdup(chain->uri) : NULL;
 		svc->reqmod = chain->reqmod ? strdup(chain->reqmod) : NULL;
 		svc->respmod = chain->respmod ? strdup(chain->respmod) : NULL;
-		svc->type = chain->type;
 		svc->icap_fail_open = chain->icap_fail_open;
 		svc->conn_fail_open = chain->conn_fail_open;
 		svc->timeout = chain->timeout;
@@ -439,15 +469,32 @@ icap_service_copy(icap_service_t *chain)
 	return new_chain;
 }
 
+static int NONNULL(1)
+icap_chain_size(conn_opts_t *conn_opts)
+{
+	icap_service_t *curr = conn_opts->icap_chain;
+	int count = 0;
+	while (curr) {
+		count++;
+		curr = curr->next;
+	}
+	return count;
+}
+
 /*
  * Parse an ICAP service specification string
- * Format: icap://<host>:<port>,<reqmod>,<respmod>,<type>,<mode>,<conn_mode>,<timeout>,<preview>,<max_body_size>,<echo_header>
- * Example: icap://127.0.0.1:1344,echo,echo,inspect,open,open,3,1024,4096
- * Example: icap://127.0.0.1:1345,reqmod,respmod,modify,close,close,30,4096,8192,X-ICAP-E2G
+ * Format: icap://<host>:<port>,<reqmod>,<respmod>,<mode>,<conn_mode>,<timeout>,<preview>,<max_body_size>,<echo_header>
+ * Example: icap://127.0.0.1:1344,echo,echo,open,open,3,1024,4096
+ * Example: icap://127.0.0.1:1345,reqmod,respmod,close,close,30,4096,8192,X-ICAP-E2G
  */
 int NONNULL(1, 2)
 icap_chain_parse_spec(conn_opts_t *conn_opts, const char *spec)
 {
+	if (icap_chain_size(conn_opts) >= ICAP_MAX_SERVICES) {
+		log_err_printf("ICAP Config Error: Maximum number of services (%d) already configured\n", ICAP_MAX_SERVICES);
+		return -1;
+	}
+
 	/* Create and initialize a new service */
 	icap_service_t *svc = malloc(sizeof(icap_service_t));
 	if (!svc) return -1;
@@ -455,7 +502,6 @@ icap_chain_parse_spec(conn_opts_t *conn_opts, const char *spec)
 	
 	/* Defaults */
 	svc->port = 1344;
-	svc->type = ICAP_SERVICE_MODIFY;
 	svc->icap_fail_open = conn_opts->icap_fail_open;
 	svc->conn_fail_open = conn_opts->icap_conn_fail_open;
 	svc->timeout = conn_opts->icap_timeout;
@@ -472,7 +518,6 @@ icap_chain_parse_spec(conn_opts_t *conn_opts, const char *spec)
 	char *uri = strtok_r(spec_copy, ",", &saveptr);
 	char *reqmod = strtok_r(NULL, ",", &saveptr);
 	char *respmod = strtok_r(NULL, ",", &saveptr);
-	char *type = strtok_r(NULL, ",", &saveptr);
 	char *mode = strtok_r(NULL, ",", &saveptr);
 	char *conn_mode = strtok_r(NULL, ",", &saveptr);
 	char *timeout = strtok_r(NULL, ",", &saveptr);
@@ -530,18 +575,6 @@ icap_chain_parse_spec(conn_opts_t *conn_opts, const char *spec)
 
 	if (respmod) {
 		svc->respmod = strdup(respmod);
-	}
-
-	/* Parse Type */
-	if (type) {
-		if (strcasecmp(type, "inspect") == 0) {
-			svc->type = ICAP_SERVICE_INSPECT;
-		} else if (strcasecmp(type, "modify") == 0) {
-			svc->type = ICAP_SERVICE_MODIFY;
-		} else {
-			log_err_printf("ICAP Config Error: Unknown type '%s'\n", type);
-			goto err;
-		}
 	}
 
 	/* Parse Mode */
@@ -630,24 +663,6 @@ err:
 	return -1;
 }
 
-void NONNULL(1)
-icap_conn_term(pxy_conn_ctx_t *ctx)
-{
-	log_finest("ENTER");
-
-	pxy_conn_term(ctx, 1);
-
-	if (ctx->src.bev) {
-		pxy_bev_eventcb(ctx->src.bev, BEV_EVENT_EOF, ctx);
-	}
-	else if (ctx->dst.bev) {
-		pxy_bev_eventcb(ctx->dst.bev, BEV_EVENT_EOF, ctx);
-	}
-	else {
-		log_finest("No bev to trigger eventcb with BEV_EVENT_EOF");
-	}
-}
-
 struct evbuffer * NONNULL(1)
 icap_get_first_service_in_hdr(pxy_conn_ctx_t *ctx, int reqmod)
 {
@@ -719,15 +734,15 @@ icap_service_connect(icap_service_ctx_t *service_ctx)
 
 	// TODO: Do we need to check failopen state if no progress, otherwise do we go into an infinite loop?
 	// if (service_ctx->failopen && icap_ctx->made_progress) {
-	if (service_ctx->failopen) {
-		log_finest_va("ICAP service in failopen state, idx=%d", service_ctx->idx);
-		return -1;
-	}
+	// if (service_ctx->failopen) {
+	// 	log_finer_icap("ICAP service in failopen state");
+	// 	return -1;
+	// }
 
 	if (!service_ctx->bev) {
 		struct bufferevent *bev = bufferevent_socket_new(ctx->thr->evbase, -1, BEV_OPT_CLOSE_ON_FREE | BEV_OPT_DEFER_CALLBACKS);
 		if (!bev) {
-			log_finest_va("ICAP bufferevent allocation failed for %s", service_ctx->svc->server);
+			log_fine_icap("ICAP bufferevent allocation failed");
 			return -1;
 		}
 		service_ctx->bev = bev;
@@ -741,26 +756,25 @@ icap_service_connect(icap_service_ctx_t *service_ctx)
 		bufferevent_set_timeouts(bev, &tv, &tv);
 
 		if (bufferevent_socket_connect_hostname(bev, NULL, AF_UNSPEC, service_ctx->svc->server, service_ctx->svc->port) < 0) {
-			log_finest_va("ICAP connection failed to %s:%d", service_ctx->svc->server, service_ctx->svc->port);
+			log_finest_icap_va("ICAP connection failed to %s:%d", service_ctx->svc->server, service_ctx->svc->port);
 			bufferevent_free(bev);
 			return -1;
 		}
 
 		bufferevent_enable(bev, EV_READ | EV_WRITE);
-		log_finest_va("ICAP connecting to %s:%d, %s, idx=%d", service_ctx->svc->server, service_ctx->svc->port,
-			service_ctx->svc->type == ICAP_SERVICE_MODIFY ? "ICAP_SERVICE_MODIFY" : "ICAP_SERVICE_INSPECT", service_ctx->idx);
+		log_finest_icap_va("ICAP connecting to %s:%d", service_ctx->svc->server, service_ctx->svc->port);
 	}
 	else {
-		log_finest_va("ICAP already connected to %s", service_ctx->svc->server);
+		log_finest_icap_va("ICAP already connected to %s:%d", service_ctx->svc->server, service_ctx->svc->port);
 
 		int rv = icap_build_request(service_ctx);
 		if (rv < 0) {
-			log_finest_va("ICAP failed to build and send request to %s", service_ctx->svc->server);
+			log_finest_icap_va("ICAP failed to build and send request to %s:%d", service_ctx->svc->server, service_ctx->svc->port);
 			icap_handle_service_error(service_ctx);
 			return -1;
 		}
 		else if (rv == 0) {
-			log_finest_va("ICAP request sent to service idx=%d at %s", service_ctx->idx, service_ctx->svc->server);
+			log_finest_icap_va("ICAP request sent to service at %s:%d", service_ctx->svc->server, service_ctx->svc->port);
 		}
 	}
 
@@ -782,8 +796,8 @@ icap_service_disconnect(icap_service_ctx_t *service_ctx, icap_ctx_t *icap_ctx)
 	pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
 
 	if (service_ctx->bev) {
-		if (ctx) log_finest_va("Disable bufferevents for %s, idx=%d", service_ctx->svc->type == ICAP_SERVICE_MODIFY ? "ICAP_SERVICE_MODIFY" : "ICAP_SERVICE_INSPECT", service_ctx->idx);
-		else log_dbg_printf("Disable bufferevents for %s\n", service_ctx->svc->type == ICAP_SERVICE_MODIFY ? "ICAP_SERVICE_MODIFY" : "ICAP_SERVICE_INSPECT");
+		if (ctx) log_finest_icap("Disable bufferevents");
+		else log_dbg_printf("Disable bufferevents for service idx=%d\n", service_ctx->idx);
 		
 		bufferevent_disable(service_ctx->bev, EV_READ | EV_WRITE);
 		bufferevent_setcb(service_ctx->bev, NULL, NULL, NULL, NULL);
@@ -791,8 +805,8 @@ icap_service_disconnect(icap_service_ctx_t *service_ctx, icap_ctx_t *icap_ctx)
 
 		evutil_socket_t fd = bufferevent_getfd(service_ctx->bev);
 		if (fd >= 0) {
-			if (ctx) log_finest_va("Closing ICAP socket fd=%d for %s", fd, service_ctx->svc->type == ICAP_SERVICE_MODIFY ? "ICAP_SERVICE_MODIFY" : "ICAP_SERVICE_INSPECT");
-			else log_dbg_printf("Closing ICAP socket fd=%d for %s\n", fd, service_ctx->svc->type == ICAP_SERVICE_MODIFY ? "ICAP_SERVICE_MODIFY" : "ICAP_SERVICE_INSPECT");
+			if (ctx) log_finest_icap_va("Closing ICAP socket fd=%d", fd);
+			else log_dbg_printf("Closing ICAP socket fd=%d for service idx=%d\n", fd, service_ctx->idx);
 
 			// Don't close the socket here, let bufferevent_free handle it, otherwise we get Epoll Bad file descriptor errors.
 			// evutil_closesocket(fd);
@@ -804,7 +818,7 @@ icap_service_disconnect(icap_service_ctx_t *service_ctx, icap_ctx_t *icap_ctx)
 
 	// ATTENTION: Do not free service_ctx here, just disconnect
 
-	if (ctx) log_finest_va("ICAP service disconnected, svc idx=%d", service_ctx->idx);
+	if (ctx) log_finest_icap("ICAP service disconnected");
 	else log_dbg_printf("ICAP service disconnected, svc idx=%d\n", service_ctx->idx);
 }
 
@@ -854,7 +868,9 @@ icap_have_data_to_process(icap_ctx_t *icap_ctx, int *service_idx)
 					evbuffer_get_length(icap_ctx->services[i]->src.in_body), evbuffer_get_length(icap_ctx->services[i]->dst.in_body), i);
 
 				unsigned int wait_preview_continue = icap_ctx->services[i]->src.wait_preview_continue | icap_ctx->services[i]->dst.wait_preview_continue;
-				if (!wait_preview_continue) {
+				unsigned int detected_204 = icap_ctx->services[i]->src.detected_204 | icap_ctx->services[i]->dst.detected_204;
+				unsigned int detected_206 = icap_ctx->services[i]->src.detected_206 | icap_ctx->services[i]->dst.detected_206;
+				if (!wait_preview_continue || detected_204 || detected_206) {
 					*service_idx = i;
 					return 1;
 				}
@@ -970,16 +986,19 @@ icap_get_http_content_length(icap_ctx_t *icap_ctx)
 
 	unsigned int http_content_length_set = icap_ctx->reqmod ? icap_ctx->src_http_content_length_set : icap_ctx->dst_http_content_length_set;
 	if (http_content_length_set == 0) {
-		if (icap_ctx->reqmod) {
-			icap_ctx->src_http_content_length_set = 1;
-		} else {
-			icap_ctx->dst_http_content_length_set = 1;
-		}
-
 		protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
 		if (http_ctx && http_ctx->http_content_length) {
 			*http_content_length = (size_t)strtoull(http_ctx->http_content_length, NULL, 10);
 			log_finest_va("Set HTTP content length, http_content_length=%zu", *http_content_length);
+
+			if (icap_ctx->reqmod) {
+				icap_ctx->src_http_content_length_set = 1;
+			} else {
+				icap_ctx->dst_http_content_length_set = 1;
+			}
+		}
+		else {
+			log_finest("HTTP content length not found, return 0");
 		}
 	}
 
@@ -1000,12 +1019,11 @@ icap_failopen_to_next_service(icap_service_ctx_t *service_ctx)
 	struct evbuffer *sent_hdr = icap_ctx->reqmod ? service_ctx->src.sent_hdr : service_ctx->dst.sent_hdr;
 	struct evbuffer *sent_body = icap_ctx->reqmod ? service_ctx->src.sent_body : service_ctx->dst.sent_body;
 
-	log_finest_va("ENTER, idx=%d, sent_hdr=%zu, sent_body=%zu, in_hdr=%zu, in_body=%zu",
+	log_finest_icap_va("ENTER, idx=%d, sent_hdr=%zu, sent_body=%zu, in_hdr=%zu, in_body=%zu",
 		service_ctx->idx, evbuffer_get_length(sent_hdr), evbuffer_get_length(sent_body), evbuffer_get_length(in_hdr), evbuffer_get_length(in_body));
 
-	int null_body = icap_is_nullbody(service_ctx);
-	if (null_body) {
-		log_finest("Content complete: null-body");
+	if (icap_is_nullbody(service_ctx)) {
+		log_finest_icap("Content complete: null-body");
 		ICAP_STATE(service_ctx, icap_ctx->reqmod)->content_complete = 1;
 	}
 
@@ -1018,17 +1036,17 @@ icap_failopen_to_next_service(icap_service_ctx_t *service_ctx)
 	// otherwise we may never mark content complete and cannot terminate the connection (until it expires)
 	*sent_body_size += (evbuffer_get_length(in_body) + evbuffer_get_length(sent_body));
 
-	log_finest_va("Updated sent_body_size=%zu, idx=%d", *sent_body_size, service_ctx->idx);
+	log_finest_icap_va("Updated sent_body_size=%zu", *sent_body_size);
 
 	size_t http_content_length = icap_get_http_content_length(icap_ctx);
 
-	log_finest_va("Checking if HTTP content complete, sent_body_size=%zu, http_content_length=%zu", *sent_body_size, http_content_length);
+	log_finest_icap_va("Checking if HTTP content complete, sent_body_size=%zu, http_content_length=%zu", *sent_body_size, http_content_length);
 	if (*sent_body_size >= http_content_length) {
 		ICAP_STATE(service_ctx, icap_ctx->reqmod)->content_complete = 1;
 	}
 
 	if (next_idx < icap_ctx->service_count) {
-		log_finest_va("Failopen to next service, idx=%d, next_idx=%d", service_ctx->idx, next_idx);
+		log_finest_icap_va("Failopen to next service, next_idx=%d", next_idx);
 
 		struct evbuffer *next_in_hdr = icap_ctx->reqmod ? icap_ctx->services[next_idx]->src.in_hdr : icap_ctx->services[next_idx]->dst.in_hdr;
 		struct evbuffer *next_in_body = icap_ctx->reqmod ? icap_ctx->services[next_idx]->src.in_body : icap_ctx->services[next_idx]->dst.in_body;
@@ -1053,7 +1071,7 @@ icap_failopen_to_next_service(icap_service_ctx_t *service_ctx)
 		}
 	}
 	else {
-		log_finest_va("Failopen to destination, idx=%d", service_ctx->idx);
+		log_finest_icap("Failopen to destination");
 
 		struct evbuffer *outbuf = bufferevent_get_output(icap_ctx->reqmod ? ctx->dst.bev : ctx->src.bev);
 
@@ -1084,10 +1102,10 @@ icap_advance_to_next_service(icap_service_ctx_t *service_ctx)
 	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
 	UNUSED pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
 
-	log_finest_va("ENTER, %s, service_count=%d, current_service_idx=%d, idx=%d", icap_ctx->reqmod ? "REQMOD" : "RESPMOD", icap_ctx->service_count, icap_ctx->current_service_idx, service_ctx->idx);
+	log_finest_icap_va("ENTER, service_count=%d, current_service_idx=%d", icap_ctx->service_count, icap_ctx->current_service_idx);
 
 	if (icap_ctx->current_service_idx + 1 >= icap_ctx->service_count) {
-		log_finest("No next service to advance to");
+		log_finest_icap("No next service to advance to");
 		return;
 	}
 
@@ -1135,14 +1153,13 @@ icap_handle_service_error(icap_service_ctx_t *service_ctx)
 	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
 	pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
 
-	if (ctx) log_finest_va("ICAP service in error state, conn_opts conn_fail_open=%s, conn_opts icap_fail_open=%s, svc type=%s, svc conn_fail_open=%s, svc icap_fail_open=%s",
+	if (ctx) log_finest_icap_va("ICAP service in error state, conn_opts conn_fail_open=%s, conn_opts icap_fail_open=%s, svc conn_fail_open=%s, svc icap_fail_open=%s",
 		ctx->conn_opts->icap_conn_fail_open == ICAP_FAIL_CLOSE ? "fail-close" : "fail-open",
 		ctx->conn_opts->icap_fail_open == ICAP_FAIL_CLOSE ? "fail-close" : "fail-open",
-		service_ctx->svc->type == ICAP_SERVICE_MODIFY ? "ICAP_SERVICE_MODIFY" : "ICAP_SERVICE_INSPECT",
 		service_ctx->svc->conn_fail_open == ICAP_FAIL_CLOSE ? "fail-close" : "fail-open",
 		service_ctx->svc->icap_fail_open == ICAP_FAIL_CLOSE ? "fail-close" : "fail-open");
-	else log_dbg_printf("ICAP service in error state, conn_opts conn_fail_open=-, conn_opts icap_fail_open=-, svc type=%s, svc conn_fail_open=%s, svc icap_fail_open=%s\n",
-		service_ctx->svc->type == ICAP_SERVICE_MODIFY ? "ICAP_SERVICE_MODIFY" : "ICAP_SERVICE_INSPECT",
+	else log_dbg_printf("ICAP service idx=%d in error state, conn_opts conn_fail_open=-, conn_opts icap_fail_open=-, svc conn_fail_open=%s, svc icap_fail_open=%s\n",
+		service_ctx->idx,
 		service_ctx->svc->conn_fail_open == ICAP_FAIL_CLOSE ? "fail-close" : "fail-open",
 		service_ctx->svc->icap_fail_open == ICAP_FAIL_CLOSE ? "fail-close" : "fail-open");
 
@@ -1150,7 +1167,7 @@ icap_handle_service_error(icap_service_ctx_t *service_ctx)
 	// TODO: Check if conn_opts->icap_conn_fail_open is always copied to service_ctx->svc->conn_fail_open
 	// if ((ctx && ctx->conn_opts->icap_conn_fail_open == ICAP_FAIL_CLOSE) || (service_ctx->svc->conn_fail_open == ICAP_FAIL_CLOSE)) {
 	if (service_ctx->svc->conn_fail_open == ICAP_FAIL_CLOSE) {
-		if (ctx) log_finest("ICAP service in error state, terminate connection as fail-close");
+		if (ctx) log_finest_icap("ICAP service in error state, terminate connection as fail-close");
 		else log_dbg_printf("ICAP service in error state, terminate connection as fail-close\n");
 
 		icap_conn_term(ctx);
@@ -1165,7 +1182,7 @@ icap_handle_service_error(icap_service_ctx_t *service_ctx)
 		icap_ctx->current_service_idx = service_ctx->idx;
 
 		if ((icap_ctx->current_service_idx + 1) < icap_ctx->service_count) {
-			if (ctx) log_finest_va("ICAP in error state, continue with next ICAP service in chain, idx=%d, current_service_idx=%d", service_ctx->idx, icap_ctx->current_service_idx);
+			if (ctx) log_finest_icap_va("ICAP in error state, continue with next ICAP service in chain, current_service_idx=%d", icap_ctx->current_service_idx);
 			else log_dbg_printf("ICAP in error state, continue with next ICAP service in chain\n");
 
 			icap_failopen_to_next_service(service_ctx);
@@ -1175,21 +1192,19 @@ icap_handle_service_error(icap_service_ctx_t *service_ctx)
 				icap_process_chain(icap_ctx, icap_ctx->current_service_idx);
 			}
 			else {
-				if (ctx) log_finest_va("ICAP service chain finished for %s, %s", icap_ctx->reqmod ? "REQMOD" : "RESPMOD",
-					service_ctx->svc->type == ICAP_SERVICE_MODIFY ? "ICAP_SERVICE_MODIFY" : "ICAP_SERVICE_INSPECT");
-				else log_dbg_printf("ICAP service chain finished for %s, %s\n", icap_ctx->reqmod ? "REQMOD" : "RESPMOD",
-					service_ctx->svc->type == ICAP_SERVICE_MODIFY ? "ICAP_SERVICE_MODIFY" : "ICAP_SERVICE_INSPECT");
+				if (ctx) log_finest_icap("ICAP service chain finished");
+				else log_dbg_printf("ICAP service chain finished for service idx=%d, %s\n", service_ctx->idx, icap_ctx->reqmod ? "REQMOD" : "RESPMOD");
 			}
 		}
 		else {
-			if (ctx) log_finest("ICAP in error state, no more services to try");
+			if (ctx) log_finest_icap("ICAP in error state, no more services to try");
 			else log_dbg_printf("ICAP in error state, no more services to try\n");
 
 			icap_failopen_to_next_service(service_ctx);
 		}
 	}
 	else {
-		if (ctx) log_finest("ICAP in error state, will not try further services");
+		if (ctx) log_finest_icap("ICAP in error state, will not try further services");
 		else log_dbg_printf("ICAP in error state, will not try further services\n");
 	}
 
@@ -1202,6 +1217,28 @@ icap_preview_enabled(icap_service_t *svc)
 	return svc->preview_size > 0;
 }
 
+// We need separate null_body functions for sending request to and processing response from service
+static int
+icap_is_icap_response_nullbody(icap_service_ctx_t *service_ctx)
+{
+	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
+	UNUSED pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
+
+	int null_body = icap_ctx->reqmod ? service_ctx->src.null_body : service_ctx->dst.null_body;
+	if (null_body) {
+		log_finest_icap("Service response null body");
+		return 1;
+	}
+
+	int has_body = icap_ctx->reqmod ? service_ctx->src.has_body : service_ctx->dst.has_body;
+	if (has_body) {
+		log_finest_icap("Encapsulated header indicates has_body");
+		return 0;
+	}
+
+	return 0;
+}
+
 static int
 icap_is_nullbody(icap_service_ctx_t *service_ctx)
 {
@@ -1211,27 +1248,47 @@ icap_is_nullbody(icap_service_ctx_t *service_ctx)
 	struct evbuffer *in_body = icap_ctx->reqmod ? service_ctx->src.in_body : service_ctx->dst.in_body;
 	size_t in_body_len = evbuffer_get_length(in_body);
 
-	if (in_body_len > 0) {
-		log_finest_va("Not null body, in_body_len=%zu, type=%s, idx=%d", in_body_len,
-			icap_ctx->reqmod ? "REQMOD" : "RESPMOD", service_ctx->idx);
+	if (icap_ctx->is_veto) {
+		log_finest_icap_va("Veto detected, assume not null body, in_body_len=%zu", in_body_len);
 		return 0;
 	}
 
 	if (!ctx->spec->http) {
-		log_finest_va("Non-http connection, assume not null body, type=%s, idx=%d", icap_ctx->reqmod ? "REQMOD" : "RESPMOD", service_ctx->idx);
+		log_finest_icap("Non-http connection, assume not null body");
 		return 0;
 	}
 
-	// ATTENTION: Check the null_body flag of the first service only, the others may be incorrect
-	int null_body = icap_ctx->reqmod ? icap_ctx->services[0]->src.null_body : icap_ctx->services[0]->dst.null_body;
-	if (null_body) {
-		log_finest_va("First service input null body, type=%s, idx=%d", icap_ctx->reqmod ? "REQMOD" : "RESPMOD", service_ctx->idx);
-		return 1;
+	// TODO: Do we need has_body check, or is null_body check below enough?
+	// int has_body = icap_ctx->reqmod ? service_ctx->src.has_body : service_ctx->dst.has_body;
+	// if (has_body) {
+	// 	log_finest_icap("Service has body");
+	// 	return 0;
+	// }
+
+	// ATTENTION: The null_body flag may be misleading, due to 204 and 206 responses
+	// int null_body = icap_ctx->reqmod ? icap_ctx->services[0]->src.null_body : icap_ctx->services[0]->dst.null_body;
+	// if (null_body) {
+	// 	log_finest_icap("First service input null body");
+	// 	return 1;
+	// }
+
+	size_t sent_body_size = icap_ctx->reqmod ? icap_ctx->services[0]->src.sent_body_size : icap_ctx->services[0]->dst.sent_body_size;
+	if (sent_body_size > 0) {
+		log_finest_icap_va("First service sent_body_size > 0, assume not null body, sent_body_size=%zu", sent_body_size);
+		return 0;
+	}
+
+	// ATTENTION: Move this check after null_body check, otherwise breaks 204 bypass with c-icap echo service
+	// TODO: Do we need to check detected_204? Because if we got 204, then in_body_len > 0
+	// if (in_body_len > 0 && !ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_204) {
+	if (in_body_len > 0) {
+		log_finest_icap_va("Not null body, in_body_len=%zu", in_body_len);
+		return 0;
 	}
 
 	size_t http_content_length = icap_get_http_content_length(icap_ctx);
-	log_finest_va("HTTP content length=%zu, null_body=%u, type=%s, idx=%d", http_content_length,
-		icap_ctx->reqmod ? service_ctx->src.null_body : service_ctx->dst.null_body, icap_ctx->reqmod ? "REQMOD" : "RESPMOD", service_ctx->idx);
+	log_finest_icap_va("HTTP content length=%zu, null_body=%u", http_content_length,
+		icap_ctx->reqmod ? service_ctx->src.null_body : service_ctx->dst.null_body);
 	return http_content_length == 0;
 }
 
@@ -1246,11 +1303,75 @@ icap_service_content_complete(icap_service_ctx_t *service_ctx)
 	struct evbuffer *sent_hdr = icap_ctx->reqmod ? service_ctx->src.sent_hdr : service_ctx->dst.sent_hdr;
 	struct evbuffer *sent_body = icap_ctx->reqmod ? service_ctx->src.sent_body : service_ctx->dst.sent_body;
 
-	log_finest_va("Service finished, drain sent_hdr=%zu, sent_body=%zu, idx=%d, type=%s", evbuffer_get_length(sent_hdr),
-		evbuffer_get_length(sent_body), service_ctx->idx, icap_ctx->reqmod ? "REQMOD" : "RESPMOD");
+	if (icap_ctx->is_veto) {
+		icap_ctx->sent_veto_page = 1;
+	}
+
+	log_finest_icap_va("Service finished, drain sent_hdr=%zu, sent_body=%zu, sent_veto_page=%u",
+		evbuffer_get_length(sent_hdr), evbuffer_get_length(sent_body), icap_ctx->sent_veto_page);
 
 	evbuffer_drain(sent_hdr, -1);
 	evbuffer_drain(sent_body, -1);
+}
+
+static void
+icap_service_bypass_2046(icap_service_ctx_t *service_ctx)
+{
+	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
+	UNUSED pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
+
+	struct evbuffer *sent_hdr = icap_ctx->reqmod ? service_ctx->src.sent_hdr : service_ctx->dst.sent_hdr;
+	struct evbuffer *out_hdr = icap_ctx->reqmod ? service_ctx->src.out_hdr : service_ctx->dst.out_hdr;
+
+	if (evbuffer_get_length(sent_hdr) > 0) {
+		log_finest_icap_va("Move sent_hdr to out_hdr, sent_hdr=%zu, out_hdr=%zu", evbuffer_get_length(sent_hdr), evbuffer_get_length(out_hdr));
+		evbuffer_add_buffer(out_hdr, sent_hdr);
+		icap_ctx->made_progress = 1;
+	}
+
+	struct evbuffer *in_hdr = icap_ctx->reqmod ? service_ctx->src.in_hdr : service_ctx->dst.in_hdr;
+
+	if (evbuffer_get_length(in_hdr) > 0) {
+		log_finest_icap_va("Move in_hdr to out_hdr, in_hdr=%zu, out_hdr=%zu", evbuffer_get_length(in_hdr), evbuffer_get_length(out_hdr));
+		evbuffer_add_buffer(out_hdr, in_hdr);
+		icap_ctx->made_progress = 1;
+	}
+
+	struct evbuffer *sent_body = icap_ctx->reqmod ? service_ctx->src.sent_body : service_ctx->dst.sent_body;
+	struct evbuffer *out_body = icap_ctx->reqmod ? service_ctx->src.out_body : service_ctx->dst.out_body;
+
+	size_t *sent_body_size = icap_ctx->reqmod ? &service_ctx->src.sent_body_size : &service_ctx->dst.sent_body_size;
+
+	if (evbuffer_get_length(sent_body) > 0) {
+		// ATTENTION: We have already added existing sent_body in sent_body_size, so do not count it again here
+		// *sent_body_size += evbuffer_get_length(sent_body);
+
+		log_finest_icap_va("Move sent_body to out_body, sent_body=%zu, out_body=%zu", evbuffer_get_length(sent_body), evbuffer_get_length(out_body));
+		evbuffer_add_buffer(out_body, sent_body);
+		icap_ctx->made_progress = 1;
+	}
+
+	struct evbuffer *in_body = icap_ctx->reqmod ? service_ctx->src.in_body : service_ctx->dst.in_body;
+
+	if (evbuffer_get_length(in_body) > 0) {
+		*sent_body_size += evbuffer_get_length(in_body);
+
+		log_finest_icap_va("Move in_body to out_body, in_body=%zu, out_body=%zu", evbuffer_get_length(in_body), evbuffer_get_length(out_body));
+		evbuffer_add_buffer(out_body, in_body);
+		icap_ctx->made_progress = 1;
+	}
+
+	size_t http_content_length = icap_get_http_content_length(icap_ctx);
+	log_finest_icap_va("Checking if HTTP content complete, sent_body_size=%zu, http_content_length=%zu", *sent_body_size, http_content_length);
+
+	if (http_content_length > 0) {
+		if (*sent_body_size >= http_content_length) {
+			icap_service_content_complete(service_ctx);
+		}
+	}
+	else {
+		icap_service_content_complete(service_ctx);
+	}
 }
 
 static int NONNULL(1)
@@ -1262,23 +1383,38 @@ icap_extract_icap_headers(icap_service_ctx_t *service_ctx, struct evbuffer *inpu
 	size_t *body_offset = icap_ctx->reqmod ? &service_ctx->src.body_offset : &service_ctx->dst.body_offset;
 	size_t *header_offset = icap_ctx->reqmod ? &service_ctx->src.header_offset : &service_ctx->dst.header_offset;
 
-	log_finest_va("ENTER, header_offset=%zu, body_offset=%zu, null_body=%u, type=%s, idx=%d", *header_offset, *body_offset,
-		icap_ctx->reqmod ? service_ctx->src.null_body : service_ctx->dst.null_body, icap_ctx->reqmod ? "REQMOD" : "RESPMOD", service_ctx->idx);
+	log_finest_icap_va("ENTER, header_offset=%zu, body_offset=%zu, null_body=%u", *header_offset, *body_offset,
+		icap_ctx->reqmod ? service_ctx->src.null_body : service_ctx->dst.null_body);
 
-	char *line;
+	int rv = 0;
 
 	/* Parse ICAP Headers to find Encapsulated offsets and Veto detection */
-	while ((line = icap_evbuffer_readline(input, NULL))) {
+	while (1) {
+		size_t line_eol = 0;
+		char *line = icap_evbuffer_readline(input, &line_eol);
+		if (!line) {
+			log_finest_icap("Failed reading ICAP header line, stop parsing headers");
+			rv = -1;
+			break;
+		}
+
 		if (strlen(line) == 0) {
-			log_finest("End of ICAP headers");
+			log_finest_icap("End of ICAP headers, stop parsing headers");
 			free(line);
 			break;
 		}
-		
+
+		if (line_eol == 0) {
+			log_finest_icap("No EOL in line, reinject line back to input buffer, stop parsing headers");
+			evbuffer_add(input, line, strlen(line));
+			free(line);
+			break;
+		}
+
 		/* Check for Veto: X-Response-Info: Blocked */
 		if (strncasecmp(line, "X-Response-Info:", 16) == 0) {
 			if (strcasestr(line, "Blocked")) {
-				log_finest("ICAP Veto detected: X-Response-Info: Blocked");
+				log_finest_icap("ICAP Veto detected: X-Response-Info: Blocked");
 				icap_ctx->is_veto = 1;
 			}
 		}
@@ -1298,12 +1434,19 @@ icap_extract_icap_headers(icap_service_ctx_t *service_ctx, struct evbuffer *inpu
 				if (p) {
 					p += 10;
 					*body_offset = (size_t)strtoull(p, NULL, 10);
+					log_finest_icap_va("ICAP detected null-body=%zu", *body_offset);
 					ICAP_STATE(service_ctx, icap_ctx->reqmod)->null_body = 1;
 				}
 			}
 
 			char *h = strstr(line, "req-hdr=");
-			if (!h) h = strstr(line, "res-hdr=");
+			if (!h) {
+				h = strstr(line, "res-hdr=");
+				if (h && icap_ctx->reqmod) {
+					log_finest_icap("ICAP Veto detected: res-hdr in reqmod response");
+					icap_ctx->is_veto = 1;
+				}
+			}
 			if (h) {
 				h += 8;
 				*header_offset = (size_t)strtoull(h, NULL, 10);
@@ -1312,44 +1455,82 @@ icap_extract_icap_headers(icap_service_ctx_t *service_ctx, struct evbuffer *inpu
 
 		if (service_ctx->svc->echo_header &&
 			strncasecmp(line, service_ctx->svc->echo_header, strlen(service_ctx->svc->echo_header)) == 0) {
-			log_finest_va("Found echo header='%s'", line);
+			log_finest_icap_va("Found echo header='%s'", line);
 
 			char *value = strcasestr(line, ":");
 			if (value && strlen(value) > 1) {
 				if (service_ctx->echo_header) {
-					log_finest_va("Overwriting existing echo_header='%s'", service_ctx->echo_header);
+					log_finest_icap_va("Overwriting existing echo_header='%s'", service_ctx->echo_header);
 					free(service_ctx->echo_header);
 				}
 
 				// Set the whole line, both key and value as echo header
 				service_ctx->echo_header = strdup(line);
 				if (!service_ctx->echo_header) {
-					log_finest_va("Failed malloc echo header='%s'", line);
+					log_finest_icap_va("Failed malloc echo header='%s'", line);
 					free(line);
 					break;
 				}
 
-				log_finest_va("Set echo_header='%s'", service_ctx->echo_header);
+				log_finest_icap_va("Set echo_header='%s'", service_ctx->echo_header);
 			}
 			else {
-				log_finest("No value in echo header");
+				log_finest_icap("No value in echo header");
 			}
 		}
 
 		free(line);
 	}
 
-	int rv = 0;
-
 	/* Validate offset values to prevent underflow */
 	if (*body_offset < *header_offset) {
-		log_finest_va("Invalid ICAP offsets: body_offset (%zu) < header_offset (%zu)", *body_offset, *header_offset);
+		log_finest_icap_va("Invalid ICAP offsets: body_offset (%zu) < header_offset (%zu)", *body_offset, *header_offset);
 		rv = -1;
 	}
 
-	log_finest_va("EXIT, header_offset=%zu, body_offset=%zu, null_body=%u, type=%s, idx=%d", *header_offset, *body_offset,
-		icap_ctx->reqmod ? service_ctx->src.null_body : service_ctx->dst.null_body, icap_ctx->reqmod ? "REQMOD" : "RESPMOD", service_ctx->idx);
+	log_finest_icap_va("EXIT, header_offset=%zu, body_offset=%zu, null_body=%u", *header_offset, *body_offset,
+		icap_ctx->reqmod ? service_ctx->src.null_body : service_ctx->dst.null_body);
 	return rv;
+}
+
+static int NONNULL(1,2)
+icap_update_http_content_length(icap_service_ctx_t *service_ctx, struct evbuffer *outbuf)
+{
+	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
+	UNUSED pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
+
+	/* Update http_content_length from Content-Length in new HTTP headers */
+	size_t hdrlen = evbuffer_get_length(outbuf);
+	char *hdr_buf = malloc(hdrlen + 1);
+	if (!hdr_buf) {
+		log_finest("Failed to allocate header buffer for HTTP content length update");
+		return -1;
+	}
+
+	evbuffer_copyout(outbuf, hdr_buf, hdrlen);
+	hdr_buf[hdrlen] = '\0';
+	
+	char *content_length_line = strstr(hdr_buf, "Content-Length:");
+	if (content_length_line) {
+		char *content_length_str = util_skipws(content_length_line + 15);
+		size_t len = strspn(content_length_str, "0123456789");
+
+		// 4GB (4294967295 bytes) limit to prevent overflow, Content-Length > 4294967295 is unlikely
+		if (len < 11) {
+			content_length_str[len] = '\0';
+			size_t *http_content_length = icap_ctx->reqmod ? &icap_ctx->src_http_content_length : &icap_ctx->dst_http_content_length;
+			*http_content_length = (size_t)strtoull(content_length_str, NULL, 10);
+			log_finest_icap_va("Updated HTTP content length: %zu", *http_content_length);
+		}
+		else {
+			log_finest_icap_va("Content-Length value too long to parse: '%s'", content_length_str);
+		}
+	}
+	else {
+		log_finest_icap("No Content-Length line found in HTTP headers");
+	}
+	free(hdr_buf);
+	return 0;
 }
 
 // Returns 1 if HTTP headers are fully received and extracted, 0 if still waiting for more data
@@ -1360,13 +1541,13 @@ icap_extract_http_headers(icap_service_ctx_t *service_ctx, struct evbuffer *inpu
 	UNUSED pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
 
 	if (!ctx->spec->http) {
-		log_finest_va("Non-http connection, skip extracting HTTP headers, type=%s, idx=%d", icap_ctx->reqmod ? "REQMOD" : "RESPMOD", service_ctx->idx);
+		log_finest_icap("Non-http connection, skip extracting HTTP headers");
 		return 1;
 	}
 
 	unsigned int received_http_headers = icap_ctx->reqmod ? service_ctx->src.received_http_headers : service_ctx->dst.received_http_headers;
 	if (received_http_headers) {
-		log_finest("Already received HTTP headers in ICAP response");
+		log_finest_icap("Already received HTTP headers in ICAP response");
 		return 1;
 	}
 
@@ -1374,8 +1555,22 @@ icap_extract_http_headers(icap_service_ctx_t *service_ctx, struct evbuffer *inpu
 	size_t header_offset = icap_ctx->reqmod ? service_ctx->src.header_offset : service_ctx->dst.header_offset;
 	size_t hdrlen = body_offset - header_offset;
 	if (hdrlen == 0) {
-		log_finest("No HTTP headers in ICAP response");
+		log_finest_icap("No HTTP headers indicated in ICAP encapsulated header");
+
+		if (icap_is_icap_response_nullbody(service_ctx)) {
+			log_finest_icap("Null body with no http headers, assume 204 response, stream data from sent_hdr to out_hdr");
+			ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_204 = 1;
+			icap_service_bypass_2046(service_ctx);
+		}
 		return 1;
+	}
+
+	if (icap_ctx->is_veto && !icap_ctx->veto_page) {
+		icap_ctx->veto_page = evbuffer_new();
+		if (!icap_ctx->veto_page) {
+			log_finest_icap("Failed to allocate veto page buffer");
+			return -1;
+		}
 	}
 
 	struct evbuffer *out_hdr = icap_ctx->reqmod ? service_ctx->src.out_hdr : service_ctx->dst.out_hdr;
@@ -1384,98 +1579,151 @@ icap_extract_http_headers(icap_service_ctx_t *service_ctx, struct evbuffer *inpu
 	if (!wait_http_headers) {
 		// TODO: Check if hdrlen can be 0, otherwise evbuffer_get_length(input) == 0 may not be necessary
 		if (evbuffer_get_length(input) == 0 || evbuffer_get_length(input) < hdrlen) {
-			log_finest_va("No or not enough content left in ICAP response after icap headers, wait for HTTP headers, hdrlen=%zu, input=%zu", hdrlen, evbuffer_get_length(input));
+			log_finest_icap_va("No or not enough content left in ICAP response after icap headers, wait for HTTP headers, hdrlen=%zu, input=%zu", hdrlen, evbuffer_get_length(input));
 			ICAP_STATE(service_ctx, icap_ctx->reqmod)->wait_http_headers = 1;
 			return 0;
 		}
 	}
 	else {
-		log_finest_va("WAIT for headers hdrlen=%zu, input=%zu", hdrlen, evbuffer_get_length(input));
+		log_finest_icap_va("WAIT for headers hdrlen=%zu, input=%zu", hdrlen, evbuffer_get_length(input));
 
 		size_t *received_hdr_size = icap_ctx->reqmod ? &service_ctx->src.received_hdr_size : &service_ctx->dst.received_hdr_size;
 
 		if (status_line) {
 			evbuffer_add(out_hdr, *status_line, strlen(*status_line));
-			evbuffer_add(out_hdr, *eol_size == 1 ? "\n" : "\r\n", *eol_size == 1 ? 1 : 2);
+			*received_hdr_size += strlen(*status_line);
 
-			*received_hdr_size += strlen(*status_line) + *eol_size;
+			if (*eol_size > 0) {
+				evbuffer_add(out_hdr, *eol_size == 1 ? "\n" : "\r\n", *eol_size == 1 ? 1 : 2);
+				*received_hdr_size += *eol_size;
+			}
 
 			free(*status_line);
 			*status_line = NULL;
 			*eol_size = 0;
 
-			log_finest_va("Added status line to out_hdr, received_hdr_size=%zu", *received_hdr_size);
+			log_finest_icap_va("Added status line to out_hdr, received_hdr_size=%zu", *received_hdr_size);
 		}
 
 		size_t remaining_hdr_size = hdrlen - *received_hdr_size;
 
 		if (evbuffer_get_length(input) < remaining_hdr_size) {
-			log_finest_va("Keep waiting for headers, hdrlen=%zu, remaining=%zu, available=%zu", hdrlen, remaining_hdr_size, evbuffer_get_length(input));
+			log_finest_icap_va("Keep waiting for headers, hdrlen=%zu, remaining=%zu, available=%zu", hdrlen, remaining_hdr_size, evbuffer_get_length(input));
 			return 0;
 		}
 
-		log_finest_va("Got all headers, hdrlen=%zu, remaining=%zu, available=%zu", hdrlen, remaining_hdr_size, evbuffer_get_length(input));
-
-		evbuffer_remove_buffer(input, out_hdr, remaining_hdr_size);
-
-		*received_hdr_size = hdrlen;
-
-		log_finest_va("AFTER WAIT for headers hdrlen=%zu, input=%zu", hdrlen, evbuffer_get_length(input));
+		hdrlen = remaining_hdr_size;
+		log_finest_icap_va("AFTER WAIT for headers, will move remaining_hdr_size=%zu, input=%zu", remaining_hdr_size, evbuffer_get_length(input));
 
 		ICAP_STATE(service_ctx, icap_ctx->reqmod)->wait_http_headers = 0;
-		ICAP_STATE(service_ctx, icap_ctx->reqmod)->received_http_headers = 1;
 	}
 
 	received_http_headers = icap_ctx->reqmod ? service_ctx->src.received_http_headers : service_ctx->dst.received_http_headers;
 	if (!received_http_headers) {
 		size_t *received_hdr_size = icap_ctx->reqmod ? &service_ctx->src.received_hdr_size : &service_ctx->dst.received_hdr_size;
-		*received_hdr_size = hdrlen;
+		*received_hdr_size = body_offset - header_offset;
 
-		log_finest_va("Update headers with modify service, hdrlen(offset diff)=%zu", hdrlen);
-		evbuffer_remove_buffer(input, out_hdr, hdrlen);
-		
-		ICAP_STATE(service_ctx, icap_ctx->reqmod)->received_http_headers = 1;
-	}
-
-	/* Check for HTTP 4xx/5xx in encapsulated HTTP status (for REQMOD) */
-	if (icap_ctx->reqmod) {
-		/* Only check for HTTP errors in REQMOD mode */
-		char *hdr_buf = malloc(hdrlen + 1);
-		if (!hdr_buf) {
-			log_finest("Failed to allocate header buffer for HTTP error check");
+		struct evbuffer *outbuf = NULL;
+		if (icap_ctx->is_veto) {
+			outbuf = icap_ctx->veto_page;
+			log_finest_icap_va("Save hdr to veto page, hdrlen(offset diff)=%zu", hdrlen);
 		}
 		else {
-			evbuffer_copyout(out_hdr, hdr_buf, hdrlen);
-			hdr_buf[hdrlen] = '\0';
-			
-			/* Look for HTTP status line with 4xx or 5xx */
-			char *status_line = strstr(hdr_buf, "HTTP/");
-			if (status_line) {
-				/* Check for 4xx or 5xx status codes more precisely */
-				if ((strncmp(status_line + 9, "4", 1) == 0 && strlen(status_line) > 12) ||
-				    (strncmp(status_line + 9, "5", 1) == 0 && strlen(status_line) > 12)) {
-					log_finest_va("ICAP Veto detected: Encapsulated HTTP error response: %.*s", 
-						(int)(strlen(status_line) > 50 ? 50 : strlen(status_line)), status_line);
-					icap_ctx->is_veto = 1;
-				}
-			}
-			else {
-				log_finest("No HTTP status line found in encapsulated headers");
-			}
-			free(hdr_buf);
+			outbuf = icap_ctx->reqmod ? service_ctx->src.out_hdr : service_ctx->dst.out_hdr;
+			log_finest_icap_va("Update headers, hdrlen(offset diff)=%zu", hdrlen);
+		}
+		evbuffer_remove_buffer(input, outbuf, hdrlen);
+		
+		if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_206) {
+			struct evbuffer *sent_hdr = icap_ctx->reqmod ? service_ctx->src.sent_hdr : service_ctx->dst.sent_hdr;
+			log_finest_icap_va("Discard sent_hdr with 206 response, sent_hdr=%zu", evbuffer_get_length(sent_hdr));
+			evbuffer_drain(sent_hdr, -1);
+		}
+		ICAP_STATE(service_ctx, icap_ctx->reqmod)->received_http_headers = 1;
+
+		/* Update http_content_length from Content-Length in new HTTP headers */
+		if (icap_update_http_content_length(service_ctx, outbuf) < 0) {
+			return -1;
 		}
 	}
 
+	// TODO: Do we need to check for HTTP 4xx/5xx in encapsulated HTTP status line?
+	// But it doesn't seem like icap services use HTTP status codes for veto
+	// /* Check for HTTP 4xx/5xx in encapsulated HTTP status (for REQMOD) */
+	// if (icap_ctx->reqmod) {
+	// 	/* Only check for HTTP errors in REQMOD mode */
+	// 	char *hdr_buf = malloc(hdrlen + 1);
+	// 	if (!hdr_buf) {
+	// 		log_finest("Failed to allocate header buffer for HTTP error check");
+	// 	}
+	// 	else {
+	// 		evbuffer_copyout(out_hdr, hdr_buf, hdrlen);
+	// 		hdr_buf[hdrlen] = '\0';
+			
+	// 		/* Look for HTTP status line with 4xx or 5xx */
+	// 		char *status_line = strstr(hdr_buf, "HTTP/");
+	// 		if (status_line) {
+	// 			/* Check for 4xx or 5xx status codes more precisely */
+	// 			if ((strncmp(status_line + 9, "4", 1) == 0 && strlen(status_line) > 12) ||
+	// 			    (strncmp(status_line + 9, "5", 1) == 0 && strlen(status_line) > 12)) {
+	// 				log_finest_icap_va("ICAP Veto detected: Encapsulated HTTP error response: %.*s", 
+	// 					(int)(strlen(status_line) > 50 ? 50 : strlen(status_line)), status_line);
+	// 				icap_ctx->is_veto = 1;
+	// 			}
+	// 		}
+	// 		else {
+	// 			log_finest_icap("No HTTP status line found in encapsulated headers");
+	// 		}
+	// 		free(hdr_buf);
+	// 	}
+	// }
+
+#ifdef DEBUG_PROXY
 	/* Log extracted headers for debugging */
-	char *hdr_buf = malloc(hdrlen + 1);
-	if (hdr_buf) {
-		evbuffer_copyout(out_hdr, hdr_buf, hdrlen);
-		hdr_buf[hdrlen] = '\0';
-		log_finest_va("Extracted headers (%zu bytes): %.200s...", hdrlen, hdr_buf);
-		free(hdr_buf);
-	}
+	size_t len = evbuffer_get_length(out_hdr);
+	size_t log_len = len < 400 ? len : 400;
+	char log_buf[401];  // Stack allocation
+	evbuffer_copyout(out_hdr, log_buf, log_len);
+	log_buf[log_len] = '\0';
+	log_finest_icap_va("Extracted headers (first %zu bytes, orig %zu bytes): %s", log_len, len, log_buf);
+#endif /* DEBUG_PROXY */
 
 	return 1;
+}
+
+static int
+icap_search_206_extension(icap_service_ctx_t *service_ctx, char *line)
+{
+	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
+	UNUSED pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
+
+	char *p = strstr(line, "use-original-body=");
+	if (p) {
+		p += 18;
+		size_t use_original_body = (size_t)strtoull(p, NULL, 10);
+
+		struct evbuffer *sent_body = icap_ctx->reqmod ? service_ctx->src.sent_body : service_ctx->dst.sent_body;
+		log_finest_icap_va("Found use-original-body extension, use_original_body=%zu, sent_body=%zu", use_original_body, evbuffer_get_length(sent_body));
+
+		if (use_original_body > 0) {
+			evbuffer_drain(sent_body, use_original_body);
+			log_finest_icap_va("Moved use-original-body chunk, use_original_body=%zu, sent_body=%zu", use_original_body, evbuffer_get_length(sent_body));
+
+			size_t *sent_body_size = icap_ctx->reqmod ? &service_ctx->src.sent_body_size : &service_ctx->dst.sent_body_size;
+			*sent_body_size += ICAP_STATE(service_ctx, icap_ctx->reqmod)->body_chunk_len_206;
+
+			// TODO: Check possible underflow? But we always send preview in 206, so sent_body_size should be at least preview_size
+			*sent_body_size -= use_original_body;
+			log_finest_icap_va("Updated sent_body_size=%zu, use_original_body=%zu, body_chunk_len_206=%zu",
+				*sent_body_size, use_original_body, ICAP_STATE(service_ctx, icap_ctx->reqmod)->body_chunk_len_206);
+		}
+
+		ICAP_STATE(service_ctx, icap_ctx->reqmod)->use_original_body = use_original_body;
+		return 1;
+	}
+
+	log_finest_icap("No use-original-body extension found in 206 response");
+	return 0;
 }
 
 static int
@@ -1484,71 +1732,71 @@ icap_extract_body_chunk(icap_service_ctx_t *service_ctx, struct evbuffer *input,
 	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
 	UNUSED pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
 
-	unsigned int has_body = icap_ctx->reqmod ? service_ctx->src.has_body : service_ctx->dst.has_body;
-	if (!has_body) {
-		log_finest("No modified body, content complete");
-		/* Drain the rest since we don't have a body to extract */
-		evbuffer_drain(input, evbuffer_get_length(input));
-		icap_service_content_complete(service_ctx);
-		return 0;
-	}
-
-	int null_body = icap_is_nullbody(service_ctx);
-	if (null_body) {
-		log_finest("Null body indicated by Encapsulated header, mark content complete");
-		evbuffer_drain(input, evbuffer_get_length(input));
-		icap_service_content_complete(service_ctx);
-		return 0;
-	}
-
-	if (evbuffer_get_length(input) == 0) {
-		log_finest("No content left in ICAP response before body chunk");
-		return 0;
-	}
-
-	if (icap_ctx->is_veto) {
-		/* If body exists, save it as the veto page to send to client */
-		if (evbuffer_get_length(input) > 0 && !icap_ctx->veto_page) {
-			icap_ctx->veto_page = evbuffer_new();
-			if (!icap_ctx->veto_page) {
-				log_finest("Failed to allocate veto page buffer");
-				/* Continue processing without veto page - data will be lost */
-			}
-			else {
-				evbuffer_add_buffer(icap_ctx->veto_page, input);
-				log_finest_va("Veto page saved, size=%zu", evbuffer_get_length(icap_ctx->veto_page));
-			}
+	if (icap_is_icap_response_nullbody(service_ctx)) {
+		if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_204 || ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_206) {
+			log_finest_icap_va("No modified body with 204 or 206 response, stream data from sent_body to out_body, 204=%u, 206=%u", 
+				ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_204, ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_206);
+			icap_service_bypass_2046(service_ctx);
 		}
-		else if (icap_ctx->veto_page) {
-			/* Drain remaining input if veto page already exists */
-			log_finest("Veto page already exists, draining remaining input");
+		else {
+			log_finest_icap("No modified body, content complete");
+			/* Drain the rest since we don't have a body to extract */
 			evbuffer_drain(input, evbuffer_get_length(input));
+
+			struct evbuffer *sent_body = icap_ctx->reqmod ? service_ctx->src.sent_body : service_ctx->dst.sent_body;
+			struct evbuffer *out_body = icap_ctx->reqmod ? service_ctx->src.out_body : service_ctx->dst.out_body;
+
+			if (evbuffer_get_length(sent_body) > 0) {
+				// ATTENTION: We have already added existing sent_body in sent_body_size, so do not count it again here
+				// *sent_body_size += evbuffer_get_length(sent_body);
+
+				log_finest_icap_va("Move sent_body to out_body, sent_body=%zu, out_body=%zu", evbuffer_get_length(sent_body), evbuffer_get_length(out_body));
+				evbuffer_add_buffer(out_body, sent_body);
+				icap_ctx->made_progress = 1;
+			}
+
+			icap_service_content_complete(service_ctx);
 		}
 		return 0;
+	}
+
+	if (!status_line && evbuffer_get_length(input) == 0) {
+		log_finest_icap("No content left in ICAP response before body chunk");
+		return 0;
+	}
+
+	if (icap_ctx->is_veto && !icap_ctx->veto_page) {
+		icap_ctx->veto_page = evbuffer_new();
+		if (!icap_ctx->veto_page) {
+			log_finest_icap("Failed to allocate veto page buffer");
+			return -1;
+		}
 	}
 
 	// Now input contains the body, chunked encoded by ICAP.
 
 	size_t *remaining_chunk_size = icap_ctx->reqmod ? &service_ctx->src.remaining_chunk_size : &service_ctx->dst.remaining_chunk_size;
-	log_finest_va("ENTER, *remaining_chunk_size=%zu", *remaining_chunk_size);
+	log_finest_icap_va("ENTER, *remaining_chunk_size=%zu", *remaining_chunk_size);
 
 	struct evbuffer *body_chunk = evbuffer_new();
 	if (!body_chunk) {
-		log_finest("Failed to allocate body_chunk buffer");
+		log_finest_icap("Failed to allocate body_chunk buffer");
 		return -1;
 	}
 
 	if (*remaining_chunk_size > 0) {
-		log_finest_va("BEFORE Remaining chunk size=%zu, input=%zu", *remaining_chunk_size, evbuffer_get_length(input));
+		log_finest_icap_va("BEFORE Remaining chunk size=%zu, input=%zu", *remaining_chunk_size, evbuffer_get_length(input));
 
 		if (status_line) {
 			evbuffer_add(body_chunk, status_line, strlen(status_line));
-			evbuffer_add(body_chunk, eol_size == 1 ? "\n" : "\r\n", eol_size == 1 ? 1 : 2);
-
 			*remaining_chunk_size -= strlen(status_line);
-			*remaining_chunk_size -= eol_size;
 
-			log_finest_va("Remaining chunk_size=%zu, status_line+eol=%zu", *remaining_chunk_size, strlen(status_line)+eol_size);
+			if (eol_size > 0) {
+				evbuffer_add(body_chunk, eol_size == 1 ? "\n" : "\r\n", eol_size == 1 ? 1 : 2);
+				*remaining_chunk_size -= eol_size;
+			}
+
+			log_finest_icap_va("Remaining chunk_size=%zu, status_line+eol=%zu", *remaining_chunk_size, strlen(status_line)+eol_size);
 			status_line = NULL;
 		}
 
@@ -1556,41 +1804,73 @@ icap_extract_body_chunk(icap_service_ctx_t *service_ctx, struct evbuffer *input,
 		// Discard chunk termination
 		evbuffer_drain(input, 2);
 
-		log_finest_va("MOVED Remaining chunk=%zu, input=%zu", *remaining_chunk_size, evbuffer_get_length(input));
+		log_finest_icap_va("MOVED Remaining chunk=%zu, input=%zu", *remaining_chunk_size, evbuffer_get_length(input));
 		*remaining_chunk_size = 0;
 	}
 	else {
-		log_finest_va("NO Remaining chunk size=%zu, input=%zu", *remaining_chunk_size, evbuffer_get_length(input));
+		log_finest_icap_va("NO Remaining chunk size=%zu, input=%zu", *remaining_chunk_size, evbuffer_get_length(input));
 	}
 
 	char *line = status_line ? strdup(status_line) : NULL;
 
-	while (evbuffer_get_length(input) > 0) {
+	while (evbuffer_get_length(input) > 0 || line) {
 		size_t chunk_size = 0;
 
-		struct evbuffer_ptr term_ptr = evbuffer_search(input, "0\r\n\r\n", 5, NULL);
-		if (term_ptr.pos == 0) {
-			log_finest("FOUND ICAP terminator at the beginning of input");
-			evbuffer_drain(input, 5);
-			icap_service_content_complete(service_ctx);
-			if (line) {
+		// TODO: Should we check terminator here
+		// struct evbuffer_ptr term_ptr = evbuffer_search(input, "0\r\n\r\n", 5, NULL);
+		// if (term_ptr.pos == 0) {
+		// 	log_finest_icap("FOUND ICAP terminator at the beginning of input");
+		// 	evbuffer_drain(input, 5);
+		// 	icap_service_content_complete(service_ctx);
+		// 	if (line) {
+		// 		free(line);
+		// 		line = NULL;
+		// 	}
+		// 	break;
+		// }
+		struct evbuffer_ptr term_ptr;
+
+		if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_206) {
+			// line may have "0; " at the beginning
+			if (line && icap_search_206_extension(service_ctx, line)) {
+				// Discard extention terminator
+				evbuffer_drain(input, 2);
 				free(line);
 				line = NULL;
+				eol_size = 0;
 			}
-			break;
+
+			term_ptr = evbuffer_search(input, "0; ", 3, NULL);
+			if (term_ptr.pos == 0) {
+				log_finest_icap("FOUND ICAP 206 terminator at the beginning of input");
+				evbuffer_drain(input, 3);
+
+				// Read the "use-original-body=" line
+				size_t line_eol = 0;
+				char *ext_line = icap_evbuffer_readline(input, &line_eol);
+				if (!ext_line) {
+					log_finest_icap("Failed reading 206 extension line, stop parsing headers");
+					return -1;
+				}
+				if (icap_search_206_extension(service_ctx, ext_line)) {
+					// Discard extention terminator
+					evbuffer_drain(input, 2);
+				}
+				free(ext_line);
+			}
 		}
 
 		if (!line) {
 			size_t line_eol = 0;
 			line = icap_evbuffer_readline(input, &line_eol);
 			if (!line) {
-				log_finest("Incomplete chunk header or EOF");
-				break;
+				log_finest_icap("Failed reading chunk size line");
+				return -1;
 			}
 			eol_size = line_eol;
 		}
 
-		log_finest_va("Chunk size line='%s', CRLF size=%zu", line, eol_size);
+		log_finest_icap_va("Chunk size line='%s', CRLF size=%zu", line, eol_size);
 
 #ifdef DEBUG_PROXY
 		/* Log first 400 bytes for debugging */
@@ -1599,9 +1879,8 @@ icap_extract_body_chunk(icap_service_ctx_t *service_ctx, struct evbuffer *input,
 		char log_buf[401];  // Stack allocation
 		evbuffer_copyout(input, log_buf, log_len);
 		log_buf[log_len] = '\0';
-		// log_finest_va("ICAP response (first %zu bytes, orig %zu bytes): %s", log_len, len, log_buf);
-		log_finest_va("Chunk rest (first %zu bytes, orig %zu bytes): %s", log_len, len, log_buf);
-#endif /* !DEBUG_PROXY */
+		log_finest_icap_va("Chunk rest (first %zu bytes, orig %zu bytes): %s", log_len, len, log_buf);
+#endif /* DEBUG_PROXY */
 
 		// TODO: We assume chunk size is always < 0x100000, Chunk size line may have chunk extensions, but for simplicity we only parse the chunk size and ignore extensions,
 		// since they are not commonly used and we want to avoid parsing complexity and potential errors from malformed chunk extensions.
@@ -1610,22 +1889,20 @@ icap_extract_body_chunk(icap_service_ctx_t *service_ctx, struct evbuffer *input,
 		}
 
 		if (chunk_size == 0) {
-			log_finest_va("End of body chunks, CRLF size=%zu", eol_size);
+			log_finest_icap_va("End of body chunks, CRLF size=%zu", eol_size);
+
+			evbuffer_add(body_chunk, line, strlen(line));
+			if (eol_size > 0) {
+				evbuffer_add(body_chunk, eol_size == 1 ? "\n" : "\r\n", eol_size == 1 ? 1 : 2);
+			}
 
 			struct evbuffer_ptr term_ptr = evbuffer_search(input, "\r\n", 2, NULL);
 			/* If not found, we haven't received the end of the stream yet. */
 			if (term_ptr.pos == 0) {
-				log_finest("FOUND ICAP terminator with end of body chunks");
+				log_finest_icap("FOUND ICAP terminator with end of body chunks");
 				evbuffer_drain(input, 2);
 				icap_service_content_complete(service_ctx);
 			}
-			else {
-				evbuffer_add(body_chunk, line, strlen(line));
-				evbuffer_add(body_chunk, eol_size == 1 ? "\n" : "\r\n", eol_size == 1 ? 1 : 2);
-			}
-			free(line);
-			line = NULL;
-			break;
 		}
 
 		free(line);
@@ -1634,11 +1911,11 @@ icap_extract_body_chunk(icap_service_ctx_t *service_ctx, struct evbuffer *input,
 		if (evbuffer_get_length(input) == 0) {
 			// The last line in the segment was the chunk size line, there is no content after it yet, so save the chunk size.
 			*remaining_chunk_size = chunk_size;
-			log_finest_va("No content left in ICAP response after chunk size line, remaining chunk size=%zu", *remaining_chunk_size);
+			log_finest_icap_va("No content left in ICAP response after chunk size line, remaining chunk size=%zu", *remaining_chunk_size);
 			break;
 		}
 
-		log_finest_va("CURRENT remaining chunk size=%zu, input=%zu", *remaining_chunk_size, evbuffer_get_length(input));
+		log_finest_icap_va("CURRENT remaining chunk size=%zu, input=%zu", *remaining_chunk_size, evbuffer_get_length(input));
 
 		/* Read chunk data */
 		while (chunk_size > 0 && evbuffer_get_length(input) > 0) {
@@ -1648,7 +1925,7 @@ icap_extract_body_chunk(icap_service_ctx_t *service_ctx, struct evbuffer *input,
 			// if (icap_preview_enabled(service_ctx->svc)) {
 			// 	struct evbuffer_ptr term_ptr = evbuffer_search(input, "\r\n0; ieof", 9, NULL);
 			// 	if (term_ptr.pos != -1 && (size_t)term_ptr.pos < chunk_size) {
-			// 		log_finest("Detected merged ieof terminator inside data chunk");
+			// 		log_finest_icap("Detected merged ieof terminator inside data chunk");
 			// 		chunk_size = term_ptr.pos; // Truncate the read to stop before the '0'
 			// 	}
 			// }
@@ -1659,12 +1936,12 @@ icap_extract_body_chunk(icap_service_ctx_t *service_ctx, struct evbuffer *input,
 			if (chunk_size > avail) {
 				*remaining_chunk_size = chunk_size - avail;
 				to_read = avail;
-				log_finest_va("SEGMENTED chunk, remaining=%zu, chunk_size=%zu, avail=%zu, to_read=%zu", *remaining_chunk_size, chunk_size, avail, to_read);
+				log_finest_icap_va("SEGMENTED chunk, remaining=%zu, chunk_size=%zu, avail=%zu, to_read=%zu", *remaining_chunk_size, chunk_size, avail, to_read);
 			}
 			else {
 				to_read = chunk_size;
 				complete = 1;
-				log_finest_va("COMPLETE chunk, remaining=%zu, chunk_size=%zu, avail=%zu, to_read=%zu, input=%zu", *remaining_chunk_size, chunk_size, avail, to_read, evbuffer_get_length(input));
+				log_finest_icap_va("COMPLETE chunk, remaining=%zu, chunk_size=%zu, avail=%zu, to_read=%zu, input=%zu", *remaining_chunk_size, chunk_size, avail, to_read, evbuffer_get_length(input));
 			}
 			
 			/* Move data to body_chunk */
@@ -1675,35 +1952,49 @@ icap_extract_body_chunk(icap_service_ctx_t *service_ctx, struct evbuffer *input,
 			if (complete && evbuffer_get_length(input) > 1) {
 				/* Read trailing "\r\n" after chunk data */
 				evbuffer_drain(input, 2);
-				log_finest_va("DRAIN eol after COMPLETE chunk, input=%zu", evbuffer_get_length(input));
+				log_finest_icap_va("DRAIN eol after COMPLETE chunk, input=%zu", evbuffer_get_length(input));
 			}
 
 			struct evbuffer_ptr term_ptr = evbuffer_search(input, "0\r\n\r\n", 5, NULL);
 			/* If not found, we haven't received the end of the stream yet. */
 			if (term_ptr.pos == 0) {
-				log_finest("FOUND ICAP terminator");
+				log_finest_icap("FOUND ICAP terminator");
 				evbuffer_drain(input, 5);
 				icap_service_content_complete(service_ctx);
 			}
 		}
 
-		log_finest_va("AFTER chunk processing, input=%zu", evbuffer_get_length(input));
+		log_finest_icap_va("AFTER chunk processing, input=%zu", evbuffer_get_length(input));
 	}
 
-	log_finest_va("Extracted %zu bytes of unchunked body, input=%zu", evbuffer_get_length(body_chunk), evbuffer_get_length(input));
+	size_t body_chunk_len = evbuffer_get_length(body_chunk);
+	log_finest_icap_va("Extracted %zu bytes of unchunked body, input=%zu", body_chunk_len, evbuffer_get_length(input));
 
-	struct evbuffer *out_body = icap_ctx->reqmod ? service_ctx->src.out_body : service_ctx->dst.out_body;
-
-	// TODO: Move this if condition to the beginning of the function and skip all the chunk parsing if we have an inspect service
-	if (service_ctx->svc->type == ICAP_SERVICE_MODIFY) {
-		log_finest_va("Update body with modify service, out_body=%zu, body_chunk=%zu", evbuffer_get_length(out_body), evbuffer_get_length(body_chunk));
-		evbuffer_add_buffer(out_body, body_chunk);
+	struct evbuffer *outbuf = NULL;
+	if (icap_ctx->is_veto) {
+		outbuf = icap_ctx->veto_page;
+		log_finest_icap_va("Save body to veto page, out_body=%zu, body_chunk=%zu", evbuffer_get_length(outbuf), body_chunk_len);
 	}
 	else {
-		evbuffer_drain(input, evbuffer_get_length(input));
-		struct evbuffer *sent_body = icap_ctx->reqmod ? service_ctx->src.sent_body : service_ctx->dst.sent_body;
-		log_finest_va("Do not update body with inspect service, move sent to out, sent_body=%zu", evbuffer_get_length(sent_body));
-		evbuffer_remove_buffer(sent_body, out_body, evbuffer_get_length(sent_body));
+		outbuf = icap_ctx->reqmod ? service_ctx->src.out_body : service_ctx->dst.out_body;
+		log_finest_icap_va("Update body, out_body=%zu, body_chunk=%zu", evbuffer_get_length(outbuf), body_chunk_len);
+	}
+
+	evbuffer_add_buffer(outbuf, body_chunk);
+
+	if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_206) {
+		if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->use_original_body > 0) {
+			size_t *sent_body_size = icap_ctx->reqmod ? &service_ctx->src.sent_body_size : &service_ctx->dst.sent_body_size;
+			log_finest_icap_va("Update sent_body_size=%zu, body_chunk=%zu", *sent_body_size, body_chunk_len);
+			*sent_body_size += body_chunk_len;
+		}
+		else {
+			// Wait for 206 response to tell us whether we should use original body or not
+			log_finest_icap_va("Update body_chunk_len_206=%zu, body_chunk=%zu", ICAP_STATE(service_ctx, icap_ctx->reqmod)->body_chunk_len_206, body_chunk_len);
+			ICAP_STATE(service_ctx, icap_ctx->reqmod)->body_chunk_len_206 += body_chunk_len;
+		}
+
+		icap_service_bypass_2046(service_ctx);
 	}
 
 	evbuffer_free(body_chunk);
@@ -1728,16 +2019,12 @@ icap_handle_chain_continuation(icap_service_ctx_t *service_ctx, icap_ctx_t *icap
 
 	/* Move to the next service in the chain or resume connection */
 	if ((icap_ctx->current_service_idx + 1) >= icap_ctx->service_count) {
-		log_finest_va("ICAP service chain finished for %s, %s", 
-			icap_ctx->reqmod ? "REQMOD" : "RESPMOD",
-			service_ctx->svc->type == ICAP_SERVICE_MODIFY ? "ICAP_SERVICE_MODIFY" : "ICAP_SERVICE_INSPECT");
+		log_finest_icap("ICAP service chain finished");
 		icap_send_data(ctx->icap_ctx);
 		return;
 	}
 
-	log_finest_va("Current service done for now, %s, %s, service_count=%d, current_service_idx=%d",
-		icap_ctx->reqmod ? "REQMOD" : "RESPMOD",
-		service_ctx->svc->type == ICAP_SERVICE_MODIFY ? "ICAP_SERVICE_MODIFY" : "ICAP_SERVICE_INSPECT",
+	log_finest_icap_va("Current service done for now, service_count=%d, current_service_idx=%d",
 		icap_ctx->service_count, icap_ctx->current_service_idx);
 
 	icap_advance_to_next_service(service_ctx);
@@ -1753,8 +2040,7 @@ icap_service_bypass(icap_service_ctx_t *service_ctx, struct evbuffer *input)
 
 	int content_complete = 0;
 
-	int null_body = icap_is_nullbody(service_ctx);
-	if (null_body) {
+	if (icap_is_nullbody(service_ctx)) {
 		log_finest("Content complete: null-body");
 		content_complete = 1;
 	}
@@ -1774,9 +2060,9 @@ icap_service_bypass(icap_service_ctx_t *service_ctx, struct evbuffer *input)
 
 	struct evbuffer *sent_hdr = icap_ctx->reqmod ? service_ctx->src.sent_hdr : service_ctx->dst.sent_hdr;
 	struct evbuffer *out_hdr = icap_ctx->reqmod ? service_ctx->src.out_hdr : service_ctx->dst.out_hdr;
-	log_finest_va("Move sent_hdr to out_hdr with inspect service, sent_hdr=%zu", evbuffer_get_length(sent_hdr));
+	log_finest_icap_va("Move sent_hdr to out_hdr, sent_hdr=%zu, out_hdr=%zu", evbuffer_get_length(sent_hdr), evbuffer_get_length(out_hdr));
 
-	// TODO: Check if we need to update sent_hdr_size for inspect service, since we may need it for correct content_complete detection
+	// TODO: Check if we need to update sent_hdr_size, since we may need it for correct content_complete detection
 	// size_t *sent_hdr_size = icap_ctx->reqmod ? &service_ctx->src.sent_hdr_size : &service_ctx->dst.sent_hdr_size;
 	// *sent_hdr_size += evbuffer_get_length(sent_hdr);
 
@@ -1785,9 +2071,9 @@ icap_service_bypass(icap_service_ctx_t *service_ctx, struct evbuffer *input)
 		icap_ctx->made_progress = 1;
 	}
 
-	// TODO: Check if we need to move in_hdr to out_hdr for inspect service, since we may need it for correct content_complete detection
+	// TODO: Check if we need to move in_hdr to out_hdr, since we may need it for correct content_complete detection
 	// struct evbuffer *in_hdr = icap_ctx->reqmod ? service_ctx->src.in_hdr : service_ctx->dst.in_hdr;
-	// log_finest_va("Move in_hdr to out_hdr with inspect service, in_hdr=%zu", evbuffer_get_length(in_hdr));
+	// log_finest_icap_va("Move in_hdr to out_hdr, in_hdr=%zu", evbuffer_get_length(in_hdr));
 
 	// *sent_hdr_size += evbuffer_get_length(in_hdr);
 
@@ -1795,7 +2081,7 @@ icap_service_bypass(icap_service_ctx_t *service_ctx, struct evbuffer *input)
 
 	struct evbuffer *sent_body = icap_ctx->reqmod ? service_ctx->src.sent_body : service_ctx->dst.sent_body;
 	struct evbuffer *out_body = icap_ctx->reqmod ? service_ctx->src.out_body : service_ctx->dst.out_body;
-	log_finest_va("Move sent_body to out_body with inspect service, sent_body=%zu", evbuffer_get_length(sent_body));
+	log_finest_icap_va("Move sent_body to out_body, sent_body=%zu, out_body=%zu", evbuffer_get_length(sent_body), evbuffer_get_length(out_body));
 
 	// size_t *sent_body_size = icap_ctx->reqmod ? &service_ctx->src.sent_body_size : &service_ctx->dst.sent_body_size;
 	// *sent_body_size += evbuffer_get_length(sent_body);
@@ -1806,7 +2092,7 @@ icap_service_bypass(icap_service_ctx_t *service_ctx, struct evbuffer *input)
 	}
 
 	// struct evbuffer *in_body = icap_ctx->reqmod ? service_ctx->src.in_body : service_ctx->dst.in_body;
-	// log_finest_va("Move in_body to out_body with inspect service, in_body=%zu", evbuffer_get_length(in_body));
+	// log_finest_icap_va("Move in_body to out_body, in_body=%zu", evbuffer_get_length(in_body));
 
 	// *sent_body_size += evbuffer_get_length(in_body);
 
@@ -1830,13 +2116,12 @@ icap_bev_readcb(struct bufferevent *bev, void *arg)
 	int received_icap_headers = icap_ctx->reqmod ? service_ctx->src.received_icap_headers : service_ctx->dst.received_icap_headers;
 
 	struct evbuffer *input = bufferevent_get_input(bev);
-	log_finest_va("ENTER for %s, inbuf=%zu, service idx=%d, received_icap_headers=%d", icap_ctx->reqmod ? "REQMOD" : "RESPMOD",
-		evbuffer_get_length(input), service_ctx->idx, received_icap_headers);
+	log_finest_icap_va("ENTER, inbuf=%zu, received_icap_headers=%d", evbuffer_get_length(input), received_icap_headers);
 
 	if (!received_icap_headers) {
 		struct evbuffer_ptr ptr = evbuffer_search(input, "\r\n\r\n", 4, NULL);
 		if (ptr.pos == -1) {
-			log_finest("Waiting for complete ICAP headers");
+			log_finest_icap("Waiting for complete ICAP headers");
 			return;
 		}
 
@@ -1850,14 +2135,14 @@ icap_bev_readcb(struct bufferevent *bev, void *arg)
 	char log_buf[401];  // Stack allocation
 	evbuffer_copyout(input, log_buf, log_len);
 	log_buf[log_len] = '\0';
-	log_finest_va("ICAP response (first %zu bytes, orig %zu bytes): %s", log_len, len, log_buf);
-#endif /* !DEBUG_PROXY */
+	log_finest_icap_va("ICAP response (first %zu bytes, orig %zu bytes): %s", log_len, len, log_buf);
+#endif /* DEBUG_PROXY */
 
 	char *status_line = NULL;
 
 	struct evbuffer_ptr term_ptr = evbuffer_search(input, "0\r\n\r\n", 5, NULL);
 	if (term_ptr.pos == 0) {
-		log_finest("FOUND ICAP terminator at the beginning of input");
+		log_finest_icap("FOUND ICAP terminator at the beginning of input");
 		evbuffer_drain(input, 5);
 		icap_service_content_complete(service_ctx);
 		goto out;
@@ -1867,102 +2152,122 @@ icap_bev_readcb(struct bufferevent *bev, void *arg)
 	size_t eol_size = 0;
 	status_line = icap_evbuffer_readline(input, &eol_size);
 	if (!status_line) {
-		log_finest("Incomplete headers");
-		icap_handle_service_error(service_ctx);
-		goto out;
+		log_finest_icap("Failed reading status line");
+		goto err;
 	}
-	log_finest_va("EOL size=%zu, status_line len=%zu", eol_size, strlen(status_line));
+
+	log_finest_icap_va("EOL size=%zu, status_line len=%zu", eol_size, strlen(status_line));
 
 	/* Check for response code - use strncmp for proper prefix matching */
 	if (strncmp(status_line, "ICAP/1.0 200", 12) == 0) {
-		log_finest("ICAP 200 OK - body modified, extracting...");
+		log_finest_icap("ICAP 200 OK - body modified, extracting...");
 
 		if (icap_extract_icap_headers(service_ctx, input) == -1) {
-			evbuffer_drain(input, evbuffer_get_length(input));
-			icap_handle_service_error(service_ctx);
+			goto err;
+		}
+
+		// TODO: Is this possible in real world and do we need to handle it?
+		// if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_204) {
+		// 	log_finest_icap("Received 200 OK with previous 204 No Content, streaming data");
+		// 	icap_service_bypass_2046(service_ctx);
+		// 	goto out;
+		// }
+
+		// TODO: Make sure it is fine to pass NULL and 0 as status_line and eol_size pointers, as we dereference them in icap_extract_http_headers()
+		int rv = 0;
+		if ((rv = icap_extract_http_headers(service_ctx, input, NULL, 0)) < 1) {
+			if (rv == -1) {
+				goto err;
+			}
 			goto out;
 		}
 
-		if (service_ctx->svc->type == ICAP_SERVICE_MODIFY) {
-			// TODO: Make sure it is fine to pass NULL and 0 as status_line and eol_size pointers, as we dereference them in icap_extract_http_headers()
-			if (icap_extract_http_headers(service_ctx, input, NULL, 0) == 0) {
-				goto out;
-			}
-
-			if (icap_extract_body_chunk(service_ctx, input, NULL, 0) == -1) {
-				evbuffer_drain(input, evbuffer_get_length(input));
-				icap_handle_service_error(service_ctx);
-			}
+		if (icap_extract_body_chunk(service_ctx, input, NULL, 0) == -1) {
+			goto err;
 		}
-		else {
-			icap_service_bypass(service_ctx, input);
+	}
+	else if (strncmp(status_line, "ICAP/1.0 206", 12) == 0) {
+		log_finest_icap("ICAP 206 Partial Content - body modified, extracting...");
+		ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_206 = 1;
+
+		if (icap_extract_icap_headers(service_ctx, input) == -1) {
+			goto err;
+		}
+
+		int rv = 0;
+		if ((rv = icap_extract_http_headers(service_ctx, input, NULL, 0)) < 1) {
+			if (rv == -1) {
+				goto err;
+			}
+			goto out;
+		}
+
+		if (icap_extract_body_chunk(service_ctx, input, NULL, 0) == -1) {
+			goto err;
 		}
 	}
 	else if (strncmp(status_line, "ICAP/1.0 204", 12) == 0) {
-		log_finest("ICAP 204 No Content - no modification needed, bypassing");
+		log_finest_icap("ICAP 204 No Content - no modification needed, bypassing");
 		if (icap_extract_icap_headers(service_ctx, input) == -1) {
-			evbuffer_drain(input, evbuffer_get_length(input));
-			icap_handle_service_error(service_ctx);
-			goto out;
+			goto err;
 		}
 		icap_service_bypass(service_ctx, input);
 	}
 	else if (strncmp(status_line, "ICAP/1.0 100", 12) == 0) {
 		/* Drain the entire 100 Continue response (including trailing CRLFs) */
-		log_finest_va("ICAP 100 Continue, drain eol, input=%zu", evbuffer_get_length(input));
+		log_finest_icap_va("ICAP 100 Continue, drain eol, input=%zu", evbuffer_get_length(input));
 		evbuffer_drain(input, eol_size);
 
 		if (icap_preview_enabled(service_ctx->svc)) {
-			log_finest_va("Reset wait for ICAP 100 preview continue, idx=%d", service_ctx->idx);
+			log_finest_icap_va("Reset wait for ICAP 100 preview continue, idx=%d", service_ctx->idx);
 			ICAP_STATE(service_ctx, icap_ctx->reqmod)->wait_preview_continue = 0;
 
-			log_finest("Preview accepted, sending remainder");
+			log_finest_icap("Preview accepted, sending remainder");
 			/* Send the remainder of the body */
 			int rv = icap_build_request(service_ctx);
 			if (rv < 0) {
-				log_finest_va("ICAP failed to build and send request to %s", service_ctx->svc->server);
-				icap_handle_service_error(service_ctx);
+				log_finest_icap_va("ICAP failed to build and send request to %s", service_ctx->svc->server);
+				goto err;
 			}
 			else if (rv == 0) {
-				log_finest_va("ICAP %s request sent to %s", icap_ctx->reqmod ? "REQMOD" : "RESPMOD", service_ctx->svc->server);
+				log_finest_icap_va("ICAP request sent to %s", service_ctx->svc->server);
 			}
 		}
 		else {
-			log_finest("Received 100 Continue when preview not enabled, treating as error");
-			icap_handle_service_error(service_ctx);
+			log_finest_icap("Received 100 Continue when preview not enabled, treating as error");
+			goto err;
 		}
 	}
 	else if ((strncmp(status_line, "ICAP/1.0 4", 10) == 0) || (strncmp(status_line, "ICAP/1.0 5", 10) == 0)) {
-		log_finest_va("ICAP server returned error response: %s", status_line);
-		evbuffer_drain(input, evbuffer_get_length(input));
-		icap_handle_service_error(service_ctx);
+		log_finest_icap_va("ICAP server returned error response: %s", status_line);
+		goto err;
 	}
 	else {
-		log_finest_va("No status code in ICAP response, assume hdr/body stream: %s", status_line);
+		log_finest_icap_va("No status code in ICAP response, assume hdr/body stream: %s", status_line);
 
-		// Do not extract icap headers, because it reads line by evbuffer_readln(input, NULL, EVBUFFER_EOL_CRLF))
+		// Do not extract icap headers, because it reads and removes the status line from input
 		// and we must have already extracted headers by now
-		if (service_ctx->svc->type == ICAP_SERVICE_MODIFY) {
-			if (!ICAP_STATE(service_ctx, icap_ctx->reqmod)->received_icap_headers) {
-				log_finest_va("Have not received ICAP headers yet, treating as error, input=%zu, idx=%d", evbuffer_get_length(input), service_ctx->idx);
-				icap_handle_service_error(service_ctx);
-				goto out;
-			}
-
-			if (icap_extract_http_headers(service_ctx, input, &status_line, &eol_size) == 0) {
-				goto out;
-			}
-
-			if (icap_extract_body_chunk(service_ctx, input, status_line, eol_size) == -1) {
-				evbuffer_drain(input, evbuffer_get_length(input));
-				icap_handle_service_error(service_ctx);
-			}
+		if (!ICAP_STATE(service_ctx, icap_ctx->reqmod)->received_icap_headers) {
+			log_finest_icap_va("Have not received ICAP headers yet, treating as error, input=%zu", evbuffer_get_length(input));
+			goto err;
 		}
-		else {
-			icap_service_bypass(service_ctx, input);
+
+		int rv = 0;
+		if ((rv = icap_extract_http_headers(service_ctx, input, &status_line, &eol_size)) < 1) {
+			if (rv == -1) {
+				goto err;
+			}
+			goto out;
+		}
+
+		if (icap_extract_body_chunk(service_ctx, input, status_line, eol_size) == -1) {
+			goto err;
 		}
 	}
-
+	goto out;
+err:
+	evbuffer_drain(input, evbuffer_get_length(input));
+	icap_handle_service_error(service_ctx);
 out:
 	// icap_extract_http_headers() frees status_line after consuming it
 	if (status_line) {
@@ -1984,7 +2289,7 @@ icap_bev_writecb(UNUSED struct bufferevent *bev, UNUSED void *arg)
 	icap_service_ctx_t *service_ctx = (icap_service_ctx_t *)arg;
 	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
 	UNUSED pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
-	log_finest_va("ICAP write callback called for %s", icap_ctx->reqmod ? "REQMOD" : "RESPMOD");
+	log_finest_icap("ICAP write callback called");
 }
 
 /*
@@ -2042,15 +2347,15 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 	size_t in_hdr_len = evbuffer_get_length(in_hdr);
 	size_t in_body_len = evbuffer_get_length(in_body);
 
-	log_finest_va("ENTER reqmod=%d, in_hdr_len=%zu, in_body_len=%zu", icap_ctx->reqmod, in_hdr_len, in_body_len);
+	log_finest_icap_va("ENTER, in_hdr_len=%zu, in_body_len=%zu", in_hdr_len, in_body_len);
 
 	if (service_ctx->failopen) {
-		log_finest_va("ICAP service in failopen state, idx=%d", service_ctx->idx);
+		log_finest_icap("ICAP service in failopen state");
 		return -1;
 	}
 
 	if (in_hdr_len == 0 && in_body_len == 0) {
-		log_finest_va("NO hdr or body to send, wait for data, in_hdr_len=%zu, in_body_len=%zu, idx=%d", in_hdr_len, in_body_len, service_ctx->idx);
+		log_finest_icap_va("NO hdr or body to send, wait for data, in_hdr_len=%zu, in_body_len=%zu", in_hdr_len, in_body_len);
 		return 1;
 	}
 
@@ -2072,7 +2377,7 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 		int null_body = icap_is_nullbody(service_ctx);
 
 		if (!null_body && in_body_len == 0) {
-			log_finest_va("NOT null body but no body yet, do not send icap headers, wait for body, in_hdr_len=%zu, idx=%d", in_hdr_len, service_ctx->idx);
+			log_finest_icap_va("NOT null body but no body yet, do not send icap headers, wait for body, in_hdr_len=%zu", in_hdr_len);
 			return 1;
 		}
 
@@ -2094,7 +2399,7 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 
 			if (icap_max_body_size_enabled(service_ctx)) {
 				if (preview_size > service_ctx->svc->max_body_size) {
-					log_finest_va("Max body size enabled, truncating preview size, preview_size=%zu, max_body_size=%zu", preview_size, service_ctx->svc->max_body_size);
+					log_finest_icap_va("Max body size enabled, truncating preview size, preview_size=%zu, max_body_size=%zu", preview_size, service_ctx->svc->max_body_size);
 					preview_size = service_ctx->svc->max_body_size;
 				}
 			}
@@ -2104,20 +2409,20 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 			}
 
 			snprintf(preview_hdr, sizeof(preview_hdr), "Preview: %zu\r\n", preview_size);
-			log_finest_va("Adding Preview header: %zu bytes, content_complete=%d", preview_size, content_complete);
+			log_finest_icap_va("Adding Preview header: %zu bytes, content_complete=%d", preview_size, content_complete);
 		}
 
 		char *echo_hdr = NULL;
 		if (!reqmod && service_ctx->echo_header) {
 			echo_hdr = service_ctx->echo_header;
-			log_finest_va("Adding echo header: %s", echo_hdr);
+			log_finest_icap_va("Adding echo header: %s", echo_hdr);
 		}
 
 		snprintf(icap_hdr_str, sizeof(icap_hdr_str),
 			"%s icap://%s/%s ICAP/1.0\r\n"
 			"Host: %s\r\n"
 			"User-Agent: SSLproxy\r\n"
-			"Allow: 204\r\n"
+			"Allow: 204, 206\r\n"
 			"%s%s"
 			"%s"
 			"Encapsulated: %s\r\n",
@@ -2136,7 +2441,7 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 			return -1;
 		}
 
-		log_finest_va("Generated ICAP Header: %s", icap_hdr_str);
+		log_finest_icap_va("Generated ICAP Header: %s", icap_hdr_str);
 		evbuffer_add(icap_buf, icap_hdr_str, strlen(icap_hdr_str));
 
 		/* Add standard X-headers */
@@ -2157,21 +2462,21 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 		}
 		evbuffer_free(icap_buf);
 
-		if (icap_preview_enabled(service_ctx->svc) && in_body_len > 0) {
-			log_finest_va("Set wait for ICAP 100 preview continue, idx=%d", service_ctx->idx);
+		if (icap_preview_enabled(service_ctx->svc) && in_body_len > 0 && !content_complete) {
+			log_finest_icap("Set wait for ICAP 100 preview continue");
 			ICAP_STATE(service_ctx, icap_ctx->reqmod)->wait_preview_continue = 1;
 		}
 	}
 	else {
-		log_finest_va("Do not send ICAP header, already sent, sent_hdr_size=%zu, sent_body_size=%zu", sent_hdr_size, sent_body_size);
+		log_finest_icap_va("Do not send ICAP header, already sent, sent_hdr_size=%zu, sent_body_size=%zu", sent_hdr_size, sent_body_size);
 	}
 
 	/* 2. Send Headers (HTTP only) */
 	if (ctx->spec->http && in_hdr_len > 0) {
-		log_finest_va("Sending HTTP headers to ICAP server, in_hdr_len=%zu", in_hdr_len);
+		log_finest_icap_va("Sending HTTP headers to ICAP server, in_hdr_len=%zu", in_hdr_len);
 
 		if (icap_evbuffer_write_bev(bev, in_hdr, in_hdr_len) < 0) {
-			log_finest("Failed to write ICAP headers");
+			log_finest_icap("Failed to write ICAP headers");
 			return -1;
 		}
 
@@ -2180,7 +2485,7 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 		size_t *sent_hdr_size_new = icap_ctx->reqmod ? &service_ctx->src.sent_hdr_size : &service_ctx->dst.sent_hdr_size;
 		*sent_hdr_size_new += in_hdr_len;
 
-		log_finest_va("Moved in_hdr to sent_hdr, in_hdr=%zu, sent_hdr=%zu, sent_hdr_size=%zu", evbuffer_get_length(in_hdr), evbuffer_get_length(sent_hdr), *sent_hdr_size_new);
+		log_finest_icap_va("Moved in_hdr to sent_hdr, in_hdr=%zu, sent_hdr=%zu, sent_hdr_size=%zu", evbuffer_get_length(in_hdr), evbuffer_get_length(sent_hdr), *sent_hdr_size_new);
 		icap_ctx->made_progress = 1;
 	}
 
@@ -2189,28 +2494,28 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 		/* Format as chunked for ICAP */
 		struct evbuffer *chunk_buf = evbuffer_new();
 		if (!chunk_buf) {
-			log_finest("Failed to allocate chunk buffer for body");
+			log_finest_icap("Failed to allocate chunk buffer for body");
 			return -1;
 		}
 
 		size_t chunk_len = in_body_len;
 
 		if (icap_preview_enabled(service_ctx->svc) && sent_body_size == 0) {
-			chunk_len = preview_size;
-			log_finest_va("Sending body preview to ICAP server, in_body_len=%zu, chunk_len=%zu, preview_size=%zu", in_body_len, chunk_len, service_ctx->svc->preview_size);
+			chunk_len = in_body_len < service_ctx->svc->preview_size ? in_body_len : preview_size;
+			log_finest_icap_va("Sending body preview to ICAP service, in_body_len=%zu, chunk_len=%zu, preview_size=%zu", in_body_len, chunk_len, service_ctx->svc->preview_size);
 		}
 
 		if (icap_max_body_size_enabled(service_ctx)) {
 			if (chunk_len > service_ctx->svc->max_body_size) {
 				chunk_len = service_ctx->svc->max_body_size;
-				log_finest_va("Max body size enabled, truncating body chunk, in_body_len=%zu, chunk_len=%zu, max_body_size=%zu", in_body_len, chunk_len, service_ctx->svc->max_body_size);
+				log_finest_icap_va("Max body size enabled, truncating body chunk, in_body_len=%zu, chunk_len=%zu, max_body_size=%zu", in_body_len, chunk_len, service_ctx->svc->max_body_size);
 			}
 		}
 
 		evbuffer_add_printf(chunk_buf, "%zx\r\n", chunk_len);
 
 		if (icap_evbuffer_add_evbuf(chunk_buf, in_body, chunk_len) < 0) {
-			log_finest("Failed to add ICAP body data to chunk buffer");
+			log_finest_icap("Failed to add ICAP body data to chunk buffer");
 			evbuffer_free(chunk_buf);
 			return -1;
 		}
@@ -2218,41 +2523,46 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 		// TODO: Check if service config is fail-open before copying
 		// Make a copy of sent data, to use for fail-open in case the service errors out
 		// struct evbuffer *sent_body = icap_ctx->reqmod ? service_ctx->src.sent_body : service_ctx->dst.sent_body;
-		log_finest_va("Moving in_body to sent_body, in_body=%zu, sent_body=%zu", evbuffer_get_length(in_body), evbuffer_get_length(sent_body));
+		log_finest_icap_va("Moving in_body to sent_body, in_body=%zu, sent_body=%zu, chunk_len=%zu", evbuffer_get_length(in_body), evbuffer_get_length(sent_body), chunk_len);
 		evbuffer_remove_buffer(in_body, sent_body, chunk_len);
 
 		evbuffer_add_printf(chunk_buf, "\r\n");
 
 		size_t *sent_body_size_new = icap_ctx->reqmod ? &service_ctx->src.sent_body_size : &service_ctx->dst.sent_body_size;
 		*sent_body_size_new += chunk_len;
-		log_finest_va("Updated sent_body_size=%zu, chunk_len=%zu, idx=%d", *sent_body_size_new, chunk_len, service_ctx->idx);
+		log_finest_icap_va("Updated sent_body_size=%zu, chunk_len=%zu", *sent_body_size_new, chunk_len);
 
-		log_finest_va("Sending body chunk to ICAP server, sent_body_size=%zu, sent_body=%zu", *sent_body_size_new, evbuffer_get_length(sent_body));
+		log_finest_icap_va("Sending body chunk to ICAP server, sent_body_size=%zu, sent_body=%zu", *sent_body_size_new, evbuffer_get_length(sent_body));
 
 		size_t http_content_length = icap_get_http_content_length(icap_ctx);
-		log_finest_va("Checking if HTTP content complete, sent_body_size=%zu, http_content_length=%zu", *sent_body_size_new, http_content_length);
+		log_finest_icap_va("Checking if HTTP content complete, sent_body_size=%zu, http_content_length=%zu", *sent_body_size_new, http_content_length);
 		if (*sent_body_size_new >= http_content_length) {
 			content_complete = 1;
 		}
 
 		if (icap_preview_enabled(service_ctx->svc) && sent_hdr_size == 0 && sent_body_size == 0) {
-			log_finest_va("Terminating preview, sent_hdr=%zu, sent_body=%zu, content_complete=%d", evbuffer_get_length(sent_hdr), evbuffer_get_length(sent_body), content_complete);
+			log_finest_icap_va("Terminating preview, sent_hdr=%zu, sent_body=%zu, content_complete=%d", evbuffer_get_length(sent_hdr), evbuffer_get_length(sent_body), content_complete);
 			// 0; ieof\r\n\r\n is a mechanism to signal the early end of a message body: preview >= in_body_len
 			evbuffer_add_printf(chunk_buf, content_complete ? "0; ieof\r\n\r\n" : "0\r\n\r\n");
 		}
 		else if (content_complete) {
-			log_finest_va("Content complete, adding terminator, preview_enabled=%d, sent_hdr=%zu, sent_body=%zu",
+			log_finest_icap_va("Content complete, adding terminator, preview_enabled=%d, sent_hdr=%zu, sent_body=%zu",
 				icap_preview_enabled(service_ctx->svc), evbuffer_get_length(sent_hdr), evbuffer_get_length(sent_body));
 			evbuffer_add_printf(chunk_buf, "0\r\n\r\n");
 		}
 
 		if (bufferevent_write_buffer(bev, chunk_buf) < 0) {
-			log_finest("Failed to send ICAP body chunk");
+			log_finest_icap("Failed to send ICAP body chunk");
 			evbuffer_free(chunk_buf);
 			return -1;
 		}
 		evbuffer_free(chunk_buf);
 
+		// ATTENTION: Do not set content_complete here, wait for icap service response, otherwise terminates the connection too early
+		// if (content_complete && sent_hdr_size == 0 && sent_body_size == 0) {
+		// 	log_finest_icap("Content complete after sending first body chunk, set flag");
+		// 	ICAP_STATE(service_ctx, icap_ctx->reqmod)->content_complete = 1;
+		// }
 		icap_ctx->made_progress = 1;
 	}
 
@@ -2269,40 +2579,36 @@ icap_bev_eventcb(UNUSED struct bufferevent *bev, short events, void *arg)
 	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
 	UNUSED pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
 
-	log_finest_va("ICAP event 0x%x for %s, idx=%d", events, icap_ctx->reqmod ? "REQMOD" : "RESPMOD", service_ctx->idx);
+	log_finest_icap_va("ICAP event 0x%x", events);
 
 	if (events & BEV_EVENT_CONNECTED) {
-		log_finest_va("ICAP connected to %s, sending request", service_ctx->svc->server);
+		log_finest_icap_va("ICAP connected to %s, sending request", service_ctx->svc->server);
 
 		int rv = icap_build_request(service_ctx);
 		if (rv < 0) {
-			log_finest_va("ICAP failed to build and send request to %s", service_ctx->svc->server);
-			icap_handle_service_error(service_ctx);
-			return;
+			log_finest_icap_va("ICAP failed to build and send request to %s", service_ctx->svc->server);
+			goto err;
 		}
 		else if (rv == 0) {
-			log_finest_va("ICAP %s request sent to %s", icap_ctx->reqmod ? "REQMOD" : "RESPMOD", service_ctx->svc->server);
+			log_finest_icap_va("ICAP request sent to %s", service_ctx->svc->server);
 		}
 		return;
 	}
 
+	// events can have multiple flags set, so check each flag separately
 	if (events & BEV_EVENT_ERROR) {
-		log_finest("ICAP connection error");
-		icap_handle_service_error(service_ctx);
-		return;
+		log_finest_icap("ICAP connection error");
 	}
 
 	if (events & BEV_EVENT_EOF) {
-		log_finest("ICAP connection closed (eof)");
-		icap_handle_service_error(service_ctx);
-		return;
+		log_finest_icap("ICAP connection closed (eof)");
 	}
 
 	if (events & BEV_EVENT_TIMEOUT) {
-		log_finest("ICAP connection timeout");
-		icap_handle_service_error(service_ctx);
-		return;
+		log_finest_icap("ICAP connection timeout");
 	}
+err:
+	icap_handle_service_error(service_ctx);
 }
 
 static void
@@ -2323,11 +2629,8 @@ icap_process_chain_cb(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 	/* Check for Veto: abort chain immediately if a previous service blocked the content */
 	if (icap_ctx->is_veto) {
 		log_finest("ICAP Veto detected in chain, aborting remaining services");
-		// TODO: Find the svc who vetoed and use their fail_mode instead of defaulting to fail-open
-		// But we should send the veto page if available, hence do not terminate the flow: ICAP_FAIL_OPEN
-		// icap_disconnect() checks for ICAP_STATE_ERROR too and will terminate if fail_mode is closed
-		// TODO: If veto detected, what state should we pass to icap_disconnect()?
-		icap_disconnect(icap_ctx);
+		// Go to the last service to send the veto page
+		icap_handle_chain_continuation(icap_ctx->services[icap_ctx->service_count - 1], ctx->icap_ctx);
 		return;
 	}
 
@@ -2343,8 +2646,10 @@ icap_process_chain_cb(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 	}
 
 	unsigned int wait_preview_continue = icap_ctx->reqmod ? service_ctx->src.wait_preview_continue : service_ctx->dst.wait_preview_continue;
+	// TODO: Do we need to check detected_204 here to bypass waiting for preview continue?
+	// if (!wait_preview_continue || ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_204) {
 	if (!wait_preview_continue) {
-		log_finest_va("Triggering service, idx=%d, server=%s", service_idx, service_ctx->svc->server);
+		log_finest_icap_va("Triggering service, server=%s", service_ctx->svc->server);
 
 		if (icap_service_connect(service_ctx) < 0) {
 			icap_handle_service_error(service_ctx);
@@ -2352,11 +2657,17 @@ icap_process_chain_cb(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 	}
 	else {
 		if (service_ctx->failopen) {
-			log_finest_va("Preview enabled but service in fail-open, failopen to next service, idx=%d", service_ctx->idx);
+			log_finest_icap("Preview enabled but service in fail-open, failopen to next service");
 			icap_failopen_to_next_service(service_ctx);
 		}
 		else {
-			log_finest_va("Wait for ICAP 100 preview continue, proceed to next service, idx=%d", service_ctx->idx);
+			log_finest_icap("Wait for ICAP 100 preview continue, proceed to next service");
+
+			if (icap_is_icap_response_nullbody(service_ctx) && (ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_204 || ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_206)) {
+				log_finest_icap_va("Preview mode with 204 or 206, streaming data, 204=%d, 206=%d",
+					ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_204, ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_206);
+				icap_service_bypass_2046(service_ctx);
+			}
 		}
 	}
 
@@ -2440,6 +2751,11 @@ icap_is_content_complete(icap_ctx_t *icap_ctx, int reqmod)
 {
 	UNUSED pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
 
+	if (icap_ctx->is_veto && icap_ctx->sent_veto_page) {
+		log_finest("Veto page sent, assume all content COMPLETE");
+		return 1;
+	}
+
 	for (int i = 0; i < icap_ctx->service_count; i++) {
 		if (icap_ctx->services[i]) {
 			unsigned int content_complete = reqmod ? icap_ctx->services[i]->src.content_complete : icap_ctx->services[i]->dst.content_complete;
@@ -2467,14 +2783,36 @@ icap_process_done(struct evbuffer *inbuf, struct evbuffer *outbuf, icap_ctx_t *i
 	struct evbuffer *out_hdr = icap_ctx->reqmod ? service_ctx->src.out_hdr : service_ctx->dst.out_hdr;
 	struct evbuffer *out_body = icap_ctx->reqmod ? service_ctx->src.out_body : service_ctx->dst.out_body;
 
-	log_finest_va("%s data ICAP inbuf=%zu, outbuf=%zu, out_hdr=%zu, out_body=%zu, is_veto=%d",
-		reqmod ? "REQMOD" : "RESPMOD",
+	log_finest_icap_va("ENTER, inbuf=%zu, outbuf=%zu, out_hdr=%zu, out_body=%zu, is_veto=%d",
 		evbuffer_get_length(inbuf), evbuffer_get_length(outbuf),
 		evbuffer_get_length(out_hdr), evbuffer_get_length(out_body),
 		icap_ctx->is_veto);
 
 	if (icap_ctx->is_veto) {
-		log_finest("Content vetoed by ICAP service");
+		log_finest_icap("Content vetoed by ICAP service");
+
+		if (icap_ctx->veto_page) {
+			log_finest_icap_va("Sending veto page to client, veto_page=%zu", evbuffer_get_length(icap_ctx->veto_page));
+
+#ifdef DEBUG_PROXY
+			/* Log veto page for debugging */
+			size_t len = evbuffer_get_length(icap_ctx->veto_page);
+			size_t log_len = len < 400 ? len : 400;
+			char log_buf[401];  // Stack allocation
+			evbuffer_copyout(icap_ctx->veto_page, log_buf, log_len);
+			log_buf[log_len] = '\0';
+			log_finest_icap_va("Veto page (first %zu bytes, orig %zu bytes): %s", log_len, len, log_buf);
+#endif /* DEBUG_PROXY */
+
+			// Send block page to src (client), not dst (server)
+			if (ctx->src.bev) {
+				evbuffer_add_buffer(bufferevent_get_output(ctx->src.bev), icap_ctx->veto_page);
+				icap_ctx->made_progress = 1;
+			}
+			else {
+				log_finest_icap("Src connection already closed, cannot send veto page");
+			}
+		}
 
 		// ATTENTION: Do NOT reset is_veto here - it must remain set until context is freed
 		evbuffer_drain(inbuf, -1);
@@ -2482,29 +2820,17 @@ icap_process_done(struct evbuffer *inbuf, struct evbuffer *outbuf, icap_ctx_t *i
 
 		evbuffer_drain(out_hdr, -1);
 		evbuffer_drain(out_body, -1);
-
-		if (icap_ctx->veto_page) {
-			log_finest("Sending veto page to client");
-
-			// Send block page to src (client), not dst (server)
-			if (ctx->src.bev) {
-					evbuffer_add_buffer(bufferevent_get_output(ctx->src.bev), icap_ctx->veto_page);
-			}
-			else {
-				log_finest("Src connection already closed, cannot send veto page");
-			}
-		}
 	}
 	else {
 		// Send the data in the out buffers of the last service to their destination
 		if (ctx->spec->http && evbuffer_get_length(out_hdr) > 0) {
-			log_finest_va("Send hdr to destination, out_hdr=%zu", evbuffer_get_length(out_hdr));
+			log_finest_icap_va("Send hdr to destination, out_hdr=%zu", evbuffer_get_length(out_hdr));
 			evbuffer_add_buffer(outbuf, out_hdr);
 			icap_ctx->made_progress = 1;
 		}
 
 		if (evbuffer_get_length(out_body) > 0) {
-			log_finest_va("Send body to destination, out_body=%zu", evbuffer_get_length(out_body));
+			log_finest_icap_va("Send body to destination, out_body=%zu", evbuffer_get_length(out_body));
 			evbuffer_add_buffer(outbuf, out_body);
 			icap_ctx->made_progress = 1;
 		}
@@ -2517,7 +2843,7 @@ icap_process_data(struct evbuffer *inbuf, pxy_conn_ctx_t *ctx, int reqmod)
 	icap_ctx_t *icap_ctx = ctx->icap_ctx;
 
 	if (!icap_ctx) {
-		log_finest_va("No ICAP context, skipping ICAP processing, inbuf=%zu, type=%s", evbuffer_get_length(inbuf), reqmod ? "REQMOD" : "RESPMOD");
+		log_finest_va("No ICAP context in %s, skipping ICAP processing, inbuf=%zu", reqmod ? "REQMOD" : "RESPMOD", evbuffer_get_length(inbuf));
 		return;
 	}
 
