@@ -557,9 +557,16 @@ icap_chain_parse_spec(conn_opts_t *conn_opts, const char *spec)
 	char *port_delim = strchr(host_start, ':');
 	if (port_delim) {
 		*port_delim = '\0';
-		svc->port = atoi(port_delim + 1);
-		if (svc->port <= 0 || svc->port > 65535) {
-			log_err_printf("ICAP Config Error: Invalid port '%s'\n", port_delim + 1);
+		char *port = port_delim + 1;
+		if (strlen(port) < 6 && strspn(port, "0123456789") == strlen(port)) {
+			svc->port = atoi(port);
+			if (svc->port <= 0 || svc->port > 65535) {
+				log_err_printf("ICAP Config Error: Invalid port '%s'\n", port);
+				goto err;
+			}
+		}
+		else {
+			log_err_printf("ICAP Config Error: Port invalid in URI '%s'\n", uri);
 			goto err;
 		}
 	}
@@ -602,30 +609,48 @@ icap_chain_parse_spec(conn_opts_t *conn_opts, const char *spec)
 	}
 
 	if (timeout) {
-		int value = atoi(timeout);
-		if (value >= 0 && value <= 60 && strspn(timeout, "0123456789") == strlen(timeout)) {
-			svc->timeout = value;
-		} else {
+		if (strlen(timeout) < 3 && strspn(timeout, "0123456789") == strlen(timeout)) {
+			int value = atoi(timeout);
+			if (value >= 0 && value <= 60) {
+				svc->timeout = value;
+			} else {
+				log_err_printf("ICAP Config Error: Invalid timeout '%s'\n", timeout);
+				goto err;
+			}
+		}
+		else {
 			log_err_printf("ICAP Config Error: Invalid timeout '%s'\n", timeout);
 			goto err;
 		}
 	}
 
 	if (preview) {
-		int value = atoi(preview);
-		if (value >= 0 && value <= 16777216 && strspn(preview, "0123456789") == strlen(preview)) {
-			svc->preview_size = value;
-		} else {
+		if (strlen(preview) < 9 && strspn(preview, "0123456789") == strlen(preview)) {
+			int value = atoi(preview);
+			if (value >= 0 && value <= 16777216) {
+				svc->preview_size = value;
+			} else {
+				log_err_printf("ICAP Config Error: Invalid preview size '%s'\n", preview);
+				goto err;
+			}
+		}
+		else {
 			log_err_printf("ICAP Config Error: Invalid preview size '%s'\n", preview);
 			goto err;
 		}
 	}
 
 	if (max_body_size) {
-		int value = atoi(max_body_size);
-		if (value >= 0 && value <= 16777216 && strspn(max_body_size, "0123456789") == strlen(max_body_size)) {
-			svc->max_body_size = value;
-		} else {
+		if (strlen(max_body_size) < 9 && strspn(max_body_size, "0123456789") == strlen(max_body_size)) {
+			int value = atoi(max_body_size);
+			if (value >= 0 && value <= 16777216) {
+				svc->max_body_size = value;
+			} else {
+				log_err_printf("ICAP Config Error: Invalid max body size '%s'\n", max_body_size);
+				goto err;
+			}
+		}
+		else {
 			log_err_printf("ICAP Config Error: Invalid max body size '%s'\n", max_body_size);
 			goto err;
 		}
@@ -785,7 +810,7 @@ void NONNULL(1)
 icap_service_disconnect(icap_service_ctx_t *service_ctx, icap_ctx_t *icap_ctx)
 {
 	// ATTENTION: Check ctx before calling log macros in this function, as ctx may be NULL
-	// ATTTENTION: Do not get icap_ctx from service_ctx here, because service_ctx may be already freed and its pointer may be dangling,
+	// ATTENTION: Do not get icap_ctx from service_ctx here, because service_ctx may be already freed and its pointer may be dangling,
 	// so we pass ctx->icap_ctx as a parameter to this function
 	// icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
 	if (!icap_ctx) {
@@ -1457,6 +1482,8 @@ icap_extract_icap_headers(icap_service_ctx_t *service_ctx, struct evbuffer *inpu
 			strncasecmp(line, service_ctx->svc->echo_header, strlen(service_ctx->svc->echo_header)) == 0) {
 			log_finest_icap_va("Found echo header='%s'", line);
 
+			// The echo header value cannot contain CRLF or LF, as we read the line by icap_evbuffer_readline(),
+			// so it cannot inject arbitrary ICAP headers into the subsequent requests (Header injection)
 			char *value = strcasestr(line, ":");
 			if (value && strlen(value) > 1) {
 				if (service_ctx->echo_header) {
@@ -1464,15 +1491,19 @@ icap_extract_icap_headers(icap_service_ctx_t *service_ctx, struct evbuffer *inpu
 					free(service_ctx->echo_header);
 				}
 
-				// Set the whole line, both key and value as echo header
-				service_ctx->echo_header = strdup(line);
+				// Set the whole line, both key and value as echo header, plus CRLF
+				#define ECHO_HEADER_MAX_LEN 128
+				service_ctx->echo_header = malloc(ECHO_HEADER_MAX_LEN);
 				if (!service_ctx->echo_header) {
 					log_finest_icap_va("Failed malloc echo header='%s'", line);
 					free(line);
+					rv = -1;
 					break;
 				}
 
-				log_finest_icap_va("Set echo_header='%s'", service_ctx->echo_header);
+				snprintf(service_ctx->echo_header, ECHO_HEADER_MAX_LEN, "%s\r\n", line);
+
+				log_finest_icap_va("Set echo_header with CRLF='%s'", service_ctx->echo_header);
 			}
 			else {
 				log_finest_icap("No value in echo header");
@@ -1707,7 +1738,7 @@ icap_search_206_extension(icap_service_ctx_t *service_ctx, char *line)
 
 		if (use_original_body > 0) {
 			evbuffer_drain(sent_body, use_original_body);
-			log_finest_icap_va("Moved use-original-body chunk, use_original_body=%zu, sent_body=%zu", use_original_body, evbuffer_get_length(sent_body));
+			log_finest_icap_va("Discard original body chunk, use_original_body=%zu, sent_body=%zu", use_original_body, evbuffer_get_length(sent_body));
 
 			size_t *sent_body_size = icap_ctx->reqmod ? &service_ctx->src.sent_body_size : &service_ctx->dst.sent_body_size;
 			*sent_body_size += ICAP_STATE(service_ctx, icap_ctx->reqmod)->body_chunk_len_206;
@@ -1791,7 +1822,7 @@ icap_extract_body_chunk(icap_service_ctx_t *service_ctx, struct evbuffer *input,
 			evbuffer_add(body_chunk, status_line, strlen(status_line));
 			*remaining_chunk_size -= strlen(status_line);
 
-			if (eol_size > 0) {
+			if (eol_size > 0 && *remaining_chunk_size >= eol_size) {
 				evbuffer_add(body_chunk, eol_size == 1 ? "\n" : "\r\n", eol_size == 1 ? 1 : 2);
 				*remaining_chunk_size -= eol_size;
 			}
@@ -1800,12 +1831,17 @@ icap_extract_body_chunk(icap_service_ctx_t *service_ctx, struct evbuffer *input,
 			status_line = NULL;
 		}
 
-		evbuffer_remove_buffer(input, body_chunk, *remaining_chunk_size);
-		// Discard chunk termination
-		evbuffer_drain(input, 2);
+		size_t to_remove = *remaining_chunk_size < evbuffer_get_length(input) ? *remaining_chunk_size : evbuffer_get_length(input);
+		evbuffer_remove_buffer(input, body_chunk, to_remove);
+
+		*remaining_chunk_size -= to_remove;
+
+		if (*remaining_chunk_size == 0) {
+			// Discard chunk termination
+			evbuffer_drain(input, 2);
+		}
 
 		log_finest_icap_va("MOVED Remaining chunk=%zu, input=%zu", *remaining_chunk_size, evbuffer_get_length(input));
-		*remaining_chunk_size = 0;
 	}
 	else {
 		log_finest_icap_va("NO Remaining chunk size=%zu, input=%zu", *remaining_chunk_size, evbuffer_get_length(input));
@@ -1831,32 +1867,45 @@ icap_extract_body_chunk(icap_service_ctx_t *service_ctx, struct evbuffer *input,
 		struct evbuffer_ptr term_ptr;
 
 		if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_206) {
+			int found_206_extension = 0;
+
 			// line may have "0; " at the beginning
 			if (line && icap_search_206_extension(service_ctx, line)) {
-				// Discard extention terminator
+				// Discard extension terminator
 				evbuffer_drain(input, 2);
 				free(line);
 				line = NULL;
 				eol_size = 0;
+
+				log_finest_icap("FOUND use-original-body extension in initial line of 206 response");
+				found_206_extension = 1;
 			}
 
-			term_ptr = evbuffer_search(input, "0; ", 3, NULL);
-			if (term_ptr.pos == 0) {
-				log_finest_icap("FOUND ICAP 206 terminator at the beginning of input");
-				evbuffer_drain(input, 3);
+			if (!found_206_extension) {
+				term_ptr = evbuffer_search(input, "0; ", 3, NULL);
+				if (term_ptr.pos == 0) {
+					log_finest_icap("FOUND ICAP 206 terminator at the beginning of input");
+					evbuffer_drain(input, 3);
 
-				// Read the "use-original-body=" line
-				size_t line_eol = 0;
-				char *ext_line = icap_evbuffer_readline(input, &line_eol);
-				if (!ext_line) {
-					log_finest_icap("Failed reading 206 extension line, stop parsing headers");
-					return -1;
+					// Read the "use-original-body=" line
+					size_t line_eol = 0;
+					char *ext_line = icap_evbuffer_readline(input, &line_eol);
+					if (!ext_line) {
+						log_finest_icap("Failed reading 206 extension line, stop parsing headers");
+						return -1;
+					}
+					if (icap_search_206_extension(service_ctx, ext_line)) {
+						// Discard extension terminator
+						evbuffer_drain(input, 2);
+					}
+					free(ext_line);
+
+					found_206_extension = 1;
 				}
-				if (icap_search_206_extension(service_ctx, ext_line)) {
-					// Discard extention terminator
-					evbuffer_drain(input, 2);
-				}
-				free(ext_line);
+			}
+
+			if (found_206_extension) {
+				ICAP_STATE(service_ctx, icap_ctx->reqmod)->content_complete = 1;
 			}
 		}
 
@@ -1882,26 +1931,31 @@ icap_extract_body_chunk(icap_service_ctx_t *service_ctx, struct evbuffer *input,
 		log_finest_icap_va("Chunk rest (first %zu bytes, orig %zu bytes): %s", log_len, len, log_buf);
 #endif /* DEBUG_PROXY */
 
-		// TODO: We assume chunk size is always < 0x100000, Chunk size line may have chunk extensions, but for simplicity we only parse the chunk size and ignore extensions,
+		// TODO: We assume chunk size is always < 0x100000 (1 MB), Chunk size line may have chunk extensions, but for simplicity we only parse the chunk size and ignore extensions,
 		// since they are not commonly used and we want to avoid parsing complexity and potential errors from malformed chunk extensions.
 		if (strlen(line) < 6 && strspn(line, "0123456789abcdefABCDEF") == strlen(line)) {
 			chunk_size = (size_t)strtoull(line, NULL, 16);
 		}
 
-		if (chunk_size == 0) {
-			log_finest_icap_va("End of body chunks, CRLF size=%zu", eol_size);
-
-			evbuffer_add(body_chunk, line, strlen(line));
-			if (eol_size > 0) {
-				evbuffer_add(body_chunk, eol_size == 1 ? "\n" : "\r\n", eol_size == 1 ? 1 : 2);
-			}
-
-			struct evbuffer_ptr term_ptr = evbuffer_search(input, "\r\n", 2, NULL);
-			/* If not found, we haven't received the end of the stream yet. */
-			if (term_ptr.pos == 0) {
-				log_finest_icap("FOUND ICAP terminator with end of body chunks");
-				evbuffer_drain(input, 2);
+		if (chunk_size == 0 && (strlen(line) > 0 || eol_size > 0)) {
+			if (strncmp(line, "0", 1) == 0 && eol_size == 2) {
+				log_finest_icap_va("Found ICAP terminator, end of body chunks, CRLF size=%zu", eol_size);
 				icap_service_content_complete(service_ctx);
+
+				struct evbuffer_ptr term_ptr = evbuffer_search(input, "\r\n", 2, NULL);
+				if (term_ptr.pos == 0) {
+					log_finest_icap("Discard CRLF after ICAP terminator with zero chunk size");
+					evbuffer_drain(input, 2);
+				}
+			}
+			else {
+				log_finest_icap_va("Stream line to body chunk, no terminator, line size=%zu, CRLF size=%zu", strlen(line), eol_size);
+				if (strlen(line) > 0) {
+					evbuffer_add(body_chunk, line, strlen(line));
+				}
+				if (eol_size > 0) {
+					evbuffer_add(body_chunk, eol_size == 1 ? "\n" : "\r\n", eol_size == 1 ? 1 : 2);
+				}
 			}
 		}
 
@@ -1955,16 +2009,24 @@ icap_extract_body_chunk(icap_service_ctx_t *service_ctx, struct evbuffer *input,
 				log_finest_icap_va("DRAIN eol after COMPLETE chunk, input=%zu", evbuffer_get_length(input));
 			}
 
-			struct evbuffer_ptr term_ptr = evbuffer_search(input, "0\r\n\r\n", 5, NULL);
-			/* If not found, we haven't received the end of the stream yet. */
-			if (term_ptr.pos == 0) {
-				log_finest_icap("FOUND ICAP terminator");
-				evbuffer_drain(input, 5);
-				icap_service_content_complete(service_ctx);
-			}
+			// struct evbuffer_ptr term_ptr = evbuffer_search(input, "0\r\n\r\n", 5, NULL);
+			// /* If not found, we haven't received the end of the stream yet. */
+			// if (term_ptr.pos == 0) {
+			// 	log_finest_icap("FOUND ICAP terminator");
+			// 	evbuffer_drain(input, 5);
+			// 	icap_service_content_complete(service_ctx);
+			// }
 		}
 
 		log_finest_icap_va("AFTER chunk processing, input=%zu", evbuffer_get_length(input));
+
+		term_ptr = evbuffer_search(input, "0\r\n\r\n", 5, NULL);
+		/* If not found, we haven't received the end of the stream yet. */
+		if (term_ptr.pos == 0) {
+			log_finest_icap("FOUND ICAP terminator after chunk processing");
+			evbuffer_drain(input, 5);
+			icap_service_content_complete(service_ctx);
+		}
 	}
 
 	size_t body_chunk_len = evbuffer_get_length(body_chunk);
@@ -1983,18 +2045,18 @@ icap_extract_body_chunk(icap_service_ctx_t *service_ctx, struct evbuffer *input,
 	evbuffer_add_buffer(outbuf, body_chunk);
 
 	if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_206) {
-		if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->use_original_body > 0) {
+		if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->use_original_body > 0 || ICAP_STATE(service_ctx, icap_ctx->reqmod)->content_complete) {
 			size_t *sent_body_size = icap_ctx->reqmod ? &service_ctx->src.sent_body_size : &service_ctx->dst.sent_body_size;
 			log_finest_icap_va("Update sent_body_size=%zu, body_chunk=%zu", *sent_body_size, body_chunk_len);
 			*sent_body_size += body_chunk_len;
+
+			icap_service_bypass_2046(service_ctx);
 		}
 		else {
 			// Wait for 206 response to tell us whether we should use original body or not
 			log_finest_icap_va("Update body_chunk_len_206=%zu, body_chunk=%zu", ICAP_STATE(service_ctx, icap_ctx->reqmod)->body_chunk_len_206, body_chunk_len);
 			ICAP_STATE(service_ctx, icap_ctx->reqmod)->body_chunk_len_206 += body_chunk_len;
 		}
-
-		icap_service_bypass_2046(service_ctx);
 	}
 
 	evbuffer_free(body_chunk);
@@ -2008,7 +2070,7 @@ icap_extract_body_chunk(icap_service_ctx_t *service_ctx, struct evbuffer *input,
 static void
 icap_handle_chain_continuation(icap_service_ctx_t *service_ctx, icap_ctx_t *icap_ctx)
 {
-	// ATTTENTION: Do not get icap_ctx from service_ctx here, because service_ctx may be already freed and its pointer may be dangling,
+	// ATTENTION: Do not get icap_ctx from service_ctx here, because service_ctx may be already freed and its pointer may be dangling,
 	// so we pass ctx->icap_ctx as a parameter to this function
 	// icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
 	if (!icap_ctx) {
@@ -2316,10 +2378,6 @@ icap_add_standard_x_headers(pxy_conn_ctx_t *ctx, struct evbuffer *icap_buf)
 		evbuffer_add(icap_buf, x_hdr, strlen(x_hdr));
 	}
 #endif /* !WITHOUT_USERAUTH */
-	// snprintf(x_hdr, sizeof(x_hdr), "X-Authenticated-User: soner\r\n");
-	// evbuffer_add(icap_buf, x_hdr, strlen(x_hdr));
-	// snprintf(x_hdr, sizeof(x_hdr), "X-ICAP-E2G:-,G,0,0,0,\r\n");
-	// evbuffer_add(icap_buf, x_hdr, strlen(x_hdr));
 }
 
 static int NONNULL(1)
@@ -2423,7 +2481,7 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 			"Host: %s\r\n"
 			"User-Agent: SSLproxy\r\n"
 			"Allow: 204, 206\r\n"
-			"%s%s"
+			"%s"
 			"%s"
 			"Encapsulated: %s\r\n",
 			reqmod ? "REQMOD" : "RESPMOD",
@@ -2431,7 +2489,7 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 			reqmod ? (service_ctx->svc->reqmod ? service_ctx->svc->reqmod : "") : (service_ctx->svc->respmod ? service_ctx->svc->respmod : ""),
 			service_ctx->svc->server,
 			preview_hdr,
-			echo_hdr ? echo_hdr : "", echo_hdr ? "\r\n" : "",
+			echo_hdr ? echo_hdr : "",
 			encapsulated_hdr
 			);
 
@@ -2530,9 +2588,9 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 
 		size_t *sent_body_size_new = icap_ctx->reqmod ? &service_ctx->src.sent_body_size : &service_ctx->dst.sent_body_size;
 		*sent_body_size_new += chunk_len;
-		log_finest_icap_va("Updated sent_body_size=%zu, chunk_len=%zu", *sent_body_size_new, chunk_len);
 
-		log_finest_icap_va("Sending body chunk to ICAP server, sent_body_size=%zu, sent_body=%zu", *sent_body_size_new, evbuffer_get_length(sent_body));
+		log_finest_icap_va("Sending body chunk to ICAP server, sent_body_size=%zu, sent_body=%zu, chunk_len=%zu",
+			*sent_body_size_new, evbuffer_get_length(sent_body), chunk_len);
 
 		size_t http_content_length = icap_get_http_content_length(icap_ctx);
 		log_finest_icap_va("Checking if HTTP content complete, sent_body_size=%zu, http_content_length=%zu", *sent_body_size_new, http_content_length);
@@ -2697,6 +2755,8 @@ icap_process_chain(icap_ctx_t *icap_ctx, int service_idx)
 
 		if (event_add(icap_ctx->chain_ev, NULL) == -1) {
 			log_finest_va("Error adding chain_ev, service_idx=%d", service_idx);
+			event_free(icap_ctx->chain_ev);
+			icap_ctx->chain_ev = NULL;
 			return;
 		}
 
