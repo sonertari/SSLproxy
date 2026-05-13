@@ -134,6 +134,8 @@ typedef struct icap_service_state {
 	unsigned int detected_206 : 1;    /* Whether 206 detected in ICAP response */
 	size_t use_original_body;         /* Offset of unmodified body indicated by use-original-body extension with 206 */
 	size_t body_chunk_len_206;        /* Body chunk length in use-original-body extension with 206 */
+
+	unsigned int wait_terminator : 1;
 } icap_service_state_t;
 
 struct icap_service_ctx {
