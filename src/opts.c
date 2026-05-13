@@ -156,6 +156,8 @@ conn_opts_new(void)
 	conn_opts->icap_timeout = 30;                     /* 30 seconds by default */
 	conn_opts->icap_fail_open = ICAP_FAIL_CLOSE;      /* Fail stop by default */
 	conn_opts->icap_conn_fail_open = ICAP_FAIL_CLOSE; /* Fail block by default */
+	conn_opts->icap_allow_204 = 1;                    /* Allow 204 responses from ICAP by default */
+	conn_opts->icap_allow_206 = 1;                    /* Allow 206 responses from ICAP by default */
 #endif /* !WITHOUT_ICAP */
 	return conn_opts;
 }
@@ -2902,6 +2904,22 @@ set_conn_opts_option(conn_opts_t *conn_opts, const char *argv0,
 		conn_opts->icap_conn_fail_open = yes;
 #ifdef DEBUG_OPTS
 		log_dbg_printf("IcapConnFailOpen: %u\n", conn_opts->icap_conn_fail_open);
+#endif /* DEBUG_OPTS */
+	} else if (equal(name, "IcapAllow204")) {
+		yes = check_value_yesno(value, "IcapAllow204", line_num);
+		if (yes == -1)
+			return -1;
+		conn_opts->icap_allow_204 = yes;
+#ifdef DEBUG_OPTS
+		log_dbg_printf("IcapAllow204: %u\n", conn_opts->icap_allow_204);
+#endif /* DEBUG_OPTS */
+	} else if (equal(name, "IcapAllow206")) {
+		yes = check_value_yesno(value, "IcapAllow206", line_num);
+		if (yes == -1)
+			return -1;
+		conn_opts->icap_allow_206 = yes;
+#ifdef DEBUG_OPTS
+		log_dbg_printf("IcapAllow206: %u\n", conn_opts->icap_allow_206);
 #endif /* DEBUG_OPTS */
 #endif /* !WITHOUT_ICAP */
 	}

@@ -412,6 +412,8 @@ icap_service_copy(icap_service_t *chain)
 		svc->timeout = chain->timeout;
 		svc->preview_size = chain->preview_size;
 		svc->max_body_size = chain->max_body_size;
+		svc->allow_204 = chain->allow_204;
+		svc->allow_206 = chain->allow_206;
 		svc->echo_header = chain->echo_header ? strdup(chain->echo_header) : NULL;
 		svc->next = NULL;
 
@@ -448,9 +450,9 @@ icap_chain_size(conn_opts_t *conn_opts)
 
 /*
  * Parse an ICAP service specification string
- * Format: icap://<host>:<port>,<reqmod>,<respmod>,<mode>,<conn_mode>,<timeout>,<preview>,<max_body_size>,<echo_header>
- * Example: icap://127.0.0.1:1344,echo,echo,open,open,3,1024,4096
- * Example: icap://127.0.0.1:1345,reqmod,respmod,close,close,30,4096,8192,X-ICAP-E2G
+ * Format: icap://<host>:<port>,<reqmod>,<respmod>,<mode>,<conn_mode>,<timeout>,<preview>,<max_body_size>,<allow_204>,<allow_206>,<echo_header>
+ * Example: icap://127.0.0.1:1344,echo,echo,open,open,3,1024,4096,yes,no
+ * Example: icap://127.0.0.1:1345,reqmod,respmod,close,close,30,4096,8192,yes,yes,X-ICAP-E2G
  */
 int NONNULL(1, 2)
 icap_chain_parse_spec(conn_opts_t *conn_opts, const char *spec)
@@ -472,6 +474,8 @@ icap_chain_parse_spec(conn_opts_t *conn_opts, const char *spec)
 	svc->timeout = conn_opts->icap_timeout;
 	svc->preview_size = conn_opts->icap_preview_size;
 	svc->max_body_size = conn_opts->icap_max_body_size;
+	svc->allow_204 = conn_opts->icap_allow_204;
+	svc->allow_206 = conn_opts->icap_allow_206;
 
 	/* Make a local copy to tokenize */
 	char *spec_copy = strdup(spec);
@@ -488,6 +492,8 @@ icap_chain_parse_spec(conn_opts_t *conn_opts, const char *spec)
 	char *timeout = strtok_r(NULL, ",", &saveptr);
 	char *preview = strtok_r(NULL, ",", &saveptr);
 	char *max_body_size = strtok_r(NULL, ",", &saveptr);
+	char *allow_204 = strtok_r(NULL, ",", &saveptr);
+	char *allow_206 = strtok_r(NULL, ",", &saveptr);
 	char *echo_header = strtok_r(NULL, ",", &saveptr);
 	char *trailing = strtok_r(NULL, ",", &saveptr);
 
@@ -617,6 +623,28 @@ icap_chain_parse_spec(conn_opts_t *conn_opts, const char *spec)
 		}
 		else {
 			log_err_printf("ICAP Config Error: Invalid max body size '%s'\n", max_body_size);
+			goto err;
+		}
+	}
+
+	if (allow_204) {
+		if (strcasecmp(allow_204, "yes") == 0) {
+			svc->allow_204 = 1;
+		} else if (strcasecmp(allow_204, "no") == 0) {
+			svc->allow_204 = 0;
+		} else {
+			log_err_printf("ICAP Config Error: Unknown allow 204 value '%s'\n", allow_204);
+			goto err;
+		}
+	}
+
+	if (allow_206) {
+		if (strcasecmp(allow_206, "yes") == 0) {
+			svc->allow_206 = 1;
+		} else if (strcasecmp(allow_206, "no") == 0) {
+			svc->allow_206 = 0;
+		} else {
+			log_err_printf("ICAP Config Error: Unknown allow 206 value '%s'\n", allow_206);
 			goto err;
 		}
 	}
@@ -1045,19 +1073,19 @@ icap_failopen_to_next_service(icap_service_ctx_t *service_ctx)
 		// TODO: Non-http protocols do not have hdr
 		if (evbuffer_get_length(sent_hdr) > 0) {
 			evbuffer_add_buffer(next_in_hdr, sent_hdr);
-			icap_ctx->made_progress = 1;
+			// icap_ctx->made_progress = 1;
 		}
 		if (evbuffer_get_length(sent_body) > 0) {
 			evbuffer_add_buffer(next_in_body, sent_body);
-			icap_ctx->made_progress = 1;
+			// icap_ctx->made_progress = 1;
 		}
 		if (evbuffer_get_length(in_hdr) > 0) {
 			evbuffer_add_buffer(next_in_hdr, in_hdr);
-			icap_ctx->made_progress = 1;
+			// icap_ctx->made_progress = 1;
 		}
 		if (evbuffer_get_length(in_body) > 0) {
 			evbuffer_add_buffer(next_in_body, in_body);
-			icap_ctx->made_progress = 1;
+			// icap_ctx->made_progress = 1;
 		}
 	}
 	else {
@@ -1068,19 +1096,19 @@ icap_failopen_to_next_service(icap_service_ctx_t *service_ctx)
 		// TODO: Non-http protocols do not have hdr
 		if (evbuffer_get_length(sent_hdr) > 0) {
 			evbuffer_add_buffer(outbuf, sent_hdr);
-			icap_ctx->made_progress = 1;
+			// icap_ctx->made_progress = 1;
 		}
 		if (evbuffer_get_length(sent_body) > 0) {
 			evbuffer_add_buffer(outbuf, sent_body);
-			icap_ctx->made_progress = 1;
+			// icap_ctx->made_progress = 1;
 		}
 		if (evbuffer_get_length(in_hdr) > 0) {
 			evbuffer_add_buffer(outbuf, in_hdr);
-			icap_ctx->made_progress = 1;
+			// icap_ctx->made_progress = 1;
 		}
 		if (evbuffer_get_length(in_body) > 0) {
 			evbuffer_add_buffer(outbuf, in_body);
-			icap_ctx->made_progress = 1;
+			// icap_ctx->made_progress = 1;
 		}
 		bufferevent_enable(icap_ctx->reqmod ? ctx->src.bev : ctx->dst.bev, EV_READ);
 	}
@@ -1110,11 +1138,11 @@ icap_advance_to_next_service(icap_service_ctx_t *service_ctx)
 
 	if (evbuffer_get_length(out_hdr) > 0) {
 		evbuffer_add_buffer(next_in_hdr, out_hdr);
-		icap_ctx->made_progress = 1;
+		// icap_ctx->made_progress = 1;
 	}
 	if (evbuffer_get_length(out_body) > 0) {
 		evbuffer_add_buffer(next_in_body, out_body);
-		icap_ctx->made_progress = 1;
+		// icap_ctx->made_progress = 1;
 	}
 }
 
@@ -2299,6 +2327,16 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 			log_finest_icap_va("Adding Preview header: %zu bytes, content_complete=%d", preview_size, content_complete);
 		}
 
+		// strlen("Allow: 204, 206\r\n") = 17, so 18 bytes is enough for this header
+		char allow_hdr[18] = "";
+
+		if (service_ctx->svc->allow_204 || service_ctx->svc->allow_206) {
+			snprintf(allow_hdr, sizeof(allow_hdr), "Allow: %s%s\r\n",
+				service_ctx->svc->allow_204 ? "204" : "",
+				service_ctx->svc->allow_206 ? (service_ctx->svc->allow_204 ? ", 206" : "206") : "");
+			log_finest_icap_va("Adding Allow header: %s", allow_hdr);
+		}
+
 		char *echo_hdr = NULL;
 		if (!reqmod && service_ctx->echo_header) {
 			echo_hdr = service_ctx->echo_header;
@@ -2309,7 +2347,7 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 			"%s icap://%s/%s ICAP/1.0\r\n"
 			"Host: %s\r\n"
 			"User-Agent: SSLproxy\r\n"
-			"Allow: 204, 206\r\n"
+			"%s"
 			"%s"
 			"%s"
 			"Encapsulated: %s\r\n",
@@ -2317,6 +2355,7 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 			service_ctx->svc->server,
 			reqmod ? (service_ctx->svc->reqmod ? service_ctx->svc->reqmod : "") : (service_ctx->svc->respmod ? service_ctx->svc->respmod : ""),
 			service_ctx->svc->server,
+			allow_hdr,
 			preview_hdr,
 			echo_hdr ? echo_hdr : "",
 			encapsulated_hdr

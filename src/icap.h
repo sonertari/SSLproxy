@@ -55,6 +55,8 @@ typedef struct icap_service {
 	unsigned int timeout;                /* Timeout in seconds */
 	size_t preview_size;                 /* Preview slice size in bytes; 0 = preview disabled */
 	size_t max_body_size;                /* Max body size; 0 = disabled */
+	unsigned int allow_204 : 1;          /* 0: Don't allow 204 responses from ICAP, treat as error; 1: Allow 204 responses */
+	unsigned int allow_206 : 1;          /* 0: Don't allow 206 responses from ICAP, treat as error; 1: Allow 206 responses */
 	char *echo_header;                   /* Header in reqmod to echo to respmod */
 
 	struct icap_service *next;           /* Linked list for configuration */
