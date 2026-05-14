@@ -85,7 +85,6 @@ struct icap_ctx {
 
 	unsigned int reqmod : 1;          /* 1: reqmod or respmod */
 
-    int current_service_idx;          /* Current service index */
 #define ICAP_MAX_SERVICES 16          /* Max services per connection */
     icap_service_ctx_t *services[ICAP_MAX_SERVICES];
     int service_count;		          /* Number of service in services */

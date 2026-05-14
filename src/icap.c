@@ -366,7 +366,6 @@ icap_init(pxy_conn_ctx_t *ctx)
 
 	icap_set_extended_headers(icap_ctx, 0);
 
-	icap_ctx->current_service_idx = 0;
 	return icap_ctx;
 }
 
@@ -752,10 +751,10 @@ icap_service_connect(icap_service_ctx_t *service_ctx)
 
 	// TODO: Do we need to check failopen state if no progress, otherwise do we go into an infinite loop?
 	// if (service_ctx->failopen && icap_ctx->made_progress) {
-	// if (service_ctx->failopen) {
-	// 	log_finer_icap("ICAP service in failopen state");
-	// 	return -1;
-	// }
+	if (service_ctx->failopen) {
+		log_finer_icap("ICAP service in failopen state");
+		return -1;
+	}
 
 	if (!service_ctx->bev) {
 		struct bufferevent *bev = bufferevent_socket_new(ctx->thr->evbase, -1, BEV_OPT_CLOSE_ON_FREE | BEV_OPT_DEFER_CALLBACKS);
@@ -947,8 +946,6 @@ icap_send_data(icap_ctx_t *icap_ctx)
 		struct evbuffer *outbuf = bufferevent_get_output(icap_ctx->reqmod ? ctx->dst.bev : ctx->src.bev);
 		icap_process_done(inbuf, outbuf, icap_ctx);
 
-		icap_ctx->current_service_idx = 0;
-
 		unsigned int made_progress = icap_ctx->made_progress;
 
 		log_finest_va("Reset made_progress: %s", made_progress ? "MADE PROGRESS" : "NO PROGRESS");
@@ -1073,19 +1070,19 @@ icap_failopen_to_next_service(icap_service_ctx_t *service_ctx)
 		// TODO: Non-http protocols do not have hdr
 		if (evbuffer_get_length(sent_hdr) > 0) {
 			evbuffer_add_buffer(next_in_hdr, sent_hdr);
-			// icap_ctx->made_progress = 1;
+			icap_ctx->made_progress = 1;
 		}
 		if (evbuffer_get_length(sent_body) > 0) {
 			evbuffer_add_buffer(next_in_body, sent_body);
-			// icap_ctx->made_progress = 1;
+			icap_ctx->made_progress = 1;
 		}
 		if (evbuffer_get_length(in_hdr) > 0) {
 			evbuffer_add_buffer(next_in_hdr, in_hdr);
-			// icap_ctx->made_progress = 1;
+			icap_ctx->made_progress = 1;
 		}
 		if (evbuffer_get_length(in_body) > 0) {
 			evbuffer_add_buffer(next_in_body, in_body);
-			// icap_ctx->made_progress = 1;
+			icap_ctx->made_progress = 1;
 		}
 	}
 	else {
@@ -1096,19 +1093,19 @@ icap_failopen_to_next_service(icap_service_ctx_t *service_ctx)
 		// TODO: Non-http protocols do not have hdr
 		if (evbuffer_get_length(sent_hdr) > 0) {
 			evbuffer_add_buffer(outbuf, sent_hdr);
-			// icap_ctx->made_progress = 1;
+			icap_ctx->made_progress = 1;
 		}
 		if (evbuffer_get_length(sent_body) > 0) {
 			evbuffer_add_buffer(outbuf, sent_body);
-			// icap_ctx->made_progress = 1;
+			icap_ctx->made_progress = 1;
 		}
 		if (evbuffer_get_length(in_hdr) > 0) {
 			evbuffer_add_buffer(outbuf, in_hdr);
-			// icap_ctx->made_progress = 1;
+			icap_ctx->made_progress = 1;
 		}
 		if (evbuffer_get_length(in_body) > 0) {
 			evbuffer_add_buffer(outbuf, in_body);
-			// icap_ctx->made_progress = 1;
+			icap_ctx->made_progress = 1;
 		}
 		bufferevent_enable(icap_ctx->reqmod ? ctx->src.bev : ctx->dst.bev, EV_READ);
 	}
@@ -1120,9 +1117,10 @@ icap_advance_to_next_service(icap_service_ctx_t *service_ctx)
 	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
 	UNUSED pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
 
-	log_finest_icap_va("ENTER, service_count=%d, current_service_idx=%d", icap_ctx->service_count, icap_ctx->current_service_idx);
+	int next_idx = service_ctx->idx + 1;
+	log_finest_icap_va("ENTER, service_count=%d, next_idx=%d", icap_ctx->service_count, next_idx);
 
-	if (icap_ctx->current_service_idx + 1 >= icap_ctx->service_count) {
+	if (next_idx >= icap_ctx->service_count) {
 		log_finest_icap("No next service to advance to");
 		return;
 	}
@@ -1130,19 +1128,17 @@ icap_advance_to_next_service(icap_service_ctx_t *service_ctx)
 	struct evbuffer *out_hdr = icap_ctx->reqmod ? service_ctx->src.out_hdr : service_ctx->dst.out_hdr;
 	struct evbuffer *out_body = icap_ctx->reqmod ? service_ctx->src.out_body : service_ctx->dst.out_body;
 
-	icap_ctx->current_service_idx++;
-
-	icap_service_ctx_t *next_service = icap_ctx->services[icap_ctx->current_service_idx];
+	icap_service_ctx_t *next_service = icap_ctx->services[next_idx];
 	struct evbuffer *next_in_hdr = icap_ctx->reqmod ? next_service->src.in_hdr : next_service->dst.in_hdr;
 	struct evbuffer *next_in_body = icap_ctx->reqmod ? next_service->src.in_body : next_service->dst.in_body;
 
 	if (evbuffer_get_length(out_hdr) > 0) {
 		evbuffer_add_buffer(next_in_hdr, out_hdr);
-		// icap_ctx->made_progress = 1;
+		icap_ctx->made_progress = 1;
 	}
 	if (evbuffer_get_length(out_body) > 0) {
 		evbuffer_add_buffer(next_in_body, out_body);
-		// icap_ctx->made_progress = 1;
+		icap_ctx->made_progress = 1;
 	}
 }
 
@@ -1195,30 +1191,20 @@ icap_handle_service_error(icap_service_ctx_t *service_ctx)
 	// TODO: Check if conn_opts->icap_fail_open is always copied to service_ctx->svc->icap_fail_open
 	// else if ((ctx && ctx->conn_opts->icap_fail_open == ICAP_FAIL_OPEN) || (service_ctx->svc->icap_fail_open == ICAP_FAIL_OPEN)) {
 	else if (service_ctx->svc->icap_fail_open == ICAP_FAIL_OPEN) {
-
 		service_ctx->failopen = 1;
-		icap_ctx->current_service_idx = service_ctx->idx;
 
-		if ((icap_ctx->current_service_idx + 1) < icap_ctx->service_count) {
-			if (ctx) log_finest_icap_va("ICAP in error state, continue with next ICAP service in chain, current_service_idx=%d", icap_ctx->current_service_idx);
+		icap_failopen_to_next_service(service_ctx);
+
+		int next_idx = service_ctx->idx + 1;
+		if (next_idx < icap_ctx->service_count) {
+			if (ctx) log_finest_icap_va("ICAP in error state, continue with next ICAP service in chain, next_idx=%d", next_idx);
 			else log_dbg_printf("ICAP in error state, continue with next ICAP service in chain\n");
 
-			icap_failopen_to_next_service(service_ctx);
-
-			if ((icap_ctx->current_service_idx + 1) < icap_ctx->service_count) {
-				icap_ctx->current_service_idx++;
-				icap_process_chain(icap_ctx, icap_ctx->current_service_idx);
-			}
-			else {
-				if (ctx) log_finest_icap("ICAP service chain finished");
-				else log_dbg_printf("ICAP service chain finished for service idx=%d, %s\n", service_ctx->idx, icap_ctx->reqmod ? "REQMOD" : "RESPMOD");
-			}
+			icap_process_chain(icap_ctx, next_idx);
 		}
 		else {
-			if (ctx) log_finest_icap("ICAP in error state, no more services to try");
+			if (ctx) log_finest_icap_va("ICAP in error state, no more services to try, next_idx=%d", next_idx);
 			else log_dbg_printf("ICAP in error state, no more services to try\n");
-
-			icap_failopen_to_next_service(service_ctx);
 		}
 	}
 	else {
@@ -2041,18 +2027,18 @@ icap_handle_chain_continuation(icap_service_ctx_t *service_ctx, icap_ctx_t *icap
 	UNUSED pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
 
 	/* Move to the next service in the chain or resume connection */
-	if ((icap_ctx->current_service_idx + 1) >= icap_ctx->service_count) {
+	int next_idx = service_ctx->idx + 1;
+
+	if (next_idx >= icap_ctx->service_count) {
 		log_finest_icap("ICAP service chain finished");
 		icap_send_data(ctx->icap_ctx);
 		return;
 	}
 
-	log_finest_icap_va("Current service done for now, service_count=%d, current_service_idx=%d",
-		icap_ctx->service_count, icap_ctx->current_service_idx);
+	log_finest_icap_va("Current service done for now, service_count=%d, next_idx=%d", icap_ctx->service_count, next_idx);
 
 	icap_advance_to_next_service(service_ctx);
-
-	icap_process_chain(ctx->icap_ctx, icap_ctx->current_service_idx);
+	icap_process_chain(ctx->icap_ctx, next_idx);
 }
 
 /*
@@ -2065,14 +2051,20 @@ icap_bev_readcb(struct bufferevent *bev, void *arg)
 	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
 	pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
 
-	// TODO: Should we reset current_service_idx even if ICAP headers are not complete yet? We don't continue with chain if waiting for full headers below
-	// ATTENTION: Reset current service idx, so we pass icap response to next service or send to destination with final service
-	icap_ctx->current_service_idx = service_ctx->idx;
-
 	int received_icap_headers = icap_ctx->reqmod ? service_ctx->src.received_icap_headers : service_ctx->dst.received_icap_headers;
 
 	struct evbuffer *input = bufferevent_get_input(bev);
 	log_finest_icap_va("ENTER, inbuf=%zu, received_icap_headers=%d", evbuffer_get_length(input), received_icap_headers);
+
+#ifdef DEBUG_PROXY
+	/* Log first 400 bytes for debugging */
+	size_t len = evbuffer_get_length(input);
+	size_t log_len = len < 400 ? len : 400;
+	char log_buf[401];  // Stack allocation
+	evbuffer_copyout(input, log_buf, log_len);
+	log_buf[log_len] = '\0';
+	log_finest_icap_va("ICAP response (first %zu bytes, orig %zu bytes): %s", log_len, len, log_buf);
+#endif /* DEBUG_PROXY */
 
 	char *status_line = NULL;
 	size_t eol_size = 0;
@@ -2093,16 +2085,6 @@ icap_bev_readcb(struct bufferevent *bev, void *arg)
 
 		ICAP_STATE(service_ctx, icap_ctx->reqmod)->received_icap_headers = 1;
 	}
-
-#ifdef DEBUG_PROXY
-	/* Log first 400 bytes for debugging */
-	size_t len = evbuffer_get_length(input);
-	size_t log_len = len < 400 ? len : 400;
-	char log_buf[401];  // Stack allocation
-	evbuffer_copyout(input, log_buf, log_len);
-	log_buf[log_len] = '\0';
-	log_finest_icap_va("ICAP response (first %zu bytes, orig %zu bytes): %s", log_len, len, log_buf);
-#endif /* DEBUG_PROXY */
 
 	if (status_line) {
 		log_finest_icap_va("EOL size=%zu, status_line len=%zu, status_line=%s", eol_size, strlen(status_line), status_line);
