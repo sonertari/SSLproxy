@@ -310,7 +310,10 @@ protoautossl_peek_and_upgrade(pxy_conn_ctx_t *ctx)
 				}
 			} else {
 #ifndef WITHOUT_ICAP
-				icap_set_extended_headers(ctx->icap_ctx, 1);
+				if (icap_set_extended_headers(ctx->icap_ctx, 1) == -1) {
+					log_err_level(LOG_ERR, "Failed to set ICAP extended headers after ClientHello");
+					return -1;
+				}
 #endif /* !WITHOUT_ICAP */
 
 				// srvdst == dst in split mode

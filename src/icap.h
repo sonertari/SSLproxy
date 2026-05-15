@@ -90,7 +90,6 @@ struct icap_ctx {
     int service_count;		          /* Number of service in services */
 
 	char *icap_extended_headers;
-	size_t icap_extended_headers_len;
 
 	size_t src_http_content_length;
 	unsigned int  src_http_content_length_set : 1; /* Whether http_content_length is set based on HTTP header info */
