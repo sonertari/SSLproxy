@@ -2651,6 +2651,8 @@ icap_process_chain(icap_ctx_t *icap_ctx, int service_idx)
 			return;
 		}
 
+		// Do not immediately dispatch with event_active(),
+		// instead use a zero timeout to prevent reentrant callback issues
 		struct timeval tv = {0, 0};
 		if (event_add(icap_ctx->chain_ev, &tv) == -1) {
 			log_finest_va("Error adding chain_ev, service_idx=%d", service_idx);
@@ -2658,8 +2660,6 @@ icap_process_chain(icap_ctx_t *icap_ctx, int service_idx)
 			icap_ctx->chain_ev = NULL;
 			return;
 		}
-
-		event_active(icap_ctx->chain_ev, 0, 0);
 	}
 	else {
 		log_finest_va("Chain event already active, do not add or activate again, chain_service_idx=%d, service_idx=%d",

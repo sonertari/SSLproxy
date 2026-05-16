@@ -361,7 +361,7 @@ prototcp_try_send_userauth_msg(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 }
 #endif /* !WITHOUT_USERAUTH */
 
-static int NONNULL(1,2,3,4)
+int NONNULL(1,2,3,4)
 prototcp_try_validate_proto(struct bufferevent *bev, pxy_conn_ctx_t *ctx, struct evbuffer *inbuf, struct bufferevent *other)
 {
 	if (ctx->conn_opts->validate_proto && ctx->protoctx->validatecb && !ctx->protoctx->is_valid) {

@@ -241,8 +241,33 @@ protosmtp_bev_eventcb_connected_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx
 static void NONNULL(1)
 protosmtp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
+	log_finest_va("ENTER, size=%zu", evbuffer_get_length(bufferevent_get_input(bev)));
+
+	if (ctx->dst.closed) {
+		ctx->protoctx->discard_inbufcb(bev);
+		return;
+	}
+
 	struct evbuffer *inbuf = bufferevent_get_input(bev);
 	struct evbuffer *outbuf = bufferevent_get_output(ctx->dst.bev);
+
+#ifndef WITHOUT_USERAUTH
+	if (prototcp_try_send_userauth_msg(bev, ctx)) {
+		return;
+	}
+#endif /* !WITHOUT_USERAUTH */
+
+	if (pxy_conn_apply_deferred_block_action(ctx)) {
+		return;
+	}
+
+	if (prototcp_try_validate_proto(bev, ctx, inbuf, ctx->dst.bev) != 0) {
+		return;
+	}
+
+	if (pxy_try_prepend_sslproxy_header(ctx, inbuf, outbuf) != 0) {
+		return;
+	}
 
 #ifndef WITHOUT_ICAP
 	protosmtp_ctx_t *smtp_ctx = ctx->protoctx->arg;
@@ -281,12 +306,18 @@ protosmtp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 #endif /* !WITHOUT_ICAP */
 
 	ctx->protoctx->set_watermarkcb(bev, ctx, ctx->dst.bev);
-
 }
 
 static void NONNULL(1)
 protosmtp_bev_readcb_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
+	log_finest_va("ENTER, size=%zu", evbuffer_get_length(bufferevent_get_input(bev)));
+
+	if (ctx->src.closed) {
+		ctx->protoctx->discard_inbufcb(bev);
+		return;
+	}
+
 	struct evbuffer *inbuf = bufferevent_get_input(bev);
 	struct evbuffer *outbuf = bufferevent_get_output(ctx->src.bev);
 

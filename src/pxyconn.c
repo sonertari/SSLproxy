@@ -344,6 +344,8 @@ pxy_conn_ctx_free(pxy_conn_ctx_t *ctx, int by_requestor)
 	pxy_thr_detach(ctx);
 
 #ifndef WITHOUT_ICAP
+	// Do not check icap_enabled(ctx) here, because ctx->icap_ctx may be initialized but not enabled,
+	// and we should still free it if it is initialized
 	if (ctx->icap_ctx) {
 		icap_ctx_free(ctx->icap_ctx);
 		ctx->icap_ctx = NULL;
@@ -826,19 +828,21 @@ pxy_try_prepend_sslproxy_header(pxy_conn_ctx_t *ctx, struct evbuffer *inbuf, UNU
 		log_finest_va("ORIG packet, size=%zu:\n%.*s", packet_size, (int)packet_size, packet);
 
 		pxy_insert_sslproxy_header(ctx, packet, &packet_size);
-		evbuffer_add(inbuf, packet, packet_size);
+		evbuffer_add(outbuf, packet, packet_size);
 
 		log_finest_va("NEW packet, size=%zu:\n%.*s", packet_size, (int)packet_size, packet);
 
 		free(packet);
+	}
+	else {
+		evbuffer_add_buffer(outbuf, inbuf);
+	}
 #else /* DEBUG_PROXY */
-		struct evbuffer *tmp = evbuffer_new();
-		evbuffer_add_printf(tmp, "%s\r\n", ctx->sslproxy_header);
-		evbuffer_prepend_buffer(inbuf, tmp);
-		evbuffer_free(tmp);
-#endif /* !DEBUG_PROXY */
+		evbuffer_add_printf(outbuf, "%s\r\n", ctx->sslproxy_header);
 		ctx->sent_sslproxy_header = 1;
 	}
+	evbuffer_add_buffer(outbuf, inbuf);
+#endif /* !DEBUG_PROXY */
 	return 0;
 }
 
@@ -1182,7 +1186,7 @@ pxy_set_sslproxy_header(pxy_conn_ctx_t *ctx, int upgraded)
 	log_finer_va("sslproxy_header= %s", ctx->sslproxy_header);
 
 #ifndef WITHOUT_ICAP
-	return icap_set_extended_headers(ctx->icap_ctx, upgraded);
+	return icap_enabled(ctx) ? icap_set_extended_headers(ctx->icap_ctx, upgraded) : 0;
 #else /* WITHOUT_ICAP */
 	return 0;
 #endif /* !WITHOUT_ICAP */
@@ -1194,7 +1198,7 @@ pxy_setup_child_listener(pxy_conn_ctx_t *ctx)
 	if (!ctx->divert) {
 		// split mode
 #ifndef WITHOUT_ICAP
-		return icap_set_extended_headers(ctx->icap_ctx, 0);
+		return icap_enabled(ctx) ? icap_set_extended_headers(ctx->icap_ctx, 0) : 0;
 #else /* WITHOUT_ICAP */
 		return 0;
 #endif /* !WITHOUT_ICAP */

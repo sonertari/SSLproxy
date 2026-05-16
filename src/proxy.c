@@ -199,11 +199,13 @@ proxy_conn_ctx_new(evutil_socket_t fd,
 #endif /* !WITHOUT_USERAUTH */
 
 #ifndef WITHOUT_ICAP
-	ctx->icap_ctx = icap_init(ctx);
-	if (!ctx->icap_ctx) {
-		log_finest("Failed to initialize ICAP context");
-		free(ctx);
-		return NULL;
+	if (icap_enabled(ctx)) {
+		ctx->icap_ctx = icap_init(ctx);
+		if (!ctx->icap_ctx) {
+			log_finest("Failed to initialize ICAP context");
+			free(ctx);
+			return NULL;
+		}
 	}
 #endif /* !WITHOUT_ICAP */
 
@@ -284,10 +286,16 @@ proxy_listener_acceptcb(UNUSED struct evconnlistener *listener,
 		log_err_level(LOG_CRIT, "Error creating initial event, aborting connection");
 		goto out;
 	}
+
+	// Do not immediately dispatch with event_active(),
+	// instead use a zero timeout to prevent reentrant callback issues
+	struct timeval tv = {0, 0};
+
 	// The only purpose of this event is to change the event base, so it is a one-shot event
-	if (event_add(ctx->ev, NULL) == -1)
+	if (event_add(ctx->ev, &tv) == -1) {
+		log_err_level(LOG_CRIT, "Error adding initial event, aborting connection");
 		goto out;
-	event_active(ctx->ev, 0, 0);
+	}
 	return;
 out:
 	evutil_closesocket(fd);
