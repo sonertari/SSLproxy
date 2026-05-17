@@ -2854,7 +2854,7 @@ set_conn_opts_option(conn_opts_t *conn_opts, const char *argv0,
 			return -1;
 		}
 #ifdef DEBUG_OPTS
-		log_dbg_printf("Icap spec parsed: '%s'\n", value);
+		log_dbg_printf("Icap spec line: '%s'\n", value);
 #endif /* DEBUG_OPTS */
 	} else if (equal(name, "IcapMaxBodySize")) {
 		size_t i = atoi(value);

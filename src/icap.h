@@ -47,7 +47,6 @@ typedef enum icap_fail_mode {
 typedef struct icap_service {
 	char *server;                        /* ICAP server hostname/IP */
 	int port;                            /* ICAP server port */
-	char *uri;                           /* Full ICAP URI (e.g. icap://127.0.0.1/echo) */
 	char *reqmod;                        /* REQMOD path component of the ICAP URI (e.g. /reqmod) */
 	char *respmod;                       /* RESPMOD path component of the ICAP URI (e.g. /respmod) */
 	icap_fail_mode_t icap_fail_open : 1; /* 0: stop, 1: next service in chain on service error */
@@ -61,15 +60,6 @@ typedef struct icap_service {
 
 	struct icap_service *next;           /* Linked list for configuration */
 } icap_service_t;
-
-/*
- * ICAP connection states
- */
-typedef enum icap_state_value {
-	ICAP_STATE_IDLE = 0,           /* Not connected to ICAP server */
-	ICAP_STATE_DONE,               /* ICAP processing complete */
-	ICAP_STATE_ERROR,              /* Error occurred */
-} icap_state_value_t;
 
 typedef struct icap_service_ctx icap_service_ctx_t;
 
@@ -87,7 +77,7 @@ struct icap_ctx {
 
 #define ICAP_MAX_SERVICES 16          /* Max services per connection */
     icap_service_ctx_t *services[ICAP_MAX_SERVICES];
-    int service_count;		          /* Number of service in services */
+    int service_count;		          /* Number of services in the services list */
 
 	char *icap_extended_headers;
 
@@ -99,12 +89,17 @@ struct icap_ctx {
 	unsigned int made_progress : 1;
 
 	struct event *chain_ev;
-	int chain_service_idx;
+	int chain_ev_service_idx;
 };
 
 typedef struct icap_service_state {
 	unsigned int received_icap_headers : 1;
-	unsigned int received_http_headers : 1;
+
+	size_t header_offset;
+	size_t body_offset;
+
+	unsigned int has_body : 1;
+	unsigned int null_body : 1;       /* Whether body is null based on header info */
 
 	struct evbuffer *in_hdr;
 	struct evbuffer *sent_hdr;
@@ -112,21 +107,16 @@ typedef struct icap_service_state {
 
 	struct evbuffer *out_hdr;
 
+	unsigned int received_http_headers : 1;
+	size_t received_hdr_size;
+
 	struct evbuffer *in_body;
 	struct evbuffer *sent_body;
 
 	struct evbuffer *out_body;
-	unsigned int has_body : 1;
-	size_t body_offset;
-	unsigned int null_body : 1;       /* Whether body is null based on header info */
-	size_t sent_body_size;
-	size_t header_offset;
+
 	size_t remaining_chunk_size;
-
-	unsigned int wait_http_headers : 1;
-	size_t received_hdr_size;
-
-	// TODO: Check content_complete implementation based on HTTP header and content sizes
+	size_t sent_body_size;
 	unsigned int content_complete : 1;
 
 	unsigned int wait_preview_continue : 1;
