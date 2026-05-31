@@ -301,7 +301,9 @@ icap_ctx_free(icap_ctx_t *icap_ctx)
 		log_dbg_printf("No ICAP context to free\n");
 		return;
 	}
-	log_dbg_printf("ICAP context free\n");
+
+	pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
+	log_finest("ENTER");
 
 	if (icap_ctx->chain_ev) {
 		event_free(icap_ctx->chain_ev);
@@ -319,7 +321,6 @@ icap_ctx_free(icap_ctx_t *icap_ctx)
 		free(icap_ctx->icap_extended_headers);
 	}
 
-	pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
 	free(icap_ctx);
 	ctx->icap_ctx = NULL;
 
@@ -369,7 +370,6 @@ icap_init(pxy_conn_ctx_t *ctx)
 		return NULL;
 
 	if (icap_set_extended_headers(icap_ctx, 0) == -1) {
-		log_err_printf("Failed to set ICAP extended headers\n");
 		icap_ctx_free(icap_ctx);
 		return NULL;
 	}
@@ -412,19 +412,19 @@ icap_service_copy(icap_service_t *chain)
 
 		svc->next = NULL;
 
-		if (chain->server && (svc->server = strdup(chain->server)) && !svc->server) {
+		if (chain->server && !(svc->server = strdup(chain->server))) {
 			log_err_level_printf(LOG_CRIT, "ICAP server allocation failed\n");
 			goto err;
 		}
 
 		svc->port = chain->port;
 
-		if (chain->reqmod && (svc->reqmod = strdup(chain->reqmod)) && !svc->reqmod) {
+		if (chain->reqmod && !(svc->reqmod = strdup(chain->reqmod))) {
 			log_err_level_printf(LOG_CRIT, "ICAP reqmod allocation failed\n");
 			goto err;
 		}
 
-		if (chain->respmod && (svc->respmod = strdup(chain->respmod)) && !svc->respmod) {
+		if (chain->respmod && !(svc->respmod = strdup(chain->respmod))) {
 			log_err_level_printf(LOG_CRIT, "ICAP respmod allocation failed\n");
 			goto err;
 		}
@@ -437,7 +437,7 @@ icap_service_copy(icap_service_t *chain)
 		svc->allow_204 = chain->allow_204;
 		svc->allow_206 = chain->allow_206;
 
-		if (chain->echo_header && (svc->echo_header = strdup(chain->echo_header)) && !svc->echo_header) {
+		if (chain->echo_header && !(svc->echo_header = strdup(chain->echo_header))) {
 			log_err_level_printf(LOG_CRIT, "ICAP echo_header allocation failed\n");
 			goto err;
 		}
@@ -620,7 +620,7 @@ icap_chain_parse_spec(conn_opts_t *conn_opts, const char *spec)
 				log_err_level_printf(LOG_ERR, "ICAP Config Error: Invalid timeout '%s'\n", timeout);
 				goto err;
 			}
-			svc->timeout = (int)val;
+			svc->timeout = (unsigned int)val;
 		}
 		else {
 			log_err_level_printf(LOG_ERR, "ICAP Config Error: Invalid timeout '%s'\n", timeout);
@@ -637,7 +637,7 @@ icap_chain_parse_spec(conn_opts_t *conn_opts, const char *spec)
 				log_err_level_printf(LOG_ERR, "ICAP Config Error: Invalid preview size '%s'\n", preview);
 				goto err;
 			}
-			svc->preview_size = (int)val;
+			svc->preview_size = val;
 		}
 		else {
 			log_err_level_printf(LOG_ERR, "ICAP Config Error: Invalid preview size '%s'\n", preview);
@@ -654,7 +654,7 @@ icap_chain_parse_spec(conn_opts_t *conn_opts, const char *spec)
 				log_err_level_printf(LOG_ERR, "ICAP Config Error: Invalid max body size '%s'\n", max_body_size);
 				goto err;
 			}
-			svc->max_body_size = (int)val;
+			svc->max_body_size = val;
 		}
 		else {
 			log_err_level_printf(LOG_ERR, "ICAP Config Error: Invalid max body size '%s'\n", max_body_size);
@@ -733,18 +733,18 @@ icap_get_first_service_in_hdr(pxy_conn_ctx_t *ctx, int reqmod)
 }
 
 int NONNULL(1)
-icap_set_extended_headers(icap_ctx_t *icap_ctx, int upgraded)
+icap_set_extended_headers(icap_ctx_t *icap_ctx, UNUSED int upgraded)
 {
 	pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
 	log_finest("ENTER");
 
-	/* Build the ICAP meta headers (X-Src, X-Dst, X-Proto, X-User) */
+	// Either tcp or udp, for now we only support tcp
 	const char *proto = "tcp";
-	if (ctx->spec->http) proto = ctx->spec->ssl || upgraded ? "https" : "http";
-	else if (ctx->spec->pop3) proto = ctx->spec->ssl || upgraded ? "pop3s" : "pop3";
-	else if (ctx->spec->smtp) proto = ctx->spec->ssl || upgraded ? "smtps" : "smtp";
-	else if (ctx->spec->upgrade) proto = upgraded ? "autossl-tls" : "autossl";
-	else if (ctx->spec->ssl || upgraded) proto = "ssl";
+	// if (ctx->spec->http) proto = ctx->spec->ssl || upgraded ? "https" : "http";
+	// else if (ctx->spec->pop3) proto = ctx->spec->ssl || upgraded ? "pop3s" : "pop3";
+	// else if (ctx->spec->smtp) proto = ctx->spec->ssl || upgraded ? "smtps" : "smtp";
+	// else if (ctx->spec->upgrade) proto = upgraded ? "autossl-tls" : "autossl";
+	// else if (ctx->spec->ssl || upgraded) proto = "ssl";
 
 	#define ICAP_USER_HEADER_MAX_LEN 256
 	char user_hdr[ICAP_USER_HEADER_MAX_LEN];
@@ -757,15 +757,18 @@ icap_set_extended_headers(icap_ctx_t *icap_ctx, int upgraded)
 
 	// Estimate string length
 	size_t len = snprintf(NULL, 0,
-		"X-Src: [%s]:%s\r\n"
-		"X-Dst: [%s]:%s\r\n"
+		"X-Client-IP: %s\r\n"
+		"X-Client-Port: %s\r\n"
+		"X-Server-IP: %s\r\n"
+		"X-Server-Port: %s\r\n"
 		"X-Proto: %s\r\n"
 		"%s",
 		STRORNONE(ctx->srchost_str), STRORNONE(ctx->srcport_str),
 		STRORNONE(ctx->dsthost_str), STRORNONE(ctx->dstport_str),
 		proto, user_hdr);
 
-	if (len == SIZE_MAX || len + 1 > SIZE_MAX / sizeof(char)) {
+	if (len == SIZE_MAX) {
+		log_err_level(LOG_ERR, "ICAP extended headers too long");
 		icap_conn_term(ctx);
 		return -1;
 	}
@@ -779,8 +782,10 @@ icap_set_extended_headers(icap_ctx_t *icap_ctx, int upgraded)
 	}
 
 	if (snprintf(icap_ctx->icap_extended_headers, len + 1,
-		"X-Src: [%s]:%s\r\n"
-		"X-Dst: [%s]:%s\r\n"
+		"X-Client-IP: %s\r\n"
+		"X-Client-Port: %s\r\n"
+		"X-Server-IP: %s\r\n"
+		"X-Server-Port: %s\r\n"
 		"X-Proto: %s\r\n"
 		"%s",
 		STRORNONE(ctx->srchost_str), STRORNONE(ctx->srcport_str),
@@ -898,16 +903,6 @@ icap_have_data_to_process(icap_ctx_t *icap_ctx, int *service_idx)
 {
 	UNUSED pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
 
-	// TODO: This may not be needed, as we move source data to the first service's in_hdr and in_body buffers as soon as it arrives
-	// so if there is data in src or dst bev input buffers, its readcb should fire soon or its watermark may be activated, so we can just wait for that instead of busy checking here
-	// if (evbuffer_get_length(bufferevent_get_input(ctx->src.bev)) > 0 || evbuffer_get_length(bufferevent_get_input(ctx->dst.bev)) > 0) {
-	// 	log_finest_va("Source has data, src=%zu, dst=%zu, go to first service, return idx=0",
-	// 		evbuffer_get_length(bufferevent_get_input(ctx->src.bev)),
-	// 		evbuffer_get_length(bufferevent_get_input(ctx->dst.bev)));
-	// 	*service_idx = 0;
-	// 	return 1;
-	// }
-
 	for (int i = 0; i < icap_ctx->service_count; i++) {
 		if (icap_ctx->services[i] && icap_ctx->services[i]->bev) {
 			// TODO: Do we need to check the bev input buffer for data to process, but if we do, then chain goes into an infinite loop
@@ -1005,15 +1000,6 @@ icap_send_data(icap_ctx_t *icap_ctx)
 		log_finest_va("Reset made_progress: %s", made_progress ? "MADE PROGRESS" : "NO PROGRESS");
 		icap_ctx->made_progress = 0;
 
-		// No need to check inbuf, let its readcb fire if there is data to read, prevent busy loop
-		// TODO: Should we check inbuf if made_progress, but it causes infinite loop
-		// if (made_progress && evbuffer_get_length(inbuf) > 0) {
-		// if (evbuffer_get_length(inbuf) > 0) {
-		// 	log_finest_va("Continue processing data in inbuf=%zu, do not resume flow yet", evbuffer_get_length(inbuf));
-		// 	icap_process_data(inbuf, ctx, icap_ctx->reqmod);
-		// 	return;
-		// }
-
 		int service_idx = 0;
 		if (!made_progress || icap_have_data_to_process(icap_ctx, &service_idx) == 0) {
 			log_finest("Enable reading from source, resume flow");
@@ -1081,8 +1067,6 @@ icap_failopen_to_next_service(icap_service_ctx_t *service_ctx)
 	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
 	pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
 
-	// TODO: Determine content_complete on failopen and terminate connection, otherwise connection remains open since icap_ctx still exists
-
 	struct evbuffer *in_hdr = ICAP_STATE(service_ctx, icap_ctx->reqmod)->in_hdr;
 	struct evbuffer *in_body = ICAP_STATE(service_ctx, icap_ctx->reqmod)->in_body;
 	struct evbuffer *sent_hdr = ICAP_STATE(service_ctx, icap_ctx->reqmod)->sent_hdr;
@@ -1120,7 +1104,6 @@ icap_failopen_to_next_service(icap_service_ctx_t *service_ctx)
 		struct evbuffer *next_in_hdr = ICAP_STATE(icap_ctx->services[next_idx], icap_ctx->reqmod)->in_hdr;
 		struct evbuffer *next_in_body = ICAP_STATE(icap_ctx->services[next_idx], icap_ctx->reqmod)->in_body;
 
-		// TODO: Drain sent_hdr and sent_body after moving all content to next service
 		// TODO: Non-http protocols do not have hdr
 		if (evbuffer_get_length(sent_hdr) > 0) {
 			evbuffer_add_buffer(next_in_hdr, sent_hdr);
@@ -1232,8 +1215,7 @@ icap_handle_service_error(icap_service_ctx_t *service_ctx)
 		service_ctx->svc->icap_fail_open == ICAP_FAIL_CLOSE ? "fail-close" : "fail-open");
 
 	// Connection fail mode
-	// TODO: Check if conn_opts->icap_conn_fail_open is always copied to service_ctx->svc->conn_fail_open
-	// if ((ctx && ctx->conn_opts->icap_conn_fail_open == ICAP_FAIL_CLOSE) || (service_ctx->svc->conn_fail_open == ICAP_FAIL_CLOSE)) {
+	// conn_opts->icap_conn_fail_open is always copied to service_ctx->svc->conn_fail_open
 	if (service_ctx->svc->conn_fail_open == ICAP_FAIL_CLOSE) {
 		if (ctx) log_fine_icap("ICAP service in error state, terminate connection as fail-close");
 		else log_dbg_printf("ICAP service in error state, terminate connection as fail-close\n");
@@ -1242,8 +1224,7 @@ icap_handle_service_error(icap_service_ctx_t *service_ctx)
 		return;
 	}
 	// ICAP service fail mode
-	// TODO: Check if conn_opts->icap_fail_open is always copied to service_ctx->svc->icap_fail_open
-	// else if ((ctx && ctx->conn_opts->icap_fail_open == ICAP_FAIL_OPEN) || (service_ctx->svc->icap_fail_open == ICAP_FAIL_OPEN)) {
+	// conn_opts->icap_fail_open is always copied to service_ctx->svc->icap_fail_open
 	else if (service_ctx->svc->icap_fail_open == ICAP_FAIL_OPEN) {
 		service_ctx->failopen = 1;
 
@@ -1820,7 +1801,7 @@ icap_parse_chunk_header(icap_service_ctx_t *service_ctx, struct evbuffer *input,
 
 	char *ext = NULL;
 
-	// TODO: We assume chunk size is always < 0x1000000 (16 MB)
+	// Assume chunk size is always < 0x1000000 (16 MB)
 	#define ICAP_CHUNK_SIZE_MAX_DIGITS 6
 	if (strlen(line) <= ICAP_CHUNK_SIZE_MAX_DIGITS && strspn(line, "0123456789abcdefABCDEF") == strlen(line)) {
 		*chunk_size = (size_t)strtoull(line, NULL, 16);
@@ -2273,17 +2254,8 @@ icap_add_standard_x_headers(pxy_conn_ctx_t *ctx, struct evbuffer *icap_buf)
 	log_finest("ENTER");
 	#define ICAP_X_HEADER_MAX_LEN 256
 	char x_hdr[ICAP_X_HEADER_MAX_LEN];
-	
-	/* X-Client-IP header */
-	snprintf(x_hdr, sizeof(x_hdr), "X-Client-IP: %s\r\n", STRORNONE(ctx->srchost_str));
-	evbuffer_add(icap_buf, x_hdr, strlen(x_hdr));
-	
-	/* X-Server-IP header */
-	snprintf(x_hdr, sizeof(x_hdr), "X-Server-IP: %s\r\n", STRORNONE(ctx->dsthost_str));
-	evbuffer_add(icap_buf, x_hdr, strlen(x_hdr));
-	
+
 #ifndef WITHOUT_USERAUTH
-	/* X-Authenticated-User header if available */
 	if (ctx->user) {
 		snprintf(x_hdr, sizeof(x_hdr), "X-Authenticated-User: %s\r\n", STRORNONE(ctx->user));
 		evbuffer_add(icap_buf, x_hdr, strlen(x_hdr));
@@ -2409,7 +2381,7 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 			log_finest_icap_va("Adding echo header: %s", echo_hdr);
 		}
 
-		snprintf(icap_hdr_str, sizeof(icap_hdr_str),
+		size_t len = snprintf(NULL, 0,
 			"%s icap://%s/%s ICAP/1.0\r\n"
 			"Host: %s\r\n"
 			"User-Agent: SSLproxy\r\n"
@@ -2424,8 +2396,32 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 			allow_hdr,
 			preview_hdr,
 			echo_hdr ? echo_hdr : "",
-			encapsulated_hdr
-			);
+			encapsulated_hdr);
+
+		if (len >= ICAP_MAX_HEADER_SIZE) {
+			log_fine_icap_va("ICAP header size %zu exceeds maximum buffer size %d", len, ICAP_MAX_HEADER_SIZE);
+			return -1;
+		}
+
+		if (snprintf(icap_hdr_str, sizeof(icap_hdr_str),
+			"%s icap://%s/%s ICAP/1.0\r\n"
+			"Host: %s\r\n"
+			"User-Agent: SSLproxy\r\n"
+			"%s"
+			"%s"
+			"%s"
+			"Encapsulated: %s\r\n",
+			reqmod ? "REQMOD" : "RESPMOD",
+			service_ctx->svc->server,
+			reqmod ? (service_ctx->svc->reqmod ? service_ctx->svc->reqmod : "") : (service_ctx->svc->respmod ? service_ctx->svc->respmod : ""),
+			service_ctx->svc->server,
+			allow_hdr,
+			preview_hdr,
+			echo_hdr ? echo_hdr : "",
+			encapsulated_hdr) < 0) {
+			log_fine_icap("Failed to format ICAP header");
+			return -1;
+		}
 
 		struct evbuffer *icap_buf = evbuffer_new();
 		if (!icap_buf) {
@@ -2516,7 +2512,7 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 			return -1;
 		}
 
-		// TODO: Check if service config is fail-open before copying
+		// TODO: Check if service config is fail-open before copying?
 		// Make a copy of sent data, to use for fail-open in case the service errors out
 		log_finer_icap_va("Moving in_body to sent_body, in_body=%zu, sent_body=%zu, chunk_len=%zu", evbuffer_get_length(in_body), evbuffer_get_length(sent_body), chunk_len);
 		evbuffer_remove_buffer(in_body, sent_body, chunk_len);
@@ -2851,8 +2847,8 @@ icap_process_data(struct evbuffer *inbuf, pxy_conn_ctx_t *ctx, int reqmod)
 	if (evbuffer_get_length(inbuf) > 0 || evbuffer_get_length(in_hdr) > 0) {
 		struct evbuffer *in_body = ICAP_STATE(icap_ctx->services[0], icap_ctx->reqmod)->in_body;
 
+		// TODO: Non-http protocols do not have hdr
 		if (evbuffer_get_length(in_hdr) == 0) {
-			// TODO: Non-http protocols do not have hdr
 			log_finer("No new hdr data to process");
 		}
 
