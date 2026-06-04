@@ -2636,7 +2636,7 @@ icap_process_chain_cb(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 		else {
 			log_finer_icap("Wait for ICAP 100 preview continue, proceed to next service");
 
-			if (icap_is_icap_response_nullbody(service_ctx) && (ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_204 || ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_206)) {
+			if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_204 || ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_206) {
 				log_finer_icap_va("Preview mode with 204 or 206, streaming data, 204=%d, 206=%d",
 					ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_204, ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_206);
 				icap_service_bypass(service_ctx);
