@@ -51,7 +51,7 @@ static void icap_disconnect(icap_ctx_t *);
 static void icap_handle_service_error(icap_service_ctx_t *);
 static int icap_build_request(icap_service_ctx_t *);
 static int icap_is_content_complete(icap_ctx_t *, int);
-static int icap_is_nullbody(icap_service_ctx_t *);
+static int icap_is_http_nullbody(icap_service_ctx_t *);
 static void icap_process_chain(icap_ctx_t *, int);
 
 /*
@@ -271,9 +271,14 @@ err:
 	return NULL;
 }
 
-static void NONNULL(1)
+static void
 icap_conn_term(pxy_conn_ctx_t *ctx)
 {
+	if (!ctx) {
+		log_dbg_printf("No connection context to terminate\n");
+		return;
+	}
+
 	log_finest("ENTER");
 
 	// ATTENTION: Do not set term, we free icap_ctx before firing the eof event below, so eof eventcb will terminate the connection
@@ -368,11 +373,6 @@ icap_init(pxy_conn_ctx_t *ctx)
 	icap_ctx_t *icap_ctx = icap_ctx_new(ctx);
 	if (!icap_ctx)
 		return NULL;
-
-	if (icap_set_extended_headers(icap_ctx, 0) == -1) {
-		icap_ctx_free(icap_ctx);
-		return NULL;
-	}
 
 	return icap_ctx;
 }
@@ -738,6 +738,13 @@ icap_set_extended_headers(icap_ctx_t *icap_ctx, UNUSED int upgraded)
 	pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
 	log_finest("ENTER");
 
+	if (icap_ctx->icap_extended_headers) {
+		// This is possible with autossl upgrade
+		log_finest("ICAP extended headers already set, resetting with new values");
+		free(icap_ctx->icap_extended_headers);
+		icap_ctx->icap_extended_headers = NULL;
+	}
+
 	// Either tcp or udp, for now we only support tcp
 	const char *proto = "tcp";
 	// if (ctx->spec->http) proto = ctx->spec->ssl || upgraded ? "https" : "http";
@@ -746,12 +753,18 @@ icap_set_extended_headers(icap_ctx_t *icap_ctx, UNUSED int upgraded)
 	// else if (ctx->spec->upgrade) proto = upgraded ? "autossl-tls" : "autossl";
 	// else if (ctx->spec->ssl || upgraded) proto = "ssl";
 
+#ifndef WITHOUT_USERAUTH
 	#define ICAP_USER_HEADER_MAX_LEN 256
 	char user_hdr[ICAP_USER_HEADER_MAX_LEN];
 	user_hdr[0] = '\0';
-#ifndef WITHOUT_USERAUTH
 	if (ctx->conn_opts->user_auth && ctx->user) {
-		snprintf(user_hdr, sizeof(user_hdr), "X-User: %s\r\n", ctx->user);
+		// Use X-Client-Username for E2Guardian compatibility
+		if (snprintf(user_hdr, sizeof(user_hdr), "X-Client-Username: %s\r\n", ctx->user) < 0) {
+			log_err_level(LOG_CRIT, "ICAP user header set failed");
+			ctx->enomem = 1;
+			icap_conn_term(ctx);
+			return -1;
+		}
 	}
 #endif /* !WITHOUT_USERAUTH */
 
@@ -762,10 +775,16 @@ icap_set_extended_headers(icap_ctx_t *icap_ctx, UNUSED int upgraded)
 		"X-Server-IP: %s\r\n"
 		"X-Server-Port: %s\r\n"
 		"X-Proto: %s\r\n"
-		"%s",
-		STRORNONE(ctx->srchost_str), STRORNONE(ctx->srcport_str),
+#ifndef WITHOUT_USERAUTH
+		"%s"
+#endif /* !WITHOUT_USERAUTH */
+		, STRORNONE(ctx->srchost_str), STRORNONE(ctx->srcport_str),
 		STRORNONE(ctx->dsthost_str), STRORNONE(ctx->dstport_str),
-		proto, user_hdr);
+		proto
+#ifndef WITHOUT_USERAUTH
+		, user_hdr
+#endif /* !WITHOUT_USERAUTH */
+		);
 
 	if (len == SIZE_MAX) {
 		log_err_level(LOG_ERR, "ICAP extended headers too long");
@@ -787,16 +806,24 @@ icap_set_extended_headers(icap_ctx_t *icap_ctx, UNUSED int upgraded)
 		"X-Server-IP: %s\r\n"
 		"X-Server-Port: %s\r\n"
 		"X-Proto: %s\r\n"
-		"%s",
-		STRORNONE(ctx->srchost_str), STRORNONE(ctx->srcport_str),
+#ifndef WITHOUT_USERAUTH
+		"%s"
+#endif /* !WITHOUT_USERAUTH */
+		, STRORNONE(ctx->srchost_str), STRORNONE(ctx->srcport_str),
 		STRORNONE(ctx->dsthost_str), STRORNONE(ctx->dstport_str),
-		proto, user_hdr) < 0) {
+		proto
+#ifndef WITHOUT_USERAUTH
+		, user_hdr
+#endif /* !WITHOUT_USERAUTH */
+		) < 0) {
 
 		log_err_level(LOG_CRIT, "ICAP extended headers set failed");
 		ctx->enomem = 1;
 		icap_conn_term(ctx);
 		return -1;
 	}
+
+	log_finer_va("Set ICAP extended headers:\n%s", icap_ctx->icap_extended_headers);
 	return 0;
 }
 
@@ -861,7 +888,7 @@ icap_service_connect(icap_service_ctx_t *service_ctx)
 void NONNULL(1)
 icap_service_disconnect(icap_service_ctx_t *service_ctx, icap_ctx_t *icap_ctx)
 {
-	// ATTENTION: Check ctx before calling log macros in this function, as ctx may be NULL
+	// ATTENTION: ctx may be NULL
 	// ATTENTION: Do not get icap_ctx from service_ctx here, because service_ctx may be already freed and its pointer may be dangling,
 	// so we pass ctx->icap_ctx as a parameter to this function
 	// icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
@@ -870,11 +897,10 @@ icap_service_disconnect(icap_service_ctx_t *service_ctx, icap_ctx_t *icap_ctx)
 		return;
 	}
 
-	pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
+	UNUSED pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
 
 	if (service_ctx->bev) {
-		if (ctx) log_finest_icap("Disable bufferevents");
-		else log_dbg_printf("Disable bufferevents for service idx=%d\n", service_ctx->idx);
+		log_finest_icap("Disable bufferevents");
 		
 		bufferevent_disable(service_ctx->bev, EV_READ | EV_WRITE);
 		bufferevent_setcb(service_ctx->bev, NULL, NULL, NULL, NULL);
@@ -883,8 +909,7 @@ icap_service_disconnect(icap_service_ctx_t *service_ctx, icap_ctx_t *icap_ctx)
 		// Don't close the socket here, let bufferevent_free handle it, otherwise we get Epoll Bad file descriptor errors.
 		// evutil_socket_t fd = bufferevent_getfd(service_ctx->bev);
 		// if (fd >= 0) {
-		// 	if (ctx) log_finest_icap_va("Closing ICAP socket fd=%d", fd);
-		// 	else log_dbg_printf("Closing ICAP socket fd=%d for service idx=%d\n", fd, service_ctx->idx);
+		// 	log_finest_icap_va("Closing ICAP socket fd=%d", fd);
 		// 	evutil_closesocket(fd);
 		// }
 
@@ -894,8 +919,7 @@ icap_service_disconnect(icap_service_ctx_t *service_ctx, icap_ctx_t *icap_ctx)
 
 	// ATTENTION: Do not free service_ctx here, just disconnect
 
-	if (ctx) log_finer_icap("ICAP service disconnected");
-	else log_dbg_printf("ICAP service disconnected, svc idx=%d\n", service_ctx->idx);
+	log_finer_icap("ICAP service disconnected");
 }
 
 static int NONNULL(1)
@@ -1021,8 +1045,7 @@ icap_send_data(icap_ctx_t *icap_ctx)
 		}
 	}
 	else {
-		if (ctx) log_fine("No connection context to resume flow");
-		else log_dbg_printf("No connection context to resume flow\n");
+		log_fine("No connection context to resume flow");
 	}
 }
 
@@ -1075,7 +1098,7 @@ icap_failopen_to_next_service(icap_service_ctx_t *service_ctx)
 	log_finest_icap_va("ENTER, sent_hdr=%zu, sent_body=%zu, in_hdr=%zu, in_body=%zu",
 		evbuffer_get_length(sent_hdr), evbuffer_get_length(sent_body), evbuffer_get_length(in_hdr), evbuffer_get_length(in_body));
 
-	if (icap_is_nullbody(service_ctx)) {
+	if (icap_is_http_nullbody(service_ctx)) {
 		log_finest_icap("Content complete: null-body");
 		ICAP_STATE(service_ctx, icap_ctx->reqmod)->content_complete = 1;
 	}
@@ -1182,44 +1205,37 @@ icap_advance_to_next_service(icap_service_ctx_t *service_ctx)
 static void NONNULL(1)
 icap_disconnect(icap_ctx_t *icap_ctx)
 {
-	// ATTENTION: Check ctx before calling log macros in this function, as ctx may be NULL
+	// ATTENTION: ctx may be NULL
 	pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
 
 	for (int i = 0; i < icap_ctx->service_count; i++) {
 		if (icap_ctx->services[i]) {
-			icap_service_disconnect(icap_ctx->services[i], ctx->icap_ctx);
+			icap_service_disconnect(icap_ctx->services[i], ctx ? ctx->icap_ctx : icap_ctx);
 			icap_service_ctx_free(icap_ctx->services[i]);
 			icap_ctx->services[i] = NULL;
 		}
 	}
 
-	if (ctx) log_finer("ICAP chain disconnected");
-	else log_dbg_printf("ICAP chain disconnected\n");
+	log_finer("ICAP chain disconnected");
 }
 
 static void NONNULL(1)
 icap_handle_service_error(icap_service_ctx_t *service_ctx)
 {
-	// ATTENTION: Check ctx before calling log macros in this function, as ctx may be NULL?
+	// ATTENTION: ctx may be NULL
 	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
 	pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
 
-	if (ctx) log_fine_icap_va("ICAP service in error state, conn_opts conn_fail_open=%s, conn_opts icap_fail_open=%s, svc conn_fail_open=%s, svc icap_fail_open=%s",
-		ctx->conn_opts->icap_conn_fail_open == ICAP_FAIL_CLOSE ? "fail-close" : "fail-open",
-		ctx->conn_opts->icap_fail_open == ICAP_FAIL_CLOSE ? "fail-close" : "fail-open",
-		service_ctx->svc->conn_fail_open == ICAP_FAIL_CLOSE ? "fail-close" : "fail-open",
-		service_ctx->svc->icap_fail_open == ICAP_FAIL_CLOSE ? "fail-close" : "fail-open");
-	else log_dbg_printf("ICAP service idx=%d in error state, conn_opts conn_fail_open=-, conn_opts icap_fail_open=-, svc conn_fail_open=%s, svc icap_fail_open=%s\n",
-		service_ctx->idx,
+	log_fine_icap_va("ICAP service in error state, conn_opts conn_fail_open=%s, conn_opts icap_fail_open=%s, svc conn_fail_open=%s, svc icap_fail_open=%s",
+		ctx ? (ctx->conn_opts->icap_conn_fail_open == ICAP_FAIL_CLOSE ? "fail-close" : "fail-open") : "-",
+		ctx ? (ctx->conn_opts->icap_fail_open == ICAP_FAIL_CLOSE ? "fail-close" : "fail-open") : "-",
 		service_ctx->svc->conn_fail_open == ICAP_FAIL_CLOSE ? "fail-close" : "fail-open",
 		service_ctx->svc->icap_fail_open == ICAP_FAIL_CLOSE ? "fail-close" : "fail-open");
 
 	// Connection fail mode
 	// conn_opts->icap_conn_fail_open is always copied to service_ctx->svc->conn_fail_open
 	if (service_ctx->svc->conn_fail_open == ICAP_FAIL_CLOSE) {
-		if (ctx) log_fine_icap("ICAP service in error state, terminate connection as fail-close");
-		else log_dbg_printf("ICAP service in error state, terminate connection as fail-close\n");
-
+		log_fine_icap("ICAP service in error state, terminate connection as fail-close");
 		icap_conn_term(ctx);
 		return;
 	}
@@ -1232,22 +1248,18 @@ icap_handle_service_error(icap_service_ctx_t *service_ctx)
 
 		int next_idx = service_ctx->idx + 1;
 		if (next_idx < icap_ctx->service_count) {
-			if (ctx) log_finer_icap_va("ICAP in error state, continue with next ICAP service in chain, next_idx=%d", next_idx);
-			else log_dbg_printf("ICAP in error state, continue with next ICAP service in chain\n");
-
+			log_finer_icap_va("ICAP in error state, continue with next ICAP service in chain, next_idx=%d", next_idx);
 			icap_process_chain(icap_ctx, next_idx);
 		}
 		else {
-			if (ctx) log_finer_icap_va("ICAP in error state, no more services to try, next_idx=%d", next_idx);
-			else log_dbg_printf("ICAP in error state, no more services to try\n");
+			log_finer_icap_va("ICAP in error state, no more services to try, next_idx=%d", next_idx);
 		}
 	}
 	else {
-		if (ctx) log_finer_icap("ICAP in error state, will not try further services");
-		else log_dbg_printf("ICAP in error state, will not try further services\n");
+		log_finer_icap("ICAP in error state, will not try further services");
 	}
 
-	icap_service_disconnect(service_ctx, ctx->icap_ctx);
+	icap_service_disconnect(service_ctx, ctx ? ctx->icap_ctx : icap_ctx);
 }
 
 static int NONNULL(1)
@@ -1279,7 +1291,7 @@ icap_is_icap_response_nullbody(icap_service_ctx_t *service_ctx)
 }
 
 static int
-icap_is_nullbody(icap_service_ctx_t *service_ctx)
+icap_is_http_nullbody(icap_service_ctx_t *service_ctx)
 {
 	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
 	UNUSED pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
@@ -1411,7 +1423,7 @@ icap_service_bypass(icap_service_ctx_t *service_ctx)
 }
 
 static int
-parse_encapsulated_field(icap_service_ctx_t *service_ctx, const char *line, const char *field, size_t *offset)
+icap_parse_encapsulated_field(icap_service_ctx_t *service_ctx, const char *line, const char *field, size_t *offset)
 {
 	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
 	UNUSED pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
@@ -1491,17 +1503,17 @@ icap_extract_icap_headers(icap_service_ctx_t *service_ctx, struct evbuffer *inpu
 		}
 		
 		if (strncasecmp(line, "Encapsulated:", 13) == 0) {
-			if (parse_encapsulated_field(service_ctx, line, "req-body", body_offset) == 1 ||
-				parse_encapsulated_field(service_ctx, line, "res-body", body_offset) == 1) {
+			if (icap_parse_encapsulated_field(service_ctx, line, "req-body", body_offset) == 1 ||
+				icap_parse_encapsulated_field(service_ctx, line, "res-body", body_offset) == 1) {
 				ICAP_STATE(service_ctx, icap_ctx->reqmod)->has_body = 1;
 			}
-			else if (parse_encapsulated_field(service_ctx, line, "null-body", body_offset) == 1) {
+			else if (icap_parse_encapsulated_field(service_ctx, line, "null-body", body_offset) == 1) {
 				log_finest_icap_va("ICAP detected null-body=%zu", *body_offset);
 				ICAP_STATE(service_ctx, icap_ctx->reqmod)->null_body = 1;
 			}
 
-			if (parse_encapsulated_field(service_ctx, line, "req-hdr", header_offset) != 1) {
-				if (parse_encapsulated_field(service_ctx, line, "res-hdr", header_offset) == 1) {
+			if (icap_parse_encapsulated_field(service_ctx, line, "req-hdr", header_offset) != 1) {
+				if (icap_parse_encapsulated_field(service_ctx, line, "res-hdr", header_offset) == 1) {
 					if (icap_ctx->reqmod) {
 						log_finer_icap("ICAP Veto detected: res-hdr in reqmod response");
 						icap_ctx->is_veto = 1;
@@ -2245,28 +2257,6 @@ icap_bev_writecb(UNUSED struct bufferevent *bev, UNUSED void *arg)
 	log_finest_icap("ICAP write callback called");
 }
 
-/*
- * Add standard X-headers to ICAP request
- */
-static void
-icap_add_standard_x_headers(pxy_conn_ctx_t *ctx, struct evbuffer *icap_buf)
-{
-	log_finest("ENTER");
-	#define ICAP_X_HEADER_MAX_LEN 256
-	char x_hdr[ICAP_X_HEADER_MAX_LEN];
-
-#ifndef WITHOUT_USERAUTH
-	if (ctx->user) {
-		snprintf(x_hdr, sizeof(x_hdr), "X-Authenticated-User: %s\r\n", STRORNONE(ctx->user));
-		evbuffer_add(icap_buf, x_hdr, strlen(x_hdr));
-
-		// For E2Guardian compatibility
-		snprintf(x_hdr, sizeof(x_hdr), "X-Client-Username: %s\r\n", STRORNONE(ctx->user));
-		evbuffer_add(icap_buf, x_hdr, strlen(x_hdr));
-	}
-#endif /* !WITHOUT_USERAUTH */
-}
-
 static int NONNULL(1)
 icap_max_body_size_enabled(icap_service_ctx_t *service_ctx)
 {
@@ -2320,7 +2310,7 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 		#define ICAP_MAX_ENCAPSULATED_HEADER_SIZE 128
 		char encapsulated_hdr[ICAP_MAX_ENCAPSULATED_HEADER_SIZE];
 
-		int null_body = icap_is_nullbody(service_ctx);
+		int null_body = icap_is_http_nullbody(service_ctx);
 
 		if (!null_body && in_body_len == 0) {
 			log_finer_icap_va("NOT null body but no body yet, do not send icap headers, wait for body, in_hdr_len=%zu", in_hdr_len);
@@ -2433,9 +2423,6 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 		log_finest_icap_va("Generated ICAP Header: %s", icap_hdr_str);
 		evbuffer_add(icap_buf, icap_hdr_str, strlen(icap_hdr_str));
 
-		/* Add standard X-headers */
-		icap_add_standard_x_headers(ctx, icap_buf);
-		
 		/* Add custom ICAP meta headers if any */
 		if (service_ctx->icap_ctx->icap_extended_headers) {
 			evbuffer_add(icap_buf, service_ctx->icap_ctx->icap_extended_headers, strlen(service_ctx->icap_ctx->icap_extended_headers));
