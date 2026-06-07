@@ -31,12 +31,30 @@ support it.
 SSLproxy is designed to transparently terminate connections that are redirected
 to it using a network address translation engine. SSLproxy then terminates
 SSL/TLS and initiates a new SSL/TLS connection to the original destination
-address. Packets received on the client side are decrypted and sent to the
-program listening on a port given in the proxy specification. SSLproxy inserts
-in the first packet the address and port it is expecting to receive the packets
-back from the program. Upon receiving the packets back, SSLproxy re-encrypts
-and sends them to their original destination. The return traffic follows the
-same path back to the client in reverse order.
+address. The rest of the actions is determined by the mode of operation 
+specified in its global, proxyspec, and filter rule configuration.
+
+SSLproxy supports three major modes of operation:
+
+- **Divert**
+- **Split**
+- **Icap**
+
+SSLproxy does not automagically redirect any network traffic. To actually
+implement a proxy, you also need to redirect the traffic to the system running 
+sslproxy. Your options include running sslproxy on a legitimate router, ARP 
+spoofing, ND spoofing, DNS poisoning, deploying a rogue access point (e.g. 
+using hostap mode), physical recabling, malicious VLAN reconfiguration or 
+route injection, /etc/hosts modification and so on.
+
+#### Divert
+
+In Divert mode, packets received on the client side are decrypted and sent to 
+the program listening on a port given in the proxy specification. SSLproxy 
+inserts in the first packet the address and port it is expecting to receive 
+the packets back from the program. Upon receiving the packets back, SSLproxy 
+re-encrypts and sends them to their original destination. The return traffic 
+follows the same path back to the client in reverse order.
 
 ![Mode of Operation Diagram](https://drive.google.com/uc?id=1N_Yy5nMPDSvY8YaNFd4sHvipyLWq5zDy)
 
@@ -49,9 +67,11 @@ into the kernel, the connection is effectively blocked. In the case of
 SSLproxy, SSLproxy acts as both the packet filter and the kernel, and the 
 communication occurs over networking sockets.
 
+#### Split
+
 SSLproxy supports split mode of operation similar to SSLsplit as well. In 
 split mode, packets are not diverted to listening programs, effectively making 
-SSLproxy behave similar to SSLsplit, but not exactly like it, because SSLproxy 
+SSLproxy behave similar to SSLsplit, but not exactly like it. Because SSLproxy 
 has certain features nonexistent in SSLsplit, such as user authentication, 
 protocol validation, and filtering rules. Also, note that the implementation 
 of the proxy core in SSLproxy is different from the one in SSLsplit; for 
@@ -60,12 +80,24 @@ implementation uses a thread manager level lock (which does not necessarily
 make sslproxy run faster than sslsplit). In SSLproxy, split mode can be 
 defined globally, per-proxyspec, or per-connection using filtering rules.
 
-SSLproxy does not automagically redirect any network traffic.  To actually
-implement a proxy, you also need to redirect the traffic to the system running 
-sslproxy.  Your options include running sslproxy on a legitimate router, ARP 
-spoofing, ND spoofing, DNS poisoning, deploying a rogue access point (e.g. 
-using hostap mode), physical recabling, malicious VLAN reconfiguration or 
-route injection, /etc/hosts modification and so on.
+#### Icap
+
+In Icap mode, SSLproxy sends decrypted contents to configured ICAP services 
+for inspection. Icap mode is not a direct alternative to the other modes of 
+operation. Instead, it should be combined with either Divert or Split mode. 
+For example, SSLproxy can send ICAP requests for the content in a connection 
+that it also diverts to the listening program configured for it.
+
+You can configure multiple ICAP services. Up to a maximum of 16 services is 
+allowed per chain. But note that global specifications are copied into 
+proxyspecs and proxyspec specifications are copied into filtering rules, so 
+the total number of services in a chain is determined by the ordering in the 
+configuration file.
+
+SSLproxy sends the contents to all of the ICAP services in the chain. The 
+output of the current ICAP service is passed to the next service in the chain, 
+and eventually forwarded to its destination. The destination is the listening 
+program in Divert mode and the server in Split mode.
 
 #### Proxy specifications
 
@@ -108,6 +140,23 @@ connection options too:
 
 	    # Divert or split
 	    Divert (yes|no)
+
+		Icap icap://host:port,reqmod,respmod,icap_fail_open,conn_fail_open,timeout,preview_size,max_body_size,allow_204,allow_206,echo_header
+        Icap {
+            Proto icap
+            Server host
+            Port port
+            Reqmod reqmod
+            Respmod respmod
+            FailOpen (yes|no)
+            ConnFailOpen (yes|no)
+            Timeout 30
+            PreviewSize 4096
+            MaxBodySize 1048576
+            Allow204 (yes|no)
+            Allow206 (yes|no)
+            EchoHeader x-header-to-echo (e.g. X-Response-Vars)
+        }
 
 	    # Connection options
 	    Passthrough (yes|no)
@@ -392,6 +441,8 @@ connection without changing its filter action
 
 SSLproxy supports one line and structured filtering rules.
 
+#### One line filtering rules
+
 The syntax of one line filtering rules is as follows:
 
 	(Divert|Split|Pass|Block|Match)
@@ -412,8 +463,12 @@ The syntax of one line filtering rules is as follows:
 	        [[!]content] [[!]pcap] [[!]mirror] [$macro]|[!]*)]
 	  |*) [# comment]
 
-The syntax of structured filtering rules is as follows, and they can configure 
-connection options too:
+#### Structured filtering rules
+
+The syntax of structured filtering rules is as follows, and they can also 
+specify connection options and ICAP services to be selectively applied to 
+matching connections, not just globally or per-proxyspec. One line filtering 
+rules cannot specify connection options or ICAP services.
 
 	FilterRule {
 	    Action (Divert|Split|Pass|Block|Match)
@@ -430,6 +485,23 @@ connection options too:
 	    URI (uri[*]|$macro|*)
 	    DstIp (serverip[*]|$macro|*)
 	    DstPort (serverport[*]|$macro|*)
+
+		Icap icap://host:port,reqmod,respmod,icap_fail_open,conn_fail_open,timeout,preview_size,max_body_size,allow_204,allow_206,echo_header
+        Icap {
+            Proto icap
+            Server host
+            Port port
+            Reqmod reqmod
+            Respmod respmod
+            FailOpen (yes|no)
+            ConnFailOpen (yes|no)
+            Timeout 30
+            PreviewSize 4096
+            MaxBodySize 1048576
+            Allow204 (yes|no)
+            Allow206 (yes|no)
+            EchoHeader x-header-to-echo (e.g. X-Response-Vars)
+        }
 
 	    # Multiple Log lines allowed
 	    Log ([[!]connect] [[!]master] [[!]cert]
@@ -471,6 +543,8 @@ connection options too:
 	    UserAuthURL https://192.168.0.1/userdblogin.php
 	}
 
+#### Application of filter actions
+
 The specification of which connections a filtering rule will be applied to is 
 achieved by the `from` and `to` parts of the filtering rule and by the 
 proxyspec that the rule is defined for.
@@ -486,53 +560,6 @@ headers, or `*` for all.
 	+ All rule types can use the `port` field
 - The proxyspec handling the connection defines the protocol filter for the 
 connection.
-
-If and how a connection should be logged is specified using the `log` or 
-`Log` part of one line or structured filtering rules, respectively:
-
-- `connect` enables logging connection information to connect log file
-- `master` enables logging of master keys
-- `cert` enables logging of generated certificates
-- `content` enables logging packet contents to content log file
-- `pcap` enables writing packets to pcap file
-- `mirror` enables mirroring packets to mirror interface or target
-
-You can add a negation prefix `!` to a log action to disable that logging.
-
-Structured filtering rules can also specify connection options to be 
-selectively applied to matching connections, not just globally or 
-per-proxyspec. One line filtering rules cannot specify connection options.
-
-For example, if the following rules are defined in a structured HTTPS proxyspec,
-
-	Split from user soner desc notebook to sni example.com log content
-	Pass from user soner desc android to cn .fbcdn.net*
-
-The first filtering rule above splits but does not divert HTTPS connections 
-from the user `soner` who has logged in with the description `notebook` to SSL 
-sites with the SNI of `example.com`. Also, the rule specifies that the packet 
-contents of the matching connection be written to content log file configured 
-globally.
-
-The second rule passes through HTTPS connections from the user `soner` who has 
-logged in with the description `android` to SSL sites with the Common Names 
-containing the substring `.fbcdn.net` anywhere in it (notice the asterisk at 
-the end). Since connection contents cannot be written to log files in 
-passthrough mode, the rule does not specify any content log action.
-
-The default filter action is Divert. So, if those are the only filtering rules 
-in that proxyspec, the other connections are diverted to the listening program 
-specified in that proxyspec, without writing any logs.
-
-If you want to enable, say, connect logging for the other connections handled 
-by that proxyspec, without changing their default Divert filter action, you 
-can add a third filtering rule to that proxyspec:
-
-	Match * log connect
-
-Note that the second example above is a filtering rule you can use to resolve 
-one of the certificate issues preventing the Facebook application on Android 
-smartphones to connect to the Internet from behind sslproxy.
 
 Filtering rules are applied based on certain precedence orders:
 
@@ -564,6 +591,20 @@ In terms of possible filter actions,
 enabled divert and split modes, but cannot take pass action. Also, HTTP 
 filtering rules can only disable logging.
 
+#### Log actions
+
+If and how a connection should be logged is specified using the `log` or 
+`Log` part of one line or structured filtering rules, respectively:
+
+- `connect` enables logging connection information to connect log file
+- `master` enables logging of master keys
+- `cert` enables logging of generated certificates
+- `content` enables logging packet contents to content log file
+- `pcap` enables writing packets to pcap file
+- `mirror` enables mirroring packets to mirror interface or target
+
+You can add a negation prefix `!` to a log action to disable that logging.
+
 Log actions do not configure any loggers. Global loggers for respective log 
 actions should have been configured for those log actions to have any effect.
 
@@ -571,37 +612,145 @@ If no filtering rules are defined for a proxyspec, all log actions for that
 proxyspec are enabled. Otherwise, all log actions are disabled, and filtering 
 rules should enable them specifically.
 
+#### Rule reuse
+
 To increase rule reuse, one or more of SNI, CN, Host, URI, and DstIp site 
 fields can be specified in the same structured filtering rule.
+
+#### Application of connection options
 
 Connection options specified in a structured filtering rule can have any 
 effect only if the rule matches the connection before global or proxyspec 
 connection options are applied. Otherwise, the global or proxyspec connection 
 options already applied to a connection cannot be overriden by the connection 
-options specified in the matching structured filtering rule. For example, SSL 
-options of a connection cannot be changed after the SSL connection is 
-established. So, normally SSL type of rules cannot modify SSL options of a 
-connection, but you can use the ReconnectSSL option to reconnect the server 
-side of an SSL connection to enforce the SSL options in the SSL type of 
-filtering rules. In other words, the ReconnectSSL option allows for using the 
-SNI and CN fields in stuctured filtering rules to match SSL connections and 
-change their SSL configuration.
+options specified in the matching structured filtering rule.
+
+For example, SSL options of a connection cannot be changed after the SSL 
+connection is established. So, normally SSL type of rules cannot modify SSL 
+options of a connection, but you can use the ReconnectSSL option to reconnect 
+the server side of an SSL connection to enforce the SSL options in the SSL 
+type of filtering rules. In other words, the ReconnectSSL option allows for 
+using the SNI and CN fields in stuctured filtering rules to match SSL 
+connections and change their SSL configuration.
+
+#### Macro support
 
 Macro expansion is supported. The `Define` option can be used for defining 
 macros to be used in filtering rules. Macro names must start with a `$` sign. 
 The macro name must be followed by words separated by spaces.
+
+#### Substring matching
 
 You can append an asterisk `*` to the fields in filtering rules for substring 
 matching. Otherwise, the filter searches for an exact match with the field in 
 the rule. The filter uses B-trees for exact string matching and Aho-Corasick 
 machines for substring matching.
 
-The ordering of filtering rules is important. The ordering of from, to, and 
-log parts of one line filtering rules is not important. The ordering of log 
-actions is not important.
+#### Order of filtering rules
+
+- The ordering of filtering rules is important.
+- The ordering of from, to, and log parts of one line filtering rules is not 
+important.
+- The ordering of log actions is not important.
+
+#### UserAuth
 
 If the UserAuth option is disabled, only client IP addresses can be used in 
 the from part of filtering rules.
+
+#### Sample filtering rules
+
+If the following rules are defined in a structured HTTPS proxyspec,
+
+	Split from user soner desc notebook to sni example.com log content
+	Pass from user soner desc android to cn .fbcdn.net*
+
+The first filtering rule above splits but does not divert HTTPS connections 
+from the user `soner` who has logged in with the description `notebook` to SSL 
+sites with the SNI of `example.com`. Also, the rule specifies that the packet 
+contents of the matching connection be written to content log file configured 
+globally.
+
+The second rule passes through HTTPS connections from the user `soner` who has 
+logged in with the description `android` to SSL sites with the Common Names 
+containing the substring `.fbcdn.net` anywhere in it (notice the asterisk at 
+the end). Since connection contents cannot be written to log files in 
+passthrough mode, the rule does not specify any content log action.
+
+The default filter action is Divert. So, if those are the only filtering rules 
+in that proxyspec, the other connections are diverted to the listening program 
+specified in that proxyspec, without writing any logs.
+
+If you want to enable, say, connect logging for the other connections handled 
+by that proxyspec, without changing their default Divert filter action, you 
+can add a third filtering rule to that proxyspec:
+
+	Match * log connect
+
+Note that the second example above is a filtering rule you can use to resolve 
+one of the certificate issues preventing the Facebook application on Android 
+smartphones to connect to the Internet from behind sslproxy.
+
+If you want to inspect the contents of all the connections specified by that 
+proxyspec using the `Suricata IDS/IPS` system, you can utilize [`icapsuricata`](https://github.com/sonertari/icapsuricata) 
+in Icap mode. After configuring the `icapsuricata` module in c-icap, you can 
+add an Icap specification to the same proxyspec:
+
+	Icap icap://127.0.0.1:1344,suricata,suricata,yes,yes,10,1024,0,yes,no,X-Response-Vars
+
+If you want to inspect the same contents using the `E2Guardian` web filter as 
+well, you can add another Icap specification after the one for `icapsuricata`:
+
+	Icap icap://127.0.0.1:1345,reqmod,respmod,no,no,30,4096,8192,yes,no,X-ICAP-E2G
+
+Due to the ordering of these Icap specifications, connection contents are 
+first sent to `icapsuricata` and then to `E2Guardian`.
+
+These Icap specifications can be used with structured filtering rules to 
+inspect the contents of certain connections selectively, not all of the 
+connections in the proxyspec.
+
+For example, the first sample filtering rule above can be written in 
+structured format, with the same Icap specification for `icapsuricata` also in 
+structured format, as follows:
+
+	FilterRule {
+		Action Split
+
+		# From
+		User soner
+		Desc notebook
+
+		# To
+		SNI example.com
+
+		Log content
+
+		Icap {
+			Proto icap
+			Server 127.0.0.1
+			Port 1344
+			Reqmod suricata
+			Respmod suricata
+			FailOpen yes
+			ConnFailOpen yes
+			Timeout 10
+			PreviewSize 1024
+			MaxBodySize 0
+			Allow204 yes
+			Allow206 no
+			EchoHeader X-Response-Vars
+		}
+
+		Icap icap://127.0.0.1:1345,reqmod,respmod,no,no,30,4096,8192,yes,no,X-ICAP-E2G
+	}
+
+So, in this case, this structured version of the first filtering rule above 
+splits the HTTPS connections from the user `soner` who has logged in with the 
+description `notebook` to SSL sites with the SNI of `example.com`, and logs 
+the contents to the content log file, as before. But, this rule also sends the 
+contents in those connections to the `icapsuricata` and `E2Guardian` ICAP 
+services in chain for inspection, in that respective order.
 
 #### Excluding sites from SSL inspection
 

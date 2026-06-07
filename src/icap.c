@@ -717,9 +717,10 @@ icap_set_allow_206(icap_service_t *svc, const char *value, unsigned int line_num
 
 /*
  * Parse an ICAP service specification string
- * Format: icap://<host>:<port>,<reqmod>,<respmod>,<icap_fail_open>,<conn_fail_open>,<timeout>,<preview>,<max_body_size>,<allow_204>,<allow_206>,<echo_header>
+ * Format: icap://host:port,reqmod,respmod,icap_fail_open,conn_fail_open,timeout,preview_size,max_body_size,allow_204,allow_206,echo_header
  * Example: icap://127.0.0.1:1344,echo,echo,yes,yes,3,1024,4096,yes,no
  * Example: icap://127.0.0.1:1345,reqmod,respmod,no,no,30,4096,8192,yes,no,X-ICAP-E2G
+ * Example: icap://127.0.0.1:1344,suricata,suricata,yes,yes,10,1024,0,yes,no,X-Response-Vars
  */
 int NONNULL(1, 2)
 load_icap_line(conn_opts_t *conn_opts, const char *spec, unsigned int line_num)

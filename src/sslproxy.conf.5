@@ -2,8 +2,8 @@
 .\" SSLproxy - transparent SSL/TLS proxy for diverting packets to programs
 .\" https://github.com/sonertari/SSLproxy
 .\"
+.\" Copyright (c) 2017-2026, Soner Tari <sonertari@gmail.com>.
 .\" Copyright (c) 2009-2019, Daniel Roethlisberger <daniel@roe.ch>.
-.\" Copyright (c) 2017-2025, Soner Tari <sonertari@gmail.com>.
 .\" All rights reserved.
 .\"
 .\" Redistribution and use in source and binary forms, with or without
@@ -369,6 +369,45 @@ Load configuration from an include file.
 Recursive include files are not allowed. The Include option cannot be used in 
 include files.
 .TP
+\fBIcap STRING\fR
+
+The syntax of one line Icap specifications is as follows:
+.br
+Icap icap://host:port,reqmod,respmod,icap_fail_open,conn_fail_open,timeout,preview_size,max_body_size,allow_204,allow_206,echo_header
+.TP
+\fBIcap {\fR
+.br
+Proto
+.br
+Server
+.br
+Port
+.br
+Reqmod
+.br
+Respmod
+.br
+FailOpen
+.br
+ConnFailOpen
+.br
+Timeout
+.br
+PreviewSize
+.br
+MaxBodySize
+.br
+Allow204
+.br
+Allow206
+.br
+EchoHeader
+.br
+\fB}\fR
+.br
+
+See sslproxy(1) for the details.
+.TP
 \fBDefine STRING\fR
 Define macro to be used in filtering rules. Macro names must start with a $ 
 char. The macro name must be followed by words separated with spaces. For 
@@ -505,11 +544,16 @@ UserTimeout
 .br
 UserAuthURL
 .br
+Icap one line Icap specifications
+.br
+Icap {...} structured Icap specifications
+.br
 \fB}\fR
 .br
-Structured filtering rules can specify connection options to be selectively 
-applied to matching connections, not just per-proxyspec or globally. One line 
-filtering rules cannot specify connection options.
+Structured filtering rules can specify connection options and Icap 
+specifications to be selectively applied to matching connections, not just per-
+proxyspec or globally. One line filtering rules cannot specify connection 
+options and Icap specifications.
 
 See sslproxy(1) for the details.
 .TP
@@ -603,6 +647,10 @@ DivertUsers
 PassUsers
 .br
 PassSite
+.br
+Icap one line Icap specifications
+.br
+Icap {...} structured Icap specifications
 .br
 Define
 .br
