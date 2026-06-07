@@ -31,10 +31,14 @@
 
 #include "pxyconn.h"
 typedef struct protohttp_ctx {
-	unsigned int seen_req_header : 1; /* 0 until request header complete */
-	unsigned int seen_resp_header : 1;  /* 0 until response hdr complete */
-	unsigned int sent_http_conn_close : 1;   /* 0 until Conn: close sent */
-	unsigned int ocsp_denied : 1;                /* 1 if OCSP was denied */
+	unsigned int seen_req_header : 1;      /* 0 until request header complete */
+	unsigned int seen_resp_header : 1;     /* 0 until response hdr complete */
+	unsigned int sent_http_conn_close : 1; /* 0 until Conn: close sent */
+	unsigned int ocsp_denied : 1;          /* 1 if OCSP was denied */
+
+#ifndef WITHOUT_ICAP
+	struct evbuffer *in_hdr;               /* tmp buffer for http headers */
+#endif /* !WITHOUT_ICAP */
 
 	/* log strings from HTTP request */
 	char *http_method;
@@ -47,7 +51,7 @@ typedef struct protohttp_ctx {
 	char *http_status_text;
 	char *http_content_length;
 
-	unsigned int not_valid : 1;    /* 1 if cannot find HTTP on first line */
+	unsigned int not_valid : 1;            /* 1 if cannot find HTTP on first line */
 	unsigned int seen_keyword_count;
 	long long unsigned int seen_bytes;
 } protohttp_ctx_t;

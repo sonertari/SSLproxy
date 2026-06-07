@@ -589,15 +589,29 @@ protohttp_apply_filter(pxy_conn_ctx_t *ctx)
 			ctx->log_mirror = 0;
 #endif /* !WITHOUT_MIRROR */
 
-		if (a->conn_opts)
+		if (a->conn_opts) {
 			ctx->conn_opts = a->conn_opts;
+#ifndef WITHOUT_ICAP
+			if (a->conn_opts->icap_chain) {
+				ctx->conn_opts->icap_chain = icap_service_copy(a->conn_opts->icap_chain);
+				if (!ctx->conn_opts->icap_chain) {
+					ctx->enomem = 1;
+					return 1;
+				}
+				ctx->icap_ctx = icap_init(ctx);
+				if (!ctx->icap_ctx) {
+					ctx->enomem = 1;
+					return 1;
+				}
+			}
+#endif /* !WITHOUT_ICAP */
+		}
 	}
 
 	// Cannot defer block action any longer
 	// Match action should not override any deferred action, hence no 'else if'
 	if (pxy_conn_apply_deferred_block_action(ctx))
 		rv = 1;
-
 	return rv;
 }
 
@@ -844,14 +858,23 @@ protohttp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		// Use a local pointer to the output buffer
 		struct evbuffer *outbuf_ptr = outbuf;
 #ifndef WITHOUT_ICAP
-		if (icap_enabled(ctx)) {
-			outbuf_ptr = icap_get_first_service_in_hdr(ctx, 1);
-		}
+		// ATTENTION: Filter rule application in protohttp_filter_request_header() may reinit icap_ctx and change the icap services along with their in_hdr,
+		// so we cannot use the in_hdr of first service here. This is only for http requests, not responses, because we don't apply filters to responses.
+		// outbuf_ptr = icap_get_first_service_in_hdr(ctx, 1);
+		log_finest_va("ICAP enabled for the connection, using http_ctx->in_hdr, size=%zu", evbuffer_get_length(http_ctx->in_hdr));
+		outbuf_ptr = http_ctx->in_hdr;
 #endif /* !WITHOUT_ICAP */
 
 		if (protohttp_filter_request_header(inbuf, outbuf_ptr, http_ctx, ctx->type, ctx) == -1) {
 			return;
 		}
+
+#ifndef WITHOUT_ICAP
+		if (http_ctx->seen_req_header) {
+			outbuf_ptr = icap_enabled(ctx) ? icap_get_first_service_in_hdr(ctx, 1) : outbuf;
+			evbuffer_add_buffer(outbuf_ptr, http_ctx->in_hdr);
+		}
+#endif /* !WITHOUT_ICAP */
 	}
 
 	// There may or may not be data left after parsing headers, but we should send ICAP requests for HTTP headers accumulated too
@@ -1238,6 +1261,11 @@ protohttp_free_ctx(protohttp_ctx_t *http_ctx)
 	if (http_ctx->http_content_length) {
 		free(http_ctx->http_content_length);
 	}
+#ifndef WITHOUT_ICAP
+	if (http_ctx->in_hdr) {
+		evbuffer_free(http_ctx->in_hdr);
+	}
+#endif /* !WITHOUT_ICAP */
 	free(http_ctx);
 }
 
@@ -1277,6 +1305,15 @@ protohttp_setup(pxy_conn_ctx_t *ctx)
 	}
 	memset(ctx->protoctx->arg, 0, sizeof(protohttp_ctx_t));
 
+#ifndef WITHOUT_ICAP
+	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
+	http_ctx->in_hdr = evbuffer_new();
+	if (!http_ctx->in_hdr) {
+		free(ctx->protoctx->arg);
+		return PROTO_ERROR;
+	}
+#endif /* !WITHOUT_ICAP */
+
 	return PROTO_HTTP;
 }
 
@@ -1300,8 +1337,20 @@ protohttps_setup(pxy_conn_ctx_t *ctx)
 	}
 	memset(ctx->protoctx->arg, 0, sizeof(protohttp_ctx_t));
 
+#ifndef WITHOUT_ICAP
+	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
+	http_ctx->in_hdr = evbuffer_new();
+	if (!http_ctx->in_hdr) {
+		free(ctx->protoctx->arg);
+		return PROTO_ERROR;
+	}
+#endif /* !WITHOUT_ICAP */
+
 	ctx->sslctx = malloc(sizeof(ssl_ctx_t));
 	if (!ctx->sslctx) {
+#ifndef WITHOUT_ICAP
+		evbuffer_free(http_ctx->in_hdr);
+#endif /* !WITHOUT_ICAP */
 		free(ctx->protoctx->arg);
 		return PROTO_ERROR;
 	}

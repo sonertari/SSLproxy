@@ -27,6 +27,7 @@
 
 #include "opts.h"
 #include "filter.h"
+#include "icap.h"
 
 #include "sys.h"
 #include "log.h"
@@ -576,7 +577,7 @@ filter_value_str(value_t *value)
 	char *s = NULL;
 
 	while (value) {
-		char *p;
+		char *p = NULL;
 		if (asprintf(&p, "%s%s%s", STRORNONE(s), s ? ", " : "", value->value) < 0) {
 			goto err;
 		}
@@ -610,7 +611,7 @@ filter_macro_str(macro_t *macro)
 	while (macro) {
 		char *v = filter_value_str(macro->value);
 
-		char *p;
+		char *p = NULL;
 		if (asprintf(&p, "%s%smacro %s = %s", STRORNONE(s), NLORNONE(s), macro->name, STRORNONE(v)) < 0) {
 			if (v)
 				free(v);
@@ -637,22 +638,35 @@ static char *
 filter_rule_site_str(filter_rule_t *rule, char *site, unsigned int exact_site, unsigned int all_sites, char *apply_to, int rule_num)
 {
 	char *s = NULL;
+	char *p = NULL; // Safe temporary pointer for asprintf calculation
 
 	char *copts_str = conn_opts_str(rule->action.conn_opts);
 	if (!copts_str)
 		return oom_return_na_null();
 
+	char *icap_str = NULL;
 	char *rule_num_str = NULL;
-	if (rule_num >= 0) {
-		if (asprintf(&rule_num_str, " %d", rule_num) < 0)
+
+#ifndef WITHOUT_ICAP
+	if (rule->action.conn_opts->icap_chain) {
+		icap_str = icap_chain_str(rule->action.conn_opts);
+		if (!icap_str)
 			goto err;
+	}
+#endif /* !WITHOUT_ICAP */
+
+	if (rule_num >= 0) {
+		if (asprintf(&rule_num_str, " %d", rule_num) < 0) {
+			rule_num_str = NULL;
+			goto err;
+		}
 	} else {
 		rule_num_str = strdup("");
 		if (!rule_num_str)
 			goto err;
 	}
 
-	if (asprintf(&s, "filter rule%s: %s=%s, dstport=%s, srcip=%s"
+	int ret = asprintf(&p, "filter rule%s: %s=%s, dstport=%s, srcip=%s"
 #ifndef WITHOUT_USERAUTH
 		", user=%s, desc=%s"
 #endif /* !WITHOUT_USERAUTH */
@@ -672,7 +686,7 @@ filter_rule_site_str(filter_rule_t *rule, char *site, unsigned int exact_site, u
 #ifdef DEBUG_PROXY
 		", line=%d"
 #endif /* DEBUG_PROXY */
-		"%s%s\n",
+		"%s%s%s%s\n",
 		rule_num_str, apply_to, site, STRORNONE(rule->port), STRORNONE(rule->ip),
 #ifndef WITHOUT_USERAUTH
 		STRORNONE(rule->user), STRORNONE(rule->desc),
@@ -697,13 +711,19 @@ filter_rule_site_str(filter_rule_t *rule, char *site, unsigned int exact_site, u
 #ifdef DEBUG_PROXY
 		rule->action.line_num,
 #endif /* DEBUG_PROXY */
-		strlen(copts_str) ? "\n  " : "", copts_str) < 0) {
-		s = NULL;
-	}
+		strlen(copts_str) ? "\n  " : "", copts_str,
+		icap_str ? "\n   " : "", STRORNONE(icap_str));
+
+	if (ret >= 0) {
+        s = p; // Assignment only occurs on explicit formatting success
+    }
 err:
+	if (copts_str)
+		free(copts_str);
+	if (icap_str)
+		free(icap_str);
 	if (rule_num_str)
 		free(rule_num_str);
-	free(copts_str);
 	return s;
 }
 
@@ -812,8 +832,19 @@ filter_port_str(filter_port_list_t *port_list)
 		if (!copts_str)
 			goto err;
 
-		char *p;
-		if (asprintf(&p, "%s\n          %d: %s (%s%s, action=%s|%s|%s|%s|%s, log=%s|%s|%s|%s|%s"
+		char *icap_str = NULL;
+#ifndef WITHOUT_ICAP
+		if (port_list->port->action.conn_opts->icap_chain) {
+			icap_str = icap_chain_str(port_list->port->action.conn_opts);
+			if (!icap_str) {
+				free(copts_str);
+				goto err;
+			}
+		}
+#endif /* !WITHOUT_ICAP */
+
+		char *p = NULL;
+		int ret = asprintf(&p, "%s\n          %d: %s (%s%s, action=%s|%s|%s|%s|%s, log=%s|%s|%s|%s|%s"
 #ifndef WITHOUT_MIRROR
 				"|%s"
 #endif /* !WITHOUT_MIRROR */
@@ -821,7 +852,7 @@ filter_port_str(filter_port_list_t *port_list)
 #ifdef DEBUG_PROXY
 				", line=%d"
 #endif /* DEBUG_PROXY */
-				"%s%s)", STRORNONE(s), count,
+				"%s%s%s%s)", STRORNONE(s), count,
 				port_list->port->port, port_list->port->all_ports ? "all_ports, " : "", port_list->port->exact ? "exact" : "substring",
 				port_list->port->action.divert ? "divert" : "", port_list->port->action.split ? "split" : "", port_list->port->action.pass ? "pass" : "", port_list->port->action.block ? "block" : "", port_list->port->action.match ? "match" : "",
 				port_list->port->action.log_connect ? (port_list->port->action.log_connect == 1 ? "!connect" : "connect") : "", port_list->port->action.log_master ? (port_list->port->action.log_master == 1 ? "!master" : "master") : "",
@@ -834,13 +865,17 @@ filter_port_str(filter_port_list_t *port_list)
 #ifdef DEBUG_PROXY
 				port_list->port->action.line_num,
 #endif /* DEBUG_PROXY */
-				strlen(copts_str) ? "\n            " : "", copts_str) < 0) {
-			if (copts_str)
-				free(copts_str);
-			goto err;
-		}
+				strlen(copts_str) ? "\n            " : "", copts_str,
+				icap_str ? "\n             " : "", STRORNONE(icap_str));
+
 		if (copts_str)
 			free(copts_str);
+		if (icap_str)
+			free(icap_str);
+		if (ret < 0) {
+			// asprintf failed. Don't touch 's' so we don't leak history
+			goto out;
+		}
 		if (s)
 			free(s);
 		s = p;
@@ -887,11 +922,17 @@ filter_sites_str(filter_site_list_t *site_list)
 	while (site_list) {
 		filter_port_list_t *port = NULL;
 
+		// Force reset the global processing hooks to avoid tracking pollution
+		port_list_acm = NULL;
+
 		if (site_list->site->port_btree)
 			__kb_traverse(filter_port_p_t, site_list->site->port_btree, build_port_list);
 
 		char *ports_exact = filter_port_str(port);
 		free_list(port, filter_port_list_t);
+		if (!ports_exact) {
+			goto err;
+		}
 
 		if (site_list->site->port_acm)
 			ACM_foreach_keyword(site_list->site->port_acm, build_port_list_acm);
@@ -899,6 +940,10 @@ filter_sites_str(filter_site_list_t *site_list)
 		char *ports_substring = filter_port_str(port_list_acm);
 		free_list(port_list_acm, filter_port_list_t);
 		port_list_acm = NULL;
+		if (!ports_substring) {
+			free(ports_exact);
+			goto err;
+		}
 
 		if (site_list->site->port_all)
 			build_port_list_acm((MatchHolder(char)){0}, site_list->site->port_all);
@@ -906,13 +951,36 @@ filter_sites_str(filter_site_list_t *site_list)
 		char *ports_all = filter_port_str(port_list_acm);
 		free_list(port_list_acm, filter_port_list_t);
 		port_list_acm = NULL;
+		if (!ports_all) {
+			free(ports_exact);
+			free(ports_substring);
+			goto err;
+		}
 
 		char *copts_str = conn_opts_str(site_list->site->action.conn_opts);
-		if (!copts_str)
+		if (!copts_str) {
+			free(ports_exact);
+			free(ports_substring);
+			free(ports_all);
 			goto err;
+		}
 
-		char *p;
-		if (asprintf(&p, "%s\n      %d: %s (%s%s, action=%s|%s|%s|%s|%s, log=%s|%s|%s|%s|%s"
+		char *icap_str = NULL;
+#ifndef WITHOUT_ICAP
+		if (site_list->site->action.conn_opts->icap_chain) {
+			icap_str = icap_chain_str(site_list->site->action.conn_opts);
+			if (!icap_str) {
+				free(ports_exact);
+				free(ports_substring);
+				free(ports_all);
+				free(copts_str);
+				goto err;
+			}
+		}
+#endif /* !WITHOUT_ICAP */
+
+		char *p = NULL;
+		int ret = asprintf(&p, "%s\n      %d: %s (%s%s, action=%s|%s|%s|%s|%s, log=%s|%s|%s|%s|%s"
 #ifndef WITHOUT_MIRROR
 				"|%s"
 #endif /* !WITHOUT_MIRROR */
@@ -920,7 +988,7 @@ filter_sites_str(filter_site_list_t *site_list)
 #ifdef DEBUG_PROXY
 				", line=%d"
 #endif /* DEBUG_PROXY */
-				"%s%s)%s%s%s%s%s%s",
+				"%s%s%s%s)%s%s%s%s%s%s",
 				STRORNONE(s), count,
 				site_list->site->site, site_list->site->all_sites ? "all_sites, " : "", site_list->site->exact ? "exact" : "substring",
 				site_list->site->action.divert ? "divert" : "", site_list->site->action.split ? "split" : "", site_list->site->action.pass ? "pass" : "", site_list->site->action.block ? "block" : "", site_list->site->action.match ? "match" : "",
@@ -935,19 +1003,10 @@ filter_sites_str(filter_site_list_t *site_list)
 				site_list->site->action.line_num,
 #endif /* DEBUG_PROXY */
 				strlen(copts_str) ? "\n        " : "", copts_str,
+				icap_str ? "\n         " : "", STRORNONE(icap_str),
 				ports_exact ? "\n        port exact:" : "", STRORNONE(ports_exact),
 				ports_substring ? "\n        port substring:" : "", STRORNONE(ports_substring),
-				ports_all ? "\n        port all:" : "", STRORNONE(ports_all)) < 0) {
-			if (ports_exact)
-				free(ports_exact);
-			if (ports_substring)
-				free(ports_substring);
-			if (ports_all)
-				free(ports_all);
-			if (copts_str)
-				free(copts_str);
-			goto err;
-		}
+				ports_all ? "\n        port all:" : "", STRORNONE(ports_all));
 		if (ports_exact)
 			free(ports_exact);
 		if (ports_substring)
@@ -956,6 +1015,13 @@ filter_sites_str(filter_site_list_t *site_list)
 			free(ports_all);
 		if (copts_str)
 			free(copts_str);
+		if (icap_str)
+			free(icap_str);
+
+		if (ret < 0) {
+			// asprintf failed. Don't touch 's' so we don't leak history
+			goto out;
+		}
 		if (s)
 			free(s);
 		s = p;
@@ -1113,7 +1179,7 @@ filter_ip_list_str(filter_ip_list_t *ip_list)
 	while (ip_list) {
 		char *list = filter_list_str(ip_list->ip->list);
 
-		char *p;
+		char *p = NULL;
 		if (asprintf(&p, "%s%s  ip %d %s (%s)=\n%s", STRORNONE(s), NLORNONE(s),
 				count, ip_list->ip->ip, ip_list->ip->exact ? "exact" : "substring", STRORNONE(list)) < 0) {
 			if (list)
@@ -1293,7 +1359,7 @@ filter_desc_list_str(filter_desc_list_t *desc)
 	while (desc) {
 		char *list = filter_list_str(desc->desc->list);
 
-		char *p;
+		char *p = NULL;
 		if (asprintf(&p, "%s%s   desc %d %s (%s)=\n%s", STRORNONE(s), NLORNONE(s),
 				count, desc->desc->desc, desc->desc->exact ? "exact" : "substring", STRORNONE(list)) < 0) {
 			if (list)
@@ -2752,30 +2818,30 @@ filter_rule_struct_macro_expand(opts_t *opts, name_value_lines_t nvls[], int nvl
 
 static int WUNRES
 filter_rule_struct_parse(name_value_lines_t nvls[], int *nvls_size, conn_opts_t *conn_opts, const char *argv0,
-		char *name, char *value, unsigned int line_num, tmp_opts_t *tmp_opts, filter_parse_state_t *parse_state)
+		char *name, char *value, unsigned int *line_num, FILE *f, tmp_opts_t *tmp_opts, filter_parse_state_t *parse_state)
 {
 	// Closing brace '}' is the only option without a value
 	// and only allowed in structured filtering rules and proxyspecs
 	if ((!value || !strlen(value)) && !equal(name, "}")) {
-		fprintf(stderr, "Error in conf: No value assigned for %s on line %d\n", name, line_num);
+		fprintf(stderr, "Error in conf: No value assigned for %s on line %d\n", name, *line_num);
 		return -1;
 	}
 
 	if (equal(name, "}")) {
 #ifdef DEBUG_OPTS
-		log_dbg_printf("FilterRule } on line %d\n", line_num);
+		log_dbg_printf("FilterRule } on line %d\n", *line_num);
 #endif /* DEBUG_OPTS */
 		if (!parse_state->action) {
-			fprintf(stderr, "Incomplete FilterRule on line %d\n", line_num);
+			fprintf(stderr, "Incomplete FilterRule on line %d\n", *line_num);
 			return -1;
 		}
 		// Return 2 to indicate the end of structured filter rule
 		return 2;
 	}
 
-	int rv = set_conn_opts_option(conn_opts, argv0, name, value, line_num, tmp_opts);
+	int rv = set_conn_opts_option(conn_opts, argv0, name, value, line_num, f, tmp_opts);
 	if (rv == -1) {
-		fprintf(stderr, "Error in conf: '%s' on line %d\n", name, line_num);
+		fprintf(stderr, "Error in conf: '%s' on line %d\n", name, *line_num);
 		return -1;
 	} else if (rv == 0) {
 		parse_state->conn_opts = 1;
@@ -2784,82 +2850,82 @@ filter_rule_struct_parse(name_value_lines_t nvls[], int *nvls_size, conn_opts_t 
 
 	if (equal(name, "Action")) {
 		if (parse_state->action) {
-			fprintf(stderr, "Error in conf: Only one Action spec allowed '%s' on line %d\n", value, line_num);
+			fprintf(stderr, "Error in conf: Only one Action spec allowed '%s' on line %d\n", value, *line_num);
 			return -1;
 		}
 		parse_state->action = 1;
 	}
 	else if (equal(name, "User")) {
 		if (parse_state->user) {
-			fprintf(stderr, "Error in conf: Only one User spec allowed '%s' on line %d\n", value, line_num);
+			fprintf(stderr, "Error in conf: Only one User spec allowed '%s' on line %d\n", value, *line_num);
 			return -1;
 		}
 		if (parse_state->srcip) {
-			fprintf(stderr, "Error in conf: Cannot specify both SrcIp and User '%s' on line %d\n", value, line_num);
+			fprintf(stderr, "Error in conf: Cannot specify both SrcIp and User '%s' on line %d\n", value, *line_num);
 			return -1;
 		}
 		parse_state->user = 1;
 	}
 	else if (equal(name, "Desc")) {
 		if (parse_state->desc) {
-			fprintf(stderr, "Error in conf: Only one Desc spec allowed '%s' on line %d\n", value, line_num);
+			fprintf(stderr, "Error in conf: Only one Desc spec allowed '%s' on line %d\n", value, *line_num);
 			return -1;
 		}
 		if (parse_state->srcip) {
-			fprintf(stderr, "Error in conf: Cannot specify both SrcIp and Desc '%s' on line %d\n", value, line_num);
+			fprintf(stderr, "Error in conf: Cannot specify both SrcIp and Desc '%s' on line %d\n", value, *line_num);
 			return -1;
 		}
 		parse_state->desc = 1;
 	}
 	else if (equal(name, "SrcIp")) {
 		if (parse_state->srcip) {
-			fprintf(stderr, "Error in conf: Only one SrcIp spec allowed '%s' on line %d\n", value, line_num);
+			fprintf(stderr, "Error in conf: Only one SrcIp spec allowed '%s' on line %d\n", value, *line_num);
 			return -1;
 		}
 		if (parse_state->user || parse_state->desc) {
-			fprintf(stderr, "Error in conf: Cannot specify both User/Desc and SrcIp '%s' on line %d\n", value, line_num);
+			fprintf(stderr, "Error in conf: Cannot specify both User/Desc and SrcIp '%s' on line %d\n", value, *line_num);
 			return -1;
 		}
 		parse_state->srcip = 1;
 	}
 	else if (equal(name, "SNI")) {
 		if (parse_state->sni) {
-			fprintf(stderr, "Error in conf: Only one SNI spec allowed '%s' on line %d\n", value, line_num);
+			fprintf(stderr, "Error in conf: Only one SNI spec allowed '%s' on line %d\n", value, *line_num);
 			return -1;
 		}
 		parse_state->sni = 1;
 	}
 	else if (equal(name, "CN")) {
 		if (parse_state->cn) {
-			fprintf(stderr, "Error in conf: Only one CN spec allowed '%s' on line %d\n", value, line_num);
+			fprintf(stderr, "Error in conf: Only one CN spec allowed '%s' on line %d\n", value, *line_num);
 			return -1;
 		}
 		parse_state->cn = 1;
 	}
 	else if (equal(name, "Host")) {
 		if (parse_state->host) {
-			fprintf(stderr, "Error in conf: Only one Host spec allowed '%s' on line %d\n", value, line_num);
+			fprintf(stderr, "Error in conf: Only one Host spec allowed '%s' on line %d\n", value, *line_num);
 			return -1;
 		}
 		parse_state->host = 1;
 	}
 	else if (equal(name, "URI")) {
 		if (parse_state->uri) {
-			fprintf(stderr, "Error in conf: Only one URI spec allowed '%s' on line %d\n", value, line_num);
+			fprintf(stderr, "Error in conf: Only one URI spec allowed '%s' on line %d\n", value, *line_num);
 			return -1;
 		}
 		parse_state->uri = 1;
 	}
 	else if (equal(name, "DstIp")) {
 		if (parse_state->dstip) {
-			fprintf(stderr, "Error in conf: Only one DstIp spec allowed '%s' on line %d\n", value, line_num);
+			fprintf(stderr, "Error in conf: Only one DstIp spec allowed '%s' on line %d\n", value, *line_num);
 			return -1;
 		}
 		parse_state->dstip = 1;
 	}
 	else if (equal(name, "DstPort")) {
 		if (parse_state->dstport) {
-			fprintf(stderr, "Error in conf: Only one DstPort spec allowed '%s' on line %d\n", value, line_num);
+			fprintf(stderr, "Error in conf: Only one DstPort spec allowed '%s' on line %d\n", value, *line_num);
 			return -1;
 		}
 		parse_state->dstport = 1;
@@ -2869,12 +2935,12 @@ filter_rule_struct_parse(name_value_lines_t nvls[], int *nvls_size, conn_opts_t 
 	}
 	else if (equal(name, "ReconnectSSL")) {
 		if (parse_state->reconnect_ssl) {
-			fprintf(stderr, "Error in conf: Only one ReconnectSSL spec allowed '%s' on line %d\n", value, line_num);
+			fprintf(stderr, "Error in conf: Only one ReconnectSSL spec allowed '%s' on line %d\n", value, *line_num);
 			return -1;
 		}
 		parse_state->reconnect_ssl = 1;
 
-		int yes = check_value_yesno(value, "ReconnectSSL", line_num);
+		int yes = check_value_yesno(value, "ReconnectSSL", *line_num);
 		if (yes == -1)
 			return -1;
 		conn_opts->reconnect_ssl = yes;
@@ -2883,13 +2949,13 @@ filter_rule_struct_parse(name_value_lines_t nvls[], int *nvls_size, conn_opts_t 
 #endif /* DEBUG_OPTS */
 	}
 	else {
-		fprintf(stderr, "Error in conf: Unknown option '%s' on line %d\n", name, line_num);
+		fprintf(stderr, "Error in conf: Unknown option '%s' on line %d\n", name, *line_num);
 		return -1;
 	}
 
 	nvls[*nvls_size].name = strdup(name);
 	nvls[*nvls_size].value = strdup(value);
-	nvls[*nvls_size].line_num = line_num;
+	nvls[*nvls_size].line_num = *line_num;
 	(*nvls_size)++;
 
 	return 0;
@@ -2951,7 +3017,7 @@ load_filterrule_struct(opts_t *opts, conn_opts_t *conn_opts, const char *argv0, 
 
 		retval = get_name_value(name, &value, ' ', *line_num);
 		if (retval == 0) {
-			retval = filter_rule_struct_parse(nvls, &nvls_size, copts, argv0, name, value, *line_num, tmp_opts, &parse_state);
+			retval = filter_rule_struct_parse(nvls, &nvls_size, copts, argv0, name, value, line_num, f, tmp_opts, &parse_state);
 		}
 		if (retval == -1) {
 			goto err;

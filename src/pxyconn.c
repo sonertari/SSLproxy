@@ -347,8 +347,7 @@ pxy_conn_ctx_free(pxy_conn_ctx_t *ctx, int by_requestor)
 	// Do not check icap_enabled(ctx) here, because ctx->icap_ctx may be initialized but not enabled,
 	// and we should still free it if it is initialized
 	if (ctx->icap_ctx) {
-		icap_ctx_free(ctx->icap_ctx);
-		ctx->icap_ctx = NULL;
+		icap_ctx_free(ctx->icap_ctx, 1);
 	}
 #endif /* !WITHOUT_ICAP */
 
@@ -1725,8 +1724,23 @@ pxy_conn_apply_filter(pxy_conn_ctx_t *ctx, unsigned int defer_action)
 			ctx->log_mirror = 0;
 #endif /* !WITHOUT_MIRROR */
 
-		if (a->conn_opts)
+		if (a->conn_opts) {
 			ctx->conn_opts = a->conn_opts;
+#ifndef WITHOUT_ICAP
+			if (a->conn_opts->icap_chain) {
+				ctx->conn_opts->icap_chain = icap_service_copy(a->conn_opts->icap_chain);
+				if (!ctx->conn_opts->icap_chain) {
+					ctx->enomem = 1;
+					return 1;
+				}
+				ctx->icap_ctx = icap_init(ctx);
+				if (!ctx->icap_ctx) {
+					ctx->enomem = 1;
+					return 1;
+				}
+			}
+#endif /* !WITHOUT_ICAP */
+		}
 	}
 	return rv;
 }

@@ -32,6 +32,7 @@
 #include "opts.h"
 #include "pxyconn.h"
 #include "protohttp.h"
+#include "util.h"
 
 #include <event2/buffer.h>
 #include <event2/bufferevent.h>
@@ -300,7 +301,7 @@ icap_conn_term(pxy_conn_ctx_t *ctx)
 }
 
 void
-icap_ctx_free(icap_ctx_t *icap_ctx)
+icap_ctx_free(icap_ctx_t *icap_ctx, int term_conn)
 {
 	if (!icap_ctx) {
 		log_dbg_printf("No ICAP context to free\n");
@@ -329,7 +330,9 @@ icap_ctx_free(icap_ctx_t *icap_ctx)
 	free(icap_ctx);
 	ctx->icap_ctx = NULL;
 
-	icap_conn_term(ctx);
+	if (term_conn) {
+		icap_conn_term(ctx);
+	}
 }
 
 static icap_ctx_t *
@@ -355,7 +358,7 @@ icap_ctx_new(pxy_conn_ctx_t *ctx)
 		icap_ctx->services[icap_ctx->service_count] = icap_service_ctx_new(svc, icap_ctx, icap_ctx->service_count);
 		if (!icap_ctx->services[icap_ctx->service_count]) {
 			log_err_level(LOG_CRIT, "ICAP service context allocation failed");
-			icap_ctx_free(icap_ctx);
+			icap_ctx_free(icap_ctx, 1);
 			return NULL;
 		}
 		svc = svc->next;
@@ -370,10 +373,22 @@ icap_init(pxy_conn_ctx_t *ctx)
 {
 	log_finest("ENTER");
 
+	int reinit = 0;
+	if (ctx->icap_ctx) {
+		log_dbg_printf("ICAP context already initialized, reinitializing\n");
+		icap_ctx_free(ctx->icap_ctx, 0);
+		reinit = 1;
+	}
+
 	icap_ctx_t *icap_ctx = icap_ctx_new(ctx);
 	if (!icap_ctx)
 		return NULL;
 
+	if (reinit && icap_set_extended_headers(icap_ctx, 0) == -1) {
+		log_err_level(LOG_CRIT, "ICAP extended header allocation failed");
+		icap_ctx_free(icap_ctx, 1);
+		return NULL;
+	}
 	return icap_ctx;
 }
 
@@ -394,6 +409,57 @@ icap_service_free(icap_service_t *chain)
 	}
 }
 
+char * NONNULL(1)
+icap_service_str(icap_service_t *svc)
+{
+	char *s = NULL;
+	if (asprintf(&s, "icap svc: Server=%s, Port=%d, Reqmod=%s, Respmod=%s, IcapFailOpen=%u, ConnFailOpen=%u, "
+		"Timeout=%u, PreviewSize=%zu, MaxBodySize=%zu, Allow204=%u, Allow206=%u, EchoHeader=%s",
+		svc->server, svc->port, svc->reqmod, svc->respmod, svc->icap_fail_open, svc->conn_fail_open,
+		svc->timeout, svc->preview_size, svc->max_body_size, svc->allow_204, svc->allow_206, STRORDASH(svc->echo_header)) < 0) {
+		log_err_level_printf(LOG_CRIT, "ICAP service string allocation failed\n");
+		return NULL;
+	}
+	return s;
+}
+
+char * NONNULL(1)
+icap_chain_str(conn_opts_t *conn_opts)
+{
+	icap_service_t *svc = conn_opts->icap_chain;
+	char *s = NULL;
+	char *p = NULL;
+	int count = 0;
+	while (svc) {
+		char *icap_str = icap_service_str(svc);
+		if (!icap_str) {
+			goto err;
+		}
+
+		int ret = asprintf(&p, "%s%s\n", s ? s : "icap: \n", icap_str);
+
+		free(icap_str);
+
+		if (ret < 0) {
+			log_err_level_printf(LOG_CRIT, "ICAP chain string allocation failed\n");
+			goto err;
+		}
+		if (s)
+			free(s);
+		s = p;
+		count++;
+		svc = svc->next;
+	}
+	goto out;
+err:
+	if (s) {
+		free(s);
+		s = NULL;
+	}
+out:
+	return s;
+}
+
 /*
  * Copy an ICAP service chain
  */
@@ -402,6 +468,13 @@ icap_service_copy(icap_service_t *chain)
 {
 	icap_service_t *new_chain = NULL, *svc = NULL, *last = NULL;
 	while (chain) {
+		char *icap_str = icap_service_str(chain);
+		if (!icap_str) {
+			goto err;
+		}
+		log_dbg_printf("icap_service_copy: icap chain: %s\n", icap_str);
+		free(icap_str);
+
 		svc = malloc(sizeof(icap_service_t));
 		if (!svc) {
 			log_err_level_printf(LOG_CRIT, "ICAP service allocation failed\n");
@@ -469,25 +542,14 @@ icap_chain_size(conn_opts_t *conn_opts)
 	return count;
 }
 
-/*
- * Parse an ICAP service specification string
- * Format: icap://<host>:<port>,<reqmod>,<respmod>,<mode>,<conn_mode>,<timeout>,<preview>,<max_body_size>,<allow_204>,<allow_206>,<echo_header>
- * Example: icap://127.0.0.1:1344,echo,echo,open,open,3,1024,4096,yes,no
- * Example: icap://127.0.0.1:1345,reqmod,respmod,close,close,30,4096,8192,yes,yes,X-ICAP-E2G
- */
-int NONNULL(1, 2)
-icap_chain_parse_spec(conn_opts_t *conn_opts, const char *spec)
+static icap_service_t * MALLOC
+icap_service_new(conn_opts_t *conn_opts)
 {
-	if (icap_chain_size(conn_opts) >= ICAP_MAX_SERVICES) {
-		log_err_level_printf(LOG_CRIT, "ICAP Config Error: Maximum number of services (%d) already configured\n", ICAP_MAX_SERVICES);
-		return -1;
-	}
-
 	/* Create and initialize a new service */
 	icap_service_t *svc = malloc(sizeof(icap_service_t));
 	if (!svc) {
 		log_err_level_printf(LOG_CRIT, "ICAP service allocation failed\n");
-		return -1;
+		return NULL;
 	}
 	memset(svc, 0, sizeof(icap_service_t));
 	
@@ -500,6 +562,178 @@ icap_chain_parse_spec(conn_opts_t *conn_opts, const char *spec)
 	svc->max_body_size = conn_opts->icap_max_body_size;
 	svc->allow_204 = conn_opts->icap_allow_204;
 	svc->allow_206 = conn_opts->icap_allow_206;
+	return svc;
+}
+
+static int NONNULL(1)
+icap_set_proto(const char *value, unsigned int line_num)
+{
+	if (equal(value, "icaps")) {
+		log_err_level_printf(LOG_ERR, "ICAP Config Error: Secure ICAP (icaps) not supported on line %u\n", line_num);
+		return -1;
+	} else if (equal(value, "icap")) {
+	} else {
+		log_err_level_printf(LOG_ERR, "ICAP Config Error: Invalid ICAP protocol '%s' on line %u\n", value, line_num);
+		return -1;
+	}
+	return 0;
+}
+
+static int NONNULL(1, 2)
+icap_set_port(icap_service_t *svc, const char *value, unsigned int line_num)
+{
+	#define ICAP_PORT_MAX_DIGITS 5
+	if (strlen(value) <= ICAP_PORT_MAX_DIGITS && strspn(value, "0123456789") == strlen(value)) {
+		char *endptr;
+		unsigned long val = strtoul(value, &endptr, 10);
+		if (endptr == value || *endptr != '\0' || val > 65535) {
+			log_err_level_printf(LOG_ERR, "ICAP Config Error: Invalid port '%s' on line %u\n", value, line_num);
+			return -1;
+		}
+		svc->port = (int)val;
+	}
+	else {
+		log_err_level_printf(LOG_ERR, "ICAP Config Error: Invalid port '%s' on line %u\n", value, line_num);
+		return -1;
+	}
+	return 0;
+}
+
+static int NONNULL(1, 2)
+icap_set_fail_open(icap_service_t *svc, const char *value, unsigned int line_num)
+{
+	if (equal(value, "yes")) {
+		svc->icap_fail_open = ICAP_FAIL_OPEN;
+	} else if (equal(value, "no")) {
+		svc->icap_fail_open = ICAP_FAIL_CLOSE;
+	} else {
+		log_err_level_printf(LOG_ERR, "ICAP Config Error: Unknown fail open value '%s' on line %u\n", value, line_num);
+		return -1;
+	}
+	return 0;
+}
+
+static int NONNULL(1, 2)
+icap_set_conn_fail_open(icap_service_t *svc, const char *value, unsigned int line_num)
+{
+	if (equal(value, "yes")) {
+		svc->conn_fail_open = ICAP_FAIL_OPEN;
+	} else if (equal(value, "no")) {
+		svc->conn_fail_open = ICAP_FAIL_CLOSE;
+	} else {
+		log_err_level_printf(LOG_ERR, "ICAP Config Error: Unknown conn fail open value '%s' on line %u\n", value, line_num);
+		return -1;
+	}
+	return 0;
+}
+
+static int NONNULL(1, 2)
+icap_set_timeout(icap_service_t *svc, const char *value, unsigned int line_num)
+{
+	#define ICAP_TIMEOUT_MAX_DIGITS 2
+	if (strlen(value) <= ICAP_TIMEOUT_MAX_DIGITS && strspn(value, "0123456789") == strlen(value)) {
+		char *endptr;
+		unsigned long val = strtoul(value, &endptr, 10);
+		if (endptr == value || *endptr != '\0' || val > 60) {
+			log_err_level_printf(LOG_ERR, "ICAP Config Error: Invalid timeout '%s' on line %u\n", value, line_num);
+			return -1;
+		}
+		svc->timeout = (unsigned int)val;
+	}
+	else {
+		log_err_level_printf(LOG_ERR, "ICAP Config Error: Invalid timeout '%s' on line %u\n", value, line_num);
+		return -1;
+	}
+	return 0;
+}
+
+static int NONNULL(1, 2)
+icap_set_preview_size(icap_service_t *svc, const char *value, unsigned int line_num)
+{
+	#define ICAP_PREVIEW_MAX_DIGITS 8
+	if (strlen(value) <= ICAP_PREVIEW_MAX_DIGITS && strspn(value, "0123456789") == strlen(value)) {
+		char *endptr;
+		unsigned long val = strtoul(value, &endptr, 10);
+		if (endptr == value || *endptr != '\0' || val > 16777216) {
+			log_err_level_printf(LOG_ERR, "ICAP Config Error: Invalid preview size '%s' on line %u\n", value, line_num);
+			return -1;
+		}
+		svc->preview_size = val;
+	}
+	else {
+		log_err_level_printf(LOG_ERR, "ICAP Config Error: Invalid preview size '%s' on line %u\n", value, line_num);
+		return -1;
+	}
+	return 0;
+}
+
+static int NONNULL(1, 2)
+icap_set_max_body_size(icap_service_t *svc, const char *value, unsigned int line_num)
+{
+	#define ICAP_MAX_BODY_SIZE_MAX_DIGITS 8
+	if (strlen(value) <= ICAP_MAX_BODY_SIZE_MAX_DIGITS && strspn(value, "0123456789") == strlen(value)) {
+		char *endptr;
+		unsigned long val = strtoul(value, &endptr, 10);
+		if (endptr == value || *endptr != '\0' || val > 16777216) {
+			log_err_level_printf(LOG_ERR, "ICAP Config Error: Invalid max body size '%s' on line %u\n", value, line_num);
+			return -1;
+		}
+		svc->max_body_size = val;
+	}
+	else {
+		log_err_level_printf(LOG_ERR, "ICAP Config Error: Invalid max body size '%s' on line %u\n", value, line_num);
+		return -1;
+	}
+	return 0;
+}
+
+static int NONNULL(1, 2)
+icap_set_allow_204(icap_service_t *svc, const char *value, unsigned int line_num)
+{
+	if (equal(value, "yes")) {
+		svc->allow_204 = 1;
+	} else if (equal(value, "no")) {
+		svc->allow_204 = 0;
+	} else {
+		log_err_level_printf(LOG_ERR, "ICAP Config Error: Unknown allow 204 value '%s' on line %u\n", value, line_num);
+		return -1;
+	}
+	return 0;
+}
+
+static int NONNULL(1, 2)
+icap_set_allow_206(icap_service_t *svc, const char *value, unsigned int line_num)
+{
+	if (equal(value, "yes")) {
+		svc->allow_206 = 1;
+	} else if (equal(value, "no")) {
+		svc->allow_206 = 0;
+	} else {
+		log_err_level_printf(LOG_ERR, "ICAP Config Error: Unknown allow 206 value '%s' on line %u\n", value, line_num);
+		return -1;
+	}
+	return 0;
+}
+
+/*
+ * Parse an ICAP service specification string
+ * Format: icap://<host>:<port>,<reqmod>,<respmod>,<icap_fail_open>,<conn_fail_open>,<timeout>,<preview>,<max_body_size>,<allow_204>,<allow_206>,<echo_header>
+ * Example: icap://127.0.0.1:1344,echo,echo,yes,yes,3,1024,4096,yes,no
+ * Example: icap://127.0.0.1:1345,reqmod,respmod,no,no,30,4096,8192,yes,no,X-ICAP-E2G
+ */
+int NONNULL(1, 2)
+load_icap_line(conn_opts_t *conn_opts, const char *spec, unsigned int line_num)
+{
+	if (icap_chain_size(conn_opts) >= ICAP_MAX_SERVICES) {
+		log_err_level_printf(LOG_CRIT, "ICAP Config Error: Maximum number of services (%d) already configured\n", ICAP_MAX_SERVICES);
+		return -1;
+	}
+
+	icap_service_t *svc = icap_service_new(conn_opts);
+	if (!svc) {
+		log_err_level_printf(LOG_CRIT, "ICAP service allocation failed\n");
+		return -1;
+	}
 
 	/* Make a local copy to tokenize */
 	char *spec_copy = strdup(spec);
@@ -512,8 +746,8 @@ icap_chain_parse_spec(conn_opts_t *conn_opts, const char *spec)
 	char *uri = strtok_r(spec_copy, ",", &saveptr);
 	char *reqmod = strtok_r(NULL, ",", &saveptr);
 	char *respmod = strtok_r(NULL, ",", &saveptr);
-	char *mode = strtok_r(NULL, ",", &saveptr);
-	char *conn_mode = strtok_r(NULL, ",", &saveptr);
+	char *icap_fail_open = strtok_r(NULL, ",", &saveptr);
+	char *conn_fail_open = strtok_r(NULL, ",", &saveptr);
 	char *timeout = strtok_r(NULL, ",", &saveptr);
 	char *preview = strtok_r(NULL, ",", &saveptr);
 	char *max_body_size = strtok_r(NULL, ",", &saveptr);
@@ -532,9 +766,11 @@ icap_chain_parse_spec(conn_opts_t *conn_opts, const char *spec)
 	if (strncmp(uri, "icap://", 7) == 0) {
 		host_start = uri + 7;
 	} else if (strncmp(uri, "icaps://", 8) == 0) {
-		host_start = uri + 8;
+		// host_start = uri + 8;
+		log_err_level_printf(LOG_ERR, "ICAP Config Error: Secure ICAP (icaps://) not supported\n");
+		goto err;
 	} else {
-		log_err_level_printf(LOG_ERR, "ICAP Config Error: URI must start with icap:// or icaps://\n");
+		log_err_level_printf(LOG_ERR, "ICAP Config Error: URI must start with icap://\n");
 		goto err;
 	}
 
@@ -549,32 +785,21 @@ icap_chain_parse_spec(conn_opts_t *conn_opts, const char *spec)
 	if (port_delim) {
 		*port_delim = '\0';
 		char *port = port_delim + 1;
-		#define ICAP_PORT_MAX_DIGITS 5
-		if (strlen(port) <= ICAP_PORT_MAX_DIGITS && strspn(port, "0123456789") == strlen(port)) {
-			char *endptr;
-			unsigned long val = strtoul(port, &endptr, 10);
-			if (endptr == port || *endptr != '\0' || val > 65535) {
-				log_err_level_printf(LOG_ERR, "ICAP Config Error: Invalid port '%s'\n", port);
-				goto err;
-			}
-			svc->port = (int)val;
-		}
-		else {
-			log_err_level_printf(LOG_ERR, "ICAP Config Error: Port invalid in URI '%s'\n", uri);
+		if (icap_set_port(svc, port, line_num) == -1) {
 			goto err;
 		}
 	}
 	
 	svc->server = strdup(host_start);
 	if (!svc->server) {
-		log_err_level_printf(LOG_CRIT, "ICAP server allocation failed\n");
+		log_err_level_printf(LOG_CRIT, "ICAP server allocation failed on line %u\n", line_num);
 		goto err;
 	}
 
 	if (reqmod) {
 		svc->reqmod = strdup(reqmod);
 		if (!svc->reqmod) {
-			log_err_level_printf(LOG_CRIT, "ICAP reqmod allocation failed\n");
+			log_err_level_printf(LOG_CRIT, "ICAP reqmod allocation failed on line %u\n", line_num);
 			goto err;
 		}
 	}
@@ -582,104 +807,49 @@ icap_chain_parse_spec(conn_opts_t *conn_opts, const char *spec)
 	if (respmod) {
 		svc->respmod = strdup(respmod);
 		if (!svc->respmod) {
-			log_err_level_printf(LOG_CRIT, "ICAP respmod allocation failed\n");
+			log_err_level_printf(LOG_CRIT, "ICAP respmod allocation failed on line %u\n", line_num);
 			goto err;
 		}
 	}
 
-	/* Parse Mode */
-	if (mode) {
-		if (strcasecmp(mode, "close") == 0) {
-			svc->icap_fail_open = ICAP_FAIL_CLOSE;
-		} else if (strcasecmp(mode, "open") == 0) {
-			svc->icap_fail_open = ICAP_FAIL_OPEN;
-		} else {
-			log_err_level_printf(LOG_ERR, "ICAP Config Error: Unknown fail mode '%s'\n", mode);
+	if (icap_fail_open) {
+		if (icap_set_fail_open(svc, icap_fail_open, line_num) == -1) {
 			goto err;
 		}
 	}
 
-	/* Parse Conn Mode */
-	if (conn_mode) {
-		if (strcasecmp(conn_mode, "close") == 0) {
-			svc->conn_fail_open = ICAP_FAIL_CLOSE;
-		} else if (strcasecmp(conn_mode, "open") == 0) {
-			svc->conn_fail_open = ICAP_FAIL_OPEN;
-		} else {
-			log_err_level_printf(LOG_ERR, "ICAP Config Error: Unknown fail mode '%s'\n", conn_mode);
+	if (conn_fail_open) {
+		if (icap_set_conn_fail_open(svc, conn_fail_open, line_num) == -1) {
 			goto err;
 		}
 	}
 
 	if (timeout) {
-		#define ICAP_TIMEOUT_MAX_DIGITS 2
-		if (strlen(timeout) <= ICAP_TIMEOUT_MAX_DIGITS && strspn(timeout, "0123456789") == strlen(timeout)) {
-			char *endptr;
-			unsigned long val = strtoul(timeout, &endptr, 10);
-			if (endptr == timeout || *endptr != '\0' || val > 60) {
-				log_err_level_printf(LOG_ERR, "ICAP Config Error: Invalid timeout '%s'\n", timeout);
-				goto err;
-			}
-			svc->timeout = (unsigned int)val;
-		}
-		else {
-			log_err_level_printf(LOG_ERR, "ICAP Config Error: Invalid timeout '%s'\n", timeout);
+		if (icap_set_timeout(svc, timeout, line_num) == -1) {
 			goto err;
 		}
 	}
 
 	if (preview) {
-		#define ICAP_PREVIEW_MAX_DIGITS 8
-		if (strlen(preview) <= ICAP_PREVIEW_MAX_DIGITS && strspn(preview, "0123456789") == strlen(preview)) {
-			char *endptr;
-			unsigned long val = strtoul(preview, &endptr, 10);
-			if (endptr == preview || *endptr != '\0' || val > 16777216) {
-				log_err_level_printf(LOG_ERR, "ICAP Config Error: Invalid preview size '%s'\n", preview);
-				goto err;
-			}
-			svc->preview_size = val;
-		}
-		else {
-			log_err_level_printf(LOG_ERR, "ICAP Config Error: Invalid preview size '%s'\n", preview);
+		if (icap_set_preview_size(svc, preview, line_num) == -1) {
 			goto err;
 		}
 	}
 
 	if (max_body_size) {
-		#define ICAP_MAX_BODY_SIZE_MAX_DIGITS 8
-		if (strlen(max_body_size) <= ICAP_MAX_BODY_SIZE_MAX_DIGITS && strspn(max_body_size, "0123456789") == strlen(max_body_size)) {
-			char *endptr;
-			unsigned long val = strtoul(max_body_size, &endptr, 10);
-			if (endptr == max_body_size || *endptr != '\0' || val > 16777216) {
-				log_err_level_printf(LOG_ERR, "ICAP Config Error: Invalid max body size '%s'\n", max_body_size);
-				goto err;
-			}
-			svc->max_body_size = val;
-		}
-		else {
-			log_err_level_printf(LOG_ERR, "ICAP Config Error: Invalid max body size '%s'\n", max_body_size);
+		if (icap_set_max_body_size(svc, max_body_size, line_num) == -1) {
 			goto err;
 		}
 	}
 
 	if (allow_204) {
-		if (strcasecmp(allow_204, "yes") == 0) {
-			svc->allow_204 = 1;
-		} else if (strcasecmp(allow_204, "no") == 0) {
-			svc->allow_204 = 0;
-		} else {
-			log_err_level_printf(LOG_ERR, "ICAP Config Error: Unknown allow 204 value '%s'\n", allow_204);
+		if (icap_set_allow_204(svc, allow_204, line_num) == -1) {
 			goto err;
 		}
 	}
 
 	if (allow_206) {
-		if (strcasecmp(allow_206, "yes") == 0) {
-			svc->allow_206 = 1;
-		} else if (strcasecmp(allow_206, "no") == 0) {
-			svc->allow_206 = 0;
-		} else {
-			log_err_level_printf(LOG_ERR, "ICAP Config Error: Unknown allow 206 value '%s'\n", allow_206);
+		if (icap_set_allow_206(svc, allow_206, line_num) == -1) {
 			goto err;
 		}
 	}
@@ -687,24 +857,28 @@ icap_chain_parse_spec(conn_opts_t *conn_opts, const char *spec)
 	if (echo_header) {
 		svc->echo_header = strdup(echo_header);
 		if (!svc->echo_header) {
-			log_err_level_printf(LOG_CRIT, "ICAP echo header allocation failed\n");
+			log_err_level_printf(LOG_CRIT, "ICAP echo header allocation failed on line %u\n", line_num);
 			goto err;
 		}
 	}
 
 	if (trailing) {
-		log_err_level_printf(LOG_ERR, "ICAP Config Error: Extra fields in spec '%s'\n", spec);
+		log_err_level_printf(LOG_ERR, "ICAP Config Error: Extra fields in spec '%s' on line %u\n", spec, line_num);
 		goto err;
 	}
 
 	free(spec_copy);
+	spec_copy = NULL;
 
-	log_dbg_printf("Icap spec parsed: Server=%s, Port=%d, ReqMod=%s, RespMod=%s, IcapFailOpen=%u, ConnFailOpen=%u, "
-		"Timeout=%u, Preview=%zu, MaxBodySize=%zu, Allow204=%u, Allow206=%u, EchoHeader=%s\n",
-		svc->server, svc->port, svc->reqmod, svc->respmod, svc->icap_fail_open, svc->conn_fail_open,
-		svc->timeout, svc->preview_size, svc->max_body_size, svc->allow_204, svc->allow_206, STRORDASH(svc->echo_header));
+	char *icap_str = icap_service_str(svc);
+	if (!icap_str) {
+		goto err;
+	}
 
-	/* Append to chain */
+	log_dbg_printf("Icap line parsed: %s\n", icap_str);
+	free(icap_str);
+
+	// Append to chain
 	if (!conn_opts->icap_chain) {
 		conn_opts->icap_chain = svc;
 	} else {
@@ -720,6 +894,185 @@ err:
 	if (svc->respmod) free(svc->respmod);
 	if (svc->echo_header) free(svc->echo_header);
 	if (spec_copy) free(spec_copy);
+	free(svc);
+	return -1;
+}
+
+static int WUNRES
+icap_set_option(icap_service_t *svc, const char *name, char *value, unsigned int *line_num)
+{
+	// Closing brace '}' is the only option without a value
+	// and only allowed in structured proxyspecs, filter rules, and icap specs
+	if ((!value || !strlen(value)) && !equal(name, "}")) {
+		fprintf(stderr, "Error in conf: No value assigned for %s on line %d\n", name, *line_num);
+		return -1;
+	}
+
+	if (equal(name, "Proto")) {
+		if (icap_set_proto(value, *line_num) == -1)
+			return -1;
+	}
+	else if (equal(name, "Server")) {
+		svc->server = strdup(value);
+		if (!svc->server) {
+			log_err_level_printf(LOG_CRIT, "ICAP server allocation failed on line %u\n", *line_num);
+			return -1;
+		}
+	}
+	else if (equal(name, "Port")) {
+		if (icap_set_port(svc, value, *line_num) == -1)
+			return -1;
+	}
+	else if (equal(name, "Reqmod")) {
+		svc->reqmod = strdup(value);
+		if (!svc->reqmod) {
+			log_err_level_printf(LOG_CRIT, "ICAP reqmod allocation failed on line %u\n", *line_num);
+			return -1;
+		}
+	}
+	else if (equal(name, "Respmod")) {
+		svc->respmod = strdup(value);
+		if (!svc->respmod) {
+			log_err_level_printf(LOG_CRIT, "ICAP respmod allocation failed on line %u\n", *line_num);
+			return -1;
+		}
+	}
+	else if (equal(name, "FailOpen")) {
+		if (icap_set_fail_open(svc, value, *line_num) == -1)
+			return -1;
+	}
+	else if (equal(name, "ConnFailOpen")) {
+		if (icap_set_conn_fail_open(svc, value, *line_num) == -1)
+			return -1;
+	}
+	else if (equal(name, "Timeout")) {
+		if (icap_set_timeout(svc, value, *line_num) == -1)
+			return -1;
+	}
+	else if (equal(name, "PreviewSize")) {
+		if (icap_set_preview_size(svc, value, *line_num) == -1)
+			return -1;
+	}
+	else if (equal(name, "MaxBodySize")) {
+		if (icap_set_max_body_size(svc, value, *line_num) == -1)
+			return -1;
+	}
+	else if (equal(name, "Allow204")) {
+		if (icap_set_allow_204(svc, value, *line_num) == -1)
+			return -1;
+	}
+	else if (equal(name, "Allow206")) {
+		if (icap_set_allow_206(svc, value, *line_num) == -1)
+			return -1;
+	}
+	else if (equal(name, "EchoHeader")) {
+		svc->echo_header = strdup(value);
+		if (!svc->echo_header) {
+			log_err_level_printf(LOG_CRIT, "ICAP echo header allocation failed on line %u\n", *line_num);
+			return -1;
+		}
+	}
+	else if (equal(name, "}")) {
+#ifdef DEBUG_OPTS
+		log_dbg_printf("ICAP } on line %d\n", *line_num);
+#endif /* DEBUG_OPTS */
+		if (!svc->server) {
+			fprintf(stderr, "Incomplete ICAP service on line %d\n", *line_num);
+			return -1;
+		}
+		// Return 2 to indicate the end of structured ICAP service
+		return 2;
+	}
+	else {
+		fprintf(stderr, "Unsupported option in ICAP service on line %d\n", *line_num);
+		return -1;
+	}
+	return 0;
+}
+
+int
+load_icap_struct(conn_opts_t *conn_opts, unsigned int *line_num, FILE *f)
+{
+	char *name, *value;
+	char *line = NULL;
+	size_t line_len;
+
+	if (icap_chain_size(conn_opts) >= ICAP_MAX_SERVICES) {
+		log_err_level_printf(LOG_CRIT, "ICAP Config Error: Maximum number of services (%d) already configured\n", ICAP_MAX_SERVICES);
+		return -1;
+	}
+
+	icap_service_t *svc = icap_service_new(conn_opts);
+	if (!svc) {
+		log_err_level_printf(LOG_CRIT, "ICAP service allocation failed\n");
+		return -1;
+	}
+
+	int closing_brace = 0;
+
+	while (!feof(f) && !closing_brace) {
+		if (getline(&line, &line_len, f) == -1) {
+			break;
+		}
+		if (line == NULL) {
+			fprintf(stderr, "Error in conf file: getline() returns NULL line after line %d\n", *line_num);
+			goto err;
+		}
+		(*line_num)++;
+
+		/* Skip white space */
+		for (name = line; *name == ' ' || *name == '\t'; name++);
+
+		/* Skip comments and empty lines */
+		if ((name[0] == '\0') || (name[0] == '#') || (name[0] == ';') ||
+			(name[0] == '\r') || (name[0] == '\n')) {
+			continue;
+		}
+
+		int retval = get_name_value(name, &value, ' ', *line_num);
+		if (retval == 0) {
+			retval = icap_set_option(svc, name, value, line_num);
+		}
+		if (retval == -1) {
+			goto err;
+		} else if (retval == 2) {
+			closing_brace = 1;
+		}
+
+		free(line);
+		line = NULL;
+	}
+
+	if (!closing_brace) {
+		fprintf(stderr, "Error in conf file: struct ICAP has no closing brace '}' after line %d\n", *line_num);
+		goto err;
+	}
+
+	char *icap_str = icap_service_str(svc);
+	if (!icap_str) {
+		goto err;
+	}
+
+	log_dbg_printf("Icap struct parsed: %s\n", icap_str);
+	free(icap_str);
+
+	// Append to chain
+	if (!conn_opts->icap_chain) {
+		conn_opts->icap_chain = svc;
+	} else {
+		icap_service_t *curr = conn_opts->icap_chain;
+		while (curr->next) curr = curr->next;
+		curr->next = svc;
+	}
+
+	return 0;
+err:
+	if (line)
+		free(line);
+	if (svc->server) free(svc->server);
+	if (svc->reqmod) free(svc->reqmod);
+	if (svc->respmod) free(svc->respmod);
+	if (svc->echo_header) free(svc->echo_header);
 	free(svc);
 	return -1;
 }
@@ -1041,7 +1394,7 @@ icap_send_data(icap_ctx_t *icap_ctx)
 		if (made_progress && icap_is_content_complete(icap_ctx, 1) && icap_is_content_complete(icap_ctx, 0)) {
 			// ATTENTION: Pass ctx->icap_ctx to the free function, because the icap_ctx param is actually service_ctx->icap_ctx,
 			// which may not be NULL even if ctx->icap_ctx is NULL
-			icap_ctx_free(ctx->icap_ctx);
+			icap_ctx_free(ctx->icap_ctx, 1);
 		}
 	}
 	else {

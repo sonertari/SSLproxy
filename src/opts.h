@@ -345,7 +345,7 @@ int opts_disable_enable_proto(conn_opts_t *, const char *, const char *, int) NO
 int opts_set_ciphers(conn_opts_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;
 int opts_set_ciphersuites(conn_opts_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;
 
-int set_conn_opts_option(conn_opts_t *, const char *, const char *, char *, unsigned int, tmp_opts_t *);
+int set_conn_opts_option(conn_opts_t *, const char *, const char *, char *, unsigned int *, FILE *, tmp_opts_t *);
 int load_proxyspec_struct(global_t *, const char *, char **, unsigned int *, FILE *, tmp_opts_t *) WUNRES;
 
 #define OPTS_DEBUG(global) unlikely((global)->debug)

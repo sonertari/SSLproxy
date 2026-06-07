@@ -142,8 +142,9 @@ struct icap_service_ctx {
 	icap_service_state_t dst;
 };
 
-void icap_ctx_free(icap_ctx_t *);
+void icap_ctx_free(icap_ctx_t *, int);
 icap_ctx_t *icap_init(pxy_conn_ctx_t *);
+char *icap_chain_str(conn_opts_t *);
 
 /*
  * ICAP chain orchestration
@@ -154,7 +155,9 @@ struct evbuffer *icap_get_first_service_in_hdr(pxy_conn_ctx_t *, int) NONNULL(1)
 
 void icap_service_free(icap_service_t *);
 icap_service_t *icap_service_copy(icap_service_t *);
-int icap_chain_parse_spec(conn_opts_t *, const char *) NONNULL(1,2);
+int load_icap_line(conn_opts_t *, const char *, unsigned int) NONNULL(1,2);
+int load_icap_struct(conn_opts_t *, unsigned int *, FILE *);
+
 int icap_set_extended_headers(icap_ctx_t *, int) NONNULL(1);
 
 void icap_process_data(struct evbuffer *, pxy_conn_ctx_t *, int) NONNULL(1,2);
