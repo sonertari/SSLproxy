@@ -593,11 +593,6 @@ protohttp_apply_filter(pxy_conn_ctx_t *ctx)
 			ctx->conn_opts = a->conn_opts;
 #ifndef WITHOUT_ICAP
 			if (a->conn_opts->icap_chain) {
-				ctx->conn_opts->icap_chain = icap_service_copy(a->conn_opts->icap_chain);
-				if (!ctx->conn_opts->icap_chain) {
-					ctx->enomem = 1;
-					return 1;
-				}
 				ctx->icap_ctx = icap_init(ctx);
 				if (!ctx->icap_ctx) {
 					ctx->enomem = 1;
