@@ -2,7 +2,7 @@
 
 # SSLproxy - transparent SSL/TLS proxy for decrypting and diverting network traffic to other programs for deep SSL inspection
 
-Copyright (C) 2017-2025, [Soner Tari](mailto:sonertari@gmail.com).
+Copyright (C) 2017-2026, [Soner Tari](mailto:sonertari@gmail.com).
 https://github.com/sonertari/SSLproxy
 
 Copyright (C) 2009-2019, [Daniel Roethlisberger](//daniel.roe.ch/).
@@ -22,11 +22,10 @@ Filter through those UTM software. Given that most of the Internet traffic is
 encrypted now, without SSLproxy it wouldn't be possible to deeply inspect most 
 of the network traffic passing through UTMFW.
 
-See [this presentation](https://drive.google.com/open?id=12YaGIGs0-xfpqMNAY3rzUbIyed-Tso8W) 
-for a summary of SSL interception and potential issues with middleboxes that 
-support it.
+See [this presentation](docs/RisksOfSSLInspection.pdf) for a summary of SSL 
+interception and potential issues with middleboxes that support it.
 
-### Mode of operation
+### Modes of Operation
 
 SSLproxy is designed to transparently terminate connections that are redirected
 to it using a network address translation engine. SSLproxy then terminates
@@ -56,7 +55,7 @@ the packets back from the program. Upon receiving the packets back, SSLproxy
 re-encrypts and sends them to their original destination. The return traffic 
 follows the same path back to the client in reverse order.
 
-![Mode of Operation Diagram](https://drive.google.com/uc?id=1N_Yy5nMPDSvY8YaNFd4sHvipyLWq5zDy)
+![Divert Mode of Operation Diagram](docs/DivertMode.png)
 
 This is similar in principle to [divert 
 sockets](https://man.openbsd.org/divert.4), where the packet filter diverts the 
@@ -69,16 +68,17 @@ communication occurs over networking sockets.
 
 #### Split
 
-SSLproxy supports split mode of operation similar to SSLsplit as well. In 
-split mode, packets are not diverted to listening programs, effectively making 
-SSLproxy behave similar to SSLsplit, but not exactly like it. Because SSLproxy 
-has certain features nonexistent in SSLsplit, such as user authentication, 
-protocol validation, and filtering rules. Also, note that the implementation 
-of the proxy core in SSLproxy is different from the one in SSLsplit; for 
-example, the proxy core in SSLproxy runs lockless, whereas SSLsplit 
-implementation uses a thread manager level lock (which does not necessarily 
-make sslproxy run faster than sslsplit). In SSLproxy, split mode can be 
-defined globally, per-proxyspec, or per-connection using filtering rules.
+SSLproxy supports split mode of operation similar to [`SSLsplit`](https://github.com/droe/sslsplit) 
+as well. In split mode, packets are not diverted to listening programs, 
+effectively making SSLproxy behave similar to SSLsplit, but not exactly like 
+it. Because SSLproxy has certain features nonexistent in SSLsplit, such as 
+user authentication, protocol validation, and filtering rules. Also, note that 
+the implementation of the proxy core in SSLproxy is different from the one in 
+SSLsplit; for example, the proxy core in SSLproxy runs lockless, whereas 
+SSLsplit implementation uses a thread manager level lock (which does not 
+necessarily make sslproxy run faster than sslsplit). In SSLproxy, split mode 
+can be defined globally, per-proxyspec, or per-connection using filtering 
+rules.
 
 #### Icap
 
@@ -87,6 +87,8 @@ for inspection. Icap mode is not a direct alternative to the other modes of
 operation. Instead, it should be combined with either Divert or Split mode. 
 For example, SSLproxy can send ICAP requests for the content in a connection 
 that it also diverts to the listening program configured for it.
+
+![Icap Mode of Operation Diagram](docs/IcapMode.png)
 
 You can configure multiple ICAP services. Up to a maximum of 16 services is 
 allowed per chain. But note that global specifications are copied into 
@@ -99,7 +101,7 @@ output of the current ICAP service is passed to the next service in the chain,
 and eventually forwarded to its destination. The destination is the listening 
 program in Divert mode and the server in Split mode.
 
-#### Proxy specifications
+### Proxy Specifications
 
 SSLproxy supports three different types of proxy specifications, or proxyspecs 
 for short, which can be in divert or split style.
@@ -202,7 +204,9 @@ connection options too:
 	    FilterRule {...} structured filtering rules
 	}
 
-For example, given the following command line proxyspec:
+#### Sample proxyspec
+
+Given the following command line proxyspec:
 
 	https 127.0.0.1 8443 up:8080
 
@@ -219,7 +223,7 @@ The response from the Server follows the same path back to the Client in
 reverse order.
 
 Split style proxyspecs configure for split mode of operation similar to 
-[SSLsplit](https://github.com/droe/sslsplit). See the SSLsplit documentation 
+[`SSLsplit`](https://github.com/droe/sslsplit). See the SSLsplit documentation 
 for the details of split style proxyspecs.
 
 #### SSLproxy line
@@ -277,153 +281,7 @@ So, the listening program can be running on a machine anywhere in the world.
 Since the packets between SSLproxy and the listening program are always 
 unencrypted, you should be careful while using such a setup.
 
-### Protocols
-
-#### Supported protocols
-
-SSLproxy supports plain TCP, plain SSL, HTTP, HTTPS, POP3, POP3S, SMTP, and 
-SMTPS connections over both IPv4 and IPv6. It also has the ability to 
-dynamically upgrade plain TCP to SSL in order to generically support SMTP 
-STARTTLS and similar upgrade mechanisms. Depending on the version of OpenSSL, 
-SSLproxy supports SSL 3.0, TLS 1.0, TLS 1.1, TLS 1.2, and TLS 1.3, and 
-optionally SSL 2.0 as well. SSLproxy supports Server Name Indication (SNI), 
-but not Encrypted SNI in TLS 1.3. It is able to work with RSA, DSA and ECDSA 
-keys and DHE and ECDHE cipher suites.
-
-The following features of SSLproxy are IPv4 only:
-
-- Divert addresses for listening programs in proxyspecs
-- SSLproxy return addresses dynamically assigned to connections
-- IP addresses in the ua and ra options
-- IP and ethernet addresses of clients in user authentication
-- Target IP and ethernet addresses in mirror logging
-
-#### OCSP, HPKP, HSTS, Upgrade et al.
-
-SSLproxy implements a number of defences against mechanisms which would
-normally prevent MitM attacks or make them more difficult. SSLproxy can deny
-OCSP requests in a generic way. For HTTP and HTTPS connections, SSLproxy
-mangles headers to prevent server-instructed public key pinning (HPKP), avoid
-strict transport security restrictions (HSTS), avoid Certificate Transparency
-enforcement (Expect-CT), and prevent switching to QUIC/SPDY, HTTP/2 or
-WebSockets (Upgrade, Alternate Protocols). HTTP compression, encodings and
-keep-alive are disabled to make the logs more readable.
-
-Another reason to disable persistent connections is to reduce file descriptor 
-usage. Accordingly, connections are closed if they remain idle for a certain 
-period of time. The default timeout is 120 seconds, which can be configured by 
-the ConnIdleTimeout option.
-
-#### Protocol validation
-
-Protocol validation makes sure the traffic handled by a proxyspec is using the 
-protocol specified in that proxyspec. If a connection cannot pass protocol 
-validation, it is terminated. To enable protocol validation, the ValidateProto 
-option can be defined globally, per-proxyspec, or per-connection using 
-filtering rules. This feature currently supports HTTP, POP3, and SMTP 
-protocols.
-
-SSLproxy uses only client requests for protocol validation. However, it also 
-validates SMTP responses until it starts processing the packets from the 
-client. If there is no excessive fragmentation, the first couple of packets in 
-the connection should be enough for validating protocols.
-
-### Certificates
-
-#### Certificate forging
-
-For SSL and HTTPS connections, SSLproxy generates and signs forged X509v3
-certificates on-the-fly, mimicking the original server certificate's subject
-DN, subjectAltName extension and other characteristics. SSLproxy has the
-ability to use existing certificates of which the private key is available,
-instead of generating forged ones. SSLproxy supports NULL-prefix CN
-certificates but otherwise does not implement exploits against specific
-certificate verification vulnerabilities in SSL/TLS stacks.
-
-#### Certificate verification
-
-SSLproxy verifies upstream certificates by default. If the verification fails,
-the connection is terminated immediately. This is in contrast to SSLsplit,
-because in order to maximize the chances that a connection can be successfully
-split, SSLsplit accepts all certificates by default, including self-signed
-ones. See [The Risks of SSL Inspection](https://insights.sei.cmu.edu/cert/2015/03/the-risks-of-ssl-inspection.html)
-for the reasons for this difference. You can enable or disable this feature by 
-the VerifyPeer option, which can be defined globally, per-proxyspec, or 
-per-connection using filtering rules.
-
-#### Client certificates
-
-SSLproxy uses the certificate and key from the pemfiles configured by the 
-ClientCert and ClientKey options when the destination requests client 
-certificates. These options can be defined globally, per-proxyspec, or 
-per-connection using filtering rules.
-
-Alternatively, you can use Pass filtering rules to pass through certain 
-destinations requesting client certificates.
-
-### User authentication
-
-If the UserAuth option is enabled, SSLproxy requires network users to log in 
-to the system to establish connections to the external network.
-
-SSLproxy determines the user owner of a connection using a `users` table in an 
-SQLite3 database configured by the UserDBPath option. The users table should 
-be created using the following SQL statement:
-
-	CREATE TABLE USERS(
-	   IP             CHAR(45)     PRIMARY KEY     NOT NULL,
-	   USER           CHAR(31)     NOT NULL,
-	   ETHER          CHAR(17)     NOT NULL,
-	   ATIME          INT          NOT NULL,
-	   DESC           CHAR(50)
-	);
-
-SSLproxy does not create this users table or the database file by itself, nor 
-does it log users in or out. So the database file with the users table should 
-already exist at the location pointed to by the UserDBPath option. An external 
-program should log users in and out on the users table. The external program 
-should fill out all the fields in user records, except perhaps for the DESC 
-field, which can be left blank.
-
-When SSLproxy accepts a connection,
-
-- It searches the client IP address of the connection in the users table. If 
-the client IP address is not in the users table, the connection is redirected 
-to a login page configured by the UserAuthURL option.
-- If SSLproxy finds a user record for the client IP address in the users 
-table, it obtains the ethernet address of the client IP address from the arp 
-cache of the system, and compares it with the value in the user record for 
-that IP address. If the client IP address is not in the arp cache, or the 
-ethernet addresses do not match, the connection is redirected to the login 
-page.
-- If the ethernet addresses match, SSLproxy compares the atime value in the 
-user record with the current system time. If the difference is greater than 
-the value configured by the UserTimeout option, the connection is redirected 
-to the login page.
-
-If the connection passes all those checks, SSLproxy proceeds with establishing 
-the connection.
-
-The atime of the IP address in the users table is updated with the system time 
-while the connection is being terminated. Since this atime update is executed 
-using a privsep command, it is expensive. So, to reduce the frequency of such 
-updates, it is deferred until after the user idle time is more than half of 
-the timeout period.
-
-If a description text is provided in the DESC field, it can be used in 
-filtering rules to treat the user logged in from different locations, i.e. 
-from different client IP addresses, differently.
-
-If the UserAuth option is enabled, the user owner of the connection is 
-appended at the end of the SSLproxy line, so that the listening program can 
-parse and use this information in its logic and/or logging:
-
-	SSLproxy: [127.0.0.1]:34649,[192.168.3.24]:47286,[192.168.111.130]:443,s,soner
-
-The user authentication feature is currently available on OpenBSD and Linux 
-only.
-
-### Filtering rules
+### Filtering Rules
 
 SSLproxy can divert, split, pass, block, or match connections based on 
 filtering rules. Filtering rules can be defined globally and/or per-proxyspec.
@@ -627,17 +485,19 @@ options specified in the matching structured filtering rule.
 
 For example, SSL options of a connection cannot be changed after the SSL 
 connection is established. So, normally SSL type of rules cannot modify SSL 
-options of a connection, but you can use the ReconnectSSL option to reconnect 
+options of a connection, but you can use the `ReconnectSSL` option to reconnect 
 the server side of an SSL connection to enforce the SSL options in the SSL 
-type of filtering rules. In other words, the ReconnectSSL option allows for 
+type of filtering rules. In other words, the `ReconnectSSL` option allows for 
 using the SNI and CN fields in stuctured filtering rules to match SSL 
 connections and change their SSL configuration.
 
 #### Macro support
 
-Macro expansion is supported. The `Define` option can be used for defining 
-macros to be used in filtering rules. Macro names must start with a `$` sign. 
-The macro name must be followed by words separated by spaces.
+Macro expansion is supported:
+
+- The `Define` option can be used for defining macros to be used in filtering rules.
+- Macro names must start with a `$` sign.
+- The macro name must be followed by words separated by spaces.
 
 #### Substring matching
 
@@ -649,7 +509,7 @@ machines for substring matching.
 #### Order of filtering rules
 
 - The ordering of filtering rules is important.
-- The ordering of from, to, and log parts of one line filtering rules is not 
+- The ordering of `from`, `to`, and `log` parts of one line filtering rules is not 
 important.
 - The ordering of log actions is not important.
 
@@ -745,12 +605,10 @@ structured format, as follows:
 		Icap icap://127.0.0.1:1345,reqmod,respmod,no,no,30,4096,8192,yes,no,X-ICAP-E2G
 	}
 
-So, in this case, this structured version of the first filtering rule above 
-splits the HTTPS connections from the user `soner` who has logged in with the 
-description `notebook` to SSL sites with the SNI of `example.com`, and logs 
-the contents to the content log file, as before. But, this rule also sends the 
-contents in those connections to the `icapsuricata` and `E2Guardian` ICAP 
-services in chain for inspection, in that respective order.
+This structured version of the first filtering rule above behaves the same as 
+the one line version. But, this rule also sends the contents in those 
+connections to the `icapsuricata` and `E2Guardian` ICAP services in chain for 
+inspection, in that order.
 
 #### Excluding sites from SSL inspection
 
@@ -794,6 +652,152 @@ are diverted to listening programs.
 
 These user control lists can be defined globally or per-proxyspec. User 
 control lists do not support macro expansion.
+
+### User Authentication
+
+If the UserAuth option is enabled, SSLproxy requires network users to log in 
+to the system to establish connections to the external network.
+
+SSLproxy determines the user owner of a connection using a `users` table in an 
+SQLite3 database configured by the UserDBPath option. The users table should 
+be created using the following SQL statement:
+
+	CREATE TABLE USERS(
+	   IP             CHAR(45)     PRIMARY KEY     NOT NULL,
+	   USER           CHAR(31)     NOT NULL,
+	   ETHER          CHAR(17)     NOT NULL,
+	   ATIME          INT          NOT NULL,
+	   DESC           CHAR(50)
+	);
+
+SSLproxy does not create this users table or the database file by itself, nor 
+does it log users in or out. So the database file with the users table should 
+already exist at the location pointed to by the UserDBPath option. An external 
+program should log users in and out on the users table. The external program 
+should fill out all the fields in user records, except perhaps for the DESC 
+field, which can be left blank.
+
+When SSLproxy accepts a connection,
+
+- It searches the client IP address of the connection in the users table. If 
+the client IP address is not in the users table, the connection is redirected 
+to a login page configured by the UserAuthURL option.
+- If SSLproxy finds a user record for the client IP address in the users 
+table, it obtains the ethernet address of the client IP address from the arp 
+cache of the system, and compares it with the value in the user record for 
+that IP address. If the client IP address is not in the arp cache, or the 
+ethernet addresses do not match, the connection is redirected to the login 
+page.
+- If the ethernet addresses match, SSLproxy compares the atime value in the 
+user record with the current system time. If the difference is greater than 
+the value configured by the UserTimeout option, the connection is redirected 
+to the login page.
+
+If the connection passes all those checks, SSLproxy proceeds with establishing 
+the connection.
+
+The atime of the IP address in the users table is updated with the system time 
+while the connection is being terminated. Since this atime update is executed 
+using a privsep command, it is expensive. So, to reduce the frequency of such 
+updates, it is deferred until after the user idle time is more than half of 
+the timeout period.
+
+If a description text is provided in the DESC field, it can be used in 
+filtering rules to treat the user logged in from different locations, i.e. 
+from different client IP addresses, differently.
+
+If the UserAuth option is enabled, the user owner of the connection is 
+appended at the end of the SSLproxy line, so that the listening program can 
+parse and use this information in its logic and/or logging:
+
+	SSLproxy: [127.0.0.1]:34649,[192.168.3.24]:47286,[192.168.111.130]:443,s,soner
+
+The user authentication feature is currently available on OpenBSD and Linux 
+only.
+
+### Protocols
+
+#### Supported protocols
+
+SSLproxy supports plain TCP, plain SSL, HTTP, HTTPS, POP3, POP3S, SMTP, and 
+SMTPS connections over both IPv4 and IPv6. It also has the ability to 
+dynamically upgrade plain TCP to SSL in order to generically support SMTP 
+STARTTLS and similar upgrade mechanisms. Depending on the version of OpenSSL, 
+SSLproxy supports SSL 3.0, TLS 1.0, TLS 1.1, TLS 1.2, and TLS 1.3, and 
+optionally SSL 2.0 as well. SSLproxy supports Server Name Indication (SNI), 
+but not Encrypted SNI in TLS 1.3. It is able to work with RSA, DSA and ECDSA 
+keys and DHE and ECDHE cipher suites.
+
+The following features of SSLproxy are IPv4 only:
+
+- Divert addresses for listening programs in proxyspecs
+- SSLproxy return addresses dynamically assigned to connections
+- IP addresses in the ua and ra options
+- IP and ethernet addresses of clients in user authentication
+- Target IP and ethernet addresses in mirror logging
+
+#### OCSP, HPKP, HSTS, Upgrade et al.
+
+SSLproxy implements a number of defences against mechanisms which would
+normally prevent MitM attacks or make them more difficult. SSLproxy can deny
+OCSP requests in a generic way. For HTTP and HTTPS connections, SSLproxy
+mangles headers to prevent server-instructed public key pinning (HPKP), avoid
+strict transport security restrictions (HSTS), avoid Certificate Transparency
+enforcement (Expect-CT), and prevent switching to QUIC/SPDY, HTTP/2 or
+WebSockets (Upgrade, Alternate Protocols). HTTP compression, encodings and
+keep-alive are disabled to make the logs more readable.
+
+Another reason to disable persistent connections is to reduce file descriptor 
+usage. Accordingly, connections are closed if they remain idle for a certain 
+period of time. The default timeout is 120 seconds, which can be configured by 
+the ConnIdleTimeout option.
+
+#### Protocol validation
+
+Protocol validation makes sure the traffic handled by a proxyspec is using the 
+protocol specified in that proxyspec. If a connection cannot pass protocol 
+validation, it is terminated. To enable protocol validation, the ValidateProto 
+option can be defined globally, per-proxyspec, or per-connection using 
+filtering rules. This feature currently supports HTTP, POP3, and SMTP 
+protocols.
+
+SSLproxy uses only client requests for protocol validation. However, it also 
+validates SMTP responses until it starts processing the packets from the 
+client. If there is no excessive fragmentation, the first couple of packets in 
+the connection should be enough for validating protocols.
+
+### Certificates
+
+#### Certificate forging
+
+For SSL and HTTPS connections, SSLproxy generates and signs forged X509v3
+certificates on-the-fly, mimicking the original server certificate's subject
+DN, subjectAltName extension and other characteristics. SSLproxy has the
+ability to use existing certificates of which the private key is available,
+instead of generating forged ones. SSLproxy supports NULL-prefix CN
+certificates but otherwise does not implement exploits against specific
+certificate verification vulnerabilities in SSL/TLS stacks.
+
+#### Certificate verification
+
+SSLproxy verifies upstream certificates by default. If the verification fails,
+the connection is terminated immediately. This is in contrast to SSLsplit,
+because in order to maximize the chances that a connection can be successfully
+split, SSLsplit accepts all certificates by default, including self-signed
+ones. See [The Risks of SSL Inspection](https://insights.sei.cmu.edu/cert/2015/03/the-risks-of-ssl-inspection.html)
+for the reasons for this difference. You can enable or disable this feature by 
+the VerifyPeer option, which can be defined globally, per-proxyspec, or 
+per-connection using filtering rules.
+
+#### Client certificates
+
+SSLproxy uses the certificate and key from the pemfiles configured by the 
+ClientCert and ClientKey options when the destination requests client 
+certificates. These options can be defined globally, per-proxyspec, or 
+per-connection using filtering rules.
+
+Alternatively, you can use Pass filtering rules to pass through certain 
+destinations requesting client certificates.
 
 ### Logging
 
