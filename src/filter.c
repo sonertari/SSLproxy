@@ -648,7 +648,7 @@ filter_rule_site_str(filter_rule_t *rule, char *site, unsigned int exact_site, u
 	char *rule_num_str = NULL;
 
 #ifndef WITHOUT_ICAP
-	if (rule->action.conn_opts->icap_chain) {
+	if (rule->action.conn_opts && rule->action.conn_opts->icap_chain) {
 		icap_str = icap_chain_str(rule->action.conn_opts);
 		if (!icap_str)
 			goto err;
@@ -834,7 +834,7 @@ filter_port_str(filter_port_list_t *port_list)
 
 		char *icap_str = NULL;
 #ifndef WITHOUT_ICAP
-		if (port_list->port->action.conn_opts->icap_chain) {
+		if (port_list->port->action.conn_opts && port_list->port->action.conn_opts->icap_chain) {
 			icap_str = icap_chain_str(port_list->port->action.conn_opts);
 			if (!icap_str) {
 				free(copts_str);
@@ -967,7 +967,7 @@ filter_sites_str(filter_site_list_t *site_list)
 
 		char *icap_str = NULL;
 #ifndef WITHOUT_ICAP
-		if (site_list->site->action.conn_opts->icap_chain) {
+		if (site_list->site->action.conn_opts && site_list->site->action.conn_opts->icap_chain) {
 			icap_str = icap_chain_str(site_list->site->action.conn_opts);
 			if (!icap_str) {
 				free(ports_exact);
