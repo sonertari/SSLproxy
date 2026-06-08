@@ -232,10 +232,10 @@ typedef struct pxy_conn_lproc_desc {
 struct pxy_conn_ctx {
 	enum conn_type type;
 
-#ifdef DEBUG_PROXY
+#if defined(DEBUG_PROXY) || defined(DEBUG_ICAP)
 	// Unique id of the conn, used in debugging only
 	long long unsigned int id;
-#endif /* DEBUG_PROXY */
+#endif /* DEBUG_PROXY || DEBUG_ICAP */
 
 	pxy_conn_ctx_t *conn;                 /* parent's conn ctx is itself */
 
