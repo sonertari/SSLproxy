@@ -55,7 +55,7 @@ the packets back from the program. Upon receiving the packets back, SSLproxy
 re-encrypts and sends them to their original destination. The return traffic 
 follows the same path back to the client in reverse order.
 
-![Divert Mode of Operation Diagram](docs/DivertMode.png)
+![Divert Mode Diagram](docs/DivertMode.png)
 
 This is similar in principle to [divert 
 sockets](https://man.openbsd.org/divert.4), where the packet filter diverts the 
@@ -88,13 +88,12 @@ operation. Instead, it should be combined with either Divert or Split mode.
 For example, SSLproxy can send ICAP requests for the content in a connection 
 that it also diverts to the listening program configured for it.
 
-![Icap Mode of Operation Diagram](docs/IcapMode.png)
+![Icap Mode Diagram](docs/IcapMode.png)
 
-You can configure multiple ICAP services. Up to a maximum of 16 services is 
-allowed per chain. But note that global specifications are copied into 
-proxyspecs and proxyspec specifications are copied into filtering rules, so 
-the total number of services in a chain is determined by the ordering in the 
-configuration file.
+You can configure multiple ICAP services, up to a maximum of 16 services per 
+chain. But note that global services are copied into proxyspecs, and proxyspec 
+services are copied into filtering rules. So the total number of services in a 
+filter rule chain is determined by the ordering in the configuration file.
 
 SSLproxy sends the contents to all of the ICAP services in the chain. The 
 output of the current ICAP service is passed to the next service in the chain, 
