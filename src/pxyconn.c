@@ -1350,7 +1350,8 @@ pxy_bev_readcb_preexec_logging_and_stats(struct bufferevent *bev, pxy_conn_ctx_t
 					unsigned char *data = evbuffer_pullup(inbuf, pullup_len);
 					if (data) {
 						const unsigned char *chello = NULL;
-						int rv = ssl_tls_clienthello_parse(data, pullup_len, 0, &chello, NULL);
+						int rv = ssl_tls_clienthello_parse(data, pullup_len, 0, &chello, NULL,
+							&ctx->sslctx->alpn_protos, &ctx->sslctx->alpn_protos_len);
 						if (rv == 0 || (rv == 1 && chello != NULL)) {
 							return 0;
 						}
@@ -1412,7 +1413,8 @@ pxy_bev_readcb_preexec_logging_and_stats_child(struct bufferevent *bev, pxy_conn
 				unsigned char *data = evbuffer_pullup(inbuf, pullup_len);
 				if (data) {
 					const unsigned char *chello = NULL;
-					int rv = ssl_tls_clienthello_parse(data, pullup_len, 0, &chello, NULL);
+					int rv = ssl_tls_clienthello_parse(data, pullup_len, 0, &chello, NULL,
+						&ctx->conn->sslctx->alpn_protos, &ctx->conn->sslctx->alpn_protos_len);
 					if (rv == 0 || (rv == 1 && chello != NULL)) {
 						return 0;
 					}
