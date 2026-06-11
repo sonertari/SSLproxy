@@ -29,6 +29,7 @@
 
 #include "protossl.h"
 #include "prototcp.h"
+#include "protohttp2.h"
 #ifndef WITHOUT_ICAP
 #include "icap.h"
 #endif /* !WITHOUT_ICAP */
@@ -1019,6 +1020,7 @@ protossl_apply_filter(pxy_conn_ctx_t *ctx)
 		ctx->pass = 1;
 		rv = 1;
 	}
+
 	return rv;
 }
 
@@ -1926,7 +1928,7 @@ protossl_bev_eventcb_error_srvdst(UNUSED struct bufferevent *bev, pxy_conn_ctx_t
 	}
 }
 
-static void NONNULL(1)
+void NONNULL(1)
 protossl_bev_eventcb_dst(struct bufferevent *bev, short events, pxy_conn_ctx_t *ctx)
 {
 	if (events & BEV_EVENT_CONNECTED) {
@@ -1988,6 +1990,7 @@ protossl_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 	}
 }
 
+// @attention Called by thrmgr thread
 protocol_t
 protossl_setup(pxy_conn_ctx_t *ctx)
 {

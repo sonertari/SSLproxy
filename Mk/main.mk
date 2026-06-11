@@ -309,6 +309,12 @@ PKGS+=		$(shell $(PKGCONFIG) $(PCFLAGS) --exists sqlite3 \
 		&& echo sqlite3)
 endif
 endif
+ifneq ($(filter -DWITHOUT_HTTP2,$(FEATURES)),-DWITHOUT_HTTP2)
+ifndef LIBNGHTTP2_BASE
+PKGS+=		$(shell $(PKGCONFIG) $(PCFLAGS) --exists libnghttp2 \
+		&& echo libnghttp2)
+endif
+endif
 TPKGS:=		
 ifndef CHECK_BASE
 TPKGS+=		$(shell $(PKGCONFIG) $(PCFLAGS) --exists check \
@@ -358,6 +364,15 @@ SQLITE_FOUND:=$(call locate,sqlite3,include/sqlite3.h,$(SQLITE_BASE))
 ifndef SQLITE_FOUND
 $(error dependency 'SQLite3' not found; \
 	install it or point SQLITE_BASE to base path)
+endif
+endif
+endif
+ifneq ($(filter -DWITHOUT_HTTP2,$(FEATURES)),-DWITHOUT_HTTP2)
+ifeq (,$(filter libnghttp2,$(PKGS)))
+LIBNGHTTP2_FOUND:=$(call locate,libnghttp2,include/nghttp2/nghttp2.h,$(LIBNGHTTP2_BASE))
+ifndef LIBNGHTTP2_FOUND
+$(error dependency 'libnghttp2' not found; \
+	install it or point LIBNGHTTP2_BASE to base path)
 endif
 endif
 endif
@@ -424,6 +439,13 @@ ifdef SQLITE_FOUND
 PKG_CPPFLAGS+=	-I$(SQLITE_FOUND)/include
 PKG_LDFLAGS+=	-L$(SQLITE_FOUND)/lib
 PKG_LIBS+=	-lsqlite3
+endif
+endif
+ifneq ($(filter -DWITHOUT_HTTP2,$(FEATURES)),-DWITHOUT_HTTP2)
+ifdef LIBNGHTTP2_FOUND
+PKG_CPPFLAGS+=	-I$(LIBNGHTTP2_FOUND)/include
+PKG_LDFLAGS+=	-L$(LIBNGHTTP2_FOUND)/lib
+PKG_LIBS+=	-lnghttp2
 endif
 endif
 
@@ -510,6 +532,11 @@ $(info LIBNET_BASE:    $(strip $(LIBNET_FOUND)))
 endif
 ifdef SQLITE_FOUND
 $(info SQLITE_BASE:    $(strip $(SQLITE_FOUND)))
+endif
+ifneq ($(filter -DWITHOUT_HTTP2,$(FEATURES)),-DWITHOUT_HTTP2)
+ifdef LIBNGHTTP2_FOUND
+$(info LIBNGHTTP2_BASE: $(strip $(LIBNGHTTP2_FOUND)))
+endif
 endif
 ifdef CHECK_FOUND
 $(info CHECK_BASE:     $(strip $(CHECK_FOUND)))

@@ -27,6 +27,7 @@
  */
 
 #include "protohttp.h"
+#include "protohttp2.h"
 #include "prototcp.h"
 #include "protossl.h"
 #include "protopassthrough.h"
@@ -42,7 +43,7 @@
 #include <string.h>
 #include <event2/bufferevent.h>
 
-static void NONNULL(1)
+void NONNULL(1)
 protohttp_log_connect(pxy_conn_ctx_t *ctx)
 {
 	if (!ctx->log_connect)
@@ -607,63 +608,14 @@ protohttp_apply_filter(pxy_conn_ctx_t *ctx)
 	// Match action should not override any deferred action, hence no 'else if'
 	if (pxy_conn_apply_deferred_block_action(ctx))
 		rv = 1;
+
 	return rv;
 }
 
-static void
-protohttp_try_remove_sslproxy_header(pxy_conn_ctx_t *ctx, unsigned char *packet, size_t *packet_size)
-{
-	// XXX: Duplicate of pxy_try_remove_sslproxy_header(), to pass pxy_conn_ctx_t
-	// @attention Cannot use string manipulation functions; we are dealing with binary arrays here, not NULL-terminated strings
-	unsigned char *pos = memmem(packet, *packet_size, ctx->conn->sslproxy_header, ctx->conn->sslproxy_header_len);
-	if (pos) {
-		log_finer("REMOVE");
-		memmove(pos, pos + ctx->conn->sslproxy_header_len + 2, *packet_size - (pos - packet) - (ctx->conn->sslproxy_header_len + 2));
-		*packet_size -= ctx->conn->sslproxy_header_len + 2;
-	}
-}
-
-static int WUNRES NONNULL(1,2,3,5)
+int WUNRES NONNULL(1,2,3,5)
 protohttp_filter_request_header(struct evbuffer *inbuf, struct evbuffer *outbuf, protohttp_ctx_t *http_ctx, enum conn_type type, pxy_conn_ctx_t *ctx)
 {
 	char *line;
-
-	struct evbuffer_ptr posptr;
-	memset(&posptr, 0, sizeof(posptr));
-
-	if (ctx->sslctx && !ctx->sslctx->h2) {
-		posptr = evbuffer_search_eol(inbuf, NULL, NULL, EVBUFFER_EOL_CRLF);
-	}
-
-	if ((ctx->sslctx && ctx->sslctx->h2) || posptr.pos == -1) {
-		if (posptr.pos == -1) {
-			log_finest("No CRLF in request header");
-		}
-		else {
-			log_finest("H2 request header");
-		}
-
-		if ((type == CONN_TYPE_PARENT) && ctx->divert && !ctx->sent_sslproxy_header) {
-			if (pxy_try_prepend_sslproxy_header(ctx, inbuf, outbuf) != 0) {
-				return -1;
-			}
-			ctx->sent_sslproxy_header = 1;
-		}
-		else {
-			size_t packet_size = evbuffer_get_length(inbuf);
-			unsigned char *packet = pxy_malloc_packet(packet_size, ctx->conn);
-			if (!packet) {
-				return -1;
-			}
-
-			evbuffer_remove(inbuf, packet, packet_size);
-			protohttp_try_remove_sslproxy_header(ctx->conn, packet, &packet_size);
-			evbuffer_add(outbuf, packet, packet_size);
-			free(packet);
-		}
-		http_ctx->seen_req_header = 1;
-		return 0;
-	}
 
 	while (!http_ctx->seen_req_header && (line = evbuffer_readln(inbuf, NULL, EVBUFFER_EOL_CRLF))) {
 		log_finest_va("%s", line);
@@ -720,23 +672,6 @@ protohttp_get_url(struct evbuffer *inbuf, pxy_conn_ctx_t *ctx)
 	char *path = NULL;
 	char *host = NULL;
 	char *url = NULL;
-
-	struct evbuffer_ptr posptr;
-	memset(&posptr, 0, sizeof(posptr));
-
-	if (ctx->sslctx && !ctx->sslctx->h2) {
-		posptr = evbuffer_search_eol(inbuf, NULL, NULL, EVBUFFER_EOL_CRLF);
-	}
-
-	if ((ctx->sslctx && ctx->sslctx->h2) || posptr.pos == -1) {
-		if (posptr.pos == -1) {
-			log_finest("No CRLF in header");
-		}
-		else {
-			log_finest("H2 header");
-		}
-		return url;
-	}
 
 	while ((!host || !path) && (line = evbuffer_readln(inbuf, NULL, EVBUFFER_EOL_CRLF))) {
 		log_finest_va("%s", line);
@@ -1061,26 +996,6 @@ protohttp_filter_response_header(struct evbuffer *inbuf, struct evbuffer *outbuf
 {
 	char *line;
 
-	struct evbuffer_ptr posptr;
-	memset(&posptr, 0, sizeof(posptr));
-
-	if (ctx->sslctx && !ctx->sslctx->h2) {
-		posptr = evbuffer_search_eol(inbuf, NULL, NULL, EVBUFFER_EOL_CRLF);
-	}
-
-	if ((ctx->sslctx && ctx->sslctx->h2) || posptr.pos == -1) {
-		if (posptr.pos == -1) {
-			log_finest("No CRLF in response header");
-		}
-		else {
-			log_finest("H2 response header");
-		}
-		evbuffer_add_buffer(outbuf, inbuf);
-
-		http_ctx->seen_resp_header = 1;
-		return;
-	}
-
 	while (!http_ctx->seen_resp_header && (line = evbuffer_readln(inbuf, NULL, EVBUFFER_EOL_CRLF))) {
 		log_finest_va("%s", line);
 
@@ -1319,6 +1234,59 @@ protohttp_bev_writecb(struct bufferevent *bev, void *arg)
 	}
 }
 
+
+void
+protohttps_bev_eventcb(struct bufferevent *bev, short events, void *arg)
+{
+	pxy_conn_ctx_t *ctx = arg;
+
+	if (events & BEV_EVENT_ERROR) {
+		protossl_log_ssl_error(bev, ctx);
+	}
+
+	if (bev == ctx->src.bev) {
+		prototcp_bev_eventcb_src(bev, events, ctx);
+	} else if (bev == ctx->dst.bev) {
+		protossl_bev_eventcb_dst(bev, events, ctx);
+	} else if (bev == ctx->srvdst.bev) {
+		protossl_bev_eventcb_srvdst(bev, events, ctx);
+
+		if (events & BEV_EVENT_CONNECTED) {
+			if (ctx->sslctx->h2) {
+				protohttp2_setup(ctx);
+			}
+		}
+	} else {
+		log_err_printf("protohttps_bev_eventcb: UNKWN conn end\n");
+	}
+}
+
+void
+protohttps_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
+{
+	pxy_conn_child_ctx_t *ctx = arg;
+	log_finest("ENTER");
+
+	if (events & BEV_EVENT_ERROR) {
+		protossl_log_ssl_error(bev, ctx->conn);
+	}
+
+	if (bev == ctx->src.bev) {
+		prototcp_bev_eventcb_src_child(bev, events, ctx);
+	} else if (bev == ctx->dst.bev) {
+		prototcp_bev_eventcb_dst_child(bev, events, ctx);
+
+		if (events & BEV_EVENT_CONNECTED) {
+			if (ctx->conn->sslctx->h2) {
+				bufferevent_disable(ctx->src.bev, EV_READ|EV_WRITE);
+				protohttp2_setup_child(ctx);
+			}
+		}
+	} else {
+		log_err_printf("protohttps_bev_eventcb_child: UNKWN conn end\n");
+	}
+}
+
 static void NONNULL(1)
 protohttp_free_ctx(protohttp_ctx_t *http_ctx)
 {
@@ -1358,20 +1326,21 @@ protohttp_free(pxy_conn_ctx_t *ctx)
 	protohttp_free_ctx(http_ctx);
 }
 
-static void NONNULL(1)
+void NONNULL(1)
 protohttps_free(pxy_conn_ctx_t *ctx)
 {
 	protohttp_free(ctx);
 	protossl_free(ctx);
 }
 
-static void NONNULL(1)
+void NONNULL(1)
 protohttp_free_child(pxy_conn_child_ctx_t *ctx)
 {
 	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
 	protohttp_free_ctx(http_ctx);
 }
 
+// @attention Called by thrmgr thread
 protocol_t
 protohttp_setup(pxy_conn_ctx_t *ctx)
 {
@@ -1409,7 +1378,7 @@ protohttps_setup(pxy_conn_ctx_t *ctx)
 
 	ctx->protoctx->bev_readcb = protohttp_bev_readcb;
 	ctx->protoctx->bev_writecb = protohttp_bev_writecb;
-	ctx->protoctx->bev_eventcb = protossl_bev_eventcb;
+	ctx->protoctx->bev_eventcb = protohttps_bev_eventcb;
 
 	ctx->protoctx->proto_free = protohttps_free;
 
@@ -1466,7 +1435,7 @@ protohttps_setup_child(pxy_conn_child_ctx_t *ctx)
 	ctx->protoctx->connectcb = protossl_connect_child;
 
 	ctx->protoctx->bev_readcb = protohttp_bev_readcb_child;
-	ctx->protoctx->bev_eventcb = protossl_bev_eventcb_child;
+	ctx->protoctx->bev_eventcb = protohttps_bev_eventcb_child;
 
 	ctx->protoctx->proto_free = protohttp_free_child;
 
