@@ -3049,7 +3049,7 @@ icap_process_chain(icap_ctx_t *icap_ctx, int service_idx)
 int NONNULL(1)
 icap_enabled(pxy_conn_ctx_t *ctx)
 {
-	return ctx->conn_opts->icap_chain != NULL;
+	return ctx->conn_opts->icap_chain && (!ctx->sslctx || !ctx->sslctx->alpn_negotiating);
 }
 
 int NONNULL(1)

@@ -858,7 +858,7 @@ protohttp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		// ATTENTION: Filter rule application in protohttp_filter_request_header() may reinit icap_ctx and change the icap services along with their in_hdr,
 		// so we cannot use the in_hdr of first service here. This is only for http requests, not responses, because we don't apply filters to responses.
 		// outbuf_ptr = icap_get_first_service_in_hdr(ctx, 1);
-		log_finest_va("ICAP enabled for the connection, using http_ctx->in_hdr, size=%zu", evbuffer_get_length(http_ctx->in_hdr));
+		log_finest_va("Using http_ctx->in_hdr, size=%zu", evbuffer_get_length(http_ctx->in_hdr));
 		outbuf_ptr = http_ctx->in_hdr;
 #endif /* !WITHOUT_ICAP */
 
@@ -1032,6 +1032,11 @@ protohttp_bev_readcb_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
 	struct evbuffer *inbuf = bufferevent_get_input(bev);
 	struct evbuffer *outbuf = bufferevent_get_output(ctx->src.bev);
+
+	if (ctx->sslctx && !ctx->sslctx->alpn_negotiating) {
+		log_finest_va("Wait for ALPN negotiation end, inbuf=%zu", evbuffer_get_length(inbuf));
+		return;
+	}
 
 	if (!http_ctx->seen_resp_header) {
 		log_finest_va("HTTP Response Header, size=%zu", evbuffer_get_length(inbuf));
@@ -1239,6 +1244,7 @@ void
 protohttps_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
+	log_finest("ENTER");
 
 	if (events & BEV_EVENT_ERROR) {
 		protossl_log_ssl_error(bev, ctx);
@@ -1246,6 +1252,12 @@ protohttps_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 
 	if (bev == ctx->src.bev) {
 		prototcp_bev_eventcb_src(bev, events, ctx);
+
+		if (events & BEV_EVENT_CONNECTED) {
+			if (ctx->sslctx->h2) {
+				protohttp2_setup(ctx);
+			}
+		}
 	} else if (bev == ctx->dst.bev) {
 		protossl_bev_eventcb_dst(bev, events, ctx);
 	} else if (bev == ctx->srvdst.bev) {
@@ -1257,7 +1269,7 @@ protohttps_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 			}
 		}
 	} else {
-		log_err_printf("protohttps_bev_eventcb: UNKWN conn end\n");
+		log_finest("protohttps_bev_eventcb: UNKWN conn end\n");
 	}
 }
 
@@ -1275,15 +1287,8 @@ protohttps_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 		prototcp_bev_eventcb_src_child(bev, events, ctx);
 	} else if (bev == ctx->dst.bev) {
 		prototcp_bev_eventcb_dst_child(bev, events, ctx);
-
-		if (events & BEV_EVENT_CONNECTED) {
-			if (ctx->conn->sslctx->h2) {
-				bufferevent_disable(ctx->src.bev, EV_READ|EV_WRITE);
-				protohttp2_setup_child(ctx);
-			}
-		}
 	} else {
-		log_err_printf("protohttps_bev_eventcb_child: UNKWN conn end\n");
+		log_finest("protohttps_bev_eventcb_child: UNKWN conn end\n");
 	}
 }
 

@@ -452,7 +452,7 @@ prototcp_bev_readcb_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	struct evbuffer *outbuf = bufferevent_get_output(ctx->src.bev);
 
 #ifndef WITHOUT_ICAP
-	if (!icap_enabled(ctx)) {
+	if (!icap_enabled(ctx) || ctx->sslctx->alpn_negotiating) {
 #endif /* !WITHOUT_ICAP */
 		evbuffer_add_buffer(outbuf, inbuf);
 #ifndef WITHOUT_ICAP
