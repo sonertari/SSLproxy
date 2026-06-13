@@ -1815,7 +1815,7 @@ static int NONNULL(1)
 icap_extract_icap_headers(icap_service_ctx_t *service_ctx, struct evbuffer *input)
 {
 	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
-	UNUSED pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
+	pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
 
 	size_t *body_offset = &ICAP_STATE(service_ctx, icap_ctx->reqmod)->body_offset;
 	size_t *header_offset = &ICAP_STATE(service_ctx, icap_ctx->reqmod)->header_offset;
@@ -1927,7 +1927,7 @@ static int NONNULL(1,2)
 icap_update_http_content_length(icap_service_ctx_t *service_ctx, struct evbuffer *outbuf)
 {
 	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
-	UNUSED pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
+	pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
 
 	/* Update http_content_length from Content-Length in new HTTP headers */
 	size_t hdrlen = evbuffer_get_length(outbuf);
@@ -1979,7 +1979,7 @@ static int NONNULL(1,2)
 icap_extract_http_headers(icap_service_ctx_t *service_ctx, struct evbuffer *input)
 {
 	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
-	UNUSED pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
+	pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
 
 	if (!ctx->spec->http) {
 		log_finest_icap("Non-http connection, skip extracting HTTP headers");
@@ -2076,7 +2076,7 @@ icap_extract_http_headers(icap_service_ctx_t *service_ctx, struct evbuffer *inpu
 	// 	}
 	// }
 
-#ifdef DEBUG_PROXY
+#ifdef DEBUG_ICAP
 	/* Log extracted headers for debugging */
 	struct evbuffer *out_hdr = ICAP_STATE(service_ctx, icap_ctx->reqmod)->out_hdr;
 	size_t len = evbuffer_get_length(out_hdr);
@@ -2085,7 +2085,7 @@ icap_extract_http_headers(icap_service_ctx_t *service_ctx, struct evbuffer *inpu
 	evbuffer_copyout(out_hdr, log_buf, log_len);
 	log_buf[log_len] = '\0';
 	log_finest_icap_va("Extracted headers (first %zu bytes, orig %zu bytes): %s", log_len, len, log_buf);
-#endif /* DEBUG_PROXY */
+#endif /* DEBUG_ICAP */
 
 	return 1;
 }
@@ -2240,7 +2240,7 @@ static int
 icap_extract_body_chunk(icap_service_ctx_t *service_ctx, struct evbuffer *input)
 {
 	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
-	UNUSED pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
+	pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
 
 	if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->wait_terminator) {
 		if (icap_try_discard_terminator(service_ctx, input) > 0) {
@@ -2346,7 +2346,7 @@ icap_extract_body_chunk(icap_service_ctx_t *service_ctx, struct evbuffer *input)
 			break;
 		}
 
-#ifdef DEBUG_PROXY
+#ifdef DEBUG_ICAP
 		/* Log first 400 bytes for debugging */
 		size_t len = evbuffer_get_length(input);
 		size_t log_len = len < 400 ? len : 400;
@@ -2354,7 +2354,7 @@ icap_extract_body_chunk(icap_service_ctx_t *service_ctx, struct evbuffer *input)
 		evbuffer_copyout(input, log_buf, log_len);
 		log_buf[log_len] = '\0';
 		log_finest_icap_va("Chunk rest (first %zu bytes, orig %zu bytes): %s", log_len, len, log_buf);
-#endif /* DEBUG_PROXY */
+#endif /* DEBUG_ICAP */
 
 		log_finest_icap_va("CURRENT remaining chunk size=%zu, input=%zu", *remaining_chunk_size, evbuffer_get_length(input));
 
@@ -2437,7 +2437,7 @@ icap_handle_chain_continuation(icap_service_ctx_t *service_ctx, icap_ctx_t *icap
 		log_dbg_printf("No ICAP context in icap_handle_chain_continuation(), idx=%d\n", service_ctx->idx);
 		return;
 	}
-	UNUSED pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
+	pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
 
 	/* Move to the next service in the chain or resume connection */
 	int next_idx = service_ctx->idx + 1;
@@ -2469,7 +2469,7 @@ icap_bev_readcb(struct bufferevent *bev, void *arg)
 	struct evbuffer *input = bufferevent_get_input(bev);
 	log_finest_icap_va("ENTER, inbuf=%zu, received_icap_headers=%d", evbuffer_get_length(input), received_icap_headers);
 
-#ifdef DEBUG_PROXY
+#ifdef DEBUG_ICAP
 	/* Log first 400 bytes for debugging */
 	size_t len = evbuffer_get_length(input);
 	size_t log_len = len < 400 ? len : 400;
@@ -2477,7 +2477,7 @@ icap_bev_readcb(struct bufferevent *bev, void *arg)
 	evbuffer_copyout(input, log_buf, log_len);
 	log_buf[log_len] = '\0';
 	log_finest_icap_va("ICAP response (first %zu bytes, orig %zu bytes): %s", log_len, len, log_buf);
-#endif /* DEBUG_PROXY */
+#endif /* DEBUG_ICAP */
 
 	char *status_line = NULL;
 	size_t eol_size = 0;
@@ -3106,7 +3106,6 @@ static void NONNULL(1,2,3)
 icap_process_done(struct evbuffer *inbuf, struct evbuffer *outbuf, icap_ctx_t *icap_ctx)
 {
 	pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
-	UNUSED int reqmod = icap_ctx->reqmod;
 
 	icap_service_ctx_t *service_ctx = icap_ctx->services[icap_ctx->service_count - 1];
 
@@ -3124,7 +3123,7 @@ icap_process_done(struct evbuffer *inbuf, struct evbuffer *outbuf, icap_ctx_t *i
 		if (icap_ctx->veto_page) {
 			log_finer_icap_va("Sending veto page to client, veto_page=%zu", evbuffer_get_length(icap_ctx->veto_page));
 
-#ifdef DEBUG_PROXY
+#ifdef DEBUG_ICAP
 			/* Log veto page for debugging */
 			size_t len = evbuffer_get_length(icap_ctx->veto_page);
 			size_t log_len = len < 400 ? len : 400;
@@ -3132,7 +3131,7 @@ icap_process_done(struct evbuffer *inbuf, struct evbuffer *outbuf, icap_ctx_t *i
 			evbuffer_copyout(icap_ctx->veto_page, log_buf, log_len);
 			log_buf[log_len] = '\0';
 			log_finest_icap_va("Veto page (first %zu bytes, orig %zu bytes): %s", log_len, len, log_buf);
-#endif /* DEBUG_PROXY */
+#endif /* DEBUG_ICAP */
 
 			// Send block page to src (client), not dst (server)
 			if (ctx->src.bev) {
