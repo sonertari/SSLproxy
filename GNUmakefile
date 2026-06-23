@@ -4,6 +4,9 @@ TESTPROXYTESTSDIR:= tests/testproxy
 
 TARGET:=	sslproxy
 
+# you can override this with the path to your container engine
+DOCKER := docker
+
 all: $(TARGET)
 
 $(TARGET):
@@ -79,6 +82,13 @@ distclean:
 realclean:
 	$(MAKE) -C $(SRCDIR) realclean
 	$(MAKE) -C $(CHECKTESTSDIR) realclean
+
+image-sslproxy:
+	$(DOCKER) build -t sslproxy-local:latest --no-cache .
+
+image-sslproxy-arm64:
+	$(DOCKER) build --platform linux/arm64 --progress=plain -t sslproxy-local-arm64:latest --no-cache .
+
 FORCE:
 
 .PHONY: all config clean buildtest test sudotest travis lint \
