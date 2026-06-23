@@ -42,7 +42,7 @@
 #include <sys/param.h>
 
 static ssize_t
-protohttp2_data_read_callback(nghttp2_session *session, int32_t stream_id, uint8_t *buf, size_t length,
+protohttp2_provider_read_callback(nghttp2_session *session, int32_t stream_id, uint8_t *buf, size_t length,
     uint32_t *data_flags, nghttp2_data_source *source, void *user_data);
 
 /*
@@ -51,7 +51,6 @@ protohttp2_data_read_callback(nghttp2_session *session, int32_t stream_id, uint8
 
 typedef struct stream_ctx {
     int32_t stream_id;
-    evutil_socket_t fd; // Used to match responses to requests
     pxy_conn_ctx_t *ctx;
 
     nghttp2_nv *headers;
@@ -59,8 +58,8 @@ typedef struct stream_ctx {
     size_t headers_capacity;
 
     struct evbuffer *data_buf;
-    int h1_body_finished;
     nghttp2_data_provider provider;
+
     struct stream_ctx *next;
 } stream_ctx_t;
 
@@ -71,23 +70,7 @@ typedef struct protohttp2_ctx {
     pxy_conn_ctx_t *ctx;
     
     stream_ctx_t *streams;
-
-    enum {
-        H1_STATE_STATUS_LINE,
-        H1_STATE_HEADERS,
-        H1_STATE_BODY_IDENTITY,
-        H1_STATE_BODY_CHUNK_HEAD,
-        H1_STATE_BODY_CHUNK_DATA,
-        H1_STATE_BODY_CHUNK_TRAILER
-    } h1_state;
-    long long h1_content_length;
-    int h1_chunked;
-    size_t h1_chunk_left;
-    stream_ctx_t *h1_active_stream;
-
-    unsigned int h2_handshake_done : 1;
 } protohttp2_ctx_t;
-
 
 static stream_ctx_t *
 protohttp2_get_stream_ctx(protohttp2_ctx_t *h2_ctx, int32_t stream_id)
@@ -95,8 +78,7 @@ protohttp2_get_stream_ctx(protohttp2_ctx_t *h2_ctx, int32_t stream_id)
     pxy_conn_ctx_t *ctx = h2_ctx->ctx;
 
     stream_ctx_t *s = h2_ctx->streams;
-    while (s)
-    {
+    while (s) {
         if (s->stream_id == stream_id)
             return s;
         s = s->next;
@@ -106,38 +88,23 @@ protohttp2_get_stream_ctx(protohttp2_ctx_t *h2_ctx, int32_t stream_id)
     return NULL;
 }
 
-// static int32_t
-// protohttp2_get_stream_id_from_fd(protohttp2_ctx_t *h2_ctx, evutil_socket_t fd)
-// {
-//     stream_ctx_t *s = h2_ctx->streams;
-//     while (s) {
-//         log_dbg_printf("protohttp2_get_stream_id_from_fd: fd: %d, stream_id: %d\n", fd, s->stream_id);
-//         if (s->fd == fd) {
-//             return s->stream_id;
-//         }
-//         s = s->next;
-//     }
-//     return -1;
-// }
-
 static stream_ctx_t *
-protohttp2_new_stream_ctx(protohttp2_ctx_t *h2_ctx, int32_t stream_id, evutil_socket_t fd)
+protohttp2_new_stream_ctx(protohttp2_ctx_t *h2_ctx, int32_t stream_id)
 {
     pxy_conn_ctx_t *ctx = h2_ctx->ctx;
 
-    log_finest_va("ENTER, fd=%d, stream_id=%d", fd, stream_id);
+    log_finest_va("ENTER, stream_id=%d", stream_id);
     stream_ctx_t *s = malloc(sizeof(stream_ctx_t));
     if (!s)
         return NULL;
     memset(s, 0, sizeof(stream_ctx_t));
     s->stream_id = stream_id;
     s->ctx = ctx;
-    s->fd = fd;
     s->data_buf = evbuffer_new();
 
     // Set up the data provider hook
     s->provider.source.ptr = s;
-    s->provider.read_callback = protohttp2_data_read_callback;
+    s->provider.read_callback = protohttp2_provider_read_callback;
 
     s->next = h2_ctx->streams;
     h2_ctx->streams = s;
@@ -192,16 +159,21 @@ protohttp2_free_stream_ctx(protohttp2_ctx_t *h2_ctx, stream_ctx_t *s)
 }
 
 static struct evbuffer *
-protohttp2_h1_headers(nghttp2_nv *headers, size_t count)
+protohttp2_h1_headers(stream_ctx_t *s)
 {
-    log_err_printf("protohttp2_h1_headers: ENTER\n");
+    pxy_conn_ctx_t *ctx = s->ctx;
+    log_finest("ENTER");
 
     struct evbuffer *buf = evbuffer_new();
     if (!buf)
         return NULL;
+
     int method_idx = -1, path_idx = -1, status_idx = -1, authority_idx = -1;
-    for (size_t i = 0; i < count; i++)
-    {
+
+    nghttp2_nv *headers = s->headers;
+    size_t count = s->headers_count;
+
+    for (size_t i = 0; i < count; i++) {
         if (headers[i].namelen == 7 && !memcmp(headers[i].name, ":method", 7))
             method_idx = (int)i;
         else if (headers[i].namelen == 5 && !memcmp(headers[i].name, ":path", 5))
@@ -211,36 +183,34 @@ protohttp2_h1_headers(nghttp2_nv *headers, size_t count)
         else if (headers[i].namelen == 10 && !memcmp(headers[i].name, ":authority", 10))
             authority_idx = (int)i;
     }
-    if (method_idx != -1)
-    {
-        log_err_printf("protohttp2_h1_headers: method_idx=%d\n", method_idx);
-        log_err_printf("protohttp2_h1_headers: %.*s %.*s HTTP/1.1\r\n",
-                            (int)headers[method_idx].valuelen, (char *)headers[method_idx].value,
-                            (path_idx != -1) ? (int)headers[path_idx].valuelen : 1, (path_idx != -1) ? (char *)headers[path_idx].value : "/");
 
-        evbuffer_add_printf(buf, "%.*s %.*s HTTP/1.1\r\n",
-                            (int)headers[method_idx].valuelen, (char *)headers[method_idx].value,
-                            (path_idx != -1) ? (int)headers[path_idx].valuelen : 1, (path_idx != -1) ? (char *)headers[path_idx].value : "/");
-        if (authority_idx != -1)
-        {
+    if (method_idx != -1) {
+        log_finest_va("method_idx=%d", method_idx);
+        log_finest_va("%.*s %.*s HTTP/1.1", (int)headers[method_idx].valuelen, (char *)headers[method_idx].value,
+            (path_idx != -1) ? (int)headers[path_idx].valuelen : 1, (path_idx != -1) ? (char *)headers[path_idx].value : "/");
+
+        evbuffer_add_printf(buf, "%.*s %.*s HTTP/1.1\r\n", (int)headers[method_idx].valuelen, (char *)headers[method_idx].value,
+            (path_idx != -1) ? (int)headers[path_idx].valuelen : 1, (path_idx != -1) ? (char *)headers[path_idx].value : "/");
+
+        if (authority_idx != -1) {
             evbuffer_add_printf(buf, "Host: %.*s\r\n", (int)headers[authority_idx].valuelen, (char *)headers[authority_idx].value);
         }
     }
-    if (status_idx != -1)
-    {
-        log_err_printf("protohttp2_h1_headers: status_idx=%d\n", status_idx);
-        log_err_printf("protohttp2_h1_headers: HTTP/1.1 %.*s\r\n", (int)headers[status_idx].valuelen, (char *)headers[status_idx].value);
+
+    if (status_idx != -1) {
+        log_finest_va("status_idx=%d", status_idx);
+        log_finest_va("HTTP/1.1 %.*s", (int)headers[status_idx].valuelen, (char *)headers[status_idx].value);
 
         evbuffer_add_printf(buf, "HTTP/1.1 %.*s\r\n", (int)headers[status_idx].valuelen, (char *)headers[status_idx].value);
     }
-    for (size_t i = 0; i < count; i++)
-    {
+
+    for (size_t i = 0; i < count; i++) {
         if (headers[i].name[0] == ':')
             continue;
         // Skip Host to avoid duplicates
         if (headers[i].namelen == 4 && !strncasecmp((char *)headers[i].name, "Host", 4))
             continue;
-        log_err_printf("protohttp2_h1_headers: %.*s: %.*s\r\n", (int)headers[i].namelen, headers[i].name, (int)headers[i].valuelen, headers[i].value);
+        log_finest_va("%.*s: %.*s", (int)headers[i].namelen, headers[i].name, (int)headers[i].valuelen, headers[i].value);
         evbuffer_add_printf(buf, "%.*s: %.*s\r\n", (int)headers[i].namelen, headers[i].name, (int)headers[i].valuelen, headers[i].value);
     }
 
@@ -252,10 +222,6 @@ protohttp2_h1_headers(nghttp2_nv *headers, size_t count)
     evbuffer_add_printf(buf, "\r\n");
     return buf;
 }
-
-/*
- * Callbacks
- */
 
 static void NONNULL(1, 2)
 protohttp2_bev_writecb(UNUSED struct bufferevent *bev, UNUSED void *arg)
@@ -270,7 +236,7 @@ protohttp2_bev_writecb(UNUSED struct bufferevent *bev, UNUSED void *arg)
  */
 
 static ssize_t
-protohttp2_send_callback_src(nghttp2_session *session, const uint8_t *data, size_t length, int flags, void *user_data)
+protohttp2_send_callback_src(UNUSED nghttp2_session *session, const uint8_t *data, size_t length, UNUSED int flags, void *user_data)
 {
     protohttp2_ctx_t *h2_ctx = (protohttp2_ctx_t *)user_data;
     pxy_conn_ctx_t *ctx = h2_ctx->ctx;
@@ -278,13 +244,12 @@ protohttp2_send_callback_src(nghttp2_session *session, const uint8_t *data, size
 
     if (bufferevent_write(ctx->src.bev, data, length) == -1)
         return NGHTTP2_ERR_CALLBACK_FAILURE;
-    (void)session;
-    (void)flags;
+
     return (ssize_t)length;
 }
 
 static ssize_t
-protohttp2_send_callback_dst(nghttp2_session *session, const uint8_t *data, size_t length, int flags, void *user_data)
+protohttp2_send_callback_dst(UNUSED nghttp2_session *session, const uint8_t *data, size_t length, UNUSED int flags, void *user_data)
 {
     protohttp2_ctx_t *h2_ctx = (protohttp2_ctx_t *)user_data;
     pxy_conn_ctx_t *ctx = h2_ctx->ctx;
@@ -292,8 +257,7 @@ protohttp2_send_callback_dst(nghttp2_session *session, const uint8_t *data, size
 
     if (bufferevent_write(ctx->dst.bev, data, length) == -1)
         return NGHTTP2_ERR_CALLBACK_FAILURE;
-    (void)session;
-    (void)flags;
+
     return (ssize_t)length;
 }
 
@@ -307,13 +271,14 @@ protohttp2_on_header_callback(UNUSED nghttp2_session *session, const nghttp2_fra
         log_finest("Not a HEADERS frame, ignoring");
         return 0;
     }
+
     stream_ctx_t *s = protohttp2_get_stream_ctx(h2_ctx, frame->hd.stream_id);
-    if (!s)
-        s = protohttp2_new_stream_ctx(h2_ctx, frame->hd.stream_id, ctx->fd);
-    if (s)
-    {
-        if (s->headers_count == s->headers_capacity)
-        {
+    if (!s) {
+        s = protohttp2_new_stream_ctx(h2_ctx, frame->hd.stream_id);
+    }
+
+    if (s) {
+        if (s->headers_count == s->headers_capacity) {
             s->headers_capacity = s->headers_capacity ? s->headers_capacity * 2 : 16;
             s->headers = realloc(s->headers, s->headers_capacity * sizeof(nghttp2_nv));
         }
@@ -362,7 +327,7 @@ protohttp2_trigger_write_loop(protohttp2_ctx_t *h2_ctx, int reqmod)
 }
 
 static ssize_t
-protohttp2_data_read_callback(UNUSED nghttp2_session *session, UNUSED int32_t stream_id, uint8_t *buf, size_t length,
+protohttp2_provider_read_callback(UNUSED nghttp2_session *session, UNUSED int32_t stream_id, uint8_t *buf, size_t length,
     uint32_t *data_flags, nghttp2_data_source *source, UNUSED void *user_data)
 {
     stream_ctx_t *s = (stream_ctx_t *)source->ptr;
@@ -379,7 +344,7 @@ protohttp2_data_read_callback(UNUSED nghttp2_session *session, UNUSED int32_t st
     evbuffer_remove(s->data_buf, buf, to_read);
 
     // If our buffer is empty and the remote server has sent EOF, flag the end of stream
-    if (evbuffer_get_length(s->data_buf) == 0 && (/* check if server side stream ended */0)) {
+    if (evbuffer_get_length(s->data_buf) == 0 && (/* TODO: Check if the server side stream has ended */ 0)) {
         *data_flags |= NGHTTP2_DATA_FLAG_EOF;
     }
 
@@ -387,26 +352,22 @@ protohttp2_data_read_callback(UNUSED nghttp2_session *session, UNUSED int32_t st
 }
 
 int
-protohttp2_submit_data(protohttp2_ctx_t *h2_ctx, stream_ctx_t *s, int32_t stream_id, size_t data_len, int reqmod, void *user_data)
+protohttp2_submit_data(protohttp2_ctx_t *h2_ctx, stream_ctx_t *s, int reqmod)
 {
     pxy_conn_ctx_t *ctx = (pxy_conn_ctx_t *)h2_ctx->ctx;
 
     int rv = 0;
     if (s->headers_count > 0) {
-        log_finest_va("Submit headers, headers_count=%zu, stream_id=%d, reqmod=%d", s->headers_count, stream_id, reqmod);
+        log_finest_va("Submit headers, headers_count=%zu, stream_id=%d, reqmod=%d", s->headers_count, s->stream_id, reqmod);
 
         if (reqmod) {
-            rv = nghttp2_submit_request(h2_ctx->dst_session, NULL, 
-                                            s->headers, s->headers_count, &s->provider, user_data);
+            rv = nghttp2_submit_request(h2_ctx->dst_session, NULL, s->headers, s->headers_count, &s->provider, h2_ctx);
+            // TODO: Do we need to save the newly assigned stream ID assigned by nghttp2? Isn't it always the same as the one in the frame header?
             s->stream_id = rv;
         }
         else {
-            rv = nghttp2_submit_response(h2_ctx->src_session, s->stream_id, 
-                                            s->headers, s->headers_count, &s->provider);
+            rv = nghttp2_submit_response(h2_ctx->src_session, s->stream_id, s->headers, s->headers_count, &s->provider);
         }
-
-        // TODO: Do we need to save the newly assigned stream ID assigned by nghttp2? Isn't it always the same as the one in the frame header?
-        // s->stream_id = rv;
 
         if (rv < 0) {
             log_finest_va("Fatal: nghttp2_submit_request failed: %s", nghttp2_strerror(rv));
@@ -424,10 +385,8 @@ protohttp2_submit_data(protohttp2_ctx_t *h2_ctx, stream_ctx_t *s, int32_t stream
         log_finest_va("No headers to submit, stream_id=%d, reqmod=%d", s->stream_id, reqmod);
     }
 
-    if (data_len > 0) {
-        log_finest_va("Submit data, data_len=%zu, s->stream_id=%d, stream_id=%d, reqmod=%d", data_len, s->stream_id, stream_id, reqmod);
-
-        //rv = nghttp2_submit_data(reqmod ? h2_ctx->dst_session : h2_ctx->src_session, NGHTTP2_FLAG_END_STREAM, stream_id, &provider);
+    if (evbuffer_get_length(s->data_buf) > 0) {
+        log_finest_va("Submit data, data_len=%zu, stream_id=%d, reqmod=%d", evbuffer_get_length(s->data_buf), s->stream_id, reqmod);
 
         // Unpause the stream data provider loop
         rv = nghttp2_session_resume_data(reqmod ? h2_ctx->dst_session : h2_ctx->src_session, s->stream_id);
@@ -435,19 +394,12 @@ protohttp2_submit_data(protohttp2_ctx_t *h2_ctx, stream_ctx_t *s, int32_t stream
             log_finest_va("Fatal: nghttp2_session_resume_data failed: %s", nghttp2_strerror(rv));
             return -1;
         }
-
-        // Do not cosume window, it is processed automatically by default
-        // rv = nghttp2_session_consume(reqmod ? h2_ctx->dst_session : h2_ctx->src_session, stream_id, data_len);
-        // if (rv < 0) {
-        //     log_finest_va("Fatal: nghttp2_session_consume failed: %s", nghttp2_strerror(rv));
-        //     return -1;
-        // }
     }
     else {
         log_finest_va("No data to submit, stream_id=%d, reqmod=%d", s->stream_id, reqmod);
     }
 
-    log_finest_va("Success submitting request to nghttp2, assigned stream_id=%d, frame stream_id=%d", rv, s->stream_id);
+    log_finest_va("Success submitting request to nghttp2, rv=%d, stream_id=%d", rv, s->stream_id);
 
     protohttp2_trigger_write_loop(h2_ctx, reqmod);
     return 0;
@@ -470,7 +422,6 @@ protohttp2_on_frame_recv(UNUSED nghttp2_session *session, const nghttp2_frame *f
     // if (frame->hd.type == NGHTTP2_SETTINGS && (frame->hd.flags & NGHTTP2_FLAG_ACK))
     if (frame->hd.type == NGHTTP2_SETTINGS) {
         log_finest("NGHTTP2_SETTINGS received");
-        h2_ctx->h2_handshake_done = 1;
 
         // If we were manually holding data, trigger a write now
         nghttp2_session_send(session);
@@ -488,11 +439,14 @@ protohttp2_on_frame_recv(UNUSED nghttp2_session *session, const nghttp2_frame *f
                 // for (size_t i = 0; i < s->headers_count; i++) {
                 // 	evbuffer_add_printf(outbuf_ptr, "%s: %s\r\n", s->headers[i].name, s->headers[i].value);
                 // }
-                evbuffer_add_buffer(outbuf_ptr, protohttp2_h1_headers(s->headers, s->headers_count));
+                struct evbuffer *header_buf = protohttp2_h1_headers(s);
+                evbuffer_add_buffer(outbuf_ptr, header_buf);
+                evbuffer_free(header_buf);
                 icap_process_data(s->data_buf, ctx, reqmod);
+                return 0;
             }
 
-            return protohttp2_submit_data(h2_ctx, s, s->stream_id, 0, reqmod, user_data);
+            return protohttp2_submit_data(h2_ctx, s, reqmod);
         }
     }
     return 0;
@@ -535,11 +489,12 @@ protohttp2_on_data_chunk_recv(nghttp2_session *session, UNUSED uint8_t flags, in
     // Queue pristine payload data straight into the staging buffer
     evbuffer_add(s->data_buf, data, len);
 
-    // if (icap_enabled(ctx)) {
-    //     icap_process_data(s->data_buf, ctx, reqmod);
-    // }
+    if (icap_enabled(ctx)) {
+        icap_process_data(s->data_buf, ctx, reqmod);
+        return 0;
+    }
 
-    return protohttp2_submit_data(h2_ctx, s, stream_id, len, reqmod, user_data);
+    return protohttp2_submit_data(h2_ctx, s, reqmod);
 }
 
 static int
@@ -589,11 +544,11 @@ protohttp2_on_stream_close_callback_dst(UNUSED nghttp2_session *session, int32_t
  * Interface
  */
 
-void protohttp2_free(pxy_conn_ctx_t *ctx) {
+void protohttp2_free(pxy_conn_ctx_t *ctx)
+{
     protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
     protohttp2_ctx_t *h2_ctx = http_ctx->arg;
-    if (h2_ctx)
-    {
+    if (h2_ctx) {
         if (h2_ctx->src_session) {
             nghttp2_session_del(h2_ctx->src_session);
         }
@@ -605,83 +560,6 @@ void protohttp2_free(pxy_conn_ctx_t *ctx) {
     protohttps_free(ctx);
 }
 
-static void NONNULL(1,2)
-protohttp2_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
-{
-    log_finest("ENTER");
-
-    protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
-    protohttp2_ctx_t *h2_ctx = http_ctx->arg;
-    struct evbuffer *inbuf = bufferevent_get_input(bev);
-    size_t len = evbuffer_get_length(inbuf);
-    if (!len) {
-    	log_finest("No data to read");
-        return;
-    }
-
-    unsigned char *data = malloc(len);
-    if (!data) {
-        log_finest("malloc failed");
-        return;
-    }
-    evbuffer_remove(inbuf, data, len);
-
-    if (nghttp2_session_mem_recv(h2_ctx->src_session, data, len) < 0)
-    {
-        log_finest("nghttp2_session_mem_recv failed");
-        pxy_conn_term(h2_ctx->ctx, 1);
-    }
-    else
-    {
-        // Always call nghttp2_session_send() to process pending frames
-        // This is to ensure the HTTP/2 state machine is properly stepped
-        nghttp2_session_send(h2_ctx->src_session);
-    }
-    free(data);
-}
-
-static void NONNULL(1)
-protohttp2_bev_readcb_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
-{
-	log_finest("ENTER");
-
-    protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
-    protohttp2_ctx_t *h2_ctx = http_ctx->arg;
-
-    struct evbuffer *inbuf = bufferevent_get_input(bev);
-    size_t len = evbuffer_get_length(inbuf);
-    if (!len) {
-    	log_finest("No data to read");
-        return;
-    }
-
-    unsigned char *data = malloc(len);
-    if (!data) {
-        log_finest("malloc failed");
-        return;
-    }
-    evbuffer_remove(inbuf, data, len);
-
-    if (nghttp2_session_mem_recv(h2_ctx->dst_session, data, len) < 0)
-    {
-        log_finest("nghttp2_session_mem_recv failed");
-        pxy_conn_term(h2_ctx->ctx, 1);
-    }
-    else
-    {
-        // Always call nghttp2_session_send() to process pending frames
-        // This is to ensure the HTTP/2 state machine is properly stepped
-        nghttp2_session_send(h2_ctx->dst_session);
-    }
-    free(data);
-}
-
-static void NONNULL(1)
-protohttp2_bev_readcb_srvdst(UNUSED struct bufferevent *bev, UNUSED pxy_conn_ctx_t *ctx)
-{
-    log_err_level(LOG_ERR, "readcb called on srvdst");
-}
-
 static void NONNULL(1)
 protohttp2_bev_readcb(struct bufferevent *bev, void *arg)
 {
@@ -689,12 +567,38 @@ protohttp2_bev_readcb(struct bufferevent *bev, void *arg)
 	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
 	int seen_resp_header_on_entry = http_ctx->seen_resp_header;
 
-	if (bev == ctx->src.bev) {
-		protohttp2_bev_readcb_src(bev, ctx);
-	} else if (bev == ctx->dst.bev) {
-		protohttp2_bev_readcb_dst(bev, ctx);
+	if (bev == ctx->src.bev || bev == ctx->dst.bev) {
+        int reqmod = bev == ctx->src.bev;
+        log_finest_va("ENTER, reqmod=%d", reqmod);
+
+        protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
+        protohttp2_ctx_t *h2_ctx = http_ctx->arg;
+        struct evbuffer *inbuf = bufferevent_get_input(bev);
+        size_t len = evbuffer_get_length(inbuf);
+        if (!len) {
+            log_finest("No data to read");
+            return;
+        }
+
+        unsigned char *data = malloc(len);
+        if (!data) {
+            log_finest("malloc failed");
+            return;
+        }
+        evbuffer_remove(inbuf, data, len);
+
+        if (nghttp2_session_mem_recv(reqmod ? h2_ctx->src_session : h2_ctx->dst_session, data, len) < 0) {
+            log_finest("nghttp2_session_mem_recv failed");
+            pxy_conn_term(h2_ctx->ctx, reqmod);
+        }
+        else {
+            // Always call nghttp2_session_send() to process pending frames
+            // This is to ensure the HTTP/2 state machine is properly stepped
+            nghttp2_session_send(reqmod ? h2_ctx->src_session : h2_ctx->dst_session);
+        }
+        free(data);
 	} else if (bev == ctx->srvdst.bev) {
-		protohttp2_bev_readcb_srvdst(bev, ctx);
+        log_fine("readcb called on srvdst");
 	} else {
 		log_finest("protohttp2_bev_readcb: UNKWN conn end\n");
 		return;
@@ -734,7 +638,7 @@ protocol_t protohttp2_setup(pxy_conn_ctx_t *ctx)
     protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
     h2_ctx->ctx = ctx;
     http_ctx->arg = h2_ctx;
-    
+
     // Initialize session for H2 connections
     nghttp2_session_callbacks *cb;
     nghttp2_session_callbacks_new(&cb);
