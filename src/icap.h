@@ -31,6 +31,7 @@
 #ifndef WITHOUT_ICAP
 
 #include "pxyconn.h"
+#include "protohttp2.h"
 #include "attrib.h"
 
 #include <event2/buffer.h>
@@ -62,12 +63,15 @@ typedef struct icap_service {
 } icap_service_t;
 
 typedef struct icap_service_ctx icap_service_ctx_t;
+typedef void (*proto_data_submit_cb)(icap_ctx_t *) NONNULL(1);
 
 /*
  * ICAP context - per-connection state for ICAP processing
  */
 struct icap_ctx {
 	pxy_conn_ctx_t *conn_ctx;
+	stream_ctx_t *stream_ctx;         /* For HTTP/2, the stream context */
+	protohttp2_ctx_t *h2_ctx;         /* For HTTP/2, the HTTP/2 context */
 
 	unsigned int is_veto : 1;         /* 1 if ICAP server vetoed the transaction */
 	unsigned int sent_veto_page : 1;  /* 1 if veto page sent to client */
@@ -90,6 +94,8 @@ struct icap_ctx {
 
 	struct event *chain_ev;
 	int chain_ev_service_idx;
+
+	proto_data_submit_cb submit_cb;
 };
 
 typedef struct icap_service_state {
@@ -143,15 +149,17 @@ struct icap_service_ctx {
 };
 
 void icap_ctx_free(icap_ctx_t *, int);
-icap_ctx_t *icap_init(pxy_conn_ctx_t *);
+icap_ctx_t *icap_init(pxy_conn_ctx_t *, stream_ctx_t *, protohttp2_ctx_t *) NONNULL(1);
 char *icap_chain_str(conn_opts_t *);
 
 /*
  * ICAP chain orchestration
  */
 int icap_enabled(pxy_conn_ctx_t *) NONNULL(1);
-int icap_is_finished(pxy_conn_ctx_t *) NONNULL(1);
-struct evbuffer *icap_get_first_service_in_hdr(pxy_conn_ctx_t *, int) NONNULL(1);
+int icap_is_finished(icap_ctx_t *);
+struct evbuffer *icap_get_first_service_in_hdr(icap_ctx_t *) NONNULL(1);
+struct evbuffer *icap_get_last_service_out_body(icap_ctx_t *) NONNULL(1);
+struct evbuffer *icap_get_last_service_out_hdr(icap_ctx_t *) NONNULL(1);
 
 void icap_service_free(icap_service_t *);
 icap_service_t *icap_service_copy(icap_service_t *);
@@ -159,8 +167,9 @@ int load_icap_line(conn_opts_t *, const char *, unsigned int) NONNULL(1,2);
 int load_icap_struct(conn_opts_t *, unsigned int *, FILE *);
 
 int icap_set_extended_headers(icap_ctx_t *, int) NONNULL(1);
+void icap_disconnect(icap_ctx_t *) NONNULL(1);
 
-void icap_process_data(struct evbuffer *, pxy_conn_ctx_t *, int) NONNULL(1,2);
+void icap_process_data(struct evbuffer *, icap_ctx_t *) NONNULL(1,2);
 
 #endif /* !WITHOUT_ICAP */
 

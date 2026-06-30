@@ -30,6 +30,36 @@
 
 #include "pxyconn.h"
 
+#include <nghttp2/nghttp2.h>
+
+typedef struct stream_ctx {
+    int32_t stream_id;
+    pxy_conn_ctx_t *ctx;
+
+    nghttp2_nv *headers;
+    size_t headers_count;
+    size_t headers_capacity;
+
+    struct evbuffer *data_buf;
+    nghttp2_data_provider provider;
+
+#ifndef WITHOUT_ICAP
+	icap_ctx_t *icap_ctx;
+#endif /* !WITHOUT_ICAP */
+
+    struct stream_ctx *next;
+} stream_ctx_t;
+
+typedef struct protohttp2_ctx {
+    nghttp2_session *src_session;
+    nghttp2_session *dst_session;
+
+    pxy_conn_ctx_t *ctx;
+    
+    stream_ctx_t *streams;
+} protohttp2_ctx_t;
+
+void protohttp2_free(pxy_conn_ctx_t *) NONNULL(1);
 protocol_t protohttp2_setup(pxy_conn_ctx_t *) NONNULL(1);
 protocol_t protohttp2_setup_child(pxy_conn_child_ctx_t *) NONNULL(1);
 

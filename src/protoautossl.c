@@ -471,7 +471,8 @@ protoautossl_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 #ifndef WITHOUT_ICAP
 	}
 	else {
-		icap_process_data(inbuf, ctx, 1);
+		ctx->icap_ctx->reqmod = 1;
+		icap_process_data(inbuf, ctx->icap_ctx);
 	}
 #endif /* !WITHOUT_ICAP */
 
@@ -507,7 +508,8 @@ protoautossl_bev_readcb_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 #ifndef WITHOUT_ICAP
 	}
 	else {
-		icap_process_data(inbuf, ctx, 0);
+		ctx->icap_ctx->reqmod = 0;
+		icap_process_data(inbuf, ctx->icap_ctx);
 	}
 #endif /* !WITHOUT_ICAP */
 

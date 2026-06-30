@@ -109,26 +109,26 @@ void log_dbg_mode(int);
 #ifdef DEBUG_ICAP
 // FINE
 #define log_fine_icap(str) \
-		if (ctx) log_dbg_level_icap_printf(LOG_DBG_MODE_FINE, __FUNCTION__, ctx->conn->thr ? ctx->conn->thr->id : 0, ctx->conn->id, ctx->conn->fd, ctx->conn->child_fd, service_ctx->idx, ctx->icap_ctx->reqmod, (str)); \
+		if (ctx) log_dbg_level_icap_printf(LOG_DBG_MODE_FINE, __FUNCTION__, ctx->conn->thr ? ctx->conn->thr->id : 0, ctx->conn->id, ctx->conn->fd, ctx->conn->child_fd, service_ctx->idx, icap_ctx->reqmod, (str)); \
 		else log_dbg_level_icap_printf(LOG_DBG_MODE_FINE, __FUNCTION__, 0, 0, 0, 0, service_ctx->idx, 0, (str))
 #define log_fine_icap_va(format_str, ...) \
-		if (ctx) log_dbg_level_icap_printf(LOG_DBG_MODE_FINE, __FUNCTION__, ctx->conn->thr ? ctx->conn->thr->id : 0, ctx->conn->id, ctx->conn->fd, ctx->conn->child_fd, service_ctx->idx, ctx->icap_ctx->reqmod, (format_str), __VA_ARGS__); \
+		if (ctx) log_dbg_level_icap_printf(LOG_DBG_MODE_FINE, __FUNCTION__, ctx->conn->thr ? ctx->conn->thr->id : 0, ctx->conn->id, ctx->conn->fd, ctx->conn->child_fd, service_ctx->idx, icap_ctx->reqmod, (format_str), __VA_ARGS__); \
 		else log_dbg_level_icap_printf(LOG_DBG_MODE_FINE, __FUNCTION__, 0, 0, 0, 0, service_ctx->idx, 0, (format_str), __VA_ARGS__)
 
 // FINER
 #define log_finer_icap(str) \
-		if (ctx) log_dbg_level_icap_printf(LOG_DBG_MODE_FINER, __FUNCTION__, ctx->conn->thr ? ctx->conn->thr->id : 0, ctx->conn->id, ctx->conn->fd, ctx->conn->child_fd, service_ctx->idx, ctx->icap_ctx->reqmod, (str)); \
+		if (ctx) log_dbg_level_icap_printf(LOG_DBG_MODE_FINER, __FUNCTION__, ctx->conn->thr ? ctx->conn->thr->id : 0, ctx->conn->id, ctx->conn->fd, ctx->conn->child_fd, service_ctx->idx, icap_ctx->reqmod, (str)); \
 		else log_dbg_level_icap_printf(LOG_DBG_MODE_FINER, __FUNCTION__, 0, 0, 0, 0, service_ctx->idx, 0, (str))
 #define log_finer_icap_va(format_str, ...) \
-		if (ctx) log_dbg_level_icap_printf(LOG_DBG_MODE_FINER, __FUNCTION__, ctx->conn->thr ? ctx->conn->thr->id : 0, ctx->conn->id, ctx->conn->fd, ctx->conn->child_fd, service_ctx->idx, ctx->icap_ctx->reqmod, (format_str), __VA_ARGS__); \
+		if (ctx) log_dbg_level_icap_printf(LOG_DBG_MODE_FINER, __FUNCTION__, ctx->conn->thr ? ctx->conn->thr->id : 0, ctx->conn->id, ctx->conn->fd, ctx->conn->child_fd, service_ctx->idx, icap_ctx->reqmod, (format_str), __VA_ARGS__); \
 		else log_dbg_level_icap_printf(LOG_DBG_MODE_FINER, __FUNCTION__, 0, 0, 0, 0, service_ctx->idx, 0, (format_str), __VA_ARGS__)
 
 // FINEST
 #define log_finest_icap(str) \
-		if (ctx) log_dbg_level_icap_printf(LOG_DBG_MODE_FINEST, __FUNCTION__, ctx->conn->thr ? ctx->conn->thr->id : 0, ctx->conn->id, ctx->conn->fd, ctx->conn->child_fd, service_ctx->idx, ctx->icap_ctx->reqmod, (str)); \
+		if (ctx) log_dbg_level_icap_printf(LOG_DBG_MODE_FINEST, __FUNCTION__, ctx->conn->thr ? ctx->conn->thr->id : 0, ctx->conn->id, ctx->conn->fd, ctx->conn->child_fd, service_ctx->idx, icap_ctx->reqmod, (str)); \
 		else log_dbg_level_icap_printf(LOG_DBG_MODE_FINEST, __FUNCTION__, 0, 0, 0, 0, service_ctx->idx, 0, (str))
 #define log_finest_icap_va(format_str, ...) \
-		if (ctx) log_dbg_level_icap_printf(LOG_DBG_MODE_FINEST, __FUNCTION__, ctx->conn->thr ? ctx->conn->thr->id : 0, ctx->conn->id, ctx->conn->fd, ctx->conn->child_fd, service_ctx->idx, ctx->icap_ctx->reqmod, (format_str), __VA_ARGS__); \
+		if (ctx) log_dbg_level_icap_printf(LOG_DBG_MODE_FINEST, __FUNCTION__, ctx->conn->thr ? ctx->conn->thr->id : 0, ctx->conn->id, ctx->conn->fd, ctx->conn->child_fd, service_ctx->idx, icap_ctx->reqmod, (format_str), __VA_ARGS__); \
 		else log_dbg_level_icap_printf(LOG_DBG_MODE_FINEST, __FUNCTION__, 0, 0, 0, 0, service_ctx->idx, 0, (format_str), __VA_ARGS__)
 #else /* !DEBUG_ICAP */
 #define log_fine_icap(str) ((void)0)

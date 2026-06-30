@@ -47,8 +47,7 @@
 static void icap_bev_readcb(struct bufferevent *, void *);
 static void icap_bev_writecb(UNUSED struct bufferevent *, UNUSED void *);
 static void icap_bev_eventcb(UNUSED struct bufferevent *, short, void *);
-static void icap_process_done(struct evbuffer *, struct evbuffer *, icap_ctx_t *);
-static void icap_disconnect(icap_ctx_t *);
+static void icap_data_submit(icap_ctx_t *);
 static void icap_handle_service_error(icap_service_ctx_t *);
 static int icap_build_request(icap_service_ctx_t *);
 static int icap_is_content_complete(icap_ctx_t *, int);
@@ -148,6 +147,7 @@ static void NONNULL(1)
 icap_service_ctx_free(icap_service_ctx_t *service_ctx)
 {
 	UNUSED pxy_conn_ctx_t *ctx = service_ctx->icap_ctx->conn_ctx;
+	UNUSED icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
 	log_finest_icap("ENTER");
 
 	if (service_ctx->src.in_hdr) {
@@ -319,6 +319,13 @@ icap_ctx_free(icap_ctx_t *icap_ctx, int term_conn)
 	/* Disconnect if connected */
 	icap_disconnect(icap_ctx);
 
+	// TODO: Do we need to free h2 here? But otherwise every other h2 connection stalls and icap times out
+	if (icap_ctx->stream_ctx) {
+		protohttp2_free(ctx);
+		icap_ctx->h2_ctx = NULL;
+		icap_ctx->stream_ctx = NULL;
+	}
+
 	/* Free buffers */
 	if (icap_ctx->veto_page) {
 		evbuffer_free(icap_ctx->veto_page);
@@ -336,7 +343,7 @@ icap_ctx_free(icap_ctx_t *icap_ctx, int term_conn)
 }
 
 static icap_ctx_t *
-icap_ctx_new(pxy_conn_ctx_t *ctx)
+icap_ctx_new(pxy_conn_ctx_t *ctx, stream_ctx_t *stream_ctx, protohttp2_ctx_t *h2_ctx)
 {
 	log_finest("ENTER");
 
@@ -348,8 +355,16 @@ icap_ctx_new(pxy_conn_ctx_t *ctx)
 	}
 	memset(icap_ctx, 0, sizeof(icap_ctx_t));
 
-	ctx->icap_ctx = icap_ctx;
 	icap_ctx->conn_ctx = ctx;
+	icap_ctx->stream_ctx = stream_ctx;
+	icap_ctx->h2_ctx = h2_ctx;
+
+	if (!stream_ctx) {
+		ctx->icap_ctx = icap_ctx;
+	}
+	else {
+		stream_ctx->icap_ctx = icap_ctx;
+	}
 
 	icap_service_t *svc = ctx->conn_opts->icap_chain;
 	icap_ctx->service_count = 0;
@@ -369,26 +384,34 @@ icap_ctx_new(pxy_conn_ctx_t *ctx)
 }
 
 icap_ctx_t *
-icap_init(pxy_conn_ctx_t *ctx)
+icap_init(pxy_conn_ctx_t *ctx, stream_ctx_t *stream_ctx, protohttp2_ctx_t *h2_ctx)
 {
-	log_finest("ENTER");
+	log_finest_va("ENTER, processing %s, stream_id=%d", stream_ctx ? "stream" : "connection", stream_ctx ? stream_ctx->stream_id : -1);
 
-	int reinit = 0;
-	if (ctx->icap_ctx) {
-		log_dbg_printf("ICAP context already initialized, reinitializing\n");
-		icap_ctx_free(ctx->icap_ctx, 0);
-		reinit = 1;
+	icap_ctx_t *icap_ctx = !stream_ctx ? ctx->icap_ctx : stream_ctx->icap_ctx;
+	if (icap_ctx) {
+		if (!stream_ctx) {
+			log_fine("Conn ICAP context already initialized, reinitializing");
+			icap_ctx_free(ctx->icap_ctx, 0);
+		}
+		else {
+			log_fine_va("Stream ICAP context already initialized, reinitializing, stream_id=%d", stream_ctx->stream_id);
+			icap_ctx_free(stream_ctx->icap_ctx, 0);
+		}
 	}
 
-	icap_ctx_t *icap_ctx = icap_ctx_new(ctx);
+	icap_ctx = icap_ctx_new(ctx, stream_ctx, h2_ctx);
 	if (!icap_ctx)
 		return NULL;
 
-	if (reinit && icap_set_extended_headers(icap_ctx, 0) == -1) {
+	if (icap_set_extended_headers(icap_ctx, 0) == -1) {
 		log_err_level(LOG_CRIT, "ICAP extended header allocation failed");
 		icap_ctx_free(icap_ctx, 1);
 		return NULL;
 	}
+
+	icap_ctx->submit_cb = icap_data_submit;
+
 	return icap_ctx;
 }
 
@@ -1079,11 +1102,9 @@ err:
 }
 
 struct evbuffer * NONNULL(1)
-icap_get_first_service_in_hdr(pxy_conn_ctx_t *ctx, int reqmod)
+icap_get_first_service_in_hdr(icap_ctx_t *icap_ctx)
 {
-	// This function is called before icap_ctx->reqmod is set, hence the reqmod param
-	icap_ctx_t *icap_ctx = ctx->icap_ctx;
-	return ICAP_STATE(icap_ctx->services[0], reqmod)->in_hdr;
+	return ICAP_STATE(icap_ctx->services[0], icap_ctx->reqmod)->in_hdr;
 }
 
 int NONNULL(1)
@@ -1198,6 +1219,8 @@ icap_service_connect(icap_service_ctx_t *service_ctx)
 	}
 
 	if (!service_ctx->bev) {
+		log_finest_icap_va("ICAP not connected, connecting to %s:%d", service_ctx->svc->server, service_ctx->svc->port);
+
 		struct bufferevent *bev = bufferevent_socket_new(ctx->thr->evbase, -1, BEV_OPT_CLOSE_ON_FREE | BEV_OPT_DEFER_CALLBACKS);
 		if (!bev) {
 			log_fine_icap("ICAP bufferevent allocation failed");
@@ -1239,18 +1262,11 @@ icap_service_connect(icap_service_ctx_t *service_ctx)
 	return 0;
 }
 
-void NONNULL(1)
+static void NONNULL(1)
 icap_service_disconnect(icap_service_ctx_t *service_ctx, icap_ctx_t *icap_ctx)
 {
 	// ATTENTION: ctx may be NULL
-	// ATTENTION: Do not get icap_ctx from service_ctx here, because service_ctx may be already freed and its pointer may be dangling,
-	// so we pass ctx->icap_ctx as a parameter to this function
-	// icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
-	if (!icap_ctx) {
-		log_dbg_printf("No ICAP context in icap_service_disconnect(), idx=%d\n", service_ctx->idx);
-		return;
-	}
-
+	// TODO: Can we get icap_ctx from service_ctx here? Because service_ctx may be already freed and its pointer may be dangling
 	UNUSED pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
 
 	if (service_ctx->bev) {
@@ -1272,7 +1288,6 @@ icap_service_disconnect(icap_service_ctx_t *service_ctx, icap_ctx_t *icap_ctx)
 	}
 
 	// ATTENTION: Do not free service_ctx here, just disconnect
-
 	log_finer_icap("ICAP service disconnected");
 }
 
@@ -1359,19 +1374,7 @@ icap_send_data(icap_ctx_t *icap_ctx)
 
 	// TODO: We may not have ctx and/or bevs, if the connection is terminated
 	if (ctx && ctx->src.bev && ctx->dst.bev) {
-		struct bufferevent *in_bev = icap_ctx->reqmod ? ctx->src.bev : ctx->dst.bev;
-		struct evbuffer *inbuf = bufferevent_get_input(in_bev);
-
-		icap_service_ctx_t *service_ctx = icap_ctx->services[icap_ctx->service_count - 1];
-
-		UNUSED struct evbuffer *out_hdr = ICAP_STATE(service_ctx, icap_ctx->reqmod)->out_hdr;
-		UNUSED struct evbuffer *out_body = ICAP_STATE(service_ctx, icap_ctx->reqmod)->out_body;
-
-		log_finer_va("End of chain reached, send data to destination, out_hdr=%zu, out_body=%zu, inbuf=%zu",
-			evbuffer_get_length(out_hdr), evbuffer_get_length(out_body), evbuffer_get_length(inbuf));
-
-		struct evbuffer *outbuf = bufferevent_get_output(icap_ctx->reqmod ? ctx->dst.bev : ctx->src.bev);
-		icap_process_done(inbuf, outbuf, icap_ctx);
+		icap_ctx->submit_cb(icap_ctx);
 
 		unsigned int made_progress = icap_ctx->made_progress;
 
@@ -1382,10 +1385,14 @@ icap_send_data(icap_ctx_t *icap_ctx)
 		if (!made_progress || icap_have_data_to_process(icap_ctx, &service_idx) == 0) {
 			log_finest("Enable reading from source, resume flow");
 
-			// TODO: Should we enable the current conn_bev only?
-			bufferevent_enable(in_bev, EV_READ);
-			// bufferevent_enable(ctx->src.bev, EV_READ);
-			// bufferevent_enable(ctx->dst.bev, EV_READ);
+			// TODO: Resume reading from stream, not the whole connection, in http2 mode
+			if (!icap_ctx->stream_ctx && !icap_ctx->h2_ctx) {
+				// TODO: Should we enable the current conn_bev only?
+				struct bufferevent *in_bev = icap_ctx->reqmod ? ctx->src.bev : ctx->dst.bev;
+				bufferevent_enable(in_bev, EV_READ);
+				// bufferevent_enable(ctx->src.bev, EV_READ);
+				// bufferevent_enable(ctx->dst.bev, EV_READ);
+			}
 		}
 		else {
 			log_finer("Do not enable reading from source");
@@ -1395,7 +1402,7 @@ icap_send_data(icap_ctx_t *icap_ctx)
 		if (made_progress && icap_is_content_complete(icap_ctx, 1) && icap_is_content_complete(icap_ctx, 0)) {
 			// ATTENTION: Pass ctx->icap_ctx to the free function, because the icap_ctx param is actually service_ctx->icap_ctx,
 			// which may not be NULL even if ctx->icap_ctx is NULL
-			icap_ctx_free(ctx->icap_ctx, 1);
+			icap_ctx_free(icap_ctx, 1);
 		}
 	}
 	else {
@@ -1556,27 +1563,27 @@ icap_advance_to_next_service(icap_service_ctx_t *service_ctx)
 	}
 }
 
-static void NONNULL(1)
+void NONNULL(1)
 icap_disconnect(icap_ctx_t *icap_ctx)
 {
-	// ATTENTION: ctx may be NULL
 	pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
 
 	for (int i = 0; i < icap_ctx->service_count; i++) {
 		if (icap_ctx->services[i]) {
-			icap_service_disconnect(icap_ctx->services[i], ctx ? ctx->icap_ctx : icap_ctx);
+			icap_service_disconnect(icap_ctx->services[i], icap_ctx);
 			icap_service_ctx_free(icap_ctx->services[i]);
 			icap_ctx->services[i] = NULL;
 		}
 	}
 
+	// TODO: ctx may be NULL?
 	log_finer("ICAP chain disconnected");
 }
 
 static void NONNULL(1)
 icap_handle_service_error(icap_service_ctx_t *service_ctx)
 {
-	// ATTENTION: ctx may be NULL
+	// TODO: ctx may be NULL?
 	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
 	pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
 
@@ -1613,7 +1620,8 @@ icap_handle_service_error(icap_service_ctx_t *service_ctx)
 		log_finer_icap("ICAP in error state, will not try further services");
 	}
 
-	icap_service_disconnect(service_ctx, ctx ? ctx->icap_ctx : icap_ctx);
+	// TODO: Can icap_ctx be NULL here?
+	icap_service_disconnect(service_ctx, icap_ctx);
 }
 
 static int NONNULL(1)
@@ -2444,14 +2452,14 @@ icap_handle_chain_continuation(icap_service_ctx_t *service_ctx, icap_ctx_t *icap
 
 	if (next_idx >= icap_ctx->service_count) {
 		log_finest_icap("ICAP service chain finished");
-		icap_send_data(ctx->icap_ctx);
+		icap_send_data(icap_ctx);
 		return;
 	}
 
 	log_finest_icap_va("Current service done for now, service_count=%d, next_idx=%d", icap_ctx->service_count, next_idx);
 
 	icap_advance_to_next_service(service_ctx);
-	icap_process_chain(ctx->icap_ctx, next_idx);
+	icap_process_chain(icap_ctx, next_idx);
 }
 
 /*
@@ -2596,7 +2604,7 @@ out:
 		free(status_line);
 	}
 
-	icap_handle_chain_continuation(service_ctx, ctx->icap_ctx);
+	icap_handle_chain_continuation(service_ctx, icap_ctx);
 }
 
 /*
@@ -2957,7 +2965,7 @@ icap_process_chain_cb(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 	if (icap_ctx->is_veto) {
 		log_finer("ICAP Veto detected in chain, aborting remaining services");
 		// Go to the last service to send the veto page
-		icap_handle_chain_continuation(icap_ctx->services[icap_ctx->service_count - 1], ctx->icap_ctx);
+		icap_handle_chain_continuation(icap_ctx->services[icap_ctx->service_count - 1], icap_ctx);
 		return;
 	}
 
@@ -3002,7 +3010,7 @@ icap_process_chain_cb(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 	if (ctx && !ctx->term) {
 		// Stream data to icap services as it comes, continue chain processing with or without preview
 		// (E2guardian expects this behavior and does not respond until it receives all body data)
-		icap_handle_chain_continuation(service_ctx, ctx->icap_ctx);
+		icap_handle_chain_continuation(service_ctx, icap_ctx);
 	}
 }
 
@@ -3052,15 +3060,15 @@ icap_enabled(pxy_conn_ctx_t *ctx)
 	return ctx->conn_opts->icap_chain && (!ctx->sslctx || !ctx->sslctx->alpn_negotiating);
 }
 
-int NONNULL(1)
-icap_is_finished(pxy_conn_ctx_t *ctx)
+int
+icap_is_finished(icap_ctx_t *icap_ctx)
 {
-	icap_ctx_t *icap_ctx = ctx->icap_ctx;
-
 	if (!icap_ctx) {
-		log_finest("No ICAP context, assume finished");
+		log_dbg_printf("No ICAP context, assume finished\n");
 		return 1;
 	}
+
+	UNUSED pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
 
 	if (!icap_is_content_complete(icap_ctx, 1) || !icap_is_content_complete(icap_ctx, 0)) {
 		for (int i = 0; i < icap_ctx->service_count; i++) {
@@ -3102,10 +3110,25 @@ icap_is_content_complete(icap_ctx_t *icap_ctx, int reqmod)
 	return 1;
 }
 
-static void NONNULL(1,2,3)
-icap_process_done(struct evbuffer *inbuf, struct evbuffer *outbuf, icap_ctx_t *icap_ctx)
+struct evbuffer * NONNULL(1)
+icap_get_last_service_out_hdr(icap_ctx_t *icap_ctx)
+{
+	return ICAP_STATE(icap_ctx->services[icap_ctx->service_count - 1], icap_ctx->reqmod)->out_hdr;
+}
+
+struct evbuffer * NONNULL(1)
+icap_get_last_service_out_body(icap_ctx_t *icap_ctx)
+{
+	return ICAP_STATE(icap_ctx->services[icap_ctx->service_count - 1], icap_ctx->reqmod)->out_body;
+}
+
+static void NONNULL(1)
+icap_data_submit(icap_ctx_t *icap_ctx)
 {
 	pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
+
+	struct evbuffer *inbuf = bufferevent_get_input(icap_ctx->reqmod ? ctx->src.bev : ctx->dst.bev);
+	struct evbuffer *outbuf = bufferevent_get_output(icap_ctx->reqmod ? ctx->dst.bev : ctx->src.bev);
 
 	icap_service_ctx_t *service_ctx = icap_ctx->services[icap_ctx->service_count - 1];
 
@@ -3167,18 +3190,11 @@ icap_process_done(struct evbuffer *inbuf, struct evbuffer *outbuf, icap_ctx_t *i
 }
 
 void NONNULL(1,2)
-icap_process_data(struct evbuffer *inbuf, pxy_conn_ctx_t *ctx, int reqmod)
+icap_process_data(struct evbuffer *inbuf, icap_ctx_t *icap_ctx)
 {
-	icap_ctx_t *icap_ctx = ctx->icap_ctx;
+	pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
 
-	if (!icap_ctx) {
-		log_fine_va("No ICAP context in %s, skipping ICAP processing, inbuf=%zu", reqmod ? "REQMOD" : "RESPMOD", evbuffer_get_length(inbuf));
-		return;
-	}
-
-	icap_ctx->reqmod = reqmod;
-
-	struct evbuffer *in_hdr = icap_get_first_service_in_hdr(ctx, reqmod);
+	struct evbuffer *in_hdr = icap_get_first_service_in_hdr(icap_ctx);
 
 	log_finest_va("ENTER for ICAP %s data, hdr=%zu, inbuf=%zu, is_veto=%d",
 		icap_ctx->reqmod ? "REQMOD" : "RESPMOD", evbuffer_get_length(in_hdr), evbuffer_get_length(inbuf), icap_ctx->is_veto);
@@ -3199,11 +3215,14 @@ icap_process_data(struct evbuffer *inbuf, pxy_conn_ctx_t *ctx, int reqmod)
 			log_finer("No new body data to process");
 		}
 
-		/* Pause reading from src or dst: disable read callback temporarily */
-		// TODO: Should we disable the current conn_bev only?
-		bufferevent_disable(icap_ctx->reqmod ? ctx->src.bev : ctx->dst.bev, EV_READ);
-		// bufferevent_disable(ctx->src.bev, EV_READ);
-		// bufferevent_disable(ctx->dst.bev, EV_READ);
+		// TODO: Pause reading from stream, not the whole connection, in http2 mode
+		if (!icap_ctx->stream_ctx && !icap_ctx->h2_ctx) {
+			/* Pause reading from src or dst: disable read callback temporarily */
+			// TODO: Should we disable the current conn_bev only?
+			bufferevent_disable(icap_ctx->reqmod ? ctx->src.bev : ctx->dst.bev, EV_READ);
+			// bufferevent_disable(ctx->src.bev, EV_READ);
+			// bufferevent_disable(ctx->dst.bev, EV_READ);
+		}
 
 		log_finer_va("Triggering ICAP for %s, hdr=%zu, inbuf=%zu", icap_ctx->reqmod ? "REQMOD" : "RESPMOD", evbuffer_get_length(in_hdr), evbuffer_get_length(inbuf));
 		icap_process_chain(icap_ctx, 0);

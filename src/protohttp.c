@@ -594,7 +594,7 @@ protohttp_apply_filter(pxy_conn_ctx_t *ctx)
 			ctx->conn_opts = a->conn_opts;
 #ifndef WITHOUT_ICAP
 			if (a->conn_opts->icap_chain) {
-				ctx->icap_ctx = icap_init(ctx);
+				ctx->icap_ctx = icap_init(ctx, NULL, NULL);
 				if (!ctx->icap_ctx) {
 					ctx->enomem = 1;
 					return 1;
@@ -857,7 +857,7 @@ protohttp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 #ifndef WITHOUT_ICAP
 		// ATTENTION: Filter rule application in protohttp_filter_request_header() may reinit icap_ctx and change the icap services along with their in_hdr,
 		// so we cannot use the in_hdr of first service here. This is only for http requests, not responses, because we don't apply filters to responses.
-		// outbuf_ptr = icap_get_first_service_in_hdr(ctx, 1);
+		// outbuf_ptr = icap_get_first_service_in_hdr(ctx->icap_ctx);
 		log_finest_va("Using http_ctx->in_hdr, size=%zu", evbuffer_get_length(http_ctx->in_hdr));
 		outbuf_ptr = http_ctx->in_hdr;
 #endif /* !WITHOUT_ICAP */
@@ -868,7 +868,8 @@ protohttp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 
 #ifndef WITHOUT_ICAP
 		if (http_ctx->seen_req_header) {
-			outbuf_ptr = icap_enabled(ctx) ? icap_get_first_service_in_hdr(ctx, 1) : outbuf;
+			ctx->icap_ctx->reqmod = 1;
+			outbuf_ptr = icap_enabled(ctx) ? icap_get_first_service_in_hdr(ctx->icap_ctx) : outbuf;
 			evbuffer_add_buffer(outbuf_ptr, http_ctx->in_hdr);
 		}
 #endif /* !WITHOUT_ICAP */
@@ -884,8 +885,8 @@ protohttp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 #ifndef WITHOUT_ICAP
 		}
 		else {
-			// icap_ctx may not have been initialized yet, hence we pass ctx and reqmod too
-			icap_process_data(inbuf, ctx, 1);
+			ctx->icap_ctx->reqmod = 1;
+			icap_process_data(inbuf, ctx->icap_ctx);
 		}
 #endif /* !WITHOUT_ICAP */
 	}
@@ -991,7 +992,7 @@ protohttp_filter_response_header_line(const char *line, protohttp_ctx_t *http_ct
 	return (char*)line;
 }
 
-static void NONNULL(1,2,3,4)
+void NONNULL(1,2,3,4)
 protohttp_filter_response_header(struct evbuffer *inbuf, struct evbuffer *outbuf, protohttp_ctx_t *http_ctx, pxy_conn_ctx_t *ctx)
 {
 	char *line;
@@ -1033,11 +1034,6 @@ protohttp_bev_readcb_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	struct evbuffer *inbuf = bufferevent_get_input(bev);
 	struct evbuffer *outbuf = bufferevent_get_output(ctx->src.bev);
 
-	if (ctx->sslctx && !ctx->sslctx->alpn_negotiating) {
-		log_finest_va("Wait for ALPN negotiation end, inbuf=%zu", evbuffer_get_length(inbuf));
-		return;
-	}
-
 	if (!http_ctx->seen_resp_header) {
 		log_finest_va("HTTP Response Header, size=%zu", evbuffer_get_length(inbuf));
 
@@ -1045,7 +1041,8 @@ protohttp_bev_readcb_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		struct evbuffer *outbuf_ptr = outbuf;
 #ifndef WITHOUT_ICAP
 		if (icap_enabled(ctx)) {
-			outbuf_ptr = icap_get_first_service_in_hdr(ctx, 0);
+			ctx->icap_ctx->reqmod = 0;
+			outbuf_ptr = icap_get_first_service_in_hdr(ctx->icap_ctx);
 		}
 #endif /* !WITHOUT_ICAP */
 
@@ -1065,7 +1062,8 @@ protohttp_bev_readcb_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 #ifndef WITHOUT_ICAP
 		}
 		else {
-			icap_process_data(inbuf, ctx, 0);
+			ctx->icap_ctx->reqmod = 0;
+			icap_process_data(inbuf, ctx->icap_ctx);
 		}
 #endif /* !WITHOUT_ICAP */
 	}
@@ -1295,30 +1293,40 @@ protohttps_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 static void NONNULL(1)
 protohttp_free_ctx(protohttp_ctx_t *http_ctx)
 {
+	log_err_printf("protohttp_free_ctx: ENTER\n");
+
 	if (http_ctx->http_method) {
 		free(http_ctx->http_method);
+		http_ctx->http_method = NULL;
 	}
 	if (http_ctx->http_uri) {
 		free(http_ctx->http_uri);
+		http_ctx->http_uri = NULL;
 	}
 	if (http_ctx->http_host) {
 		free(http_ctx->http_host);
+		http_ctx->http_host = NULL;
 	}
 	if (http_ctx->http_content_type) {
 		free(http_ctx->http_content_type);
+		http_ctx->http_content_type = NULL;
 	}
 	if (http_ctx->http_status_code) {
 		free(http_ctx->http_status_code);
+		http_ctx->http_status_code = NULL;
 	}
 	if (http_ctx->http_status_text) {
 		free(http_ctx->http_status_text);
+		http_ctx->http_status_text = NULL;
 	}
 	if (http_ctx->http_content_length) {
 		free(http_ctx->http_content_length);
+		http_ctx->http_content_length = NULL;
 	}
 #ifndef WITHOUT_ICAP
 	if (http_ctx->in_hdr) {
 		evbuffer_free(http_ctx->in_hdr);
+		http_ctx->in_hdr = NULL;
 	}
 #endif /* !WITHOUT_ICAP */
 	free(http_ctx);
@@ -1328,7 +1336,10 @@ static void NONNULL(1)
 protohttp_free(pxy_conn_ctx_t *ctx)
 {
 	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
-	protohttp_free_ctx(http_ctx);
+	if (http_ctx) {
+		protohttp_free_ctx(http_ctx);
+		ctx->protoctx->arg = NULL;
+	}
 }
 
 void NONNULL(1)
@@ -1342,7 +1353,10 @@ void NONNULL(1)
 protohttp_free_child(pxy_conn_child_ctx_t *ctx)
 {
 	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
-	protohttp_free_ctx(http_ctx);
+	if (http_ctx) {
+		protohttp_free_ctx(http_ctx);
+		ctx->protoctx->arg = NULL;
+	}
 }
 
 // @attention Called by thrmgr thread

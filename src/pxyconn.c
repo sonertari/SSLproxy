@@ -1730,7 +1730,7 @@ pxy_conn_apply_filter(pxy_conn_ctx_t *ctx, unsigned int defer_action)
 			ctx->conn_opts = a->conn_opts;
 #ifndef WITHOUT_ICAP
 			if (a->conn_opts->icap_chain) {
-				ctx->icap_ctx = icap_init(ctx);
+				ctx->icap_ctx = icap_init(ctx, NULL, NULL);
 				if (!ctx->icap_ctx) {
 					ctx->enomem = 1;
 					return 1;
