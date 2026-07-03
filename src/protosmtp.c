@@ -273,7 +273,7 @@ protosmtp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	protosmtp_ctx_t *smtp_ctx = ctx->protoctx->arg;
 
 	// Detect start and end of SMTP DATA phase to send ICAP requests
-	if (icap_enabled(ctx) && !smtp_ctx->in_data) {
+	if (icap_enabled(ctx->icap_ctx) && !smtp_ctx->in_data) {
 		if (!smtp_ctx->in_data) {
 			size_t len = evbuffer_get_length(inbuf);
 			char *data = malloc(len + 1);
@@ -295,7 +295,7 @@ protosmtp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		}
 	}
 
-	if (!icap_enabled(ctx) || !smtp_ctx->in_data) {
+	if (!icap_enabled(ctx->icap_ctx) || !smtp_ctx->in_data) {
 #endif /* !WITHOUT_ICAP */
 		evbuffer_add_buffer(outbuf, inbuf);
 #ifndef WITHOUT_ICAP
@@ -326,7 +326,7 @@ protosmtp_bev_readcb_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	protosmtp_ctx_t *smtp_ctx = ctx->protoctx->arg;
 
 	// Detect start and end of SMTP DATA phase to send ICAP requests
-	if (!smtp_ctx->in_data) {
+	if (icap_enabled(ctx->icap_ctx) && !smtp_ctx->in_data) {
 		size_t len = evbuffer_get_length(inbuf);
 		char *data = malloc(len + 1);
 		if (data) {
@@ -346,7 +346,7 @@ protosmtp_bev_readcb_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		}
 	}
 
-	if (!icap_enabled(ctx) || !smtp_ctx->in_data) {
+	if (!icap_enabled(ctx->icap_ctx) || !smtp_ctx->in_data) {
 #endif /* !WITHOUT_ICAP */
 		evbuffer_add_buffer(outbuf, inbuf);
 #ifndef WITHOUT_ICAP

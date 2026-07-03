@@ -97,32 +97,6 @@ protohttp2_new_stream_ctx(protohttp2_ctx_t *h2_ctx, int32_t stream_id)
     return s;
 }
 
-// static void
-// protohttp2_add_header(stream_ctx_t *s, const char *name, const char *value)
-// {
-//     if (s->headers_count == s->headers_capacity) {
-//         s->headers_capacity = s->headers_capacity ? s->headers_capacity * 2 : 16;
-//         s->headers = realloc(s->headers, s->headers_capacity * sizeof(nghttp2_nv));
-//         if (!s->headers) {
-//             // Handle allocation failure
-//             return;
-//         }
-//     }
-//     nghttp2_nv *nv = &s->headers[s->headers_count++];
-//     nv->name = (uint8_t *)strdup(name);
-//     nv->namelen = strlen(name);
-//     // H2 requires lowercase header names
-//     for (size_t i = 0; i < nv->namelen; i++) {
-//         if (nv->name[i] >= 'A' && nv->name[i] <= 'Z') {
-//             nv->name[i] += 'a' - 'A';
-//         }
-//     }
-//     nv->value = (uint8_t *)strdup(value);
-//     nv->valuelen = strlen(value);
-//     nv->flags = NGHTTP2_NV_FLAG_NONE;
-//     log_dbg_printf("protohttp2_add_header: H2 Header: %s: %s\n", name, value);
-// }
-
 static void
 protohttp2_free_stream_headers(stream_ctx_t *s)
 {
@@ -137,6 +111,10 @@ protohttp2_free_stream_headers(stream_ctx_t *s)
         }
     }
     s->headers_count = 0;
+    s->headers_capacity = 0;
+
+    free(s->headers);
+    s->headers = NULL;
 }
 
 static void
@@ -151,7 +129,6 @@ protohttp2_free_stream_ctx(protohttp2_ctx_t *h2_ctx, stream_ctx_t *s)
     }
     if (s->headers) {
         protohttp2_free_stream_headers(s);
-        free(s->headers);
     }
     if (s->data_buf) evbuffer_free(s->data_buf);
 
@@ -165,7 +142,7 @@ protohttp2_free_stream_ctx(protohttp2_ctx_t *h2_ctx, stream_ctx_t *s)
 }
 
 static struct evbuffer *
-protohttp2_h1_headers(stream_ctx_t *s)
+protohttp2_get_h1_headers(stream_ctx_t *s)
 {
     pxy_conn_ctx_t *ctx = s->ctx;
     log_finest("ENTER");
@@ -191,7 +168,7 @@ protohttp2_h1_headers(stream_ctx_t *s)
     }
 
     if (method_idx != -1) {
-        log_finest_va("method_idx=%d", method_idx);
+        // log_finest_va("method_idx=%d", method_idx);
         log_finest_va("%.*s %.*s HTTP/1.1", (int)headers[method_idx].valuelen, (char *)headers[method_idx].value,
             (path_idx != -1) ? (int)headers[path_idx].valuelen : 1, (path_idx != -1) ? (char *)headers[path_idx].value : "/");
 
@@ -204,10 +181,11 @@ protohttp2_h1_headers(stream_ctx_t *s)
     }
 
     if (status_idx != -1) {
-        log_finest_va("status_idx=%d", status_idx);
+        // log_finest_va("status_idx=%d", status_idx);
         log_finest_va("HTTP/1.1 %.*s", (int)headers[status_idx].valuelen, (char *)headers[status_idx].value);
 
-        evbuffer_add_printf(buf, "HTTP/1.1 %.*s\r\n", (int)headers[status_idx].valuelen, (char *)headers[status_idx].value);
+        // TODO: Add the correct reason phrase, otherwise E2Guardian icap service does not respond, we just use "OK" as a placeholder for now.
+        evbuffer_add_printf(buf, "HTTP/1.1 %.*s OK\r\n", (int)headers[status_idx].valuelen, (char *)headers[status_idx].value);
     }
 
     for (size_t i = 0; i < count; i++) {
@@ -227,7 +205,6 @@ protohttp2_h1_headers(stream_ctx_t *s)
     // Add an extra CRLF to signal end of headers.
     evbuffer_add_printf(buf, "\r\n");
 
-    protohttp2_free_stream_headers(s);
     return buf;
 }
 
@@ -248,31 +225,36 @@ trim_whitespace(char *str, size_t *len)
     return str;
 }
 
-/* Helper to append an nghttp2_nv element safely */
 static int
-add_nv_header(stream_ctx_t *s, size_t *allocated, const char *name, size_t namelen, const char *value, size_t valuelen)
+protohttp2_add_nv_header(stream_ctx_t *s, const char *name, size_t namelen, const char *value, size_t valuelen)
 {
-    if (s->headers_count >= *allocated) {
-        *allocated = *allocated == 0 ? 16 : *allocated * 2;
-        nghttp2_nv *tmp = realloc(s->headers, *allocated * sizeof(nghttp2_nv));
-        if (!tmp) return -1;
+    pxy_conn_ctx_t *ctx = s->ctx;
+    log_finest_va("%.*s: %.*s", (int)namelen, name, (int)valuelen, value);
+
+    if (s->headers_count >= s->headers_capacity) {
+        size_t new_capacity = s->headers_capacity == 0 ? 16 : s->headers_capacity * 2;
+        nghttp2_nv *tmp = realloc(s->headers, new_capacity * sizeof(nghttp2_nv));
+        if (!tmp) {
+            log_fine("Failed reallocating headers");
+            return -1;
+        }
         s->headers = tmp;
+        s->headers_capacity = new_capacity;
     }
 
     nghttp2_nv *nv = &s->headers[s->headers_count];
-    
-    /* Allocate and copy name/value - nghttp2 expects them to persist until submitted */
-    nv->name = (uint8_t *)malloc(namelen);
+
+    nv->name = malloc(namelen);
     if (!nv->name) return -1;
     memcpy(nv->name, name, namelen);
     nv->namelen = namelen;
 
-    /* HTTP/2 mandates lowercase names */
+    // HTTP/2 mandates strict lowercase header names
     for (size_t i = 0; i < nv->namelen; i++) {
         nv->name[i] = tolower(nv->name[i]);
     }
 
-    nv->value = (uint8_t *)malloc(valuelen);
+    nv->value = malloc(valuelen);
     if (!nv->value) {
         free(nv->name);
         return -1;
@@ -286,37 +268,31 @@ add_nv_header(stream_ctx_t *s, size_t *allocated, const char *name, size_t namel
 }
 
 int
-protohttp2_h1_to_h2_headers(stream_ctx_t *s, struct evbuffer *h1_buf)
+protohttp2_get_h2_headers(stream_ctx_t *s, struct evbuffer *h1_buf)
 {
     pxy_conn_ctx_t *ctx = s->ctx;
     log_finest("ENTER");
-    
-    /* Clean slate for this stream context's header holder */
+
+    // Clean slate for this stream context's header holder
     if (s->headers) {
         protohttp2_free_stream_headers(s);
-        free(s->headers);
     }
-    s->headers = NULL;
-    s->headers_count = 0;
-    size_t allocated = 0;
 
     size_t line_len;
     char *line;
     int is_first_line = 1;
 
-    /* Read the evbuffer line-by-line using CRLF or LF delimiters */
     while ((line = evbuffer_readln(h1_buf, &line_len, EVBUFFER_EOL_CRLF)) != NULL) {
-        /* Empty line means we reached the end of the HTTP/1.1 header block */
         if (line_len == 0) {
             free(line);
-            break; 
+            break;
         }
 
         if (is_first_line) {
             is_first_line = 0;
-            
-            /* Check if it's a Request Line (e.g., "GET /index.html HTTP/1.1") */
-            if (!memcmp(line, "HTTP/", 5) == 0) {
+
+            // Request Line
+            if (memcmp(line, "HTTP/", 5) != 0) {
                 char *method = line;
                 char *path = strchr(line, ' ');
                 if (path) {
@@ -326,31 +302,50 @@ protohttp2_h1_to_h2_headers(stream_ctx_t *s, struct evbuffer *h1_buf)
                     if (version) {
                         *version = '\0';
                     }
+
+                    // Strip absolute uri scheme and authority
+                    // If path starts with "http://" or "https://", skip to the relative path component
+                    if (strncasecmp(path, "http://", 7) == 0) {
+                        char *relative_path = strchr(path + 7, '/');
+                        if (relative_path) {
+                            path = relative_path;
+                        } else {
+                            path = "/"; // Fallback if no trailing slash was provided
+                        }
+                    } else if (strncasecmp(path, "https://", 8) == 0) {
+                        char *relative_path = strchr(path + 8, '/');
+                        if (relative_path) {
+                            path = relative_path;
+                        } else {
+                            path = "/"; // Fallback if no trailing slash was provided
+                        }
+                    }
+
                     size_t m_len = strlen(method);
                     size_t p_len = strlen(path);
-                    
-                    log_finest_va("Parsed Request Line: :method=%.*s, :path=%.*s, and add :scheme=https", (int)m_len, method, (int)p_len, path);
-                    if (add_nv_header(s, &allocated, ":method", 7, method, m_len) < 0 ||
-                        add_nv_header(s, &allocated, ":path", 5, path, p_len) < 0 ||
-                        add_nv_header(s, &allocated, ":scheme", 7, "https", 5) < 0) {
+
+                    log_finest_va("Translate Request Line: :method=%.*s, :path=%.*s, and add :scheme=https", (int)m_len, method, (int)p_len, path);
+                    if (protohttp2_add_nv_header(s, ":method", 7, method, m_len) < 0 ||
+                        protohttp2_add_nv_header(s, ":path", 5, path, p_len) < 0 ||
+                        protohttp2_add_nv_header(s, ":scheme", 7, "https", 5) < 0) {
                         free(line);
                         return -1;
                     }
                 }
-            } 
-            /* Otherwise it's a Status Line (e.g., "HTTP/1.1 200 OK") */
+            }
+            // Status Line
             else {
-                // char *version = line;
                 char *status = strchr(line, ' ');
                 if (status) {
-                    while (*status == ' ') status++; /* Skip spaces */
+                    while (*status == ' ') status++; // Skip spaces
                     char *phrase = strchr(status, ' ');
                     if (phrase) {
-                        *phrase = '\0'; /* We only want the status digit group (e.g. "200") */
+                        // We only want the status digit group (e.g. "200"), not the reason phrase (e.g. "OK")
+                        *phrase = '\0';
                     }
                     size_t s_len = strlen(status);
-                    log_finest_va("Parsed Status Line: :status=%.*s", (int)s_len, status);
-                    if (add_nv_header(s, &allocated, ":status", 7, status, s_len) < 0) {
+                    log_finest_va("Translate Status Line: :status=%.*s", (int)s_len, status);
+                    if (protohttp2_add_nv_header(s, ":status", 7, status, s_len) < 0) {
                         free(line);
                         return -1;
                     }
@@ -360,7 +355,7 @@ protohttp2_h1_to_h2_headers(stream_ctx_t *s, struct evbuffer *h1_buf)
             continue;
         }
 
-        /* Process regular headers "Name: Value" */
+        // Process regular headers "Name: Value"
         char *colon = strchr(line, ':');
         if (colon) {
             *colon = '\0';
@@ -372,25 +367,23 @@ protohttp2_h1_to_h2_headers(stream_ctx_t *s, struct evbuffer *h1_buf)
             h_name = trim_whitespace(h_name, &n_len);
             h_value = trim_whitespace(h_value, &v_len);
 
-            /* Translate Host into :authority */
             if (n_len == 4 && !strncasecmp(h_name, "Host", 4)) {
-                log_finest_va("Translating Host to :authority: %.*s", (int)v_len, h_value);
-                if (add_nv_header(s, &allocated, ":authority", 10, h_value, v_len) < 0) {
+                log_finest_va("Translate Host to :authority: %.*s", (int)v_len, h_value);
+                if (protohttp2_add_nv_header(s, ":authority", 10, h_value, v_len) < 0) {
                     free(line);
                     return -1;
                 }
-            } 
-            /* Filter out Connection headers that are forbidden or invalid in H2 */
+            }
+            // Filter out Connection headers that are forbidden or invalid in H2
             else if ((n_len == 10 && !strncasecmp(h_name, "Connection", 10)) ||
                      (n_len == 17 && !strncasecmp(h_name, "Transfer-Encoding", 17)) ||
                      (n_len == 10 && !strncasecmp(h_name, "Keep-Alive", 10)) ||
                      (n_len == 5  && !strncasecmp(h_name, "Proxy", 5))) {
-                log_finest_va("Skipping H1 specific connection header: %s", h_name);
-            } 
-            /* Regular Header Pass-through */
+                log_finest_va("Skip H1 specific connection header: %s", h_name);
+            }
+            // Regular Header Pass-through
             else {
-                log_finest_va("Adding header: %s: %s", h_name, h_value);
-                if (add_nv_header(s, &allocated, h_name, n_len, h_value, v_len) < 0) {
+                if (protohttp2_add_nv_header(s, h_name, n_len, h_value, v_len) < 0) {
                     free(line);
                     return -1;
                 }
@@ -445,7 +438,7 @@ protohttp2_on_header_callback(UNUSED nghttp2_session *session, const nghttp2_fra
 {
     protohttp2_ctx_t *h2_ctx = (protohttp2_ctx_t *)user_data;
     pxy_conn_ctx_t *ctx = h2_ctx->ctx;
-    
+
     if (frame->hd.type != NGHTTP2_HEADERS) {
         log_finest("Not a HEADERS frame, ignoring");
         return 0;
@@ -490,16 +483,16 @@ protohttp2_trigger_write_loop(protohttp2_ctx_t *h2_ctx, int reqmod)
     // ATTENTION: The other side of the connection (client or server) is the session for sending data
     nghttp2_session *session = reqmod ? h2_ctx->dst_session : h2_ctx->src_session;
     struct bufferevent *bev = reqmod ? ctx->dst.bev : ctx->src.bev;
-    
+
     // Ask nghttp2 to serialize the pending header queue into a raw byte stream
     ssize_t payload_len = nghttp2_session_mem_send(session, &binary_payload);
-    
+
     while (payload_len > 0) {
         // Write the raw binary frames directly into the bufferevent
         bufferevent_write(bev, binary_payload, payload_len);
         // struct evbuffer *outbuf = bufferevent_get_output(bev);
         // evbuffer_add(outbuf, binary_payload, payload_len);
-        
+
         // Check if there is more data waiting in the memory queue loop
         payload_len = nghttp2_session_mem_send(session, &binary_payload);
     }
@@ -513,7 +506,7 @@ protohttp2_provider_read_callback(UNUSED nghttp2_session *session, UNUSED int32_
     size_t available = evbuffer_get_length(s->data_buf);
 
     if (available == 0) {
-        // No data ready right now. Tell nghttp2 to pause writing DATA frames 
+        // No data ready right now. Tell nghttp2 to pause writing DATA frames
         // for this stream until we explicitly resume it.
         return NGHTTP2_ERR_DEFERRED;
     }
@@ -555,6 +548,9 @@ protohttp2_submit_data(protohttp2_ctx_t *h2_ctx, stream_ctx_t *s, int reqmod)
 
         // Clean up memory allocated during the collection callback
         protohttp2_free_stream_headers(s);
+
+        // ATTENTION: The write loop should be triggered separately for headers and data
+        protohttp2_trigger_write_loop(h2_ctx, reqmod);
     }
     else {
         log_finest_va("No headers to submit, stream_id=%d, reqmod=%d", s->stream_id, reqmod);
@@ -569,14 +565,14 @@ protohttp2_submit_data(protohttp2_ctx_t *h2_ctx, stream_ctx_t *s, int reqmod)
             log_finest_va("Fatal: nghttp2_session_resume_data failed: %s", nghttp2_strerror(rv));
             return -1;
         }
+
+        protohttp2_trigger_write_loop(h2_ctx, reqmod);
     }
     else {
         log_finest_va("No data to submit, stream_id=%d, reqmod=%d", s->stream_id, reqmod);
     }
 
     log_finest_va("Success submitting data to nghttp2, rv=%d, stream_id=%d", rv, s->stream_id);
-
-    protohttp2_trigger_write_loop(h2_ctx, reqmod);
     return 0;
 }
 
@@ -588,8 +584,7 @@ protohttp2_icap_data_submit(icap_ctx_t *icap_ctx)
     pxy_conn_ctx_t *ctx = h2_ctx->ctx;
 
     struct evbuffer *out_hdr = icap_get_last_service_out_hdr(icap_ctx);
-    // evbuffer_add_buffer(s->data_buf, out_hdr);
-    protohttp2_h1_to_h2_headers(s, out_hdr);
+    protohttp2_get_h2_headers(s, out_hdr);
 
     struct evbuffer *out_body = icap_get_last_service_out_body(icap_ctx);
     evbuffer_add_buffer(s->data_buf, out_body);
@@ -631,30 +626,24 @@ protohttp2_on_frame_recv(UNUSED nghttp2_session *session, const nghttp2_frame *f
 
         stream_ctx_t *s = protohttp2_get_stream_ctx(h2_ctx, frame->hd.stream_id);
         if (s) {
-            if (icap_enabled(ctx)) {
+            if (icap_enabled(s->icap_ctx)) {
                 s->icap_ctx->reqmod = reqmod;
 
-                // struct evbuffer *outbuf_ptr = icap_enabled(ctx) ? icap_get_first_service_in_hdr(ctx, 1) : outbuf;
                 struct evbuffer *outbuf_ptr = icap_get_first_service_in_hdr(s->icap_ctx);
-                // for (size_t i = 0; i < s->headers_count; i++) {
-                // 	evbuffer_add_printf(outbuf_ptr, "%s: %s\r\n", s->headers[i].name, s->headers[i].value);
-                // }
-                struct evbuffer *header_buf = protohttp2_h1_headers(s);
+                struct evbuffer *header_buf = protohttp2_get_h1_headers(s);
 
-                struct evbuffer *filtered_header_buf = evbuffer_new();
                 protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
 
                 if (reqmod) {
-                    if (protohttp_filter_request_header(header_buf, filtered_header_buf, http_ctx, ctx->type, ctx) == -1) {
+                    if (protohttp_filter_request_header(header_buf, outbuf_ptr, http_ctx, ctx->type, ctx) == -1) {
+                        evbuffer_free(header_buf);
                         return -1;
                     }
                 }
                 else {
-                    protohttp_filter_response_header(header_buf, filtered_header_buf, http_ctx, ctx);
+                    protohttp_filter_response_header(header_buf, outbuf_ptr, http_ctx, ctx);
                 }
 
-                evbuffer_add_buffer(outbuf_ptr, filtered_header_buf);
-                evbuffer_free(filtered_header_buf);
                 evbuffer_free(header_buf);
 
                 icap_process_data(s->data_buf, s->icap_ctx);
@@ -704,7 +693,7 @@ protohttp2_on_data_chunk_recv(nghttp2_session *session, UNUSED uint8_t flags, in
     // Queue pristine payload data straight into the staging buffer
     evbuffer_add(s->data_buf, data, len);
 
-    if (icap_enabled(ctx)) {
+    if (icap_enabled(s->icap_ctx)) {
         s->icap_ctx->reqmod = reqmod;
         icap_process_data(s->data_buf, s->icap_ctx);
         return 0;
@@ -740,7 +729,7 @@ protohttp2_on_stream_close(UNUSED nghttp2_session *session, int32_t stream_id, U
         evbuffer_add(outbuf, "0\r\n\r\n", 5);
 
 #ifndef WITHOUT_ICAP
-        if (icap_enabled(ctx) && !icap_is_finished(s->icap_ctx)) {
+        if (icap_enabled(s->icap_ctx) && !icap_is_finished(s->icap_ctx)) {
             log_finest("ICAP not finished yet, do not terminate stream");
             return 0;
 		}
@@ -798,7 +787,12 @@ protohttp2_bev_readcb(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
 	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
-	int seen_resp_header_on_entry = http_ctx->seen_resp_header;
+    if (!http_ctx) {
+        log_finest("protohttp2_bev_readcb: http_ctx is NULL");
+        return;
+    }
+
+    int seen_resp_header_on_entry = http_ctx->seen_resp_header;
 
 	if (bev == ctx->src.bev || bev == ctx->dst.bev) {
         int reqmod = bev == ctx->src.bev;

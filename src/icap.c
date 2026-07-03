@@ -316,17 +316,8 @@ icap_ctx_free(icap_ctx_t *icap_ctx, int term_conn)
 		icap_ctx->chain_ev = NULL;
 	}
 
-	/* Disconnect if connected */
 	icap_disconnect(icap_ctx);
 
-	// TODO: Do we need to free h2 here? But otherwise every other h2 connection stalls and icap times out
-	if (icap_ctx->stream_ctx) {
-		protohttp2_free(ctx);
-		icap_ctx->h2_ctx = NULL;
-		icap_ctx->stream_ctx = NULL;
-	}
-
-	/* Free buffers */
 	if (icap_ctx->veto_page) {
 		evbuffer_free(icap_ctx->veto_page);
 	}
@@ -334,11 +325,19 @@ icap_ctx_free(icap_ctx_t *icap_ctx, int term_conn)
 		free(icap_ctx->icap_extended_headers);
 	}
 
-	free(icap_ctx);
-	ctx->icap_ctx = NULL;
+	int h2_stream = icap_ctx->stream_ctx != NULL;
 
-	if (term_conn) {
-		icap_conn_term(ctx);
+	free(icap_ctx);
+
+	// TODO: Free the h2 stream owner of icap_ctx.
+	// Do we need to free h2 here? Check if all h2 streams are finished before freeing h2 context
+	if (!h2_stream) {
+		// The icap_ctx owner may be conn or stream, so we need to set the correct pointer to NULL
+		ctx->icap_ctx = NULL;
+
+		if (term_conn) {
+			icap_conn_term(ctx);
+		}
 	}
 }
 
@@ -1566,8 +1565,6 @@ icap_advance_to_next_service(icap_service_ctx_t *service_ctx)
 void NONNULL(1)
 icap_disconnect(icap_ctx_t *icap_ctx)
 {
-	pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
-
 	for (int i = 0; i < icap_ctx->service_count; i++) {
 		if (icap_ctx->services[i]) {
 			icap_service_disconnect(icap_ctx->services[i], icap_ctx);
@@ -1576,8 +1573,10 @@ icap_disconnect(icap_ctx_t *icap_ctx)
 		}
 	}
 
-	// TODO: ctx may be NULL?
-	log_finer("ICAP chain disconnected");
+	// TODO: icap_ctx->conn_ctx may be a dangling pointer, assign NULL to it based on its owner: conn or stream
+	// pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
+	// log_finer("ICAP chain disconnected");
+	log_dbg_level_printf(LOG_DBG_MODE_FINER, __FUNCTION__, 0, 0, 0, 0, "ICAP chain disconnected");
 }
 
 static void NONNULL(1)
@@ -3051,20 +3050,27 @@ icap_process_chain(icap_ctx_t *icap_ctx, int service_idx)
 	}
 }
 
-/*
- * Check if ICAP is enabled for this connection
- */
-int NONNULL(1)
-icap_enabled(pxy_conn_ctx_t *ctx)
+// Check if ICAP is enabled for this connection/stream
+int
+icap_enabled(icap_ctx_t *icap_ctx)
 {
-	return ctx->conn_opts->icap_chain && (!ctx->sslctx || !ctx->sslctx->alpn_negotiating);
+	if (!icap_ctx) {
+		// This happens when terminating the connection/stream
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, __FUNCTION__, 0, 0, 0, 0, "No ICAP context, assume disabled");
+		return 0;
+	}
+
+	UNUSED pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
+	log_finest_va("ENTER, service_count=%d", icap_ctx->service_count);
+	return icap_ctx->service_count > 0;
 }
 
 int
 icap_is_finished(icap_ctx_t *icap_ctx)
 {
 	if (!icap_ctx) {
-		log_dbg_printf("No ICAP context, assume finished\n");
+		// This happens when terminating the connection/stream
+		log_dbg_level_printf(LOG_DBG_MODE_FINEST, __FUNCTION__, 0, 0, 0, 0, "No ICAP context, assume finished");
 		return 1;
 	}
 

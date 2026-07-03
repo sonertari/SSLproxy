@@ -344,8 +344,7 @@ pxy_conn_ctx_free(pxy_conn_ctx_t *ctx, int by_requestor)
 	pxy_thr_detach(ctx);
 
 #ifndef WITHOUT_ICAP
-	// Do not check icap_enabled(ctx) here, because ctx->icap_ctx may be initialized but not enabled,
-	// and we should still free it if it is initialized
+	// Do not check icap_enabled() here, because we should free it if initialized
 	if (ctx->icap_ctx) {
 		icap_ctx_free(ctx->icap_ctx, 1);
 	}
@@ -1185,7 +1184,7 @@ pxy_set_sslproxy_header(pxy_conn_ctx_t *ctx, int upgraded)
 	log_finer_va("sslproxy_header= %s", ctx->sslproxy_header);
 
 #ifndef WITHOUT_ICAP
-	return icap_enabled(ctx) ? icap_set_extended_headers(ctx->icap_ctx, upgraded) : 0;
+	return icap_enabled(ctx->icap_ctx) ? icap_set_extended_headers(ctx->icap_ctx, upgraded) : 0;
 #else /* WITHOUT_ICAP */
 	return 0;
 #endif /* !WITHOUT_ICAP */
@@ -1197,7 +1196,7 @@ pxy_setup_child_listener(pxy_conn_ctx_t *ctx)
 	if (!ctx->divert) {
 		// split mode
 #ifndef WITHOUT_ICAP
-		return icap_enabled(ctx) ? icap_set_extended_headers(ctx->icap_ctx, 0) : 0;
+		return icap_enabled(ctx->icap_ctx) ? icap_set_extended_headers(ctx->icap_ctx, 0) : 0;
 #else /* WITHOUT_ICAP */
 		return 0;
 #endif /* !WITHOUT_ICAP */

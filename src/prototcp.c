@@ -425,7 +425,7 @@ prototcp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	}
 
 #ifndef WITHOUT_ICAP
-	if (!icap_enabled(ctx)) {
+	if (!icap_enabled(ctx->icap_ctx)) {
 #endif /* !WITHOUT_ICAP */
 		evbuffer_add_buffer(outbuf, inbuf);
 #ifndef WITHOUT_ICAP
@@ -453,7 +453,7 @@ prototcp_bev_readcb_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	struct evbuffer *outbuf = bufferevent_get_output(ctx->src.bev);
 
 #ifndef WITHOUT_ICAP
-	if (!icap_enabled(ctx) || ctx->sslctx->alpn_negotiating) {
+	if (!icap_enabled(ctx->icap_ctx) || ctx->sslctx->alpn_negotiating) {
 #endif /* !WITHOUT_ICAP */
 		evbuffer_add_buffer(outbuf, inbuf);
 #ifndef WITHOUT_ICAP
@@ -600,7 +600,7 @@ prototcp_bev_writecb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		return;
 	}
 #ifndef WITHOUT_ICAP
-	if (!icap_enabled(ctx)) {
+	if (!icap_enabled(ctx->icap_ctx)) {
 #endif /* !WITHOUT_ICAP */
 		ctx->protoctx->unset_watermarkcb(bev, ctx, &ctx->dst);
 #ifndef WITHOUT_ICAP
@@ -733,7 +733,7 @@ prototcp_bev_eventcb_eof_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		ctx->dst.closed = 1;
 	} else if (!ctx->dst.closed) {
 #ifndef WITHOUT_ICAP
-		if (icap_enabled(ctx) && !icap_is_finished(ctx->icap_ctx)) {
+		if (icap_enabled(ctx->icap_ctx) && !icap_is_finished(ctx->icap_ctx)) {
 			log_finest("ICAP not finished yet, do not terminate conn");
 			return;
 		}
@@ -761,7 +761,7 @@ prototcp_bev_eventcb_eof_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		ctx->src.closed = 1;
 	} else if (!ctx->src.closed) {
 #ifndef WITHOUT_ICAP
-		if (icap_enabled(ctx) && !icap_is_finished(ctx->icap_ctx)) {
+		if (icap_enabled(ctx->icap_ctx) && !icap_is_finished(ctx->icap_ctx)) {
 			log_finest("ICAP not finished yet, do not terminate conn");
 			return;
 		}

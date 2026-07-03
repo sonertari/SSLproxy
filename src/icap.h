@@ -155,7 +155,7 @@ char *icap_chain_str(conn_opts_t *);
 /*
  * ICAP chain orchestration
  */
-int icap_enabled(pxy_conn_ctx_t *) NONNULL(1);
+int icap_enabled(icap_ctx_t *);
 int icap_is_finished(icap_ctx_t *);
 struct evbuffer *icap_get_first_service_in_hdr(icap_ctx_t *) NONNULL(1);
 struct evbuffer *icap_get_last_service_out_body(icap_ctx_t *) NONNULL(1);

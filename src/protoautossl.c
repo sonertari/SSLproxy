@@ -311,7 +311,7 @@ protoautossl_peek_and_upgrade(pxy_conn_ctx_t *ctx)
 				}
 			} else {
 #ifndef WITHOUT_ICAP
-				if (icap_enabled(ctx) && icap_set_extended_headers(ctx->icap_ctx, 1) == -1) {
+				if (icap_enabled(ctx->icap_ctx) && icap_set_extended_headers(ctx->icap_ctx, 1) == -1) {
 					log_err_level(LOG_ERR, "Failed to set ICAP extended headers after ClientHello");
 					return -1;
 				}
@@ -465,7 +465,7 @@ protoautossl_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	}
 
 #ifndef WITHOUT_ICAP
-	if (!icap_enabled(ctx)) {
+	if (!icap_enabled(ctx->icap_ctx)) {
 #endif /* !WITHOUT_ICAP */
 		evbuffer_add_buffer(outbuf, inbuf);
 #ifndef WITHOUT_ICAP
@@ -502,7 +502,7 @@ protoautossl_bev_readcb_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	struct evbuffer *outbuf = bufferevent_get_output(ctx->src.bev);
 
 #ifndef WITHOUT_ICAP
-	if (!icap_enabled(ctx)) {
+	if (!icap_enabled(ctx->icap_ctx)) {
 #endif /* !WITHOUT_ICAP */
 		evbuffer_add_buffer(outbuf, inbuf);
 #ifndef WITHOUT_ICAP

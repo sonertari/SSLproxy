@@ -122,7 +122,7 @@ protopop3_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	protopop3_ctx_t *pop3_ctx = ctx->protoctx->arg;
 
 	// Client -> Server: wait for RETR command to start sending ICAP requests
-	if (icap_enabled(ctx) && !pop3_ctx->in_retr) {
+	if (icap_enabled(ctx->icap_ctx) && !pop3_ctx->in_retr) {
 		size_t len = evbuffer_get_length(inbuf);
 		char *data = malloc(len + 1);
 		if (data) {
@@ -136,7 +136,7 @@ protopop3_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		}
 	}
 
-	if (!icap_enabled(ctx) || !pop3_ctx->in_retr) {
+	if (!icap_enabled(ctx->icap_ctx) || !pop3_ctx->in_retr) {
 #endif /* !WITHOUT_ICAP */
 		evbuffer_add_buffer(outbuf, inbuf);
 #ifndef WITHOUT_ICAP
@@ -167,7 +167,7 @@ protopop3_bev_readcb_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	protopop3_ctx_t *pop3_ctx = ctx->protoctx->arg;
 
 	// Server -> Client: wait for the end of message in RETR response to stop sending ICAP requests
-	if (icap_enabled(ctx) && pop3_ctx->in_retr) {
+	if (icap_enabled(ctx->icap_ctx) && pop3_ctx->in_retr) {
 		struct evbuffer_ptr ptr = evbuffer_search(inbuf, "\r\n.\r\n", 5, NULL);
 		if (ptr.pos != -1) {
 			log_finest("POP3 RETR response ended");
@@ -175,7 +175,7 @@ protopop3_bev_readcb_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		}
 	}
 
-	if (!icap_enabled(ctx) || !pop3_ctx->in_retr) {
+	if (!icap_enabled(ctx->icap_ctx) || !pop3_ctx->in_retr) {
 #endif /* !WITHOUT_ICAP */
 		evbuffer_add_buffer(outbuf, inbuf);
 #ifndef WITHOUT_ICAP
