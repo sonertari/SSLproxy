@@ -75,7 +75,8 @@ struct icap_ctx {
 
 	unsigned int is_veto : 1;         /* 1 if ICAP server vetoed the transaction */
 	unsigned int sent_veto_page : 1;  /* 1 if veto page sent to client */
-	struct evbuffer *veto_page;       /* The block page to inject to the client */
+	struct evbuffer *veto_hdr;        /* The block page headers to inject to the client */
+	struct evbuffer *veto_body;       /* The block page body to inject to the client */
 
 	unsigned int reqmod : 1;          /* 1: reqmod or respmod */
 
@@ -95,7 +96,8 @@ struct icap_ctx {
 	struct event *chain_ev;
 	int chain_ev_service_idx;
 
-	proto_data_submit_cb submit_cb;
+	proto_data_submit_cb send_data_to_src_cb;
+	proto_data_submit_cb send_data_to_dst_cb;
 };
 
 typedef struct icap_service_state {

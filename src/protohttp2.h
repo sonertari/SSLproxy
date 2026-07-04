@@ -61,7 +61,6 @@ typedef struct protohttp2_ctx {
 
 void protohttp2_free(pxy_conn_ctx_t *) NONNULL(1);
 protocol_t protohttp2_setup(pxy_conn_ctx_t *) NONNULL(1);
-protocol_t protohttp2_setup_child(pxy_conn_child_ctx_t *) NONNULL(1);
 
 #endif /* !PROTOHTTP2_H */
 

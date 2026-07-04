@@ -48,6 +48,8 @@ static void icap_bev_readcb(struct bufferevent *, void *);
 static void icap_bev_writecb(UNUSED struct bufferevent *, UNUSED void *);
 static void icap_bev_eventcb(UNUSED struct bufferevent *, short, void *);
 static void icap_data_submit(icap_ctx_t *);
+static void icap_send_data_to_src_cb(icap_ctx_t *);
+static void icap_send_data_to_dst_cb(icap_ctx_t *);
 static void icap_handle_service_error(icap_service_ctx_t *);
 static int icap_build_request(icap_service_ctx_t *);
 static int icap_is_content_complete(icap_ctx_t *, int);
@@ -318,8 +320,11 @@ icap_ctx_free(icap_ctx_t *icap_ctx, int term_conn)
 
 	icap_disconnect(icap_ctx);
 
-	if (icap_ctx->veto_page) {
-		evbuffer_free(icap_ctx->veto_page);
+	if (icap_ctx->veto_hdr) {
+		evbuffer_free(icap_ctx->veto_hdr);
+	}
+	if (icap_ctx->veto_body) {
+		evbuffer_free(icap_ctx->veto_body);
 	}
 	if (icap_ctx->icap_extended_headers) {
 		free(icap_ctx->icap_extended_headers);
@@ -327,14 +332,17 @@ icap_ctx_free(icap_ctx_t *icap_ctx, int term_conn)
 
 	int h2_stream = icap_ctx->stream_ctx != NULL;
 
-	free(icap_ctx);
-
-	// TODO: Free the h2 stream owner of icap_ctx.
-	// Do we need to free h2 here? Check if all h2 streams are finished before freeing h2 context
 	if (!h2_stream) {
 		// The icap_ctx owner may be conn or stream, so we need to set the correct pointer to NULL
 		ctx->icap_ctx = NULL;
+	}
+	else {
+		// TODO: Free h2 conn if all h2 streams are finished
+	}
 
+	free(icap_ctx);
+
+	if (!h2_stream) {
 		if (term_conn) {
 			icap_conn_term(ctx);
 		}
@@ -409,7 +417,8 @@ icap_init(pxy_conn_ctx_t *ctx, stream_ctx_t *stream_ctx, protohttp2_ctx_t *h2_ct
 		return NULL;
 	}
 
-	icap_ctx->submit_cb = icap_data_submit;
+	icap_ctx->send_data_to_src_cb = icap_send_data_to_src_cb;
+	icap_ctx->send_data_to_dst_cb = icap_send_data_to_dst_cb;
 
 	return icap_ctx;
 }
@@ -1373,7 +1382,7 @@ icap_send_data(icap_ctx_t *icap_ctx)
 
 	// TODO: We may not have ctx and/or bevs, if the connection is terminated
 	if (ctx && ctx->src.bev && ctx->dst.bev) {
-		icap_ctx->submit_cb(icap_ctx);
+		icap_data_submit(icap_ctx);
 
 		unsigned int made_progress = icap_ctx->made_progress;
 
@@ -1572,6 +1581,7 @@ icap_disconnect(icap_ctx_t *icap_ctx)
 			icap_ctx->services[i] = NULL;
 		}
 	}
+	icap_ctx->service_count = 0;
 
 	// TODO: icap_ctx->conn_ctx may be a dangling pointer, assign NULL to it based on its owner: conn or stream
 	// pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
@@ -2020,16 +2030,16 @@ icap_extract_http_headers(icap_service_ctx_t *service_ctx, struct evbuffer *inpu
 
 	struct evbuffer *outbuf = NULL;
 	if (icap_ctx->is_veto) {
-		if (!icap_ctx->veto_page) {
-			icap_ctx->veto_page = evbuffer_new();
-			if (!icap_ctx->veto_page) {
-				log_fine_icap("Failed to allocate veto page buffer");
+		if (!icap_ctx->veto_hdr) {
+			icap_ctx->veto_hdr = evbuffer_new();
+			if (!icap_ctx->veto_hdr) {
+				log_fine_icap("Failed to allocate veto header buffer");
 				ctx->enomem = 1;
 				return -1;
 			}
 		}
-		outbuf = icap_ctx->veto_page;
-		log_finest_icap_va("Save hdr to veto page, hdrlen(offset diff)=%zu", hdrlen);
+		outbuf = icap_ctx->veto_hdr;
+		log_finest_icap_va("Save hdr to veto hdr, hdrlen(offset diff)=%zu", hdrlen);
 	}
 	else {
 		outbuf = ICAP_STATE(service_ctx, icap_ctx->reqmod)->out_hdr;
@@ -2402,18 +2412,18 @@ icap_extract_body_chunk(icap_service_ctx_t *service_ctx, struct evbuffer *input)
 	if (body_chunk_len > 0) {
 		struct evbuffer *outbuf = NULL;
 		if (icap_ctx->is_veto) {
-			if (!icap_ctx->veto_page) {
-				icap_ctx->veto_page = evbuffer_new();
-				if (!icap_ctx->veto_page) {
-					log_fine_icap("Failed to allocate veto page buffer");
+			if (!icap_ctx->veto_body) {
+				icap_ctx->veto_body = evbuffer_new();
+				if (!icap_ctx->veto_body) {
+					log_fine_icap("Failed to allocate veto body buffer");
 					ctx->enomem = 1;
 					rv = -1;
 					goto err;
 				}
 			}
 
-			outbuf = icap_ctx->veto_page;
-			log_finer_icap_va("Save body to veto page, out_body=%zu, body_chunk=%zu", evbuffer_get_length(outbuf), body_chunk_len);
+			outbuf = icap_ctx->veto_body;
+			log_finer_icap_va("Save body to veto body, out_body=%zu, body_chunk=%zu", evbuffer_get_length(outbuf), body_chunk_len);
 		}
 		else {
 			outbuf = ICAP_STATE(service_ctx, icap_ctx->reqmod)->out_body;
@@ -3128,6 +3138,53 @@ icap_get_last_service_out_body(icap_ctx_t *icap_ctx)
 	return ICAP_STATE(icap_ctx->services[icap_ctx->service_count - 1], icap_ctx->reqmod)->out_body;
 }
 
+void NONNULL(1)
+icap_send_data_to_src_cb(icap_ctx_t *icap_ctx)
+{
+	pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
+
+	log_finest_va("ENTER, veto_hdr=%zu, veto_body=%zu", evbuffer_get_length(icap_ctx->veto_hdr), evbuffer_get_length(icap_ctx->veto_body));
+
+	// Send veto page to src (client), not dst (server)
+	if (ctx->src.bev) {
+		evbuffer_add_buffer(bufferevent_get_output(ctx->src.bev), icap_ctx->veto_hdr);
+		evbuffer_add_buffer(bufferevent_get_output(ctx->src.bev), icap_ctx->veto_body);
+		icap_ctx->made_progress = 1;
+	}
+	else {
+		log_fine("Src connection already closed, cannot send veto page");
+	}
+}
+
+void NONNULL(1)
+icap_send_data_to_dst_cb(icap_ctx_t *icap_ctx)
+{
+	pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
+
+	struct evbuffer *outbuf = bufferevent_get_output(icap_ctx->reqmod ? ctx->dst.bev : ctx->src.bev);
+
+	// Send the data in the out buffers of the last service to their destination
+	icap_service_ctx_t *service_ctx = icap_ctx->services[icap_ctx->service_count - 1];
+
+	struct evbuffer *out_hdr = ICAP_STATE(service_ctx, icap_ctx->reqmod)->out_hdr;
+	struct evbuffer *out_body = ICAP_STATE(service_ctx, icap_ctx->reqmod)->out_body;
+
+	log_finest_icap_va("ENTER, outbuf=%zu, out_hdr=%zu, out_body=%zu",
+		evbuffer_get_length(outbuf), evbuffer_get_length(out_hdr), evbuffer_get_length(out_body));
+
+	if (ctx->spec->http && evbuffer_get_length(out_hdr) > 0) {
+		log_finer_icap_va("Send hdr to destination, out_hdr=%zu", evbuffer_get_length(out_hdr));
+		evbuffer_add_buffer(outbuf, out_hdr);
+		icap_ctx->made_progress = 1;
+	}
+
+	if (evbuffer_get_length(out_body) > 0) {
+		log_finer_icap_va("Send body to destination, out_body=%zu", evbuffer_get_length(out_body));
+		evbuffer_add_buffer(outbuf, out_body);
+		icap_ctx->made_progress = 1;
+	}
+}
+
 static void NONNULL(1)
 icap_data_submit(icap_ctx_t *icap_ctx)
 {
@@ -3149,27 +3206,23 @@ icap_data_submit(icap_ctx_t *icap_ctx)
 	if (icap_ctx->is_veto) {
 		log_finest_icap("Content vetoed by ICAP service");
 
-		if (icap_ctx->veto_page) {
-			log_finer_icap_va("Sending veto page to client, veto_page=%zu", evbuffer_get_length(icap_ctx->veto_page));
+		// TODO: Do we always have both veto_hdr and veto_body?
+		if (icap_ctx->veto_hdr && icap_ctx->veto_body) {
+			log_finer_icap_va("Sending veto page to client, veto_hdr=%zu, veto_body=%zu", evbuffer_get_length(icap_ctx->veto_hdr), evbuffer_get_length(icap_ctx->veto_body));
 
 #ifdef DEBUG_ICAP
 			/* Log veto page for debugging */
-			size_t len = evbuffer_get_length(icap_ctx->veto_page);
+			size_t len = evbuffer_get_length(icap_ctx->veto_hdr) + evbuffer_get_length(icap_ctx->veto_body);
 			size_t log_len = len < 400 ? len : 400;
 			char log_buf[401];  // Stack allocation
-			evbuffer_copyout(icap_ctx->veto_page, log_buf, log_len);
+			evbuffer_copyout(icap_ctx->veto_hdr, log_buf, log_len);
+			evbuffer_copyout(icap_ctx->veto_body, log_buf + evbuffer_get_length(icap_ctx->veto_hdr), log_len - evbuffer_get_length(icap_ctx->veto_hdr));
 			log_buf[log_len] = '\0';
 			log_finest_icap_va("Veto page (first %zu bytes, orig %zu bytes): %s", log_len, len, log_buf);
 #endif /* DEBUG_ICAP */
 
-			// Send block page to src (client), not dst (server)
-			if (ctx->src.bev) {
-				evbuffer_add_buffer(bufferevent_get_output(ctx->src.bev), icap_ctx->veto_page);
-				icap_ctx->made_progress = 1;
-			}
-			else {
-				log_fine_icap("Src connection already closed, cannot send veto page");
-			}
+			// Send veto page to src (client), not dst (server)
+			icap_ctx->send_data_to_src_cb(icap_ctx);
 		}
 
 		// ATTENTION: Do NOT reset is_veto here - it must remain set until context is freed
@@ -3180,18 +3233,7 @@ icap_data_submit(icap_ctx_t *icap_ctx)
 		evbuffer_drain(out_body, evbuffer_get_length(out_body));
 	}
 	else {
-		// Send the data in the out buffers of the last service to their destination
-		if (ctx->spec->http && evbuffer_get_length(out_hdr) > 0) {
-			log_finer_icap_va("Send hdr to destination, out_hdr=%zu", evbuffer_get_length(out_hdr));
-			evbuffer_add_buffer(outbuf, out_hdr);
-			icap_ctx->made_progress = 1;
-		}
-
-		if (evbuffer_get_length(out_body) > 0) {
-			log_finer_icap_va("Send body to destination, out_body=%zu", evbuffer_get_length(out_body));
-			evbuffer_add_buffer(outbuf, out_body);
-			icap_ctx->made_progress = 1;
-		}
+		icap_ctx->send_data_to_dst_cb(icap_ctx);
 	}
 }
 
