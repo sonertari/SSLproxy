@@ -45,8 +45,11 @@
 static ssize_t
 protohttp2_provider_read_callback(nghttp2_session *session, int32_t stream_id, uint8_t *buf, size_t length,
     uint32_t *data_flags, nghttp2_data_source *source, void *user_data);
+
+#ifndef WITHOUT_ICAP
 static void NONNULL(1) protohttp2_icap_send_data_to_src_cb(icap_ctx_t *icap_ctx);
 static void NONNULL(1) protohttp2_icap_send_data_to_dst_cb(icap_ctx_t *icap_ctx);
+#endif /* !WITHOUT_ICAP */
 
 static stream_ctx_t *
 protohttp2_get_stream_ctx(protohttp2_ctx_t *h2_ctx, int32_t stream_id)
@@ -155,6 +158,7 @@ protohttp2_free_stream_ctx(protohttp2_ctx_t *h2_ctx, stream_ctx_t *s)
     free(s);
 }
 
+#ifndef WITHOUT_ICAP
 static struct evbuffer *
 protohttp2_get_h1_headers(stream_ctx_t *s)
 {
@@ -221,8 +225,8 @@ protohttp2_get_h1_headers(stream_ctx_t *s)
 
     return buf;
 }
+#endif /* !WITHOUT_ICAP */
 
-/* Helper to trim whitespace */
 static char *
 trim_whitespace(char *str, size_t *len)
 {
@@ -509,8 +513,9 @@ protohttp2_trigger_write_loop(protohttp2_ctx_t *h2_ctx, int reqmod)
 }
 
 static ssize_t
-protohttp2_provider_read_callback(UNUSED nghttp2_session *session, UNUSED int32_t stream_id, uint8_t *buf, size_t length,
-    uint32_t *data_flags, nghttp2_data_source *source, UNUSED void *user_data)
+protohttp2_provider_read_callback(UNUSED nghttp2_session *session, UNUSED int32_t stream_id,
+    uint8_t *buf, size_t length, UNUSED uint32_t *data_flags, // data_flags is UNUSED if WITHOUT_ICAP is set
+    nghttp2_data_source *source, UNUSED void *user_data)
 {
     stream_ctx_t *s = source->ptr;
     size_t available = evbuffer_get_length(s->data_buf);
@@ -525,14 +530,17 @@ protohttp2_provider_read_callback(UNUSED nghttp2_session *session, UNUSED int32_
     size_t to_read = (available < length) ? available : length;
     evbuffer_remove(s->data_buf, buf, to_read);
 
+#ifndef WITHOUT_ICAP
+    // TODO: Do we need to set NGHTTP2_DATA_FLAG_EOF when icap is disabled too? But how to know the end of stream in that case?
     // Flag the end of stream
-    if (evbuffer_get_length(s->data_buf) == 0 && icap_is_finished(s->icap_ctx)) {
+    if (evbuffer_get_length(s->data_buf) == 0 && icap_enabled(s->icap_ctx) && icap_is_finished(s->icap_ctx)) {
         protohttp2_ctx_t *h2_ctx = s->icap_ctx->h2_ctx;
         pxy_conn_ctx_t *ctx = h2_ctx->ctx;
 
         log_finest_va("Set NGHTTP2_DATA_FLAG_EOF for stream_id=%d", s->stream_id);
         *data_flags |= NGHTTP2_DATA_FLAG_EOF;
     }
+#endif /* !WITHOUT_ICAP */
 
     return to_read;
 }
@@ -587,6 +595,7 @@ protohttp2_submit_data(protohttp2_ctx_t *h2_ctx, stream_ctx_t *s, int reqmod)
     return 0;
 }
 
+#ifndef WITHOUT_ICAP
 static void NONNULL(1)
 protohttp2_icap_send_data_to_src_cb(icap_ctx_t *icap_ctx)
 {
@@ -630,6 +639,7 @@ protohttp2_icap_send_data_to_dst_cb(icap_ctx_t *icap_ctx)
     }
     icap_ctx->made_progress = 1;
 }
+#endif /* !WITHOUT_ICAP */
 
 static int
 protohttp2_on_frame_recv(UNUSED nghttp2_session *session, const nghttp2_frame *frame, void *user_data, int reqmod)
@@ -672,6 +682,7 @@ protohttp2_on_frame_recv(UNUSED nghttp2_session *session, const nghttp2_frame *f
 
         stream_ctx_t *s = protohttp2_get_stream_ctx(h2_ctx, frame->hd.stream_id);
         if (s) {
+#ifndef WITHOUT_ICAP
             if (icap_enabled(s->icap_ctx)) {
                 s->icap_ctx->reqmod = reqmod;
 
@@ -695,7 +706,9 @@ protohttp2_on_frame_recv(UNUSED nghttp2_session *session, const nghttp2_frame *f
                 icap_process_data(s->data_buf, s->icap_ctx);
                 return 0;
             }
+#endif /* !WITHOUT_ICAP */
 
+            // TODO: Filter h2 request/response headers
             return protohttp2_submit_data(h2_ctx, s, reqmod);
         }
     }
@@ -739,11 +752,13 @@ protohttp2_on_data_chunk_recv(nghttp2_session *session, UNUSED uint8_t flags, in
     // Queue pristine payload data straight into the staging buffer
     evbuffer_add(s->data_buf, data, len);
 
+#ifndef WITHOUT_ICAP
     if (icap_enabled(s->icap_ctx)) {
         s->icap_ctx->reqmod = reqmod;
         icap_process_data(s->data_buf, s->icap_ctx);
         return 0;
     }
+#endif /* !WITHOUT_ICAP */
 
     return protohttp2_submit_data(h2_ctx, s, reqmod);
 }

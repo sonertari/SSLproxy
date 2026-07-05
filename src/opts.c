@@ -2672,7 +2672,8 @@ check_value_yesno(const char *value, const char *name, unsigned int line_num)
 
 int
 set_conn_opts_option(conn_opts_t *conn_opts, const char *argv0,
-		const char *name, char *value, unsigned int *line_num, FILE *f, tmp_opts_t *tmp_opts)
+	const char *name, char *value, unsigned int *line_num, UNUSED FILE *f, // f is UNUSED if WITHOUT_ICAP is set
+	tmp_opts_t *tmp_opts)
 {
 	int yes;
 
