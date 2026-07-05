@@ -38,9 +38,6 @@
 #include <event2/bufferevent.h>
 #include <event2/event.h>
 
-/* Helper to select the src or dst state based on reqmod flag */
-#define ICAP_STATE(svc, reqmod) ((reqmod) ? &(svc)->src : &(svc)->dst)
-
 /*
  * Forward declarations of static callbacks
  */
@@ -50,6 +47,7 @@ static void icap_bev_eventcb(UNUSED struct bufferevent *, short, void *);
 static void icap_data_submit(icap_ctx_t *);
 static void icap_send_data_to_src_cb(icap_ctx_t *);
 static void icap_send_data_to_dst_cb(icap_ctx_t *);
+static void icap_failopen_to_dest_cb(icap_service_ctx_t *);
 static void icap_handle_service_error(icap_service_ctx_t *);
 static int icap_build_request(icap_service_ctx_t *);
 static int icap_is_content_complete(icap_ctx_t *, int);
@@ -145,7 +143,7 @@ icap_evbuffer_readline(struct evbuffer *input, size_t *eol_len)
 	return line;
 }
 
-static void NONNULL(1)
+static void
 icap_service_ctx_free(icap_service_ctx_t *service_ctx)
 {
 	UNUSED pxy_conn_ctx_t *ctx = service_ctx->icap_ctx->conn_ctx;
@@ -419,6 +417,7 @@ icap_init(pxy_conn_ctx_t *ctx, stream_ctx_t *stream_ctx, protohttp2_ctx_t *h2_ct
 
 	icap_ctx->send_data_to_src_cb = icap_send_data_to_src_cb;
 	icap_ctx->send_data_to_dst_cb = icap_send_data_to_dst_cb;
+	icap_ctx->failopen_to_dest_cb = icap_failopen_to_dest_cb;
 
 	return icap_ctx;
 }
@@ -1270,11 +1269,12 @@ icap_service_connect(icap_service_ctx_t *service_ctx)
 	return 0;
 }
 
-static void NONNULL(1)
-icap_service_disconnect(icap_service_ctx_t *service_ctx, icap_ctx_t *icap_ctx)
+static void
+icap_service_disconnect(icap_service_ctx_t *service_ctx)
 {
-	// ATTENTION: ctx may be NULL
-	// TODO: Can we get icap_ctx from service_ctx here? Because service_ctx may be already freed and its pointer may be dangling
+	// TODO: icap_ctx may be NULL?
+	UNUSED icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
+	// TODO: ctx may be NULL?
 	UNUSED pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
 
 	if (service_ctx->bev) {
@@ -1453,7 +1453,7 @@ icap_get_http_content_length(icap_ctx_t *icap_ctx)
 	return *http_content_length;
 }
 
-static void NONNULL(1)
+static int
 icap_failopen_to_next_service(icap_service_ctx_t *service_ctx)
 {
 	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
@@ -1513,34 +1513,16 @@ icap_failopen_to_next_service(icap_service_ctx_t *service_ctx)
 			evbuffer_add_buffer(next_in_body, in_body);
 			icap_ctx->made_progress = 1;
 		}
+		return 0;
 	}
 	else {
 		log_finer_icap("Failopen to destination");
-
-		struct evbuffer *outbuf = bufferevent_get_output(icap_ctx->reqmod ? ctx->dst.bev : ctx->src.bev);
-
-		// TODO: Non-http protocols do not have hdr
-		if (evbuffer_get_length(sent_hdr) > 0) {
-			evbuffer_add_buffer(outbuf, sent_hdr);
-			icap_ctx->made_progress = 1;
-		}
-		if (evbuffer_get_length(sent_body) > 0) {
-			evbuffer_add_buffer(outbuf, sent_body);
-			icap_ctx->made_progress = 1;
-		}
-		if (evbuffer_get_length(in_hdr) > 0) {
-			evbuffer_add_buffer(outbuf, in_hdr);
-			icap_ctx->made_progress = 1;
-		}
-		if (evbuffer_get_length(in_body) > 0) {
-			evbuffer_add_buffer(outbuf, in_body);
-			icap_ctx->made_progress = 1;
-		}
-		bufferevent_enable(icap_ctx->reqmod ? ctx->src.bev : ctx->dst.bev, EV_READ);
+		icap_ctx->failopen_to_dest_cb(service_ctx);
+		return 1;
 	}
 }
 
-static void NONNULL(1)
+static void
 icap_advance_to_next_service(icap_service_ctx_t *service_ctx)
 {
 	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
@@ -1576,7 +1558,7 @@ icap_disconnect(icap_ctx_t *icap_ctx)
 {
 	for (int i = 0; i < icap_ctx->service_count; i++) {
 		if (icap_ctx->services[i]) {
-			icap_service_disconnect(icap_ctx->services[i], icap_ctx);
+			icap_service_disconnect(icap_ctx->services[i]);
 			icap_service_ctx_free(icap_ctx->services[i]);
 			icap_ctx->services[i] = NULL;
 		}
@@ -1589,11 +1571,12 @@ icap_disconnect(icap_ctx_t *icap_ctx)
 	log_dbg_level_printf(LOG_DBG_MODE_FINER, __FUNCTION__, 0, 0, 0, 0, "ICAP chain disconnected");
 }
 
-static void NONNULL(1)
+static void
 icap_handle_service_error(icap_service_ctx_t *service_ctx)
 {
-	// TODO: ctx may be NULL?
+	// TODO: icap_ctx may be NULL?
 	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
+	// TODO: ctx may be NULL?
 	pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
 
 	log_fine_icap_va("ICAP service in error state, conn_opts conn_fail_open=%s, conn_opts icap_fail_open=%s, svc conn_fail_open=%s, svc icap_fail_open=%s",
@@ -1601,6 +1584,8 @@ icap_handle_service_error(icap_service_ctx_t *service_ctx)
 		ctx ? (ctx->conn_opts->icap_fail_open == ICAP_FAIL_CLOSE ? "fail-close" : "fail-open") : "-",
 		service_ctx->svc->conn_fail_open == ICAP_FAIL_CLOSE ? "fail-close" : "fail-open",
 		service_ctx->svc->icap_fail_open == ICAP_FAIL_CLOSE ? "fail-close" : "fail-open");
+
+	icap_service_disconnect(service_ctx);
 
 	// Connection fail mode
 	// conn_opts->icap_conn_fail_open is always copied to service_ctx->svc->conn_fail_open
@@ -1614,23 +1599,22 @@ icap_handle_service_error(icap_service_ctx_t *service_ctx)
 	else if (service_ctx->svc->icap_fail_open == ICAP_FAIL_OPEN) {
 		service_ctx->failopen = 1;
 
-		icap_failopen_to_next_service(service_ctx);
-
+		// ATTENTION: service_ctx may be freed in icap_failopen_to_next_service, so we need to get next_idx before calling it
 		int next_idx = service_ctx->idx + 1;
-		if (next_idx < icap_ctx->service_count) {
+
+		// TODO: icap_ctx may be NULL after icap_failopen_to_next_service()?
+		int rv = icap_failopen_to_next_service(service_ctx);
+		if (rv == 0) {
 			log_finer_icap_va("ICAP in error state, continue with next ICAP service in chain, next_idx=%d", next_idx);
 			icap_process_chain(icap_ctx, next_idx);
 		}
 		else {
-			log_finer_icap_va("ICAP in error state, no more services to try, next_idx=%d", next_idx);
+			log_finer_icap_va("ICAP in error state, no more services to try, next_idx=%d, service_count=%d", next_idx, icap_ctx->service_count);
 		}
 	}
 	else {
 		log_finer_icap("ICAP in error state, will not try further services");
 	}
-
-	// TODO: Can icap_ctx be NULL here?
-	icap_service_disconnect(service_ctx, icap_ctx);
 }
 
 static int NONNULL(1)
@@ -1714,7 +1698,7 @@ icap_is_http_nullbody(icap_service_ctx_t *service_ctx)
 	return http_content_length == 0;
 }
 
-static void NONNULL(1)
+static void
 icap_service_content_complete(icap_service_ctx_t *service_ctx)
 {
 	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
@@ -1828,7 +1812,7 @@ icap_parse_encapsulated_field(icap_service_ctx_t *service_ctx, const char *line,
     return 1;
 }
 
-static int NONNULL(1)
+static int
 icap_extract_icap_headers(icap_service_ctx_t *service_ctx, struct evbuffer *input)
 {
 	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
@@ -1940,7 +1924,7 @@ icap_extract_icap_headers(icap_service_ctx_t *service_ctx, struct evbuffer *inpu
 	return rv;
 }
 
-static int NONNULL(1,2)
+static int NONNULL(2)
 icap_update_http_content_length(icap_service_ctx_t *service_ctx, struct evbuffer *outbuf)
 {
 	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
@@ -1992,7 +1976,7 @@ icap_update_http_content_length(icap_service_ctx_t *service_ctx, struct evbuffer
 }
 
 // Returns 1 if HTTP headers are fully received and extracted, 0 if still waiting for more data
-static int NONNULL(1,2)
+static int NONNULL(2)
 icap_extract_http_headers(icap_service_ctx_t *service_ctx, struct evbuffer *input)
 {
 	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
@@ -2638,7 +2622,7 @@ icap_max_body_size_enabled(icap_service_ctx_t *service_ctx)
  * Build and send ICAP request
  * return 1 if not sent yet (waiting for more data), 0 if sent, -1 on error
  */
-static int NONNULL(1)
+static int
 icap_build_request(icap_service_ctx_t *service_ctx)
 {
 	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
@@ -3138,7 +3122,7 @@ icap_get_last_service_out_body(icap_ctx_t *icap_ctx)
 	return ICAP_STATE(icap_ctx->services[icap_ctx->service_count - 1], icap_ctx->reqmod)->out_body;
 }
 
-void NONNULL(1)
+static void NONNULL(1)
 icap_send_data_to_src_cb(icap_ctx_t *icap_ctx)
 {
 	pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
@@ -3156,7 +3140,7 @@ icap_send_data_to_src_cb(icap_ctx_t *icap_ctx)
 	}
 }
 
-void NONNULL(1)
+static void NONNULL(1)
 icap_send_data_to_dst_cb(icap_ctx_t *icap_ctx)
 {
 	pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
@@ -3185,6 +3169,41 @@ icap_send_data_to_dst_cb(icap_ctx_t *icap_ctx)
 	}
 }
 
+static void
+icap_failopen_to_dest_cb(icap_service_ctx_t *service_ctx)
+{
+	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
+	pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
+
+	log_finest_icap("ENTER");
+
+	struct evbuffer *in_hdr = ICAP_STATE(service_ctx, icap_ctx->reqmod)->in_hdr;
+	struct evbuffer *in_body = ICAP_STATE(service_ctx, icap_ctx->reqmod)->in_body;
+	struct evbuffer *sent_hdr = ICAP_STATE(service_ctx, icap_ctx->reqmod)->sent_hdr;
+	struct evbuffer *sent_body = ICAP_STATE(service_ctx, icap_ctx->reqmod)->sent_body;
+
+	struct evbuffer *outbuf = bufferevent_get_output(icap_ctx->reqmod ? ctx->dst.bev : ctx->src.bev);
+
+	// TODO: Non-http protocols do not have hdr
+	if (evbuffer_get_length(sent_hdr) > 0) {
+		evbuffer_add_buffer(outbuf, sent_hdr);
+		icap_ctx->made_progress = 1;
+	}
+	if (evbuffer_get_length(sent_body) > 0) {
+		evbuffer_add_buffer(outbuf, sent_body);
+		icap_ctx->made_progress = 1;
+	}
+	if (evbuffer_get_length(in_hdr) > 0) {
+		evbuffer_add_buffer(outbuf, in_hdr);
+		icap_ctx->made_progress = 1;
+	}
+	if (evbuffer_get_length(in_body) > 0) {
+		evbuffer_add_buffer(outbuf, in_body);
+		icap_ctx->made_progress = 1;
+	}
+	bufferevent_enable(icap_ctx->reqmod ? ctx->src.bev : ctx->dst.bev, EV_READ);
+}
+
 static void NONNULL(1)
 icap_data_submit(icap_ctx_t *icap_ctx)
 {
@@ -3193,14 +3212,29 @@ icap_data_submit(icap_ctx_t *icap_ctx)
 	struct evbuffer *inbuf = bufferevent_get_input(icap_ctx->reqmod ? ctx->src.bev : ctx->dst.bev);
 	struct evbuffer *outbuf = bufferevent_get_output(icap_ctx->reqmod ? ctx->dst.bev : ctx->src.bev);
 
-	icap_service_ctx_t *service_ctx = icap_ctx->services[icap_ctx->service_count - 1];
+	icap_service_ctx_t *service_ctx = NULL;
+	struct evbuffer *out_hdr = NULL;
+	struct evbuffer *out_body = NULL;
 
-	struct evbuffer *out_hdr = ICAP_STATE(service_ctx, icap_ctx->reqmod)->out_hdr;
-	struct evbuffer *out_body = ICAP_STATE(service_ctx, icap_ctx->reqmod)->out_body;
+	// ATTENTION: service_ctx may be freed in failopen
+	if (icap_ctx->service_count > 0) {
+		service_ctx = icap_ctx->services[icap_ctx->service_count - 1];
 
-	log_finest_icap_va("ENTER, inbuf=%zu, outbuf=%zu, out_hdr=%zu, out_body=%zu, is_veto=%d",
+		if (service_ctx) {
+			out_hdr = ICAP_STATE(service_ctx, icap_ctx->reqmod)->out_hdr;
+			out_body = ICAP_STATE(service_ctx, icap_ctx->reqmod)->out_body;
+		}
+		else {
+			log_finer("Service context is NULL");
+		}
+	}
+	else {
+		log_finer("No ICAP services");
+	}
+
+	log_finest_va("ENTER, inbuf=%zu, outbuf=%zu, out_hdr=%zu, out_body=%zu, is_veto=%d",
 		evbuffer_get_length(inbuf), evbuffer_get_length(outbuf),
-		evbuffer_get_length(out_hdr), evbuffer_get_length(out_body),
+		out_hdr ? evbuffer_get_length(out_hdr) : 0, out_body ? evbuffer_get_length(out_body) : 0,
 		icap_ctx->is_veto);
 
 	if (icap_ctx->is_veto) {
@@ -3229,8 +3263,8 @@ icap_data_submit(icap_ctx_t *icap_ctx)
 		evbuffer_drain(inbuf, evbuffer_get_length(inbuf));
 		evbuffer_drain(outbuf, evbuffer_get_length(outbuf));
 
-		evbuffer_drain(out_hdr, evbuffer_get_length(out_hdr));
-		evbuffer_drain(out_body, evbuffer_get_length(out_body));
+		if (out_hdr) evbuffer_drain(out_hdr, evbuffer_get_length(out_hdr));
+		if (out_body) evbuffer_drain(out_body, evbuffer_get_length(out_body));
 	}
 	else {
 		icap_ctx->send_data_to_dst_cb(icap_ctx);

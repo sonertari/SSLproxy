@@ -37,6 +37,9 @@
 #include <event2/buffer.h>
 #include <event2/bufferevent.h>
 
+/* Helper to select the src or dst state based on reqmod flag */
+#define ICAP_STATE(svc, reqmod) ((reqmod) ? &(svc)->src : &(svc)->dst)
+
 /*
  * ICAP Service Configuration
  */
@@ -64,6 +67,7 @@ typedef struct icap_service {
 
 typedef struct icap_service_ctx icap_service_ctx_t;
 typedef void (*proto_data_submit_cb)(icap_ctx_t *) NONNULL(1);
+typedef void (*proto_failopen_to_dest_cb)(icap_service_ctx_t *) NONNULL(1);
 
 /*
  * ICAP context - per-connection state for ICAP processing
@@ -98,6 +102,7 @@ struct icap_ctx {
 
 	proto_data_submit_cb send_data_to_src_cb;
 	proto_data_submit_cb send_data_to_dst_cb;
+	proto_failopen_to_dest_cb failopen_to_dest_cb;
 };
 
 typedef struct icap_service_state {

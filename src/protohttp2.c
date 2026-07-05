@@ -49,6 +49,7 @@ protohttp2_provider_read_callback(nghttp2_session *session, int32_t stream_id, u
 #ifndef WITHOUT_ICAP
 static void NONNULL(1) protohttp2_icap_send_data_to_src_cb(icap_ctx_t *icap_ctx);
 static void NONNULL(1) protohttp2_icap_send_data_to_dst_cb(icap_ctx_t *icap_ctx);
+static void NONNULL(1) protohttp2_icap_failopen_to_dest_cb(icap_service_ctx_t *service_ctx);
 #endif /* !WITHOUT_ICAP */
 
 static stream_ctx_t *
@@ -94,6 +95,7 @@ protohttp2_new_stream_ctx(protohttp2_ctx_t *h2_ctx, int32_t stream_id)
     }
     s->icap_ctx->send_data_to_src_cb = protohttp2_icap_send_data_to_src_cb;
     s->icap_ctx->send_data_to_dst_cb = protohttp2_icap_send_data_to_dst_cb;
+    s->icap_ctx->failopen_to_dest_cb = protohttp2_icap_failopen_to_dest_cb;
 #endif /* !WITHOUT_ICAP */
 
     s->next = h2_ctx->streams;
@@ -104,6 +106,9 @@ protohttp2_new_stream_ctx(protohttp2_ctx_t *h2_ctx, int32_t stream_id)
 static void
 protohttp2_free_stream_headers(stream_ctx_t *s)
 {
+    pxy_conn_ctx_t *ctx = s->ctx;
+    log_finest("ENTER");
+
     for (size_t i = 0; i < s->headers_count; i++) {
         if (s->headers[i].name) {
             free(s->headers[i].name);
@@ -147,7 +152,9 @@ protohttp2_free_stream_ctx(protohttp2_ctx_t *h2_ctx, stream_ctx_t *s)
     if (s->headers) {
         protohttp2_free_stream_headers(s);
     }
+
     if (s->data_buf) evbuffer_free(s->data_buf);
+    s->data_buf = NULL;
 
 #ifndef WITHOUT_ICAP
     if (s->icap_ctx) {
@@ -286,13 +293,13 @@ protohttp2_add_nv_header(stream_ctx_t *s, const char *name, size_t namelen, cons
 }
 
 int
-protohttp2_get_h2_headers(stream_ctx_t *s, struct evbuffer *h1_buf)
+protohttp2_get_h2_headers(stream_ctx_t *s, struct evbuffer *h1_buf, int init)
 {
     pxy_conn_ctx_t *ctx = s->ctx;
     log_finest("ENTER");
 
     // Clean slate for this stream context's header holder
-    if (s->headers) {
+    if (init == 1 && s->headers) {
         protohttp2_free_stream_headers(s);
     }
 
@@ -606,7 +613,7 @@ protohttp2_icap_send_data_to_src_cb(icap_ctx_t *icap_ctx)
     log_finest_va("ENTER, stream_id=%d, veto_hdr=%zu, veto_body=%zu, data_buf=%zu", s->stream_id,
         evbuffer_get_length(icap_ctx->veto_hdr), evbuffer_get_length(icap_ctx->veto_body), evbuffer_get_length(s->data_buf));
 
-    protohttp2_get_h2_headers(s, icap_ctx->veto_hdr);
+    protohttp2_get_h2_headers(s, icap_ctx->veto_hdr, 1);
 
     evbuffer_add_buffer(s->data_buf, icap_ctx->veto_body);
 
@@ -622,17 +629,68 @@ static void NONNULL(1)
 protohttp2_icap_send_data_to_dst_cb(icap_ctx_t *icap_ctx)
 {
     stream_ctx_t *s = icap_ctx->stream_ctx;
+    if (!s) {
+    	log_dbg_level_printf(LOG_DBG_MODE_FINE, __FUNCTION__, 0, 0, 0, 0, "No stream context");
+        return;
+    }
+
     protohttp2_ctx_t *h2_ctx = icap_ctx->h2_ctx;
     pxy_conn_ctx_t *ctx = h2_ctx->ctx;
 
     struct evbuffer *out_hdr = icap_get_last_service_out_hdr(icap_ctx);
-    protohttp2_get_h2_headers(s, out_hdr);
+    protohttp2_get_h2_headers(s, out_hdr, 1);
 
     struct evbuffer *out_body = icap_get_last_service_out_body(icap_ctx);
     evbuffer_add_buffer(s->data_buf, out_body);
 
     log_finest_va("ENTER, stream_id=%d, data_buf=%zu", s->stream_id, evbuffer_get_length(s->data_buf));
 
+    if (protohttp2_submit_data(h2_ctx, s, icap_ctx->reqmod) < 0) {
+        log_finest_va("Failed to submit data for stream_id=%d", s->stream_id);
+        return;
+    }
+    icap_ctx->made_progress = 1;
+}
+
+static void NONNULL(1)
+protohttp2_icap_failopen_to_dest_cb(icap_service_ctx_t *service_ctx)
+{
+	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
+	pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
+    stream_ctx_t *s = icap_ctx->stream_ctx;
+
+    log_finest_va("ENTER, stream_id=%d, headers_count=%zu, data_buf=%zu", s->stream_id, s->headers_count, evbuffer_get_length(s->data_buf));
+
+	struct evbuffer *in_hdr = ICAP_STATE(service_ctx, icap_ctx->reqmod)->in_hdr;
+	struct evbuffer *in_body = ICAP_STATE(service_ctx, icap_ctx->reqmod)->in_body;
+	struct evbuffer *sent_hdr = ICAP_STATE(service_ctx, icap_ctx->reqmod)->sent_hdr;
+	struct evbuffer *sent_body = ICAP_STATE(service_ctx, icap_ctx->reqmod)->sent_body;
+
+    // On failopen, s->headers may contain headers, as we may not have submitted them by protohttp2_submit_data()
+    protohttp2_free_stream_headers(s);
+
+    // TODO: Non-http protocols do not have hdr
+	if (evbuffer_get_length(sent_hdr) > 0) {
+        protohttp2_get_h2_headers(s, sent_hdr, 1);
+		icap_ctx->made_progress = 1;
+	}
+	if (evbuffer_get_length(sent_body) > 0) {
+        evbuffer_add_buffer(s->data_buf, sent_body);
+		icap_ctx->made_progress = 1;
+	}
+	if (evbuffer_get_length(in_hdr) > 0) {
+        // Do not init h2 headers, just append to existing headers from sent_hdr, if any
+        protohttp2_get_h2_headers(s, in_hdr, 0);
+		icap_ctx->made_progress = 1;
+	}
+	if (evbuffer_get_length(in_body) > 0) {
+		evbuffer_add_buffer(s->data_buf, in_body);
+		icap_ctx->made_progress = 1;
+	}
+
+    log_finest_va("After copy, stream_id=%d, headers_count=%zu, data_buf=%zu", s->stream_id, s->headers_count, evbuffer_get_length(s->data_buf));
+
+    protohttp2_ctx_t *h2_ctx = icap_ctx->h2_ctx;
     if (protohttp2_submit_data(h2_ctx, s, icap_ctx->reqmod) < 0) {
         log_finest_va("Failed to submit data for stream_id=%d", s->stream_id);
         return;
