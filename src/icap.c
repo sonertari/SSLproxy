@@ -1389,12 +1389,14 @@ icap_send_data(icap_ctx_t *icap_ctx)
 		log_finest_va("Reset made_progress: %s", made_progress ? "MADE PROGRESS" : "NO PROGRESS");
 		icap_ctx->made_progress = 0;
 
+		int h2 = icap_ctx->stream_ctx && icap_ctx->h2_ctx;
+
 		int service_idx = 0;
 		if (!made_progress || icap_have_data_to_process(icap_ctx, &service_idx) == 0) {
-			log_finest("Enable reading from source, resume flow");
-
 			// TODO: Resume reading from stream, not the whole connection, in http2 mode
-			if (!icap_ctx->stream_ctx && !icap_ctx->h2_ctx) {
+			if (!h2) {
+				log_finest("Enable reading from source, resume flow");
+
 				// TODO: Should we enable the current conn_bev only?
 				struct bufferevent *in_bev = icap_ctx->reqmod ? ctx->src.bev : ctx->dst.bev;
 				bufferevent_enable(in_bev, EV_READ);
@@ -1408,9 +1410,11 @@ icap_send_data(icap_ctx_t *icap_ctx)
 		}
 
 		if (made_progress && icap_is_content_complete(icap_ctx, 1) && icap_is_content_complete(icap_ctx, 0)) {
-			// ATTENTION: Pass ctx->icap_ctx to the free function, because the icap_ctx param is actually service_ctx->icap_ctx,
-			// which may not be NULL even if ctx->icap_ctx is NULL
-			icap_ctx_free(icap_ctx, 1);
+			// The icap_ctx owner may be conn or stream
+			// TODO: Free h2 conn if all h2 streams are finished
+			if (!h2) {
+				icap_ctx_free(icap_ctx, 1);
+			}
 		}
 	}
 	else {

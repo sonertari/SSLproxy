@@ -460,6 +460,8 @@ protohttp2_on_header_callback(UNUSED nghttp2_session *session, const nghttp2_fra
     protohttp2_ctx_t *h2_ctx = (protohttp2_ctx_t *)user_data;
     pxy_conn_ctx_t *ctx = h2_ctx->ctx;
 
+    log_finest_va("ENTER, stream_id=%d", frame->hd.stream_id);
+
     if (frame->hd.type != NGHTTP2_HEADERS) {
         log_finest("Not a HEADERS frame, ignoring");
         return 0;
@@ -736,7 +738,7 @@ protohttp2_on_frame_recv(UNUSED nghttp2_session *session, const nghttp2_frame *f
 
     // if (frame->hd.type == NGHTTP2_HEADERS && frame->headers.cat == NGHTTP2_HCAT_RESPONSE)
     if (frame->hd.type == NGHTTP2_HEADERS) {
-        log_finest("NGHTTP2_HEADERS received");
+        log_finest_va("NGHTTP2_HEADERS received, stream_id=%d", frame->hd.stream_id);
 
         stream_ctx_t *s = protohttp2_get_stream_ctx(h2_ctx, frame->hd.stream_id);
         if (s) {
@@ -748,6 +750,13 @@ protohttp2_on_frame_recv(UNUSED nghttp2_session *session, const nghttp2_frame *f
                 struct evbuffer *header_buf = protohttp2_get_h1_headers(s);
 
                 protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
+
+                // XXX: Temporary workaround for stream multiplexing to work: Reset the seen_req_header and seen_resp_header flags,
+                // because all h2 streams share the same HTTP context.
+                // TODO: Refactor h1 and h2 code to have separate HTTP contexts for h1 connections and h2 streams.
+                // Otherwise, none of the fields in protohttp_ctx_t works properly: the variables for h1/h2 state, statistics, and logging.
+                http_ctx->seen_req_header = 0;
+                http_ctx->seen_resp_header = 0;
 
                 if (reqmod) {
                     if (protohttp_filter_request_header(header_buf, outbuf_ptr, http_ctx, ctx->type, ctx) == -1) {
@@ -768,6 +777,10 @@ protohttp2_on_frame_recv(UNUSED nghttp2_session *session, const nghttp2_frame *f
 
             // TODO: Filter h2 request/response headers
             return protohttp2_submit_data(h2_ctx, s, reqmod);
+        }
+        else {
+            log_finest_va("No stream context found for stream_id=%d", frame->hd.stream_id);
+            return -1;
         }
     }
     return 0;
@@ -837,22 +850,22 @@ static int
 protohttp2_on_stream_close(UNUSED nghttp2_session *session, int32_t stream_id, UNUSED uint32_t error_code, void *user_data)
 {
     protohttp2_ctx_t *h2_ctx = user_data;
-
     pxy_conn_ctx_t *ctx = h2_ctx->ctx;
-    log_finest_va("stream_id=%d", stream_id);
 
     stream_ctx_t *s = protohttp2_get_stream_ctx(h2_ctx, stream_id);
     if (s) {
 #ifndef WITHOUT_ICAP
         if (icap_enabled(s->icap_ctx) && !icap_is_finished(s->icap_ctx)) {
-            log_finest("ICAP not finished yet, do not terminate stream");
+            log_finest_va("ICAP not finished yet, do not terminate stream, stream_id=%d", stream_id);
             return 0;
 		}
 #endif /* !WITHOUT_ICAP */
-        log_finest("Terminate stream");
+        log_finest_va("Terminate stream, stream_id=%d", stream_id);
         protohttp2_free_stream_ctx(h2_ctx, s);
         return 0;
     }
+
+    log_finest_va("No stream context found for stream_id=%d", stream_id);
     return -1;
 }
 
