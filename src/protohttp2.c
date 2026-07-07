@@ -45,6 +45,7 @@
 static ssize_t
 protohttp2_provider_read_callback(nghttp2_session *session, int32_t stream_id, uint8_t *buf, size_t length,
     uint32_t *data_flags, nghttp2_data_source *source, void *user_data);
+static void protohttp2_trigger_write_loop(protohttp2_ctx_t *h2_ctx, int reqmod);
 
 #ifndef WITHOUT_ICAP
 static void NONNULL(1) protohttp2_icap_send_data_to_src_cb(icap_ctx_t *icap_ctx);
@@ -107,7 +108,7 @@ static void
 protohttp2_free_stream_headers(stream_ctx_t *s)
 {
     pxy_conn_ctx_t *ctx = s->ctx;
-    log_finest("ENTER");
+    log_finest_va("ENTER, stream_id=%d", s->stream_id);
 
     for (size_t i = 0; i < s->headers_count; i++) {
         if (s->headers[i].name) {
@@ -126,22 +127,28 @@ protohttp2_free_stream_headers(stream_ctx_t *s)
     s->headers = NULL;
 }
 
-// TODO: This function is not used anywhere, but we may need it to terminate connection when all streams are closed.
-// int
-// protohttp2_stream_count(protohttp2_ctx_t *h2_ctx)
-// {
-//     int count = 0;
-//     stream_ctx_t *s = h2_ctx->streams;
-//     while (s) {
-//         count++;
-//         s = s->next;
-//     }
-//     return count;
-// }
-
 static void
 protohttp2_free_stream_ctx(protohttp2_ctx_t *h2_ctx, stream_ctx_t *s)
 {
+    pxy_conn_ctx_t *ctx = h2_ctx->ctx;
+    log_finest_va("ENTER, stream_id=%d", s->stream_id);
+
+    if (s->headers) {
+        protohttp2_free_stream_headers(s);
+    }
+
+    if (s->data_buf) {
+        evbuffer_free(s->data_buf);
+        s->data_buf = NULL;
+    }
+
+#ifndef WITHOUT_ICAP
+    if (s->icap_ctx) {
+        icap_disconnect(s->icap_ctx);
+        s->icap_ctx = NULL;
+    }
+#endif /* !WITHOUT_ICAP */
+
     if (h2_ctx->streams == s) {
         h2_ctx->streams = s->next;
     } else {
@@ -149,18 +156,6 @@ protohttp2_free_stream_ctx(protohttp2_ctx_t *h2_ctx, stream_ctx_t *s)
         while (prev && prev->next != s) prev = prev->next;
         if (prev) prev->next = s->next;
     }
-    if (s->headers) {
-        protohttp2_free_stream_headers(s);
-    }
-
-    if (s->data_buf) evbuffer_free(s->data_buf);
-    s->data_buf = NULL;
-
-#ifndef WITHOUT_ICAP
-    if (s->icap_ctx) {
-        icap_disconnect(s->icap_ctx);
-    }
-#endif /* !WITHOUT_ICAP */
 
     free(s);
 }
@@ -426,14 +421,27 @@ protohttp2_bev_writecb(UNUSED struct bufferevent *bev, UNUSED void *arg)
     // TODO: Remove this callback and use the callback in https code
 	pxy_conn_ctx_t *ctx = arg;
 	log_finest("ENTER");
+
+    protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
+    protohttp2_ctx_t *h2_ctx = http_ctx->arg;
+
+    // ATTENTION: Triggering the write loop here is necessary to ensure that any pending data in the nghttp2 session is flushed out to the underlying bufferevent.
+    // This is especially important when dealing with HTTP/2 streams, as the protocol requires proper framing and flow control.
+    // By calling protohttp2_trigger_write_loop, we ensure that the nghttp2 session processes any queued frames and sends them out through the appropriate bufferevent (either src or dst).
+    protohttp2_trigger_write_loop(h2_ctx, bev == ctx->dst.bev ? 1 : 0);
 }
 
 static ssize_t
 protohttp2_send_callback_src(UNUSED nghttp2_session *session, const uint8_t *data, size_t length, UNUSED int flags, void *user_data)
 {
-    protohttp2_ctx_t *h2_ctx = (protohttp2_ctx_t *)user_data;
+    protohttp2_ctx_t *h2_ctx = user_data;
     pxy_conn_ctx_t *ctx = h2_ctx->ctx;
     log_finest("ENTER");
+
+    if (ctx->src.bev == NULL) {
+        log_finest("No src.bev to send data");
+        return NGHTTP2_ERR_CALLBACK_FAILURE;
+    }
 
     if (bufferevent_write(ctx->src.bev, data, length) == -1)
         return NGHTTP2_ERR_CALLBACK_FAILURE;
@@ -447,6 +455,11 @@ protohttp2_send_callback_dst(UNUSED nghttp2_session *session, const uint8_t *dat
     protohttp2_ctx_t *h2_ctx = (protohttp2_ctx_t *)user_data;
     pxy_conn_ctx_t *ctx = h2_ctx->ctx;
     log_finest("ENTER");
+
+    if (ctx->dst.bev == NULL) {
+        log_finest("No dst.bev to send data");
+        return NGHTTP2_ERR_CALLBACK_FAILURE;
+    }
 
     if (bufferevent_write(ctx->dst.bev, data, length) == -1)
         return NGHTTP2_ERR_CALLBACK_FAILURE;
@@ -495,7 +508,7 @@ protohttp2_on_header_callback(UNUSED nghttp2_session *session, const nghttp2_fra
     return 0;
 }
 
-void
+static void
 protohttp2_trigger_write_loop(protohttp2_ctx_t *h2_ctx, int reqmod)
 {
     const uint8_t *binary_payload;
@@ -506,6 +519,11 @@ protohttp2_trigger_write_loop(protohttp2_ctx_t *h2_ctx, int reqmod)
     // ATTENTION: The other side of the connection (client or server) is the session for sending data
     nghttp2_session *session = reqmod ? h2_ctx->dst_session : h2_ctx->src_session;
     struct bufferevent *bev = reqmod ? ctx->dst.bev : ctx->src.bev;
+
+    if (bev == NULL) {
+        log_finest_va("No %s.bev to send data", reqmod ? "dst" : "src");
+        return;
+    }
 
     // Ask nghttp2 to serialize the pending header queue into a raw byte stream
     ssize_t payload_len = nghttp2_session_mem_send(session, &binary_payload);
@@ -558,9 +576,8 @@ static int
 protohttp2_submit_data(protohttp2_ctx_t *h2_ctx, stream_ctx_t *s, int reqmod)
 {
     pxy_conn_ctx_t *ctx = h2_ctx->ctx;
-
     int rv = 0;
-    
+
     if (s->headers_count > 0) {
         log_finest_va("Submit headers, headers_count=%zu, stream_id=%d, reqmod=%d", s->headers_count, s->stream_id, reqmod);
 
@@ -580,6 +597,10 @@ protohttp2_submit_data(protohttp2_ctx_t *h2_ctx, stream_ctx_t *s, int reqmod)
             }
         }
         protohttp2_free_stream_headers(s);
+
+#ifndef WITHOUT_ICAP
+        s->icap_ctx->made_progress = 1;
+#endif /* !WITHOUT_ICAP */
     }
 
     if (evbuffer_get_length(s->data_buf) > 0) {
@@ -588,16 +609,20 @@ protohttp2_submit_data(protohttp2_ctx_t *h2_ctx, stream_ctx_t *s, int reqmod)
         rv = nghttp2_session_resume_data(reqmod ? h2_ctx->dst_session : h2_ctx->src_session, s->stream_id);
 
         if (rv == NGHTTP2_ERR_INVALID_ARGUMENT) {
-            // Clean operational bypass: The engine is already active and polling.
+            // Clean operational bypass: The engine is already active and polling
             log_finest_va("Stream %d already active, continuing to explicit write execution.", s->stream_id);
         }
         else if (rv < 0) {
             log_finest_va("Fatal: nghttp2_session_resume_data failed: %s", nghttp2_strerror(rv));
             return -1;
         }
+
+#ifndef WITHOUT_ICAP
+        s->icap_ctx->made_progress = 1;
+#endif /* !WITHOUT_ICAP */
     }
 
-    // Clean Data Wakeup Flush. 
+    // Clean Data Wakeup Flush
     log_finest_va("Executing scheduled session frame serialization loop for stream %d", s->stream_id);
     protohttp2_trigger_write_loop(h2_ctx, reqmod);
 
@@ -624,7 +649,6 @@ protohttp2_icap_send_data_to_src_cb(icap_ctx_t *icap_ctx)
         log_finest_va("Failed to submit data for stream_id=%d", s->stream_id);
         return;
     }
-    icap_ctx->made_progress = 1;
 }
 
 static void NONNULL(1)
@@ -651,7 +675,6 @@ protohttp2_icap_send_data_to_dst_cb(icap_ctx_t *icap_ctx)
         log_finest_va("Failed to submit data for stream_id=%d", s->stream_id);
         return;
     }
-    icap_ctx->made_progress = 1;
 }
 
 static void NONNULL(1)
@@ -697,7 +720,6 @@ protohttp2_icap_failopen_to_dest_cb(icap_service_ctx_t *service_ctx)
         log_finest_va("Failed to submit data for stream_id=%d", s->stream_id);
         return;
     }
-    icap_ctx->made_progress = 1;
 }
 #endif /* !WITHOUT_ICAP */
 
@@ -707,28 +729,32 @@ protohttp2_on_frame_recv(UNUSED nghttp2_session *session, const nghttp2_frame *f
     protohttp2_ctx_t *h2_ctx = (protohttp2_ctx_t *)user_data;
 
     pxy_conn_ctx_t *ctx = h2_ctx->ctx;
-    log_finest_va("ENTER, frame_type=0x%02x, reqmod=%d", frame->hd.type, reqmod);
+    log_finest_va("ENTER, frame_type=0x%02x, stream_id=%d, reqmod=%d", frame->hd.type, frame->hd.stream_id, reqmod);
 
     if (frame->hd.type == NGHTTP2_GOAWAY) {
-        log_finest("NGHTTP2_GOAWAY received");
-        // TODO: Do we need to trigger a write loop here? Does not seem to have any effect.
-        // The nghttp2 library should handle this automatically, but we can force a flush to ensure any pending frames are sent.
-        // nghttp2_session_send(session);
+        log_finest_va("NGHTTP2_GOAWAY received, stream_id=%d", frame->hd.stream_id);
+        // Forward the GOAWAY frame to the other side of the connection
+        nghttp2_submit_goaway(reqmod ? h2_ctx->dst_session : h2_ctx->src_session, NGHTTP2_FLAG_NONE, 0, NGHTTP2_NO_ERROR, NULL, 0);
+    }
+
+    if (frame->hd.type == NGHTTP2_RST_STREAM) {
+        log_finest_va("NGHTTP2_RST_STREAM received, stream_id=%d", frame->hd.stream_id);
+        // ATTENTION: Forward the RST_STREAM frame to the other side of the connection to ensure proper stream termination
+        nghttp2_submit_rst_stream(reqmod ? h2_ctx->dst_session : h2_ctx->src_session, NGHTTP2_FLAG_NONE, frame->hd.stream_id, NGHTTP2_NO_ERROR);
     }
 
     if (frame->hd.type == NGHTTP2_WINDOW_UPDATE) {
-        log_finest("NGHTTP2_WINDOW_UPDATE received");
+        log_finest_va("NGHTTP2_WINDOW_UPDATE received, stream_id=%d", frame->hd.stream_id);
         // TODO: Do we need to trigger a write loop here?
         // nghttp2_session_send(session);
     }
 
-    // Check if we received the SETTINGS ACK from the server
-    // if (frame->hd.type == NGHTTP2_SETTINGS && (frame->hd.flags & NGHTTP2_FLAG_ACK))
     if (frame->hd.type == NGHTTP2_SETTINGS) {
+        // Check if we received the SETTINGS ACK from the server
         if (frame->hd.flags & NGHTTP2_FLAG_ACK) {
-            log_finest("NGHTTP2_SETTINGS ACK received from client/server");
+            log_finest_va("NGHTTP2_SETTINGS ACK received from client/server, stream_id=%d", frame->hd.stream_id);
         } else {
-            log_finest("NGHTTP2_SETTINGS parameter adjustments received");
+            log_finest_va("NGHTTP2_SETTINGS parameter adjustments received, stream_id=%d", frame->hd.stream_id);
         }
 
         // If we were manually holding data, trigger a write now
@@ -860,8 +886,15 @@ protohttp2_on_stream_close(UNUSED nghttp2_session *session, int32_t stream_id, U
             return 0;
 		}
 #endif /* !WITHOUT_ICAP */
-        log_finest_va("Terminate stream, stream_id=%d", stream_id);
-        protohttp2_free_stream_ctx(h2_ctx, s);
+
+        if (s->closed) {
+            log_finest_va("Stream closed before, freeing, stream_id=%d", stream_id);
+            protohttp2_free_stream_ctx(h2_ctx, s);
+        }
+        else {
+            log_finest_va("Stream closing, stream_id=%d", stream_id);
+            s->closed = 1;
+        }
         return 0;
     }
 
@@ -887,6 +920,8 @@ protohttp2_on_stream_close_callback_dst(UNUSED nghttp2_session *session, int32_t
 
 void protohttp2_free(pxy_conn_ctx_t *ctx)
 {
+    log_finest("ENTER");
+
     protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
     if (!http_ctx) {
         return;
@@ -916,7 +951,7 @@ protohttp2_bev_readcb(struct bufferevent *bev, void *arg)
 	pxy_conn_ctx_t *ctx = arg;
 	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
     if (!http_ctx) {
-        log_finest("protohttp2_bev_readcb: http_ctx is NULL");
+        log_finest("http_ctx is NULL");
         return;
     }
 
@@ -926,8 +961,12 @@ protohttp2_bev_readcb(struct bufferevent *bev, void *arg)
         int reqmod = bev == ctx->src.bev;
         log_finest_va("ENTER, reqmod=%d", reqmod);
 
-        protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
         protohttp2_ctx_t *h2_ctx = http_ctx->arg;
+        if (!h2_ctx) {
+            log_finest("h2_ctx is NULL");
+            return;
+        }
+
         struct evbuffer *inbuf = bufferevent_get_input(bev);
         size_t len = evbuffer_get_length(inbuf);
         if (!len) {
@@ -944,7 +983,6 @@ protohttp2_bev_readcb(struct bufferevent *bev, void *arg)
 
         if (nghttp2_session_mem_recv(reqmod ? h2_ctx->src_session : h2_ctx->dst_session, data, len) < 0) {
             log_finest("nghttp2_session_mem_recv failed");
-            pxy_conn_term(h2_ctx->ctx, reqmod);
         }
         else {
             // Always call nghttp2_session_send() to process pending frames

@@ -346,7 +346,8 @@ pxy_conn_ctx_free(pxy_conn_ctx_t *ctx, int by_requestor)
 #ifndef WITHOUT_ICAP
 	// Do not check icap_enabled() here, because we should free it if initialized
 	if (ctx->icap_ctx) {
-		icap_ctx_free(ctx->icap_ctx, 1);
+		// Do not pass term_conn to icap_ctx_free() to avoid double free
+		icap_ctx_free(ctx->icap_ctx, 0);
 	}
 #endif /* !WITHOUT_ICAP */
 
@@ -403,6 +404,9 @@ void
 pxy_conn_free(pxy_conn_ctx_t *ctx, int by_requestor)
 {
 	log_finest("ENTER");
+
+	// Reset term flag to avoid double free
+	ctx->term = 0;
 
 	// Always assign NULL after freeing
 	if (ctx->src.bev) {

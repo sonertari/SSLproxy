@@ -328,19 +328,15 @@ icap_ctx_free(icap_ctx_t *icap_ctx, int term_conn)
 		free(icap_ctx->icap_extended_headers);
 	}
 
-	int h2_stream = icap_ctx->stream_ctx != NULL;
-
-	if (!h2_stream) {
-		// The icap_ctx owner may be conn or stream, so we need to set the correct pointer to NULL
-		ctx->icap_ctx = NULL;
-	}
-	else {
-		// TODO: Free h2 conn if all h2 streams are finished
-	}
+	int h2 = icap_ctx->stream_ctx && icap_ctx->h2_ctx;
 
 	free(icap_ctx);
 
-	if (!h2_stream) {
+	// TODO: Free h2 conn if all h2 streams are finished?
+	if (!h2) {
+		// The icap_ctx owner may be conn or stream, so we need to set the correct pointer to NULL
+		ctx->icap_ctx = NULL;
+
 		if (term_conn) {
 			icap_conn_term(ctx);
 		}

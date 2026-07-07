@@ -47,6 +47,8 @@ typedef struct stream_ctx {
 	icap_ctx_t *icap_ctx;
 #endif /* !WITHOUT_ICAP */
 
+    unsigned int closed : 1; /* 1 if stream is closing, set after the first on_stream_close event */
+
     struct stream_ctx *next;
 } stream_ctx_t;
 
@@ -55,7 +57,7 @@ typedef struct protohttp2_ctx {
     nghttp2_session *dst_session;
 
     pxy_conn_ctx_t *ctx;
-    
+
     stream_ctx_t *streams;
 } protohttp2_ctx_t;
 
