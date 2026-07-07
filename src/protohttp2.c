@@ -128,7 +128,7 @@ protohttp2_free_stream_headers(stream_ctx_t *s)
 }
 
 static void
-protohttp2_free_stream_ctx(protohttp2_ctx_t *h2_ctx, stream_ctx_t *s)
+protohttp2_free_stream_ctx(protohttp2_ctx_t *h2_ctx, stream_ctx_t *s, int remove)
 {
     pxy_conn_ctx_t *ctx = h2_ctx->ctx;
     log_finest_va("ENTER, stream_id=%d", s->stream_id);
@@ -148,6 +148,10 @@ protohttp2_free_stream_ctx(protohttp2_ctx_t *h2_ctx, stream_ctx_t *s)
         s->icap_ctx = NULL;
     }
 #endif /* !WITHOUT_ICAP */
+
+    if (!remove) {
+        return;
+    }
 
     if (h2_ctx->streams == s) {
         h2_ctx->streams = s->next;
@@ -887,13 +891,14 @@ protohttp2_on_stream_close(UNUSED nghttp2_session *session, int32_t stream_id, U
 		}
 #endif /* !WITHOUT_ICAP */
 
-        if (s->closed) {
-            log_finest_va("Stream closed before, freeing, stream_id=%d", stream_id);
-            protohttp2_free_stream_ctx(h2_ctx, s);
+        if (!s->closed) {
+            log_finest_va("Stream closed, free partially, stream_id=%d", stream_id);
+            s->closed = 1;
+            protohttp2_free_stream_ctx(h2_ctx, s, 0);
         }
         else {
-            log_finest_va("Stream closing, stream_id=%d", stream_id);
-            s->closed = 1;
+            log_finest_va("Stream closed before, free completely and remove, stream_id=%d", stream_id);
+            protohttp2_free_stream_ctx(h2_ctx, s, 1);
         }
         return 0;
     }
@@ -938,7 +943,7 @@ void protohttp2_free(pxy_conn_ctx_t *ctx)
             h2_ctx->dst_session = NULL;
         }
         while (h2_ctx->streams)
-            protohttp2_free_stream_ctx(h2_ctx, h2_ctx->streams);
+            protohttp2_free_stream_ctx(h2_ctx, h2_ctx->streams, 1);
         free(h2_ctx);
         http_ctx->arg = NULL;
     }
