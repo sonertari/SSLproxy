@@ -1290,7 +1290,7 @@ protohttps_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 	}
 }
 
-static void NONNULL(1)
+void NONNULL(1)
 protohttp_free_ctx(protohttp_ctx_t *http_ctx)
 {
 	log_err_printf("protohttp_free_ctx: ENTER\n");

@@ -136,7 +136,12 @@ icap_evbuffer_readline(struct evbuffer *input, size_t *eol_len)
 
 	evbuffer_copyout(input, line, line_len);
 	line[line_len] = '\0';
-	evbuffer_drain(input, line_len + eol_sz);
+	if (eol_sz > 0) {
+		evbuffer_drain(input, line_len + eol_sz);
+	}
+	else {
+		log_err_level_printf(LOG_INFO, "EOL size is 0, do not drain, line=%s\n", line);
+	}
 
 	if (eol_len)
 		*eol_len = eol_sz;
@@ -387,7 +392,7 @@ icap_ctx_new(pxy_conn_ctx_t *ctx, stream_ctx_t *stream_ctx, protohttp2_ctx_t *h2
 icap_ctx_t *
 icap_init(pxy_conn_ctx_t *ctx, stream_ctx_t *stream_ctx, protohttp2_ctx_t *h2_ctx)
 {
-	log_finest_va("ENTER, processing %s, stream_id=%d", stream_ctx ? "stream" : "connection", stream_ctx ? stream_ctx->stream_id : -1);
+	log_finest_va("ENTER, processing %s, stream_id=%d", stream_ctx ? "stream" : "connection", stream_ctx ? stream_ctx->src_stream_id : -1);
 
 	icap_ctx_t *icap_ctx = !stream_ctx ? ctx->icap_ctx : stream_ctx->icap_ctx;
 	if (icap_ctx) {
@@ -396,7 +401,7 @@ icap_init(pxy_conn_ctx_t *ctx, stream_ctx_t *stream_ctx, protohttp2_ctx_t *h2_ct
 			icap_ctx_free(ctx->icap_ctx, 0);
 		}
 		else {
-			log_fine_va("Stream ICAP context already initialized, reinitializing, stream_id=%d", stream_ctx->stream_id);
+			log_fine_va("Stream ICAP context already initialized, reinitializing, stream_id=%d", stream_ctx->src_stream_id);
 			icap_ctx_free(stream_ctx->icap_ctx, 0);
 		}
 	}
@@ -1433,7 +1438,14 @@ icap_get_http_content_length(icap_ctx_t *icap_ctx)
 
 	unsigned int http_content_length_set = icap_ctx->reqmod ? icap_ctx->src_http_content_length_set : icap_ctx->dst_http_content_length_set;
 	if (http_content_length_set == 0) {
-		protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
+		protohttp_ctx_t *http_ctx = NULL;
+		if (icap_ctx->stream_ctx && icap_ctx->h2_ctx) {
+			http_ctx = icap_ctx->stream_ctx->http_ctx;
+		}
+		else {
+			http_ctx = ctx->protoctx->arg;
+		}
+
 		if (http_ctx && http_ctx->http_content_length) {
 			*http_content_length = (size_t)strtoull(http_ctx->http_content_length, NULL, 10);
 			log_finer_va("Set HTTP content length, http_content_length=%zu", *http_content_length);
@@ -1479,7 +1491,9 @@ icap_failopen_to_next_service(icap_service_ctx_t *service_ctx)
 	// ATTENTION: Handle sent_body_size in failopen, since we are not actually sending the body to the service,
 	// so we count it towards the content complete check for HTTP services,
 	// otherwise we may never mark content complete and cannot terminate the connection (until it expires)
-	*sent_body_size += (evbuffer_get_length(in_body) + evbuffer_get_length(sent_body));
+	// TODO: Do we add or set sent_body_size?
+	// *sent_body_size += (evbuffer_get_length(in_body) + evbuffer_get_length(sent_body));
+	*sent_body_size = (evbuffer_get_length(in_body) + evbuffer_get_length(sent_body));
 
 	log_finest_icap_va("Updated sent_body_size=%zu", *sent_body_size);
 
@@ -2166,6 +2180,13 @@ icap_parse_chunk_header(icap_service_ctx_t *service_ctx, struct evbuffer *input,
 		goto out;
 	}
 
+	if (eol_size == 0) {
+		// This is most probably a fragmented chunk header line
+		log_finer_icap("Fragmented chunk header line, wait for more data");
+		rv = 1;
+		goto out;
+	}
+
 	char *ext = NULL;
 
 	// Assume chunk size is always < 0x1000000 (16 MB)
@@ -2335,9 +2356,13 @@ icap_extract_body_chunk(icap_service_ctx_t *service_ctx, struct evbuffer *input)
 
 	while (evbuffer_get_length(input) > 0) {
 		size_t chunk_size = 0;
-		if (icap_parse_chunk_header(service_ctx, input, &chunk_size) < 0) {
+		int chrv = icap_parse_chunk_header(service_ctx, input, &chunk_size);
+		if (chrv < 0) {
 			rv = -1;
 			goto err;
+		}
+		else if (chrv > 0) {
+			break;
 		}
 
 		if (evbuffer_get_length(input) == 0) {
@@ -3097,8 +3122,14 @@ icap_is_content_complete(icap_ctx_t *icap_ctx, int reqmod)
 	for (int i = 0; i < icap_ctx->service_count; i++) {
 		if (icap_ctx->services[i]) {
 			unsigned int content_complete = reqmod ? icap_ctx->services[i]->src.content_complete : icap_ctx->services[i]->dst.content_complete;
+			unsigned int failopen = icap_ctx->services[i]->failopen;
 			if (content_complete == 0) {
 				log_finest_va("%s content NOT complete, service idx=%d", reqmod ? "REQMOD" : "RESPMOD", i);
+				return 0;
+			}
+			// TODO: Should we check for failopen here?
+			else if (failopen) {
+				log_finest_va("%s content complete but service in failopen, service idx=%d, content_complete=%u, failopen=%u", reqmod ? "REQMOD" : "RESPMOD", i, content_complete, failopen);
 				return 0;
 			}
 			else {

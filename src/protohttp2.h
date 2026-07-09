@@ -29,11 +29,13 @@
 #define PROTOHTTP2_H
 
 #include "pxyconn.h"
+#include "protohttp.h"
 
 #include <nghttp2/nghttp2.h>
 
 typedef struct stream_ctx {
-    int32_t stream_id;
+    int32_t src_stream_id;
+    int32_t dst_stream_id;
     pxy_conn_ctx_t *ctx;
 
     nghttp2_nv *headers;
@@ -46,6 +48,8 @@ typedef struct stream_ctx {
 #ifndef WITHOUT_ICAP
 	icap_ctx_t *icap_ctx;
 #endif /* !WITHOUT_ICAP */
+
+    protohttp_ctx_t *http_ctx;
 
     unsigned int closed : 1; /* 1 if stream is closing, set after the first on_stream_close event */
 

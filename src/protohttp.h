@@ -67,6 +67,7 @@ void protohttp_filter_response_header(struct evbuffer *, struct evbuffer *, prot
 
 int protohttp_validate(pxy_conn_ctx_t *) NONNULL(1);
 
+void protohttp_free_ctx(protohttp_ctx_t *) NONNULL(1);
 void protohttps_free(pxy_conn_ctx_t *) NONNULL(1);
 void protohttp_free_child(pxy_conn_child_ctx_t *) NONNULL(1);
 
