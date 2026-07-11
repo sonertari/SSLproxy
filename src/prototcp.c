@@ -733,9 +733,22 @@ prototcp_bev_eventcb_eof_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		ctx->dst.closed = 1;
 	} else if (!ctx->dst.closed) {
 #ifndef WITHOUT_ICAP
-		if (icap_enabled(ctx->icap_ctx) && !icap_is_finished(ctx->icap_ctx)) {
-			log_finest("ICAP not finished yet, do not terminate conn");
-			return;
+		protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
+		protohttp2_ctx_t *h2_ctx = http_ctx->arg;
+		if (h2_ctx) {
+			if (protohttp2_icap_is_finished(ctx)) {
+				log_finest("ICAP finished, terminate conn");
+			}
+			else {
+				log_finest("ICAP not finished yet, do not terminate conn");
+				return;
+			}
+		}
+		else {
+			if (icap_enabled(ctx->icap_ctx) && !icap_is_finished(ctx->icap_ctx)) {
+				log_finest("ICAP not finished yet, do not terminate conn");
+				return;
+			}
 		}
 #endif /* !WITHOUT_ICAP */
 		log_finest("!dst.closed, terminate conn");
@@ -761,9 +774,22 @@ prototcp_bev_eventcb_eof_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		ctx->src.closed = 1;
 	} else if (!ctx->src.closed) {
 #ifndef WITHOUT_ICAP
-		if (icap_enabled(ctx->icap_ctx) && !icap_is_finished(ctx->icap_ctx)) {
-			log_finest("ICAP not finished yet, do not terminate conn");
-			return;
+		protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
+		protohttp2_ctx_t *h2_ctx = http_ctx->arg;
+		if (h2_ctx) {
+			if (protohttp2_icap_is_finished(ctx)) {
+				log_finest("ICAP finished, terminate conn");
+			}
+			else {
+				log_finest("ICAP not finished yet, do not terminate conn");
+				return;
+			}
+		}
+		else {
+			if (icap_enabled(ctx->icap_ctx) && !icap_is_finished(ctx->icap_ctx)) {
+				log_finest("ICAP not finished yet, do not terminate conn");
+				return;
+			}
 		}
 #endif /* !WITHOUT_ICAP */
 		log_finest("!src.closed, terminate conn");

@@ -120,7 +120,11 @@ static void
 protohttp2_free_stream_headers(stream_ctx_t *s)
 {
     pxy_conn_ctx_t *ctx = s->ctx;
+#ifndef WITHOUT_ICAP
     log_finest_va("ENTER, src_stream_id=%d, dst_stream_id=%d, reqmod=%d", s->src_stream_id, s->dst_stream_id, s->icap_ctx->reqmod);
+#else /* !WITHOUT_ICAP */
+    log_finest_va("ENTER, src_stream_id=%d, dst_stream_id=%d", s->src_stream_id, s->dst_stream_id);
+#endif /* !WITHOUT_ICAP */
 
     for (size_t i = 0; i < s->headers_count; i++) {
         if (s->headers[i].name) {
@@ -139,12 +143,17 @@ protohttp2_free_stream_headers(stream_ctx_t *s)
     s->headers = NULL;
 }
 
-static void
-protohttp2_free_stream_ctx(protohttp2_ctx_t *h2_ctx, stream_ctx_t *s, int remove)
+void NONNULL(1)
+protohttp2_free_stream_ctx(stream_ctx_t *s)
 {
+    protohttp_ctx_t *http_ctx = s->ctx->protoctx->arg;
+    protohttp2_ctx_t *h2_ctx = http_ctx->arg;
     pxy_conn_ctx_t *ctx = h2_ctx->ctx;
-    log_finest_va("ENTER, src_stream_id=%d, dst_stream_id=%d, reqmod=%d", s->src_stream_id, s->dst_stream_id, s->icap_ctx->reqmod);
-
+#ifndef WITHOUT_ICAP
+    log_finest_va("ENTER, src_stream_id=%d, dst_stream_id=%d, reqmod=%d", s->src_stream_id, s->dst_stream_id, s->icap_ctx ? s->icap_ctx->reqmod : -1);
+#else /* !WITHOUT_ICAP */
+    log_finest_va("ENTER, src_stream_id=%d, dst_stream_id=%d", s->src_stream_id, s->dst_stream_id);
+#endif /* !WITHOUT_ICAP */
     if (s->headers) {
         protohttp2_free_stream_headers(s);
     }
@@ -156,18 +165,26 @@ protohttp2_free_stream_ctx(protohttp2_ctx_t *h2_ctx, stream_ctx_t *s, int remove
 
 #ifndef WITHOUT_ICAP
     if (s->icap_ctx) {
-        icap_disconnect(s->icap_ctx);
+        s->icap_ctx->stream_ctx = NULL;
+        if (icap_enabled(s->icap_ctx) && !icap_is_finished(s->icap_ctx)) {
+            log_finest("ICAP not finished, set icap_ctx term flag");
+            s->icap_ctx->term = 1;
+        } else {
+            log_finest("ICAP finished or not enabled, free icap_ctx");
+            icap_ctx_free(s->icap_ctx, 1);
+        }
+        // Set s->icap_ctx to NULL even if we don't free icap_ctx above,
+        // to avoid double free of icap_ctx and infinite loop in protohttp2_free_stream_ctx() in icap_ctx_free()
         s->icap_ctx = NULL;
+    }
+    else {
+        log_finest("No ICAP context");
     }
 #endif /* !WITHOUT_ICAP */
 
     if (s->http_ctx) {
         protohttp_free_ctx(s->http_ctx);
         s->http_ctx = NULL;
-    }
-
-    if (!remove) {
-        return;
     }
 
     if (h2_ctx->streams == s) {
@@ -248,7 +265,6 @@ protohttp2_get_h1_headers(stream_ctx_t *s)
 
     return buf;
 }
-#endif /* !WITHOUT_ICAP */
 
 static char *
 trim_whitespace(char *str, size_t *len)
@@ -435,6 +451,7 @@ protohttp2_get_h2_headers(stream_ctx_t *s, struct evbuffer *h1_buf, int init)
 
     return 0;
 }
+#endif /* !WITHOUT_ICAP */
 
 static void NONNULL(1, 2)
 protohttp2_bev_writecb(UNUSED struct bufferevent *bev, UNUSED void *arg)
@@ -786,10 +803,10 @@ protohttp2_on_frame_recv(UNUSED nghttp2_session *session, const nghttp2_frame *f
                 else {
                     log_finest_va("ICAP finished, src_stream_id=%d, dst_stream_id=%d, reqmod=%d", s->src_stream_id, s->dst_stream_id, reqmod);
                 }
-            }
 
-            log_finest_va("Set stream closed, src_stream_id=%d, dst_stream_id=%d, reqmod=%d", s->src_stream_id, s->dst_stream_id, reqmod);
-            s->closed = 1;
+                log_finest_va("Set stream closed, src_stream_id=%d, dst_stream_id=%d, reqmod=%d", s->src_stream_id, s->dst_stream_id, reqmod);
+                s->closed = 1;
+            }
 #endif /* !WITHOUT_ICAP */
 
             log_finest_va("Forward RST_STREAM to other end, src_stream_id=%d, dst_stream_id=%d, reqmod=%d", s->src_stream_id, s->dst_stream_id, reqmod);
@@ -932,25 +949,29 @@ protohttp2_on_stream_close(UNUSED nghttp2_session *session, int32_t stream_id, U
     stream_ctx_t *s = protohttp2_get_stream_ctx(h2_ctx, stream_id, reqmod);
     if (s) {
 #ifndef WITHOUT_ICAP
-        if (icap_enabled(s->icap_ctx) && !icap_is_finished(s->icap_ctx)) {
-            log_finest_va("ICAP not finished yet, do not terminate stream, src_stream_id=%d, dst_stream_id=%d, reqmod=%d", s->src_stream_id, s->dst_stream_id, reqmod);
-            if (!s->closed) {
-                log_finest_va("Set stream closed, src_stream_id=%d, dst_stream_id=%d, reqmod=%d", s->src_stream_id, s->dst_stream_id, reqmod);
-                s->closed = 1;
+        if (icap_enabled(s->icap_ctx)) {
+            if (!icap_is_finished(s->icap_ctx)) {
+                log_finest_va("ICAP not finished yet, do not terminate stream, src_stream_id=%d, dst_stream_id=%d, reqmod=%d", s->src_stream_id, s->dst_stream_id, reqmod);
+                if (!s->closed) {
+                    log_finest_va("Set stream closed, src_stream_id=%d, dst_stream_id=%d, reqmod=%d", s->src_stream_id, s->dst_stream_id, reqmod);
+                    s->closed = 1;
+                }
+                return 0;
             }
-            return 0;
-		}
+            else {
+                log_finest_va("ICAP finished, src_stream_id=%d, dst_stream_id=%d, reqmod=%d", s->src_stream_id, s->dst_stream_id, reqmod);
+            }
+        }
 #endif /* !WITHOUT_ICAP */
 
         if (!s->closed) {
             log_finest_va("Set stream closed, src_stream_id=%d, dst_stream_id=%d, reqmod=%d", s->src_stream_id, s->dst_stream_id, reqmod);
             s->closed = 1;
-            // TODO: Free the stream context partially here, if icap is not enabled?
-            // protohttp2_free_stream_ctx(h2_ctx, s, 0);
         }
         else {
             log_finest_va("Stream closed before, free completely and remove, src_stream_id=%d, dst_stream_id=%d, reqmod=%d", s->src_stream_id, s->dst_stream_id, reqmod);
-            protohttp2_free_stream_ctx(h2_ctx, s, 1);
+            s->term = 1;
+            protohttp2_free_stream_ctx(s);
         }
         return 0;
     }
@@ -975,7 +996,26 @@ protohttp2_on_stream_close_callback_dst(UNUSED nghttp2_session *session, int32_t
  * Interface
  */
 
-void protohttp2_free(pxy_conn_ctx_t *ctx)
+#ifndef WITHOUT_ICAP
+int
+protohttp2_icap_is_finished(pxy_conn_ctx_t *ctx)
+{
+    protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
+    protohttp2_ctx_t *h2_ctx = http_ctx->arg;
+    stream_ctx_t *s = h2_ctx->streams;
+    while (s) {
+        if (icap_enabled(s->icap_ctx) && !icap_is_finished(s->icap_ctx)) {
+            log_finest_va("ICAP not finished for stream, src_stream_id=%d, dst_stream_id=%d, reqmod=%d", s->src_stream_id, s->dst_stream_id, s->icap_ctx->reqmod);
+            return 0;
+        }
+        s = s->next;
+    }
+    return 1;
+}
+#endif /* !WITHOUT_ICAP */
+
+void
+protohttp2_free(pxy_conn_ctx_t *ctx)
 {
     log_finest("ENTER");
 
@@ -995,7 +1035,7 @@ void protohttp2_free(pxy_conn_ctx_t *ctx)
             h2_ctx->dst_session = NULL;
         }
         while (h2_ctx->streams)
-            protohttp2_free_stream_ctx(h2_ctx, h2_ctx->streams, 1);
+            protohttp2_free_stream_ctx(h2_ctx->streams);
         free(h2_ctx);
         http_ctx->arg = NULL;
     }

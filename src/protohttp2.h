@@ -52,6 +52,7 @@ typedef struct stream_ctx {
     protohttp_ctx_t *http_ctx;
 
     unsigned int closed : 1; /* 1 if stream is closing, set after the first on_stream_close event */
+    unsigned int term : 1;   /* 1 if stream is ready to be terminated */
 
     struct stream_ctx *next;
 } stream_ctx_t;
@@ -65,8 +66,10 @@ typedef struct protohttp2_ctx {
     stream_ctx_t *streams;
 } protohttp2_ctx_t;
 
+int protohttp2_icap_is_finished(pxy_conn_ctx_t *) NONNULL(1);
 void protohttp2_free(pxy_conn_ctx_t *) NONNULL(1);
 protocol_t protohttp2_setup(pxy_conn_ctx_t *) NONNULL(1);
+void protohttp2_free_stream_ctx(stream_ctx_t *) NONNULL(1);
 
 #endif /* !PROTOHTTP2_H */
 

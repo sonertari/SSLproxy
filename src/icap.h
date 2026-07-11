@@ -96,6 +96,7 @@ struct icap_ctx {
 	unsigned int  dst_http_content_length_set : 1;
 
 	unsigned int made_progress : 1;
+	unsigned int term : 1;            /* 1 if ICAP context is ready to be terminated */
 
 	struct event *chain_ev;
 	int chain_ev_service_idx;

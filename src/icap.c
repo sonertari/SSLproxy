@@ -55,54 +55,6 @@ static int icap_is_http_nullbody(icap_service_ctx_t *);
 static void icap_process_chain(icap_ctx_t *, int);
 
 /*
- * Helpers to copy data between evbuffers and bufferevents without
- * forcing large contiguous allocations via evbuffer_pullup().
- */
-static int
-icap_evbuffer_write_bev(struct bufferevent *bev, struct evbuffer *src, size_t len)
-{
-	struct evbuffer_iovec v[16];
-	size_t written = 0;
-
-	while (written < len) {
-		int n = evbuffer_peek(src, len - written, NULL, v, 16);
-		if (n <= 0)
-			return -1;
-		for (int i = 0; i < n && written < len; i++) {
-			size_t to_write = v[i].iov_len;
-			if (to_write > len - written)
-				to_write = len - written;
-			if (bufferevent_write(bev, v[i].iov_base, to_write) < 0)
-				return -1;
-			written += to_write;
-		}
-	}
-	return 0;
-}
-
-static int
-icap_evbuffer_add_evbuf(struct evbuffer *dst, struct evbuffer *src, size_t len)
-{
-	struct evbuffer_iovec v[16];
-	size_t copied = 0;
-
-	while (copied < len) {
-		int n = evbuffer_peek(src, len - copied, NULL, v, 16);
-		if (n <= 0)
-			return -1;
-		for (int i = 0; i < n && copied < len; i++) {
-			size_t to_copy = v[i].iov_len;
-			if (to_copy > len - copied)
-				to_copy = len - copied;
-			if (evbuffer_add(dst, v[i].iov_base, to_copy) < 0)
-				return -1;
-			copied += to_copy;
-		}
-	}
-	return 0;
-}
-
-/*
  * Read one line from an evbuffer, stripping the EOL terminator.
  *
  * Unlike evbuffer_readln(input, NULL, EVBUFFER_EOL_CRLF), this function
@@ -306,7 +258,7 @@ icap_conn_term(pxy_conn_ctx_t *ctx)
 }
 
 void
-icap_ctx_free(icap_ctx_t *icap_ctx, int term_conn)
+icap_ctx_free(icap_ctx_t *icap_ctx, int term_owner)
 {
 	if (!icap_ctx) {
 		log_dbg_printf("No ICAP context to free\n");
@@ -333,19 +285,27 @@ icap_ctx_free(icap_ctx_t *icap_ctx, int term_conn)
 		free(icap_ctx->icap_extended_headers);
 	}
 
-	int h2 = icap_ctx->stream_ctx && icap_ctx->h2_ctx;
+	int h2 = icap_ctx->h2_ctx ? 1 : 0;
 
-	free(icap_ctx);
-
-	// TODO: Free h2 conn if all h2 streams are finished?
 	if (!h2) {
-		// The icap_ctx owner may be conn or stream, so we need to set the correct pointer to NULL
 		ctx->icap_ctx = NULL;
 
-		if (term_conn) {
+		// The icap_ctx owner may be conn or stream, so we need to set the correct pointer to NULL
+		if (term_owner) {
 			icap_conn_term(ctx);
 		}
 	}
+	else {
+		// TODO: Free h2 conn if all h2 streams are finished?
+		stream_ctx_t *s = icap_ctx->stream_ctx;
+		if (term_owner && s && s->term) {
+			log_finest("Stream term flag set, free stream ctx");
+			s->icap_ctx = NULL;
+			protohttp2_free_stream_ctx(s);
+		}
+	}
+
+	free(icap_ctx);
 }
 
 static icap_ctx_t *
@@ -1383,14 +1343,22 @@ icap_send_data(icap_ctx_t *icap_ctx)
 
 	// TODO: We may not have ctx and/or bevs, if the connection is terminated
 	if (ctx && ctx->src.bev && ctx->dst.bev) {
+		stream_ctx_t *s = icap_ctx->stream_ctx;
 		icap_data_submit(icap_ctx);
+
+		// XXX: We may not have s and/or icap_ctx here, icap_data_submit() may have freed them
+		if (!s->icap_ctx || !icap_ctx->stream_ctx) {
+			log_finest("No stream ctx or ICAP context, return");
+			return;
+		}
 
 		unsigned int made_progress = icap_ctx->made_progress;
 
 		log_finest_va("Reset made_progress: %s", made_progress ? "MADE PROGRESS" : "NO PROGRESS");
 		icap_ctx->made_progress = 0;
 
-		int h2 = icap_ctx->stream_ctx && icap_ctx->h2_ctx;
+		// We may not have icap_ctx->stream_ctx at this point
+		int h2 = icap_ctx->h2_ctx ? 1 : 0;
 
 		int service_idx = 0;
 		if (!made_progress || icap_have_data_to_process(icap_ctx, &service_idx) == 0) {
@@ -2457,8 +2425,6 @@ static void
 icap_handle_chain_continuation(icap_service_ctx_t *service_ctx, icap_ctx_t *icap_ctx)
 {
 	// ATTENTION: Do not get icap_ctx from service_ctx here, because service_ctx may be already freed and its pointer may be dangling,
-	// so we pass ctx->icap_ctx as a parameter to this function
-	// icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
 	if (!icap_ctx) {
 		log_dbg_printf("No ICAP context in icap_handle_chain_continuation(), idx=%d\n", service_ctx->idx);
 		return;
@@ -2494,6 +2460,13 @@ icap_bev_readcb(struct bufferevent *bev, void *arg)
 
 	struct evbuffer *input = bufferevent_get_input(bev);
 	log_finest_icap_va("ENTER, inbuf=%zu, received_icap_headers=%d", evbuffer_get_length(input), received_icap_headers);
+
+	// This may be our last chance to free the icap_ctx
+	if (icap_ctx->term) {
+		log_finest("ICAP term set, free icap_ctx");
+		icap_ctx_free(icap_ctx, 1);
+		return;
+	}
 
 #ifdef DEBUG_ICAP
 	/* Log first 400 bytes for debugging */
@@ -2635,6 +2608,12 @@ icap_bev_writecb(UNUSED struct bufferevent *bev, UNUSED void *arg)
 	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
 	UNUSED pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
 	log_finest_icap("ICAP write callback called");
+
+	// This may be our last chance to free the icap_ctx
+	if (icap_ctx->term) {
+		log_finest("ICAP term set, free icap_ctx");
+		icap_ctx_free(icap_ctx, 1);
+	}
 }
 
 static int NONNULL(1)
@@ -2833,10 +2812,8 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 	if (ctx->spec->http && in_hdr_len > 0) {
 		log_finest_icap_va("Sending HTTP headers to ICAP server, in_hdr_len=%zu", in_hdr_len);
 
-		if (icap_evbuffer_write_bev(bev, in_hdr, in_hdr_len) < 0) {
-			log_fine_icap("Failed to write ICAP headers");
-			return -1;
-		}
+		// We use evbuffer_pullup() here for stability, even though it is not efficient
+		bufferevent_write(bev, evbuffer_pullup(in_hdr, in_hdr_len), in_hdr_len);
 
 		evbuffer_remove_buffer(in_hdr, sent_hdr, in_hdr_len);
 
@@ -2873,11 +2850,8 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 
 		evbuffer_add_printf(chunk_buf, "%zx\r\n", chunk_len);
 
-		if (icap_evbuffer_add_evbuf(chunk_buf, in_body, chunk_len) < 0) {
-			log_fine_icap("Failed to add ICAP body data to chunk buffer");
-			evbuffer_free(chunk_buf);
-			return -1;
-		}
+		// We use evbuffer_pullup() here for stability, even though it is not efficient
+		evbuffer_add(chunk_buf, evbuffer_pullup(in_body, chunk_len), chunk_len);
 
 		// TODO: Check if service config is fail-open before copying?
 		// Make a copy of sent data, to use for fail-open in case the service errors out
@@ -2933,6 +2907,13 @@ icap_bev_eventcb(UNUSED struct bufferevent *bev, short events, void *arg)
 	UNUSED pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
 
 	log_finer_icap_va("ICAP event 0x%x", events);
+
+	// This may be our last chance to free the icap_ctx
+	if (icap_ctx->term) {
+		log_finest("ICAP term set, free icap_ctx");
+		icap_ctx_free(icap_ctx, 1);
+		return;
+	}
 
 	if (events & BEV_EVENT_CONNECTED) {
 		log_finest_icap_va("ICAP connected to %s, sending request", service_ctx->svc->server);
