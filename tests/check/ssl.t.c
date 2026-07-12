@@ -361,10 +361,12 @@ START_TEST(ssl_tls_clienthello_parse_00)
 	int rv;
 	const unsigned char *ch = NULL;
 	char *sni = (void *)0xDEADBEEF;
+	unsigned char *alpn_wire;
+	size_t alpn_wire_len;
 
 	rv = ssl_tls_clienthello_parse(clienthello00,
 	                               sizeof(clienthello00) - 1,
-	                               0, &ch, &sni);
+	                               0, &ch, &sni, &alpn_wire, &alpn_wire_len);
 #ifdef HAVE_SSLV2
 	ck_assert_msg(rv == 0, "rv not 0");
 	ck_assert_msg(ch != NULL, "ch is NULL");
@@ -382,10 +384,12 @@ START_TEST(ssl_tls_clienthello_parse_01)
 	int rv;
 	const unsigned char *ch = NULL;
 	char *sni = (void *)0xDEADBEEF;
+	unsigned char *alpn_wire;
+	size_t alpn_wire_len;
 
 	rv = ssl_tls_clienthello_parse(clienthello01,
 	                               sizeof(clienthello01) - 1,
-	                               0, &ch, &sni);
+	                               0, &ch, &sni, &alpn_wire, &alpn_wire_len);
 	ck_assert_msg(rv == 0, "rv not 0");
 	ck_assert_msg(ch != NULL, "ch is NULL");
 	ck_assert_msg(sni == NULL, "sni not NULL");
@@ -397,10 +401,12 @@ START_TEST(ssl_tls_clienthello_parse_02)
 	int rv;
 	const unsigned char *ch = NULL;
 	char *sni = (void *)0xDEADBEEF;
+	unsigned char *alpn_wire;
+	size_t alpn_wire_len;
 
 	rv = ssl_tls_clienthello_parse(clienthello02,
 	                                sizeof(clienthello02) - 1,
-	                                0, &ch, &sni);
+	                                0, &ch, &sni, &alpn_wire, &alpn_wire_len);
 	ck_assert_msg(rv == 0, "rv not 0");
 	ck_assert_msg(ch != NULL, "ch is NULL");
 	ck_assert_msg(sni == NULL, "sni not NULL");
@@ -412,10 +418,12 @@ START_TEST(ssl_tls_clienthello_parse_03)
 	int rv;
 	const unsigned char *ch = NULL;
 	char *sni = NULL;
+	unsigned char *alpn_wire;
+	size_t alpn_wire_len;
 
 	rv = ssl_tls_clienthello_parse(clienthello03,
 	                                sizeof(clienthello03) - 1,
-	                                0, &ch, &sni);
+	                                0, &ch, &sni, &alpn_wire, &alpn_wire_len);
 	ck_assert_msg(rv == 0, "rv not 0");
 	ck_assert_msg(ch != NULL, "ch is NULL");
 	ck_assert_msg(sni && !strcmp(sni, "192.168.100.4"),
@@ -428,10 +436,12 @@ START_TEST(ssl_tls_clienthello_parse_04)
 	int rv;
 	const unsigned char *ch = NULL;
 	char *sni = NULL;
+	unsigned char *alpn_wire;
+	size_t alpn_wire_len;
 
 	rv = ssl_tls_clienthello_parse(clienthello04,
 	                                sizeof(clienthello04) - 1,
-	                                0, &ch, &sni);
+	                                0, &ch, &sni, &alpn_wire, &alpn_wire_len);
 	ck_assert_msg(rv == 0, "rv not 0");
 	ck_assert_msg(ch != NULL, "ch is NULL");
 	ck_assert_msg(sni && !strcmp(sni, "kamesh.com"),
@@ -446,9 +456,11 @@ START_TEST(ssl_tls_clienthello_parse_05)
 		const unsigned char *ch = NULL;
 		char *sni = (void*)0xDEADBEEF;
 		ssize_t sz;
+		unsigned char *alpn_wire;
+		size_t alpn_wire_len;
 
 		sz = (ssize_t)i;
-		rv = ssl_tls_clienthello_parse(clienthello04, sz, 0, &ch, &sni);
+		rv = ssl_tls_clienthello_parse(clienthello04, sz, 0, &ch, &sni, &alpn_wire, &alpn_wire_len);
 		ck_assert_msg(rv == 1, "rv not 1");
 		ck_assert_msg(ch != NULL, "ch is NULL");
 		ck_assert_msg(sni == (void*)0xDEADBEEF, "sni modified");
@@ -461,10 +473,12 @@ START_TEST(ssl_tls_clienthello_parse_06)
 	int rv;
 	const unsigned char *ch = NULL;
 	char *sni = NULL;
+	unsigned char *alpn_wire;
+	size_t alpn_wire_len;
 
 	rv = ssl_tls_clienthello_parse(clienthello05,
 	                                sizeof(clienthello05) - 1,
-	                                0, &ch, &sni);
+	                                0, &ch, &sni, &alpn_wire, &alpn_wire_len);
 	ck_assert_msg(rv == 0, "rv not 0");
 	ck_assert_msg(ch != NULL, "ch is NULL");
 	ck_assert_msg(sni && !strcmp(sni, "daniel.roe.ch"),
@@ -479,9 +493,11 @@ START_TEST(ssl_tls_clienthello_parse_07)
 		const unsigned char *ch = NULL;
 		char *sni = (void*)0xDEADBEEF;
 		ssize_t sz;
+		unsigned char *alpn_wire;
+		size_t alpn_wire_len;
 
 		sz = (ssize_t)i;
-		rv = ssl_tls_clienthello_parse(clienthello05, sz, 0, &ch, &sni);
+		rv = ssl_tls_clienthello_parse(clienthello05, sz, 0, &ch, &sni, &alpn_wire, &alpn_wire_len);
 		ck_assert_msg(rv == 1, "rv not 1");
 		ck_assert_msg(ch != NULL, "ch is NULL");
 		ck_assert_msg(sni == (void*)0xDEADBEEF, "sni modified");
@@ -494,10 +510,12 @@ START_TEST(ssl_tls_clienthello_parse_08)
 	int rv;
 	const unsigned char *ch = (void *)0xDEADBEEF;
 	char *sni = (void *)0xDEADBEEF;
+	unsigned char *alpn_wire;
+	size_t alpn_wire_len;
 
 	rv = ssl_tls_clienthello_parse(clienthello06,
 	                                sizeof(clienthello06) - 1,
-	                                0, &ch, &sni);
+	                                0, &ch, &sni, &alpn_wire, &alpn_wire_len);
 	ck_assert_msg(rv == 1, "rv not 1");
 	ck_assert_msg(ch == NULL, "ch not NULL");
 	ck_assert_msg(sni == (void*)0xDEADBEEF, "sni modified");
@@ -509,10 +527,12 @@ START_TEST(ssl_tls_clienthello_parse_09)
 	int rv;
 	const unsigned char *ch = NULL;
 	char *sni = NULL;
+	unsigned char *alpn_wire;
+	size_t alpn_wire_len;
 
 	rv = ssl_tls_clienthello_parse(clienthello06,
 	                                sizeof(clienthello06) - 1,
-	                                1, &ch, &sni);
+	                                1, &ch, &sni, &alpn_wire, &alpn_wire_len);
 	ck_assert_msg(rv == 0, "rv not 0");
 	ck_assert_msg(ch != NULL, "ch is NULL");
 	ck_assert_msg((ch - clienthello06) != 21, "ch does not point to start");
@@ -525,10 +545,12 @@ START_TEST(ssl_tls_clienthello_parse_10)
 {
 	int rv;
 	const unsigned char *ch = NULL;
+	unsigned char *alpn_wire;
+	size_t alpn_wire_len;
 
 	rv = ssl_tls_clienthello_parse(clienthello06,
 	                                sizeof(clienthello06) - 1,
-	                                1, &ch, NULL);
+	                                1, &ch, NULL, &alpn_wire, &alpn_wire_len);
 	ck_assert_msg(rv == 0, "rv not 0");
 	ck_assert_msg(ch != NULL, "ch is NULL");
 	ck_assert_msg((ch - clienthello06) != 21, "ch does not point to start");
