@@ -106,7 +106,7 @@ DEBUG_CFLAGS?=	-g
 #FEATURES+=	-DPURIFY
 
 # Define to add proxy state machine debugging; dump state in debug mode.
-FEATURES+=	-DDEBUG_PROXY
+#FEATURES+=	-DDEBUG_PROXY
 
 # Define to add certificate debugging; dump all certificates in debug mode.
 #FEATURES+=	-DDEBUG_CERTIFICATE
@@ -115,7 +115,7 @@ FEATURES+=	-DDEBUG_PROXY
 #FEATURES+=	-DDEBUG_SESSION_CACHE
 
 # Define to add debugging of sslsplit's own ClientHello message parser.
-FEATURES+=	-DDEBUG_CLIENTHELLO_PARSER
+#FEATURES+=	-DDEBUG_CLIENTHELLO_PARSER
 
 # Define to add thread debugging; dump thread state when choosing a thread.
 #FEATURES+=	-DDEBUG_THREAD

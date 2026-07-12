@@ -56,7 +56,7 @@ static void NONNULL(1) protohttp2_icap_failopen_to_dest_cb(icap_service_ctx_t *s
 static stream_ctx_t *
 protohttp2_get_stream_ctx(protohttp2_ctx_t *h2_ctx, int32_t stream_id, int reqmod)
 {
-    pxy_conn_ctx_t *ctx = h2_ctx->ctx;
+    UNUSED pxy_conn_ctx_t *ctx = h2_ctx->ctx;
 
     stream_ctx_t *s = h2_ctx->streams;
     while (s) {
@@ -119,7 +119,7 @@ protohttp2_new_stream_ctx(protohttp2_ctx_t *h2_ctx, int32_t stream_id)
 static void
 protohttp2_free_stream_headers(stream_ctx_t *s)
 {
-    pxy_conn_ctx_t *ctx = s->ctx;
+    UNUSED pxy_conn_ctx_t *ctx = s->ctx;
 #ifndef WITHOUT_ICAP
     log_finest_va("ENTER, src_stream_id=%d, dst_stream_id=%d, reqmod=%d", s->src_stream_id, s->dst_stream_id, s->icap_ctx->reqmod);
 #else /* !WITHOUT_ICAP */
@@ -148,7 +148,7 @@ protohttp2_free_stream_ctx(stream_ctx_t *s)
 {
     protohttp_ctx_t *http_ctx = s->ctx->protoctx->arg;
     protohttp2_ctx_t *h2_ctx = http_ctx->arg;
-    pxy_conn_ctx_t *ctx = h2_ctx->ctx;
+    UNUSED pxy_conn_ctx_t *ctx = h2_ctx->ctx;
 #ifndef WITHOUT_ICAP
     log_finest_va("ENTER, src_stream_id=%d, dst_stream_id=%d, reqmod=%d", s->src_stream_id, s->dst_stream_id, s->icap_ctx ? s->icap_ctx->reqmod : -1);
 #else /* !WITHOUT_ICAP */
@@ -165,6 +165,10 @@ protohttp2_free_stream_ctx(stream_ctx_t *s)
 
 #ifndef WITHOUT_ICAP
     if (s->icap_ctx) {
+        // Disconnect the ICAP chain to stop any further event callbacks,
+        // but do not free the icap_ctx here
+    	icap_disconnect(s->icap_ctx, 0);
+
         s->icap_ctx->stream_ctx = NULL;
         if (icap_enabled(s->icap_ctx) && !icap_is_finished(s->icap_ctx)) {
             log_finest("ICAP not finished, set icap_ctx term flag");
@@ -202,7 +206,7 @@ protohttp2_free_stream_ctx(stream_ctx_t *s)
 static struct evbuffer *
 protohttp2_get_h1_headers(stream_ctx_t *s)
 {
-    pxy_conn_ctx_t *ctx = s->ctx;
+    UNUSED pxy_conn_ctx_t *ctx = s->ctx;
     log_finest_va("ENTER, src_stream_id=%d, dst_stream_id=%d, reqmod=%d", s->src_stream_id, s->dst_stream_id, s->icap_ctx->reqmod);
 
     struct evbuffer *buf = evbuffer_new();
@@ -285,7 +289,7 @@ trim_whitespace(char *str, size_t *len)
 static int
 protohttp2_add_nv_header(stream_ctx_t *s, const char *name, size_t namelen, const char *value, size_t valuelen)
 {
-    pxy_conn_ctx_t *ctx = s->ctx;
+    UNUSED pxy_conn_ctx_t *ctx = s->ctx;
     log_finest_va("%.*s: %.*s", (int)namelen, name, (int)valuelen, value);
 
     if (s->headers_count >= s->headers_capacity) {
@@ -327,7 +331,7 @@ protohttp2_add_nv_header(stream_ctx_t *s, const char *name, size_t namelen, cons
 int
 protohttp2_get_h2_headers(stream_ctx_t *s, struct evbuffer *h1_buf, int init)
 {
-    pxy_conn_ctx_t *ctx = s->ctx;
+    UNUSED pxy_conn_ctx_t *ctx = s->ctx;
     log_finest_va("ENTER, src_stream_id=%d, dst_stream_id=%d, reqmod=%d", s->src_stream_id, s->dst_stream_id, s->icap_ctx->reqmod);
 
     // Clean slate for this stream context's header holder
@@ -509,7 +513,7 @@ static int
 protohttp2_on_header_callback(nghttp2_session *session, const nghttp2_frame *frame, const uint8_t *name, size_t namelen, const uint8_t *value, size_t valuelen, UNUSED uint8_t flags, void *user_data)
 {
     protohttp2_ctx_t *h2_ctx = (protohttp2_ctx_t *)user_data;
-    pxy_conn_ctx_t *ctx = h2_ctx->ctx;
+    UNUSED pxy_conn_ctx_t *ctx = h2_ctx->ctx;
 
     log_finest_va("ENTER, stream_id=%d, session=%s", frame->hd.stream_id, session == h2_ctx->src_session ? "src" : "dst");
 
@@ -602,9 +606,9 @@ protohttp2_provider_read_callback(UNUSED nghttp2_session *session, UNUSED int32_
     // Flag the end of stream
     if (evbuffer_get_length(s->data_buf) == 0 && icap_enabled(s->icap_ctx) && icap_is_finished(s->icap_ctx)) {
         protohttp2_ctx_t *h2_ctx = s->icap_ctx->h2_ctx;
-        pxy_conn_ctx_t *ctx = h2_ctx->ctx;
-
+        UNUSED pxy_conn_ctx_t *ctx = h2_ctx->ctx;
         log_finest_va("Set NGHTTP2_DATA_FLAG_EOF for src_stream_id=%d, dst_stream_id=%d, reqmod=%d", s->src_stream_id, s->dst_stream_id, s->icap_ctx->reqmod);
+
         *data_flags |= NGHTTP2_DATA_FLAG_EOF;
     }
 #endif /* !WITHOUT_ICAP */
@@ -615,7 +619,7 @@ protohttp2_provider_read_callback(UNUSED nghttp2_session *session, UNUSED int32_
 static int
 protohttp2_submit_data(protohttp2_ctx_t *h2_ctx, stream_ctx_t *s, int reqmod)
 {
-    pxy_conn_ctx_t *ctx = h2_ctx->ctx;
+    UNUSED pxy_conn_ctx_t *ctx = h2_ctx->ctx;
     int rv = 0;
 
     if (s->headers_count > 0) {
@@ -677,7 +681,7 @@ protohttp2_icap_send_data_to_src_cb(icap_ctx_t *icap_ctx)
 {
     stream_ctx_t *s = icap_ctx->stream_ctx;
     protohttp2_ctx_t *h2_ctx = icap_ctx->h2_ctx;
-    pxy_conn_ctx_t *ctx = h2_ctx->ctx;
+    UNUSED pxy_conn_ctx_t *ctx = h2_ctx->ctx;
 
     log_finest_va("ENTER, src_stream_id=%d, dst_stream_id=%d, veto_hdr=%zu, veto_body=%zu, data_buf=%zu", s->src_stream_id, s->dst_stream_id,
         evbuffer_get_length(icap_ctx->veto_hdr), evbuffer_get_length(icap_ctx->veto_body), evbuffer_get_length(s->data_buf));
@@ -703,7 +707,7 @@ protohttp2_icap_send_data_to_dst_cb(icap_ctx_t *icap_ctx)
     }
 
     protohttp2_ctx_t *h2_ctx = icap_ctx->h2_ctx;
-    pxy_conn_ctx_t *ctx = h2_ctx->ctx;
+    UNUSED pxy_conn_ctx_t *ctx = h2_ctx->ctx;
 
     struct evbuffer *out_hdr = icap_get_last_service_out_hdr(icap_ctx);
     protohttp2_get_h2_headers(s, out_hdr, 1);
@@ -728,7 +732,7 @@ static void NONNULL(1)
 protohttp2_icap_failopen_to_dest_cb(icap_service_ctx_t *service_ctx)
 {
 	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
-	pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
+	UNUSED pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
     stream_ctx_t *s = icap_ctx->stream_ctx;
 
     log_finest_va("ENTER, src_stream_id=%d, dst_stream_id=%d, reqmod=%d, headers_count=%zu, data_buf=%zu", s->src_stream_id, s->dst_stream_id,
@@ -891,7 +895,7 @@ static int
 protohttp2_on_data_chunk_recv(nghttp2_session *session, UNUSED uint8_t flags, int32_t stream_id, const uint8_t *data, size_t len, void *user_data, int reqmod)
 {
     protohttp2_ctx_t *h2_ctx = (protohttp2_ctx_t *)user_data;
-    pxy_conn_ctx_t *ctx = h2_ctx->ctx;
+    UNUSED pxy_conn_ctx_t *ctx = h2_ctx->ctx;
     log_finest_va("ENTER, stream_id=%d, len=%zu", stream_id, len);
 
     stream_ctx_t *s = protohttp2_get_stream_ctx(h2_ctx, stream_id, reqmod);
@@ -941,7 +945,7 @@ static int
 protohttp2_on_stream_close(UNUSED nghttp2_session *session, int32_t stream_id, UNUSED uint32_t error_code, void *user_data)
 {
     protohttp2_ctx_t *h2_ctx = user_data;
-    pxy_conn_ctx_t *ctx = h2_ctx->ctx;
+    UNUSED pxy_conn_ctx_t *ctx = h2_ctx->ctx;
     int reqmod = (session == h2_ctx->src_session) ? 1 : 0;
 
     log_finest_va("ENTER, stream_id=%d, reqmod=%d", stream_id, reqmod);

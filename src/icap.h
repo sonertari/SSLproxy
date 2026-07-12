@@ -175,7 +175,7 @@ int load_icap_line(conn_opts_t *, const char *, unsigned int) NONNULL(1,2);
 int load_icap_struct(conn_opts_t *, unsigned int *, FILE *);
 
 int icap_set_extended_headers(icap_ctx_t *, int) NONNULL(1);
-void icap_disconnect(icap_ctx_t *) NONNULL(1);
+void icap_disconnect(icap_ctx_t *, int) NONNULL(1);
 
 void icap_process_data(struct evbuffer *, icap_ctx_t *) NONNULL(1,2);
 

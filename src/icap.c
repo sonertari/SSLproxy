@@ -105,7 +105,7 @@ icap_service_ctx_free(icap_service_ctx_t *service_ctx)
 {
 	UNUSED pxy_conn_ctx_t *ctx = service_ctx->icap_ctx->conn_ctx;
 	UNUSED icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
-	log_finest_icap("ENTER");
+	log_finest_icap_va("ENTER, service idx=%d", service_ctx->idx);
 
 	if (service_ctx->src.in_hdr) {
 		evbuffer_free(service_ctx->src.in_hdr);
@@ -273,7 +273,7 @@ icap_ctx_free(icap_ctx_t *icap_ctx, int term_owner)
 		icap_ctx->chain_ev = NULL;
 	}
 
-	icap_disconnect(icap_ctx);
+	icap_disconnect(icap_ctx, 1);
 
 	if (icap_ctx->veto_hdr) {
 		evbuffer_free(icap_ctx->veto_hdr);
@@ -1233,14 +1233,14 @@ icap_service_connect(icap_service_ctx_t *service_ctx)
 static void
 icap_service_disconnect(icap_service_ctx_t *service_ctx)
 {
+	// ATTENTION: Do not free service_ctx here, just disconnect
+
 	// TODO: icap_ctx may be NULL?
 	UNUSED icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
 	// TODO: ctx may be NULL?
 	UNUSED pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
 
 	if (service_ctx->bev) {
-		log_finest_icap("Disable bufferevents");
-		
 		bufferevent_disable(service_ctx->bev, EV_READ | EV_WRITE);
 		bufferevent_setcb(service_ctx->bev, NULL, NULL, NULL, NULL);
 		bufferevent_set_timeouts(service_ctx->bev, NULL, NULL);
@@ -1254,10 +1254,11 @@ icap_service_disconnect(icap_service_ctx_t *service_ctx)
 
 		bufferevent_free(service_ctx->bev);
 		service_ctx->bev = NULL;
+		log_finer_icap_va("ICAP service disconnected, service idx=%d", service_ctx->idx);
 	}
-
-	// ATTENTION: Do not free service_ctx here, just disconnect
-	log_finer_icap("ICAP service disconnected");
+	else {
+		log_finest_icap_va("ICAP service already disconnected, service idx=%d", service_ctx->idx);
+	}
 }
 
 static int NONNULL(1)
@@ -1347,7 +1348,7 @@ icap_send_data(icap_ctx_t *icap_ctx)
 		icap_data_submit(icap_ctx);
 
 		// XXX: We may not have s and/or icap_ctx here, icap_data_submit() may have freed them
-		if (!s->icap_ctx || !icap_ctx->stream_ctx) {
+		if (!s || !icap_ctx || !s->icap_ctx || !icap_ctx->stream_ctx) {
 			log_finest("No stream ctx or ICAP context, return");
 			return;
 		}
@@ -1437,7 +1438,7 @@ static int
 icap_failopen_to_next_service(icap_service_ctx_t *service_ctx)
 {
 	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
-	pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
+	UNUSED pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
 
 	struct evbuffer *in_hdr = ICAP_STATE(service_ctx, icap_ctx->reqmod)->in_hdr;
 	struct evbuffer *in_body = ICAP_STATE(service_ctx, icap_ctx->reqmod)->in_body;
@@ -1459,9 +1460,7 @@ icap_failopen_to_next_service(icap_service_ctx_t *service_ctx)
 	// ATTENTION: Handle sent_body_size in failopen, since we are not actually sending the body to the service,
 	// so we count it towards the content complete check for HTTP services,
 	// otherwise we may never mark content complete and cannot terminate the connection (until it expires)
-	// TODO: Do we add or set sent_body_size?
-	// *sent_body_size += (evbuffer_get_length(in_body) + evbuffer_get_length(sent_body));
-	*sent_body_size = (evbuffer_get_length(in_body) + evbuffer_get_length(sent_body));
+	*sent_body_size += (evbuffer_get_length(in_body) + evbuffer_get_length(sent_body));
 
 	log_finest_icap_va("Updated sent_body_size=%zu", *sent_body_size);
 
@@ -1536,21 +1535,25 @@ icap_advance_to_next_service(icap_service_ctx_t *service_ctx)
 }
 
 void NONNULL(1)
-icap_disconnect(icap_ctx_t *icap_ctx)
+icap_disconnect(icap_ctx_t *icap_ctx, int term)
 {
 	for (int i = 0; i < icap_ctx->service_count; i++) {
 		if (icap_ctx->services[i]) {
 			icap_service_disconnect(icap_ctx->services[i]);
-			icap_service_ctx_free(icap_ctx->services[i]);
-			icap_ctx->services[i] = NULL;
+			if (term) {
+				icap_service_ctx_free(icap_ctx->services[i]);
+				icap_ctx->services[i] = NULL;
+			}
 		}
 	}
-	icap_ctx->service_count = 0;
 
-	// TODO: icap_ctx->conn_ctx may be a dangling pointer, assign NULL to it based on its owner: conn or stream
-	// pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
-	// log_finer("ICAP chain disconnected");
-	log_dbg_level_printf(LOG_DBG_MODE_FINER, __FUNCTION__, 0, 0, 0, 0, "ICAP chain disconnected");
+	if (term) {
+		icap_ctx->service_count = 0;
+	}
+
+	// TODO: Can icap_ctx->conn_ctx be a dangling pointer here? Assign NULL to it based on its owner: conn or stream?
+	UNUSED pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
+	log_finer_va("ICAP chain %s", term ? "terminated" : "disconnected");
 }
 
 static void
@@ -2429,7 +2432,7 @@ icap_handle_chain_continuation(icap_service_ctx_t *service_ctx, icap_ctx_t *icap
 		log_dbg_printf("No ICAP context in icap_handle_chain_continuation(), idx=%d\n", service_ctx->idx);
 		return;
 	}
-	pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
+	UNUSED pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
 
 	/* Move to the next service in the chain or resume connection */
 	int next_idx = service_ctx->idx + 1;
@@ -2454,7 +2457,7 @@ icap_bev_readcb(struct bufferevent *bev, void *arg)
 {
 	icap_service_ctx_t *service_ctx = (icap_service_ctx_t *)arg;
 	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
-	pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
+	UNUSED pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
 
 	int received_icap_headers = ICAP_STATE(service_ctx, icap_ctx->reqmod)->received_icap_headers;
 
@@ -2590,6 +2593,10 @@ stream:
 err:
 	evbuffer_drain(input, evbuffer_get_length(input));
 	icap_handle_service_error(service_ctx);
+	if (status_line) {
+		free(status_line);
+	}
+	return;
 out:
 	if (status_line) {
 		free(status_line);
@@ -2987,6 +2994,7 @@ icap_process_chain_cb(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 
 		if (icap_service_connect(service_ctx) < 0) {
 			icap_handle_service_error(service_ctx);
+			return;
 		}
 	}
 	else {
@@ -3103,18 +3111,13 @@ icap_is_content_complete(icap_ctx_t *icap_ctx, int reqmod)
 	for (int i = 0; i < icap_ctx->service_count; i++) {
 		if (icap_ctx->services[i]) {
 			unsigned int content_complete = reqmod ? icap_ctx->services[i]->src.content_complete : icap_ctx->services[i]->dst.content_complete;
-			unsigned int failopen = icap_ctx->services[i]->failopen;
+			UNUSED unsigned int failopen = icap_ctx->services[i]->failopen;
 			if (content_complete == 0) {
-				log_finest_va("%s content NOT complete, service idx=%d", reqmod ? "REQMOD" : "RESPMOD", i);
-				return 0;
-			}
-			// TODO: Should we check for failopen here?
-			else if (failopen) {
-				log_finest_va("%s content complete but service in failopen, service idx=%d, content_complete=%u, failopen=%u", reqmod ? "REQMOD" : "RESPMOD", i, content_complete, failopen);
+				log_finest_va("%s content NOT complete, service idx=%d, failopen=%u", reqmod ? "REQMOD" : "RESPMOD", i, failopen);
 				return 0;
 			}
 			else {
-				log_finest_va("%s content complete for service idx=%d, content_complete=%u", reqmod ? "REQMOD" : "RESPMOD", i, content_complete);
+				log_finest_va("%s content complete for service idx=%d, failopen=%u", reqmod ? "REQMOD" : "RESPMOD", i, failopen);
 			}
 		}
 	}
