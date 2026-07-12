@@ -930,9 +930,6 @@ filter_sites_str(filter_site_list_t *site_list)
 
 		char *ports_exact = filter_port_str(port);
 		free_list(port, filter_port_list_t);
-		if (!ports_exact) {
-			goto err;
-		}
 
 		if (site_list->site->port_acm)
 			ACM_foreach_keyword(site_list->site->port_acm, build_port_list_acm);
@@ -940,10 +937,6 @@ filter_sites_str(filter_site_list_t *site_list)
 		char *ports_substring = filter_port_str(port_list_acm);
 		free_list(port_list_acm, filter_port_list_t);
 		port_list_acm = NULL;
-		if (!ports_substring) {
-			free(ports_exact);
-			goto err;
-		}
 
 		if (site_list->site->port_all)
 			build_port_list_acm((MatchHolder(char)){0}, site_list->site->port_all);
@@ -951,17 +944,12 @@ filter_sites_str(filter_site_list_t *site_list)
 		char *ports_all = filter_port_str(port_list_acm);
 		free_list(port_list_acm, filter_port_list_t);
 		port_list_acm = NULL;
-		if (!ports_all) {
-			free(ports_exact);
-			free(ports_substring);
-			goto err;
-		}
 
 		char *copts_str = conn_opts_str(site_list->site->action.conn_opts);
 		if (!copts_str) {
-			free(ports_exact);
-			free(ports_substring);
-			free(ports_all);
+			if (ports_exact) free(ports_exact);
+			if (ports_substring) free(ports_substring);
+			if (ports_all) free(ports_all);
 			goto err;
 		}
 
@@ -970,10 +958,10 @@ filter_sites_str(filter_site_list_t *site_list)
 		if (site_list->site->action.conn_opts && site_list->site->action.conn_opts->icap_chain) {
 			icap_str = icap_chain_str(site_list->site->action.conn_opts);
 			if (!icap_str) {
-				free(ports_exact);
-				free(ports_substring);
-				free(ports_all);
-				free(copts_str);
+				if (ports_exact) free(ports_exact);
+				if (ports_substring) free(ports_substring);
+				if (ports_all) free(ports_all);
+				if (copts_str) free(copts_str);
 				goto err;
 			}
 		}
