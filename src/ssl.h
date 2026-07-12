@@ -274,9 +274,7 @@ int ssl_session_is_valid(SSL_SESSION *) NONNULL(1);
 
 int ssl_is_ocspreq(const unsigned char *, size_t) NONNULL(1) WUNRES;
 
-#ifdef DEBUG_PROXY
 const char * ssl_wire_to_printable(const unsigned char *, size_t);
-#endif /* DEBUG_PROXY */
 
 int ssl_tls_clienthello_parse(const unsigned char *, ssize_t, int,
                               const unsigned char **, char **,

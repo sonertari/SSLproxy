@@ -1994,7 +1994,6 @@ len3(uint8_t p0, uint8_t p1, uint8_t p2) {
 	return (uint32_t)p2 + ((uint32_t)p1 << 8) + ((uint32_t)p0 << 16);
 }
 
-#ifdef DEBUG_PROXY
 #define WIRE_DBG_BUFS 4
 #define WIRE_DBG_MAX  256
 
@@ -2029,7 +2028,6 @@ ssl_wire_to_printable(const unsigned char *wire, size_t len)
     buf[out_pos] = '\0'; // Ensure null termination
     return buf;
 }
-#endif /* DEBUG_PROXY */
 
 #ifdef DEBUG_CLIENTHELLO_PARSER
 #define DBG_printf(...) log_dbg_printf("ClientHello parser: " __VA_ARGS__)
