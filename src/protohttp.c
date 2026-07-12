@@ -1293,7 +1293,7 @@ protohttps_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 void NONNULL(1)
 protohttp_free_ctx(protohttp_ctx_t *http_ctx)
 {
-	log_err_printf("protohttp_free_ctx: ENTER\n");
+	// log_dbg_printf("protohttp_free_ctx: ENTER\n");
 
 	if (http_ctx->http_method) {
 		free(http_ctx->http_method);

@@ -467,10 +467,17 @@ protohttp2_bev_writecb(UNUSED struct bufferevent *bev, UNUSED void *arg)
     protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
     protohttp2_ctx_t *h2_ctx = http_ctx->arg;
 
+
+    // Always call nghttp2_session_send() to flush any remaining data in the session's output buffer
+    nghttp2_session_send(h2_ctx->src_session);
+
     // ATTENTION: Triggering the write loop here is necessary to ensure that any pending data in the nghttp2 session is flushed out to the underlying bufferevent.
     // This is especially important when dealing with HTTP/2 streams, as the protocol requires proper framing and flow control.
     // By calling protohttp2_trigger_write_loop, we ensure that the nghttp2 session processes any queued frames and sends them out through the appropriate bufferevent (either src or dst).
-    protohttp2_trigger_write_loop(h2_ctx, bev == ctx->dst.bev ? 1 : 0);
+    protohttp2_trigger_write_loop(h2_ctx, 0);
+
+    nghttp2_session_send(h2_ctx->dst_session);
+    protohttp2_trigger_write_loop(h2_ctx, 1);
 }
 
 static ssize_t
@@ -702,7 +709,7 @@ protohttp2_icap_send_data_to_dst_cb(icap_ctx_t *icap_ctx)
 {
     stream_ctx_t *s = icap_ctx->stream_ctx;
     if (!s) {
-    	log_dbg_level_printf(LOG_DBG_MODE_FINE, __FUNCTION__, 0, 0, 0, 0, "No stream context");
+		// log_dbg_printf("protohttp2_icap_send_data_to_dst_cb: No stream context\n");
         return;
     }
 
@@ -725,6 +732,7 @@ protohttp2_icap_send_data_to_dst_cb(icap_ctx_t *icap_ctx)
     if (icap_enabled(s->icap_ctx) && icap_is_finished(s->icap_ctx) && s->closed) {
         log_finest_va("ICAP finished and stream closed, send RST_STREAM, src_stream_id=%d, dst_stream_id=%d, reqmod=%d", s->src_stream_id, s->dst_stream_id, icap_ctx->reqmod);
         nghttp2_submit_rst_stream(icap_ctx->reqmod ? h2_ctx->dst_session : h2_ctx->src_session, NGHTTP2_FLAG_NONE, icap_ctx->reqmod ? s->dst_stream_id : s->src_stream_id, NGHTTP2_NO_ERROR);
+        nghttp2_session_send(icap_ctx->reqmod ? h2_ctx->dst_session : h2_ctx->src_session);
     }
 }
 
@@ -816,13 +824,15 @@ protohttp2_on_frame_recv(UNUSED nghttp2_session *session, const nghttp2_frame *f
             log_finest_va("Forward RST_STREAM to other end, src_stream_id=%d, dst_stream_id=%d, reqmod=%d", s->src_stream_id, s->dst_stream_id, reqmod);
             // Send to the other end of the connection to ensure proper stream termination
             nghttp2_submit_rst_stream(reqmod ? h2_ctx->dst_session : h2_ctx->src_session, NGHTTP2_FLAG_NONE, reqmod ? s->dst_stream_id : s->src_stream_id, NGHTTP2_NO_ERROR);
+
+            // Never call nghttp2_session_send() in nghttp2 callbacks, as it may cause state corruption
+            // Instead, we call it in libevent read and write callbacks
+            // nghttp2_session_send(reqmod ? h2_ctx->dst_session : h2_ctx->src_session);
         }
     }
 
     if (frame->hd.type == NGHTTP2_WINDOW_UPDATE) {
         log_finest_va("NGHTTP2_WINDOW_UPDATE received, stream_id=%d", frame->hd.stream_id);
-        // TODO: Do we need to trigger a write loop here?
-        // nghttp2_session_send(session);
     }
 
     if (frame->hd.type == NGHTTP2_SETTINGS) {
@@ -832,10 +842,6 @@ protohttp2_on_frame_recv(UNUSED nghttp2_session *session, const nghttp2_frame *f
         } else {
             log_finest_va("NGHTTP2_SETTINGS parameter adjustments received, stream_id=%d", frame->hd.stream_id);
         }
-
-        // If we were manually holding data, trigger a write now
-        // TODO: Do we need to trigger a write loop here?
-        // nghttp2_session_send(session);
     }
 
     // if (frame->hd.type == NGHTTP2_HEADERS && frame->headers.cat == NGHTTP2_HCAT_RESPONSE)
@@ -1088,11 +1094,15 @@ protohttp2_bev_readcb(struct bufferevent *bev, void *arg)
         else {
             // Always call nghttp2_session_send() to process pending frames
             // This is to ensure the HTTP/2 state machine is properly stepped
+            // But never if nghttp2_session_mem_recv() returned an error
             nghttp2_session_send(reqmod ? h2_ctx->src_session : h2_ctx->dst_session);
-
-            // TODO: Do we need to trigger the write loop here?
-            // protohttp2_trigger_write_loop(h2_ctx, reqmod);
+            protohttp2_trigger_write_loop(h2_ctx, reqmod);
         }
+
+        // Call nghttp2_session_send() for the opposite session to ensure any pending frames are sent
+        nghttp2_session_send(reqmod ? h2_ctx->dst_session : h2_ctx->src_session);
+        protohttp2_trigger_write_loop(h2_ctx, !reqmod);
+
         free(data);
 	} else if (bev == ctx->srvdst.bev) {
         log_fine("readcb called on srvdst");
@@ -1169,6 +1179,9 @@ protocol_t protohttp2_setup(pxy_conn_ctx_t *ctx)
     nghttp2_submit_settings(h2_ctx->dst_session, NGHTTP2_FLAG_NONE, NULL, 0);
 
     nghttp2_session_callbacks_del(cb);
+
+    nghttp2_session_send(h2_ctx->src_session);
+    nghttp2_session_send(h2_ctx->dst_session);
 
     return PROTO_HTTP2;
 }

@@ -3064,7 +3064,7 @@ icap_enabled(icap_ctx_t *icap_ctx)
 {
 	if (!icap_ctx) {
 		// This happens when terminating the connection/stream
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, __FUNCTION__, 0, 0, 0, 0, "No ICAP context, assume disabled");
+		// log_dbg_printf("icap_enabled: No ICAP context, assume disabled\n");
 		return 0;
 	}
 
@@ -3078,7 +3078,7 @@ icap_is_finished(icap_ctx_t *icap_ctx)
 {
 	if (!icap_ctx) {
 		// This happens when terminating the connection/stream
-		log_dbg_level_printf(LOG_DBG_MODE_FINEST, __FUNCTION__, 0, 0, 0, 0, "No ICAP context, assume finished");
+		// log_dbg_printf("icap_is_finished: No ICAP context, assume finished\n");
 		return 1;
 	}
 
@@ -3313,7 +3313,7 @@ icap_process_data(struct evbuffer *inbuf, icap_ctx_t *icap_ctx)
 		}
 
 		// TODO: Pause reading from stream, not the whole connection, in http2 mode
-		if (!icap_ctx->stream_ctx && !icap_ctx->h2_ctx) {
+		if (!icap_ctx->h2_ctx) {
 			/* Pause reading from src or dst: disable read callback temporarily */
 			// TODO: Should we disable the current conn_bev only?
 			bufferevent_disable(icap_ctx->reqmod ? ctx->src.bev : ctx->dst.bev, EV_READ);
