@@ -154,6 +154,12 @@ protohttp2_free_stream_ctx(stream_ctx_t *s)
 #else /* !WITHOUT_ICAP */
     log_finest_va("ENTER, src_stream_id=%d, dst_stream_id=%d", s->src_stream_id, s->dst_stream_id);
 #endif /* !WITHOUT_ICAP */
+
+    if (s->ev_free) {
+        event_free(s->ev_free);
+        s->ev_free = NULL;
+    }
+
     if (s->headers) {
         protohttp2_free_stream_headers(s);
     }
@@ -175,11 +181,10 @@ protohttp2_free_stream_ctx(stream_ctx_t *s)
             s->icap_ctx->term = 1;
         } else {
             log_finest("ICAP finished or not enabled, free icap_ctx");
-            icap_ctx_free(s->icap_ctx, 1);
+            // Do not term owner, we are already freeing the owner stream here
+            icap_ctx_free(s->icap_ctx, 0);
+            s->icap_ctx = NULL;
         }
-        // Set s->icap_ctx to NULL even if we don't free icap_ctx above,
-        // to avoid double free of icap_ctx and infinite loop in protohttp2_free_stream_ctx() in icap_ctx_free()
-        s->icap_ctx = NULL;
     }
     else {
         log_finest("No ICAP context");
@@ -200,6 +205,63 @@ protohttp2_free_stream_ctx(stream_ctx_t *s)
     }
 
     free(s);
+}
+
+static void
+protohttp2_deferred_free_stream_ctx_cb(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
+{
+    stream_ctx_t *s = (stream_ctx_t *)arg;
+
+    protohttp_ctx_t *http_ctx = s->ctx->protoctx->arg;
+    protohttp2_ctx_t *h2_ctx = http_ctx->arg;
+    UNUSED pxy_conn_ctx_t *ctx = h2_ctx->ctx;
+    log_finest_va("Execute deferred free of stream_ctx, src_stream=%d, dst_stream=%d", s->src_stream_id, s->dst_stream_id);
+
+    // Perform the actual, complete teardown
+    protohttp2_free_stream_ctx(s);
+}
+
+void
+protohttp2_request_free_stream_ctx(stream_ctx_t *s)
+{
+    protohttp_ctx_t *http_ctx = s->ctx->protoctx->arg;
+    protohttp2_ctx_t *h2_ctx = http_ctx->arg;
+    UNUSED pxy_conn_ctx_t *ctx = h2_ctx->ctx;
+
+    if (s->ref_count > 0) {
+        // We are currently processing this stream higher up on the stack!
+        if (s->deferred_free_pending) {
+            log_finest_va("Stream is already deferred for stream_ctx free, return, src_stream_id=%d dst_stream_id=%d, ref_count=%d",
+                          s->src_stream_id, s->dst_stream_id, s->ref_count);
+            return;
+        }
+
+        log_finest_va("Stream is being used, defer stream_ctx free, src_stream_id=%d dst_stream_id=%d, ref_count=%d",
+                      s->src_stream_id, s->dst_stream_id, s->ref_count);
+
+        s->deferred_free_pending = 1;
+
+        // Schedule the free on the event loop (0s timeout)
+        s->ev_free = event_new(ctx->thr->evbase, -1, 0, protohttp2_deferred_free_stream_ctx_cb, s);
+		if (!s->ev_free) {
+			log_fine_va("Error creating deferred free event for stream_ctx, src_stream_id=%d dst_stream_id=%d", s->src_stream_id, s->dst_stream_id);
+			return;
+		}
+
+		// Do not immediately dispatch with event_active(),
+		// instead use a zero timeout to prevent reentrant callback issues
+		struct timeval tv = {0, 0};
+		if (event_add(s->ev_free, &tv) == -1) {
+			log_fine_va("Error adding deferred free event for stream_ctx, src_stream_id=%d dst_stream_id=%d", s->src_stream_id, s->dst_stream_id);
+			event_free(s->ev_free);
+			s->ev_free = NULL;
+		}
+        return;
+    }
+
+    log_finest_va("Stream is safe to destroy, free immediately, src_stream_id=%d, dst_stream_id=%d, ref_count=%d",
+                    s->src_stream_id, s->dst_stream_id, s->ref_count);
+    protohttp2_free_stream_ctx(s);
 }
 
 #ifndef WITHOUT_ICAP
@@ -1095,8 +1157,11 @@ protohttp2_on_stream_close(UNUSED nghttp2_session *session, int32_t stream_id, U
         }
         else {
             log_finest_va("Stream closed before, free completely and remove, src_stream_id=%d, dst_stream_id=%d, reqmod=%d", s->src_stream_id, s->dst_stream_id, reqmod);
+            // ATTENTION: Do not directly free the stream ctx here, otherwise may cause use-after-free issues in the nghttp2 callbacks
+            // nghttp2 does not have a concept of deferred callbacks, so set the term flag and schedule the stream context for cleanup in the next event loop iteration
+            // protohttp2_free_stream_ctx(s);
             s->term = 1;
-            protohttp2_free_stream_ctx(s);
+            protohttp2_request_free_stream_ctx(s);
         }
         return 0;
     }

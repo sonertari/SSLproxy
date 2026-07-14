@@ -298,10 +298,13 @@ icap_ctx_free(icap_ctx_t *icap_ctx, int term_owner)
 	else {
 		// TODO: Free h2 conn if all h2 streams are finished?
 		stream_ctx_t *s = icap_ctx->stream_ctx;
-		if (term_owner && s && s->term) {
-			log_finest("Stream term flag set, free stream ctx");
+		if (s) {
 			s->icap_ctx = NULL;
-			protohttp2_free_stream_ctx(s);
+			// Do not term the stream if it's not marked as ready to be terminated
+			if (term_owner && s->term) {
+				log_finest("Stream term flag set, free stream ctx");
+				protohttp2_request_free_stream_ctx(s);
+			}
 		}
 	}
 
@@ -1347,12 +1350,23 @@ icap_send_data(icap_ctx_t *icap_ctx)
 		int h2 = icap_ctx->h2_ctx ? 1 : 0;
 		stream_ctx_t *s = icap_ctx->stream_ctx;
 
+		if (h2) {
+			s->ref_count++;
+			log_finest_va("Increment stream ref_count, src_stream_id=%d, dst_stream_id=%d, ref_count=%d, deferred_free_pending=%d",
+				s->src_stream_id, s->dst_stream_id, s->ref_count, s->deferred_free_pending);
+		}
+
 		icap_data_submit(icap_ctx);
 
-		// XXX: We may not have s and/or icap_ctx here with h2, icap_data_submit() may have freed them
-		if (!icap_ctx || (h2 && (!s || !s->icap_ctx || !icap_ctx->stream_ctx))) {
-			log_finest("No stream ctx or ICAP context, return");
-			return;
+		if (h2) {
+			s->ref_count--;
+			log_finest_va("Decrement stream ref_count, src_stream_id=%d, dst_stream_id=%d, ref_count=%d, deferred_free_pending=%d",
+				s->src_stream_id, s->dst_stream_id, s->ref_count, s->deferred_free_pending);
+
+			if (!s->icap_ctx) {
+				log_finest_va("No ICAP context, return, src_stream_id=%d, dst_stream_id=%d", s->src_stream_id, s->dst_stream_id);
+				return;
+			}
 		}
 
 		unsigned int made_progress = icap_ctx->made_progress;
@@ -1378,12 +1392,11 @@ icap_send_data(icap_ctx_t *icap_ctx)
 			icap_process_chain(icap_ctx, service_idx);
 		}
 
+		// The icap_ctx owner may be conn or stream
+		// TODO: Free h2 conn if all h2 streams are finished?
 		if (made_progress && icap_is_content_complete(icap_ctx, 1) && icap_is_content_complete(icap_ctx, 0)) {
-			// The icap_ctx owner may be conn or stream
-			// TODO: Free h2 conn if all h2 streams are finished
-			if (!h2) {
-				icap_ctx_free(icap_ctx, 1);
-			}
+			// Do not term the h2 stream here, the stream may still be active and have data to send
+			icap_ctx_free(icap_ctx, !h2 ? 1 : 0);
 		}
 	}
 	else {
