@@ -1344,11 +1344,13 @@ icap_send_data(icap_ctx_t *icap_ctx)
 
 	// TODO: We may not have ctx and/or bevs, if the connection is terminated
 	if (ctx && ctx->src.bev && ctx->dst.bev) {
+		int h2 = icap_ctx->h2_ctx ? 1 : 0;
 		stream_ctx_t *s = icap_ctx->stream_ctx;
+
 		icap_data_submit(icap_ctx);
 
-		// XXX: We may not have s and/or icap_ctx here, icap_data_submit() may have freed them
-		if (!s || !icap_ctx || !s->icap_ctx || !icap_ctx->stream_ctx) {
+		// XXX: We may not have s and/or icap_ctx here with h2, icap_data_submit() may have freed them
+		if (!icap_ctx || (h2 && (!s || !s->icap_ctx || !icap_ctx->stream_ctx))) {
 			log_finest("No stream ctx or ICAP context, return");
 			return;
 		}
@@ -1357,9 +1359,6 @@ icap_send_data(icap_ctx_t *icap_ctx)
 
 		log_finest_va("Reset made_progress: %s", made_progress ? "MADE PROGRESS" : "NO PROGRESS");
 		icap_ctx->made_progress = 0;
-
-		// We may not have icap_ctx->stream_ctx at this point
-		int h2 = icap_ctx->h2_ctx ? 1 : 0;
 
 		int service_idx = 0;
 		if (!made_progress || icap_have_data_to_process(icap_ctx, &service_idx) == 0) {
