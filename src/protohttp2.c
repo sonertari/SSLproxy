@@ -203,6 +203,118 @@ protohttp2_free_stream_ctx(stream_ctx_t *s)
 }
 
 #ifndef WITHOUT_ICAP
+typedef struct {
+    int code;
+    const char *reason;
+} http_status_reason_t;
+
+// Common HTTP status codes and their standard reason phrases, sorted by code
+static const http_status_reason_t http_status_reasons[] = {
+    { 100, "Continue" },
+    { 101, "Switching Protocols" },
+    { 102, "Processing" },
+    { 103, "Early Hints" },
+    { 200, "OK" },
+    { 201, "Created" },
+    { 202, "Accepted" },
+    { 203, "Non-Authoritative Information" },
+    { 204, "No Content" },
+    { 205, "Reset Content" },
+    { 206, "Partial Content" },
+    { 207, "Multi-Status" },
+    { 208, "Already Reported" },
+    { 226, "IM Used" },
+    { 300, "Multiple Choices" },
+    { 301, "Moved Permanently" },
+    { 302, "Found" },
+    { 303, "See Other" },
+    { 304, "Not Modified" },
+    { 305, "Use Proxy" },
+    { 307, "Temporary Redirect" },
+    { 308, "Permanent Redirect" },
+    { 400, "Bad Request" },
+    { 401, "Unauthorized" },
+    { 402, "Payment Required" },
+    { 403, "Forbidden" },
+    { 404, "Not Found" },
+    { 405, "Method Not Allowed" },
+    { 406, "Not Acceptable" },
+    { 407, "Proxy Authentication Required" },
+    { 408, "Request Timeout" },
+    { 409, "Conflict" },
+    { 410, "Gone" },
+    { 411, "Length Required" },
+    { 412, "Precondition Failed" },
+    { 413, "Payload Too Large" },
+    { 414, "URI Too Long" },
+    { 415, "Unsupported Media Type" },
+    { 416, "Range Not Satisfied" },
+    { 417, "Expectation Failed" },
+    { 421, "Misdirected Request" },
+    { 422, "Unprocessable Entity" },
+    { 423, "Locked" },
+    { 424, "Failed Dependency" },
+    { 425, "Too Early" },
+    { 426, "Upgrade Required" },
+    { 428, "Precondition Required" },
+    { 429, "Too Many Requests" },
+    { 431, "Request Header Fields Too Large" },
+    { 451, "Unavailable For Legal Reasons" },
+    { 500, "Internal Server Error" },
+    { 501, "Not Implemented" },
+    { 502, "Bad Gateway" },
+    { 503, "Service Unavailable" },
+    { 504, "Gateway Timeout" },
+    { 505, "HTTP Version Not Supported" },
+    { 506, "Variant Also Negotiates" },
+    { 507, "Insufficient Storage" },
+    { 508, "Loop Detected" },
+    { 510, "Not Extended" },
+    { 511, "Network Authentication Required" }
+};
+
+#define HTTP_STATUS_REASONS_LEN (sizeof(http_status_reasons) / sizeof(http_status_reasons[0]))
+
+// Returns the standard reason phrase for a given status code.
+// If the code is not in our mapping table, falls back to a generic default
+// based on the HTTP status class (e.g., "Success", "Client Error").
+static const char *
+http_get_reason_phrase(int status_code)
+{
+    int low = 0;
+    int high = HTTP_STATUS_REASONS_LEN - 1;
+
+    while (low <= high) {
+        int mid = low + (high - low) / 2;
+        if (http_status_reasons[mid].code == status_code) {
+            return http_status_reasons[mid].reason;
+        }
+        if (http_status_reasons[mid].code < status_code) {
+            low = mid + 1;
+        } else {
+            high = mid - 1;
+        }
+    }
+
+    // Fallback classes if we encounter custom/unlisted status codes
+    if (status_code >= 100 && status_code < 200) return "Informational";
+    if (status_code >= 200 && status_code < 300) return "Success";
+    if (status_code >= 300 && status_code < 400) return "Redirection";
+    if (status_code >= 400 && status_code < 500) return "Client Error";
+    if (status_code >= 500 && status_code < 600) return "Server Error";
+
+    return "Unknown Status";
+}
+
+// Fast, inline conversion of exactly 3 digits to an integer
+// This is used to convert the :status header value to an integer for ICAP processing
+// as a fast alternative to strtol() or atoi(), which are slower and more complex
+static inline int
+http_parse_status_3dig(const uint8_t *val)
+{
+    return (val[0] - '0') * 100 + (val[1] - '0') * 10 + (val[2] - '0');
+}
+
 static struct evbuffer *
 protohttp2_get_h1_headers(stream_ctx_t *s)
 {
@@ -242,12 +354,15 @@ protohttp2_get_h1_headers(stream_ctx_t *s)
         }
     }
 
-    if (status_idx != -1) {
+    if (status_idx != -1 && headers[status_idx].valuelen == 3) {
         // log_finest_va("status_idx=%d", status_idx);
         log_finest_va("HTTP/1.1 %.*s", (int)headers[status_idx].valuelen, (char *)headers[status_idx].value);
 
-        // TODO: Add the correct reason phrase, otherwise E2Guardian icap service does not respond, we just use "OK" as a placeholder for now.
-        evbuffer_add_printf(buf, "HTTP/1.1 %.*s OK\r\n", (int)headers[status_idx].valuelen, (char *)headers[status_idx].value);
+        int status_code = http_parse_status_3dig(headers[status_idx].value);
+        const char *reason = http_get_reason_phrase(status_code);
+
+        // Add the correct reason phrase, otherwise E2Guardian icap service does not respond
+        evbuffer_add_printf(buf, "HTTP/1.1 %d %s\r\n", status_code, reason);
     }
 
     for (size_t i = 0; i < count; i++) {
