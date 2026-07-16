@@ -172,7 +172,8 @@ protohttp2_free_stream_ctx(stream_ctx_t *s)
 #ifndef WITHOUT_ICAP
     if (s->icap_ctx) {
         // Disconnect the ICAP chain to stop any further event callbacks,
-        // but do not free the icap_ctx here
+        // but do not terminate the icap services here, icap_ctx_free() should do that
+        // TODO: Can we term the icap services here?
     	icap_disconnect(s->icap_ctx, 0);
 
         s->icap_ctx->stream_ctx = NULL;
@@ -637,13 +638,11 @@ protohttp2_get_h2_headers(stream_ctx_t *s, struct evbuffer *h1_buf, int init)
 static void NONNULL(1, 2)
 protohttp2_bev_writecb(UNUSED struct bufferevent *bev, UNUSED void *arg)
 {
-    // TODO: Remove this callback and use the callback in https code
-	pxy_conn_ctx_t *ctx = arg;
-	log_finest("ENTER");
+    pxy_conn_ctx_t *ctx = arg;
+    log_finest("ENTER");
 
     protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
     protohttp2_ctx_t *h2_ctx = http_ctx->arg;
-
 
     // Always call nghttp2_session_send() to flush any remaining data in the session's output buffer
     nghttp2_session_send(h2_ctx->src_session);

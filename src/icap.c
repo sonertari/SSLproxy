@@ -1381,8 +1381,7 @@ icap_send_data(icap_ctx_t *icap_ctx)
 				log_finest("Enable reading from source, resume flow");
 
 				// TODO: Should we enable the current conn_bev only?
-				struct bufferevent *in_bev = icap_ctx->reqmod ? ctx->src.bev : ctx->dst.bev;
-				bufferevent_enable(in_bev, EV_READ);
+				bufferevent_enable(icap_ctx->reqmod ? ctx->src.bev : ctx->dst.bev, EV_READ);
 				// bufferevent_enable(ctx->src.bev, EV_READ);
 				// bufferevent_enable(ctx->dst.bev, EV_READ);
 			}
@@ -1395,8 +1394,9 @@ icap_send_data(icap_ctx_t *icap_ctx)
 		// The icap_ctx owner may be conn or stream
 		// TODO: Free h2 conn if all h2 streams are finished?
 		if (made_progress && icap_is_content_complete(icap_ctx, 1) && icap_is_content_complete(icap_ctx, 0)) {
-			// Do not term the h2 stream here, the stream may still be active and have data to send
-			icap_ctx_free(icap_ctx, !h2 ? 1 : 0);
+			// We can pass down term_owner for h2 streams too, because icap_ctx_free() does not free stream_ctx unless s->term is set
+			log_fine_va("Free icap_ctx and %s, all content complete", h2 ? "stream" : "conn");
+			icap_ctx_free(icap_ctx, 1);
 		}
 	}
 	else {
