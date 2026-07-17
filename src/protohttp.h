@@ -60,7 +60,7 @@ typedef struct protohttp_ctx {
 	void *arg;
 } protohttp_ctx_t;
 
-void protohttp_log_connect(pxy_conn_ctx_t *ctx) NONNULL(1);
+void protohttp_log_connect(pxy_conn_ctx_t *, protohttp_ctx_t *) NONNULL(1,2);
 
 int protohttp_filter_request_header(struct evbuffer *, struct evbuffer *, protohttp_ctx_t *, enum conn_type, pxy_conn_ctx_t *) WUNRES NONNULL(1,2,3,5);
 void protohttp_filter_response_header(struct evbuffer *, struct evbuffer *, protohttp_ctx_t *, pxy_conn_ctx_t *) NONNULL(1,2,3,4);

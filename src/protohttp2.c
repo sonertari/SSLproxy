@@ -960,6 +960,242 @@ protohttp2_icap_failopen_to_dest_cb(icap_service_ctx_t *service_ctx)
 }
 #endif /* !WITHOUT_ICAP */
 
+static void
+protohttp2_delete_nv_header(stream_ctx_t *s, size_t idx)
+{
+    pxy_conn_ctx_t *ctx = s->ctx;
+    log_finest_va("ENTER, src_stream_id=%d, dst_stream_id=%d, remove idx=%zu", s->src_stream_id, s->dst_stream_id, idx);
+
+    if (s->headers_count == 0 || idx >= s->headers_count) {
+        return; // Invalid index or empty headers
+    }
+
+    free(s->headers[idx].name);
+    free(s->headers[idx].value);
+
+    // Move the remaining headers up to fill the gap left by the removed header
+    for (size_t i = idx; i < s->headers_count - 1; i++) {
+        memcpy(&s->headers[i], &s->headers[i + 1], sizeof(nghttp2_nv));
+    }
+
+    memset(&s->headers[s->headers_count - 1], 0, sizeof(nghttp2_nv));
+    s->headers_count--;
+}
+
+static int WUNRES NONNULL(1)
+protohttp2_filter_request_header(stream_ctx_t *s)
+{
+    pxy_conn_ctx_t *ctx = s->ctx;
+    log_finest_va("ENTER, src_stream_id=%d, dst_stream_id=%d", s->src_stream_id, s->dst_stream_id);
+
+    nghttp2_nv *headers = s->headers;
+    size_t count = s->headers_count;
+    protohttp_ctx_t *http_ctx = s->http_ctx;
+
+    for (size_t i = 0; i < count; i++) {
+        log_finest_va("Processing header '%.*s=%.*s', idx=%zu, src_stream_id=%d, dst_stream_id=%d",
+            (int)headers[i].namelen, headers[i].name, (int)headers[i].valuelen, headers[i].value, i, s->src_stream_id, s->dst_stream_id);
+
+        if (headers[i].namelen == 7 && !memcmp(headers[i].name, ":method", 7)) {
+            if (http_ctx->http_method) {
+                free(http_ctx->http_method);
+            }
+            http_ctx->http_method = malloc(headers[i].valuelen + 1);
+            if (!http_ctx->http_method) {
+                s->ctx->enomem = 1;
+                return -1;
+            }
+            memcpy(http_ctx->http_method, headers[i].value, headers[i].valuelen);
+            http_ctx->http_method[headers[i].valuelen] = '\0';
+			http_ctx->seen_keyword_count++;
+
+            log_finest_va("Http method '%s', idx=%zu, src_stream_id=%d, dst_stream_id=%d",
+                http_ctx->http_method, i, s->src_stream_id, s->dst_stream_id);
+        }
+        else if (headers[i].namelen == 5 && !memcmp(headers[i].name, ":path", 5)) {
+            if (http_ctx->http_uri) {
+                free(http_ctx->http_uri);
+            }
+            http_ctx->http_uri = malloc(headers[i].valuelen + 1);
+            if (!http_ctx->http_uri) {
+                s->ctx->enomem = 1;
+                return -1;
+            }
+            memcpy(http_ctx->http_uri, headers[i].value, headers[i].valuelen);
+            http_ctx->http_uri[headers[i].valuelen] = '\0';
+			http_ctx->seen_keyword_count++;
+
+            log_finest_va("Http URI '%s', idx=%zu, src_stream_id=%d, dst_stream_id=%d",
+                http_ctx->http_uri, i, s->src_stream_id, s->dst_stream_id);
+        }
+        else if (headers[i].namelen == 10 && !memcmp(headers[i].name, ":authority", 10)) {
+            if (http_ctx->http_host) {
+                free(http_ctx->http_host);
+            }
+            http_ctx->http_host = malloc(headers[i].valuelen + 1);
+            if (!http_ctx->http_host) {
+                s->ctx->enomem = 1;
+                return -1;
+            }
+            memcpy(http_ctx->http_host, headers[i].value, headers[i].valuelen);
+            http_ctx->http_host[headers[i].valuelen] = '\0';
+			http_ctx->seen_keyword_count++;
+
+            log_finest_va("Http host '%s', idx=%zu, src_stream_id=%d, dst_stream_id=%d",
+                http_ctx->http_host, i, s->src_stream_id, s->dst_stream_id);
+        }
+        else if (headers[i].namelen == 14 && !memcmp(headers[i].name, "content-length", 14)) {
+			if (http_ctx->http_content_length) {
+				free(http_ctx->http_content_length);
+			}
+			http_ctx->http_content_length = malloc(headers[i].valuelen + 1);
+			if (!http_ctx->http_content_length) {
+				s->ctx->enomem = 1;
+				return -1;
+			}
+			memcpy(http_ctx->http_content_length, headers[i].value, headers[i].valuelen);
+			http_ctx->http_content_length[headers[i].valuelen] = '\0';
+			http_ctx->seen_keyword_count++;
+
+            log_finest_va("Http content-length '%s', idx=%zu, src_stream_id=%d, dst_stream_id=%d",
+                http_ctx->http_content_length, i, s->src_stream_id, s->dst_stream_id);
+		}
+        else if (headers[i].namelen == 12 && !memcmp(headers[i].name, "content-type", 12)) {
+			if (http_ctx->http_content_type) {
+				free(http_ctx->http_content_type);
+			}
+			http_ctx->http_content_type = malloc(headers[i].valuelen + 1);
+			if (!http_ctx->http_content_type) {
+				s->ctx->enomem = 1;
+				return -1;
+			}
+            memcpy(http_ctx->http_content_type, headers[i].value, headers[i].valuelen);
+            http_ctx->http_content_type[headers[i].valuelen] = '\0';
+			http_ctx->seen_keyword_count++;
+
+            log_finest_va("Http content-type '%s', idx=%zu, src_stream_id=%d, dst_stream_id=%d",
+                http_ctx->http_content_type, i, s->src_stream_id, s->dst_stream_id);
+        }
+        else if (s->ctx->conn_opts->remove_http_accept_encoding && (headers[i].namelen == 15 && !memcmp(headers[i].name, "accept-encoding", 15))) {
+            protohttp2_delete_nv_header(s, i);
+			http_ctx->seen_keyword_count++;
+        }
+        else if (s->ctx->conn_opts->remove_http_referer && (headers[i].namelen == 7 && !memcmp(headers[i].name, "referer", 7))) {
+            protohttp2_delete_nv_header(s, i);
+			http_ctx->seen_keyword_count++;
+		}
+		         // Not possible in HTTP/2
+        else if ((headers[i].namelen == 4 && !memcmp(headers[i].name, "host", 4)) ||
+                 (headers[i].namelen == 10 && !memcmp(headers[i].name, "connection", 10)) ||
+                 (headers[i].namelen == 8 && !memcmp(headers[i].name, "keep-alive", 8)) ||
+                 (headers[i].namelen == 7 && !memcmp(headers[i].name, "upgrade", 7)) ||
+		         // ATTENTION: flickr keeps redirecting to https with 301 unless we remove the Via line of squid
+                 // Apparently flickr assumes the existence of Via header field or squid keyword a sign of plain http, even if we are using https
+		         (headers[i].namelen == 4 && !memcmp(headers[i].name, "via", 4)) ||
+				 // Also do not send the loopback address to the Internet
+		         (headers[i].namelen == 15 && !memcmp(headers[i].name, "x-forwarded-for", 15))) {
+            protohttp2_delete_nv_header(s, i);
+        }
+    }
+
+	if (http_ctx->seen_req_header) {
+        // TODO: Implement Host and URI filter rules with H2 streams
+        // if (protohttp_apply_filter(ctx)) {
+        //     return -1;
+        // }
+
+        // TODO: Implement deny OCSP at TLS level in HTTP/2?
+        // if (ctx->conn_opts->deny_ocsp) {
+        //     protohttp_ocsp_deny(ctx, http_ctx);
+        // }
+	}
+
+    if (s->ctx->enomem) {
+        return -1;
+    }
+	return 0;
+}
+
+static int WUNRES NONNULL(1)
+protohttp2_filter_response_header(stream_ctx_t *s)
+{
+    pxy_conn_ctx_t *ctx = s->ctx;
+    log_finest_va("ENTER, src_stream_id=%d, dst_stream_id=%d", s->src_stream_id, s->dst_stream_id);
+
+    nghttp2_nv *headers = s->headers;
+    size_t count = s->headers_count;
+    protohttp_ctx_t *http_ctx = s->http_ctx;
+
+    for (size_t i = 0; i < count; i++) {
+        log_finest_va("Processing header '%.*s=%.*s', idx=%zu, src_stream_id=%d, dst_stream_id=%d",
+            (int)headers[i].namelen, headers[i].name, (int)headers[i].valuelen, headers[i].value, i, s->src_stream_id, s->dst_stream_id);
+
+        if (headers[i].namelen == 7 && !memcmp(headers[i].name, ":status", 7)) {
+            if (http_ctx->http_status_code) {
+                free(http_ctx->http_status_code);
+            }
+            http_ctx->http_status_code = malloc(headers[i].valuelen + 1);
+            if (!http_ctx->http_status_code) {
+                s->ctx->enomem = 1;
+                return -1;
+            }
+            memcpy(http_ctx->http_status_code, headers[i].value, headers[i].valuelen);
+            http_ctx->http_status_code[headers[i].valuelen] = '\0';
+
+            log_finest_va("Http status '%s', idx=%zu, src_stream_id=%d, dst_stream_id=%d",
+                http_ctx->http_status_code, i, s->src_stream_id, s->dst_stream_id);
+        }
+        else if (headers[i].namelen == 14 && !memcmp(headers[i].name, "content-length", 14)) {
+			if (http_ctx->http_content_length) {
+				free(http_ctx->http_content_length);
+			}
+			http_ctx->http_content_length = malloc(headers[i].valuelen + 1);
+			if (!http_ctx->http_content_length) {
+				s->ctx->enomem = 1;
+				return -1;
+			}
+			memcpy(http_ctx->http_content_length, headers[i].value, headers[i].valuelen);
+			http_ctx->http_content_length[headers[i].valuelen] = '\0';
+
+            log_finest_va("Http content-length '%s', idx=%zu, src_stream_id=%d, dst_stream_id=%d",
+                http_ctx->http_content_length, i, s->src_stream_id, s->dst_stream_id);
+		}
+        else if (headers[i].namelen == 12 && !memcmp(headers[i].name, "content-type", 12)) {
+			if (http_ctx->http_content_type) {
+				free(http_ctx->http_content_type);
+			}
+			http_ctx->http_content_type = malloc(headers[i].valuelen + 1);
+			if (!http_ctx->http_content_type) {
+				s->ctx->enomem = 1;
+				return -1;
+			}
+            memcpy(http_ctx->http_content_type, headers[i].value, headers[i].valuelen);
+            http_ctx->http_content_type[headers[i].valuelen] = '\0';
+
+            log_finest_va("Http content-type '%s', idx=%zu, src_stream_id=%d, dst_stream_id=%d",
+                http_ctx->http_content_type, i, s->src_stream_id, s->dst_stream_id);
+        }
+        // Normally not possible in response
+        else if (s->ctx->conn_opts->remove_http_referer && (headers[i].namelen == 7 && !memcmp(headers[i].name, "referer", 7))) {
+            protohttp2_delete_nv_header(s, i);
+		}
+        else if ((headers[i].namelen == 15 && !memcmp(headers[i].name, "public-key-pins", 15)) ||
+                 (headers[i].namelen == 27 && !memcmp(headers[i].name, "public-key-pins-report-only", 27)) ||
+                 (headers[i].namelen == 26 && !memcmp(headers[i].name, "strict-transport-security", 26)) ||
+                 (headers[i].namelen == 9 && !memcmp(headers[i].name, "expect-ct", 9)) ||
+                 (headers[i].namelen == 18 && !memcmp(headers[i].name, "alternate-protocol", 18)) ||
+                 (headers[i].namelen == 7 && !memcmp(headers[i].name, "alt-svc", 7)) ||
+                 (headers[i].namelen == 7 && !memcmp(headers[i].name, "upgrade", 7))) {
+            protohttp2_delete_nv_header(s, i);
+        }
+    }
+
+    if (s->ctx->enomem) {
+        return -1;
+    }
+	return 0;
+}
+
 static int
 protohttp2_on_frame_recv(UNUSED nghttp2_session *session, const nghttp2_frame *frame, void *user_data, int reqmod)
 {
@@ -1012,7 +1248,6 @@ protohttp2_on_frame_recv(UNUSED nghttp2_session *session, const nghttp2_frame *f
     }
 
     if (frame->hd.type == NGHTTP2_SETTINGS) {
-        // Check if we received the SETTINGS ACK from the server
         if (frame->hd.flags & NGHTTP2_FLAG_ACK) {
             log_finest_va("NGHTTP2_SETTINGS ACK received from client/server, stream_id=%d", frame->hd.stream_id);
         } else {
@@ -1020,12 +1255,38 @@ protohttp2_on_frame_recv(UNUSED nghttp2_session *session, const nghttp2_frame *f
         }
     }
 
-    // if (frame->hd.type == NGHTTP2_HEADERS && frame->headers.cat == NGHTTP2_HCAT_RESPONSE)
     if (frame->hd.type == NGHTTP2_HEADERS) {
         log_finest_va("NGHTTP2_HEADERS received, stream_id=%d", frame->hd.stream_id);
 
         stream_ctx_t *s = protohttp2_get_stream_ctx(h2_ctx, frame->hd.stream_id, reqmod);
         if (s) {
+            int seen_header_on_entry = reqmod ? s->http_ctx->seen_req_header : s->http_ctx->seen_resp_header;
+
+            if (frame->hd.flags & NGHTTP2_FLAG_END_HEADERS) {
+                if (reqmod) {
+                    log_finest_va("Request headers complete, src_stream_id=%d, dst_stream_id=%d", s->src_stream_id, s->dst_stream_id);
+                    s->http_ctx->seen_req_header = 1;
+                }
+                else {
+                    log_finest_va("Response headers complete, src_stream_id=%d, dst_stream_id=%d", s->src_stream_id, s->dst_stream_id);
+                    s->http_ctx->seen_resp_header = 1;
+                }
+            }
+
+            int (*filter_header)(stream_ctx_t *) = reqmod ? protohttp2_filter_request_header : protohttp2_filter_response_header;
+            if (filter_header(s) == -1) {
+                return -1;
+            }
+
+            // TODO: Should we log when we get the response only?
+            if (!seen_header_on_entry && ((reqmod && s->http_ctx->seen_req_header) || (!reqmod && s->http_ctx->seen_resp_header))) {
+                /* header complete: log connection */
+                if (WANT_CONNECT_LOG(ctx->conn)) {
+                    // TODO: Implement h2 specific logging with stream info
+                    protohttp_log_connect(ctx, s->http_ctx);
+                }
+            }
+
 #ifndef WITHOUT_ICAP
             if (icap_enabled(s->icap_ctx)) {
                 s->icap_ctx->reqmod = reqmod;
@@ -1033,16 +1294,7 @@ protohttp2_on_frame_recv(UNUSED nghttp2_session *session, const nghttp2_frame *f
                 struct evbuffer *outbuf_ptr = icap_get_first_service_in_hdr(s->icap_ctx);
                 struct evbuffer *header_buf = protohttp2_get_h1_headers(s);
 
-                if (reqmod) {
-                    if (protohttp_filter_request_header(header_buf, outbuf_ptr, s->http_ctx, ctx->type, ctx) == -1) {
-                        evbuffer_free(header_buf);
-                        return -1;
-                    }
-                }
-                else {
-                    protohttp_filter_response_header(header_buf, outbuf_ptr, s->http_ctx, ctx);
-                }
-
+                evbuffer_add_buffer(outbuf_ptr, header_buf);
                 evbuffer_free(header_buf);
 
                 icap_process_data(s->data_buf, s->icap_ctx);
@@ -1050,7 +1302,6 @@ protohttp2_on_frame_recv(UNUSED nghttp2_session *session, const nghttp2_frame *f
             }
 #endif /* !WITHOUT_ICAP */
 
-            // TODO: Filter h2 request/response headers
             return protohttp2_submit_data(h2_ctx, s, reqmod);
         }
         else {
@@ -1241,8 +1492,6 @@ protohttp2_bev_readcb(struct bufferevent *bev, void *arg)
         return;
     }
 
-    int seen_resp_header_on_entry = http_ctx->seen_resp_header;
-
 	if (bev == ctx->src.bev || bev == ctx->dst.bev) {
         int reqmod = bev == ctx->src.bev;
         log_finest_va("ENTER, reqmod=%d", reqmod);
@@ -1292,13 +1541,6 @@ protohttp2_bev_readcb(struct bufferevent *bev, void *arg)
 
 	if (ctx->enomem) {
 		return;
-	}
-
-	if (!seen_resp_header_on_entry && http_ctx->seen_resp_header) {
-		/* response header complete: log connection */
-		if (WANT_CONNECT_LOG(ctx->conn)) {
-			protohttp_log_connect(ctx);
-		}
 	}
 }
 

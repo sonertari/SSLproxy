@@ -44,12 +44,10 @@
 #include <event2/bufferevent.h>
 
 void NONNULL(1)
-protohttp_log_connect(pxy_conn_ctx_t *ctx)
+protohttp_log_connect(pxy_conn_ctx_t *ctx, protohttp_ctx_t *http_ctx)
 {
 	if (!ctx->log_connect)
 		return;
-
-	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
 
 	char *msg;
 #ifdef HAVE_LOCAL_PROCINFO
@@ -105,7 +103,7 @@ protohttp_log_connect(pxy_conn_ctx_t *ctx)
 #endif /* !WITHOUT_USERAUTH */
 		              );
 	} else {
-		rv = asprintf(&msg, "CONN: https %s %s %s %s %s %s %s %s %s "
+		rv = asprintf(&msg, "%s: %s %s %s %s %s %s %s %s %s %s "
 		              "sni:%s names:%s "
 		              "sproto:%s:%s dproto:%s:%s "
 		              "origcrt:%s usedcrt:%s"
@@ -117,6 +115,8 @@ protohttp_log_connect(pxy_conn_ctx_t *ctx)
 		              " user:%s"
 #endif /* !WITHOUT_USERAUTH */
 		              "\n",
+		              ctx->sslctx->h2 ? "STREAM" : "CONN",
+		              ctx->sslctx->h2 ? "h2" : "https",
 		              STRORDASH(ctx->srchost_str),
 		              STRORDASH(ctx->srcport_str),
 		              STRORDASH(ctx->dsthost_str),
@@ -1167,7 +1167,7 @@ protohttp_bev_readcb(struct bufferevent *bev, void *arg)
 	if (!seen_resp_header_on_entry && http_ctx->seen_resp_header) {
 		/* response header complete: log connection */
 		if (WANT_CONNECT_LOG(ctx->conn)) {
-			protohttp_log_connect(ctx);
+			protohttp_log_connect(ctx, http_ctx);
 		}
 	}
 }
