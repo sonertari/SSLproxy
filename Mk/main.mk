@@ -315,6 +315,16 @@ PKGS+=		$(shell $(PKGCONFIG) $(PCFLAGS) --exists libnghttp2 \
 		&& echo libnghttp2)
 endif
 endif
+ifneq ($(filter -DWITHOUT_HTTP3,$(FEATURES)),-DWITHOUT_HTTP3)
+ifndef LIBNGHTTP3_BASE
+PKGS+=		$(shell $(PKGCONFIG) $(PCFLAGS) --exists libnghttp3 \
+		&& echo libnghttp3)
+endif
+ifndef LIBNGTCP2_BASE
+PKGS+=		$(shell $(PKGCONFIG) $(PCFLAGS) --exists libngtcp2 \
+		&& echo libngtcp2)
+endif
+endif
 TPKGS:=		
 ifndef CHECK_BASE
 TPKGS+=		$(shell $(PKGCONFIG) $(PCFLAGS) --exists check \
@@ -373,6 +383,22 @@ LIBNGHTTP2_FOUND:=$(call locate,libnghttp2,include/nghttp2/nghttp2.h,$(LIBNGHTTP
 ifndef LIBNGHTTP2_FOUND
 $(error dependency 'libnghttp2' not found; \
 	install it or point LIBNGHTTP2_BASE to base path)
+endif
+endif
+endif
+ifneq ($(filter -DWITHOUT_HTTP3,$(FEATURES)),-DWITHOUT_HTTP3)
+ifeq (,$(filter libnghttp3,$(PKGS)))
+LIBNGHTTP3_FOUND:=$(call locate,libnghttp3,include/nghttp3/nghttp3.h,$(LIBNGHTTP3_BASE))
+ifndef LIBNGHTTP3_FOUND
+$(error dependency 'libnghttp3' not found; \
+	install it or point LIBNGHTTP3_BASE to base path)
+endif
+endif
+ifeq (,$(filter libngtcp2,$(PKGS)))
+LIBNGTCP2_FOUND:=$(call locate,libngtcp2,include/ngtcp2/ngtcp2.h,$(LIBNGTCP2_BASE))
+ifndef LIBNGTCP2_FOUND
+$(error dependency 'libngtcp2' not found; \
+	install it or point LIBNGTCP2_BASE to base path)
 endif
 endif
 endif
@@ -446,6 +472,14 @@ ifdef LIBNGHTTP2_FOUND
 PKG_CPPFLAGS+=	-I$(LIBNGHTTP2_FOUND)/include
 PKG_LDFLAGS+=	-L$(LIBNGHTTP2_FOUND)/lib
 PKG_LIBS+=	-lnghttp2
+endif
+endif
+ifneq ($(filter -DWITHOUT_HTTP3,$(FEATURES)),-DWITHOUT_HTTP3)
+ifdef LIBNGHTTP3_FOUND
+PKG_CPPFLAGS+=	-I$(LIBNGHTTP3_FOUND)/include
+PKG_LDFLAGS+=	-L$(LIBNGHTTP3_FOUND)/lib
+PKG_LIBS+=	-lnghttp3
+PKG_LIBS+=	-lngtcp2
 endif
 endif
 
@@ -536,6 +570,12 @@ endif
 ifneq ($(filter -DWITHOUT_HTTP2,$(FEATURES)),-DWITHOUT_HTTP2)
 ifdef LIBNGHTTP2_FOUND
 $(info LIBNGHTTP2_BASE: $(strip $(LIBNGHTTP2_FOUND)))
+endif
+endif
+ifneq ($(filter -DWITHOUT_HTTP3,$(FEATURES)),-DWITHOUT_HTTP3)
+ifdef LIBNGHTTP3_FOUND
+$(info LIBNGHTTP3_BASE: $(strip $(LIBNGHTTP3_FOUND)))
+$(info LIBNGTCP2_BASE: $(strip $(LIBNGTCP2_FOUND)))
 endif
 endif
 ifdef CHECK_FOUND
