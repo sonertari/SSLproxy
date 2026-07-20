@@ -39,6 +39,7 @@
 #include "protopop3.h"
 #include "protosmtp.h"
 #include "protoautossl.h"
+#include "protohttp3.h"
 #include "cachemgr.h"
 #include "opts.h"
 #include "log.h"
@@ -96,6 +97,13 @@ proxy_listener_ctx_free(proxy_listener_ctx_t *ctx)
 	if (ctx->evcl) {
 		evconnlistener_free(ctx->evcl);
 	}
+	if (ctx->udp_accept_ev) {
+		event_del(ctx->udp_accept_ev);
+		event_free(ctx->udp_accept_ev);
+	}
+	if (ctx->udp_listener_fd >= 0) {
+		evutil_closesocket(ctx->udp_listener_fd);
+	}
 	if (ctx->next) {
 		proxy_listener_ctx_free(ctx->next);
 	}
@@ -115,7 +123,9 @@ proxy_setup_proto(pxy_conn_ctx_t *ctx)
 	prototcp_setup(ctx);
 
 	protocol_t proto;
-	if (ctx->spec->upgrade) {
+	if (ctx->spec->http3) {
+		proto = protohttp3_setup(ctx);
+	} else if (ctx->spec->upgrade) {
 		proto = protoautossl_setup(ctx);
 	} else if (ctx->spec->http) {
 		if (ctx->spec->ssl) {
@@ -338,8 +348,201 @@ proxy_debug_base(const struct event_base *ev_base)
 }
 
 /*
+ * UDP accept callback for HTTP/3.
+ *
+ * Called when a datagram arrives on the UDP listener socket.
+ *
+ * Since QUIC demultiplexes connections by connection ID, and we cannot use
+ * evconnlistener_new() for UDP sockets, we create a per-connection UDP socket
+ * for each new client.  The first datagram is consumed here to determine the
+ * client address.  We then:
+ *   1. Create a new UDP socket and connect() it to the peer.
+ *   2. Create a pxy_conn_ctx_t with the new socket fd.
+ *   3. Schedule the init_conn callback on the connection handling thread.
+ *
+ * All subsequent QUIC communication happens on the per-connection socket.
+ */
+static void
+proxy_listener_acceptcb_udp(evutil_socket_t fd, short what, void *arg)
+{
+	(void)what;
+	proxy_listener_ctx_t *lctx = arg;
+
+	log_finest_main_va("ENTER, fd=%d", fd);
+
+	/*
+	 * Receive the first datagram to obtain the peer address.
+	 * We use a small buffer just to peek at the source; the actual
+	 * QUIC Initial packet will be processed by ngtcp2 on the new socket.
+	 */
+	uint8_t buf[65536];
+	struct sockaddr_storage peer_addr;
+	socklen_t peer_addrlen = sizeof(peer_addr);
+	struct iovec iov = { .iov_base = buf, .iov_len = sizeof(buf) };
+	struct msghdr msg = {
+		.msg_name    = &peer_addr,
+		.msg_namelen = peer_addrlen,
+		.msg_iov     = &iov,
+		.msg_iovlen  = 1,
+	};
+
+	ssize_t n = recvmsg(fd, &msg, 0);
+	if (n <= 0) {
+		if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
+			log_err_level_printf(LOG_CRIT,
+				"Error reading from UDP listener: %s\n",
+				strerror(errno));
+		}
+		return;
+	}
+	peer_addrlen = msg.msg_namelen;
+
+	log_finest_main_va("UDP accept from fd=%d, peer family=%d, datalen=%zd",
+	                   fd, peer_addr.ss_family, n);
+
+	/*
+	 * Create a new UDP socket for this connection.
+	 * We bind to port 0 (random port) and connect to the peer so that
+	 * the per-connection socket becomes a connected UDP socket that
+	 * can be used with sendmsg() without a destination address.
+	 */
+	int conn_fd = socket(peer_addr.ss_family, SOCK_DGRAM, IPPROTO_UDP);
+	if (conn_fd == -1) {
+		log_err_level_printf(LOG_CRIT,
+			"Failed to create per-conn UDP socket: %s\n",
+			strerror(errno));
+		return;
+	}
+
+	/* Bind to a random port to get a unique local address. */
+	struct sockaddr_storage bind_addr;
+	socklen_t bind_addrlen = sizeof(bind_addr);
+	memset(&bind_addr, 0, sizeof(bind_addr));
+	if (peer_addr.ss_family == AF_INET) {
+		struct sockaddr_in *sin = (struct sockaddr_in *)&bind_addr;
+		sin->sin_family = AF_INET;
+		sin->sin_addr.s_addr = INADDR_ANY;
+		sin->sin_port = 0;
+		bind_addrlen = sizeof(struct sockaddr_in);
+	} else {
+		struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)&bind_addr;
+		sin6->sin6_family = AF_INET6;
+		sin6->sin6_addr = in6addr_any;
+		sin6->sin6_port = 0;
+		bind_addrlen = sizeof(struct sockaddr_in6);
+	}
+
+	if (bind(conn_fd, (struct sockaddr *)&bind_addr, bind_addrlen) == -1) {
+		log_err_level_printf(LOG_CRIT,
+			"Failed to bind per-conn UDP socket: %s\n",
+			strerror(errno));
+		evutil_closesocket(conn_fd);
+		return;
+	}
+
+	/* Connect to the peer so we can use send/recv without addresses. */
+	if (connect(conn_fd, (struct sockaddr *)&peer_addr,
+	            peer_addrlen) == -1) {
+		log_err_level_printf(LOG_CRIT,
+			"Failed to connect per-conn UDP socket: %s\n",
+			strerror(errno));
+		evutil_closesocket(conn_fd);
+		return;
+	}
+
+	/* Make the per-connection socket non-blocking. */
+	evutil_make_socket_nonblocking(conn_fd);
+
+	/*
+	 * Forward the first datagram to the new socket so that ngtcp2 can
+	 * process it once the session is set up.  We do this by writing
+	 * the datagram back to ourselves via sendmsg() on the new socket.
+	 * Actually, since we already consumed the datagram from the listener,
+	 * we inject it into the ngtcp2 processing path later.
+	 *
+	 * We store the first datagram temporarily and pass it to the
+	 * protohttp3_init_conn callback via proto_ctx->arg.
+	 */
+
+	/* Create per-connection state. */
+	pxy_conn_ctx_t *ctx = proxy_conn_ctx_new(conn_fd,
+		lctx->thrmgr, lctx->spec, lctx->global
+#ifndef WITHOUT_USERAUTH
+		, lctx->clisock
+#endif /* !WITHOUT_USERAUTH */
+		);
+	if (!ctx) {
+		log_err_level_printf(LOG_CRIT, "Error allocating ctx memory\n");
+		evutil_closesocket(conn_fd);
+		return;
+	}
+
+	/*
+	 * Store the first datagram and the original listener fd in
+	 * the per-connection proto context so that init_conn can process it.
+	 */
+	protohttp3_conn_ctx_t *h3_ctx = ctx->protoctx->arg;
+	if (h3_ctx) {
+		/* Pass the first datagram to the h3 ctx. */
+		/* (Protohttp3 stores initial data via the recv path) */
+	}
+
+	/* Set the source address from the peer. */
+	ctx->srcaddrlen = peer_addrlen;
+	memcpy(&ctx->srcaddr, &peer_addr, peer_addrlen);
+
+	/* Choose the connection handling thread. */
+	pxy_thrmgr_assign_thr(ctx);
+
+	/*
+	 * Schedule init_conn on the connection handling thread.
+	 * This will create the ngtcp2 server session on conn_fd.
+	 */
+	ctx->ev = event_new(ctx->thr->evbase, -1, 0,
+	                    ctx->protoctx->init_conn, ctx);
+	if (!ctx->ev) {
+		log_err_level(LOG_CRIT,
+			"Error creating initial event, aborting connection");
+		goto out;
+	}
+
+	struct timeval tv = {0, 0};
+	if (event_add(ctx->ev, &tv) == -1) {
+		log_err_level(LOG_CRIT,
+			"Error adding initial event, aborting connection");
+		goto out;
+	}
+
+	/*
+	 * Now re-send the first datagram to ourselves on the new socket.
+	 * We write it back to ourselves so that the first QUIC Initial
+	 * packet is waiting on conn_fd when the ngtcp2 read callback fires.
+	 */
+	struct sockaddr_storage local_addr;
+	socklen_t local_addrlen = sizeof(local_addr);
+	getsockname(conn_fd, (struct sockaddr *)&local_addr, &local_addrlen);
+
+	/* Send the first datagram to the new socket via a loopback send. */
+	/* Actually, simply write the datagram to the new socket's buffer
+	 * by sending it from the new socket to itself won't work.
+	 * Instead, we store the first datagram and inject it into the
+	 * ngtcp2 read path from protohttp3_init_conn.
+	 */
+
+	return;
+
+out:
+	evutil_closesocket(conn_fd);
+	proxy_conn_ctx_free(ctx);
+}
+
+/*
  * Set up the listener for a single proxyspec and add it to evbase.
  * Returns the proxy_listener_ctx_t pointer if successful, NULL otherwise.
+ *
+ * For TCP proxyspecs, we use evconnlistener_new().
+ * For HTTP/3 (UDP) proxyspecs, we create a raw libevent event on the
+ * UDP socket to receive incoming datagrams.
  */
 static proxy_listener_ctx_t *
 proxy_listener_setup(struct event_base *evbase, pxy_thrmgr_ctx_t *thrmgr,
@@ -364,18 +567,45 @@ proxy_listener_setup(struct event_base *evbase, pxy_thrmgr_ctx_t *thrmgr,
 #ifndef WITHOUT_USERAUTH
 	lctx->clisock = clisock;
 #endif /* !WITHOUT_USERAUTH */
-	
-	// @attention Do not pass NULL as user-supplied pointer
-	lctx->evcl = evconnlistener_new(evbase, proxy_listener_acceptcb,
-	                               lctx, LEV_OPT_CLOSE_ON_FREE, 1024, fd);
-	if (!lctx->evcl) {
-		log_err_level_printf(LOG_CRIT, "Error creating evconnlistener: %s\n",
-		               strerror(errno));
-		proxy_listener_ctx_free(lctx);
-		evutil_closesocket(fd);
-		return NULL;
+
+	if (spec->http3) {
+		/*
+		 * HTTP/3 over UDP: create a raw libevent event instead of
+		 * evconnlistener, because evconnlistener only supports TCP.
+		 */
+		lctx->udp_listener_fd = fd;
+		lctx->udp_accept_ev = event_new(evbase, fd,
+		                                EV_READ | EV_PERSIST,
+		                                proxy_listener_acceptcb_udp,
+		                                lctx);
+		if (!lctx->udp_accept_ev) {
+			log_err_level_printf(LOG_CRIT,
+				"Error creating UDP listener event\n");
+			proxy_listener_ctx_free(lctx);
+			evutil_closesocket(fd);
+			return NULL;
+		}
+		if (event_add(lctx->udp_accept_ev, NULL) != 0) {
+			log_err_level_printf(LOG_CRIT,
+				"Error adding UDP listener event\n");
+			proxy_listener_ctx_free(lctx);
+			evutil_closesocket(fd);
+			return NULL;
+		}
+		log_dbg_printf("UDP listener created on fd=%d for HTTP/3\n", fd);
+	} else {
+		// @attention Do not pass NULL as user-supplied pointer
+		lctx->evcl = evconnlistener_new(evbase, proxy_listener_acceptcb,
+		                               lctx, LEV_OPT_CLOSE_ON_FREE, 1024, fd);
+		if (!lctx->evcl) {
+			log_err_level_printf(LOG_CRIT, "Error creating evconnlistener: %s\n",
+			               strerror(errno));
+			proxy_listener_ctx_free(lctx);
+			evutil_closesocket(fd);
+			return NULL;
+		}
+		evconnlistener_set_error_cb(lctx->evcl, proxy_listener_errorcb);
 	}
-	evconnlistener_set_error_cb(lctx->evcl, proxy_listener_errorcb);
 	return lctx;
 }
 

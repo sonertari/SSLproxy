@@ -183,6 +183,7 @@ typedef struct opts {
 typedef struct proxyspec {
 	unsigned int ssl : 1;
 	unsigned int http : 1;
+	unsigned int http3 : 1;
 	unsigned int upgrade: 1;
 	unsigned int pop3 : 1;
 	unsigned int smtp : 1;

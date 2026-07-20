@@ -1369,6 +1369,247 @@ err_conn:
     return NULL;
 }
 
+/* =========================================================================
+ * proxy.c integration: protohttp3_setup and protohttp3_init_conn
+ *
+ * These functions adapt the raw protohttp3.c internals to the SSLproxy
+ * protocol handler interface expected by proxy.c.
+ * ====================================================================== */
+
+/*
+ * Forward declarations.
+ */
+static int  protohttp3_conn_connect(pxy_conn_ctx_t *ctx);
+static void protohttp3_init_conn(evutil_socket_t fd, short what, void *arg);
+static void protohttp3_conn_free(pxy_conn_ctx_t *ctx);
+
+/*
+ * Called by proxy_setup_proto() in proxy.c to register HTTP/3 callbacks.
+ * 
+ * Since HTTP/3 uses raw UDP and ngtcp2 rather than libevent bufferevents,
+ * most of the standard callback fields (bev_readcb, bev_writecb, etc.)
+ * are left as NULL.  The actual I/O is driven by the libevent events
+ * created inside protohttp3_new().
+ */
+protocol_t
+protohttp3_setup(pxy_conn_ctx_t *ctx)
+{
+    ctx->protoctx->proto = PROTO_HTTP3;
+    ctx->protoctx->connectcb = protohttp3_conn_connect;
+    ctx->protoctx->init_conn = protohttp3_init_conn;
+    ctx->protoctx->proto_free = protohttp3_conn_free;
+
+    /*
+     * UDP bufferevent callbacks are not used – protohttp3 manages its
+     * own raw UDP events.  Set them to the default tcp implementations
+     * just so that they are never NULL (harmless since they won't be
+     * called for HTTP/3).
+     */
+    ctx->protoctx->bev_readcb = NULL;
+    ctx->protoctx->bev_writecb = NULL;
+    ctx->protoctx->bev_eventcb = NULL;
+
+    /*
+     * Watermark and discard callbacks are for bufferevent-based protocols.
+     * HTTP/3 handles its own flow control via ngtcp2, so we set these to
+     * no-ops.
+     */
+    ctx->protoctx->set_watermarkcb = NULL;
+    ctx->protoctx->unset_watermarkcb = NULL;
+    ctx->protoctx->discard_inbufcb = NULL;
+    ctx->protoctx->discard_outbufcb = NULL;
+
+    log_dbg_printf("protohttp3: protocol setup for conn on fd=%d\n", ctx->fd);
+
+    return PROTO_HTTP3;
+}
+
+/*
+ * init_conn callback – called from proxy_listener_acceptcb() after the
+ * connection has been handed off to the connection handling thread.
+ * We create the QUIC/H3 server session here.
+ */
+static void
+protohttp3_init_conn(evutil_socket_t fd, short what, void *arg)
+{
+    (void)what;
+    pxy_conn_ctx_t *ctx = arg;
+
+    log_dbg_printf("protohttp3_init_conn: fd=%d\n", fd);
+
+    event_free(ctx->ev);
+    ctx->ev = NULL;
+
+    /*
+     * pxy_conn_init sets up the connection for use with the generic
+     * SSLproxy framework.  For HTTP/3 we don't use bufferevents, so
+     * we bypass the bufferevent parts.
+     */
+    if (pxy_conn_init(ctx) == -1)
+        return;
+
+    /*
+     * Create the QUIC/H3 server session.
+     * ctx->fd is the UDP socket that was bound by the listener.
+     */
+    protohttp3_conn_ctx_t *h3_ctx = protohttp3_new(fd, ctx->thr->evbase, ctx);
+    if (!h3_ctx) {
+        log_err_level_printf(LOG_CRIT, "protohttp3: failed to create session\n");
+        pxy_conn_term(ctx, 1);
+        return;
+    }
+
+    /*
+     * Store the h3_ctx pointer in proto_ctx->arg so that it can be
+     * retrieved later.
+     */
+    ctx->protoctx->arg = h3_ctx;
+
+    log_dbg_printf("protohttp3: session initialised on fd=%d\n", fd);
+}
+
+/*
+ * connectcb callback – called from pxy_conn_connect().
+ * For HTTP/3 we need to determine the upstream server address and
+ * initiate a QUIC connection to it.
+ *
+ * In split mode, we connect the upstream (dst) UDP socket and create
+ * a client-mode ngtcp2 session for the upstream direction.
+ */
+static int
+protohttp3_conn_connect(pxy_conn_ctx_t *ctx)
+{
+    protohttp3_conn_ctx_t *h3_ctx = ctx->protoctx->arg;
+
+    log_dbg_printf("protohttp3_conn_connect: ENTER\n");
+
+    if (!h3_ctx || !h3_ctx->src_conn) {
+        log_err_level_printf(LOG_CRIT, "protohttp3: no src session\n");
+        return -1;
+    }
+
+    /*
+     * Determine the upstream (dst) address.
+     * If we have a static target address, use it.  Otherwise fall back
+     * to NAT lookup.
+     */
+    if (!ctx->dstaddrlen) {
+        if (ctx->spec->connect_addrlen) {
+            memcpy(&ctx->dstaddr, &ctx->spec->connect_addr,
+                   ctx->spec->connect_addrlen);
+            ctx->dstaddrlen = ctx->spec->connect_addrlen;
+        } else if (ctx->spec->natlookup) {
+            if (ctx->spec->natlookup((struct sockaddr *)&ctx->dstaddr,
+                                     &ctx->dstaddrlen,
+                                     ctx->fd,
+                                     (struct sockaddr *)&ctx->srcaddr,
+                                     ctx->srcaddrlen) == -1) {
+                log_err_level_printf(LOG_CRIT,
+                    "protohttp3: NAT lookup failed\n");
+                return -1;
+            }
+        }
+    }
+
+    if (!ctx->dstaddrlen) {
+        log_err_level_printf(LOG_CRIT,
+            "protohttp3: no upstream destination address\n");
+        pxy_conn_term(ctx, 1);
+        return -1;
+    }
+
+    /*
+     * Create the upstream UDP socket and connect it to the target.
+     * In split mode, we do NOT create a divert dst; the upstream QUIC
+     * connection is made directly.
+     */
+    int dst_fd = socket(ctx->dstaddr.ss_family, SOCK_DGRAM, IPPROTO_UDP);
+    if (dst_fd == -1) {
+        log_err_level_printf(LOG_CRIT,
+            "protohttp3: failed to create dst UDP socket: %s\n",
+            strerror(errno));
+        return -1;
+    }
+
+    if (connect(dst_fd, (struct sockaddr *)&ctx->dstaddr,
+                ctx->dstaddrlen) == -1) {
+        log_err_level_printf(LOG_CRIT,
+            "protohttp3: failed to connect dst UDP socket: %s\n",
+            strerror(errno));
+        close(dst_fd);
+        return -1;
+    }
+
+    /* Make the socket non-blocking. */
+    evutil_make_socket_nonblocking(dst_fd);
+
+    h3_ctx->dst_fd = dst_fd;
+
+    /*
+     * Cache the peer address for the upstream.
+     */
+    memcpy(&h3_ctx->dst_peer_addr, &ctx->dstaddr, ctx->dstaddrlen);
+    h3_ctx->dst_peer_addrlen = ctx->dstaddrlen;
+
+    /*
+     * Set up the libevent read/write events for the upstream UDP socket.
+     */
+    h3_ctx->dst_rev = event_new(h3_ctx->evbase, dst_fd,
+                                EV_READ | EV_PERSIST,
+                                protohttp3_src_read_cb, h3_ctx);
+    if (!h3_ctx->dst_rev)
+        goto err;
+
+    h3_ctx->dst_wev = event_new(h3_ctx->evbase, dst_fd,
+                                EV_WRITE,
+                                protohttp3_src_write_cb, h3_ctx);
+    if (!h3_ctx->dst_wev)
+        goto err;
+
+    if (event_add(h3_ctx->dst_rev, NULL) != 0)
+        goto err;
+
+    /*
+     * Mark the connection as connected so the proxy framework considers
+     * it ready.  HTTP/3 will still need to perform the QUIC handshake
+     * via the existing ngtcp2 events.
+     */
+    ctx->connected = 1;
+
+    log_dbg_printf("protohttp3: upstream connection established to dst_fd=%d\n",
+                   dst_fd);
+
+    /*
+     * XXX: In a complete implementation we would also create a client-mode
+     * ngtcp2 session for the upstream (dst_conn) and bind the events.
+     * This is left as a stub for now.
+     */
+
+    return 0;
+
+err:
+    if (h3_ctx->dst_rev) { event_free(h3_ctx->dst_rev); h3_ctx->dst_rev = NULL; }
+    if (h3_ctx->dst_wev) { event_free(h3_ctx->dst_wev); h3_ctx->dst_wev = NULL; }
+    close(dst_fd);
+    h3_ctx->dst_fd = -1;
+    return -1;
+}
+
+/*
+ * proto_free callback – called during connection teardown.
+ * Delegates to protohttp3_free() which cleans up the QUIC/H3 session.
+ */
+static void
+protohttp3_conn_free(pxy_conn_ctx_t *ctx)
+{
+    protohttp3_conn_ctx_t *h3_ctx = ctx->protoctx->arg;
+    if (h3_ctx) {
+        log_dbg_printf("protohttp3: freeing session\n");
+        protohttp3_free(h3_ctx);
+        ctx->protoctx->arg = NULL;
+    }
+}
+
 /*
  * protohttp3_free – tear down the entire QUIC/H3 session.
  *

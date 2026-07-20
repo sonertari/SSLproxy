@@ -183,6 +183,16 @@ void protohttp3_free(protohttp3_conn_ctx_t *h3_ctx) NONNULL(1);
 void protohttp3_request_free_stream_ctx(stream_h3_ctx_t      *s,
                                         protohttp3_conn_ctx_t *h3_ctx) NONNULL(1,2);
 
+/*
+ * Set up the HTTP/3 protocol handler in the given proxy connection context.
+ * This is the integration point called from proxy_setup_proto().
+ *
+ * For HTTP/3, the socket fd is a UDP socket.  The setup function
+ * configures the protoctx callbacks so that the QUIC/H3 session can
+ * be initiated from the init_conn callback.
+ */
+protocol_t protohttp3_setup(pxy_conn_ctx_t *) NONNULL(1) WUNRES;
+
 #endif /* !PROTOHTTP3_H */
 
 /* vim: set noet ft=c: */

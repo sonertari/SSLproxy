@@ -132,6 +132,7 @@ typedef enum protocol {
 	PROTO_TCP,
 	PROTO_SSL,
 	PROTO_HTTP2,
+	PROTO_HTTP3,
 } protocol_t;
 
 typedef struct ssl_ctx ssl_ctx_t;

@@ -34,6 +34,7 @@
 #include "pxythrmgr.h"
 
 #include <sys/syslog.h>
+#include <event2/event.h>
 
 typedef struct proxy_ctx proxy_ctx_t;
 #ifndef WITHOUT_ICAP
@@ -51,6 +52,9 @@ typedef struct proxy_listener_ctx {
 	evutil_socket_t clisock;
 #endif /* !WITHOUT_USERAUTH */
 	struct evconnlistener *evcl;
+	/* UDP listener fields for HTTP/3 support */
+	int udp_listener_fd;
+	struct event *udp_accept_ev;
 	struct proxy_listener_ctx *next;
 } proxy_listener_ctx_t;
 
