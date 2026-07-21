@@ -61,6 +61,8 @@
 #include <event2/event.h>
 
 #include <ngtcp2/ngtcp2.h>
+#include <ngtcp2/ngtcp2_crypto.h>
+#include <ngtcp2/ngtcp2_crypto_ossl.h>
 #include <nghttp3/nghttp3.h>
 
 /* -------------------------------------------------------------------------
@@ -112,6 +114,10 @@ typedef struct protohttp3_conn_ctx {
     nghttp3_conn *src_h3;
     nghttp3_conn *dst_h3;
 
+    /* TLS/SSL instances for the QUIC connections */
+    void *src_ssl; /* (SSL *) */
+    void *dst_ssl; /* (SSL *) */
+
     /*
      * Raw UDP sockets.  We cannot use Libevent bufferevents here because
      * ngtcp2 needs recvmsg() to extract per-datagram ancillary data (ECN
@@ -141,6 +147,10 @@ typedef struct protohttp3_conn_ctx {
     socklen_t               src_peer_addrlen;
     struct sockaddr_storage dst_peer_addr;
     socklen_t               dst_peer_addrlen;
+
+    /* Buffer for the first datagram received by the listener */
+    uint8_t                 *initial_pkt;
+    size_t                  initial_pkt_len;
 
     /* Local addresses (needed by ngtcp2 path tracking).                   */
     struct sockaddr_storage src_local_addr;

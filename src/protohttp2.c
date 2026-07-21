@@ -963,7 +963,7 @@ protohttp2_icap_failopen_to_dest_cb(icap_service_ctx_t *service_ctx)
 static void
 protohttp2_delete_nv_header(stream_ctx_t *s, size_t idx)
 {
-    pxy_conn_ctx_t *ctx = s->ctx;
+    UNUSED pxy_conn_ctx_t *ctx = s->ctx;
     log_finest_va("ENTER, src_stream_id=%d, dst_stream_id=%d, remove idx=%zu", s->src_stream_id, s->dst_stream_id, idx);
 
     if (s->headers_count == 0 || idx >= s->headers_count) {
@@ -985,7 +985,7 @@ protohttp2_delete_nv_header(stream_ctx_t *s, size_t idx)
 static int WUNRES NONNULL(1)
 protohttp2_filter_request_header(stream_ctx_t *s)
 {
-    pxy_conn_ctx_t *ctx = s->ctx;
+    UNUSED pxy_conn_ctx_t *ctx = s->ctx;
     log_finest_va("ENTER, src_stream_id=%d, dst_stream_id=%d", s->src_stream_id, s->dst_stream_id);
 
     nghttp2_nv *headers = s->headers;
@@ -1119,7 +1119,7 @@ protohttp2_filter_request_header(stream_ctx_t *s)
 static int WUNRES NONNULL(1)
 protohttp2_filter_response_header(stream_ctx_t *s)
 {
-    pxy_conn_ctx_t *ctx = s->ctx;
+    UNUSED pxy_conn_ctx_t *ctx = s->ctx;
     log_finest_va("ENTER, src_stream_id=%d, dst_stream_id=%d", s->src_stream_id, s->dst_stream_id);
 
     nghttp2_nv *headers = s->headers;

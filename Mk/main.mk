@@ -10,6 +10,9 @@
 # LIBPCAP_BASE	Prefix of libpcap library and headers to build against
 # LIBNET_BASE	Prefix of libnet library and headers to build against
 # SQLITE_BASE	Prefix of sqlite3 library and headers to build against
+# LIBNGHTTP2_BASE	Prefix of libnghttp2 library and headers to build against
+# LIBNGHTTP3_BASE	Prefix of libnghttp3 library and headers to build against
+# LIBNGTCP2_BASE	Prefix of libngtcp2 library and headers to build against
 # CHECK_BASE	Prefix of check library and headers to build against (optional)
 # PKGCONFIG	Name/path of pkg-config program to use for auto-detection
 # PCFLAGS	Additional pkg-config flags
@@ -424,22 +427,63 @@ $(error dependency 'libnet' not found; \
 endif
 endif
 
+SYS_INCLUDE_DIRS := /usr/include /usr/local/include
+# Normalized system list (ensures no trailing slashes)
+SYS_INCLUDE_DIRS_NORM := $(patsubst %/,%,$(SYS_INCLUDE_DIRS))
+SYS_PKG_CPPFLAGS :=
+
+# Function: Filter out standard system paths
+define add_pkg_cppflags
+    $(eval _raw := $(patsubst -I%,%,$(patsubst -isystem%,%,$(strip $1))))
+    $(eval _dir := $(patsubst %/,%,$(_raw)))
+    ifneq ($$(filter-out $$(SYS_INCLUDE_DIRS_NORM),$(_dir)),)
+        ifneq ($$(filter-out $$(PKG_CPPFLAGS),-I$(_dir)),)
+            PKG_CPPFLAGS += -I$(_dir)
+        endif
+    else
+        ifneq ($$(filter-out $$(SYS_PKG_CPPFLAGS),-I$(_dir)),)
+            SYS_PKG_CPPFLAGS += -I$(_dir)
+        endif
+    endif
+endef
+
+SYS_LIB_DIRS := /usr/lib /usr/lib64 /usr/lib/x86_64-linux-gnu /usr/local/lib
+# Normalized system list (ensures no trailing slashes)
+SYS_LIB_DIRS_NORM := $(patsubst %/,%,$(SYS_LIB_DIRS))
+SYS_PKG_LDFLAGS :=
+
+# Function: Filter out default system library directories
+define add_pkg_ldflags
+    $(eval _raw := $(patsubst -L%,%,$(strip $1)))
+    $(eval _dir := $(patsubst %/,%,$(_raw)))
+    ifneq ($$(filter-out $$(SYS_LIB_DIRS_NORM),$(_dir)),)
+        ifneq ($$(filter-out $$(PKG_LDFLAGS),-L$(_dir)),)
+            # TODO: Use selective static linking instead of rpath
+            PKG_LDFLAGS += -L$(_dir) -Wl,-rpath,$(_dir)
+        endif
+    else
+        ifneq ($$(filter-out $$(SYS_PKG_LDFLAGS),-L$(_dir)),)
+            SYS_PKG_LDFLAGS += -L$(_dir)
+        endif
+    endif
+endef
+
 PKG_CFLAGS:=
 PKG_CPPFLAGS:=
 PKG_LDFLAGS:=
 PKG_LIBS:=
 ifdef OPENSSL_FOUND
-PKG_CPPFLAGS+=	-I$(OPENSSL_FOUND)/include
+$(eval $(call add_pkg_cppflags,$(OPENSSL_FOUND)/include))
 ifneq ($(findstring openssl-3.,$(OPENSSL_FOUND)),openssl-3.)
-PKG_LDFLAGS+=	-L$(OPENSSL_FOUND)/lib
+$(eval $(call add_pkg_ldflags,$(OPENSSL_FOUND)/lib))
 else
-PKG_LDFLAGS+=	-L$(OPENSSL_FOUND)/lib64
+$(eval $(call add_pkg_ldflags,$(OPENSSL_FOUND)/lib64))
 endif
 PKG_LIBS+=	-lssl -lcrypto -lz
 endif
 ifdef LIBEVENT_FOUND
-PKG_CPPFLAGS+=	-I$(LIBEVENT_FOUND)/include
-PKG_LDFLAGS+=	-L$(LIBEVENT_FOUND)/lib
+$(eval $(call add_pkg_cppflags,$(LIBEVENT_FOUND)/include))
+$(eval $(call add_pkg_ldflags,$(LIBEVENT_FOUND)/lib))
 PKG_LIBS+=	-levent
 endif
 ifeq (,$(filter libevent_openssl,$(PKGS)))
@@ -450,36 +494,40 @@ PKG_LIBS+=	-levent_pthreads
 endif
 ifneq ($(filter -DWITHOUT_MIRROR,$(FEATURES)),-DWITHOUT_MIRROR)
 ifdef LIBNET_FOUND
-PKG_CPPFLAGS+=	-I$(LIBNET_FOUND_INC)
-PKG_LDFLAGS+=	-L$(LIBNET_FOUND)/lib
+$(eval $(call add_pkg_cppflags,$(LIBNET_FOUND_INC)))
+$(eval $(call add_pkg_ldflags,$(LIBNET_FOUND)/lib))
 PKG_LIBS+=	-lnet
 endif
 ifdef LIBPCAP_FOUND
-PKG_CPPFLAGS+=	-I$(LIBPCAP_FOUND)/include
-PKG_LDFLAGS+=	-L$(LIBPCAP_FOUND)/lib
+$(eval $(call add_pkg_cppflags,$(LIBPCAP_FOUND)/include))
+$(eval $(call add_pkg_ldflags,$(LIBPCAP_FOUND)/lib))
 PKG_LIBS+=	-lpcap
 endif
 endif
 ifneq ($(filter -DWITHOUT_USERAUTH,$(FEATURES)),-DWITHOUT_USERAUTH)
 ifdef SQLITE_FOUND
-PKG_CPPFLAGS+=	-I$(SQLITE_FOUND)/include
-PKG_LDFLAGS+=	-L$(SQLITE_FOUND)/lib
+$(eval $(call add_pkg_cppflags,$(SQLITE_FOUND)/include))
+$(eval $(call add_pkg_ldflags,$(SQLITE_FOUND)/lib))
 PKG_LIBS+=	-lsqlite3
 endif
 endif
 ifneq ($(filter -DWITHOUT_HTTP2,$(FEATURES)),-DWITHOUT_HTTP2)
 ifdef LIBNGHTTP2_FOUND
-PKG_CPPFLAGS+=	-I$(LIBNGHTTP2_FOUND)/include
-PKG_LDFLAGS+=	-L$(LIBNGHTTP2_FOUND)/lib
+$(eval $(call add_pkg_cppflags,$(LIBNGHTTP2_FOUND)/include))
+$(eval $(call add_pkg_ldflags,$(LIBNGHTTP2_FOUND)/lib))
 PKG_LIBS+=	-lnghttp2
 endif
 endif
 ifneq ($(filter -DWITHOUT_HTTP3,$(FEATURES)),-DWITHOUT_HTTP3)
 ifdef LIBNGHTTP3_FOUND
-PKG_CPPFLAGS+=	-I$(LIBNGHTTP3_FOUND)/include
-PKG_LDFLAGS+=	-L$(LIBNGHTTP3_FOUND)/lib
+$(eval $(call add_pkg_cppflags,$(LIBNGHTTP3_FOUND)/include))
+$(eval $(call add_pkg_ldflags,$(LIBNGHTTP3_FOUND)/lib))
 PKG_LIBS+=	-lnghttp3
-PKG_LIBS+=	-lngtcp2
+endif
+ifdef LIBNGTCP2_FOUND
+$(eval $(call add_pkg_cppflags,$(LIBNGTCP2_FOUND)/include))
+$(eval $(call add_pkg_ldflags,$(LIBNGTCP2_FOUND)/lib))
+PKG_LIBS+=	-lngtcp2 -lngtcp2_crypto_ossl
 endif
 endif
 
@@ -511,6 +559,11 @@ endif
 CPPDEFS+=	-D_GNU_SOURCE \
 		-D"PKGLABEL=\"$(PKGLABEL)\""
 CPPCHECKFLAGS+=	$(CPPDEFS)
+
+# Add system includes and libs to the end of the list so that they are searched last,
+# and we can override them with custom includes and libs.
+PKG_CPPFLAGS+= $(SYS_PKG_CPPFLAGS)
+PKG_LDFLAGS+= $(SYS_PKG_LDFLAGS)
 
 ifneq (ccc-analyzer,$(notdir $(CC)))
 PKG_CPPFLAGS:=	$(subst -I,-isystem,$(PKG_CPPFLAGS))
@@ -575,6 +628,8 @@ endif
 ifneq ($(filter -DWITHOUT_HTTP3,$(FEATURES)),-DWITHOUT_HTTP3)
 ifdef LIBNGHTTP3_FOUND
 $(info LIBNGHTTP3_BASE: $(strip $(LIBNGHTTP3_FOUND)))
+endif
+ifdef LIBNGTCP2_FOUND
 $(info LIBNGTCP2_BASE: $(strip $(LIBNGTCP2_FOUND)))
 endif
 endif

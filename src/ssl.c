@@ -1963,7 +1963,11 @@ ssl_session_is_valid(SSL_SESSION *sess)
 	timeout = SSL_SESSION_get_timeout(sess);
 	if (curtime < timeout)
 		return 0;
+#if OPENSSL_VERSION_NUMBER < 0x30400000L || defined(LIBRESSL_VERSION_NUMBER)
 	return (SSL_SESSION_get_time(sess) > curtime - timeout);
+#else /* OPENSSL_VERSION_NUMBER >= 0x30400000L */
+	return (SSL_SESSION_get_time_ex(sess) > curtime - timeout);
+#endif /* OPENSSL_VERSION_NUMBER >= 0x30400000L */
 }
 
 /*

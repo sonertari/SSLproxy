@@ -477,14 +477,13 @@ proxy_listener_acceptcb_udp(evutil_socket_t fd, short what, void *arg)
 		return;
 	}
 
-	/*
-	 * Store the first datagram and the original listener fd in
-	 * the per-connection proto context so that init_conn can process it.
-	 */
-	protohttp3_conn_ctx_t *h3_ctx = ctx->protoctx->arg;
-	if (h3_ctx) {
-		/* Pass the first datagram to the h3 ctx. */
-		/* (Protohttp3 stores initial data via the recv path) */
+	if (ctx->protoctx) {
+		/* Pass the first datagram to the protocol context. */
+		ctx->protoctx->initial_pkt = malloc(n);
+		if (ctx->protoctx->initial_pkt) {
+			memcpy(ctx->protoctx->initial_pkt, buf, n);
+			ctx->protoctx->initial_pkt_len = n;
+		}
 	}
 
 	/* Set the source address from the peer. */
