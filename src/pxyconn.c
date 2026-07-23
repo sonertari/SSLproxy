@@ -1789,9 +1789,11 @@ pxy_conn_connect(pxy_conn_ctx_t *ctx)
 		return;
 	}
 
-	if (bufferevent_socket_connect(ctx->srvdst.bev, (struct sockaddr *)&ctx->dstaddr, ctx->dstaddrlen) == -1) {
-		log_err_level(LOG_CRIT, "bufferevent_socket_connect for srvdst failed");
-		pxy_conn_free(ctx, ctx->term ? ctx->term_requestor : 1);
+	if (ctx->proto != PROTO_HTTP3) {
+		if (bufferevent_socket_connect(ctx->srvdst.bev, (struct sockaddr *)&ctx->dstaddr, ctx->dstaddrlen) == -1) {
+			log_err_level(LOG_CRIT, "bufferevent_socket_connect for srvdst failed");
+			pxy_conn_free(ctx, ctx->term ? ctx->term_requestor : 1);
+		}
 	}
 }
 

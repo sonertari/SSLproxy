@@ -1245,6 +1245,20 @@ protohttp3_timer_cb(evutil_socket_t fd, short what, void *arg)
  * ====================================================================== */
 
 /*
+ * Build a hex-encoded CID key string from raw CID bytes.
+ */
+void
+protohttp3_cid_key(char *key, const uint8_t *cid, size_t cidlen)
+{
+    const char hex[] = "0123456789abcdef";
+    for (size_t i = 0; i < cidlen && i < NGTCP2_MAX_CIDLEN; i++) {
+        key[i * 2]     = hex[(cid[i] >> 4) & 0xf];
+        key[i * 2 + 1] = hex[cid[i] & 0xf];
+    }
+    key[cidlen * 2] = '\0';
+}
+
+/*
  * protohttp3_new – create a fully wired QUIC/H3 server-side session.
  *
  * After this function returns:
@@ -1254,9 +1268,14 @@ protohttp3_timer_cb(evutil_socket_t fd, short what, void *arg)
  *   - h3_ctx->timer_ev is a one-shot timer (rearmed by protohttp3_arm_timer).
  *   - The nghttp3 session (src_h3) is created later inside
  *     quic_handshake_completed() once the TLS handshake is done.
+ *
+ * 'dcid' / 'dcidlen' are the client's Initial Destination Connection ID
+ * extracted from the first Initial packet.  They are used to set
+ * params.original_dcid, which ngtcp2 requires for server connections.
  */
 protohttp3_conn_ctx_t *
-protohttp3_new(int src_fd, struct event_base *evbase, pxy_conn_ctx_t *ctx)
+protohttp3_new(int src_fd, struct event_base *evbase, pxy_conn_ctx_t *ctx,
+               const uint8_t *dcid, size_t dcidlen)
 {
     protohttp3_conn_ctx_t *h3_ctx = calloc(1, sizeof(protohttp3_conn_ctx_t));
     if (!h3_ctx)
@@ -1314,15 +1333,31 @@ protohttp3_new(int src_fd, struct event_base *evbase, pxy_conn_ctx_t *ctx)
     params.initial_max_stream_data_uni          = 256 * 1024;
 
     /*
-     * Placeholder connection IDs.  A real implementation derives these
-     * from the Initial packet the client sent (stored in a pre-parsed
-     * ngtcp2_pkt_hd).  For the prototype we generate random IDs.
+     * Connection IDs.
+     *
+     * 'scid' is the server-chosen initial Source Connection ID (will be used
+     * as the DCID in server-to-client packets).  We generate it randomly.
+     *
+     * 'initial_dcid' is the *client's* initial Destination Connection ID,
+     * extracted from the client's first QUIC Initial packet.  ngtcp2 requires
+     * this to be set in params.original_dcid for server connections.
+     *
+     * If no DCID was provided (e.g. for the upstream client session), we
+     * generate a random one.
      */
-    ngtcp2_cid scid, dcid;
+    ngtcp2_cid initial_dcid, scid;
     scid.datalen = NGTCP2_MAX_CIDLEN;
     arc4random_buf(scid.data, scid.datalen);
-    dcid.datalen = NGTCP2_MAX_CIDLEN;
-    arc4random_buf(dcid.data, dcid.datalen);
+    if (dcid && dcidlen > 0) {
+        initial_dcid.datalen = dcidlen < NGTCP2_MAX_CIDLEN
+                                  ? (size_t)dcidlen : NGTCP2_MAX_CIDLEN;
+        memcpy(initial_dcid.data, dcid, initial_dcid.datalen);
+    } else {
+        initial_dcid.datalen = NGTCP2_MAX_CIDLEN;
+        arc4random_buf(initial_dcid.data, initial_dcid.datalen);
+    }
+    params.original_dcid = initial_dcid;
+    params.original_dcid_present = 1;
 
     /*
      * Path: src_fd is bound to a local address; use a zero-filled
@@ -1335,7 +1370,7 @@ protohttp3_new(int src_fd, struct event_base *evbase, pxy_conn_ctx_t *ctx)
     ngtcp2_addr_init(&path.local,  (struct sockaddr *)&local4, sizeof(local4));
     ngtcp2_addr_init(&path.remote, (struct sockaddr *)&peer4,  sizeof(peer4));
 
-    int rv = ngtcp2_conn_server_new(&h3_ctx->src_conn, &dcid, &scid, &path,
+    int rv = ngtcp2_conn_server_new(&h3_ctx->src_conn, &initial_dcid, &scid, &path,
                                     NGTCP2_PROTO_VER_V1, &cb, &settings,
                                     &params, NULL, h3_ctx);
     if (rv != 0) {
@@ -1454,7 +1489,7 @@ protohttp3_setup(pxy_conn_ctx_t *ctx)
     ctx->protoctx->discard_inbufcb = NULL;
     ctx->protoctx->discard_outbufcb = NULL;
 
-    log_dbg_printf("protohttp3: protocol setup for conn on fd=%d\n", ctx->fd);
+    log_finest_va("EXIT, ctx->fd=%d", ctx->fd);
 
     return PROTO_HTTP3;
 }
@@ -1465,15 +1500,16 @@ protohttp3_setup(pxy_conn_ctx_t *ctx)
  * We create the QUIC/H3 server session here.
  */
 static void
-protohttp3_init_conn(evutil_socket_t fd, short what, void *arg)
+protohttp3_init_conn(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 {
-    (void)what;
     pxy_conn_ctx_t *ctx = arg;
 
-    log_dbg_printf("protohttp3_init_conn: fd=%d\n", fd);
+    log_finest_va("ENTER, ctx->fd=%d, fd=%d", ctx->fd, fd);
 
-    event_free(ctx->ev);
-    ctx->ev = NULL;
+    if (ctx->ev) {
+        event_free(ctx->ev);
+        ctx->ev = NULL;
+    }
 
     /*
      * pxy_conn_init sets up the connection for use with the generic
@@ -1487,7 +1523,7 @@ protohttp3_init_conn(evutil_socket_t fd, short what, void *arg)
      * Create the QUIC/H3 server session.
      * ctx->fd is the UDP socket that was bound by the listener.
      */
-    protohttp3_conn_ctx_t *h3_ctx = protohttp3_new(fd, ctx->thr->evbase, ctx);
+    protohttp3_conn_ctx_t *h3_ctx = protohttp3_new(ctx->fd, ctx->thr->evbase, ctx, NULL, 0);
     if (!h3_ctx) {
         log_err_level_printf(LOG_CRIT, "protohttp3: failed to create session\n");
         pxy_conn_term(ctx, 1);
@@ -1514,7 +1550,7 @@ protohttp3_init_conn(evutil_socket_t fd, short what, void *arg)
         ctx->protoctx->initial_pkt = NULL;
     }
 
-    log_dbg_printf("protohttp3: session initialised on fd=%d\n", fd);
+    log_dbg_printf("protohttp3: session initialised on fd=%d\n", ctx->fd);
 
     /* Initiate upstream QUIC connection immediately for reverse proxy */
     pxy_conn_connect(ctx);

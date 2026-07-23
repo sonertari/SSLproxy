@@ -493,6 +493,8 @@ proxy_listener_acceptcb_udp(evutil_socket_t fd, short what, void *arg)
 	/* Choose the connection handling thread. */
 	pxy_thrmgr_assign_thr(ctx);
 
+	log_finest_main_va("Setting initial event, conn_fd=%d", conn_fd);
+
 	/*
 	 * Schedule init_conn on the connection handling thread.
 	 * This will create the ngtcp2 server session on conn_fd.
@@ -512,6 +514,8 @@ proxy_listener_acceptcb_udp(evutil_socket_t fd, short what, void *arg)
 		goto out;
 	}
 
+	// ctx->protoctx->init_conn(conn_fd, 0, ctx);
+
 	/*
 	 * Now re-send the first datagram to ourselves on the new socket.
 	 * We write it back to ourselves so that the first QUIC Initial
@@ -528,6 +532,7 @@ proxy_listener_acceptcb_udp(evutil_socket_t fd, short what, void *arg)
 	 * ngtcp2 read path from protohttp3_init_conn.
 	 */
 
+	log_finest_main_va("EXIT, conn_fd=%d", conn_fd);
 	return;
 
 out:

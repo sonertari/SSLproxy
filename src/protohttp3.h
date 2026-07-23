@@ -29,7 +29,7 @@
 #define PROTOHTTP3_H
 
 /*
- * HTTP/3 reverse-proxy connection handler prototype.
+ * HTTP/3 reverse-proxy connection handler.
  *
  * Design overview
  * ---------------
@@ -50,10 +50,16 @@
  *      nghttp3_conn_read_stream  ->  nghttp3 fires header/data callbacks
  *      nghttp3_conn_writev_stream  ->  fills iovecs for ngtcp2_conn_writev_stream
  *      ngtcp2_conn_write_pkt  ->  serialises QUIC packets onto the UDP socket
+ *
+ *  - Session demultiplexing: The UDP listener callback uses a khash-based
+ *    session hash table keyed by the QUIC Destination Connection ID (DCID)
+ *    extracted from each incoming packet.  New Initial packets create a new
+ *    session; all other packets are routed to the existing session.
  */
 
 #include "pxyconn.h"
 #include "attrib.h"
+#include "khash.h"
 
 #include <stdint.h>
 #include <sys/socket.h>
@@ -64,6 +70,14 @@
 #include <ngtcp2/ngtcp2_crypto.h>
 #include <ngtcp2/ngtcp2_crypto_ossl.h>
 #include <nghttp3/nghttp3.h>
+
+/* -------------------------------------------------------------------------
+ * Session hash table key: the QUIC Destination Connection ID (DCID).
+ *
+ * We store the raw DCID bytes as a khash string key.  The key is a
+ * hex-encoded string of the DCID (up to NGTCP2_MAX_CIDLEN * 2 + 1 bytes).
+ * ---------------------------------------------------------------------- */
+#define H3_CID_KEYLEN  (NGTCP2_MAX_CIDLEN * 2 + 1)
 
 /* -------------------------------------------------------------------------
  * Per-stream state  (mirrors stream_ctx_t from protohttp2.h)
@@ -161,7 +175,18 @@ typedef struct protohttp3_conn_ctx {
 
     /* Termination flag.                                                    */
     unsigned int term : 1;
+
+    /* Session hash table key (hex-encoded DCID) for lookup/removal.       */
+    char cid_key[H3_CID_KEYLEN];
 } protohttp3_conn_ctx_t;
+
+/* -------------------------------------------------------------------------
+ * Session hash table (global, per-listener).
+ *
+ * We use khash with a string key (hex-encoded DCID).
+ * The hash table is created/destroyed by the UDP listener code in proxy.c.
+ * ---------------------------------------------------------------------- */
+KHASH_MAP_INIT_STR(h3_session, protohttp3_conn_ctx_t *)
 
 /* -------------------------------------------------------------------------
  * Public interface
@@ -174,15 +199,34 @@ typedef struct protohttp3_conn_ctx {
  * 'src_fd'   - already-bound, connected UDP socket facing the client.
  * 'evbase'   - Libevent event_base owned by the proxy thread.
  * 'ctx'      - the parent SSLproxy connection context.
+ * 'dcid'     - the client's Initial Destination Connection ID (from the
+ *              first Initial packet).  Used to set original_dcid in
+ *              transport params.  May be NULL for non-Initial paths.
+ * 'dcidlen'  - length of dcid in bytes.
  *
  * Returns the new context on success, NULL on OOM / fatal error.
  */
 protohttp3_conn_ctx_t *protohttp3_new(int src_fd,
                                       struct event_base *evbase,
-                                      pxy_conn_ctx_t    *ctx) WUNRES;
+                                      pxy_conn_ctx_t    *ctx,
+                                      const uint8_t     *dcid,
+                                      size_t             dcidlen) WUNRES;
 
 /* Tear down all sessions, free all streams, delete all events.           */
 void protohttp3_free(protohttp3_conn_ctx_t *h3_ctx) NONNULL(1);
+
+/*
+ * Process a raw UDP datagram through an existing QUIC session.
+ * Called by the packet demuxer when a session is found in the hash table.
+ * Returns 0 on success, -1 on error.
+ */
+int protohttp3_process_packet(protohttp3_conn_ctx_t *h3_ctx,
+                              const uint8_t *buf, size_t len,
+                              const struct sockaddr_storage *peer_addr,
+                              socklen_t peer_addrlen,
+                              const struct sockaddr_storage *local_addr,
+                              socklen_t local_addrlen,
+                              int ecn) NONNULL(1,2);
 
 /*
  * Safely schedule a stream_h3_ctx_t for freeing.  If the stream is
@@ -202,6 +246,12 @@ void protohttp3_request_free_stream_ctx(stream_h3_ctx_t      *s,
  * be initiated from the init_conn callback.
  */
 protocol_t protohttp3_setup(pxy_conn_ctx_t *) NONNULL(1) WUNRES;
+
+/*
+ * Build a hex-encoded CID key string from raw CID bytes.
+ * 'key' must be at least H3_CID_KEYLEN bytes.
+ */
+void protohttp3_cid_key(char *key, const uint8_t *cid, size_t cidlen) NONNULL(1,2);
 
 #endif /* !PROTOHTTP3_H */
 
