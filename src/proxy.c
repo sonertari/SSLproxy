@@ -104,6 +104,10 @@ proxy_listener_ctx_free(proxy_listener_ctx_t *ctx)
 	if (ctx->udp_listener_fd >= 0) {
 		evutil_closesocket(ctx->udp_listener_fd);
 	}
+	if (ctx->h3_sessions) {
+		h3_session_map_free(ctx->h3_sessions);
+		ctx->h3_sessions = NULL;
+	}
 	if (ctx->next) {
 		proxy_listener_ctx_free(ctx->next);
 	}
@@ -370,23 +374,21 @@ proxy_listener_acceptcb_udp(evutil_socket_t fd, short what, void *arg)
 
 	log_finest_main_va("ENTER, fd=%d", fd);
 
-	/*
-	 * Receive the first datagram to obtain the peer address.
-	 * We use a small buffer just to peek at the source; the actual
-	 * QUIC Initial packet will be processed by ngtcp2 on the new socket.
-	 */
+	if (!lctx->h3_sessions) {
+		lctx->h3_sessions = h3_session_map_new();
+	}
+
 	uint8_t buf[65536];
 	struct sockaddr_storage peer_addr;
 	socklen_t peer_addrlen = sizeof(peer_addr);
-	struct iovec iov = { .iov_base = buf, .iov_len = sizeof(buf) };
-	struct msghdr msg = {
-		.msg_name    = &peer_addr,
-		.msg_namelen = peer_addrlen,
-		.msg_iov     = &iov,
-		.msg_iovlen  = 1,
-	};
+	struct sockaddr_storage local_addr;
+	socklen_t local_addrlen = sizeof(local_addr);
+	int ecn = 0;
 
-	ssize_t n = recvmsg(fd, &msg, 0);
+	ssize_t n = protohttp3_recvmsg(fd, buf, sizeof(buf),
+	                               &peer_addr, &peer_addrlen,
+	                               &local_addr, &local_addrlen,
+	                               &ecn);
 	if (n <= 0) {
 		if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
 			log_err_level_printf(LOG_CRIT,
@@ -395,17 +397,42 @@ proxy_listener_acceptcb_udp(evutil_socket_t fd, short what, void *arg)
 		}
 		return;
 	}
-	peer_addrlen = msg.msg_namelen;
 
-	log_finest_main_va("UDP accept from fd=%d, peer family=%d, datalen=%zd",
-	                   fd, peer_addr.ss_family, n);
+	if (local_addrlen == 0) {
+		local_addrlen = sizeof(local_addr);
+		if (getsockname(fd, (struct sockaddr *)&local_addr, &local_addrlen) < 0) {
+			memset(&local_addr, 0, sizeof(local_addr));
+			local_addrlen = sizeof(struct sockaddr);
+		}
+	}
 
-	/*
-	 * Create a new UDP socket for this connection.
-	 * We bind to port 0 (random port) and connect to the peer so that
-	 * the per-connection socket becomes a connected UDP socket that
-	 * can be used with sendmsg() without a destination address.
-	 */
+	quic_tuple_key_t key;
+	memset(&key, 0, sizeof(key));
+	memcpy(&key.src_addr, &peer_addr, peer_addrlen);
+	key.src_len = peer_addrlen;
+	memcpy(&key.dst_addr, &local_addr, local_addrlen);
+	key.dst_len = local_addrlen;
+
+	protohttp3_conn_ctx_t *h3_ctx = h3_session_map_get(lctx->h3_sessions, &key);
+	if (h3_ctx) {
+		log_finest_main_va("H3 session found, fd=%d", fd);
+
+		/* IF FOUND: Pass raw buffer directly to protohttp3_process_packet */
+		protohttp3_process_packet(h3_ctx, buf, (size_t)n,
+		                          &peer_addr, peer_addrlen,
+		                          &local_addr, local_addrlen,
+		                          ecn);
+		return;
+	}
+
+	/* IF NOT FOUND: Treat as a new connection attempt */
+	ngtcp2_version_cid vc;
+	int rv = ngtcp2_pkt_decode_version_cid(&vc, buf, (size_t)n, NGTCP2_MAX_CIDLEN);
+	if (rv != 0) {
+		log_finest_main_va("Not a valid QUIC packet header from fd=%d", fd);
+		return;
+	}
+
 	int conn_fd = socket(peer_addr.ss_family, SOCK_DGRAM, IPPROTO_UDP);
 	if (conn_fd == -1) {
 		log_err_level_printf(LOG_CRIT,
@@ -414,7 +441,6 @@ proxy_listener_acceptcb_udp(evutil_socket_t fd, short what, void *arg)
 		return;
 	}
 
-	/* Bind to a random port to get a unique local address. */
 	struct sockaddr_storage bind_addr;
 	socklen_t bind_addrlen = sizeof(bind_addr);
 	memset(&bind_addr, 0, sizeof(bind_addr));
@@ -440,9 +466,7 @@ proxy_listener_acceptcb_udp(evutil_socket_t fd, short what, void *arg)
 		return;
 	}
 
-	/* Connect to the peer so we can use send/recv without addresses. */
-	if (connect(conn_fd, (struct sockaddr *)&peer_addr,
-	            peer_addrlen) == -1) {
+	if (connect(conn_fd, (struct sockaddr *)&peer_addr, peer_addrlen) == -1) {
 		log_err_level_printf(LOG_CRIT,
 			"Failed to connect per-conn UDP socket: %s\n",
 			strerror(errno));
@@ -450,21 +474,8 @@ proxy_listener_acceptcb_udp(evutil_socket_t fd, short what, void *arg)
 		return;
 	}
 
-	/* Make the per-connection socket non-blocking. */
 	evutil_make_socket_nonblocking(conn_fd);
 
-	/*
-	 * Forward the first datagram to the new socket so that ngtcp2 can
-	 * process it once the session is set up.  We do this by writing
-	 * the datagram back to ourselves via sendmsg() on the new socket.
-	 * Actually, since we already consumed the datagram from the listener,
-	 * we inject it into the ngtcp2 processing path later.
-	 *
-	 * We store the first datagram temporarily and pass it to the
-	 * protohttp3_init_conn callback via proto_ctx->arg.
-	 */
-
-	/* Create per-connection state. */
 	pxy_conn_ctx_t *ctx = proxy_conn_ctx_new(conn_fd,
 		lctx->thrmgr, lctx->spec, lctx->global
 #ifndef WITHOUT_USERAUTH
@@ -477,28 +488,30 @@ proxy_listener_acceptcb_udp(evutil_socket_t fd, short what, void *arg)
 		return;
 	}
 
-	if (ctx->protoctx) {
-		/* Pass the first datagram to the protocol context. */
-		ctx->protoctx->initial_pkt = malloc(n);
-		if (ctx->protoctx->initial_pkt) {
-			memcpy(ctx->protoctx->initial_pkt, buf, n);
-			ctx->protoctx->initial_pkt_len = n;
-		}
-	}
-
-	/* Set the source address from the peer. */
 	ctx->srcaddrlen = peer_addrlen;
 	memcpy(&ctx->srcaddr, &peer_addr, peer_addrlen);
 
 	/* Choose the connection handling thread. */
 	pxy_thrmgr_assign_thr(ctx);
 
-	log_finest_main_va("Setting initial event, conn_fd=%d", conn_fd);
+	// log_finest_main_va("Before calling new, ctx->thr->evbase=%p", ctx->thr->evbase);
 
-	/*
-	 * Schedule init_conn on the connection handling thread.
-	 * This will create the ngtcp2 server session on conn_fd.
-	 */
+	h3_ctx = protohttp3_new(conn_fd, ctx->thr->evbase, ctx, vc.dcid, vc.dcidlen);
+	if (!h3_ctx) {
+		log_err_level_printf(LOG_CRIT, "Failed to create protohttp3 session\n");
+		evutil_closesocket(conn_fd);
+		proxy_conn_ctx_free(ctx);
+		return;
+	}
+	// h3_ctx->src_peer_addrlen = peer_addrlen;
+	// memcpy(&h3_ctx->src_peer_addr, &peer_addr, peer_addrlen);
+
+	ctx->protoctx->arg = h3_ctx;
+
+	h3_session_map_insert(lctx->h3_sessions, &key, h3_ctx);
+
+	// pxy_thrmgr_assign_thr(ctx);
+
 	ctx->ev = event_new(ctx->thr->evbase, -1, 0,
 	                    ctx->protoctx->init_conn, ctx);
 	if (!ctx->ev) {
@@ -514,23 +527,10 @@ proxy_listener_acceptcb_udp(evutil_socket_t fd, short what, void *arg)
 		goto out;
 	}
 
-	// ctx->protoctx->init_conn(conn_fd, 0, ctx);
-
-	/*
-	 * Now re-send the first datagram to ourselves on the new socket.
-	 * We write it back to ourselves so that the first QUIC Initial
-	 * packet is waiting on conn_fd when the ngtcp2 read callback fires.
-	 */
-	struct sockaddr_storage local_addr;
-	socklen_t local_addrlen = sizeof(local_addr);
-	getsockname(conn_fd, (struct sockaddr *)&local_addr, &local_addrlen);
-
-	/* Send the first datagram to the new socket via a loopback send. */
-	/* Actually, simply write the datagram to the new socket's buffer
-	 * by sending it from the new socket to itself won't work.
-	 * Instead, we store the first datagram and inject it into the
-	 * ngtcp2 read path from protohttp3_init_conn.
-	 */
+	protohttp3_process_packet(h3_ctx, buf, (size_t)n,
+	                          &peer_addr, peer_addrlen,
+	                          &local_addr, local_addrlen,
+	                          ecn);
 
 	log_finest_main_va("EXIT, conn_fd=%d", conn_fd);
 	return;

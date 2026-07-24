@@ -72,11 +72,15 @@
 #include <nghttp3/nghttp3.h>
 
 /* -------------------------------------------------------------------------
- * Session hash table key: the QUIC Destination Connection ID (DCID).
- *
- * We store the raw DCID bytes as a khash string key.  The key is a
- * hex-encoded string of the DCID (up to NGTCP2_MAX_CIDLEN * 2 + 1 bytes).
+ * Session hash table key: 5-tuple key structure
  * ---------------------------------------------------------------------- */
+typedef struct {
+    struct sockaddr_storage src_addr;
+    struct sockaddr_storage dst_addr;
+    socklen_t src_len;
+    socklen_t dst_len;
+} quic_tuple_key_t;
+
 #define H3_CID_KEYLEN  (NGTCP2_MAX_CIDLEN * 2 + 1)
 
 /* -------------------------------------------------------------------------
@@ -131,6 +135,7 @@ typedef struct protohttp3_conn_ctx {
     /* TLS/SSL instances for the QUIC connections */
     void *src_ssl; /* (SSL *) */
     void *dst_ssl; /* (SSL *) */
+    ngtcp2_crypto_conn_ref conn_ref;
 
     /*
      * Raw UDP sockets.  We cannot use Libevent bufferevents here because
@@ -176,36 +181,58 @@ typedef struct protohttp3_conn_ctx {
     /* Termination flag.                                                    */
     unsigned int term : 1;
 
-    /* Session hash table key (hex-encoded DCID) for lookup/removal.       */
-    char cid_key[H3_CID_KEYLEN];
+    /* Session hash table key (5-tuple) & container reference.             */
+    quic_tuple_key_t key;
+    void            *h3_sessions;
+    char             cid_key[H3_CID_KEYLEN];
 } protohttp3_conn_ctx_t;
 
+typedef struct protohttp3_conn_ctx protohttp3_conn_t;
+
 /* -------------------------------------------------------------------------
- * Session hash table (global, per-listener).
- *
- * We use khash with a string key (hex-encoded DCID).
- * The hash table is created/destroyed by the UDP listener code in proxy.c.
+ * Session hash table (khash based on 5-tuple).
  * ---------------------------------------------------------------------- */
-KHASH_MAP_INIT_STR(h3_session, protohttp3_conn_ctx_t *)
+
+static kh_inline khint_t
+kh_quic_tuple_hash_func(quic_tuple_key_t k)
+{
+    khint_t h = 0;
+    const uint8_t *p = (const uint8_t *)&k;
+    for (size_t i = 0; i < sizeof(quic_tuple_key_t); i++) {
+        h = (h * 31) + p[i];
+    }
+    return h;
+}
+
+static kh_inline int
+kh_quic_tuple_hash_equal(quic_tuple_key_t a, quic_tuple_key_t b)
+{
+    if (a.src_len != b.src_len || a.dst_len != b.dst_len) {
+        return 0;
+    }
+    return (memcmp(&a.src_addr, &b.src_addr, a.src_len) == 0 &&
+            memcmp(&a.dst_addr, &b.dst_addr, a.dst_len) == 0);
+}
+
+KHASH_INIT(h3_conn_map, quic_tuple_key_t, protohttp3_conn_ctx_t *, 1,
+           kh_quic_tuple_hash_func, kh_quic_tuple_hash_equal)
+
+typedef struct h3_session_map {
+    khash_t(h3_conn_map) *map;
+    pthread_mutex_t lock;
+} h3_session_map_t;
+
+h3_session_map_t *h3_session_map_new(void);
+void h3_session_map_free(h3_session_map_t *smap);
+
+protohttp3_conn_ctx_t *h3_session_map_get(h3_session_map_t *smap, const quic_tuple_key_t *key);
+int h3_session_map_insert(h3_session_map_t *smap, const quic_tuple_key_t *key, protohttp3_conn_ctx_t *conn);
+void h3_session_map_remove(h3_session_map_t *smap, const quic_tuple_key_t *key);
 
 /* -------------------------------------------------------------------------
  * Public interface
  * ---------------------------------------------------------------------- */
 
-/*
- * Allocate and initialise a protohttp3_conn_ctx_t, wire up all ngtcp2 and
- * nghttp3 callbacks, and arm the Libevent UDP read events.
- *
- * 'src_fd'   - already-bound, connected UDP socket facing the client.
- * 'evbase'   - Libevent event_base owned by the proxy thread.
- * 'ctx'      - the parent SSLproxy connection context.
- * 'dcid'     - the client's Initial Destination Connection ID (from the
- *              first Initial packet).  Used to set original_dcid in
- *              transport params.  May be NULL for non-Initial paths.
- * 'dcidlen'  - length of dcid in bytes.
- *
- * Returns the new context on success, NULL on OOM / fatal error.
- */
 protohttp3_conn_ctx_t *protohttp3_new(int src_fd,
                                       struct event_base *evbase,
                                       pxy_conn_ctx_t    *ctx,
@@ -214,6 +241,15 @@ protohttp3_conn_ctx_t *protohttp3_new(int src_fd,
 
 /* Tear down all sessions, free all streams, delete all events.           */
 void protohttp3_free(protohttp3_conn_ctx_t *h3_ctx) NONNULL(1);
+
+/*
+ * Receive helper for raw UDP sockets.
+ */
+ssize_t protohttp3_recvmsg(int fd,
+                           uint8_t *buf, size_t bufsz,
+                           struct sockaddr_storage *peer_addr, socklen_t *peer_addrlen,
+                           struct sockaddr_storage *local_addr, socklen_t *local_addrlen,
+                           int *ecn);
 
 /*
  * Process a raw UDP datagram through an existing QUIC session.
@@ -226,30 +262,21 @@ int protohttp3_process_packet(protohttp3_conn_ctx_t *h3_ctx,
                               socklen_t peer_addrlen,
                               const struct sockaddr_storage *local_addr,
                               socklen_t local_addrlen,
-                              int ecn) NONNULL(1,2);
+                              int ecn) NONNULL(2);
 
 /*
- * Safely schedule a stream_h3_ctx_t for freeing.  If the stream is
- * currently on the C call stack (ref_count > 0) the actual free is
- * deferred via a zero-timeout Libevent timer, matching the technique used
- * in protohttp2_request_free_stream_ctx().
+ * Safely schedule a stream_h3_ctx_t for freeing.
  */
 void protohttp3_request_free_stream_ctx(stream_h3_ctx_t      *s,
-                                        protohttp3_conn_ctx_t *h3_ctx) NONNULL(1,2);
+                                         protohttp3_conn_ctx_t *h3_ctx) NONNULL(1,2);
 
 /*
  * Set up the HTTP/3 protocol handler in the given proxy connection context.
- * This is the integration point called from proxy_setup_proto().
- *
- * For HTTP/3, the socket fd is a UDP socket.  The setup function
- * configures the protoctx callbacks so that the QUIC/H3 session can
- * be initiated from the init_conn callback.
  */
 protocol_t protohttp3_setup(pxy_conn_ctx_t *) NONNULL(1) WUNRES;
 
 /*
  * Build a hex-encoded CID key string from raw CID bytes.
- * 'key' must be at least H3_CID_KEYLEN bytes.
  */
 void protohttp3_cid_key(char *key, const uint8_t *cid, size_t cidlen) NONNULL(1,2);
 

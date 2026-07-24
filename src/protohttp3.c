@@ -75,6 +75,10 @@
 #include <netinet/in.h>    /* in_pktinfo, in6_pktinfo, IP_TOS, ...        */
 
 #include <event2/event.h>
+// #include <ngtcp2/ngtcp2_crypto.h>
+
+// For debugging, we need to include arpa/inet.h for inet_ntop() to print IP addresses.
+#include <arpa/inet.h>
 
 /*
  * h3_timestamp – return a ngtcp2_tstamp (nanoseconds, CLOCK_MONOTONIC).
@@ -851,7 +855,7 @@ quic_get_new_connection_id(ngtcp2_conn *conn,
  * Returns the number of bytes received on success, -1 on error (EAGAIN /
  * EWOULDBLOCK are swallowed and return 0).
  */
-static ssize_t
+ssize_t
 protohttp3_recvmsg(int fd,
                    uint8_t *buf, size_t bufsz,
                    struct sockaddr_storage *peer_addr, socklen_t *peer_addrlen,
@@ -922,7 +926,27 @@ protohttp3_recvmsg(int fd,
         }
     }
 
+	log_finest_main_va("EXIT, fd=%d, bytes received=%zd", fd, n);
     return n;
+}
+
+void
+protohttp3_debug_src_peer_addr(const struct sockaddr_storage *peer_addr, char *label)
+{
+    char hostbuf[INET6_ADDRSTRLEN] = "unknown";
+    uint16_t port = 0;
+
+    if (peer_addr->ss_family == AF_INET) {
+        struct sockaddr_in *s = (struct sockaddr_in *)peer_addr;
+        inet_ntop(AF_INET, &s->sin_addr, hostbuf, sizeof(hostbuf));
+        port = ntohs(s->sin_port);
+    } else if (peer_addr->ss_family == AF_INET6) {
+        struct sockaddr_in6 *s = (struct sockaddr_in6 *)peer_addr;
+        inet_ntop(AF_INET6, &s->sin6_addr, hostbuf, sizeof(hostbuf));
+        port = ntohs(s->sin6_port);
+    }
+
+    log_finest_main_va("protohttp3: %s=%s:%u", label, hostbuf, port);
 }
 
 /*
@@ -938,9 +962,10 @@ protohttp3_recvmsg(int fd,
 static void
 protohttp3_flush_src(protohttp3_conn_ctx_t *h3_ctx)
 {
+    log_finest_main_va("ENTER, fd=%d", h3_ctx ? h3_ctx->src_fd : -1);
+
     if (!h3_ctx->src_conn)
         return;
-
     ngtcp2_path_storage ps;
     ngtcp2_path_storage_zero(&ps);
 
@@ -1048,6 +1073,23 @@ protohttp3_flush_src(protohttp3_conn_ctx_t *h3_ctx)
             .msg_iov     = &iov,
             .msg_iovlen  = 1,
         };
+
+        // struct msghdr mhdr;
+        // memset(&mhdr, 0, sizeof(mhdr));
+        // mhdr.msg_name    = (struct sockaddr *)&h3_ctx->src_peer_addr;
+        // mhdr.msg_namelen = h3_ctx->src_peer_addrlen;
+        // mhdr.msg_iov     = &iov;
+        // mhdr.msg_iovlen  = 1;
+
+        // struct msghdr mhdr = {
+        //     .msg_name    = NULL,
+        //     .msg_namelen = 0,
+        //     .msg_iov     = &iov,
+        //     .msg_iovlen  = 1,
+        // };
+
+        protohttp3_debug_src_peer_addr(&h3_ctx->src_peer_addr, "src_peer_addr");
+
         ssize_t sent = sendmsg(h3_ctx->src_fd, &mhdr, 0);
         if (sent < 0) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
@@ -1083,6 +1125,8 @@ protohttp3_src_read_cb(evutil_socket_t fd, short what, void *arg)
     (void)what;
     protohttp3_conn_ctx_t *h3_ctx = arg;
 
+    log_finest_main_va("ENTER, fd=%d", h3_ctx ? h3_ctx->src_fd : -1);
+
     uint8_t buf[H3_DGRAM_BUFSZ];
     struct sockaddr_storage peer_addr;
     socklen_t               peer_addrlen;
@@ -1108,7 +1152,8 @@ protohttp3_src_read_cb(evutil_socket_t fd, short what, void *arg)
             memcpy(&h3_ctx->src_peer_addr, &peer_addr, peer_addrlen);
             h3_ctx->src_peer_addrlen = peer_addrlen;
         }
-        if (h3_ctx->src_local_addrlen == 0 && local_addrlen > 0) {
+        // if (h3_ctx->src_local_addrlen == 0 && local_addrlen > 0) {
+        if (local_addrlen > 0) {
             memcpy(&h3_ctx->src_local_addr, &local_addr, local_addrlen);
             h3_ctx->src_local_addrlen = local_addrlen;
         }
@@ -1191,6 +1236,8 @@ static void protohttp3_dst_write_cb(evutil_socket_t fd, short what, void *arg)
 static int
 protohttp3_arm_timer(protohttp3_conn_ctx_t *h3_ctx)
 {
+    log_finest_main_va("ENTER, fd=%d", h3_ctx ? h3_ctx->src_fd : -1);
+
     ngtcp2_tstamp expiry = ngtcp2_conn_get_expiry(h3_ctx->src_conn);
     ngtcp2_tstamp now    = h3_timestamp();
 
@@ -1256,6 +1303,203 @@ protohttp3_cid_key(char *key, const uint8_t *cid, size_t cidlen)
         key[i * 2 + 1] = hex[cid[i] & 0xf];
     }
     key[cidlen * 2] = '\0';
+}
+
+/* =========================================================================
+ * Session Hash Table (5-tuple lookup) Implementation
+ * ====================================================================== */
+
+h3_session_map_t *
+h3_session_map_new(void)
+{
+    h3_session_map_t *smap = calloc(1, sizeof(*smap));
+    if (!smap)
+        return NULL;
+    smap->map = kh_init(h3_conn_map);
+    if (!smap->map) {
+        free(smap);
+        return NULL;
+    }
+    pthread_mutex_init(&smap->lock, NULL);
+    return smap;
+}
+
+void
+h3_session_map_free(h3_session_map_t *smap)
+{
+    if (!smap)
+        return;
+    pthread_mutex_lock(&smap->lock);
+    if (smap->map) {
+        kh_destroy(h3_conn_map, smap->map);
+        smap->map = NULL;
+    }
+    pthread_mutex_unlock(&smap->lock);
+    pthread_mutex_destroy(&smap->lock);
+    free(smap);
+}
+
+protohttp3_conn_ctx_t *
+h3_session_map_get(h3_session_map_t *smap, const quic_tuple_key_t *key)
+{
+    if (!smap || !smap->map)
+        return NULL;
+    protohttp3_conn_ctx_t *conn = NULL;
+    pthread_mutex_lock(&smap->lock);
+    khiter_t k = kh_get(h3_conn_map, smap->map, *key);
+    if (k != kh_end(smap->map) && kh_exist(smap->map, k)) {
+        conn = kh_val(smap->map, k);
+    }
+    pthread_mutex_unlock(&smap->lock);
+    return conn;
+}
+
+int
+h3_session_map_insert(h3_session_map_t *smap, const quic_tuple_key_t *key, protohttp3_conn_ctx_t *conn)
+{
+    if (!smap || !smap->map)
+        return -1;
+    int ret;
+    pthread_mutex_lock(&smap->lock);
+    khiter_t k = kh_put(h3_conn_map, smap->map, *key, &ret);
+    if (ret >= 0) {
+        kh_val(smap->map, k) = conn;
+        conn->h3_sessions = smap;
+        conn->key = *key;
+    }
+    pthread_mutex_unlock(&smap->lock);
+    return ret >= 0 ? 0 : -1;
+}
+
+void
+h3_session_map_remove(h3_session_map_t *smap, const quic_tuple_key_t *key)
+{
+    if (!smap || !smap->map)
+        return;
+    pthread_mutex_lock(&smap->lock);
+    khiter_t k = kh_get(h3_conn_map, smap->map, *key);
+    if (k != kh_end(smap->map) && kh_exist(smap->map, k)) {
+        kh_del(h3_conn_map, smap->map, k);
+    }
+    pthread_mutex_unlock(&smap->lock);
+}
+
+int
+protohttp3_process_packet(protohttp3_conn_ctx_t *h3_ctx,
+                          const uint8_t *buf, size_t len,
+                          const struct sockaddr_storage *peer_addr,
+                          socklen_t peer_addrlen,
+                          const struct sockaddr_storage *local_addr,
+                          socklen_t local_addrlen,
+                          int ecn)
+{
+    log_finest_main_va("ENTER, fd=%d", h3_ctx ? h3_ctx->src_fd : -1);
+    // protohttp3_debug_src_peer_addr(peer_addr, "peer_addr");
+
+    if (!h3_ctx || !h3_ctx->src_conn)
+        return -1;
+
+    // if (h3_ctx->src_peer_addrlen == 0 && peer_addrlen > 0) {
+    if (peer_addrlen > 0) {
+        memcpy(&h3_ctx->src_peer_addr, peer_addr, peer_addrlen);
+        h3_ctx->src_peer_addrlen = peer_addrlen;
+    }
+    // if (h3_ctx->src_local_addrlen == 0 && local_addrlen > 0) {
+    if (local_addrlen > 0) {
+        memcpy(&h3_ctx->src_local_addr, local_addr, local_addrlen);
+        h3_ctx->src_local_addrlen = local_addrlen;
+    }
+
+    protohttp3_debug_src_peer_addr(&h3_ctx->src_peer_addr, "src_peer_addr");
+    protohttp3_debug_src_peer_addr(&h3_ctx->src_local_addr, "src_local_addr");
+
+    ngtcp2_path path;
+    ngtcp2_addr_init(&path.local,
+                     (struct sockaddr *)&h3_ctx->src_local_addr,
+                     h3_ctx->src_local_addrlen);
+    ngtcp2_addr_init(&path.remote,
+                     (struct sockaddr *)&h3_ctx->src_peer_addr,
+                     h3_ctx->src_peer_addrlen);
+
+    ngtcp2_pkt_info pi = { .ecn = (uint8_t)ecn };
+
+    int rv = ngtcp2_conn_read_pkt(h3_ctx->src_conn,
+                                  &path, &pi,
+                                  buf, len,
+                                  h3_timestamp());
+    if (rv != 0) {
+        log_finest_main_va("ngtcp2_conn_read_pkt returns: %s",
+                       ngtcp2_strerror(rv));
+        if (rv == NGTCP2_ERR_CRYPTO) {
+            unsigned long err;
+            while ((err = ERR_get_error())) {
+                char err_buf[256];
+                ERR_error_string_n(err, err_buf, sizeof(err_buf));
+                log_finest_main_va("OpenSSL error during ngtcp2_conn_read_pkt: %s", err_buf);
+            }
+        }                       
+    }
+
+    protohttp3_debug_src_peer_addr(&h3_ctx->src_peer_addr, "src_peer_addr");
+    protohttp3_flush_src(h3_ctx);
+    return rv == 0 ? 0 : -1;
+}
+
+void
+debug_log(UNUSED void *user_data, const char *fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    vfprintf(stderr, fmt, ap);
+    va_end(ap);
+    fprintf(stderr, "\n");
+}
+
+static ngtcp2_conn *get_conn(ngtcp2_crypto_conn_ref *conn_ref) {
+    protohttp3_conn_ctx_t *h3_ctx = conn_ref->user_data;
+    return h3_ctx->src_conn;
+}
+
+// static int alpn_select_cb(SSL *ssl, const unsigned char **out,
+//                           unsigned char *outlen, const unsigned char *in,
+//                           unsigned int inlen, void *arg) {
+//     (void)ssl;
+//     (void)arg;
+//     if (ngtcp2_crypto_select_alpn(out, outlen, in, inlen) != 0) {
+//         return SSL_TLSEXT_ERR_ALERT_FATAL;
+//     }
+//     return SSL_TLSEXT_ERR_OK;
+// }
+// #include <ngtcp2/ngtcp2_crypto.h>
+
+// static int alpn_select_cb(SSL *ssl, const unsigned char **out,
+//                           unsigned char *outlen, const unsigned char *in,
+//                           unsigned int inlen, void *arg) {
+//     (void)ssl;
+//     (void)arg;
+
+//     /* ngtcp2_select_alpn checks 'in' against supported H3/QUIC ALPNs (e.g. "h3") */
+//     if (ngtcp2_select_alpn(out, outlen, in, inlen) != 0) {
+//         return SSL_TLSEXT_ERR_ALERT_FATAL;
+//     }
+//     return SSL_TLSEXT_ERR_OK;
+// }
+
+static int alpn_select_cb(SSL *ssl, const unsigned char **out,
+                          unsigned char *outlen, const unsigned char *in,
+                          unsigned int inlen, void *arg) {
+    (void)ssl;
+    (void)arg;
+
+    /* Wire format: 1 byte length (2) followed by "h3" */
+    static const unsigned char h3_alpn[] = "\x02h3";
+
+    if (SSL_select_next_proto((unsigned char **)out, outlen,
+                              h3_alpn, sizeof(h3_alpn) - 1,
+                              in, inlen) != OPENSSL_NPN_NEGOTIATED) {
+        return SSL_TLSEXT_ERR_ALERT_FATAL;
+    }
+
+    return SSL_TLSEXT_ERR_OK;
 }
 
 /*
@@ -1359,16 +1603,11 @@ protohttp3_new(int src_fd, struct event_base *evbase, pxy_conn_ctx_t *ctx,
     params.original_dcid = initial_dcid;
     params.original_dcid_present = 1;
 
-    /*
-     * Path: src_fd is bound to a local address; use a zero-filled
-     * placeholder here since we fill in the real addresses from the first
-     * recvmsg() call inside protohttp3_src_read_cb().
-     */
-    struct sockaddr_in local4 = { .sin_family = AF_INET };
-    struct sockaddr_in peer4  = { .sin_family = AF_INET };
     ngtcp2_path path;
-    ngtcp2_addr_init(&path.local,  (struct sockaddr *)&local4, sizeof(local4));
-    ngtcp2_addr_init(&path.remote, (struct sockaddr *)&peer4,  sizeof(peer4));
+    ngtcp2_addr_init(&path.local,  (struct sockaddr *)&ctx->spec->listen_addr, ctx->spec->listen_addrlen);
+    ngtcp2_addr_init(&path.remote, (struct sockaddr *)&ctx->srcaddr,  ctx->srcaddrlen);
+
+    settings.log_printf = debug_log;
 
     int rv = ngtcp2_conn_server_new(&h3_ctx->src_conn, &initial_dcid, &scid, &path,
                                     NGTCP2_PROTO_VER_V1, &cb, &settings,
@@ -1387,14 +1626,69 @@ protohttp3_new(int src_fd, struct event_base *evbase, pxy_conn_ctx_t *ctx,
      * We'll use a local TLS method block for the QUIC prototype. */
     SSL_CTX *ssl_ctx = SSL_CTX_new(TLS_method());
     // ngtcp2_crypto_ossl_configure_server_context(ssl_ctx);
+    // ngtcp2_crypto_ossl_configure_server_context(ssl_ctx);
+
+    SSL_CTX_set_min_proto_version(ssl_ctx, TLS1_3_VERSION);
+    SSL_CTX_set_max_proto_version(ssl_ctx, TLS1_3_VERSION);
+    /* ALPN string for HTTP/3 ("h3") */
+    // static const unsigned char h3_alpn[] = "\x02h3";
+
+    /* Enable ALPN selection on OpenSSL server context */
+    SSL_CTX_set_alpn_select_cb(ssl_ctx, alpn_select_cb, NULL);
+
+    /* Make sure your cert & key files are valid PEMs */
+    // if (SSL_CTX_use_certificate_chain_file(ssl_ctx, "./tests/testproxy/ca.crt") <= 0 ||
+    //     SSL_CTX_use_PrivateKey_file(ssl_ctx, "./tests/testproxy/ca.key", SSL_FILETYPE_PEM) <= 0) {
+    if (SSL_CTX_use_certificate_file(ssl_ctx, "./tests/testproxy/ca.crt", SSL_FILETYPE_PEM) <= 0 ||
+        SSL_CTX_use_PrivateKey_file(ssl_ctx, "./tests/testproxy/ca.key", SSL_FILETYPE_PEM) <= 0) {
+        log_dbg_printf("protohttp3: failed to load server cert/key!\n");
+        // Clear OpenSSL error queue so old errors don't pollute runtime
+        ERR_clear_error();
+        return NULL;
+    }
+	// if (ssl_x509chain_load(NULL, &conn_opts->chain, optarg) == -1) {
+
 
     h3_ctx->src_ssl = SSL_new(ssl_ctx);
+
+    SSL_set_accept_state(h3_ctx->src_ssl);
+
     ngtcp2_crypto_ossl_configure_server_session(h3_ctx->src_ssl);
-    SSL_set_app_data(h3_ctx->src_ssl, h3_ctx->src_conn);
-    ngtcp2_conn_set_tls_native_handle(h3_ctx->src_conn, h3_ctx->src_ssl);
+
+    // ngtcp2_crypto_ossl_ctx_init(h3_ctx->src_ssl, ssl_ctx, h3_ctx->src_conn);
+    // SSL_set_accept_state(h3_ctx->src_ssl);
+    // SSL_set_quic_method(h3_ctx->src_ssl, &quic_ssl_method);
+    // ngtcp2_crypto_ctx_initial_init(&h3_ctx->src_ssl, h3_ctx->src_conn);
+
+    // ngtcp2_crypto_ossl_ctx *ossl_ctx = ngtcp2_conn_get_tls_native_handle(h3_ctx->src_conn);
+    // // ngtcp2_crypto_ossl_ctx_init(ossl_ctx, h3_ctx->src_ssl);
+    // ngtcp2_crypto_ossl_ctx_new(&ossl_ctx, h3_ctx->src_ssl);
+
+    /* 1. Setup the ngtcp2_crypto_conn_ref */
+    // ngtcp2_crypto_conn_ref conn_ref;
+    // conn_ref.get_conn = get_conn;
+    // conn_ref.user_data = h3_ctx;
+    // SSL_set_app_data(h3_ctx->src_ssl, &conn_ref);
+    h3_ctx->conn_ref.get_conn = get_conn;
+    h3_ctx->conn_ref.user_data = h3_ctx;
+    SSL_set_app_data(h3_ctx->src_ssl, &h3_ctx->conn_ref);
+
+    ngtcp2_crypto_ossl_ctx *ossl_ctx = NULL;
+    if (ngtcp2_crypto_ossl_ctx_new(&ossl_ctx, h3_ctx->src_ssl) != 0) {
+        log_dbg_printf("protohttp3: failed to create ngtcp2_crypto_ossl_ctx\n");
+        return NULL;
+    }
+    // SSL_set_app_data(h3_ctx->src_ssl, h3_ctx->src_conn);
+    ngtcp2_conn_set_tls_native_handle(h3_ctx->src_conn, ossl_ctx);
     /* Set the QUIC transport version required by quictls OpenSSL integration */
     // ngtcp2_conn_set_aead_overhead(h3_ctx->src_conn, 16);
 
+    // ngtcp2_crypto_ossl_configure_server_session(h3_ctx->src_ssl);
+    // /* 3. Encode transport parameters into TLS session (CRITICAL) */
+    // if (ngtcp2_crypto_ossl_set_server_connection(h3_ctx->src_ssl, h3_ctx->src_conn) != 0) {
+    //     log_dbg_printf("protohttp3: failed to set ngtcp2 server connection\n");
+    //     // return NULL;
+    // }    
     /* ------------------------------------------------------------------
      * Create Libevent events for the raw UDP file descriptor.
      *
@@ -1537,20 +1831,20 @@ protohttp3_init_conn(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
     ctx->protoctx->arg = h3_ctx;
 
     /* Process the first datagram received by the UDP listener */
-    if (ctx->protoctx->initial_pkt) {
-        ngtcp2_path path;
-        ngtcp2_addr_init(&path.local, (struct sockaddr *)&ctx->srcaddr, ctx->srcaddrlen);
-        ngtcp2_addr_init(&path.remote, (struct sockaddr *)&ctx->srcaddr, ctx->srcaddrlen);
-        ngtcp2_pkt_info pi = { .ecn = 0 };
-        ngtcp2_conn_read_pkt(h3_ctx->src_conn, &path, &pi,
-                             ctx->protoctx->initial_pkt,
-                             ctx->protoctx->initial_pkt_len,
-                             h3_timestamp());
-        free(ctx->protoctx->initial_pkt);
-        ctx->protoctx->initial_pkt = NULL;
-    }
+    // if (ctx->protoctx->initial_pkt) {
+    //     ngtcp2_path path;
+    //     ngtcp2_addr_init(&path.local, (struct sockaddr *)&ctx->srcaddr, ctx->srcaddrlen);
+    //     ngtcp2_addr_init(&path.remote, (struct sockaddr *)&ctx->srcaddr, ctx->srcaddrlen);
+    //     ngtcp2_pkt_info pi = { .ecn = 0 };
+    //     ngtcp2_conn_read_pkt(h3_ctx->src_conn, &path, &pi,
+    //                          ctx->protoctx->initial_pkt,
+    //                          ctx->protoctx->initial_pkt_len,
+    //                          h3_timestamp());
+    //     free(ctx->protoctx->initial_pkt);
+    //     ctx->protoctx->initial_pkt = NULL;
+    // }
 
-    log_dbg_printf("protohttp3: session initialised on fd=%d\n", ctx->fd);
+    log_finest_va("protohttp3: session initialised on fd=%d", ctx->fd);
 
     /* Initiate upstream QUIC connection immediately for reverse proxy */
     pxy_conn_connect(ctx);
@@ -1783,6 +2077,12 @@ protohttp3_free(protohttp3_conn_ctx_t *h3_ctx)
     /* Free all stream contexts.                                           */
     while (h3_ctx->streams)
         protohttp3_free_stream_ctx(h3_ctx->streams, h3_ctx);
+
+    /* Remove from session hash table if present.                          */
+    if (h3_ctx->h3_sessions) {
+        h3_session_map_remove((h3_session_map_t *)h3_ctx->h3_sessions, &h3_ctx->key);
+        h3_ctx->h3_sessions = NULL;
+    }
 
     /* Close raw UDP sockets.                                              */
     if (h3_ctx->src_fd >= 0) { close(h3_ctx->src_fd); h3_ctx->src_fd = -1; }
