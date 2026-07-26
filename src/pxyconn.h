@@ -207,8 +207,8 @@ struct proto_ctx {
 	void *arg;
 
 	/* Buffer for the first datagram received by the UDP listener */
-	uint8_t *initial_pkt;
-	size_t   initial_pkt_len;
+	// uint8_t *initial_pkt;
+	// size_t   initial_pkt_len;
 };
 
 struct proto_child_ctx {

@@ -168,12 +168,15 @@ typedef struct protohttp3_conn_ctx {
     socklen_t               dst_peer_addrlen;
 
     /* Buffer for the first datagram received by the listener */
-    uint8_t                 *initial_pkt;
-    size_t                  initial_pkt_len;
+    // uint8_t                 *initial_pkt;
+    // size_t                  initial_pkt_len;
 
     /* Local addresses (needed by ngtcp2 path tracking).                   */
     struct sockaddr_storage src_local_addr;
     socklen_t               src_local_addrlen;
+
+    // ngtcp2_cid scid; /* source and connection ID */
+    // ngtcp2_cid dcid; /* destination connection ID */
 
     /* Linked list of active H3 streams.                                   */
     stream_h3_ctx_t *streams;
@@ -185,6 +188,8 @@ typedef struct protohttp3_conn_ctx {
     quic_tuple_key_t key;
     void            *h3_sessions;
     char             cid_key[H3_CID_KEYLEN];
+
+    int udp_listener_fd;
 } protohttp3_conn_ctx_t;
 
 typedef struct protohttp3_conn_ctx protohttp3_conn_t;
@@ -236,6 +241,8 @@ void h3_session_map_remove(h3_session_map_t *smap, const quic_tuple_key_t *key);
 protohttp3_conn_ctx_t *protohttp3_new(int src_fd,
                                       struct event_base *evbase,
                                       pxy_conn_ctx_t    *ctx,
+                                      const uint8_t     *scid,
+                                      size_t             scidlen,
                                       const uint8_t     *dcid,
                                       size_t             dcidlen) WUNRES;
 

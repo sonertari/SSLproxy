@@ -280,6 +280,10 @@ privsep_server_opensock(const proxyspec_t *spec)
 		return -1;
 	}
 
+	// if (spec->http3) {
+	// 	rv = setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE|SO_REUSEPORT, (void*)&on, sizeof(on));
+	// }
+	// else
 	rv = setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, (void*)&on, sizeof(on));
 	if (rv == -1) {
 		log_err_level_printf(LOG_CRIT, "Error from setsockopt(SO_KEEPALIVE): %s (%i)\n",
