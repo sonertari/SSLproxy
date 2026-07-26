@@ -285,7 +285,7 @@ protocol_t protohttp3_setup(pxy_conn_ctx_t *) NONNULL(1) WUNRES;
 /*
  * Build a hex-encoded CID key string from raw CID bytes.
  */
-void protohttp3_cid_key(char *key, const uint8_t *cid, size_t cidlen) NONNULL(1,2);
+void protohttp3_cid_to_hex(char *key, const uint8_t *cid, size_t cidlen) NONNULL(1,2);
 
 #endif /* !PROTOHTTP3_H */
 

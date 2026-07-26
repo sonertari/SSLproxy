@@ -406,7 +406,7 @@ proxy_listener_acceptcb_udp(evutil_socket_t fd, short what, void *arg)
 		}
 	}
 
-	int conn_fd = -1;
+	pxy_conn_ctx_t *ctx = NULL;
 
 	ngtcp2_version_cid vc;
 	int rv = ngtcp2_pkt_decode_version_cid(&vc, buf, (size_t)n, NGTCP2_MAX_CIDLEN);
@@ -416,14 +416,11 @@ proxy_listener_acceptcb_udp(evutil_socket_t fd, short what, void *arg)
 	}
 
 	char scid_hex[NGTCP2_MAX_CIDLEN * 2 + 1];
-	for (size_t i = 0; i < vc.scidlen; i++) {
-		snprintf(scid_hex + (i * 2), 3, "%02x", vc.scid[i]);
-	}
+    protohttp3_cid_to_hex(scid_hex, vc.scid, vc.scidlen);
 
 	char dcid_hex[NGTCP2_MAX_CIDLEN * 2 + 1];
-	for (size_t i = 0; i < vc.dcidlen; i++) {
-		snprintf(dcid_hex + (i * 2), 3, "%02x", vc.dcid[i]);
-	}
+    protohttp3_cid_to_hex(dcid_hex, vc.dcid, vc.dcidlen);
+
 	log_finest_main_va("Packet dcid=0x%s scid=0x%s, on src_fd=%d", dcid_hex, scid_hex, fd);
 
 	quic_tuple_key_t key;
@@ -447,55 +444,8 @@ proxy_listener_acceptcb_udp(evutil_socket_t fd, short what, void *arg)
 		return;
 	}
 
-	pxy_conn_ctx_t *ctx = NULL;
-
-	conn_fd = socket(peer_addr.ss_family, SOCK_DGRAM, IPPROTO_UDP);
-	if (conn_fd == -1) {
-		log_err_level_printf(LOG_CRIT,
-			"Failed to create per-conn UDP socket: %s\n",
-			strerror(errno));
-		goto err;
-	}
-
-	// We don't use SO_REUSEPORT, because we use the listener's UDP socket for sending datagrams,
-	// and the per-connection sockets are only used for receiving datagrams.
-	// int opt = 1;
-	// setsockopt(conn_fd, SOL_SOCKET, SO_REUSEPORT, &opt, sizeof(opt));
-
-	struct sockaddr_storage bind_addr;
-	socklen_t bind_addrlen = sizeof(bind_addr);
-	memset(&bind_addr, 0, sizeof(bind_addr));
-	if (peer_addr.ss_family == AF_INET) {
-		struct sockaddr_in *sin = (struct sockaddr_in *)&bind_addr;
-		sin->sin_family = AF_INET;
-		sin->sin_addr.s_addr = INADDR_ANY;
-		sin->sin_port = 0;
-		bind_addrlen = sizeof(struct sockaddr_in);
-	} else {
-		struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)&bind_addr;
-		sin6->sin6_family = AF_INET6;
-		sin6->sin6_addr = in6addr_any;
-		sin6->sin6_port = 0;
-		bind_addrlen = sizeof(struct sockaddr_in6);
-	}
-
-	if (bind(conn_fd, (struct sockaddr *)&bind_addr, bind_addrlen) == -1) {
-		log_err_level_printf(LOG_CRIT,
-			"Failed to bind per-conn UDP socket: %s\n",
-			strerror(errno));
-		goto err;
-	}
-
-	if (connect(conn_fd, (struct sockaddr *)&peer_addr, peer_addrlen) == -1) {
-		log_err_level_printf(LOG_CRIT,
-			"Failed to connect per-conn UDP socket: %s\n",
-			strerror(errno));
-		goto err;
-	}
-
-	evutil_make_socket_nonblocking(conn_fd);
-
-	ctx = proxy_conn_ctx_new(conn_fd,
+	ctx = proxy_conn_ctx_new(
+		-1, // conn_fd is not used anymore
 		lctx->thrmgr, lctx->spec, lctx->global
 #ifndef WITHOUT_USERAUTH
 		, lctx->clisock
@@ -503,7 +453,7 @@ proxy_listener_acceptcb_udp(evutil_socket_t fd, short what, void *arg)
 		);
 	if (!ctx) {
 		log_err_level_printf(LOG_CRIT, "Error allocating ctx memory\n");
-		goto err;
+		return;
 	}
 
 	ctx->srcaddrlen = peer_addrlen;
@@ -512,11 +462,10 @@ proxy_listener_acceptcb_udp(evutil_socket_t fd, short what, void *arg)
 	/* Choose the connection handling thread. */
 	pxy_thrmgr_assign_thr(ctx);
 
-
 	// We use the listener's event base for the new connection, because we use the listener's UDP socket for sending datagrams,
 	// and the listener's event base is the one that is running the event loop.
 	// h3_ctx = protohttp3_new(conn_fd, ctx->thr->evbase, ctx, vc.scid, vc.scidlen, vc.dcid, vc.dcidlen);
-	h3_ctx = protohttp3_new(conn_fd, lctx->evbase, ctx, vc.scid, vc.scidlen, vc.dcid, vc.dcidlen);
+	h3_ctx = protohttp3_new(-1, lctx->evbase, ctx, vc.scid, vc.scidlen, vc.dcid, vc.dcidlen);
 	if (!h3_ctx) {
 		log_err_level_printf(LOG_CRIT, "Failed to create protohttp3 session\n");
 		goto err;
@@ -555,13 +504,13 @@ proxy_listener_acceptcb_udp(evutil_socket_t fd, short what, void *arg)
 	                          &local_addr, local_addrlen,
 	                          ecn);
 
-	log_finest_main_va("EXIT, conn_fd=%d", conn_fd);
+	log_finest_main_va("EXIT, conn_fd=%d", -1);
 	return;
 
 err:
-	if (conn_fd >= 0) {
-		evutil_closesocket(conn_fd);
-	}
+	// if (conn_fd >= 0) {
+	// 	evutil_closesocket(conn_fd);
+	// }
 	if (ctx) {
 		proxy_conn_ctx_free(ctx);
 	}
