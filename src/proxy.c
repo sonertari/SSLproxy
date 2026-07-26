@@ -366,13 +366,9 @@ proxy_debug_base(const struct event_base *ev_base)
  *
  * All subsequent QUIC communication happens on the per-connection socket.
  */
-
-static pthread_mutex_t udp_accept_mutex = PTHREAD_MUTEX_INITIALIZER;
-
 static void
 proxy_listener_acceptcb_udp(evutil_socket_t fd, short what, void *arg)
 {
-	pthread_mutex_lock(&udp_accept_mutex);
 	(void)what;
 	proxy_listener_ctx_t *lctx = arg;
 
@@ -399,7 +395,6 @@ proxy_listener_acceptcb_udp(evutil_socket_t fd, short what, void *arg)
 				"Error reading from UDP listener: %s\n",
 				strerror(errno));
 		}
-		pthread_mutex_unlock(&udp_accept_mutex);
 		return;
 	}
 
@@ -449,7 +444,6 @@ proxy_listener_acceptcb_udp(evutil_socket_t fd, short what, void *arg)
 		                          ecn);
 
 		log_finest_main_va("EXIT session found, src_fd=%d, udp_listener_fd=%d", h3_ctx->src_fd, h3_ctx->udp_listener_fd);
-		pthread_mutex_unlock(&udp_accept_mutex);
 		return;
 	}
 
@@ -562,7 +556,6 @@ proxy_listener_acceptcb_udp(evutil_socket_t fd, short what, void *arg)
 	                          ecn);
 
 	log_finest_main_va("EXIT, conn_fd=%d", conn_fd);
-	pthread_mutex_unlock(&udp_accept_mutex);
 	return;
 
 err:
@@ -572,7 +565,6 @@ err:
 	if (ctx) {
 		proxy_conn_ctx_free(ctx);
 	}
-	pthread_mutex_unlock(&udp_accept_mutex);
 }
 
 /*
