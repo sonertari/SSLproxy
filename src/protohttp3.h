@@ -60,6 +60,7 @@
 #include "pxyconn.h"
 #include "attrib.h"
 #include "khash.h"
+// #include <sys/queue.h>
 
 #include <stdint.h>
 #include <sys/socket.h>
@@ -114,6 +115,13 @@ typedef struct stream_h3_ctx {
     struct stream_h3_ctx *next;
 } stream_h3_ctx_t;
 
+typedef struct pkt_node {
+    uint8_t *buf;
+    size_t len;
+    int ecn;
+    struct pkt_node *next;
+} pkt_node_t;
+
 /* -------------------------------------------------------------------------
  * Per-connection (QUIC session) state
  * ---------------------------------------------------------------------- */
@@ -152,6 +160,8 @@ typedef struct protohttp3_conn_ctx {
     struct event *dst_rev;
     struct event *dst_wev;
 
+    struct event *src_process_pkt_ev; /* event to process a received packet on src_fd */
+
     /* Timer event that drives ngtcp2's loss-detection / keep-alive.       */
     struct event *timer_ev;
 
@@ -166,10 +176,6 @@ typedef struct protohttp3_conn_ctx {
     socklen_t               src_peer_addrlen;
     struct sockaddr_storage dst_peer_addr;
     socklen_t               dst_peer_addrlen;
-
-    /* Buffer for the first datagram received by the listener */
-    // uint8_t                 *initial_pkt;
-    // size_t                  initial_pkt_len;
 
     /* Local addresses (needed by ngtcp2 path tracking).                   */
     struct sockaddr_storage src_local_addr;
@@ -190,6 +196,9 @@ typedef struct protohttp3_conn_ctx {
     char             cid_key[H3_CID_KEYLEN];
 
     int udp_listener_fd;
+
+    struct pkt_node *packet_queue;
+    pthread_mutex_t packet_queue_mutex;
 } protohttp3_conn_ctx_t;
 
 typedef struct protohttp3_conn_ctx protohttp3_conn_t;
@@ -241,10 +250,7 @@ void h3_session_map_remove(h3_session_map_t *smap, const quic_tuple_key_t *key);
 protohttp3_conn_ctx_t *protohttp3_new(int src_fd,
                                       struct event_base *evbase,
                                       pxy_conn_ctx_t    *ctx,
-                                      const uint8_t     *scid,
-                                      size_t             scidlen,
-                                      const uint8_t     *dcid,
-                                      size_t             dcidlen) WUNRES;
+                                      ngtcp2_version_cid vc) WUNRES;
 
 /* Tear down all sessions, free all streams, delete all events.           */
 void protohttp3_free(protohttp3_conn_ctx_t *h3_ctx) NONNULL(1);
@@ -263,13 +269,7 @@ ssize_t protohttp3_recvmsg(int fd,
  * Called by the packet demuxer when a session is found in the hash table.
  * Returns 0 on success, -1 on error.
  */
-int protohttp3_process_packet(protohttp3_conn_ctx_t *h3_ctx,
-                              const uint8_t *buf, size_t len,
-                              const struct sockaddr_storage *peer_addr,
-                              socklen_t peer_addrlen,
-                              const struct sockaddr_storage *local_addr,
-                              socklen_t local_addrlen,
-                              int ecn) NONNULL(2);
+void protohttp3_process_packet_cb(evutil_socket_t fd, short what, void *arg) NONNULL(3);
 
 /*
  * Safely schedule a stream_h3_ctx_t for freeing.

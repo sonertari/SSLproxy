@@ -205,10 +205,6 @@ struct proto_ctx {
 
 	// For protocol specific fields, if any
 	void *arg;
-
-	/* Buffer for the first datagram received by the UDP listener */
-	// uint8_t *initial_pkt;
-	// size_t   initial_pkt_len;
 };
 
 struct proto_child_ctx {
