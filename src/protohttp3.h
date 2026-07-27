@@ -72,6 +72,15 @@
 #include <ngtcp2/ngtcp2_crypto_ossl.h>
 #include <nghttp3/nghttp3.h>
 
+/* =========================================================================
+ * Datagram receive buffer size.
+ * QUIC datagrams are bounded by the path MTU (typically <= 1500 bytes) but
+ * we use a generous buffer to accommodate jumbo frames on LAN segments.
+ * ====================================================================== */
+#define H3_DGRAM_BUFSZ  65536
+
+typedef struct protohttp3_conn_ctx protohttp3_conn_ctx_t;
+
 /* -------------------------------------------------------------------------
  * Session hash table key: 5-tuple key structure
  * ---------------------------------------------------------------------- */
@@ -83,6 +92,46 @@ typedef struct {
 } quic_tuple_key_t;
 
 #define H3_CID_KEYLEN  (NGTCP2_MAX_CIDLEN * 2 + 1)
+
+/* -------------------------------------------------------------------------
+ * Session hash table (khash based on 5-tuple).
+ * ---------------------------------------------------------------------- */
+
+static kh_inline khint_t
+kh_quic_tuple_hash_func(quic_tuple_key_t k)
+{
+    khint_t h = 0;
+    const uint8_t *p = (const uint8_t *)&k;
+    for (size_t i = 0; i < sizeof(quic_tuple_key_t); i++) {
+        h = (h * 31) + p[i];
+    }
+    return h;
+}
+
+static kh_inline int
+kh_quic_tuple_hash_equal(quic_tuple_key_t a, quic_tuple_key_t b)
+{
+    if (a.src_len != b.src_len || a.dst_len != b.dst_len) {
+        return 0;
+    }
+    return (memcmp(&a.src_addr, &b.src_addr, a.src_len) == 0 &&
+            memcmp(&a.dst_addr, &b.dst_addr, a.dst_len) == 0);
+}
+
+KHASH_INIT(h3_conn_map, quic_tuple_key_t, protohttp3_conn_ctx_t *, 1,
+           kh_quic_tuple_hash_func, kh_quic_tuple_hash_equal)
+
+typedef struct h3_session_map {
+    khash_t(h3_conn_map) *map;
+    pthread_mutex_t lock;
+} h3_session_map_t;
+
+h3_session_map_t *h3_session_map_new(void);
+void h3_session_map_free(h3_session_map_t *smap);
+
+protohttp3_conn_ctx_t *h3_session_map_get(h3_session_map_t *smap, const quic_tuple_key_t *key);
+int h3_session_map_insert(h3_session_map_t *smap, const quic_tuple_key_t *key, protohttp3_conn_ctx_t *conn);
+void h3_session_map_remove(h3_session_map_t *smap, const quic_tuple_key_t *key);
 
 /* -------------------------------------------------------------------------
  * Per-stream state  (mirrors stream_ctx_t from protohttp2.h)
@@ -126,7 +175,7 @@ typedef struct pkt_node {
  * Per-connection (QUIC session) state
  * ---------------------------------------------------------------------- */
 
-typedef struct protohttp3_conn_ctx {
+struct protohttp3_conn_ctx {
     /*
      * The QUIC transport layer.  src_conn faces the client (server mode),
      * dst_conn faces the upstream server (client mode).
@@ -150,7 +199,6 @@ typedef struct protohttp3_conn_ctx {
      * ngtcp2 needs recvmsg() to extract per-datagram ancillary data (ECN
      * bits, destination IP for path validation).
      */
-    int src_fd;   /* listening/connected UDP fd for the client side  */
     int dst_fd;   /* connected UDP fd towards the upstream server    */
 
     /* Libevent 'struct event' wrappers around the raw fds.               */
@@ -160,29 +208,24 @@ typedef struct protohttp3_conn_ctx {
     struct event *dst_rev;
     struct event *dst_wev;
 
-    struct event *src_process_pkt_ev; /* event to process a received packet on src_fd */
+    struct event *src_process_pkt_ev; /* event to process a received packet on client side */
 
     /* Timer event that drives ngtcp2's loss-detection / keep-alive.       */
     struct event *timer_ev;
 
-    /* Libevent base - borrowed from the proxy thread (never freed here).  */
+    /* Event base of the connection handling thread this h3 conn is assigned to,
+     * borrowed from the proxy thread (never freed here).  */
     struct event_base *evbase;
 
     /* Back-pointer to the owning SSLproxy connection context.             */
     pxy_conn_ctx_t *ctx;
 
     /* Peer addresses cached from the first recvmsg() call.                */
-    struct sockaddr_storage src_peer_addr;
-    socklen_t               src_peer_addrlen;
     struct sockaddr_storage dst_peer_addr;
     socklen_t               dst_peer_addrlen;
 
-    /* Local addresses (needed by ngtcp2 path tracking).                   */
-    struct sockaddr_storage src_local_addr;
-    socklen_t               src_local_addrlen;
-
-    // ngtcp2_cid scid; /* source and connection ID */
-    // ngtcp2_cid dcid; /* destination connection ID */
+    /* Local and peer addresses on client side (needed by ngtcp2 path tracking). */
+    ngtcp2_path src_path;
 
     /* Linked list of active H3 streams.                                   */
     stream_h3_ctx_t *streams;
@@ -192,63 +235,19 @@ typedef struct protohttp3_conn_ctx {
 
     /* Session hash table key (5-tuple) & container reference.             */
     quic_tuple_key_t key;
-    void            *h3_sessions;
-    char             cid_key[H3_CID_KEYLEN];
+    h3_session_map_t *h3_sessions;
 
     int udp_listener_fd;
 
-    struct pkt_node *packet_queue;
-    pthread_mutex_t packet_queue_mutex;
-} protohttp3_conn_ctx_t;
-
-typedef struct protohttp3_conn_ctx protohttp3_conn_t;
-
-/* -------------------------------------------------------------------------
- * Session hash table (khash based on 5-tuple).
- * ---------------------------------------------------------------------- */
-
-static kh_inline khint_t
-kh_quic_tuple_hash_func(quic_tuple_key_t k)
-{
-    khint_t h = 0;
-    const uint8_t *p = (const uint8_t *)&k;
-    for (size_t i = 0; i < sizeof(quic_tuple_key_t); i++) {
-        h = (h * 31) + p[i];
-    }
-    return h;
-}
-
-static kh_inline int
-kh_quic_tuple_hash_equal(quic_tuple_key_t a, quic_tuple_key_t b)
-{
-    if (a.src_len != b.src_len || a.dst_len != b.dst_len) {
-        return 0;
-    }
-    return (memcmp(&a.src_addr, &b.src_addr, a.src_len) == 0 &&
-            memcmp(&a.dst_addr, &b.dst_addr, a.dst_len) == 0);
-}
-
-KHASH_INIT(h3_conn_map, quic_tuple_key_t, protohttp3_conn_ctx_t *, 1,
-           kh_quic_tuple_hash_func, kh_quic_tuple_hash_equal)
-
-typedef struct h3_session_map {
-    khash_t(h3_conn_map) *map;
-    pthread_mutex_t lock;
-} h3_session_map_t;
-
-h3_session_map_t *h3_session_map_new(void);
-void h3_session_map_free(h3_session_map_t *smap);
-
-protohttp3_conn_ctx_t *h3_session_map_get(h3_session_map_t *smap, const quic_tuple_key_t *key);
-int h3_session_map_insert(h3_session_map_t *smap, const quic_tuple_key_t *key, protohttp3_conn_ctx_t *conn);
-void h3_session_map_remove(h3_session_map_t *smap, const quic_tuple_key_t *key);
+    struct pkt_node *pkt_queue;
+    pthread_mutex_t pkt_queue_mutex;
+};
 
 /* -------------------------------------------------------------------------
  * Public interface
  * ---------------------------------------------------------------------- */
 
-protohttp3_conn_ctx_t *protohttp3_new(int src_fd,
-                                      struct event_base *evbase,
+protohttp3_conn_ctx_t *protohttp3_new(struct event_base *evbase,
                                       pxy_conn_ctx_t    *ctx,
                                       ngtcp2_version_cid vc) WUNRES;
 
@@ -261,7 +260,6 @@ void protohttp3_free(protohttp3_conn_ctx_t *h3_ctx) NONNULL(1);
 ssize_t protohttp3_recvmsg(int fd,
                            uint8_t *buf, size_t bufsz,
                            struct sockaddr_storage *peer_addr, socklen_t *peer_addrlen,
-                           struct sockaddr_storage *local_addr, socklen_t *local_addrlen,
                            int *ecn);
 
 /*

@@ -54,10 +54,12 @@ typedef struct proxy_listener_ctx {
 	evutil_socket_t clisock;
 #endif /* !WITHOUT_USERAUTH */
 	struct evconnlistener *evcl;
+
 	/* UDP listener fields for HTTP/3 support */
 	int udp_listener_fd;
 	struct event *udp_accept_ev;
 	struct h3_session_map *h3_sessions;
+
 	struct proxy_listener_ctx *next;
 } proxy_listener_ctx_t;
 

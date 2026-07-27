@@ -105,13 +105,6 @@ static void protohttp3_timer_cb(evutil_socket_t fd, short what, void *arg);
 static int  protohttp3_arm_timer(protohttp3_conn_ctx_t *h3_ctx);
 static void protohttp3_flush_src(protohttp3_conn_ctx_t *h3_ctx);
 
-/* =========================================================================
- * Datagram receive buffer size.
- * QUIC datagrams are bounded by the path MTU (typically <= 1500 bytes) but
- * we use a generous buffer to accommodate jumbo frames on LAN segments.
- * ====================================================================== */
-#define H3_DGRAM_BUFSZ  65536
-
 /* Maximum iovecs we ask nghttp3 to fill in one writev call.              */
 #define H3_MAX_IOVECS   16
 
@@ -849,7 +842,6 @@ quic_get_new_connection_id(ngtcp2_conn *conn,
  * Receive a single datagram from the UDP socket using recvmsg() so that we
  * can extract:
  *   - The peer address (required by ngtcp2 path tracking).
- *   - The local destination address (for path validation / migration).
  *   - The ECN codepoint (DSCP bits) used by QUIC for congestion control.
  *
  * Returns the number of bytes received on success, -1 on error (EAGAIN /
@@ -859,7 +851,6 @@ ssize_t
 protohttp3_recvmsg(int fd,
                    uint8_t *buf, size_t bufsz,
                    struct sockaddr_storage *peer_addr, socklen_t *peer_addrlen,
-                   struct sockaddr_storage *local_addr, socklen_t *local_addrlen,
                    int *ecn)
 {
     struct iovec iov = { .iov_base = buf, .iov_len = bufsz };
@@ -886,7 +877,6 @@ protohttp3_recvmsg(int fd,
 
     *peer_addrlen = msg.msg_namelen;
     *ecn = 0;
-    *local_addrlen = 0;
 
     /* Walk ancillary control messages.                                    */
     for (struct cmsghdr *cmsg = CMSG_FIRSTHDR(&msg);
@@ -895,13 +885,6 @@ protohttp3_recvmsg(int fd,
 
         /* IPv4 destination address + ECN.                                 */
         if (cmsg->cmsg_level == IPPROTO_IP) {
-            if (cmsg->cmsg_type == IP_PKTINFO) {
-                struct in_pktinfo *pkt = (void *)CMSG_DATA(cmsg);
-                struct sockaddr_in *la = (struct sockaddr_in *)local_addr;
-                la->sin_family = AF_INET;
-                la->sin_addr   = pkt->ipi_addr;
-                *local_addrlen = sizeof(*la);
-            }
 #ifdef IP_TOS
             if (cmsg->cmsg_type == IP_TOS) {
                 *ecn = *(int *)CMSG_DATA(cmsg) & 0x03;
@@ -911,13 +894,6 @@ protohttp3_recvmsg(int fd,
 
         /* IPv6 destination address + ECN.                                 */
         if (cmsg->cmsg_level == IPPROTO_IPV6) {
-            if (cmsg->cmsg_type == IPV6_PKTINFO) {
-                struct in6_pktinfo *pkt6 = (void *)CMSG_DATA(cmsg);
-                struct sockaddr_in6 *la6 = (struct sockaddr_in6 *)local_addr;
-                la6->sin6_family = AF_INET6;
-                la6->sin6_addr   = pkt6->ipi6_addr;
-                *local_addrlen   = sizeof(*la6);
-            }
 #ifdef IPV6_TCLASS
             if (cmsg->cmsg_type == IPV6_TCLASS) {
                 *ecn = *(int *)CMSG_DATA(cmsg) & 0x03;
@@ -926,7 +902,7 @@ protohttp3_recvmsg(int fd,
         }
     }
 
-	log_finest_main_va("EXIT, fd=%d, bytes received=%zd", fd, n);
+	log_finest_main_va("EXIT, fd=%d, bytes received=%zd, ecn=%d", fd, n, *ecn);
     return n;
 }
 
@@ -970,14 +946,6 @@ protohttp3_flush_src(protohttp3_conn_ctx_t *h3_ctx)
     if (!h3_ctx || !h3_ctx->src_conn)
         return;
 
-    ngtcp2_path path;
-    ngtcp2_addr_init(&path.local,
-                     (struct sockaddr *)&h3_ctx->src_local_addr,
-                     h3_ctx->src_local_addrlen);
-    ngtcp2_addr_init(&path.remote,
-                     (struct sockaddr *)&h3_ctx->src_peer_addr,
-                     h3_ctx->src_peer_addrlen);
-
     static uint8_t pktbuf[H3_DGRAM_BUFSZ];
 
     for (;;) {
@@ -1005,7 +973,7 @@ protohttp3_flush_src(protohttp3_conn_ctx_t *h3_ctx)
         if (sveccnt > 0 && stream_id >= 0) {
             ngtcp2_ssize pdatalen = 0;
             pktlen = ngtcp2_conn_writev_stream(
-                         h3_ctx->src_conn, &path, &pi,
+                         h3_ctx->src_conn, &h3_ctx->src_path, &pi,
                          pktbuf, sizeof(pktbuf),
                          &pdatalen,
                          NGTCP2_WRITE_STREAM_FLAG_MORE,
@@ -1018,7 +986,7 @@ protohttp3_flush_src(protohttp3_conn_ctx_t *h3_ctx)
             }
         } else {
             /* No stream data; write pending ACKs, Handshake CRYPTO, etc. */
-            pktlen = ngtcp2_conn_write_pkt(h3_ctx->src_conn, &path, &pi,
+            pktlen = ngtcp2_conn_write_pkt(h3_ctx->src_conn, &h3_ctx->src_path, &pi,
                                            pktbuf, sizeof(pktbuf),
                                            h3_timestamp());
         }
@@ -1039,8 +1007,8 @@ protohttp3_flush_src(protohttp3_conn_ctx_t *h3_ctx)
         /* 4. Transmit via UDP socket */
         struct iovec iov = { .iov_base = pktbuf, .iov_len = (size_t)pktlen };
         struct msghdr mhdr = {
-            .msg_name    = (struct sockaddr *)&h3_ctx->src_peer_addr,
-            .msg_namelen = h3_ctx->src_peer_addrlen,
+            .msg_name    = (struct sockaddr *)&h3_ctx->ctx->srcaddr,
+            .msg_namelen = h3_ctx->ctx->srcaddrlen,
             .msg_iov     = &iov,
             .msg_iovlen  = 1,
         };
@@ -1313,18 +1281,18 @@ h3_session_map_get(h3_session_map_t *smap, const quic_tuple_key_t *key)
 {
     if (!smap || !smap->map)
         return NULL;
-    protohttp3_conn_ctx_t *conn = NULL;
+    protohttp3_conn_ctx_t *h3_ctx = NULL;
     pthread_mutex_lock(&smap->lock);
     khiter_t k = kh_get(h3_conn_map, smap->map, *key);
     if (k != kh_end(smap->map) && kh_exist(smap->map, k)) {
-        conn = kh_val(smap->map, k);
+        h3_ctx = kh_val(smap->map, k);
     }
     pthread_mutex_unlock(&smap->lock);
-    return conn;
+    return h3_ctx;
 }
 
 int
-h3_session_map_insert(h3_session_map_t *smap, const quic_tuple_key_t *key, protohttp3_conn_ctx_t *conn)
+h3_session_map_insert(h3_session_map_t *smap, const quic_tuple_key_t *key, protohttp3_conn_ctx_t *h3_ctx)
 {
     if (!smap || !smap->map)
         return -1;
@@ -1332,9 +1300,9 @@ h3_session_map_insert(h3_session_map_t *smap, const quic_tuple_key_t *key, proto
     pthread_mutex_lock(&smap->lock);
     khiter_t k = kh_put(h3_conn_map, smap->map, *key, &ret);
     if (ret >= 0) {
-        kh_val(smap->map, k) = conn;
-        conn->h3_sessions = smap;
-        conn->key = *key;
+        kh_val(smap->map, k) = h3_ctx;
+        h3_ctx->h3_sessions = smap;
+        h3_ctx->key = *key;
     }
     pthread_mutex_unlock(&smap->lock);
     return ret >= 0 ? 0 : -1;
@@ -1359,7 +1327,7 @@ protohttp3_process_packet_cb(UNUSED evutil_socket_t fd, UNUSED short what, void 
 	log_finest_main("ENTER");
     protohttp3_conn_ctx_t *h3_ctx = arg;
 
-    pthread_mutex_lock(&h3_ctx->packet_queue_mutex);
+    pthread_mutex_lock(&h3_ctx->pkt_queue_mutex);
     // ATTENTION: We should never need to check if h3_ctx->src_process_pkt_ev is not NULL here,
     // because this callback is not scheduled again if one is already scheduled.
     // Otherwise would mean a memory leak, as src_process_pkt_ev would have been overwritten.
@@ -1368,47 +1336,38 @@ protohttp3_process_packet_cb(UNUSED evutil_socket_t fd, UNUSED short what, void 
         event_free(h3_ctx->src_process_pkt_ev);
         h3_ctx->src_process_pkt_ev = NULL;
     }
-    pthread_mutex_unlock(&h3_ctx->packet_queue_mutex);
+    pthread_mutex_unlock(&h3_ctx->pkt_queue_mutex);
 
     if (!h3_ctx->src_conn) {
         log_finest_main("src_conn is NULL");
         return;
     }
 
-    protohttp3_debug_print_addr(&h3_ctx->src_peer_addr, "src_peer_addr");
-    protohttp3_debug_print_addr(&h3_ctx->src_local_addr, "src_local_addr");
-
-    ngtcp2_path path;
-    ngtcp2_addr_init(&path.local,
-                     (struct sockaddr *)&h3_ctx->src_local_addr,
-                     h3_ctx->src_local_addrlen);
-    ngtcp2_addr_init(&path.remote,
-                     (struct sockaddr *)&h3_ctx->src_peer_addr,
-                     h3_ctx->src_peer_addrlen);
+    protohttp3_debug_print_addr(&h3_ctx->ctx->srcaddr, "src_peer_addr");
+    protohttp3_debug_print_addr(&h3_ctx->ctx->spec->listen_addr, "src_local_addr");
 
     size_t total_bytes_processed = 0;
-    int packet_count = 0;
+    int pkt_count = 0;
 
     for (;;) {
-        pthread_mutex_lock(&h3_ctx->packet_queue_mutex);
-        if (!h3_ctx->packet_queue) {
-            pthread_mutex_unlock(&h3_ctx->packet_queue_mutex);
+        pthread_mutex_lock(&h3_ctx->pkt_queue_mutex);
+        if (!h3_ctx->pkt_queue) {
+            pthread_mutex_unlock(&h3_ctx->pkt_queue_mutex);
             break;
         }
 
-        pkt_node_t *pkt = h3_ctx->packet_queue;
-
-        h3_ctx->packet_queue = pkt->next;
-        pthread_mutex_unlock(&h3_ctx->packet_queue_mutex);
+        pkt_node_t *pkt = h3_ctx->pkt_queue;
+        h3_ctx->pkt_queue = pkt->next;
+        pthread_mutex_unlock(&h3_ctx->pkt_queue_mutex);
 
         ngtcp2_pkt_info pi = { .ecn = (uint8_t)pkt->ecn };
 
-        log_finest_main_va("Processing packet %d of %zu bytes", packet_count, pkt->len);
+        log_finest_main_va("Processing packet %d of %zu bytes", pkt_count, pkt->len);
         total_bytes_processed += pkt->len;
-        packet_count++;
+        pkt_count++;
 
         int rv = ngtcp2_conn_read_pkt(h3_ctx->src_conn,
-                                    &path, &pi,
+                                    &h3_ctx->src_path, &pi,
                                     pkt->buf, pkt->len,
                                     h3_timestamp());
 
@@ -1431,7 +1390,7 @@ protohttp3_process_packet_cb(UNUSED evutil_socket_t fd, UNUSED short what, void 
         }
     }
 
-    log_finest_main_va("Processed total of %d packets and %zu bytes", packet_count, total_bytes_processed);
+    log_finest_main_va("Processed total of %d packets and %zu bytes", pkt_count, total_bytes_processed);
     protohttp3_flush_src(h3_ctx);
 }
 
@@ -1490,13 +1449,12 @@ void keylog_callback(UNUSED const SSL *ssl, const char *line)
  * params.original_dcid, which ngtcp2 requires for server connections.
  */
 protohttp3_conn_ctx_t *
-protohttp3_new(int src_fd, struct event_base *evbase, pxy_conn_ctx_t *ctx, ngtcp2_version_cid vc)
+protohttp3_new(struct event_base *evbase, pxy_conn_ctx_t *ctx, ngtcp2_version_cid vc)
 {
     protohttp3_conn_ctx_t *h3_ctx = calloc(1, sizeof(protohttp3_conn_ctx_t));
     if (!h3_ctx)
         return NULL;
 
-    h3_ctx->src_fd  = src_fd;
     h3_ctx->dst_fd  = -1;
     h3_ctx->evbase  = evbase;
     h3_ctx->ctx     = ctx;
@@ -1569,7 +1527,7 @@ protohttp3_new(int src_fd, struct event_base *evbase, pxy_conn_ctx_t *ctx, ngtcp
      */
 
     ngtcp2_cid initial_scid;
-    char dcid_hex[NGTCP2_MAX_CIDLEN * 2 + 1];
+    char dcid_hex[H3_CID_KEYLEN];
 
     initial_scid.datalen = NGTCP2_MAX_CIDLEN;
     arc4random_buf(initial_scid.data, initial_scid.datalen);
@@ -1598,18 +1556,12 @@ protohttp3_new(int src_fd, struct event_base *evbase, pxy_conn_ctx_t *ctx, ngtcp
     // Set initial_scid to the scid randomly generated above, which is the server's initial Source Connection ID
     params.initial_scid = initial_scid;
 
-    ngtcp2_path path;
-    ngtcp2_addr_init(&path.local,  (struct sockaddr *)&ctx->spec->listen_addr, ctx->spec->listen_addrlen);
-    ngtcp2_addr_init(&path.remote, (struct sockaddr *)&ctx->srcaddr,  ctx->srcaddrlen);
-
-    memcpy(&h3_ctx->src_local_addr, &ctx->spec->listen_addr, ctx->spec->listen_addrlen);
-    h3_ctx->src_local_addrlen = ctx->spec->listen_addrlen;
-    memcpy(&h3_ctx->src_peer_addr, &ctx->srcaddr, ctx->srcaddrlen);
-    h3_ctx->src_peer_addrlen = ctx->srcaddrlen;
+    ngtcp2_addr_init(&h3_ctx->src_path.local,  (struct sockaddr *)&ctx->spec->listen_addr, ctx->spec->listen_addrlen);
+    ngtcp2_addr_init(&h3_ctx->src_path.remote, (struct sockaddr *)&ctx->srcaddr,  ctx->srcaddrlen);
 
     settings.log_printf = debug_log;
 
-    int rv = ngtcp2_conn_server_new(&h3_ctx->src_conn, &initial_dcid, &initial_scid, &path,
+    int rv = ngtcp2_conn_server_new(&h3_ctx->src_conn, &initial_dcid, &initial_scid, &h3_ctx->src_path,
                                     NGTCP2_PROTO_VER_V1, &cb, &settings,
                                     &params, NULL, h3_ctx);
     if (rv != 0) {
@@ -2025,22 +1977,21 @@ protohttp3_free(protohttp3_conn_ctx_t *h3_ctx)
     }
 
     /* Close raw UDP sockets.                                              */
-    if (h3_ctx->src_fd >= 0) { close(h3_ctx->src_fd); h3_ctx->src_fd = -1; }
     if (h3_ctx->dst_fd >= 0) { close(h3_ctx->dst_fd); h3_ctx->dst_fd = -1; }
 
-    pthread_mutex_lock(&h3_ctx->packet_queue_mutex);
-    while (h3_ctx->packet_queue) {
-        pkt_node_t *pkt = h3_ctx->packet_queue;
-        h3_ctx->packet_queue = pkt->next;
+    pthread_mutex_lock(&h3_ctx->pkt_queue_mutex);
+    while (h3_ctx->pkt_queue) {
+        pkt_node_t *pkt = h3_ctx->pkt_queue;
+        h3_ctx->pkt_queue = pkt->next;
         if (pkt->buf) {
             free(pkt->buf);
             pkt->buf = NULL;
         }
         free(pkt);
     }
-    pthread_mutex_unlock(&h3_ctx->packet_queue_mutex);
+    pthread_mutex_unlock(&h3_ctx->pkt_queue_mutex);
 
-    pthread_mutex_destroy(&h3_ctx->packet_queue_mutex);
+    pthread_mutex_destroy(&h3_ctx->pkt_queue_mutex);
 
     free(h3_ctx);
     log_dbg_printf("protohttp3: session freed\n");
