@@ -400,7 +400,7 @@ proxy_listener_acceptcb_udp(evutil_socket_t fd, UNUSED short what, void *arg)
 	char dcid_hex[H3_CID_KEYLEN];
     protohttp3_cid_to_hex(dcid_hex, vc.dcid, vc.dcidlen);
 
-	log_finest_main_va("Packet dcid=0x%s scid=0x%s, on fd=%d", dcid_hex, scid_hex, fd);
+	log_finest_main_va("Packet dcid=0x%s scid=0x%s, size=%zu, on fd=%d", dcid_hex, scid_hex, (size_t)n, fd);
 
 	pxy_conn_ctx_t *ctx = NULL;
 	pkt_node_t *pkt_node = NULL;
@@ -434,6 +434,7 @@ proxy_listener_acceptcb_udp(evutil_socket_t fd, UNUSED short what, void *arg)
 
 		pthread_mutex_lock(&h3_ctx->pkt_queue_mutex);
 
+		log_finest_main_va("Append packet to queue, fd=%d", fd);
 		if (!h3_ctx->pkt_queue) {
 			h3_ctx->pkt_queue = pkt_node;
 		} else {

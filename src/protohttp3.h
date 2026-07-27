@@ -192,7 +192,8 @@ struct protohttp3_conn_ctx {
     /* TLS/SSL instances for the QUIC connections */
     void *src_ssl; /* (SSL *) */
     void *dst_ssl; /* (SSL *) */
-    ngtcp2_crypto_conn_ref conn_ref;
+    ngtcp2_crypto_conn_ref src_conn_ref;
+    ngtcp2_crypto_conn_ref dst_conn_ref;
 
     /*
      * Raw UDP sockets.  We cannot use Libevent bufferevents here because
@@ -224,8 +225,15 @@ struct protohttp3_conn_ctx {
     struct sockaddr_storage dst_peer_addr;
     socklen_t               dst_peer_addrlen;
 
+    struct sockaddr_storage dst_local_addr;
+	socklen_t dst_local_addrlen;
+
     /* Local and peer addresses on client side (needed by ngtcp2 path tracking). */
     ngtcp2_path src_path;
+    ngtcp2_path dst_path;
+
+    ngtcp2_crypto_ossl_ctx *src_ossl_ctx;
+    ngtcp2_crypto_ossl_ctx *dst_ossl_ctx;
 
     /* Linked list of active H3 streams.                                   */
     stream_h3_ctx_t *streams;

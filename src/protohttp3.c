@@ -75,7 +75,6 @@
 #include <netinet/in.h>    /* in_pktinfo, in6_pktinfo, IP_TOS, ...        */
 
 #include <event2/event.h>
-// #include <ngtcp2/ngtcp2_crypto.h>
 
 // For debugging, we need to include arpa/inet.h for inet_ntop() to print IP addresses.
 #include <arpa/inet.h>
@@ -117,8 +116,10 @@ protohttp3_find_stream(protohttp3_conn_ctx_t *h3_ctx, int64_t stream_id)
 {
     stream_h3_ctx_t *s = h3_ctx->streams;
     while (s) {
-        if (s->stream_id == stream_id)
+        if (s->stream_id == stream_id) {
+            log_finest_main_va("ENTER, found stream id=%" PRId64 " fd=%d", s->stream_id, h3_ctx->dst_fd);
             return s;
+        }
         s = s->next;
     }
     return NULL;
@@ -353,6 +354,7 @@ h3_on_recv_header(nghttp3_conn *conn, int64_t stream_id,
     (void)conn; (void)token; (void)flags; (void)stream_user_data;
 
     protohttp3_conn_ctx_t *h3_ctx = user_data;
+    log_finest_main_va("ENTER, fd=%d", h3_ctx->dst_fd);
 
     stream_h3_ctx_t *s = protohttp3_find_stream(h3_ctx, stream_id);
     if (!s) {
@@ -390,26 +392,106 @@ h3_on_recv_header(nghttp3_conn *conn, int64_t stream_id,
 /* =========================================================================
  * Upstream (dst) UDP read/write loops
  * ====================================================================== */
-static void protohttp3_flush_dst(protohttp3_conn_ctx_t *h3_ctx)
+// TODO: Merge with protohttp3_flush_src() to avoid code duplication.
+static void
+protohttp3_flush_dst(protohttp3_conn_ctx_t *h3_ctx)
 {
-    if (!h3_ctx->dst_conn) return;
-    ngtcp2_path_storage ps;
-    ngtcp2_path_storage_zero(&ps);
-    ngtcp2_pkt_info pi;
-    uint8_t buf[H3_DGRAM_BUFSZ];
+    log_finest_main_va("ENTER, fd=%d", h3_ctx->dst_fd);
+
+    if (!h3_ctx || !h3_ctx->dst_conn)
+        return;
+
+    static uint8_t pktbuf[H3_DGRAM_BUFSZ];
+
     for (;;) {
-        ngtcp2_ssize ndatalen = ngtcp2_conn_writev_stream(
-            h3_ctx->dst_conn, &ps.path, &pi, buf, sizeof(buf),
-            NULL, 0, 0, NULL, 0, h3_timestamp());
-        if (ndatalen <= 0) break;
-        ssize_t n = send(h3_ctx->dst_fd, buf, (size_t)ndatalen, 0);
-        if (n < 0) {
+        ngtcp2_ssize pktlen = -1;
+        ngtcp2_pkt_info pi = {0};
+
+        nghttp3_vec vecs[H3_MAX_IOVECS];
+        int64_t stream_id = -1;
+        int fin = 0;
+        nghttp3_ssize sveccnt = 0;
+
+        /* 1. Pull H3 data if present */
+        if (h3_ctx->dst_h3) {
+            sveccnt = nghttp3_conn_writev_stream(h3_ctx->dst_h3,
+                                                 &stream_id, &fin,
+                                                 vecs, H3_MAX_IOVECS);
+            if (sveccnt < 0) {
+                log_dbg_printf("protohttp3: nghttp3_conn_writev_stream: %s\n",
+                               nghttp3_strerror((int)sveccnt));
+                break;
+            }
+        }
+        else {
+            log_finest_main_va("No upstream H3 session; skipping nghttp3_conn_writev_stream, fd=%d", h3_ctx->dst_fd);
+        }
+
+        /* 2. Write either Stream packet or standard QUIC packet (Crypto/ACK) */
+        if (sveccnt > 0 && stream_id >= 0) {
+            ngtcp2_ssize pdatalen = 0;
+            pktlen = ngtcp2_conn_writev_stream(
+                         h3_ctx->dst_conn, &h3_ctx->dst_path, &pi,
+                         pktbuf, sizeof(pktbuf),
+                         &pdatalen,
+                         NGTCP2_WRITE_STREAM_FLAG_MORE,
+                         stream_id, (const ngtcp2_vec *)vecs,
+                         (size_t)sveccnt,
+                         h3_timestamp());
+
+            if (pdatalen > 0) {
+                nghttp3_conn_add_write_offset(h3_ctx->dst_h3, stream_id, (size_t)pdatalen);
+            }
+        } else {
+            log_finest_main_va("Write pending  ACKs, Handshake CRYPTO, etc., fd=%d", h3_ctx->dst_fd);
+            /* No stream data; write pending ACKs, Handshake CRYPTO, etc. */
+            pktlen = ngtcp2_conn_write_pkt(h3_ctx->dst_conn, &h3_ctx->dst_path, &pi,
+                                           pktbuf, sizeof(pktbuf),
+                                           h3_timestamp());
+        }
+
+        /* 3. Handle write status */
+        if (pktlen == NGTCP2_ERR_WRITE_MORE) {
+            log_finest_main_va("Write more, pktlen=%zd, fd=%d", pktlen, h3_ctx->dst_fd);
+            continue;
+        }
+
+        if (pktlen <= 0) {
+            if (pktlen < 0 && pktlen != NGTCP2_ERR_WRITE_MORE) {
+                log_dbg_printf("protohttp3: ngtcp2 write error: %s\n",
+                               ngtcp2_strerror((int)pktlen));
+            }
+            log_finest_main_va("Drained all pending packets, pktlen=%zd, fd=%d", pktlen, h3_ctx->dst_fd);
+            break; /* Drained all pending packets */
+        }
+
+        log_finest_main_va("Transmit packet, pktlen=%zd, fd=%d", pktlen, h3_ctx->dst_fd);
+
+        /* 4. Transmit via UDP socket */
+        struct iovec iov = { .iov_base = pktbuf, .iov_len = (size_t)pktlen };
+        struct msghdr mhdr = {
+            .msg_name    = (struct sockaddr *)&h3_ctx->dst_peer_addr,
+            .msg_namelen = h3_ctx->dst_peer_addrlen,
+            .msg_iov     = &iov,
+            .msg_iovlen  = 1,
+        };
+
+        ssize_t sent = sendmsg(h3_ctx->dst_fd, &mhdr, 0);
+
+        log_dbg_printf("protohttp3: sendmsg fd=%d returned %zd (errno=%d: %s)\n",
+                    h3_ctx->dst_fd, sent, errno, strerror(errno));        
+        if (sent < 0) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                event_add(h3_ctx->dst_wev, NULL);
+                if (h3_ctx->dst_wev) event_add(h3_ctx->dst_wev, NULL);
+            } else {
+                log_dbg_printf("protohttp3: sendmsg error on fd %d: %s\n", 
+                               h3_ctx->dst_fd, strerror(errno));
             }
             break;
         }
     }
+
+    protohttp3_arm_timer(h3_ctx);
 }
 
 /*
@@ -425,6 +507,7 @@ h3_on_end_headers(nghttp3_conn *conn, int64_t stream_id,
     (void)conn; (void)stream_user_data;
 
     protohttp3_conn_ctx_t *h3_ctx = user_data;
+    log_finest_main_va("ENTER, fd=%d", h3_ctx->dst_fd);
 
     stream_h3_ctx_t *s = protohttp3_find_stream(h3_ctx, stream_id);
     if (!s)
@@ -478,6 +561,7 @@ h3_on_recv_data(nghttp3_conn *conn, int64_t stream_id,
     (void)conn; (void)stream_user_data;
 
     protohttp3_conn_ctx_t *h3_ctx = user_data;
+    log_finest_main_va("ENTER, fd=%d", h3_ctx->dst_fd);
 
     stream_h3_ctx_t *s = protohttp3_find_stream(h3_ctx, stream_id);
     if (!s) {
@@ -517,6 +601,7 @@ h3_on_end_stream(nghttp3_conn *conn, int64_t stream_id,
     (void)conn; (void)stream_user_data;
 
     protohttp3_conn_ctx_t *h3_ctx = user_data;
+    log_finest_main_va("ENTER, fd=%d", h3_ctx->dst_fd);
 
     stream_h3_ctx_t *s = protohttp3_find_stream(h3_ctx, stream_id);
     if (!s)
@@ -558,6 +643,7 @@ h3_stream_read_data(nghttp3_conn *conn, int64_t stream_id,
     (void)conn; (void)stream_user_data;
 
     protohttp3_conn_ctx_t *h3_ctx = user_data;
+    log_finest_main_va("ENTER, fd=%d", h3_ctx->dst_fd);
     stream_h3_ctx_t *s = protohttp3_find_stream(h3_ctx, stream_id);
 
     if (!s || s->body_len == 0) {
@@ -608,6 +694,7 @@ quic_recv_stream_data(ngtcp2_conn *conn, uint32_t flags,
     (void)conn; (void)offset; (void)stream_user_data;
 
     protohttp3_conn_ctx_t *h3_ctx = user_data;
+    log_finest_main_va("ENTER, fd=%d", h3_ctx->dst_fd);
 
     if (!h3_ctx->src_h3) {
         /* nghttp3 session not yet created (handshake incomplete).         */
@@ -650,6 +737,7 @@ quic_stream_open(ngtcp2_conn *conn, int64_t stream_id, void *user_data)
     (void)conn;
 
     protohttp3_conn_ctx_t *h3_ctx = user_data;
+    log_finest_main_va("ENTER, fd=%d", h3_ctx->dst_fd);
 
     /*
      * For unidirectional streams opened by the client we create a
@@ -691,6 +779,7 @@ quic_stream_close(ngtcp2_conn *conn, uint32_t flags,
     (void)conn; (void)flags; (void)app_error_code; (void)stream_user_data;
 
     protohttp3_conn_ctx_t *h3_ctx = user_data;
+    log_finest_main_va("ENTER, fd=%d", h3_ctx->dst_fd);
 
     if (h3_ctx->src_h3) {
         nghttp3_conn_close_stream(h3_ctx->src_h3, stream_id, app_error_code);
@@ -736,8 +825,7 @@ quic_handshake_completed(ngtcp2_conn *conn, void *user_data)
     (void)conn;
 
     protohttp3_conn_ctx_t *h3_ctx = user_data;
-
-    log_dbg_printf("protohttp3: QUIC handshake completed\n");
+    log_finest_main_va("%s QUIC handshake completed, fd=%d", conn == h3_ctx->src_conn ? "Client side" : "Server side", h3_ctx->dst_fd);
 
     /* ------------------------------------------------------------------
      * Build the nghttp3 callback table.
@@ -1040,91 +1128,6 @@ protohttp3_flush_src(protohttp3_conn_ctx_t *h3_ctx)
  * ====================================================================== */
 
 /*
- * Fired when the UDP socket for the client side (src_fd) is readable.
- *
- * The core QUIC receive loop:
- *   recvmsg()  ->  ngtcp2_conn_read_pkt()
- *              ->  quic_recv_stream_data()
- *              ->  nghttp3_conn_read_stream()
- *              ->  h3_on_recv_header / h3_on_recv_data / ...
- */
-// static void
-// protohttp3_src_read_cb(evutil_socket_t fd, short what, void *arg)
-// {
-//     (void)what;
-//     protohttp3_conn_ctx_t *h3_ctx = arg;
-
-//     log_finest_main_va("ENTER, fd=%d", h3_ctx ? h3_ctx->src_fd : -1);
-
-//     uint8_t buf[H3_DGRAM_BUFSZ];
-//     struct sockaddr_storage peer_addr;
-//     socklen_t               peer_addrlen;
-//     struct sockaddr_storage local_addr;
-//     socklen_t               local_addrlen;
-//     int ecn = 0;
-
-//     /*
-//      * Drain all immediately available datagrams in a tight loop.  Staying
-//      * in the callback reduces per-datagram Libevent overhead.
-//      */
-//     for (;;) {
-//         ssize_t n = protohttp3_recvmsg(fd,
-//                                        buf, sizeof(buf),
-//                                        &peer_addr,  &peer_addrlen,
-//                                        &local_addr, &local_addrlen,
-//                                        &ecn);
-//         if (n <= 0)
-//             break;
-
-//         /* Cache peer / local addresses on first receive.                  */
-//         if (h3_ctx->src_peer_addrlen == 0 && peer_addrlen > 0) {
-//             memcpy(&h3_ctx->src_peer_addr, &peer_addr, peer_addrlen);
-//             h3_ctx->src_peer_addrlen = peer_addrlen;
-//         }
-//         protohttp3_debug_print_addr(&h3_ctx->src_peer_addr, "src_peer_addr");
-
-//         if (h3_ctx->src_local_addrlen == 0 && local_addrlen > 0) {
-//             memcpy(&h3_ctx->src_local_addr, &local_addr, local_addrlen);
-//             h3_ctx->src_local_addrlen = local_addrlen;
-//         }
-//         protohttp3_debug_print_addr(&h3_ctx->src_local_addr, "src_local_addr");
-
-//         /* Build the ngtcp2 path descriptor from the addresses.            */
-//         ngtcp2_path path;
-//         ngtcp2_addr_init(&path.local,
-//                          (struct sockaddr *)&h3_ctx->src_local_addr,
-//                          h3_ctx->src_local_addrlen);
-//         ngtcp2_addr_init(&path.remote,
-//                          (struct sockaddr *)&h3_ctx->src_peer_addr,
-//                          h3_ctx->src_peer_addrlen);
-
-//         ngtcp2_pkt_info pi = { .ecn = (uint8_t)ecn };
-
-//         /*
-//          * Hand the raw datagram to ngtcp2.  ngtcp2 decrypts the QUIC
-//          * packet, demultiplexes streams, and fires our ngtcp2 callbacks
-//          * which in turn drive nghttp3.
-//          */
-//         int rv = ngtcp2_conn_read_pkt(h3_ctx->src_conn,
-//                                       &path, &pi,
-//                                       buf, (size_t)n,
-//                                       h3_timestamp());
-//         if (rv != 0) {
-//             // TODO: Handle fatal errors (like NGTCP2_ERR_CRYPTO) by closing the connection and cleaning up.
-//             log_finest_main_va("ngtcp2_conn_read_pkt returns %s", ngtcp2_strerror(rv));
-//             /* Non-fatal: keep draining the socket.                        */
-//         }
-//         else {
-//             log_finest_main_va("ngtcp2_conn_read_pkt processed %zd bytes", n);
-//             protohttp3_flush_src(h3_ctx);
-//         }
-//     }
-
-//     // We don't flush here, because ngtcp2_conn_read_pkt may have returned errors that require us to stop processing
-//     // protohttp3_flush_src(h3_ctx);
-// }
-
-/*
  * Fired when the UDP socket is writable again after a previous sendmsg()
  * returned EAGAIN.  We just re-enter the write flush loop.
  */
@@ -1141,23 +1144,68 @@ static void protohttp3_dst_read_cb(evutil_socket_t fd, short what, void *arg)
 {
     (void)what;
     protohttp3_conn_ctx_t *h3_ctx = arg;
-    uint8_t buf[H3_DGRAM_BUFSZ];
-    for (;;) {
-        ssize_t n = recv(fd, buf, sizeof(buf), 0);
-        if (n <= 0) break;
-        ngtcp2_path path;
-        ngtcp2_addr_init(&path.local, (struct sockaddr *)&h3_ctx->dst_peer_addr, h3_ctx->dst_peer_addrlen);
-        ngtcp2_addr_init(&path.remote, (struct sockaddr *)&h3_ctx->dst_peer_addr, h3_ctx->dst_peer_addrlen);
-        ngtcp2_pkt_info pi = { .ecn = 0 };
-        ngtcp2_conn_read_pkt(h3_ctx->dst_conn, &path, &pi, buf, (size_t)n, h3_timestamp());
+    log_finest_main_va("ENTER, fd=%d", h3_ctx->dst_fd);
+
+	uint8_t buf[H3_DGRAM_BUFSZ];
+	struct sockaddr_storage peer_addr;
+	socklen_t peer_addrlen = sizeof(peer_addr);
+	int ecn = 0;
+    // struct sockaddr_storage local_addr;
+	// socklen_t local_addrlen = sizeof(local_addr);
+
+    // TODO: The port in local_addr returned by protohttp3_recvmsg2() is always 0, why?
+    ssize_t n = protohttp3_recvmsg(fd, buf, sizeof(buf), &peer_addr, &peer_addrlen, &ecn);
+    // ssize_t n = protohttp3_recvmsg2(fd, buf, sizeof(buf), &peer_addr, &peer_addrlen, &local_addr, &local_addrlen, &ecn);
+	if (n <= 0) {
+		if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
+			log_err_level_printf(LOG_CRIT,
+				"Error reading from server-side UDP socket: %s\n",
+				strerror(errno));
+		}
+		else {
+			log_finest_main("No data read from server-side UDP socket (EAGAIN/EWOULDBLOCK)");
+		}
+		return;
+	}
+
+    protohttp3_debug_print_addr(&peer_addr, "pkt dst_peer_addr");
+    // protohttp3_debug_print_addr(&local_addr, "pkt dst_local_addr");
+
+    // protohttp3_debug_print_addr((struct sockaddr_storage *)h3_ctx->dst_path.remote.addr, "dst_path.remote");
+    // protohttp3_debug_print_addr((struct sockaddr_storage *)h3_ctx->dst_path.local.addr, "dst_path.local");
+
+    ngtcp2_pkt_info pi = { .ecn = (uint8_t)ecn };
+
+    int rv = ngtcp2_conn_read_pkt(h3_ctx->dst_conn,
+                                &h3_ctx->dst_path, &pi,
+                                buf, (size_t)n,
+                                h3_timestamp());
+
+    if (rv != 0) {
+        log_finest_main_va("ngtcp2_conn_read_pkt returns: %s", ngtcp2_strerror(rv));
+        if (rv == NGTCP2_ERR_CRYPTO) {
+            unsigned long err;
+            while ((err = ERR_get_error())) {
+                char err_buf[256];
+                ERR_error_string_n(err, err_buf, sizeof(err_buf));
+                // TODO: Log the TLS alert code from ngtcp2 if available
+                // ngtcp2_conn_get_tls_alert(h3_ctx->src_conn);
+                log_finest_main_va("OpenSSL error during ngtcp2_conn_read_pkt: %s", err_buf);
+            }
+        }
+        // TODO: See ngtcp2_conn_read_pkt() for specific error codes that indicate the connection should be closed
+        return;
     }
+
     protohttp3_flush_dst(h3_ctx);
 }
 
 static void protohttp3_dst_write_cb(evutil_socket_t fd, short what, void *arg)
 {
     (void)fd; (void)what;
-    protohttp3_flush_dst(arg);
+    protohttp3_conn_ctx_t *h3_ctx = arg;
+    log_finest_main_va("ENTER, fd=%d", h3_ctx->dst_fd);
+    protohttp3_flush_dst(h3_ctx);
 }
 
 /* =========================================================================
@@ -1395,7 +1443,8 @@ protohttp3_process_packet_cb(UNUSED evutil_socket_t fd, UNUSED short what, void 
 }
 
 void
-debug_log(UNUSED void *user_data, const char *fmt, ...) {
+debug_log_src(UNUSED void *user_data, const char *fmt, ...) {
+    fprintf(stderr, "Client-side: ");
     va_list ap;
     va_start(ap, fmt);
     vfprintf(stderr, fmt, ap);
@@ -1403,10 +1452,26 @@ debug_log(UNUSED void *user_data, const char *fmt, ...) {
     fprintf(stderr, "\n");
 }
 
-static ngtcp2_conn *get_conn(ngtcp2_crypto_conn_ref *conn_ref)
+void
+debug_log_dst(UNUSED void *user_data, const char *fmt, ...) {
+    fprintf(stderr, "Server-side: ");
+    va_list ap;
+    va_start(ap, fmt);
+    vfprintf(stderr, fmt, ap);
+    va_end(ap);
+    fprintf(stderr, "\n");
+}
+
+static ngtcp2_conn *get_src_conn(ngtcp2_crypto_conn_ref *conn_ref)
 {
     protohttp3_conn_ctx_t *h3_ctx = conn_ref->user_data;
     return h3_ctx->src_conn;
+}
+
+static ngtcp2_conn *get_dst_conn(ngtcp2_crypto_conn_ref *conn_ref)
+{
+    protohttp3_conn_ctx_t *h3_ctx = conn_ref->user_data;
+    return h3_ctx->dst_conn;
 }
 
 static int alpn_select_cb(SSL *ssl, const unsigned char **out,
@@ -1559,7 +1624,7 @@ protohttp3_new(struct event_base *evbase, pxy_conn_ctx_t *ctx, ngtcp2_version_ci
     ngtcp2_addr_init(&h3_ctx->src_path.local,  (struct sockaddr *)&ctx->spec->listen_addr, ctx->spec->listen_addrlen);
     ngtcp2_addr_init(&h3_ctx->src_path.remote, (struct sockaddr *)&ctx->srcaddr,  ctx->srcaddrlen);
 
-    settings.log_printf = debug_log;
+    settings.log_printf = debug_log_src;
 
     int rv = ngtcp2_conn_server_new(&h3_ctx->src_conn, &initial_dcid, &initial_scid, &h3_ctx->src_path,
                                     NGTCP2_PROTO_VER_V1, &cb, &settings,
@@ -1607,17 +1672,17 @@ protohttp3_new(struct event_base *evbase, pxy_conn_ctx_t *ctx, ngtcp2_version_ci
 
     ngtcp2_crypto_ossl_configure_server_session(h3_ctx->src_ssl);
 
-    h3_ctx->conn_ref.get_conn = get_conn;
-    h3_ctx->conn_ref.user_data = h3_ctx;
-    SSL_set_app_data(h3_ctx->src_ssl, &h3_ctx->conn_ref);
+    h3_ctx->src_conn_ref.get_conn = get_src_conn;
+    h3_ctx->src_conn_ref.user_data = h3_ctx;
+    SSL_set_app_data(h3_ctx->src_ssl, &h3_ctx->src_conn_ref);
 
-    ngtcp2_crypto_ossl_ctx *ossl_ctx = NULL;
-    if (ngtcp2_crypto_ossl_ctx_new(&ossl_ctx, h3_ctx->src_ssl) != 0) {
+    h3_ctx->src_ossl_ctx = NULL;
+    if (ngtcp2_crypto_ossl_ctx_new(&h3_ctx->src_ossl_ctx, h3_ctx->src_ssl) != 0) {
         log_dbg_printf("protohttp3: failed to create ngtcp2_crypto_ossl_ctx\n");
         return NULL;
     }
 
-    ngtcp2_conn_set_tls_native_handle(h3_ctx->src_conn, ossl_ctx);
+    ngtcp2_conn_set_tls_native_handle(h3_ctx->src_conn, h3_ctx->src_ossl_ctx);
 
     // TODO: Call ngtcp2_conn_get_tls_native_handle() if needed?
     // ngtcp2_crypto_ossl_ctx *ossl_ctx = ngtcp2_conn_get_tls_native_handle(h3_ctx->src_conn);
@@ -1800,8 +1865,6 @@ protohttp3_conn_connect(pxy_conn_ctx_t *ctx)
 
     /*
      * Create the upstream UDP socket and connect it to the target.
-     * In split mode, we do NOT create a divert dst; the upstream QUIC
-     * connection is made directly.
      */
     int dst_fd = socket(ctx->dstaddr.ss_family, SOCK_DGRAM, IPPROTO_UDP);
     if (dst_fd == -1) {
@@ -1809,8 +1872,40 @@ protohttp3_conn_connect(pxy_conn_ctx_t *ctx)
         return -1;
     }
 
-    if (connect(dst_fd, (struct sockaddr *)&ctx->dstaddr,
-                ctx->dstaddrlen) == -1) {
+    // TODO: Do we need to set IP_PKTINFO for the dst socket?
+    // int val = 1;
+    // if (setsockopt(dst_fd, IPPROTO_IP, IP_PKTINFO, &val, sizeof(val)) < 0) {
+    //     log_finest_va("Failed to set IP_PKTINFO: %s", strerror(errno));
+    // }
+
+    // TODO: Do we need to bind to the dst socket?
+    // /* Bind to a random port to get a unique local address. */
+	// struct sockaddr_storage bind_addr;
+	// socklen_t bind_addrlen = sizeof(bind_addr);
+	// memset(&bind_addr, 0, sizeof(bind_addr));
+	// if (ctx->dstaddr.ss_family == AF_INET) {
+	// 	struct sockaddr_in *sin = (struct sockaddr_in *)&bind_addr;
+	// 	sin->sin_family = AF_INET;
+	// 	sin->sin_addr.s_addr = INADDR_ANY;
+	// 	sin->sin_port = 0;
+	// 	bind_addrlen = sizeof(struct sockaddr_in);
+	// } else {
+	// 	struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)&bind_addr;
+	// 	sin6->sin6_family = AF_INET6;
+	// 	sin6->sin6_addr = in6addr_any;
+	// 	sin6->sin6_port = 0;
+	// 	bind_addrlen = sizeof(struct sockaddr_in6);
+	// }
+
+	// if (bind(dst_fd, (struct sockaddr *)&bind_addr, bind_addrlen) == -1) {
+	// 	log_err_level_printf(LOG_CRIT,
+	// 		"Failed to bind per-conn UDP socket: %s\n",
+	// 		strerror(errno));
+	// 	evutil_closesocket(dst_fd);
+	// 	return -1;
+	// }
+
+    if (connect(dst_fd, (struct sockaddr *)&ctx->dstaddr, ctx->dstaddrlen) == -1) {
         log_finest_va("Failed to connect dst UDP socket: %s", strerror(errno));
         close(dst_fd);
         return -1;
@@ -1828,6 +1923,136 @@ protohttp3_conn_connect(pxy_conn_ctx_t *ctx)
     h3_ctx->dst_peer_addrlen = ctx->dstaddrlen;
 
     /*
+     * Instantiate the upstream QUIC client session.
+     */
+    ngtcp2_callbacks cb = {0};
+
+    cb.client_initial           = ngtcp2_crypto_client_initial_cb;
+    cb.recv_client_initial      = ngtcp2_crypto_recv_client_initial_cb;
+    cb.recv_crypto_data         = ngtcp2_crypto_recv_crypto_data_cb;
+    cb.encrypt                  = ngtcp2_crypto_encrypt_cb;
+    cb.decrypt                  = ngtcp2_crypto_decrypt_cb;
+    cb.hp_mask                  = ngtcp2_crypto_hp_mask_cb;
+    cb.recv_retry               = ngtcp2_crypto_recv_retry_cb;
+    cb.update_key               = ngtcp2_crypto_update_key_cb;
+    cb.delete_crypto_aead_ctx   = ngtcp2_crypto_delete_crypto_aead_ctx_cb;
+    cb.delete_crypto_cipher_ctx = ngtcp2_crypto_delete_crypto_cipher_ctx_cb;
+    cb.get_path_challenge_data  = ngtcp2_crypto_get_path_challenge_data_cb;
+    cb.version_negotiation      = ngtcp2_crypto_version_negotiation_cb;
+
+    cb.handshake_completed      = quic_handshake_completed; /* In a real client this would be a client handshake cb */
+    cb.recv_stream_data         = quic_recv_stream_data;
+    cb.stream_open              = quic_stream_open;
+    cb.stream_close             = quic_stream_close;
+    cb.rand                     = quic_rand;
+    cb.get_new_connection_id    = quic_get_new_connection_id;
+
+    ngtcp2_settings settings;
+    ngtcp2_settings_default(&settings);
+    settings.initial_ts = h3_timestamp();
+
+    ngtcp2_transport_params params;
+    ngtcp2_transport_params_default(&params);
+
+    // TODO: Tune these parameters for better performance and resource usage.
+    params.initial_max_streams_bidi = 100;
+    params.initial_max_streams_uni = 100;
+    params.initial_max_data = 10 * 1024 * 1024; // 10MB
+    params.initial_max_stream_data_bidi_local = 256 * 1024;
+    params.initial_max_stream_data_bidi_remote = 256 * 1024;
+    params.initial_max_stream_data_uni = 256 * 1024;
+    params.active_connection_id_limit = 2; // Must be >= 2
+    params.max_udp_payload_size                = 1472;
+    params.max_idle_timeout = 30 * NGTCP2_SECONDS;
+
+    ngtcp2_cid scid, dcid;
+    scid.datalen = NGTCP2_MAX_CIDLEN;
+    arc4random_buf(scid.data, scid.datalen);
+    dcid.datalen = NGTCP2_MAX_CIDLEN;
+    arc4random_buf(dcid.data, dcid.datalen);
+
+    // ATTENTION: We need a persistent var for dst_local_addr, hence h3_ctx->dst_local_addr,
+    // because ngtcp2_addr_init() does not copy the sockaddr, it just stores a pointer to it.
+	h3_ctx->dst_local_addrlen = sizeof(h3_ctx->dst_local_addr);
+	if (getsockname(dst_fd, (struct sockaddr *)&h3_ctx->dst_local_addr, &h3_ctx->dst_local_addrlen) < 0) {
+		log_err_level_printf(LOG_CRIT, "Error in getsockname: %s\n", strerror(errno));
+		goto err;
+	}
+
+    // protohttp3_debug_print_addr(&ctx->dstaddr, "dst_peer_addr");
+    // protohttp3_debug_print_addr(&h3_ctx->dst_local_addr, "dst_local_addr");
+    // protohttp3_debug_print_addr(&bind_addr, "dst_bind_addr");
+
+    ngtcp2_addr_init(&h3_ctx->dst_path.local,  (struct sockaddr *)&h3_ctx->dst_local_addr, h3_ctx->dst_local_addrlen);
+    ngtcp2_addr_init(&h3_ctx->dst_path.remote, (struct sockaddr *)&ctx->dstaddr, ctx->dstaddrlen);
+
+    protohttp3_debug_print_addr((struct sockaddr_storage *)h3_ctx->dst_path.remote.addr, "dst_path.remote");
+    protohttp3_debug_print_addr((struct sockaddr_storage *)h3_ctx->dst_path.local.addr, "dst_path.local");
+
+    settings.log_printf = debug_log_dst;
+
+    int rv = ngtcp2_conn_client_new(&h3_ctx->dst_conn, &dcid, &scid, &h3_ctx->dst_path,
+                               NGTCP2_PROTO_VER_V1, &cb, &settings,
+                               &params, NULL, h3_ctx);
+    if (rv != 0) {
+        log_finest("Failed to create dst QUIC session");
+        goto err;
+    }
+
+    /* ------------------------------------------------------------------
+     * TLS OpenSSL setup (dst side).
+     * ------------------------------------------------------------------ */
+    /* Note: For SSLproxy, we should derive the SSL_CTX from the proxyspec.
+     * We'll use a local TLS method block for the QUIC prototype. */
+
+    // TODO: Use the SSL method from conn_opts if available, otherwise default to TLS_method()
+    // SSL_CTX *ssl_ctx = SSL_CTX_new(ctx->conn_opts->sslmethod());
+    SSL_CTX *ssl_ctx = SSL_CTX_new(TLS_method());
+
+    // QUIC requires TLS 1.3
+    SSL_CTX_set_min_proto_version(ssl_ctx, TLS1_3_VERSION);
+    SSL_CTX_set_max_proto_version(ssl_ctx, TLS1_3_VERSION);
+
+    // TODO: Enable ALPN selection on OpenSSL client context?
+    // SSL_CTX_set_alpn_select_cb(ssl_ctx, alpn_select_cb, NULL);
+
+    // Enable key logging for debugging purposes
+    SSL_CTX_set_keylog_callback(ssl_ctx, keylog_callback);
+
+    h3_ctx->dst_ssl = SSL_new(ssl_ctx);
+
+    // Set ALPN on client SSL instance (e.g. \x02h3)
+    unsigned char alpn[] = {0x02, 'h', '3'};
+    SSL_set_alpn_protos(h3_ctx->dst_ssl, alpn, sizeof(alpn));
+
+    /* Set SNI on the client SSL object */
+    // TODO: Get the hostname of the upstream server from the SNI in ClientHello on the client side,
+    // or from the proxyspec, if the target server is specified.
+    // For now we hardcode "localhost" for testing.
+    // if (ctx->hostname && strlen(ctx->hostname) > 0) {
+    //     SSL_set_tlsext_host_name(h3_ctx->dst_ssl, ctx->hostname);
+    // } else {
+        // Fallback if proxying by raw IP — e.g. "localhost" or target IP domain
+        SSL_set_tlsext_host_name(h3_ctx->dst_ssl, "localhost"); 
+    // }
+
+    SSL_set_connect_state(h3_ctx->dst_ssl);
+
+    ngtcp2_crypto_ossl_configure_client_session(h3_ctx->dst_ssl);
+
+    h3_ctx->dst_conn_ref.get_conn = get_dst_conn;
+    h3_ctx->dst_conn_ref.user_data = h3_ctx;
+    SSL_set_app_data(h3_ctx->dst_ssl, &h3_ctx->dst_conn_ref);
+
+    h3_ctx->dst_ossl_ctx = NULL;
+    if (ngtcp2_crypto_ossl_ctx_new(&h3_ctx->dst_ossl_ctx, h3_ctx->dst_ssl) != 0) {
+        log_dbg_printf("protohttp3: failed to create ngtcp2_crypto_ossl_ctx\n");
+        return -1;
+    }
+
+    ngtcp2_conn_set_tls_native_handle(h3_ctx->dst_conn, h3_ctx->dst_ossl_ctx);
+
+    /*
      * Set up the libevent read/write events for the upstream UDP socket.
      */
     h3_ctx->dst_rev = event_new(h3_ctx->evbase, dst_fd,
@@ -1842,65 +2067,10 @@ protohttp3_conn_connect(pxy_conn_ctx_t *ctx)
     if (!h3_ctx->dst_wev)
         goto err;
 
-    /*
-     * Instantiate the upstream QUIC client session.
-     */
-    ngtcp2_callbacks cb = {0};
-    cb.client_initial           = ngtcp2_crypto_client_initial_cb;
-    cb.recv_client_initial      = ngtcp2_crypto_recv_client_initial_cb;
-    cb.recv_crypto_data         = ngtcp2_crypto_recv_crypto_data_cb;
-    cb.encrypt                  = ngtcp2_crypto_encrypt_cb;
-    cb.decrypt                  = ngtcp2_crypto_decrypt_cb;
-    cb.hp_mask                  = ngtcp2_crypto_hp_mask_cb;
-    cb.recv_retry               = ngtcp2_crypto_recv_retry_cb;
-    cb.update_key               = ngtcp2_crypto_update_key_cb;
-    cb.delete_crypto_aead_ctx   = ngtcp2_crypto_delete_crypto_aead_ctx_cb;
-    cb.delete_crypto_cipher_ctx = ngtcp2_crypto_delete_crypto_cipher_ctx_cb;
-    cb.get_path_challenge_data  = ngtcp2_crypto_get_path_challenge_data_cb;
-    cb.version_negotiation      = ngtcp2_crypto_version_negotiation_cb;
-    cb.handshake_completed      = quic_handshake_completed; /* In a real client this would be a client handshake cb */
-    cb.recv_stream_data         = quic_recv_stream_data;
-    cb.stream_open              = quic_stream_open;
-    cb.stream_close             = quic_stream_close;
-    cb.rand                     = quic_rand;
-    cb.get_new_connection_id    = quic_get_new_connection_id;
-
-    ngtcp2_settings settings;
-    ngtcp2_settings_default(&settings);
-    settings.initial_ts = h3_timestamp();
-
-    ngtcp2_transport_params params;
-    ngtcp2_transport_params_default(&params);
-    params.initial_max_streams_bidi = 128;
-    params.initial_max_data = 1024 * 1024;
-    params.initial_max_stream_data_bidi_local = 256 * 1024;
-    params.initial_max_stream_data_bidi_remote = 256 * 1024;
-
-    ngtcp2_cid scid, dcid;
-    scid.datalen = NGTCP2_MAX_CIDLEN;
-    arc4random_buf(scid.data, scid.datalen);
-    dcid.datalen = NGTCP2_MAX_CIDLEN;
-    arc4random_buf(dcid.data, dcid.datalen);
-
-    ngtcp2_path path;
-    ngtcp2_addr_init(&path.local, (struct sockaddr *)&ctx->dstaddr, ctx->dstaddrlen);
-    ngtcp2_addr_init(&path.remote, (struct sockaddr *)&ctx->dstaddr, ctx->dstaddrlen);
-
-    if (ngtcp2_conn_client_new(&h3_ctx->dst_conn, &dcid, &scid, &path,
-                               NGTCP2_PROTO_VER_V1, &cb, &settings,
-                               &params, NULL, h3_ctx) != 0) {
-        log_finest("Failed to create dst QUIC session");
-        goto err;
-    }
-
-    SSL_CTX *ssl_ctx = SSL_CTX_new(TLS_method());
-
-    h3_ctx->dst_ssl = SSL_new(ssl_ctx);
-    ngtcp2_crypto_ossl_configure_client_session(h3_ctx->dst_ssl);
-    SSL_set_app_data(h3_ctx->dst_ssl, h3_ctx->dst_conn);
-    ngtcp2_conn_set_tls_native_handle(h3_ctx->dst_conn, h3_ctx->dst_ssl);
-
     if (event_add(h3_ctx->dst_rev, NULL) != 0)
+        goto err;
+
+    if (event_add(h3_ctx->dst_wev, NULL) != 0)
         goto err;
 
     /*
@@ -1908,15 +2078,11 @@ protohttp3_conn_connect(pxy_conn_ctx_t *ctx)
      * it ready.  HTTP/3 will still need to perform the QUIC handshake
      * via the existing ngtcp2 events.
      */
-    ctx->connected = 1;
+    // ctx->connected = 1;
 
-    log_finest_va("Upstream connection established to dst_fd=%d", dst_fd);
+    log_finest_va("Upstream connection configured to dst_fd=%d", dst_fd);
 
-    /*
-     * XXX: In a complete implementation we would also create a client-mode
-     * ngtcp2 session for the upstream (dst_conn) and bind the events.
-     * This is left as a stub for now.
-     */
+    protohttp3_flush_dst(h3_ctx);
 
     return 0;
 
