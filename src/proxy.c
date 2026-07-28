@@ -414,7 +414,8 @@ proxy_listener_acceptcb_udp(evutil_socket_t fd, UNUSED short what, void *arg)
 
 	protohttp3_conn_ctx_t *h3_ctx = h3_session_map_get(lctx->h3_sessions, &key);
 	if (h3_ctx) {
-		log_finest_main_va("H3 session found, fd=%d", fd);
+		pxy_conn_ctx_t *ctx = h3_ctx->ctx;
+		log_finest_va("H3 session found, fd=%d", fd);
 
 		pkt_node = malloc(sizeof(pkt_node_t));
 		if (!pkt_node) {
@@ -434,7 +435,7 @@ proxy_listener_acceptcb_udp(evutil_socket_t fd, UNUSED short what, void *arg)
 
 		pthread_mutex_lock(&h3_ctx->pkt_queue_mutex);
 
-		log_finest_main_va("Append packet to queue, fd=%d", fd);
+		log_finest_va("Append packet to queue, fd=%d", fd);
 		if (!h3_ctx->pkt_queue) {
 			h3_ctx->pkt_queue = pkt_node;
 		} else {
@@ -447,7 +448,7 @@ proxy_listener_acceptcb_udp(evutil_socket_t fd, UNUSED short what, void *arg)
 		}
 
 		if (!h3_ctx->src_process_pkt_ev) {
-			log_finest_main("Schedule new src_process_pkt_ev");
+			log_finest("Schedule new src_process_pkt_ev");
 
 			h3_ctx->src_process_pkt_ev = event_new(h3_ctx->evbase, h3_ctx->udp_listener_fd, 0,
 										protohttp3_process_packet_cb, h3_ctx);
@@ -458,7 +459,7 @@ proxy_listener_acceptcb_udp(evutil_socket_t fd, UNUSED short what, void *arg)
 
 			struct timeval tv = {0, 0};
 			if (event_add(h3_ctx->src_process_pkt_ev, &tv) == -1) {
-				log_finest_main("Error adding src_process_pkt_ev event, aborting connection");
+				log_finest("Error adding src_process_pkt_ev event, aborting connection");
 				event_free(h3_ctx->src_process_pkt_ev);
 				h3_ctx->src_process_pkt_ev = NULL;
 				pthread_mutex_unlock(&h3_ctx->pkt_queue_mutex);
@@ -466,12 +467,12 @@ proxy_listener_acceptcb_udp(evutil_socket_t fd, UNUSED short what, void *arg)
 			}
 		}
 		else {
-			log_finest_main("Will not schedule new src_process_pkt_ev, already scheduled");
+			log_finest("Will not schedule new src_process_pkt_ev, already scheduled");
 		}
 
 		pthread_mutex_unlock(&h3_ctx->pkt_queue_mutex);
 
-		log_finest_main_va("EXIT session found, udp_listener_fd=%d", h3_ctx->udp_listener_fd);
+		log_finest_va("EXIT session found, udp_listener_fd=%d", h3_ctx->udp_listener_fd);
 		return;
 	}
 
@@ -486,7 +487,7 @@ proxy_listener_acceptcb_udp(evutil_socket_t fd, UNUSED short what, void *arg)
 #endif /* !WITHOUT_USERAUTH */
 		);
 	if (!ctx) {
-		log_err_level_printf(LOG_CRIT, "Error allocating ctx memory\n");
+		log_finest_main("Error allocating ctx memory");
 		return;
 	}
 
@@ -501,18 +502,18 @@ proxy_listener_acceptcb_udp(evutil_socket_t fd, UNUSED short what, void *arg)
 	// because the next packet for this connection may arrive before the init_conn callback finishes.
 	h3_ctx = protohttp3_new(ctx->thr->evbase, ctx, vc);
 	if (!h3_ctx) {
-		log_err_level_printf(LOG_CRIT, "Failed to create protohttp3 session\n");
+		log_finest("Failed to create protohttp3 session context");
 		goto err;
 	}
 
 	pkt_node = malloc(sizeof(pkt_node_t));
 	if (!pkt_node) {
-		log_err_level_printf(LOG_CRIT, "Failed to allocate h3_pkt_node_t\n");
+		log_finest("Failed to allocate h3_pkt_node_t");
 		goto err;
 	}
 	pkt_node->buf = malloc((size_t)n);
 	if (!pkt_node->buf) {
-		log_err_level_printf(LOG_CRIT, "Failed to allocate buffer for h3_pkt_node_t\n");
+		log_finest("Failed to allocate buffer for h3_pkt_node_t");
 		goto err;
 	}
 
@@ -551,7 +552,7 @@ proxy_listener_acceptcb_udp(evutil_socket_t fd, UNUSED short what, void *arg)
 		goto err;
 	}
 
-	log_finest_main("EXIT");
+	log_finest("EXIT");
 	return;
 err:
 	if (pkt_node) {

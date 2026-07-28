@@ -114,10 +114,11 @@ static void protohttp3_flush_src(protohttp3_conn_ctx_t *h3_ctx);
 static stream_h3_ctx_t *
 protohttp3_find_stream(protohttp3_conn_ctx_t *h3_ctx, int64_t stream_id)
 {
+    pxy_conn_ctx_t *ctx = h3_ctx->ctx;
     stream_h3_ctx_t *s = h3_ctx->streams;
     while (s) {
         if (s->stream_id == stream_id) {
-            log_finest_main_va("ENTER, found stream id=%" PRId64 " fd=%d", s->stream_id, h3_ctx->dst_fd);
+            log_finest_va("Found stream id=%" PRId64 " fd=%d", s->stream_id, h3_ctx->dst_fd);
             return s;
         }
         s = s->next;
@@ -146,7 +147,8 @@ protohttp3_new_stream(protohttp3_conn_ctx_t *h3_ctx, int64_t stream_id)
     s->next = h3_ctx->streams;
     h3_ctx->streams = s;
 
-    log_dbg_printf("protohttp3: new stream %" PRId64 "\n", stream_id);
+    pxy_conn_ctx_t *ctx = h3_ctx->ctx;
+    log_finest_va("new stream %" PRId64, stream_id);
     return s;
 }
 
@@ -233,6 +235,9 @@ static void
 protohttp3_free_stream_ctx(stream_h3_ctx_t *s,
                            protohttp3_conn_ctx_t *h3_ctx)
 {
+    pxy_conn_ctx_t *ctx = h3_ctx->ctx;
+    log_finest_va("Free stream %" PRId64, s->stream_id);
+
     /* Cancel pending deferred-free timer if still armed.                  */
     if (s->ev_free) {
         event_free(s->ev_free);
@@ -253,7 +258,6 @@ protohttp3_free_stream_ctx(stream_h3_ctx_t *s,
             prev->next = s->next;
     }
 
-    log_dbg_printf("protohttp3: freed stream %" PRId64 "\n", s->stream_id);
     free(s);
 }
 
@@ -293,18 +297,18 @@ void
 protohttp3_request_free_stream_ctx(stream_h3_ctx_t      *s,
                                    protohttp3_conn_ctx_t *h3_ctx)
 {
+    pxy_conn_ctx_t *ctx = h3_ctx->ctx;
     if (s->ref_count > 0) {
         /* Something on the call stack still references this stream.       */
         if (s->deferred_free_pending) {
-            log_dbg_printf("protohttp3: stream %" PRId64
-                           " already deferred for free\n", s->stream_id);
+            log_finest_va("stream %" PRId64 " already deferred for free\n", s->stream_id);
             return;
         }
         s->deferred_free_pending = 1;
 
         deferred_args_t *da = malloc(sizeof(deferred_args_t));
         if (!da) {
-            log_dbg_printf("protohttp3: OOM deferring stream free\n");
+            log_finest("OOM deferring stream free\n");
             return;
         }
         da->s      = s;
@@ -323,8 +327,7 @@ protohttp3_request_free_stream_ctx(stream_h3_ctx_t      *s,
             s->ev_free = NULL;
             free(da);
         }
-        log_dbg_printf("protohttp3: stream %" PRId64
-                       " deferred for free (ref_count=%d)\n",
+        log_finest_va("stream %" PRId64 " deferred for free (ref_count=%d)",
                        s->stream_id, s->ref_count);
         return;
     }
@@ -354,7 +357,8 @@ h3_on_recv_header(nghttp3_conn *conn, int64_t stream_id,
     (void)conn; (void)token; (void)flags; (void)stream_user_data;
 
     protohttp3_conn_ctx_t *h3_ctx = user_data;
-    log_finest_main_va("ENTER, fd=%d", h3_ctx->dst_fd);
+    pxy_conn_ctx_t *ctx = h3_ctx->ctx;
+    log_finest_va("ENTER, fd=%d", h3_ctx->dst_fd);
 
     stream_h3_ctx_t *s = protohttp3_find_stream(h3_ctx, stream_id);
     if (!s) {
@@ -380,7 +384,7 @@ h3_on_recv_header(nghttp3_conn *conn, int64_t stream_id,
         return NGHTTP3_ERR_CALLBACK_FAILURE;
     }
 
-    log_dbg_printf("protohttp3: stream %" PRId64 " header: %.*s: %.*s\n",
+    log_finest_va("stream %" PRId64 " header: %.*s: %.*s",
                    stream_id,
                    (int)name_vec.len,  (char *)name_vec.base,
                    (int)value_vec.len, (char *)value_vec.base);
@@ -396,7 +400,8 @@ h3_on_recv_header(nghttp3_conn *conn, int64_t stream_id,
 static void
 protohttp3_flush_dst(protohttp3_conn_ctx_t *h3_ctx)
 {
-    log_finest_main_va("ENTER, fd=%d", h3_ctx->dst_fd);
+    pxy_conn_ctx_t *ctx = h3_ctx->ctx;
+    log_finest_va("ENTER, fd=%d", h3_ctx->dst_fd);
 
     if (!h3_ctx || !h3_ctx->dst_conn)
         return;
@@ -418,13 +423,13 @@ protohttp3_flush_dst(protohttp3_conn_ctx_t *h3_ctx)
                                                  &stream_id, &fin,
                                                  vecs, H3_MAX_IOVECS);
             if (sveccnt < 0) {
-                log_dbg_printf("protohttp3: nghttp3_conn_writev_stream: %s\n",
+                log_finest_va("nghttp3_conn_writev_stream: %s",
                                nghttp3_strerror((int)sveccnt));
                 break;
             }
         }
         else {
-            log_finest_main_va("No upstream H3 session; skipping nghttp3_conn_writev_stream, fd=%d", h3_ctx->dst_fd);
+            log_finest_va("No upstream H3 session; skipping nghttp3_conn_writev_stream, fd=%d", h3_ctx->dst_fd);
         }
 
         /* 2. Write either Stream packet or standard QUIC packet (Crypto/ACK) */
@@ -443,7 +448,7 @@ protohttp3_flush_dst(protohttp3_conn_ctx_t *h3_ctx)
                 nghttp3_conn_add_write_offset(h3_ctx->dst_h3, stream_id, (size_t)pdatalen);
             }
         } else {
-            log_finest_main_va("Write pending  ACKs, Handshake CRYPTO, etc., fd=%d", h3_ctx->dst_fd);
+            log_finest_va("Write pending  ACKs, Handshake CRYPTO, etc., fd=%d", h3_ctx->dst_fd);
             /* No stream data; write pending ACKs, Handshake CRYPTO, etc. */
             pktlen = ngtcp2_conn_write_pkt(h3_ctx->dst_conn, &h3_ctx->dst_path, &pi,
                                            pktbuf, sizeof(pktbuf),
@@ -452,20 +457,19 @@ protohttp3_flush_dst(protohttp3_conn_ctx_t *h3_ctx)
 
         /* 3. Handle write status */
         if (pktlen == NGTCP2_ERR_WRITE_MORE) {
-            log_finest_main_va("Write more, pktlen=%zd, fd=%d", pktlen, h3_ctx->dst_fd);
+            log_finest_va("Write more, pktlen=%zd, fd=%d", pktlen, h3_ctx->dst_fd);
             continue;
         }
 
         if (pktlen <= 0) {
             if (pktlen < 0 && pktlen != NGTCP2_ERR_WRITE_MORE) {
-                log_dbg_printf("protohttp3: ngtcp2 write error: %s\n",
-                               ngtcp2_strerror((int)pktlen));
+                log_finest_va("ngtcp2 write error: %s", ngtcp2_strerror((int)pktlen));
             }
-            log_finest_main_va("Drained all pending packets, pktlen=%zd, fd=%d", pktlen, h3_ctx->dst_fd);
+            log_finest_va("Drained all pending packets, pktlen=%zd, fd=%d", pktlen, h3_ctx->dst_fd);
             break; /* Drained all pending packets */
         }
 
-        log_finest_main_va("Transmit packet, pktlen=%zd, fd=%d", pktlen, h3_ctx->dst_fd);
+        log_finest_va("Transmit packet, pktlen=%zd, fd=%d", pktlen, h3_ctx->dst_fd);
 
         /* 4. Transmit via UDP socket */
         struct iovec iov = { .iov_base = pktbuf, .iov_len = (size_t)pktlen };
@@ -478,14 +482,13 @@ protohttp3_flush_dst(protohttp3_conn_ctx_t *h3_ctx)
 
         ssize_t sent = sendmsg(h3_ctx->dst_fd, &mhdr, 0);
 
-        log_dbg_printf("protohttp3: sendmsg fd=%d returned %zd (errno=%d: %s)\n",
+        log_finest_va("sendmsg fd=%d returned %zd (errno=%d: %s)",
                     h3_ctx->dst_fd, sent, errno, strerror(errno));        
         if (sent < 0) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
                 if (h3_ctx->dst_wev) event_add(h3_ctx->dst_wev, NULL);
             } else {
-                log_dbg_printf("protohttp3: sendmsg error on fd %d: %s\n", 
-                               h3_ctx->dst_fd, strerror(errno));
+                log_finest_va("sendmsg error on fd %d: %s", h3_ctx->dst_fd, strerror(errno));
             }
             break;
         }
@@ -507,7 +510,8 @@ h3_on_end_headers(nghttp3_conn *conn, int64_t stream_id,
     (void)conn; (void)stream_user_data;
 
     protohttp3_conn_ctx_t *h3_ctx = user_data;
-    log_finest_main_va("ENTER, fd=%d", h3_ctx->dst_fd);
+    pxy_conn_ctx_t *ctx = h3_ctx->ctx;
+    log_finest_va("ENTER, fd=%d", h3_ctx->dst_fd);
 
     stream_h3_ctx_t *s = protohttp3_find_stream(h3_ctx, stream_id);
     if (!s)
@@ -518,8 +522,7 @@ h3_on_end_headers(nghttp3_conn *conn, int64_t stream_id,
     if (fin)
         s->end_stream = 1;
 
-    log_dbg_printf("protohttp3: stream %" PRId64
-                   " END_HEADERS (%zu headers, fin=%d)\n",
+    log_finest_va("stream %" PRId64 " END_HEADERS (%zu headers, fin=%d)",
                    stream_id, s->headers_count, fin);
 
     /*
@@ -534,7 +537,7 @@ h3_on_end_headers(nghttp3_conn *conn, int64_t stream_id,
                                         s->headers, s->headers_count, NULL, NULL);
             protohttp3_flush_dst(h3_ctx);
         } else {
-            log_dbg_printf("protohttp3: WARNING: upstream H3 session not ready\n");
+            log_finest("WARNING: upstream H3 session not ready");
         }
     } else if (conn == h3_ctx->dst_h3) {
         /* Upstream response headers received; forward to client. */
@@ -561,13 +564,13 @@ h3_on_recv_data(nghttp3_conn *conn, int64_t stream_id,
     (void)conn; (void)stream_user_data;
 
     protohttp3_conn_ctx_t *h3_ctx = user_data;
-    log_finest_main_va("ENTER, fd=%d", h3_ctx->dst_fd);
+    pxy_conn_ctx_t *ctx = h3_ctx->ctx;
+    log_finest_va("ENTER, fd=%d", h3_ctx->dst_fd);
 
     stream_h3_ctx_t *s = protohttp3_find_stream(h3_ctx, stream_id);
     if (!s) {
         /* Data before headers – should not normally happen.               */
-        log_dbg_printf("protohttp3: data on unknown stream %" PRId64 "\n",
-                       stream_id);
+        log_finest_va("data on unknown stream %" PRId64 " (fd=%d)", stream_id, h3_ctx->dst_fd);
         return 0;
     }
 
@@ -583,8 +586,7 @@ h3_on_recv_data(nghttp3_conn *conn, int64_t stream_id,
      * For a truly minimal prototype, if we are not handling bodies we just
      * ignore them, or we could queue them. To keep it minimal and compile cleanly,
      * we will drop payload here or log it. */
-    log_dbg_printf("protohttp3: stream %" PRId64 " received %zu bytes of DATA\n",
-                   stream_id, datalen);
+    log_finest_va("stream %" PRId64 " received %zu bytes of DATA", stream_id, datalen);
 
     s->ref_count--;
     return 0;
@@ -601,7 +603,8 @@ h3_on_end_stream(nghttp3_conn *conn, int64_t stream_id,
     (void)conn; (void)stream_user_data;
 
     protohttp3_conn_ctx_t *h3_ctx = user_data;
-    log_finest_main_va("ENTER, fd=%d", h3_ctx->dst_fd);
+    pxy_conn_ctx_t *ctx = h3_ctx->ctx;
+    log_finest_va("ENTER, fd=%d", h3_ctx->dst_fd);
 
     stream_h3_ctx_t *s = protohttp3_find_stream(h3_ctx, stream_id);
     if (!s)
@@ -610,7 +613,7 @@ h3_on_end_stream(nghttp3_conn *conn, int64_t stream_id,
     s->ref_count++;
     s->end_stream = 1;
 
-    log_dbg_printf("protohttp3: stream %" PRId64 " END_STREAM\n", stream_id);
+    log_finest_va("stream %" PRId64 " END_STREAM", stream_id);
 
     /*
      * HERE: the request (or response) body is complete.
@@ -643,7 +646,8 @@ h3_stream_read_data(nghttp3_conn *conn, int64_t stream_id,
     (void)conn; (void)stream_user_data;
 
     protohttp3_conn_ctx_t *h3_ctx = user_data;
-    log_finest_main_va("ENTER, fd=%d", h3_ctx->dst_fd);
+    pxy_conn_ctx_t *ctx = h3_ctx->ctx;
+    log_finest_va("ENTER, fd=%d", h3_ctx->dst_fd);
     stream_h3_ctx_t *s = protohttp3_find_stream(h3_ctx, stream_id);
 
     if (!s || s->body_len == 0) {
@@ -694,7 +698,8 @@ quic_recv_stream_data(ngtcp2_conn *conn, uint32_t flags,
     (void)conn; (void)offset; (void)stream_user_data;
 
     protohttp3_conn_ctx_t *h3_ctx = user_data;
-    log_finest_main_va("ENTER, fd=%d", h3_ctx->dst_fd);
+    pxy_conn_ctx_t *ctx = h3_ctx->ctx;
+    log_finest_va("ENTER, fd=%d", h3_ctx->dst_fd);
 
     if (!h3_ctx->src_h3) {
         /* nghttp3 session not yet created (handshake incomplete).         */
@@ -711,8 +716,7 @@ quic_recv_stream_data(ngtcp2_conn *conn, uint32_t flags,
     nghttp3_ssize nread = nghttp3_conn_read_stream(
         h3_ctx->src_h3, stream_id, data, datalen, fin);
     if (nread < 0) {
-        log_dbg_printf("protohttp3: nghttp3_conn_read_stream error: %s\n",
-                       nghttp3_strerror((int)nread));
+        log_finest_va("nghttp3_conn_read_stream error: %s", nghttp3_strerror((int)nread));
         return NGTCP2_ERR_CALLBACK_FAILURE;
     }
 
@@ -737,7 +741,8 @@ quic_stream_open(ngtcp2_conn *conn, int64_t stream_id, void *user_data)
     (void)conn;
 
     protohttp3_conn_ctx_t *h3_ctx = user_data;
-    log_finest_main_va("ENTER, fd=%d", h3_ctx->dst_fd);
+    pxy_conn_ctx_t *ctx = h3_ctx->ctx;
+    log_finest_va("ENTER, fd=%d", h3_ctx->dst_fd);
 
     /*
      * For unidirectional streams opened by the client we create a
@@ -746,8 +751,7 @@ quic_stream_open(ngtcp2_conn *conn, int64_t stream_id, void *user_data)
      */
     if (!protohttp3_find_stream(h3_ctx, stream_id)) {
         if (!protohttp3_new_stream(h3_ctx, stream_id)) {
-            log_dbg_printf("protohttp3: OOM for new stream %" PRId64 "\n",
-                           stream_id);
+            log_finest_va("OOM for new stream %" PRId64, stream_id);
             return NGTCP2_ERR_CALLBACK_FAILURE;
         }
     }
@@ -758,12 +762,11 @@ quic_stream_open(ngtcp2_conn *conn, int64_t stream_id, void *user_data)
                                                    NULL);
         if (rv != 0 && rv != NGHTTP3_ERR_INVALID_ARGUMENT) {
             /* INVALID_ARGUMENT means nghttp3 already knows this stream.   */
-            log_dbg_printf("protohttp3: nghttp3_conn_set_stream_user_data: %s\n",
-                           nghttp3_strerror(rv));
+            log_finest_va("nghttp3_conn_set_stream_user_data: %s", nghttp3_strerror(rv));
         }
     }
 
-    log_dbg_printf("protohttp3: stream opened %" PRId64 "\n", stream_id);
+    log_finest_va("stream opened %" PRId64, stream_id);
     return 0;
 }
 
@@ -779,7 +782,8 @@ quic_stream_close(ngtcp2_conn *conn, uint32_t flags,
     (void)conn; (void)flags; (void)app_error_code; (void)stream_user_data;
 
     protohttp3_conn_ctx_t *h3_ctx = user_data;
-    log_finest_main_va("ENTER, fd=%d", h3_ctx->dst_fd);
+    pxy_conn_ctx_t *ctx = h3_ctx->ctx;
+    log_finest_va("ENTER, fd=%d", h3_ctx->dst_fd);
 
     if (h3_ctx->src_h3) {
         nghttp3_conn_close_stream(h3_ctx->src_h3, stream_id, app_error_code);
@@ -796,7 +800,7 @@ quic_stream_close(ngtcp2_conn *conn, uint32_t flags,
         }
     }
 
-    log_dbg_printf("protohttp3: stream closed %" PRId64 "\n", stream_id);
+    log_finest_va("stream closed %" PRId64, stream_id);
     return 0;
 }
 
@@ -825,7 +829,8 @@ quic_handshake_completed(ngtcp2_conn *conn, void *user_data)
     (void)conn;
 
     protohttp3_conn_ctx_t *h3_ctx = user_data;
-    log_finest_main_va("%s QUIC handshake completed, fd=%d", conn == h3_ctx->src_conn ? "Client side" : "Server side", h3_ctx->dst_fd);
+    pxy_conn_ctx_t *ctx = h3_ctx->ctx;
+    log_finest_va("%s QUIC handshake completed, fd=%d", conn == h3_ctx->src_conn ? "Client side" : "Server side", h3_ctx->dst_fd);
 
     /* ------------------------------------------------------------------
      * Build the nghttp3 callback table.
@@ -850,7 +855,7 @@ quic_handshake_completed(ngtcp2_conn *conn, void *user_data)
     }
 
     if (rv != 0) {
-        log_dbg_printf("protohttp3: nghttp3_conn_new: %s\n", nghttp3_strerror(rv));
+        log_finest_va("nghttp3_conn_new: %s", nghttp3_strerror(rv));
         return NGTCP2_ERR_CALLBACK_FAILURE;
     }
 
@@ -866,19 +871,19 @@ quic_handshake_completed(ngtcp2_conn *conn, void *user_data)
     if (ngtcp2_conn_open_uni_stream(conn, &ctrl_stream_id, NULL) != 0 ||
         ngtcp2_conn_open_uni_stream(conn, &qenc_stream_id, NULL) != 0 ||
         ngtcp2_conn_open_uni_stream(conn, &qdec_stream_id, NULL) != 0) {
-        log_dbg_printf("protohttp3: failed to open H3 control streams\n");
+        log_finest("failed to open H3 control streams");
         return NGTCP2_ERR_CALLBACK_FAILURE;
     }
 
     rv = nghttp3_conn_bind_control_stream(*h3_conn_ptr, ctrl_stream_id);
     if (rv != 0) {
-        log_dbg_printf("protohttp3: bind_control_stream: %s\n", nghttp3_strerror(rv));
+        log_finest_va("bind_control_stream: %s", nghttp3_strerror(rv));
         return NGTCP2_ERR_CALLBACK_FAILURE;
     }
 
     rv = nghttp3_conn_bind_qpack_streams(*h3_conn_ptr, qenc_stream_id, qdec_stream_id);
     if (rv != 0) {
-        log_dbg_printf("protohttp3: bind_qpack_streams: %s\n", nghttp3_strerror(rv));
+        log_finest_va("bind_qpack_streams: %s", nghttp3_strerror(rv));
         return NGTCP2_ERR_CALLBACK_FAILURE;
     }
 
@@ -1029,7 +1034,8 @@ static pthread_mutex_t sendmsg_mutex = PTHREAD_MUTEX_INITIALIZER;
 static void
 protohttp3_flush_src(protohttp3_conn_ctx_t *h3_ctx)
 {
-    log_finest_main("ENTER");
+    pxy_conn_ctx_t *ctx = h3_ctx->ctx;
+    log_finest("ENTER");
 
     if (!h3_ctx || !h3_ctx->src_conn)
         return;
@@ -1051,8 +1057,7 @@ protohttp3_flush_src(protohttp3_conn_ctx_t *h3_ctx)
                                                  &stream_id, &fin,
                                                  vecs, H3_MAX_IOVECS);
             if (sveccnt < 0) {
-                log_dbg_printf("protohttp3: nghttp3_conn_writev_stream: %s\n",
-                               nghttp3_strerror((int)sveccnt));
+                log_finest_va("nghttp3_conn_writev_stream: %s", nghttp3_strerror((int)sveccnt));
                 break;
             }
         }
@@ -1086,8 +1091,7 @@ protohttp3_flush_src(protohttp3_conn_ctx_t *h3_ctx)
 
         if (pktlen <= 0) {
             if (pktlen < 0 && pktlen != NGTCP2_ERR_WRITE_MORE) {
-                log_dbg_printf("protohttp3: ngtcp2 write error: %s\n",
-                               ngtcp2_strerror((int)pktlen));
+                log_finest_va("ngtcp2 write error: %s", ngtcp2_strerror((int)pktlen));
             }
             break; /* Drained all pending packets */
         }
@@ -1107,13 +1111,13 @@ protohttp3_flush_src(protohttp3_conn_ctx_t *h3_ctx)
         ssize_t sent = sendmsg(h3_ctx->udp_listener_fd, &mhdr, 0);
         pthread_mutex_unlock(&sendmsg_mutex);
 
-        log_dbg_printf("protohttp3: sendmsg fd=%d returned %zd (errno=%d: %s)\n",
+        log_finest_va("sendmsg fd=%d returned %zd (errno=%d: %s)",
                     h3_ctx->udp_listener_fd, sent, errno, strerror(errno));        
         if (sent < 0) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
                 if (h3_ctx->src_wev) event_add(h3_ctx->src_wev, NULL);
             } else {
-                log_dbg_printf("protohttp3: sendmsg error on fd %d: %s\n", 
+                log_finest_va("sendmsg error on fd %d: %s", 
                                h3_ctx->udp_listener_fd, strerror(errno));
             }
             break;
@@ -1136,7 +1140,8 @@ protohttp3_src_write_cb(evutil_socket_t fd, short what, void *arg)
 {
     (void)fd; (void)what;
     protohttp3_conn_ctx_t *h3_ctx = arg;
-    log_finest_main("ENTER");
+    pxy_conn_ctx_t *ctx = h3_ctx->ctx;
+    log_finest("ENTER");
     protohttp3_flush_src(h3_ctx);
 }
 
@@ -1144,7 +1149,8 @@ static void protohttp3_dst_read_cb(evutil_socket_t fd, short what, void *arg)
 {
     (void)what;
     protohttp3_conn_ctx_t *h3_ctx = arg;
-    log_finest_main_va("ENTER, fd=%d", h3_ctx->dst_fd);
+    pxy_conn_ctx_t *ctx = h3_ctx->ctx;
+    log_finest_va("ENTER, fd=%d", h3_ctx->dst_fd);
 
 	uint8_t buf[H3_DGRAM_BUFSZ];
 	struct sockaddr_storage peer_addr;
@@ -1163,7 +1169,7 @@ static void protohttp3_dst_read_cb(evutil_socket_t fd, short what, void *arg)
 				strerror(errno));
 		}
 		else {
-			log_finest_main("No data read from server-side UDP socket (EAGAIN/EWOULDBLOCK)");
+			log_finest("No data read from server-side UDP socket (EAGAIN/EWOULDBLOCK)");
 		}
 		return;
 	}
@@ -1182,7 +1188,7 @@ static void protohttp3_dst_read_cb(evutil_socket_t fd, short what, void *arg)
                                 h3_timestamp());
 
     if (rv != 0) {
-        log_finest_main_va("ngtcp2_conn_read_pkt returns: %s", ngtcp2_strerror(rv));
+        log_finest_va("ngtcp2_conn_read_pkt returns: %s", ngtcp2_strerror(rv));
         if (rv == NGTCP2_ERR_CRYPTO) {
             unsigned long err;
             while ((err = ERR_get_error())) {
@@ -1190,7 +1196,7 @@ static void protohttp3_dst_read_cb(evutil_socket_t fd, short what, void *arg)
                 ERR_error_string_n(err, err_buf, sizeof(err_buf));
                 // TODO: Log the TLS alert code from ngtcp2 if available
                 // ngtcp2_conn_get_tls_alert(h3_ctx->src_conn);
-                log_finest_main_va("OpenSSL error during ngtcp2_conn_read_pkt: %s", err_buf);
+                log_finest_va("OpenSSL error during ngtcp2_conn_read_pkt: %s", err_buf);
             }
         }
         // TODO: See ngtcp2_conn_read_pkt() for specific error codes that indicate the connection should be closed
@@ -1204,7 +1210,8 @@ static void protohttp3_dst_write_cb(evutil_socket_t fd, short what, void *arg)
 {
     (void)fd; (void)what;
     protohttp3_conn_ctx_t *h3_ctx = arg;
-    log_finest_main_va("ENTER, fd=%d", h3_ctx->dst_fd);
+    pxy_conn_ctx_t *ctx = h3_ctx->ctx;
+    log_finest_va("ENTER, fd=%d", h3_ctx->dst_fd);
     protohttp3_flush_dst(h3_ctx);
 }
 
@@ -1220,7 +1227,8 @@ static void protohttp3_dst_write_cb(evutil_socket_t fd, short what, void *arg)
 static int
 protohttp3_arm_timer(protohttp3_conn_ctx_t *h3_ctx)
 {
-    log_finest_main("ENTER");
+    pxy_conn_ctx_t *ctx = h3_ctx->ctx;
+    log_finest("ENTER");
 
     ngtcp2_tstamp expiry = ngtcp2_conn_get_expiry(h3_ctx->src_conn);
     ngtcp2_tstamp now    = h3_timestamp();
@@ -1252,12 +1260,12 @@ protohttp3_timer_cb(evutil_socket_t fd, short what, void *arg)
 {
     (void)fd; (void)what;
     protohttp3_conn_ctx_t *h3_ctx = arg;
-    log_finest_main("ENTER");
+    pxy_conn_ctx_t *ctx = h3_ctx->ctx;
+    log_finest("ENTER");
 
     int rv = ngtcp2_conn_handle_expiry(h3_ctx->src_conn, h3_timestamp());
     if (rv != 0) {
-        log_dbg_printf("protohttp3: ngtcp2_conn_handle_expiry: %s\n",
-                       ngtcp2_strerror(rv));
+        log_finest_va("ngtcp2_conn_handle_expiry: %s", ngtcp2_strerror(rv));
         return;
     }
 
@@ -1372,8 +1380,9 @@ h3_session_map_remove(h3_session_map_t *smap, const quic_tuple_key_t *key)
 void
 protohttp3_process_packet_cb(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 {
-	log_finest_main("ENTER");
     protohttp3_conn_ctx_t *h3_ctx = arg;
+    pxy_conn_ctx_t *ctx = h3_ctx->ctx;
+    log_finest("ENTER");
 
     pthread_mutex_lock(&h3_ctx->pkt_queue_mutex);
     // ATTENTION: We should never need to check if h3_ctx->src_process_pkt_ev is not NULL here,
@@ -1387,7 +1396,7 @@ protohttp3_process_packet_cb(UNUSED evutil_socket_t fd, UNUSED short what, void 
     pthread_mutex_unlock(&h3_ctx->pkt_queue_mutex);
 
     if (!h3_ctx->src_conn) {
-        log_finest_main("src_conn is NULL");
+        log_finest("src_conn is NULL");
         return;
     }
 
@@ -1410,7 +1419,7 @@ protohttp3_process_packet_cb(UNUSED evutil_socket_t fd, UNUSED short what, void 
 
         ngtcp2_pkt_info pi = { .ecn = (uint8_t)pkt->ecn };
 
-        log_finest_main_va("Processing packet %d of %zu bytes", pkt_count, pkt->len);
+        log_finest_va("Processing packet %d of %zu bytes", pkt_count, pkt->len);
         total_bytes_processed += pkt->len;
         pkt_count++;
 
@@ -1422,7 +1431,7 @@ protohttp3_process_packet_cb(UNUSED evutil_socket_t fd, UNUSED short what, void 
         free(pkt);
 
         if (rv != 0) {
-            log_finest_main_va("ngtcp2_conn_read_pkt returns: %s", ngtcp2_strerror(rv));
+            log_finest_va("ngtcp2_conn_read_pkt returns: %s", ngtcp2_strerror(rv));
             if (rv == NGTCP2_ERR_CRYPTO) {
                 unsigned long err;
                 while ((err = ERR_get_error())) {
@@ -1430,7 +1439,7 @@ protohttp3_process_packet_cb(UNUSED evutil_socket_t fd, UNUSED short what, void 
                     ERR_error_string_n(err, err_buf, sizeof(err_buf));
                     // TODO: Log the TLS alert code from ngtcp2 if available
                     // ngtcp2_conn_get_tls_alert(h3_ctx->src_conn);
-                    log_finest_main_va("OpenSSL error during ngtcp2_conn_read_pkt: %s", err_buf);
+                    log_finest_va("OpenSSL error during ngtcp2_conn_read_pkt: %s", err_buf);
                 }
             }
             // TODO: See ngtcp2_conn_read_pkt() for specific error codes that indicate the connection should be closed
@@ -1438,7 +1447,7 @@ protohttp3_process_packet_cb(UNUSED evutil_socket_t fd, UNUSED short what, void 
         }
     }
 
-    log_finest_main_va("Processed total of %d packets and %zu bytes", pkt_count, total_bytes_processed);
+    log_finest_va("Processed total of %d packets and %zu bytes", pkt_count, total_bytes_processed);
     protohttp3_flush_src(h3_ctx);
 }
 
@@ -1630,8 +1639,7 @@ protohttp3_new(struct event_base *evbase, pxy_conn_ctx_t *ctx, ngtcp2_version_ci
                                     NGTCP2_PROTO_VER_V1, &cb, &settings,
                                     &params, NULL, h3_ctx);
     if (rv != 0) {
-        log_dbg_printf("protohttp3: ngtcp2_conn_server_new: %s\n",
-                       ngtcp2_strerror(rv));
+        log_finest_va("ngtcp2_conn_server_new: %s", ngtcp2_strerror(rv));
         protohttp3_free(h3_ctx);
         return NULL;
     }
@@ -1657,7 +1665,7 @@ protohttp3_new(struct event_base *evbase, pxy_conn_ctx_t *ctx, ngtcp2_version_ci
     // TODO: Load ca.crt/key from the proxy spec, not hardcoded path
     if (SSL_CTX_use_certificate_file(ssl_ctx, "./tests/testproxy/ca.crt", SSL_FILETYPE_PEM) <= 0 ||
         SSL_CTX_use_PrivateKey_file(ssl_ctx, "./tests/testproxy/ca.key", SSL_FILETYPE_PEM) <= 0) {
-        log_dbg_printf("protohttp3: failed to load server cert/key!\n");
+        log_finest("failed to load server cert/key!");
         // Clear OpenSSL error queue so old errors don't pollute runtime
         ERR_clear_error();
         return NULL;
@@ -1678,7 +1686,7 @@ protohttp3_new(struct event_base *evbase, pxy_conn_ctx_t *ctx, ngtcp2_version_ci
 
     h3_ctx->src_ossl_ctx = NULL;
     if (ngtcp2_crypto_ossl_ctx_new(&h3_ctx->src_ossl_ctx, h3_ctx->src_ssl) != 0) {
-        log_dbg_printf("protohttp3: failed to create ngtcp2_crypto_ossl_ctx\n");
+        log_finest("failed to create ngtcp2_crypto_ossl_ctx");
         return NULL;
     }
 
@@ -2046,7 +2054,7 @@ protohttp3_conn_connect(pxy_conn_ctx_t *ctx)
 
     h3_ctx->dst_ossl_ctx = NULL;
     if (ngtcp2_crypto_ossl_ctx_new(&h3_ctx->dst_ossl_ctx, h3_ctx->dst_ssl) != 0) {
-        log_dbg_printf("protohttp3: failed to create ngtcp2_crypto_ossl_ctx\n");
+        log_finest("failed to create ngtcp2_crypto_ossl_ctx");
         return -1;
     }
 
@@ -2103,7 +2111,7 @@ protohttp3_conn_free(pxy_conn_ctx_t *ctx)
 {
     protohttp3_conn_ctx_t *h3_ctx = ctx->protoctx->arg;
     if (h3_ctx) {
-        log_dbg_printf("protohttp3: freeing session\n");
+        log_finest("freeing session");
         protohttp3_free(h3_ctx);
         ctx->protoctx->arg = NULL;
     }
@@ -2117,6 +2125,9 @@ protohttp3_conn_free(pxy_conn_ctx_t *ctx)
 void
 protohttp3_free(protohttp3_conn_ctx_t *h3_ctx)
 {
+    pxy_conn_ctx_t *ctx = h3_ctx->ctx;
+    log_finest("Free session");
+
     /* Stop all Libevent events first so no more callbacks fire.           */
     if (h3_ctx->src_rev)  { event_del(h3_ctx->src_rev);  event_free(h3_ctx->src_rev);  }
     if (h3_ctx->src_wev)  { event_del(h3_ctx->src_wev);  event_free(h3_ctx->src_wev);  }
@@ -2160,7 +2171,6 @@ protohttp3_free(protohttp3_conn_ctx_t *h3_ctx)
     pthread_mutex_destroy(&h3_ctx->pkt_queue_mutex);
 
     free(h3_ctx);
-    log_dbg_printf("protohttp3: session freed\n");
 }
 
 /* vim: set noet ft=c: */
