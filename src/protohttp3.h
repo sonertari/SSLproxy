@@ -138,7 +138,8 @@ void h3_session_map_remove(h3_session_map_t *smap, const quic_tuple_key_t *key);
  * ---------------------------------------------------------------------- */
 
 typedef struct stream_h3_ctx {
-    int64_t stream_id;         /* ngtcp2/QUIC stream id                   */
+    int64_t src_stream_id;     /* ngtcp2/QUIC stream id on the client side */
+    int64_t dst_stream_id;     /* ngtcp2/QUIC stream id on the server side */
 
     /* Accumulated request headers (filled by on_recv_header callback).    */
     nghttp3_nv  *headers;
@@ -149,6 +150,8 @@ typedef struct stream_h3_ctx {
     uint8_t     *body_buf;
     size_t       body_len;
     size_t       body_cap;
+
+    nghttp3_data_reader dr;
 
     /* Flags (same bit-field idiom used throughout sslproxy)               */
     unsigned int headers_complete : 1; /* 1 after END_HEADERS equivalent   */
@@ -203,7 +206,6 @@ struct protohttp3_conn_ctx {
     int dst_fd;   /* connected UDP fd towards the upstream server    */
 
     /* Libevent 'struct event' wrappers around the raw fds.               */
-    struct event *src_rev;   /* read-ready event on src_fd               */
     struct event *src_wev;   /* write-ready event on src_fd (armed on    */
                              /* demand when ngtcp2 has output queued)    */
     struct event *dst_rev;
@@ -281,7 +283,8 @@ void protohttp3_process_packet_cb(evutil_socket_t fd, short what, void *arg) NON
  * Safely schedule a stream_h3_ctx_t for freeing.
  */
 void protohttp3_request_free_stream_ctx(stream_h3_ctx_t      *s,
-                                         protohttp3_conn_ctx_t *h3_ctx) NONNULL(1,2);
+                                         protohttp3_conn_ctx_t *h3_ctx,
+                                         int reqmod) NONNULL(1,2);
 
 /*
  * Set up the HTTP/3 protocol handler in the given proxy connection context.
