@@ -215,7 +215,7 @@ proxy_conn_ctx_new(evutil_socket_t fd,
 #ifndef WITHOUT_ICAP
 	// ATTENTION: We initialize ICAP context for all connections, even if ICAP is not enabled for the proxyspec,
 	// because filter rules may enable ICAP for certain connections. We cannot continue without an ICAP context.
-	ctx->icap_ctx = icap_init(ctx, NULL, NULL);
+	ctx->icap_ctx = icap_init(ctx, PROTO_TCP, NULL, NULL);
 	if (!ctx->icap_ctx) {
 		log_finest("Failed to initialize ICAP context");
 		free(ctx);
@@ -450,7 +450,7 @@ proxy_listener_acceptcb_udp(evutil_socket_t fd, UNUSED short what, void *arg)
 		if (!h3_ctx->src_process_pkt_ev) {
 			log_finest("Schedule new src_process_pkt_ev");
 
-			h3_ctx->src_process_pkt_ev = event_new(h3_ctx->evbase, h3_ctx->udp_listener_fd, 0,
+			h3_ctx->src_process_pkt_ev = event_new(ctx->thr->evbase, h3_ctx->udp_listener_fd, 0,
 										protohttp3_process_packet_cb, h3_ctx);
 			if (!h3_ctx->src_process_pkt_ev) {
 				pthread_mutex_unlock(&h3_ctx->pkt_queue_mutex);
@@ -500,7 +500,7 @@ proxy_listener_acceptcb_udp(evutil_socket_t fd, UNUSED short what, void *arg)
 
 	// We cannot switch the event base before creating the h3_ctx,
 	// because the next packet for this connection may arrive before the init_conn callback finishes.
-	h3_ctx = protohttp3_new(ctx->thr->evbase, ctx, vc);
+	h3_ctx = protohttp3_new(ctx, vc);
 	if (!h3_ctx) {
 		log_finest("Failed to create protohttp3 session context");
 		goto err;
@@ -529,8 +529,6 @@ proxy_listener_acceptcb_udp(evutil_socket_t fd, UNUSED short what, void *arg)
 
 	// We use the listener's UDP socket for sending datagrams, because we want to use the same source port for all connections
 	h3_ctx->udp_listener_fd = lctx->udp_listener_fd;
-
-	ctx->protoctx->arg = h3_ctx;
 
 	h3_session_map_insert(lctx->h3_sessions, &key, h3_ctx);
 

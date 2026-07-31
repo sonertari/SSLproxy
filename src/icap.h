@@ -32,6 +32,7 @@
 
 #include "pxyconn.h"
 #include "protohttp2.h"
+#include "protohttp3.h"
 #include "attrib.h"
 
 #include <event2/buffer.h>
@@ -74,8 +75,9 @@ typedef void (*proto_failopen_to_dest_cb)(icap_service_ctx_t *) NONNULL(1);
  */
 struct icap_ctx {
 	pxy_conn_ctx_t *conn_ctx;
-	stream_ctx_t *stream_ctx;         /* For HTTP/2, the stream context */
-	protohttp2_ctx_t *h2_ctx;         /* For HTTP/2, the HTTP/2 context */
+	protocol_t proto;
+	void *stream_ctx;         /* For HTTP/2/3, the stream context */
+	void *hx_ctx;             /* For HTTP/2/3, the HTTP/2 or HTTP/3 context */
 
 	unsigned int is_veto : 1;         /* 1 if ICAP server vetoed the transaction */
 	unsigned int sent_veto_page : 1;  /* 1 if veto page sent to client */
@@ -157,7 +159,7 @@ struct icap_service_ctx {
 };
 
 void icap_ctx_free(icap_ctx_t *, int);
-icap_ctx_t *icap_init(pxy_conn_ctx_t *, stream_ctx_t *, protohttp2_ctx_t *) NONNULL(1);
+icap_ctx_t *icap_init(pxy_conn_ctx_t *, protocol_t, void *, void *) NONNULL(1);
 char *icap_chain_str(conn_opts_t *);
 
 /*

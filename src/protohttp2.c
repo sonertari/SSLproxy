@@ -99,7 +99,7 @@ protohttp2_new_stream_ctx(protohttp2_ctx_t *h2_ctx, int32_t stream_id)
 	memset(s->http_ctx, 0, sizeof(protohttp_ctx_t));
 
 #ifndef WITHOUT_ICAP
-    s->icap_ctx = icap_init(ctx, s, h2_ctx);
+    s->icap_ctx = icap_init(ctx, PROTO_HTTP2, s, h2_ctx);
 	if (!s->icap_ctx) {
         evbuffer_free(s->data_buf);
         free(s->http_ctx);
@@ -146,9 +146,9 @@ protohttp2_free_stream_headers(stream_ctx_t *s)
 void NONNULL(1)
 protohttp2_free_stream_ctx(stream_ctx_t *s)
 {
-    protohttp_ctx_t *http_ctx = s->ctx->protoctx->arg;
+    UNUSED pxy_conn_ctx_t *ctx = s->ctx;
+    protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
     protohttp2_ctx_t *h2_ctx = http_ctx->arg;
-    UNUSED pxy_conn_ctx_t *ctx = h2_ctx->ctx;
 #ifndef WITHOUT_ICAP
     log_finest_va("ENTER, src_stream_id=%d, dst_stream_id=%d, reqmod=%d", s->src_stream_id, s->dst_stream_id, s->icap_ctx ? s->icap_ctx->reqmod : -1);
 #else /* !WITHOUT_ICAP */
@@ -211,11 +211,8 @@ protohttp2_free_stream_ctx(stream_ctx_t *s)
 static void
 protohttp2_deferred_free_stream_ctx_cb(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 {
-    stream_ctx_t *s = (stream_ctx_t *)arg;
-
-    protohttp_ctx_t *http_ctx = s->ctx->protoctx->arg;
-    protohttp2_ctx_t *h2_ctx = http_ctx->arg;
-    UNUSED pxy_conn_ctx_t *ctx = h2_ctx->ctx;
+    stream_ctx_t *s = arg;
+    UNUSED pxy_conn_ctx_t *ctx = s->ctx;
     log_finest_va("Execute deferred free of stream_ctx, src_stream=%d, dst_stream=%d", s->src_stream_id, s->dst_stream_id);
 
     // Perform the actual, complete teardown
@@ -225,9 +222,7 @@ protohttp2_deferred_free_stream_ctx_cb(UNUSED evutil_socket_t fd, UNUSED short w
 void
 protohttp2_request_free_stream_ctx(stream_ctx_t *s)
 {
-    protohttp_ctx_t *http_ctx = s->ctx->protoctx->arg;
-    protohttp2_ctx_t *h2_ctx = http_ctx->arg;
-    UNUSED pxy_conn_ctx_t *ctx = h2_ctx->ctx;
+    UNUSED pxy_conn_ctx_t *ctx = s->ctx;
 
     if (s->ref_count > 0) {
         // We are currently processing this stream higher up on the stack!
@@ -693,44 +688,35 @@ protohttp2_send_callback_dst(UNUSED nghttp2_session *session, const uint8_t *dat
 }
 
 static int
-protohttp2_on_header_callback(nghttp2_session *session, const nghttp2_frame *frame, const uint8_t *name, size_t namelen, const uint8_t *value, size_t valuelen, UNUSED uint8_t flags, void *user_data)
+protohttp2_on_header_callback(nghttp2_session *session, const nghttp2_frame *frame, const uint8_t *name, size_t namelen,
+    const uint8_t *value, size_t valuelen, UNUSED uint8_t flags, void *user_data)
 {
+    // ATTENTION: NGHTTP2_FLAG_END_HEADERS is never set on the on_header_callback,
+    // it is only set on the on_frame_recv_callback when the entire frame has been received.
+    // That's why we filter and process the headers in the on_frame_recv_callback.
     protohttp2_ctx_t *h2_ctx = (protohttp2_ctx_t *)user_data;
     UNUSED pxy_conn_ctx_t *ctx = h2_ctx->ctx;
 
     log_finest_va("ENTER, stream_id=%d, session=%s", frame->hd.stream_id, session == h2_ctx->src_session ? "src" : "dst");
 
-    if (frame->hd.type != NGHTTP2_HEADERS) {
-        log_finest("Not a HEADERS frame, ignoring");
-        return 0;
-    }
-
+    // if (frame->hd.type != NGHTTP2_HEADERS) {
+    //     log_finest("Not a HEADERS frame, ignoring");
+    //     return 0;
+    // }
     int reqmod = (session == h2_ctx->src_session) ? 1 : 0;
 
     stream_ctx_t *s = protohttp2_get_stream_ctx(h2_ctx, frame->hd.stream_id, reqmod);
     if (!s) {
         s = protohttp2_new_stream_ctx(h2_ctx, frame->hd.stream_id);
-    }
-
-    if (s) {
-        if (s->headers_count == s->headers_capacity) {
-            s->headers_capacity = s->headers_capacity ? s->headers_capacity * 2 : 16;
-            s->headers = realloc(s->headers, s->headers_capacity * sizeof(nghttp2_nv));
+        if (!s) {
+            log_fine_va("Failed to create new stream context for stream_id=%d", frame->hd.stream_id);
+            return NGHTTP2_ERR_CALLBACK_FAILURE;
         }
-
-        log_finest_va("%.*s=%.*s", (int)namelen, name, (int)valuelen, value);
-
-        nghttp2_nv *nv = &s->headers[s->headers_count++];
-        nv->name = malloc(namelen);
-        memcpy(nv->name, name, namelen);
-        nv->namelen = namelen;
-        nv->value = malloc(valuelen);
-        memcpy(nv->value, value, valuelen);
-        nv->valuelen = valuelen;
-        nv->flags = NGHTTP2_NV_FLAG_NONE;
     }
-    else {
-        log_finest_va("Cannot save header for stream_id=%d: %.*s=%.*s", frame->hd.stream_id, (int)namelen, name, (int)valuelen, value);
+
+    if (protohttp2_add_nv_header(s, (const char *)name, namelen, (const char *)value, valuelen) < 0) {
+        log_fine_va("Failed to add header for stream_id=%d: %.*s=%.*s", frame->hd.stream_id, (int)namelen, name, (int)valuelen, value);
+        return NGHTTP2_ERR_CALLBACK_FAILURE;
     }
     return 0;
 }
@@ -788,7 +774,7 @@ protohttp2_provider_read_callback(UNUSED nghttp2_session *session, UNUSED int32_
     // TODO: Do we need to set NGHTTP2_DATA_FLAG_EOF when icap is disabled too? But how to know the end of stream in that case?
     // Flag the end of stream
     if (evbuffer_get_length(s->data_buf) == 0 && icap_enabled(s->icap_ctx) && icap_is_finished(s->icap_ctx)) {
-        protohttp2_ctx_t *h2_ctx = s->icap_ctx->h2_ctx;
+        protohttp2_ctx_t *h2_ctx = s->icap_ctx->hx_ctx;
         UNUSED pxy_conn_ctx_t *ctx = h2_ctx->ctx;
         log_finest_va("Set NGHTTP2_DATA_FLAG_EOF for src_stream_id=%d, dst_stream_id=%d, reqmod=%d", s->src_stream_id, s->dst_stream_id, s->icap_ctx->reqmod);
 
@@ -863,7 +849,7 @@ static void NONNULL(1)
 protohttp2_icap_send_data_to_src_cb(icap_ctx_t *icap_ctx)
 {
     stream_ctx_t *s = icap_ctx->stream_ctx;
-    protohttp2_ctx_t *h2_ctx = icap_ctx->h2_ctx;
+    protohttp2_ctx_t *h2_ctx = icap_ctx->hx_ctx;
     UNUSED pxy_conn_ctx_t *ctx = h2_ctx->ctx;
 
     log_finest_va("ENTER, src_stream_id=%d, dst_stream_id=%d, veto_hdr=%zu, veto_body=%zu, data_buf=%zu", s->src_stream_id, s->dst_stream_id,
@@ -889,7 +875,7 @@ protohttp2_icap_send_data_to_dst_cb(icap_ctx_t *icap_ctx)
         return;
     }
 
-    protohttp2_ctx_t *h2_ctx = icap_ctx->h2_ctx;
+    protohttp2_ctx_t *h2_ctx = icap_ctx->hx_ctx;
     UNUSED pxy_conn_ctx_t *ctx = h2_ctx->ctx;
 
     struct evbuffer *out_hdr = icap_get_last_service_out_hdr(icap_ctx);
@@ -952,7 +938,7 @@ protohttp2_icap_failopen_to_dest_cb(icap_service_ctx_t *service_ctx)
     log_finest_va("After copy, src_stream_id=%d, dst_stream_id=%d, reqmod=%d, headers_count=%zu, data_buf=%zu", s->src_stream_id, s->dst_stream_id,
         icap_ctx->reqmod, s->headers_count, evbuffer_get_length(s->data_buf));
 
-    protohttp2_ctx_t *h2_ctx = icap_ctx->h2_ctx;
+    protohttp2_ctx_t *h2_ctx = icap_ctx->hx_ctx;
     if (protohttp2_submit_data(h2_ctx, s, icap_ctx->reqmod) < 0) {
         log_finest_va("Failed to submit data for src_stream_id=%d, dst_stream_id=%d, reqmod=%d", s->src_stream_id, s->dst_stream_id, icap_ctx->reqmod);
         return;
@@ -1260,7 +1246,8 @@ protohttp2_on_frame_recv(UNUSED nghttp2_session *session, const nghttp2_frame *f
 
         stream_ctx_t *s = protohttp2_get_stream_ctx(h2_ctx, frame->hd.stream_id, reqmod);
         if (s) {
-            int seen_header_on_entry = reqmod ? s->http_ctx->seen_req_header : s->http_ctx->seen_resp_header;
+            // TODO: We get to this point only once per stream, when the headers are complete. So, do we need seen_header_on_entry?
+            // int seen_header_on_entry = reqmod ? s->http_ctx->seen_req_header : s->http_ctx->seen_resp_header;
 
             if (frame->hd.flags & NGHTTP2_FLAG_END_HEADERS) {
                 if (reqmod) {
@@ -1279,7 +1266,8 @@ protohttp2_on_frame_recv(UNUSED nghttp2_session *session, const nghttp2_frame *f
             }
 
             // TODO: Should we log when we get the response only?
-            if (!seen_header_on_entry && ((reqmod && s->http_ctx->seen_req_header) || (!reqmod && s->http_ctx->seen_resp_header))) {
+            // if (!seen_header_on_entry && ((reqmod && s->http_ctx->seen_req_header) || (!reqmod && s->http_ctx->seen_resp_header))) {
+            if ((reqmod && s->http_ctx->seen_req_header) || (!reqmod && s->http_ctx->seen_resp_header)) {
                 /* header complete: log connection */
                 if (WANT_CONNECT_LOG(ctx->conn)) {
                     // TODO: Implement h2 specific logging with stream info

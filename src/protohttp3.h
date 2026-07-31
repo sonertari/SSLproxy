@@ -140,6 +140,7 @@ void h3_session_map_remove(h3_session_map_t *smap, const quic_tuple_key_t *key);
 typedef struct stream_h3_ctx {
     int64_t src_stream_id;     /* ngtcp2/QUIC stream id on the client side */
     int64_t dst_stream_id;     /* ngtcp2/QUIC stream id on the server side */
+    pxy_conn_ctx_t *ctx;
 
     /* Accumulated request headers (filled by on_recv_header callback).    */
     nghttp3_nv  *headers;
@@ -152,6 +153,12 @@ typedef struct stream_h3_ctx {
     size_t       body_cap;
 
     nghttp3_data_reader dr;
+
+#ifndef WITHOUT_ICAP
+	icap_ctx_t *icap_ctx;
+#endif /* !WITHOUT_ICAP */
+
+    protohttp_ctx_t *http_ctx;
 
     /* Flags (same bit-field idiom used throughout sslproxy)               */
     unsigned int headers_complete : 1; /* 1 after END_HEADERS equivalent   */
@@ -216,10 +223,6 @@ struct protohttp3_conn_ctx {
     /* Timer event that drives ngtcp2's loss-detection / keep-alive.       */
     struct event *timer_ev;
 
-    /* Event base of the connection handling thread this h3 conn is assigned to,
-     * borrowed from the proxy thread (never freed here).  */
-    struct event_base *evbase;
-
     /* Back-pointer to the owning SSLproxy connection context.             */
     pxy_conn_ctx_t *ctx;
 
@@ -257,8 +260,7 @@ struct protohttp3_conn_ctx {
  * Public interface
  * ---------------------------------------------------------------------- */
 
-protohttp3_conn_ctx_t *protohttp3_new(struct event_base *evbase,
-                                      pxy_conn_ctx_t    *ctx,
+protohttp3_conn_ctx_t *protohttp3_new(pxy_conn_ctx_t    *ctx,
                                       ngtcp2_version_cid vc) WUNRES;
 
 /* Tear down all sessions, free all streams, delete all events.           */
@@ -282,9 +284,7 @@ void protohttp3_process_packet_cb(evutil_socket_t fd, short what, void *arg) NON
 /*
  * Safely schedule a stream_h3_ctx_t for freeing.
  */
-void protohttp3_request_free_stream_ctx(stream_h3_ctx_t      *s,
-                                         protohttp3_conn_ctx_t *h3_ctx,
-                                         int reqmod) NONNULL(1,2);
+void protohttp3_request_free_stream_ctx(stream_h3_ctx_t      *s, int reqmod) NONNULL(1);
 
 /*
  * Set up the HTTP/3 protocol handler in the given proxy connection context.

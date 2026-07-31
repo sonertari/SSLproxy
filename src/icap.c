@@ -285,17 +285,7 @@ icap_ctx_free(icap_ctx_t *icap_ctx, int term_owner)
 		free(icap_ctx->icap_extended_headers);
 	}
 
-	int h2 = icap_ctx->h2_ctx ? 1 : 0;
-
-	if (!h2) {
-		ctx->icap_ctx = NULL;
-
-		// The icap_ctx owner may be conn or stream, so we need to set the correct pointer to NULL
-		if (term_owner) {
-			icap_conn_term(ctx);
-		}
-	}
-	else {
+	if (icap_ctx->proto == PROTO_HTTP2) {
 		// TODO: Free h2 conn if all h2 streams are finished?
 		stream_ctx_t *s = icap_ctx->stream_ctx;
 		if (s) {
@@ -307,12 +297,33 @@ icap_ctx_free(icap_ctx_t *icap_ctx, int term_owner)
 			}
 		}
 	}
+	else if (icap_ctx->proto == PROTO_HTTP3) {
+		// TODO: Free h3 conn if all h3 streams are finished?
+		stream_h3_ctx_t *s = icap_ctx->stream_ctx;
+		if (s) {
+			s->icap_ctx = NULL;
+			// Do not term the stream if it's not marked as ready to be terminated
+			if (term_owner && s->term) {
+				log_finest("Stream term flag set, free stream ctx");
+				// TODO: Remove reqmod param
+				protohttp3_request_free_stream_ctx(s, icap_ctx->reqmod);
+			}
+		}
+	}
+	else {
+		ctx->icap_ctx = NULL;
+
+		// The icap_ctx owner may be conn or stream, so we need to set the correct pointer to NULL
+		if (term_owner) {
+			icap_conn_term(ctx);
+		}
+	}
 
 	free(icap_ctx);
 }
 
 static icap_ctx_t *
-icap_ctx_new(pxy_conn_ctx_t *ctx, stream_ctx_t *stream_ctx, protohttp2_ctx_t *h2_ctx)
+icap_ctx_new(pxy_conn_ctx_t *ctx, protocol_t proto, void *stream_ctx, void *hx_ctx)
 {
 	log_finest("ENTER");
 
@@ -325,14 +336,18 @@ icap_ctx_new(pxy_conn_ctx_t *ctx, stream_ctx_t *stream_ctx, protohttp2_ctx_t *h2
 	memset(icap_ctx, 0, sizeof(icap_ctx_t));
 
 	icap_ctx->conn_ctx = ctx;
+	icap_ctx->proto = proto;
 	icap_ctx->stream_ctx = stream_ctx;
-	icap_ctx->h2_ctx = h2_ctx;
+	icap_ctx->hx_ctx = hx_ctx;
 
-	if (!stream_ctx) {
-		ctx->icap_ctx = icap_ctx;
+	if (proto == PROTO_HTTP2) {
+		((stream_ctx_t *)stream_ctx)->icap_ctx = icap_ctx;
+	}
+	else if (proto == PROTO_HTTP3) {
+		((stream_h3_ctx_t *)stream_ctx)->icap_ctx = icap_ctx;
 	}
 	else {
-		stream_ctx->icap_ctx = icap_ctx;
+		ctx->icap_ctx = icap_ctx;
 	}
 
 	icap_service_t *svc = ctx->conn_opts->icap_chain;
@@ -353,23 +368,33 @@ icap_ctx_new(pxy_conn_ctx_t *ctx, stream_ctx_t *stream_ctx, protohttp2_ctx_t *h2
 }
 
 icap_ctx_t *
-icap_init(pxy_conn_ctx_t *ctx, stream_ctx_t *stream_ctx, protohttp2_ctx_t *h2_ctx)
+icap_init(pxy_conn_ctx_t *ctx, protocol_t proto, void *stream_ctx, void *hx_ctx)
 {
-	log_finest_va("ENTER, processing %s, stream_id=%d", stream_ctx ? "stream" : "connection", stream_ctx ? stream_ctx->src_stream_id : -1);
+	log_finest_va("ENTER, processing %s, stream_id=%d", stream_ctx ? "stream" : "connection", stream_ctx ? ((stream_ctx_t *)stream_ctx)->src_stream_id : -1);
 
-	icap_ctx_t *icap_ctx = !stream_ctx ? ctx->icap_ctx : stream_ctx->icap_ctx;
+	icap_ctx_t *icap_ctx = NULL;
+	if (proto == PROTO_HTTP2) {
+		icap_ctx = ((stream_ctx_t *)stream_ctx)->icap_ctx;
+	}
+	else if (proto == PROTO_HTTP3) {
+		icap_ctx = ((stream_h3_ctx_t *)stream_ctx)->icap_ctx;
+	}
+	else {
+		icap_ctx = ctx->icap_ctx;
+	}
+
 	if (icap_ctx) {
 		if (!stream_ctx) {
 			log_fine("Conn ICAP context already initialized, reinitializing");
 			icap_ctx_free(ctx->icap_ctx, 0);
 		}
 		else {
-			log_fine_va("Stream ICAP context already initialized, reinitializing, stream_id=%d", stream_ctx->src_stream_id);
-			icap_ctx_free(stream_ctx->icap_ctx, 0);
+			log_fine_va("Stream ICAP context already initialized, reinitializing, stream_id=%d", ((stream_ctx_t *)stream_ctx)->src_stream_id);
+			icap_ctx_free(((stream_ctx_t *)stream_ctx)->icap_ctx, 0);
 		}
 	}
 
-	icap_ctx = icap_ctx_new(ctx, stream_ctx, h2_ctx);
+	icap_ctx = icap_ctx_new(ctx, proto, stream_ctx, hx_ctx);
 	if (!icap_ctx)
 		return NULL;
 
@@ -1347,10 +1372,10 @@ icap_send_data(icap_ctx_t *icap_ctx)
 
 	// TODO: We may not have ctx and/or bevs, if the connection is terminated
 	if (ctx && ctx->src.bev && ctx->dst.bev) {
-		int h2 = icap_ctx->h2_ctx ? 1 : 0;
-		stream_ctx_t *s = icap_ctx->stream_ctx;
+		int h2 = icap_ctx->proto == PROTO_HTTP2;
 
 		if (h2) {
+			stream_ctx_t *s = icap_ctx->stream_ctx;
 			s->ref_count++;
 			log_finest_va("Increment stream ref_count, src_stream_id=%d, dst_stream_id=%d, ref_count=%d, deferred_free_pending=%d",
 				s->src_stream_id, s->dst_stream_id, s->ref_count, s->deferred_free_pending);
@@ -1359,6 +1384,7 @@ icap_send_data(icap_ctx_t *icap_ctx)
 		icap_data_submit(icap_ctx);
 
 		if (h2) {
+			stream_ctx_t *s = icap_ctx->stream_ctx;
 			s->ref_count--;
 			log_finest_va("Decrement stream ref_count, src_stream_id=%d, dst_stream_id=%d, ref_count=%d, deferred_free_pending=%d",
 				s->src_stream_id, s->dst_stream_id, s->ref_count, s->deferred_free_pending);
@@ -1420,8 +1446,8 @@ icap_get_http_content_length(icap_ctx_t *icap_ctx)
 	unsigned int http_content_length_set = icap_ctx->reqmod ? icap_ctx->src_http_content_length_set : icap_ctx->dst_http_content_length_set;
 	if (http_content_length_set == 0) {
 		protohttp_ctx_t *http_ctx = NULL;
-		if (icap_ctx->stream_ctx && icap_ctx->h2_ctx) {
-			http_ctx = icap_ctx->stream_ctx->http_ctx;
+		if (icap_ctx->proto == PROTO_HTTP2) {
+			http_ctx = ((stream_ctx_t *)(icap_ctx->stream_ctx))->http_ctx;
 		}
 		else {
 			http_ctx = ctx->protoctx->arg;
@@ -3325,7 +3351,7 @@ icap_process_data(struct evbuffer *inbuf, icap_ctx_t *icap_ctx)
 		}
 
 		// TODO: Pause reading from stream, not the whole connection, in http2 mode
-		if (!icap_ctx->h2_ctx) {
+		if (icap_ctx->proto != PROTO_HTTP2 && icap_ctx->proto != PROTO_HTTP3) {
 			/* Pause reading from src or dst: disable read callback temporarily */
 			// TODO: Should we disable the current conn_bev only?
 			bufferevent_disable(icap_ctx->reqmod ? ctx->src.bev : ctx->dst.bev, EV_READ);
