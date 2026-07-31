@@ -107,7 +107,6 @@ static void protohttp3_src_write_cb(evutil_socket_t fd, short what, void *arg);
 static void protohttp3_timer_cb(evutil_socket_t fd, short what, void *arg);
 
 static int  protohttp3_arm_timer(protohttp3_conn_ctx_t *h3_ctx);
-static void protohttp3_flush_src(protohttp3_conn_ctx_t *h3_ctx);
 
 static nghttp3_ssize
 h3_stream_read_data(nghttp3_conn *conn, int64_t stream_id,
@@ -161,15 +160,6 @@ protohttp3_new_stream_ctx(protohttp3_conn_ctx_t *h3_ctx, int64_t stream_id)
 
     // Set up the data reader hook
     s->dr.read_data = h3_stream_read_data;
-
-    // Pre-allocate a small header vector
-    // TODO: Free headers on error
-    // s->headers_capacity = 16;
-    // s->headers = calloc(s->headers_capacity, sizeof(nghttp3_nv));
-    // if (!s->headers) {
-    //     free(s);
-    //     return NULL;
-    // }
 
     s->http_ctx = malloc(sizeof(protohttp_ctx_t));
 	if (!s->http_ctx) {
@@ -468,19 +458,31 @@ h3_on_recv_header(nghttp3_conn *conn, int64_t stream_id,
 }
 
 /* =========================================================================
- * Upstream (dst) UDP read/write loops
+ * UDP read/write loops
  * ====================================================================== */
-// TODO: Merge with protohttp3_flush_src() to avoid code duplication.
+
+static pthread_mutex_t sendmsg_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+/*
+ * Write all serialised QUIC packets that ngtcp2 has queued for the client
+ * (src) side.  Called after every ngtcp2_conn_read_pkt() and from the
+ * write-ready Libevent callback.
+ *
+ * ngtcp2 drives the output write loop:
+ *   1. nghttp3_conn_writev_stream() fills iovecs with H3 frame data.
+ *   2. ngtcp2_conn_writev_stream() encapsulates that into QUIC packets.
+ *   3. sendmsg() transmits each QUIC packet to the peer.
+ */
 static void
-protohttp3_flush_dst(protohttp3_conn_ctx_t *h3_ctx)
+protohttp3_trigger_write_loop(protohttp3_conn_ctx_t *h3_ctx, int reqmod)
 {
     pxy_conn_ctx_t *ctx = h3_ctx->ctx;
     log_finest_va("ENTER, fd=%d", h3_ctx->dst_fd);
 
-    if (!h3_ctx || !h3_ctx->dst_conn)
-        return;
-
-    static uint8_t pktbuf[H3_DGRAM_BUFSZ];
+    // TODO: Consider using a static buffer to avoid stack allocation on each call.
+    // But static buffer may not be thread-safe if multiple threads call this function simultaneously.
+    // static uint8_t pktbuf[H3_DGRAM_BUFSZ];
+    uint8_t pktbuf[H3_DGRAM_BUFSZ];
 
     for (;;) {
         ngtcp2_ssize pktlen = -1;
@@ -492,13 +494,12 @@ protohttp3_flush_dst(protohttp3_conn_ctx_t *h3_ctx)
         nghttp3_ssize sveccnt = 0;
 
         /* 1. Pull H3 data if present */
-        if (h3_ctx->dst_h3) {
-            sveccnt = nghttp3_conn_writev_stream(h3_ctx->dst_h3,
+        if ((reqmod && h3_ctx->src_h3) || (!reqmod && h3_ctx->dst_h3)) {
+            sveccnt = nghttp3_conn_writev_stream(reqmod ? h3_ctx->src_h3 : h3_ctx->dst_h3,
                                                  &stream_id, &fin,
                                                  vecs, H3_MAX_IOVECS);
             if (sveccnt < 0) {
-                log_finest_va("nghttp3_conn_writev_stream: %s",
-                               nghttp3_strerror((int)sveccnt));
+                log_finest_va("nghttp3_conn_writev_stream: %s", nghttp3_strerror((int)sveccnt));
                 break;
             }
         }
@@ -510,22 +511,28 @@ protohttp3_flush_dst(protohttp3_conn_ctx_t *h3_ctx)
         if (sveccnt > 0 && stream_id >= 0) {
             ngtcp2_ssize pdatalen = 0;
             pktlen = ngtcp2_conn_writev_stream(
-                         h3_ctx->dst_conn, &h3_ctx->dst_path, &pi,
+                         reqmod ? h3_ctx->src_conn : h3_ctx->dst_conn,
+                         reqmod ? &h3_ctx->src_path : &h3_ctx->dst_path,
+                         &pi,
                          pktbuf, sizeof(pktbuf),
                          &pdatalen,
-                         NGTCP2_WRITE_STREAM_FLAG_MORE,
+                         // TODO: Is this enough? The ngtcp2_write_stream_flag enum has changed in recent versions.
+                         // The NGTCP2_WRITE_STREAM_FLAG_MORE flag is now deprecated and replaced with NGTCP2_WRITE_STREAM_FLAG_FIN for the FIN flag.
+                         // We need to check the version of ngtcp2 we are using and adjust accordingly.
+                         fin ? NGTCP2_WRITE_STREAM_FLAG_FIN : NGTCP2_WRITE_STREAM_FLAG_MORE,
                          stream_id, (const ngtcp2_vec *)vecs,
                          (size_t)sveccnt,
                          h3_timestamp());
 
             if (pdatalen > 0) {
-                nghttp3_conn_add_write_offset(h3_ctx->dst_h3, stream_id, (size_t)pdatalen);
+                nghttp3_conn_add_write_offset(reqmod ? h3_ctx->src_h3 : h3_ctx->dst_h3, stream_id, (size_t)pdatalen);
             }
         } else {
             log_finest_va("Write pending  ACKs, Handshake CRYPTO, etc., fd=%d", h3_ctx->dst_fd);
             /* No stream data; write pending ACKs, Handshake CRYPTO, etc. */
-            pktlen = ngtcp2_conn_write_pkt(h3_ctx->dst_conn, &h3_ctx->dst_path, &pi,
-                                           pktbuf, sizeof(pktbuf),
+            pktlen = ngtcp2_conn_write_pkt(reqmod ? h3_ctx->src_conn : h3_ctx->dst_conn,
+                                           reqmod ? &h3_ctx->src_path : &h3_ctx->dst_path,
+                                           &pi, pktbuf, sizeof(pktbuf),
                                            h3_timestamp());
         }
 
@@ -548,27 +555,99 @@ protohttp3_flush_dst(protohttp3_conn_ctx_t *h3_ctx)
         /* 4. Transmit via UDP socket */
         struct iovec iov = { .iov_base = pktbuf, .iov_len = (size_t)pktlen };
         struct msghdr mhdr = {
-            .msg_name    = (struct sockaddr *)&h3_ctx->dst_peer_addr,
-            .msg_namelen = h3_ctx->dst_peer_addrlen,
+            .msg_name    = reqmod ? (struct sockaddr *)&h3_ctx->ctx->srcaddr : (struct sockaddr *)&h3_ctx->dst_peer_addr,
+            .msg_namelen = reqmod ? h3_ctx->ctx->srcaddrlen : h3_ctx->dst_peer_addrlen,
             .msg_iov     = &iov,
             .msg_iovlen  = 1,
         };
 
-        ssize_t sent = sendmsg(h3_ctx->dst_fd, &mhdr, 0);
+        ssize_t sent = 0;
+
+        if (reqmod) {
+		    // QUIC server should send from the common UDP listener fd, not a connected socket.
+		    // hence the global mutex to serialize sendmsg() calls across multiple threads.
+		    pthread_mutex_lock(&sendmsg_mutex);
+		    sent = sendmsg(h3_ctx->udp_listener_fd, &mhdr, 0);
+		    pthread_mutex_unlock(&sendmsg_mutex);
+		}
+		else {
+	        sent = sendmsg(h3_ctx->dst_fd, &mhdr, 0);
+		}
 
         log_finest_va("sendmsg fd=%d returned %zd (errno=%d: %s)",
-                    h3_ctx->dst_fd, sent, errno, strerror(errno));        
+                    reqmod ? h3_ctx->udp_listener_fd : h3_ctx->dst_fd, sent, errno, strerror(errno));        
         if (sent < 0) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                if (h3_ctx->dst_wev) event_add(h3_ctx->dst_wev, NULL);
+                if (reqmod ? h3_ctx->src_wev : h3_ctx->dst_wev)
+					event_add(reqmod ? h3_ctx->src_wev : h3_ctx->dst_wev, NULL);
             } else {
-                log_finest_va("sendmsg error on fd %d: %s", h3_ctx->dst_fd, strerror(errno));
+                log_finest_va("sendmsg error on fd %d: %s", 
+                               reqmod ? h3_ctx->udp_listener_fd : h3_ctx->dst_fd, strerror(errno));
             }
             break;
         }
     }
 
     protohttp3_arm_timer(h3_ctx);
+}
+
+static int
+protohttp3_submit_data(protohttp3_conn_ctx_t *h3_ctx, stream_h3_ctx_t *s, int reqmod)
+{
+    UNUSED pxy_conn_ctx_t *ctx = h3_ctx->ctx;
+    int rv = 0;
+
+    if (s->headers_count > 0) {
+        log_finest_va("Submit headers, headers_count=%zu, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->headers_count, s->src_stream_id, s->dst_stream_id, reqmod);
+
+        if (reqmod) {
+            rv = nghttp3_conn_submit_request(h3_ctx->dst_h3, s->dst_stream_id, s->headers, s->headers_count, &s->dr, s);
+            if (rv < 0) {
+                log_finest_va("Fatal: nghttp3_conn_submit_request failed: %s", nghttp3_strerror(rv));
+                return -1;
+            }
+
+            // Set the stream id assigned by nghttp2 for the destination session
+            s->dst_stream_id = rv;
+        }
+        else {
+            rv = nghttp3_conn_submit_response(h3_ctx->src_h3, s->src_stream_id, s->headers, s->headers_count, &s->dr);
+            if (rv < 0) {
+                log_finest_va("Fatal: nghttp3_conn_submit_response failed: %s", nghttp3_strerror(rv));
+                return -1;
+            }
+        }
+        protohttp3_free_stream_headers(s);
+
+#ifndef WITHOUT_ICAP
+        s->icap_ctx->made_progress = 1;
+#endif /* !WITHOUT_ICAP */
+    }
+
+    if (s->body_len > 0) {
+        log_finest_va("Submit data, data_len=%zu, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->body_len, s->src_stream_id, s->dst_stream_id, reqmod);
+
+        rv = nghttp3_conn_resume_stream(reqmod ? h3_ctx->dst_h3 : h3_ctx->src_h3, reqmod ? s->dst_stream_id : s->src_stream_id);
+
+        if (rv == NGHTTP3_ERR_INVALID_ARGUMENT) {
+            // Clean operational bypass: The engine is already active and polling
+            log_finest_va("Stream %" PRId64 " already active, continuing to explicit write execution.", s->src_stream_id);
+        }
+        else if (rv < 0) {
+            log_finest_va("Fatal: nghttp3_conn_resume_stream failed: %s", nghttp3_strerror(rv));
+            return -1;
+        }
+
+#ifndef WITHOUT_ICAP
+        s->icap_ctx->made_progress = 1;
+#endif /* !WITHOUT_ICAP */
+    }
+
+    // Clean Data Wakeup Flush
+    log_finest_va("Executing scheduled session frame serialization loop for stream, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, reqmod);
+    protohttp3_trigger_write_loop(h3_ctx, reqmod);
+
+    return 0;
 }
 
 /*
@@ -612,45 +691,13 @@ h3_on_end_headers(nghttp3_conn *conn, int64_t stream_id,
             if (s->dst_stream_id == -1) {
                 ngtcp2_conn_open_bidi_stream(h3_ctx->dst_conn, &s->dst_stream_id, s);
             }
-
-            log_finest_va("Submit request to dst stream id=%" PRId64, s->dst_stream_id);
-
-            nghttp3_conn_submit_request(h3_ctx->dst_h3, s->dst_stream_id,
-                                        s->headers, s->headers_count, &s->dr, s);
-
-            /*
-             * BUG FIX: Clear the request headers from s->headers now.
-             * When Caddy's response arrives, h3_on_recv_header (reqmod=0) will
-             * find this same stream via dst_stream_id and append response
-             * headers to s->headers.  Without this reset the 6 request headers
-             * remain in the array and are forwarded to curl together with the
-             * response headers, causing curl to see ":method: GET" inside the
-             * HTTP/3 HEADERS response frame — an immediate INTERNAL_ERROR.
-             */
-            protohttp3_free_stream_headers(s);
-
-            /* Re-initialize so the array is ready to receive response headers. */
-            // s->headers_capacity = 16;
-            // s->headers = calloc(s->headers_capacity, sizeof(nghttp3_nv));
-            // if (!s->headers) {
-            //     log_finest("OOM re-allocating response header array");
-            //     s->headers_capacity = 0;
-            // }
-
-            protohttp3_flush_dst(h3_ctx);
-        } else {
+        }
+        else {
             log_finest("WARNING: upstream H3 session not ready");
         }
-    } else {
-        /* Upstream response headers received; forward to client. */
-        if (h3_ctx->src_h3) {
-            log_finest_va("Submit response to src stream id=%" PRId64, s->src_stream_id);
-
-            nghttp3_conn_submit_response(h3_ctx->src_h3, s->src_stream_id,
-                                         s->headers, s->headers_count, &s->dr);
-            protohttp3_flush_src(h3_ctx);
-        }
     }
+
+    protohttp3_submit_data(h3_ctx, s, reqmod);
 
     s->ref_count--;
     return 0;
@@ -701,14 +748,7 @@ h3_on_recv_data(nghttp3_conn *conn, int64_t stream_id,
     log_finest_va("stream %" PRId64 " received %zu bytes of DATA", stream_id, datalen);
 
     // Resume nghttp3 stream so it calls h3_stream_read_data
-    if (reqmod) {
-        nghttp3_conn_resume_stream(h3_ctx->dst_h3, s->dst_stream_id);
-        protohttp3_flush_dst(h3_ctx);
-    }
-    else {
-        nghttp3_conn_resume_stream(h3_ctx->src_h3, s->src_stream_id);
-        protohttp3_flush_src(h3_ctx);
-    }
+    protohttp3_submit_data(h3_ctx, s, reqmod);
 
     s->ref_count--;
     return 0;
@@ -738,23 +778,7 @@ h3_on_end_stream(nghttp3_conn *conn, int64_t stream_id,
 
     log_finest_va("stream %" PRId64 " END_STREAM", stream_id);
 
-    /*
-     * BUG FIX: Do NOT free the stream here.
-     *
-     * For the dst side (reqmod=0): the stream context is shared with the src
-     * side — it is found by dst_stream_id for dst events and by stream_id for
-     * src events.  Freeing it here orphans the src half and prevents the
-     * two-close handshake in quic_stream_close from firing correctly.
-     *
-     * Instead, rely solely on quic_stream_close (which fires once ngtcp2
-     * confirms both-FIN or RESET_STREAM) to perform the cleanup.  The
-     * existing closed/term logic in quic_stream_close already handles the
-     * two-event teardown correctly.
-     *
-     * For the src side (reqmod=1): similarly, the stream is already pending
-     * cleanup via protohttp3_request_free_stream_ctx's "wait for server side"
-     * path; we do not duplicate that here.
-     */
+    // Do NOT free the stream here
     return 0;
 }
 
@@ -939,11 +963,15 @@ quic_stream_close(ngtcp2_conn *conn, uint32_t flags,
 
     stream_h3_ctx_t *s = protohttp3_get_stream_ctx(h3_ctx, stream_id, reqmod);
     if (s) {
-        if (reqmod && h3_ctx->src_h3) {
-            nghttp3_conn_close_stream(h3_ctx->src_h3, s->src_stream_id, app_error_code);
+        if (reqmod) {
+            if (h3_ctx->src_h3) {
+                nghttp3_conn_close_stream(h3_ctx->src_h3, s->src_stream_id, app_error_code);
+            }
         }
-        else if (!reqmod && h3_ctx->dst_h3) {
-            nghttp3_conn_close_stream(h3_ctx->dst_h3, s->dst_stream_id, app_error_code);
+        else {
+            if (h3_ctx->dst_h3) {
+                nghttp3_conn_close_stream(h3_ctx->dst_h3, s->dst_stream_id, app_error_code);
+            }
         }
 
         if (!s->closed) {
@@ -1172,129 +1200,6 @@ protohttp3_debug_print_addr(const struct sockaddr_storage *peer_addr, char *labe
     log_finest_main_va("%s=%s:%u", label, hostbuf, port);
 }
 
-/*
- * Write all serialised QUIC packets that ngtcp2 has queued for the client
- * (src) side.  Called after every ngtcp2_conn_read_pkt() and from the
- * write-ready Libevent callback.
- *
- * ngtcp2 drives the output write loop:
- *   1. nghttp3_conn_writev_stream() fills iovecs with H3 frame data.
- *   2. ngtcp2_conn_writev_stream() encapsulates that into QUIC packets.
- *   3. sendmsg() transmits each QUIC packet to the peer.
- */
-
-static pthread_mutex_t sendmsg_mutex = PTHREAD_MUTEX_INITIALIZER;
-
-static void
-protohttp3_flush_src(protohttp3_conn_ctx_t *h3_ctx)
-{
-    pxy_conn_ctx_t *ctx = h3_ctx->ctx;
-    log_finest_va("ENTER, fd=%d", h3_ctx->dst_fd);
-
-    if (!h3_ctx || !h3_ctx->src_conn)
-        return;
-
-    // TODO: Consider using a static buffer to avoid stack allocation on each call.
-    // But static buffer may not be thread-safe if multiple threads call this function simultaneously.
-    // static uint8_t pktbuf[H3_DGRAM_BUFSZ];
-    uint8_t pktbuf[H3_DGRAM_BUFSZ];
-
-    for (;;) {
-        ngtcp2_ssize pktlen = -1;
-        ngtcp2_pkt_info pi = {0};
-
-        nghttp3_vec vecs[H3_MAX_IOVECS];
-        int64_t stream_id = -1;
-        int fin = 0;
-        nghttp3_ssize sveccnt = 0;
-
-        /* 1. Pull H3 data if present */
-        if (h3_ctx->src_h3) {
-            sveccnt = nghttp3_conn_writev_stream(h3_ctx->src_h3,
-                                                 &stream_id, &fin,
-                                                 vecs, H3_MAX_IOVECS);
-            if (sveccnt < 0) {
-                log_finest_va("nghttp3_conn_writev_stream: %s", nghttp3_strerror((int)sveccnt));
-                break;
-            }
-        }
-        else {
-            log_finest_va("No upstream H3 session; skipping nghttp3_conn_writev_stream, fd=%d", h3_ctx->dst_fd);
-        }
-
-        /* 2. Write either Stream packet or standard QUIC packet (Crypto/ACK) */
-        if (sveccnt > 0 && stream_id >= 0) {
-            ngtcp2_ssize pdatalen = 0;
-            pktlen = ngtcp2_conn_writev_stream(
-                         h3_ctx->src_conn, &h3_ctx->src_path, &pi,
-                         pktbuf, sizeof(pktbuf),
-                         &pdatalen,
-                         // TODO: Is this enough? The ngtcp2_write_stream_flag enum has changed in recent versions.
-                         // The NGTCP2_WRITE_STREAM_FLAG_MORE flag is now deprecated and replaced with NGTCP2_WRITE_STREAM_FLAG_FIN for the FIN flag.
-                         // We need to check the version of ngtcp2 we are using and adjust accordingly.
-                         fin ? NGTCP2_WRITE_STREAM_FLAG_FIN : NGTCP2_WRITE_STREAM_FLAG_MORE,
-                         stream_id, (const ngtcp2_vec *)vecs,
-                         (size_t)sveccnt,
-                         h3_timestamp());
-
-            if (pdatalen > 0) {
-                nghttp3_conn_add_write_offset(h3_ctx->src_h3, stream_id, (size_t)pdatalen);
-            }
-        } else {
-            log_finest_va("Write pending  ACKs, Handshake CRYPTO, etc., fd=%d", h3_ctx->dst_fd);
-            /* No stream data; write pending ACKs, Handshake CRYPTO, etc. */
-            pktlen = ngtcp2_conn_write_pkt(h3_ctx->src_conn, &h3_ctx->src_path, &pi,
-                                           pktbuf, sizeof(pktbuf),
-                                           h3_timestamp());
-        }
-
-        /* 3. Handle write status */
-        if (pktlen == NGTCP2_ERR_WRITE_MORE) {
-            log_finest_va("Write more, pktlen=%zd, fd=%d", pktlen, h3_ctx->dst_fd);
-            continue;
-        }
-
-        if (pktlen <= 0) {
-            if (pktlen < 0 && pktlen != NGTCP2_ERR_WRITE_MORE) {
-                log_finest_va("ngtcp2 write error: %s", ngtcp2_strerror((int)pktlen));
-            }
-            log_finest_va("Drained all pending packets, pktlen=%zd, fd=%d", pktlen, h3_ctx->dst_fd);
-            break; /* Drained all pending packets */
-        }
-
-        log_finest_va("Transmit packet, pktlen=%zd, fd=%d", pktlen, h3_ctx->dst_fd);
-
-        /* 4. Transmit via UDP socket */
-        struct iovec iov = { .iov_base = pktbuf, .iov_len = (size_t)pktlen };
-        struct msghdr mhdr = {
-            .msg_name    = (struct sockaddr *)&h3_ctx->ctx->srcaddr,
-            .msg_namelen = h3_ctx->ctx->srcaddrlen,
-            .msg_iov     = &iov,
-            .msg_iovlen  = 1,
-        };
-
-        // QUIC server should send from the common UDP listener fd, not a connected socket.
-        // hence the global mutex to serialize sendmsg() calls across multiple threads.
-        pthread_mutex_lock(&sendmsg_mutex);
-        ssize_t sent = sendmsg(h3_ctx->udp_listener_fd, &mhdr, 0);
-        pthread_mutex_unlock(&sendmsg_mutex);
-
-        log_finest_va("sendmsg fd=%d returned %zd (errno=%d: %s)",
-                    h3_ctx->udp_listener_fd, sent, errno, strerror(errno));        
-        if (sent < 0) {
-            if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                if (h3_ctx->src_wev) event_add(h3_ctx->src_wev, NULL);
-            } else {
-                log_finest_va("sendmsg error on fd %d: %s", 
-                               h3_ctx->udp_listener_fd, strerror(errno));
-            }
-            break;
-        }
-    }
-
-    protohttp3_arm_timer(h3_ctx);
-}
-
 /* =========================================================================
  * Libevent callbacks for the raw UDP fds
  * ====================================================================== */
@@ -1310,7 +1215,7 @@ protohttp3_src_write_cb(evutil_socket_t fd, short what, void *arg)
     protohttp3_conn_ctx_t *h3_ctx = arg;
     pxy_conn_ctx_t *ctx = h3_ctx->ctx;
     log_finest("ENTER");
-    protohttp3_flush_src(h3_ctx);
+    protohttp3_trigger_write_loop(h3_ctx, 1);
 }
 
 static void protohttp3_dst_read_cb(evutil_socket_t fd, short what, void *arg)
@@ -1366,7 +1271,7 @@ static void protohttp3_dst_read_cb(evutil_socket_t fd, short what, void *arg)
         return;
     }
 
-    protohttp3_flush_dst(h3_ctx);
+    protohttp3_trigger_write_loop(h3_ctx, 0);
 }
 
 static void protohttp3_dst_write_cb(evutil_socket_t fd, short what, void *arg)
@@ -1375,7 +1280,7 @@ static void protohttp3_dst_write_cb(evutil_socket_t fd, short what, void *arg)
     protohttp3_conn_ctx_t *h3_ctx = arg;
     pxy_conn_ctx_t *ctx = h3_ctx->ctx;
     log_finest_va("ENTER, fd=%d", h3_ctx->dst_fd);
-    protohttp3_flush_dst(h3_ctx);
+    protohttp3_trigger_write_loop(h3_ctx, 0);
 }
 
 /* =========================================================================
@@ -1432,7 +1337,7 @@ protohttp3_timer_cb(evutil_socket_t fd, short what, void *arg)
         return;
     }
 
-    protohttp3_flush_src(h3_ctx);
+    protohttp3_trigger_write_loop(h3_ctx, 1);
 }
 
 /* =========================================================================
@@ -1614,7 +1519,7 @@ protohttp3_process_packet_cb(UNUSED evutil_socket_t fd, UNUSED short what, void 
     }
 
     log_finest_va("Processed total of %d packets and %zu bytes", pkt_count, total_bytes_processed);
-    protohttp3_flush_src(h3_ctx);
+    protohttp3_trigger_write_loop(h3_ctx, 1);
 }
 
 void
@@ -2231,7 +2136,7 @@ protohttp3_conn_connect(pxy_conn_ctx_t *ctx)
 
     log_finest_va("Upstream connection configured to dst_fd=%d", dst_fd);
 
-    protohttp3_flush_dst(h3_ctx);
+    protohttp3_trigger_write_loop(h3_ctx, 0);
 
     return 0;
 
