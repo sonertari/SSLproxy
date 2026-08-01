@@ -79,7 +79,7 @@
  * ====================================================================== */
 #define H3_DGRAM_BUFSZ  65536
 
-typedef struct protohttp3_conn_ctx protohttp3_conn_ctx_t;
+typedef struct protohttp3_conn_ctx protohttp3_ctx_t;
 
 /* -------------------------------------------------------------------------
  * Session hash table key: 5-tuple key structure
@@ -118,7 +118,7 @@ kh_quic_tuple_hash_equal(quic_tuple_key_t a, quic_tuple_key_t b)
             memcmp(&a.dst_addr, &b.dst_addr, a.dst_len) == 0);
 }
 
-KHASH_INIT(h3_conn_map, quic_tuple_key_t, protohttp3_conn_ctx_t *, 1,
+KHASH_INIT(h3_conn_map, quic_tuple_key_t, protohttp3_ctx_t *, 1,
            kh_quic_tuple_hash_func, kh_quic_tuple_hash_equal)
 
 typedef struct h3_session_map {
@@ -129,15 +129,15 @@ typedef struct h3_session_map {
 h3_session_map_t *h3_session_map_new(void);
 void h3_session_map_free(h3_session_map_t *smap);
 
-protohttp3_conn_ctx_t *h3_session_map_get(h3_session_map_t *smap, const quic_tuple_key_t *key);
-int h3_session_map_insert(h3_session_map_t *smap, const quic_tuple_key_t *key, protohttp3_conn_ctx_t *conn);
+protohttp3_ctx_t *h3_session_map_get(h3_session_map_t *smap, const quic_tuple_key_t *key);
+int h3_session_map_insert(h3_session_map_t *smap, const quic_tuple_key_t *key, protohttp3_ctx_t *conn);
 void h3_session_map_remove(h3_session_map_t *smap, const quic_tuple_key_t *key);
 
 /* -------------------------------------------------------------------------
  * Per-stream state  (mirrors stream_ctx_t from protohttp2.h)
  * ---------------------------------------------------------------------- */
 
-typedef struct stream_h3_ctx {
+typedef struct protohttp3_stream_ctx {
     int64_t src_stream_id;     /* ngtcp2/QUIC stream id on the client side */
     int64_t dst_stream_id;     /* ngtcp2/QUIC stream id on the server side */
     pxy_conn_ctx_t *ctx;
@@ -171,8 +171,8 @@ typedef struct stream_h3_ctx {
     int deferred_free_pending;
     struct event *ev_free;
 
-    struct stream_h3_ctx *next;
-} stream_h3_ctx_t;
+    struct protohttp3_stream_ctx *next;
+} protohttp3_stream_ctx_t;
 
 typedef struct pkt_node {
     uint8_t *buf;
@@ -210,6 +210,7 @@ struct protohttp3_conn_ctx {
      * ngtcp2 needs recvmsg() to extract per-datagram ancillary data (ECN
      * bits, destination IP for path validation).
      */
+    int src_fd;   /* listener fd for QUIC UDP server    */
     int dst_fd;   /* connected UDP fd towards the upstream server    */
 
     /* Libevent 'struct event' wrappers around the raw fds.               */
@@ -241,7 +242,7 @@ struct protohttp3_conn_ctx {
     ngtcp2_crypto_ossl_ctx *dst_ossl_ctx;
 
     /* Linked list of active H3 streams.                                   */
-    stream_h3_ctx_t *streams;
+    protohttp3_stream_ctx_t *streams;
 
     /* Termination flag.                                                    */
     unsigned int term : 1;
@@ -249,8 +250,6 @@ struct protohttp3_conn_ctx {
     /* Session hash table key (5-tuple) & container reference.             */
     quic_tuple_key_t key;
     h3_session_map_t *h3_sessions;
-
-    int udp_listener_fd;
 
     struct pkt_node *pkt_queue;
     pthread_mutex_t pkt_queue_mutex;
@@ -260,11 +259,11 @@ struct protohttp3_conn_ctx {
  * Public interface
  * ---------------------------------------------------------------------- */
 
-protohttp3_conn_ctx_t *protohttp3_new(pxy_conn_ctx_t    *ctx,
+protohttp3_ctx_t *protohttp3_new(pxy_conn_ctx_t    *ctx,
                                       ngtcp2_version_cid vc) WUNRES;
 
 /* Tear down all sessions, free all streams, delete all events.           */
-void protohttp3_free(protohttp3_conn_ctx_t *h3_ctx) NONNULL(1);
+void protohttp3_free(protohttp3_ctx_t *h3_ctx) NONNULL(1);
 
 /*
  * Receive helper for raw UDP sockets.
@@ -284,7 +283,7 @@ void protohttp3_process_packet_cb(evutil_socket_t fd, short what, void *arg) NON
 /*
  * Safely schedule a stream_h3_ctx_t for freeing.
  */
-void protohttp3_request_free_stream_ctx(stream_h3_ctx_t      *s, int reqmod) NONNULL(1);
+void protohttp3_request_free_stream_ctx(protohttp3_stream_ctx_t      *s, int reqmod) NONNULL(1);
 
 /*
  * Set up the HTTP/3 protocol handler in the given proxy connection context.

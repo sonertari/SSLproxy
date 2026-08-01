@@ -56,7 +56,7 @@ typedef struct proxy_listener_ctx {
 	struct evconnlistener *evcl;
 
 	/* UDP listener fields for HTTP/3 support */
-	int udp_listener_fd;
+	int udp_fd;
 	struct event *udp_accept_ev;
 	struct h3_session_map *h3_sessions;
 

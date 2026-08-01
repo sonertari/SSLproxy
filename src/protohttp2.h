@@ -33,7 +33,7 @@
 
 #include <nghttp2/nghttp2.h>
 
-typedef struct stream_ctx {
+typedef struct protohttp2_stream_ctx {
     int32_t src_stream_id;
     int32_t dst_stream_id;
     pxy_conn_ctx_t *ctx;
@@ -58,8 +58,8 @@ typedef struct stream_ctx {
     int deferred_free_pending; /* Flag indicating we want to free this */
     struct event *ev_free;     /* Libevent timer event to execute the free */
 
-    struct stream_ctx *next;
-} stream_ctx_t;
+    struct protohttp2_stream_ctx *next;
+} protohttp2_stream_ctx_t;
 
 typedef struct protohttp2_ctx {
     nghttp2_session *src_session;
@@ -67,13 +67,13 @@ typedef struct protohttp2_ctx {
 
     pxy_conn_ctx_t *ctx;
 
-    stream_ctx_t *streams;
+    protohttp2_stream_ctx_t *streams;
 } protohttp2_ctx_t;
 
 int protohttp2_icap_is_finished(pxy_conn_ctx_t *) NONNULL(1);
 void protohttp2_free(pxy_conn_ctx_t *) NONNULL(1);
 protocol_t protohttp2_setup(pxy_conn_ctx_t *) NONNULL(1);
-void protohttp2_request_free_stream_ctx(stream_ctx_t *) NONNULL(1);
+void protohttp2_request_free_stream_ctx(protohttp2_stream_ctx_t *) NONNULL(1);
 
 #endif /* !PROTOHTTP2_H */
 

@@ -101,8 +101,8 @@ proxy_listener_ctx_free(proxy_listener_ctx_t *ctx)
 		event_del(ctx->udp_accept_ev);
 		event_free(ctx->udp_accept_ev);
 	}
-	if (ctx->udp_listener_fd >= 0) {
-		evutil_closesocket(ctx->udp_listener_fd);
+	if (ctx->udp_fd >= 0) {
+		evutil_closesocket(ctx->udp_fd);
 	}
 	if (ctx->h3_sessions) {
 		h3_session_map_free(ctx->h3_sessions);
@@ -412,7 +412,7 @@ proxy_listener_acceptcb_udp(evutil_socket_t fd, UNUSED short what, void *arg)
 	memcpy(&key.dst_addr, &lctx->spec->listen_addr, lctx->spec->listen_addrlen);
 	key.dst_len = lctx->spec->listen_addrlen;
 
-	protohttp3_conn_ctx_t *h3_ctx = h3_session_map_get(lctx->h3_sessions, &key);
+	protohttp3_ctx_t *h3_ctx = h3_session_map_get(lctx->h3_sessions, &key);
 	if (h3_ctx) {
 		pxy_conn_ctx_t *ctx = h3_ctx->ctx;
 		log_finest_va("H3 session found, fd=%d", fd);
@@ -450,7 +450,7 @@ proxy_listener_acceptcb_udp(evutil_socket_t fd, UNUSED short what, void *arg)
 		if (!h3_ctx->src_process_pkt_ev) {
 			log_finest("Schedule new src_process_pkt_ev");
 
-			h3_ctx->src_process_pkt_ev = event_new(ctx->thr->evbase, h3_ctx->udp_listener_fd, 0,
+			h3_ctx->src_process_pkt_ev = event_new(ctx->thr->evbase, h3_ctx->src_fd, 0,
 										protohttp3_process_packet_cb, h3_ctx);
 			if (!h3_ctx->src_process_pkt_ev) {
 				pthread_mutex_unlock(&h3_ctx->pkt_queue_mutex);
@@ -472,7 +472,7 @@ proxy_listener_acceptcb_udp(evutil_socket_t fd, UNUSED short what, void *arg)
 
 		pthread_mutex_unlock(&h3_ctx->pkt_queue_mutex);
 
-		log_finest_va("EXIT session found, udp_listener_fd=%d", h3_ctx->udp_listener_fd);
+		log_finest_va("EXIT session found, src_fd=%d", h3_ctx->src_fd);
 		return;
 	}
 
@@ -528,7 +528,7 @@ proxy_listener_acceptcb_udp(evutil_socket_t fd, UNUSED short what, void *arg)
 	h3_ctx->pkt_queue = pkt_node;
 
 	// We use the listener's UDP socket for sending datagrams, because we want to use the same source port for all connections
-	h3_ctx->udp_listener_fd = lctx->udp_listener_fd;
+	h3_ctx->src_fd = lctx->udp_fd;
 
 	h3_session_map_insert(lctx->h3_sessions, &key, h3_ctx);
 
@@ -601,7 +601,7 @@ proxy_listener_setup(struct event_base *evbase, pxy_thrmgr_ctx_t *thrmgr,
 		 * HTTP/3 over UDP: create a raw libevent event instead of
 		 * evconnlistener, because evconnlistener only supports TCP.
 		 */
-		lctx->udp_listener_fd = fd;
+		lctx->udp_fd = fd;
 		lctx->h3_sessions = h3_session_map_new();
 
 		lctx->udp_accept_ev = event_new(evbase, fd,
