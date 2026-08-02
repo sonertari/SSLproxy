@@ -142,16 +142,14 @@ typedef struct protohttp3_stream_ctx {
     int64_t dst_stream_id;     /* ngtcp2/QUIC stream id on the server side */
     pxy_conn_ctx_t *ctx;
 
-    /* Accumulated request headers (filled by on_recv_header callback).    */
     nghttp3_nv  *headers;
     size_t       headers_count;
     size_t       headers_capacity;
 
-    /* Body staging buffer - data received before we can forward it.       */
+    struct evbuffer *data_buf;
+    // Persistent buffer for evbuffer_pullup() to survive until the data is sent or the stream is freed
     uint8_t     *body_buf;
     size_t       body_len;
-    size_t       body_cap;
-
     nghttp3_data_reader dr;
 
 #ifndef WITHOUT_ICAP
@@ -161,7 +159,6 @@ typedef struct protohttp3_stream_ctx {
     protohttp_ctx_t *http_ctx;
 
     /* Flags (same bit-field idiom used throughout sslproxy)               */
-    unsigned int headers_complete : 1; /* 1 after END_HEADERS equivalent   */
     unsigned int end_stream       : 1; /* 1 after FIN/END_STREAM           */
     unsigned int closed           : 1; /* 1 after stream_close callback    */
     unsigned int term             : 1; /* 1 when safe to free              */

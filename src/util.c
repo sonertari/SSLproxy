@@ -27,6 +27,8 @@
  */
 
 #include <string.h>
+#include <ctype.h>
+#include <stdint.h>
 
 /*
  * Various utility functions.
@@ -60,6 +62,22 @@ util_get_first_word_len(char *mem, size_t size)
 		return (size_t)(end - mem);
 	}
 	return size;
+}
+
+char *
+trim_whitespace(char *str, size_t *len)
+{
+    char *end;
+    while (isspace((unsigned char)*str)) str++;
+    if (*str == 0) {
+        *len = 0;
+        return str;
+    }
+    end = str + strlen(str) - 1;
+    while (end > str && isspace((unsigned char)*end)) end--;
+    end[1] = '\0';
+    if (len) *len = end - str + 1;
+    return str;
 }
 
 /* vim: set noet ft=c: */

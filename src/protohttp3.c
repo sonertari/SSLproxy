@@ -30,8 +30,7 @@
 #endif
 
 /*
- * protohttp3.c – minimal, clean, working prototype structure for an
- * asynchronous HTTP/3 reverse proxy connection handler.
+ * protohttp3.c – asynchronous HTTP/3 reverse proxy connection handler.
  *
  * Stack
  * -----
@@ -46,16 +45,11 @@
  * Threading model
  * ---------------
  *   All callbacks fire on the single-threaded Libevent loop of the proxy
- *   thread that owns this connection.  No locks are needed inside the
+ *   thread assigned to this connection.  No locks are needed inside the
  *   callbacks.
  *
  * Known limitations of this prototype
  * ------------------------------------
- *   - TLS/QUIC handshake wiring (ngtcp2_crypto_*) is left as a stub;
- *     hooking in the actual OpenSSL/BoringSSL QUIC crypto layer is the
- *     next step after this file compiles and the event wiring is verified.
- *   - The upstream dst_conn is not yet set up; only the src (client-facing)
- *     side is wired.  The pattern is identical and can be replicated.
  *   - QPACK (dynamic table) is initialised with capacity 0 (static-only
  *     mode) to keep the prototype simple.
  */
@@ -63,6 +57,7 @@
 #include "protohttp.h"
 #include "protohttp3.h"
 #include "log.h"
+#include "util.h"
 
 #ifndef WITHOUT_ICAP
 #include "icap.h"
@@ -72,18 +67,24 @@
 #include <string.h>
 #include <errno.h>
 #include <unistd.h>
-#include <time.h>          /* clock_gettime(CLOCK_MONOTONIC)              */
-// #include <ctype.h>      /* for tolower() in header filtering, but not used yet */
+#include <time.h>       /* clock_gettime(CLOCK_MONOTONIC) */
+#include <ctype.h>      /* for tolower() in header filtering */
 
-/* recvmsg() ancillary data for ECN and destination-address extraction.   */
+/* recvmsg() ancillary data for ECN and destination-address extraction */
 #include <sys/socket.h>
 #include <sys/uio.h>
-#include <netinet/in.h>    /* in_pktinfo, in6_pktinfo, IP_TOS, ...        */
+#include <netinet/in.h> /* in_pktinfo, in6_pktinfo, IP_TOS, ... */
 
 #include <event2/event.h>
 
 // For debugging, we need to include arpa/inet.h for inet_ntop() to print IP addresses.
 #include <arpa/inet.h>
+
+#ifndef WITHOUT_ICAP
+static void NONNULL(1) protohttp3_icap_send_data_to_src_cb(icap_ctx_t *icap_ctx);
+static void NONNULL(1) protohttp3_icap_send_data_to_dst_cb(icap_ctx_t *icap_ctx);
+static void NONNULL(1) protohttp3_icap_failopen_to_dest_cb(icap_service_ctx_t *service_ctx);
+#endif /* !WITHOUT_ICAP */
 
 /*
  * h3_timestamp – return a ngtcp2_tstamp (nanoseconds, CLOCK_MONOTONIC).
@@ -157,6 +158,7 @@ protohttp3_new_stream_ctx(protohttp3_ctx_t *h3_ctx, int64_t stream_id)
     // Set to -1 to indicate that the dst_stream_id is not yet known.
     s->dst_stream_id = -1;
     s->ctx = ctx;
+    s->data_buf = evbuffer_new();
 
     // Set up the data reader hook
     s->dr.read_data = h3_stream_read_data;
@@ -175,9 +177,9 @@ protohttp3_new_stream_ctx(protohttp3_ctx_t *h3_ctx, int64_t stream_id)
         free(s);
 		return NULL;
     }
-    // s->icap_ctx->send_data_to_src_cb = protohttp2_icap_send_data_to_src_cb;
-    // s->icap_ctx->send_data_to_dst_cb = protohttp2_icap_send_data_to_dst_cb;
-    // s->icap_ctx->failopen_to_dest_cb = protohttp2_icap_failopen_to_dest_cb;
+    s->icap_ctx->send_data_to_src_cb = protohttp3_icap_send_data_to_src_cb;
+    s->icap_ctx->send_data_to_dst_cb = protohttp3_icap_send_data_to_dst_cb;
+    s->icap_ctx->failopen_to_dest_cb = protohttp3_icap_failopen_to_dest_cb;
 #endif /* !WITHOUT_ICAP */
 
     // Prepend to the stream list
@@ -235,7 +237,16 @@ protohttp3_free_stream_ctx(protohttp3_stream_ctx_t *s)
         protohttp3_free_stream_headers(s);
     }
 
-    free(s->body_buf);
+    if (s->data_buf) {
+        evbuffer_free(s->data_buf);
+        s->data_buf = NULL;
+    }
+
+    if (s->body_buf) {
+        free(s->body_buf);
+        s->body_buf = NULL;
+        s->body_len = 0;
+    }
 
 #ifndef WITHOUT_ICAP
     if (s->icap_ctx) {
@@ -341,8 +352,8 @@ protohttp3_request_free_stream_ctx(protohttp3_stream_ctx_t *s, int reqmod)
  */
 static int
 protohttp3_add_nv_header(protohttp3_stream_ctx_t *s,
-                         const uint8_t *name,  size_t namelen,
-                         const uint8_t *value, size_t valuelen)
+                         const char *name,  size_t namelen,
+                         const char *value, size_t valuelen)
 {
     UNUSED pxy_conn_ctx_t *ctx = s->ctx;
     log_finest_va("%.*s: %.*s", (int)namelen, name, (int)valuelen, value);
@@ -361,15 +372,20 @@ protohttp3_add_nv_header(protohttp3_stream_ctx_t *s,
     nghttp3_nv *nv = &s->headers[s->headers_count];
 
     nv->name = malloc(namelen);
-    if (!nv->name) return -1;
-    // Cast to void* to avoid warnings about discarding const qualifier
-    memcpy((void *)nv->name, name, namelen);
-    nv->namelen = namelen;
+    if (!nv->name)
+        return -1;
 
     // TODO: HTTP/3 mandates strict lowercase header names?
-    // for (size_t i = 0; i < nv->namelen; i++) {
-    //     nv->name[i] = tolower(nv->name[i]);
-    // }
+    // Note that nghttp3 seems to convert to lowercase automatically, but we will do it here for safety.
+    char name_lower[namelen];
+    memcpy(name_lower, name, namelen);
+    for (size_t i = 0; i < namelen; i++) {
+        name_lower[i] = tolower(name[i]);
+    }
+
+    // Cast to void* to avoid warnings about discarding const qualifier
+    memcpy((void *)nv->name, name_lower, namelen);
+    nv->namelen = namelen;
 
     nv->value = malloc(valuelen);
     if (!nv->value) {
@@ -381,6 +397,134 @@ protohttp3_add_nv_header(protohttp3_stream_ctx_t *s,
 
     nv->flags = NGHTTP3_NV_FLAG_NONE;
     s->headers_count++;
+    return 0;
+}
+
+int
+protohttp3_get_h3_headers(protohttp3_stream_ctx_t *s, struct evbuffer *h1_buf, int init)
+{
+    UNUSED pxy_conn_ctx_t *ctx = s->ctx;
+    log_finest_va("ENTER, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, s->icap_ctx->reqmod);
+
+    // Clean slate for this stream context's header holder
+    if (init == 1 && s->headers) {
+        protohttp3_free_stream_headers(s);
+    }
+
+    size_t line_len;
+    char *line;
+    int is_first_line = 1;
+
+    while ((line = evbuffer_readln(h1_buf, &line_len, EVBUFFER_EOL_CRLF)) != NULL) {
+        if (line_len == 0) {
+            free(line);
+            break;
+        }
+
+        if (is_first_line) {
+            is_first_line = 0;
+
+            // Request Line
+            if (memcmp(line, "HTTP/", 5) != 0) {
+                char *method = line;
+                char *path = strchr(line, ' ');
+                if (path) {
+                    *path = '\0';
+                    path++;
+                    char *version = strchr(path, ' ');
+                    if (version) {
+                        *version = '\0';
+                    }
+
+                    // Strip absolute uri scheme and authority
+                    // If path starts with "http://" or "https://", skip to the relative path component
+                    if (strncasecmp(path, "http://", 7) == 0) {
+                        char *relative_path = strchr(path + 7, '/');
+                        if (relative_path) {
+                            path = relative_path;
+                        } else {
+                            path = "/"; // Fallback if no trailing slash was provided
+                        }
+                    } else if (strncasecmp(path, "https://", 8) == 0) {
+                        char *relative_path = strchr(path + 8, '/');
+                        if (relative_path) {
+                            path = relative_path;
+                        } else {
+                            path = "/"; // Fallback if no trailing slash was provided
+                        }
+                    }
+
+                    size_t m_len = strlen(method);
+                    size_t p_len = strlen(path);
+
+                    log_finest_va("Translate Request Line: :method=%.*s, :path=%.*s, and add :scheme=https", (int)m_len, method, (int)p_len, path);
+                    if (protohttp3_add_nv_header(s, ":method", 7, method, m_len) < 0 ||
+                        protohttp3_add_nv_header(s, ":path", 5, path, p_len) < 0 ||
+                        protohttp3_add_nv_header(s, ":scheme", 7, "https", 5) < 0) {
+                        free(line);
+                        return -1;
+                    }
+                }
+            }
+            // Status Line
+            else {
+                char *status = strchr(line, ' ');
+                if (status) {
+                    while (*status == ' ') status++; // Skip spaces
+                    char *phrase = strchr(status, ' ');
+                    if (phrase) {
+                        // We only want the status digit group (e.g. "200"), not the reason phrase (e.g. "OK")
+                        *phrase = '\0';
+                    }
+                    size_t s_len = strlen(status);
+                    log_finest_va("Translate Status Line: :status=%.*s", (int)s_len, status);
+                    if (protohttp3_add_nv_header(s, ":status", 7, status, s_len) < 0) {
+                        free(line);
+                        return -1;
+                    }
+                }
+            }
+            free(line);
+            continue;
+        }
+
+        // Process regular headers "Name: Value"
+        char *colon = strchr(line, ':');
+        if (colon) {
+            *colon = '\0';
+            char *h_name = line;
+            char *h_value = colon + 1;
+
+            size_t n_len = 0;
+            size_t v_len = 0;
+            h_name = trim_whitespace(h_name, &n_len);
+            h_value = trim_whitespace(h_value, &v_len);
+
+            if (n_len == 4 && !strncasecmp(h_name, "Host", 4)) {
+                log_finest_va("Translate Host to :authority: %.*s", (int)v_len, h_value);
+                if (protohttp3_add_nv_header(s, ":authority", 10, h_value, v_len) < 0) {
+                    free(line);
+                    return -1;
+                }
+            }
+            // Filter out Connection headers that are forbidden or invalid in H2
+            else if ((n_len == 10 && !strncasecmp(h_name, "Connection", 10)) ||
+                     (n_len == 17 && !strncasecmp(h_name, "Transfer-Encoding", 17)) ||
+                     (n_len == 10 && !strncasecmp(h_name, "Keep-Alive", 10)) ||
+                     (n_len == 5  && !strncasecmp(h_name, "Proxy", 5))) {
+                log_finest_va("Skip H1 specific connection header: %s", h_name);
+            }
+            // Regular Header Pass-through
+            else {
+                if (protohttp3_add_nv_header(s, h_name, n_len, h_value, v_len) < 0) {
+                    free(line);
+                    return -1;
+                }
+            }
+        }
+        free(line);
+    }
+
     return 0;
 }
 
@@ -435,7 +579,8 @@ protohttp3_trigger_write_loop(protohttp3_ctx_t *h3_ctx, int reqmod)
         }
 
         /* 2. Write either Stream packet or standard QUIC packet (Crypto/ACK) */
-        if (sveccnt > 0 && stream_id >= 0) {
+        // Note that we do send fin packets without data to signal the end of a stream.
+        if ((sveccnt > 0 || fin) && stream_id >= 0) {
             ngtcp2_ssize pdatalen = 0;
             pktlen = ngtcp2_conn_writev_stream(
                          reqmod ? h3_ctx->src_conn : h3_ctx->dst_conn,
@@ -445,6 +590,7 @@ protohttp3_trigger_write_loop(protohttp3_ctx_t *h3_ctx, int reqmod)
                          &pdatalen,
                          // TODO: Is this enough? The ngtcp2_write_stream_flag enum has changed in recent versions.
                          // The NGTCP2_WRITE_STREAM_FLAG_MORE flag is now deprecated and replaced with NGTCP2_WRITE_STREAM_FLAG_FIN for the FIN flag.
+                         // Or should we pass NGTCP2_WRITE_STREAM_FLAG_NONE, instead of NGTCP2_WRITE_STREAM_FLAG_MORE?
                          // We need to check the version of ngtcp2 we are using and adjust accordingly.
                          fin ? NGTCP2_WRITE_STREAM_FLAG_FIN : NGTCP2_WRITE_STREAM_FLAG_MORE,
                          stream_id, (const ngtcp2_vec *)vecs,
@@ -463,7 +609,7 @@ protohttp3_trigger_write_loop(protohttp3_ctx_t *h3_ctx, int reqmod)
                                            h3_timestamp());
         }
 
-        /* 3. Handle write status */
+        /* Handle write status */
         if (pktlen == NGTCP2_ERR_WRITE_MORE) {
             log_finest_va("Write more, pktlen=%zd, fd=%d", pktlen, h3_ctx->dst_fd);
             continue;
@@ -479,7 +625,7 @@ protohttp3_trigger_write_loop(protohttp3_ctx_t *h3_ctx, int reqmod)
 
         log_finest_va("Transmit packet, pktlen=%zd, fd=%d", pktlen, h3_ctx->dst_fd);
 
-        /* 4. Transmit via UDP socket */
+        /* 3. Transmit via UDP socket */
         struct iovec iov = { .iov_base = pktbuf, .iov_len = (size_t)pktlen };
         struct msghdr mhdr = {
             .msg_name    = reqmod ? (struct sockaddr *)&h3_ctx->ctx->srcaddr : (struct sockaddr *)&h3_ctx->dst_peer_addr,
@@ -524,6 +670,8 @@ protohttp3_submit_data(protohttp3_ctx_t *h3_ctx, protohttp3_stream_ctx_t *s, int
     UNUSED pxy_conn_ctx_t *ctx = h3_ctx->ctx;
     int rv = 0;
 
+    // ATTENTION: This function submits data to the opposite side of the connection (src or dst) based on the reqmod flag.
+    // So, if reqmod is 1, we are submitting data to the dst side (server), and if reqmod is 0, we are submitting data to the src side (client).
     if (s->headers_count > 0) {
         log_finest_va("Submit headers, headers_count=%zu, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->headers_count, s->src_stream_id, s->dst_stream_id, reqmod);
 
@@ -534,8 +682,9 @@ protohttp3_submit_data(protohttp3_ctx_t *h3_ctx, protohttp3_stream_ctx_t *s, int
                 return -1;
             }
 
-            // Set the stream id assigned by nghttp2 for the destination session
-            s->dst_stream_id = rv;
+            // TODO: Set the stream id assigned by nghttp3 for the destination session, as in h2?
+            // But in h3 the dst_stream_id is assigned by ngtcp2_conn_open_bidi_stream() before calling this function.
+            // s->dst_stream_id = rv;
         }
         else {
             rv = nghttp3_conn_submit_response(h3_ctx->src_h3, s->src_stream_id, s->headers, s->headers_count, &s->dr);
@@ -551,31 +700,152 @@ protohttp3_submit_data(protohttp3_ctx_t *h3_ctx, protohttp3_stream_ctx_t *s, int
 #endif /* !WITHOUT_ICAP */
     }
 
-    if (s->body_len > 0) {
-        log_finest_va("Submit data, data_len=%zu, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->body_len, s->src_stream_id, s->dst_stream_id, reqmod);
+#ifndef WITHOUT_ICAP
+    // TODO: What about fin packets without data? Should we set made_progress for those as well?
+    if (evbuffer_get_length(s->data_buf) > 0) {
+        s->icap_ctx->made_progress = 1;
+    }
+#endif /* !WITHOUT_ICAP */
+
+    // ATTENTION: We should not check for data_buf length here, because we may have a zero-length data submission (e.g., end of stream).
+    // if (evbuffer_get_length(s->data_buf) > 0) {
+        log_finest_va("Submit data, data_len=%zu, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", evbuffer_get_length(s->data_buf), s->src_stream_id, s->dst_stream_id, reqmod);
 
         rv = nghttp3_conn_resume_stream(reqmod ? h3_ctx->dst_h3 : h3_ctx->src_h3, reqmod ? s->dst_stream_id : s->src_stream_id);
 
         if (rv == NGHTTP3_ERR_INVALID_ARGUMENT) {
             // Clean operational bypass: The engine is already active and polling
-            log_finest_va("Stream %" PRId64 " already active, continuing to explicit write execution.", s->src_stream_id);
+            log_finest_va("Stream already active, continuing to explicit write execution, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, reqmod);
         }
         else if (rv < 0) {
             log_finest_va("Fatal: nghttp3_conn_resume_stream failed: %s", nghttp3_strerror(rv));
             return -1;
         }
 
-#ifndef WITHOUT_ICAP
-        s->icap_ctx->made_progress = 1;
-#endif /* !WITHOUT_ICAP */
-    }
+// #ifndef WITHOUT_ICAP
+//         s->icap_ctx->made_progress = 1;
+// #endif /* !WITHOUT_ICAP */
+    // }
 
     // Clean Data Wakeup Flush
     log_finest_va("Executing scheduled session frame serialization loop for stream, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, reqmod);
-    protohttp3_trigger_write_loop(h3_ctx, reqmod);
+    // ATTENTION: We pass !reqmod here because the write loop is triggered on the opposite side of the connection from where the data is being submitted.
+    protohttp3_trigger_write_loop(h3_ctx, !reqmod);
 
     return 0;
 }
+
+#ifndef WITHOUT_ICAP
+static void NONNULL(1)
+protohttp3_icap_send_data_to_src_cb(icap_ctx_t *icap_ctx)
+{
+    protohttp3_stream_ctx_t *s = icap_ctx->stream_ctx;
+    protohttp3_ctx_t *h3_ctx = icap_ctx->hx_ctx;
+    UNUSED pxy_conn_ctx_t *ctx = h3_ctx->ctx;
+
+    log_finest_va("ENTER, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", veto_hdr=%zu, veto_body=%zu, data_buf=%zu", s->src_stream_id, s->dst_stream_id,
+        evbuffer_get_length(icap_ctx->veto_hdr), evbuffer_get_length(icap_ctx->veto_body), evbuffer_get_length(s->data_buf));
+
+    protohttp3_get_h3_headers(s, icap_ctx->veto_hdr, 1);
+
+    evbuffer_add_buffer(s->data_buf, icap_ctx->veto_body);
+
+    // ATTENTION: We pass 0 for reqmod because we are sending data to the src (client) side, not the dst (server) side.
+    // So, protohttp3_submit_data() will use !reqmod, when triggering the write loop.
+    // Send block page to src (client), not dst (server)
+    if (protohttp3_submit_data(h3_ctx, s, 0 /*respmod*/) < 0) {
+        log_finest_va("Failed to submit data for src_stream_id=%" PRId64, s->src_stream_id);
+        return;
+    }
+}
+
+static void NONNULL(1)
+protohttp3_icap_send_data_to_dst_cb(icap_ctx_t *icap_ctx)
+{
+    protohttp3_stream_ctx_t *s = icap_ctx->stream_ctx;
+    if (!s) {
+		// log_dbg_printf("protohttp3_icap_send_data_to_dst_cb: No stream context\n");
+        return;
+    }
+
+    protohttp3_ctx_t *h3_ctx = icap_ctx->hx_ctx;
+    UNUSED pxy_conn_ctx_t *ctx = h3_ctx->ctx;
+
+    struct evbuffer *out_hdr = icap_get_last_service_out_hdr(icap_ctx);
+    protohttp3_get_h3_headers(s, out_hdr, 1);
+
+    struct evbuffer *out_body = icap_get_last_service_out_body(icap_ctx);
+    evbuffer_add_buffer(s->data_buf, out_body);
+
+    log_finest_va("ENTER, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", data_buf=%zu", s->src_stream_id, s->dst_stream_id, evbuffer_get_length(s->data_buf));
+
+    if (protohttp3_submit_data(h3_ctx, s, icap_ctx->reqmod) < 0) {
+        log_finest_va("Failed to submit data, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, icap_ctx->reqmod);
+        return;
+    }
+
+    if (icap_enabled(s->icap_ctx) && icap_is_finished(s->icap_ctx) && s->closed) {
+        log_finest_va("ICAP finished and stream closed, send RST_STREAM, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, icap_ctx->reqmod);
+        if (icap_ctx->reqmod) {
+            if (h3_ctx->src_h3) {
+                nghttp3_conn_close_stream(h3_ctx->src_h3, s->src_stream_id, NGHTTP3_H3_NO_ERROR);
+            }
+        }
+        else {
+            if (h3_ctx->dst_h3) {
+                nghttp3_conn_close_stream(h3_ctx->dst_h3, s->dst_stream_id, NGHTTP3_H3_NO_ERROR);
+            }
+        }
+    }
+}
+
+static void NONNULL(1)
+protohttp3_icap_failopen_to_dest_cb(icap_service_ctx_t *service_ctx)
+{
+	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
+	UNUSED pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
+    protohttp3_stream_ctx_t *s = icap_ctx->stream_ctx;
+
+    log_finest_va("ENTER, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d, headers_count=%zu, data_buf=%zu", s->src_stream_id, s->dst_stream_id,
+        icap_ctx->reqmod, s->headers_count, evbuffer_get_length(s->data_buf));
+
+	struct evbuffer *in_hdr = ICAP_STATE(service_ctx, icap_ctx->reqmod)->in_hdr;
+	struct evbuffer *in_body = ICAP_STATE(service_ctx, icap_ctx->reqmod)->in_body;
+	struct evbuffer *sent_hdr = ICAP_STATE(service_ctx, icap_ctx->reqmod)->sent_hdr;
+	struct evbuffer *sent_body = ICAP_STATE(service_ctx, icap_ctx->reqmod)->sent_body;
+
+    // On failopen, s->headers may contain headers, as we may not have submitted them by protohttp2_submit_data()
+    protohttp3_free_stream_headers(s);
+
+    // TODO: Non-http protocols do not have hdr
+	if (evbuffer_get_length(sent_hdr) > 0) {
+        protohttp3_get_h3_headers(s, sent_hdr, 1);
+		icap_ctx->made_progress = 1;
+	}
+	if (evbuffer_get_length(sent_body) > 0) {
+        evbuffer_add_buffer(s->data_buf, sent_body);
+		icap_ctx->made_progress = 1;
+	}
+	if (evbuffer_get_length(in_hdr) > 0) {
+        // Do not init h3 headers, just append to existing headers from sent_hdr, if any
+        protohttp3_get_h3_headers(s, in_hdr, 0);
+		icap_ctx->made_progress = 1;
+	}
+	if (evbuffer_get_length(in_body) > 0) {
+        evbuffer_add_buffer(s->data_buf, in_body);
+		icap_ctx->made_progress = 1;
+	}
+
+    log_finest_va("After copy, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d, headers_count=%zu, data_buf=%zu", s->src_stream_id, s->dst_stream_id,
+        icap_ctx->reqmod, s->headers_count, evbuffer_get_length(s->data_buf));
+
+    protohttp3_ctx_t *h3_ctx = icap_ctx->hx_ctx;
+    if (protohttp3_submit_data(h3_ctx, s, icap_ctx->reqmod) < 0) {
+        log_finest_va("Failed to submit data for src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, icap_ctx->reqmod);
+        return;
+    }
+}
+#endif /* !WITHOUT_ICAP */
 
 /* =========================================================================
  * nghttp3 callbacks
@@ -620,11 +890,318 @@ h3_on_recv_header(nghttp3_conn *conn, int64_t stream_id,
     nghttp3_vec name_vec  = nghttp3_rcbuf_get_buf(name);
     nghttp3_vec value_vec = nghttp3_rcbuf_get_buf(value);
 
-    if (protohttp3_add_nv_header(s, name_vec.base,  name_vec.len, value_vec.base, value_vec.len) != 0) {
+    if (protohttp3_add_nv_header(s, (char *)name_vec.base,  name_vec.len, (char *)value_vec.base, value_vec.len) != 0) {
         log_fine_va("Failed to add header for stream_id=%" PRId64, stream_id);
         return NGHTTP3_ERR_CALLBACK_FAILURE;
     }
     return 0;
+}
+
+static void
+protohttp3_delete_nv_header(protohttp3_stream_ctx_t *s, size_t idx)
+{
+    UNUSED pxy_conn_ctx_t *ctx = s->ctx;
+    log_finest_va("ENTER, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", remove idx=%zu", s->src_stream_id, s->dst_stream_id, idx);
+
+    if (s->headers_count == 0 || idx >= s->headers_count) {
+        return; // Invalid index or empty headers
+    }
+
+    // TODO: How to free the name and value buffers properly? They are allocated with malloc in protohttp3_add_nv_header.
+    free((void *)s->headers[idx].name);
+    free((void *)s->headers[idx].value);
+
+    // Move the remaining headers up to fill the gap left by the removed header
+    for (size_t i = idx; i < s->headers_count - 1; i++) {
+        memcpy(&s->headers[i], &s->headers[i + 1], sizeof(nghttp3_nv));
+    }
+
+    memset(&s->headers[s->headers_count - 1], 0, sizeof(nghttp3_nv));
+    s->headers_count--;
+}
+
+static int WUNRES NONNULL(1)
+protohttp3_filter_request_header(protohttp3_stream_ctx_t *s)
+{
+    UNUSED pxy_conn_ctx_t *ctx = s->ctx;
+    log_finest_va("ENTER, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64, s->src_stream_id, s->dst_stream_id);
+
+    nghttp3_nv *headers = s->headers;
+    size_t count = s->headers_count;
+    protohttp_ctx_t *http_ctx = s->http_ctx;
+
+    for (size_t i = 0; i < count; i++) {
+        log_finest_va("Processing header '%.*s=%.*s', idx=%zu, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64,
+            (int)headers[i].namelen, headers[i].name, (int)headers[i].valuelen, headers[i].value, i, s->src_stream_id, s->dst_stream_id);
+
+        if (headers[i].namelen == 7 && !memcmp(headers[i].name, ":method", 7)) {
+            if (http_ctx->http_method) {
+                free(http_ctx->http_method);
+            }
+            http_ctx->http_method = malloc(headers[i].valuelen + 1);
+            if (!http_ctx->http_method) {
+                s->ctx->enomem = 1;
+                return -1;
+            }
+            memcpy(http_ctx->http_method, headers[i].value, headers[i].valuelen);
+            http_ctx->http_method[headers[i].valuelen] = '\0';
+			http_ctx->seen_keyword_count++;
+
+            log_finest_va("Http method '%s', idx=%zu, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64,
+                http_ctx->http_method, i, s->src_stream_id, s->dst_stream_id);
+        }
+        else if (headers[i].namelen == 5 && !memcmp(headers[i].name, ":path", 5)) {
+            if (http_ctx->http_uri) {
+                free(http_ctx->http_uri);
+            }
+            http_ctx->http_uri = malloc(headers[i].valuelen + 1);
+            if (!http_ctx->http_uri) {
+                s->ctx->enomem = 1;
+                return -1;
+            }
+            memcpy(http_ctx->http_uri, headers[i].value, headers[i].valuelen);
+            http_ctx->http_uri[headers[i].valuelen] = '\0';
+			http_ctx->seen_keyword_count++;
+
+            log_finest_va("Http URI '%s', idx=%zu, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64,
+                http_ctx->http_uri, i, s->src_stream_id, s->dst_stream_id);
+        }
+        else if (headers[i].namelen == 10 && !memcmp(headers[i].name, ":authority", 10)) {
+            if (http_ctx->http_host) {
+                free(http_ctx->http_host);
+            }
+            http_ctx->http_host = malloc(headers[i].valuelen + 1);
+            if (!http_ctx->http_host) {
+                s->ctx->enomem = 1;
+                return -1;
+            }
+            memcpy(http_ctx->http_host, headers[i].value, headers[i].valuelen);
+            http_ctx->http_host[headers[i].valuelen] = '\0';
+			http_ctx->seen_keyword_count++;
+
+            log_finest_va("Http host '%s', idx=%zu, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64,
+                http_ctx->http_host, i, s->src_stream_id, s->dst_stream_id);
+        }
+        else if (headers[i].namelen == 14 && !memcmp(headers[i].name, "content-length", 14)) {
+			if (http_ctx->http_content_length) {
+				free(http_ctx->http_content_length);
+			}
+			http_ctx->http_content_length = malloc(headers[i].valuelen + 1);
+			if (!http_ctx->http_content_length) {
+				s->ctx->enomem = 1;
+				return -1;
+			}
+			memcpy(http_ctx->http_content_length, headers[i].value, headers[i].valuelen);
+			http_ctx->http_content_length[headers[i].valuelen] = '\0';
+			http_ctx->seen_keyword_count++;
+
+            log_finest_va("Http content-length '%s', idx=%zu, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64,
+                http_ctx->http_content_length, i, s->src_stream_id, s->dst_stream_id);
+		}
+        else if (headers[i].namelen == 12 && !memcmp(headers[i].name, "content-type", 12)) {
+			if (http_ctx->http_content_type) {
+				free(http_ctx->http_content_type);
+			}
+			http_ctx->http_content_type = malloc(headers[i].valuelen + 1);
+			if (!http_ctx->http_content_type) {
+				s->ctx->enomem = 1;
+				return -1;
+			}
+            memcpy(http_ctx->http_content_type, headers[i].value, headers[i].valuelen);
+            http_ctx->http_content_type[headers[i].valuelen] = '\0';
+			http_ctx->seen_keyword_count++;
+
+            log_finest_va("Http content-type '%s', idx=%zu, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64,
+                http_ctx->http_content_type, i, s->src_stream_id, s->dst_stream_id);
+        }
+        else if (s->ctx->conn_opts->remove_http_accept_encoding && (headers[i].namelen == 15 && !memcmp(headers[i].name, "accept-encoding", 15))) {
+            protohttp3_delete_nv_header(s, i);
+			http_ctx->seen_keyword_count++;
+        }
+        else if (s->ctx->conn_opts->remove_http_referer && (headers[i].namelen == 7 && !memcmp(headers[i].name, "referer", 7))) {
+            protohttp3_delete_nv_header(s, i);
+			http_ctx->seen_keyword_count++;
+		}
+		         // Not possible in HTTP/2
+        else if ((headers[i].namelen == 4 && !memcmp(headers[i].name, "host", 4)) ||
+                 (headers[i].namelen == 10 && !memcmp(headers[i].name, "connection", 10)) ||
+                 (headers[i].namelen == 8 && !memcmp(headers[i].name, "keep-alive", 8)) ||
+                 (headers[i].namelen == 7 && !memcmp(headers[i].name, "upgrade", 7)) ||
+		         // ATTENTION: flickr keeps redirecting to https with 301 unless we remove the Via line of squid
+                 // Apparently flickr assumes the existence of Via header field or squid keyword a sign of plain http, even if we are using https
+		         (headers[i].namelen == 4 && !memcmp(headers[i].name, "via", 4)) ||
+				 // Also do not send the loopback address to the Internet
+		         (headers[i].namelen == 15 && !memcmp(headers[i].name, "x-forwarded-for", 15))) {
+            protohttp3_delete_nv_header(s, i);
+        }
+    }
+
+	if (http_ctx->seen_req_header) {
+        // TODO: Implement Host and URI filter rules with H2 streams
+        // if (protohttp_apply_filter(ctx)) {
+        //     return -1;
+        // }
+
+        // TODO: Implement deny OCSP at TLS level in HTTP/2?
+        // if (ctx->conn_opts->deny_ocsp) {
+        //     protohttp_ocsp_deny(ctx, http_ctx);
+        // }
+	}
+
+    if (s->ctx->enomem) {
+        return -1;
+    }
+	return 0;
+}
+
+static int WUNRES NONNULL(1)
+protohttp3_filter_response_header(protohttp3_stream_ctx_t *s)
+{
+    UNUSED pxy_conn_ctx_t *ctx = s->ctx;
+    log_finest_va("ENTER, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64, s->src_stream_id, s->dst_stream_id);
+
+    nghttp3_nv *headers = s->headers;
+    size_t count = s->headers_count;
+    protohttp_ctx_t *http_ctx = s->http_ctx;
+
+    for (size_t i = 0; i < count; i++) {
+        log_finest_va("Processing header '%.*s=%.*s', idx=%zu, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64,
+            (int)headers[i].namelen, headers[i].name, (int)headers[i].valuelen, headers[i].value, i, s->src_stream_id, s->dst_stream_id);
+
+        if (headers[i].namelen == 7 && !memcmp(headers[i].name, ":status", 7)) {
+            if (http_ctx->http_status_code) {
+                free(http_ctx->http_status_code);
+            }
+            http_ctx->http_status_code = malloc(headers[i].valuelen + 1);
+            if (!http_ctx->http_status_code) {
+                s->ctx->enomem = 1;
+                return -1;
+            }
+            memcpy(http_ctx->http_status_code, headers[i].value, headers[i].valuelen);
+            http_ctx->http_status_code[headers[i].valuelen] = '\0';
+
+            log_finest_va("Http status '%s', idx=%zu, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64,
+                http_ctx->http_status_code, i, s->src_stream_id, s->dst_stream_id);
+        }
+        else if (headers[i].namelen == 14 && !memcmp(headers[i].name, "content-length", 14)) {
+			if (http_ctx->http_content_length) {
+				free(http_ctx->http_content_length);
+			}
+			http_ctx->http_content_length = malloc(headers[i].valuelen + 1);
+			if (!http_ctx->http_content_length) {
+				s->ctx->enomem = 1;
+				return -1;
+			}
+			memcpy(http_ctx->http_content_length, headers[i].value, headers[i].valuelen);
+			http_ctx->http_content_length[headers[i].valuelen] = '\0';
+
+            log_finest_va("Http content-length '%s', idx=%zu, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64,
+                http_ctx->http_content_length, i, s->src_stream_id, s->dst_stream_id);
+		}
+        else if (headers[i].namelen == 12 && !memcmp(headers[i].name, "content-type", 12)) {
+			if (http_ctx->http_content_type) {
+				free(http_ctx->http_content_type);
+			}
+			http_ctx->http_content_type = malloc(headers[i].valuelen + 1);
+			if (!http_ctx->http_content_type) {
+				s->ctx->enomem = 1;
+				return -1;
+			}
+            memcpy(http_ctx->http_content_type, headers[i].value, headers[i].valuelen);
+            http_ctx->http_content_type[headers[i].valuelen] = '\0';
+
+            log_finest_va("Http content-type '%s', idx=%zu, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64,
+                http_ctx->http_content_type, i, s->src_stream_id, s->dst_stream_id);
+        }
+        // Normally not possible in response
+        else if (s->ctx->conn_opts->remove_http_referer && (headers[i].namelen == 7 && !memcmp(headers[i].name, "referer", 7))) {
+            protohttp3_delete_nv_header(s, i);
+		}
+        else if ((headers[i].namelen == 15 && !memcmp(headers[i].name, "public-key-pins", 15)) ||
+                 (headers[i].namelen == 27 && !memcmp(headers[i].name, "public-key-pins-report-only", 27)) ||
+                 (headers[i].namelen == 26 && !memcmp(headers[i].name, "strict-transport-security", 26)) ||
+                 (headers[i].namelen == 9 && !memcmp(headers[i].name, "expect-ct", 9)) ||
+                 (headers[i].namelen == 18 && !memcmp(headers[i].name, "alternate-protocol", 18)) ||
+                 (headers[i].namelen == 7 && !memcmp(headers[i].name, "alt-svc", 7)) ||
+                 (headers[i].namelen == 7 && !memcmp(headers[i].name, "upgrade", 7))) {
+            protohttp3_delete_nv_header(s, i);
+        }
+    }
+
+    if (s->ctx->enomem) {
+        return -1;
+    }
+	return 0;
+}
+
+static struct evbuffer *
+protohttp3_get_h1_headers(protohttp3_stream_ctx_t *s)
+{
+    UNUSED pxy_conn_ctx_t *ctx = s->ctx;
+    log_finest_va("ENTER, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, s->icap_ctx->reqmod);
+
+    struct evbuffer *buf = evbuffer_new();
+    if (!buf)
+        return NULL;
+
+    int method_idx = -1, path_idx = -1, status_idx = -1, authority_idx = -1;
+
+    nghttp3_nv *headers = s->headers;
+    size_t count = s->headers_count;
+
+    for (size_t i = 0; i < count; i++) {
+        if (headers[i].namelen == 7 && !memcmp(headers[i].name, ":method", 7))
+            method_idx = (int)i;
+        else if (headers[i].namelen == 5 && !memcmp(headers[i].name, ":path", 5))
+            path_idx = (int)i;
+        else if (headers[i].namelen == 7 && !memcmp(headers[i].name, ":status", 7))
+            status_idx = (int)i;
+        else if (headers[i].namelen == 10 && !memcmp(headers[i].name, ":authority", 10))
+            authority_idx = (int)i;
+    }
+
+    if (method_idx != -1) {
+        // log_finest_va("method_idx=%d", method_idx);
+        log_finest_va("%.*s %.*s HTTP/1.1", (int)headers[method_idx].valuelen, (char *)headers[method_idx].value,
+            (path_idx != -1) ? (int)headers[path_idx].valuelen : 1, (path_idx != -1) ? (char *)headers[path_idx].value : "/");
+
+        evbuffer_add_printf(buf, "%.*s %.*s HTTP/1.1\r\n", (int)headers[method_idx].valuelen, (char *)headers[method_idx].value,
+            (path_idx != -1) ? (int)headers[path_idx].valuelen : 1, (path_idx != -1) ? (char *)headers[path_idx].value : "/");
+
+        if (authority_idx != -1) {
+            evbuffer_add_printf(buf, "Host: %.*s\r\n", (int)headers[authority_idx].valuelen, (char *)headers[authority_idx].value);
+        }
+    }
+
+    if (status_idx != -1 && headers[status_idx].valuelen == 3) {
+        // log_finest_va("status_idx=%d", status_idx);
+        log_finest_va("HTTP/1.1 %.*s", (int)headers[status_idx].valuelen, (char *)headers[status_idx].value);
+
+        int status_code = http_parse_status_3dig(headers[status_idx].value);
+        const char *reason = http_get_reason_phrase(status_code);
+
+        // Add the correct reason phrase, otherwise E2Guardian icap service does not respond
+        evbuffer_add_printf(buf, "HTTP/1.1 %d %s\r\n", status_code, reason);
+    }
+
+    for (size_t i = 0; i < count; i++) {
+        if (headers[i].name[0] == ':')
+            continue;
+        // Skip Host to avoid duplicates
+        if (headers[i].namelen == 4 && !strncasecmp((char *)headers[i].name, "Host", 4))
+            continue;
+        log_finest_va("%.*s: %.*s", (int)headers[i].namelen, headers[i].name, (int)headers[i].valuelen, headers[i].value);
+        evbuffer_add_printf(buf, "%.*s: %.*s\r\n", (int)headers[i].namelen, headers[i].name, (int)headers[i].valuelen, headers[i].value);
+    }
+
+    // Do not append Transfer-Encoding, otherwise we have to wait for body of GET requests too
+    // see protohttp2_bev_readcb_src()
+    // evbuffer_add_printf(buf, "Transfer-Encoding: chunked\r\n\r\n");
+
+    // Add an extra CRLF to signal end of headers.
+    evbuffer_add_printf(buf, "\r\n");
+
+    return buf;
 }
 
 /*
@@ -646,16 +1223,16 @@ h3_on_end_headers(nghttp3_conn *conn, int64_t stream_id,
     log_finest_va("ENTER, reqmod=%d, fd=%d", reqmod, h3_ctx->dst_fd);
 
     protohttp3_stream_ctx_t *s = protohttp3_get_stream_ctx(h3_ctx, stream_id, reqmod);
-    if (!s)
+    if (!s) {
+        log_finest_va("No stream context found for stream_id=%" PRId64, stream_id);
         return 0; /* Nothing to do if stream not tracked.*/
+    }
 
     s->ref_count++;
-    s->headers_complete = 1;
     if (fin)
         s->end_stream = 1;
 
-    log_finest_va("stream %" PRId64 " END_HEADERS (%zu headers, fin=%d)",
-                   stream_id, s->headers_count, fin);
+    log_finest_va("stream %" PRId64 " END_HEADERS (%zu headers, fin=%d)", stream_id, s->headers_count, fin);
 
     /*
      * Stream Forwarding:
@@ -672,34 +1249,50 @@ h3_on_end_headers(nghttp3_conn *conn, int64_t stream_id,
         else {
             log_finest("WARNING: upstream H3 session not ready");
         }
+        log_finest_va("Request headers complete, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64, s->src_stream_id, s->dst_stream_id);
+        s->http_ctx->seen_req_header = 1;
     }
+    else {
+        log_finest_va("Response headers complete, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64, s->src_stream_id, s->dst_stream_id);
+        s->http_ctx->seen_resp_header = 1;
+    }
+
+    // TODO: We get to this point only once per stream, when the headers are complete. So, do we need seen_header_on_entry?
+    // int seen_header_on_entry = reqmod ? s->http_ctx->seen_req_header : s->http_ctx->seen_resp_header;
+
+    int (*filter_header)(protohttp3_stream_ctx_t *) = reqmod ? protohttp3_filter_request_header : protohttp3_filter_response_header;
+    if (filter_header(s) == -1) {
+        return -1;
+    }
+
+    // TODO: Should we log when we get the response only?
+    // if (!seen_header_on_entry && ((reqmod && s->http_ctx->seen_req_header) || (!reqmod && s->http_ctx->seen_resp_header))) {
+    if ((reqmod && s->http_ctx->seen_req_header) || (!reqmod && s->http_ctx->seen_resp_header)) {
+        /* header complete: log connection */
+        if (WANT_CONNECT_LOG(ctx->conn)) {
+            // TODO: Implement h3 specific logging with stream info
+            protohttp_log_connect(ctx, s->http_ctx);
+        }
+    }
+
+#ifndef WITHOUT_ICAP
+    if (icap_enabled(s->icap_ctx)) {
+        s->icap_ctx->reqmod = reqmod;
+
+        struct evbuffer *outbuf_ptr = icap_get_first_service_in_hdr(s->icap_ctx);
+        struct evbuffer *header_buf = protohttp3_get_h1_headers(s);
+
+        evbuffer_add_buffer(outbuf_ptr, header_buf);
+        evbuffer_free(header_buf);
+
+        icap_process_data(s->data_buf, s->icap_ctx);
+        return 0;
+    }
+#endif /* !WITHOUT_ICAP */
 
     protohttp3_submit_data(h3_ctx, s, reqmod);
 
     s->ref_count--;
-    return 0;
-}
-
-/*
- * Append raw bytes to the stream body staging buffer, growing by doubling.
- *
- * Returns 0 on success, -1 on OOM.
- */
-static int
-protohttp3_stream_append_body(protohttp3_stream_ctx_t *s, const uint8_t *data, size_t len)
-{
-    if (s->body_len + len > s->body_cap) {
-        size_t newcap = s->body_cap ? s->body_cap : 4096;
-        while (newcap < s->body_len + len)
-            newcap *= 2;
-        uint8_t *tmp = realloc(s->body_buf, newcap);
-        if (!tmp)
-            return -1;
-        s->body_buf = tmp;
-        s->body_cap = newcap;
-    }
-    memcpy(s->body_buf + s->body_len, data, len);
-    s->body_len += len;
     return 0;
 }
 
@@ -738,14 +1331,15 @@ h3_on_recv_data(nghttp3_conn *conn, int64_t stream_id,
 	log_finest_va("DATA (first %zu bytes, orig %zu bytes): %s", log_len, datalen, log_buf);
 #endif /* DEBUG_PROXY */
 
-    if (protohttp3_stream_append_body(s, data, datalen) != 0) {
-        log_finest_va("protohttp3_stream_append_body() failed for stream %" PRId64 " received %zu bytes of DATA", stream_id, datalen);
-        s->ref_count--;
-        return NGHTTP3_ERR_CALLBACK_FAILURE;
-    }
+    evbuffer_add(s->data_buf, data, datalen);
 
-    /* Forward payload data (assuming simple buffered forwarding for prototype) */
-    log_finest_va("stream %" PRId64 " received %zu bytes of DATA", stream_id, datalen);
+#ifndef WITHOUT_ICAP
+    if (icap_enabled(s->icap_ctx)) {
+        s->icap_ctx->reqmod = reqmod;
+        icap_process_data(s->data_buf, s->icap_ctx);
+        return 0;
+    }
+#endif /* !WITHOUT_ICAP */
 
     // Resume nghttp3 stream so it calls h3_stream_read_data
     protohttp3_submit_data(h3_ctx, s, reqmod);
@@ -808,9 +1402,27 @@ h3_stream_read_data(nghttp3_conn *conn, int64_t stream_id,
     // stream_h3_ctx_t *s = stream_user_data;
     protohttp3_stream_ctx_t *s = protohttp3_get_stream_ctx(h3_ctx, stream_id, reqmod);
 
-    if (!s || s->body_len == 0) {
+    if (!s) {
+        log_finest_va("Cannot find stream %" PRId64 ", reqmod=%d, fd=%d", stream_id, reqmod, h3_ctx->dst_fd);
+        return NGHTTP3_ERR_WOULDBLOCK;
+    }
+
+    // TODO: Do we need to set NGHTTP3_DATA_FLAG_EOF when icap is disabled too? But how to know the end of stream in that case?
+    // TODO: Do we need to check the len of s->data_buf too? But we drain it below anyway, so it should be empty after this callback.
+    // Flag the end of stream
+    if (evbuffer_get_length(s->data_buf) == 0) {
+        log_finest_va("evbuffer_get_length(s->data_buf) == 0, reqmod=%d, fd=%d", reqmod, h3_ctx->dst_fd);
+
+#ifndef WITHOUT_ICAP
+        if (s->end_stream && s->icap_ctx && icap_enabled(s->icap_ctx) && icap_is_finished(s->icap_ctx)) {
+            log_finest_va("Send FIN only, set NGHTTP3_DATA_FLAG_EOF for src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d",
+                s->src_stream_id, s->dst_stream_id, reqmod);
+            *pflags |= NGHTTP3_DATA_FLAG_EOF;
+            return 0;
+        }
+#endif /* !WITHOUT_ICAP */
+
         /* Nothing buffered right now – tell nghttp3 to pause this stream. */
-        log_finest_va("s->body_len == 0, reqmod=%d, fd=%d", reqmod, h3_ctx->dst_fd);
         return NGHTTP3_ERR_WOULDBLOCK;
     }
 
@@ -820,24 +1432,55 @@ h3_stream_read_data(nghttp3_conn *conn, int64_t stream_id,
         return NGHTTP3_ERR_WOULDBLOCK;
     }
 
+    // ATTENTION: We should have a persistent buffer for evbuffer_pullup() to survive until the data is sent or the stream is freed,
+    // we drain s->data_buf below, so the pointer returned by evbuffer_pullup() will be invalid after that.
+    // And vec[0].base just saves the pointer, it does not copy the data.
+    // vec[0].base = evbuffer_pullup(s->data_buf, evbuffer_get_length(s->data_buf));
+    // vec[0].len  = evbuffer_get_length(s->data_buf);
+
+    if (s->body_buf) {
+        free(s->body_buf);
+        s->body_buf = NULL;
+        s->body_len = 0;
+    }
+
+    s->body_buf = malloc(evbuffer_get_length(s->data_buf));
+    memcpy(s->body_buf, evbuffer_pullup(s->data_buf, evbuffer_get_length(s->data_buf)), evbuffer_get_length(s->data_buf));
+    s->body_len = evbuffer_get_length(s->data_buf);
+
+    // TODO: Do we need to fill more than one vector? For now, we just fill one vector with the entire body.
     vec[0].base = s->body_buf;
     vec[0].len  = s->body_len;
 
+    // TODO: Do we need to set NGHTTP3_DATA_FLAG_EOF when icap is disabled too? But how to know the end of stream in that case?
+    // Flag the end of stream
+    // TODO: Do we need to check the len of s->data_buf too? But we drain it below anyway, so it should be empty after this callback.
+    // if (s->end_stream && evbuffer_get_length(s->data_buf) == 0) {
     if (s->end_stream) {
+#ifndef WITHOUT_ICAP
+        if (s->icap_ctx && icap_enabled(s->icap_ctx) && !icap_is_finished(s->icap_ctx)) {
+            log_finest_va("Do not set NGHTTP3_DATA_FLAG_EOF for src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, s->icap_ctx->reqmod);
+            goto out;
+        }
+#endif /* !WITHOUT_ICAP */
+
+        log_finest_va("Set NGHTTP3_DATA_FLAG_EOF for src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, reqmod);
         *pflags |= NGHTTP3_DATA_FLAG_EOF;
     }
-
-    log_finest_va("stream %" PRId64 " READ, reqmod=%d, fd=%d, len=%zu", stream_id, reqmod, h3_ctx->dst_fd, s->body_len);
+out:
+    log_finest_va("stream %" PRId64 " READ, reqmod=%d, fd=%d, len=%zu", stream_id, reqmod, h3_ctx->dst_fd, evbuffer_get_length(s->data_buf));
 
     /*
-     * Zero body_len so a second call to this callback (e.g. after a
+     * Drain data_buf so a second call to this callback (e.g. after a
      * WOULDBLOCK / resume cycle) does not re-submit the same data.
      * body_buf is kept alive until the stream is freed; ngtcp2 copies
      * the payload into its own packet buffer within the same flush loop
      * before we ever return here again.
      */
-    s->body_len = 0;
+    evbuffer_drain(s->data_buf, evbuffer_get_length(s->data_buf));
 
+    // ATTENTION: Return the number of vectors filled, not the number of bytes placed in vec[0..*pcnt-1].
+    // return s->body_len; // Number of bytes placed in vec[0..*pcnt-1]
     return 1; // Number of vectors filled
 }
 
@@ -963,6 +1606,22 @@ quic_stream_close(ngtcp2_conn *conn, uint32_t flags,
 
     protohttp3_stream_ctx_t *s = protohttp3_get_stream_ctx(h3_ctx, stream_id, reqmod);
     if (s) {
+#ifndef WITHOUT_ICAP
+        if (icap_enabled(s->icap_ctx)) {
+            if (!icap_is_finished(s->icap_ctx)) {
+                log_finest_va("ICAP not finished yet, do not terminate stream, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, reqmod);
+                if (!s->closed) {
+                    log_finest_va("Set stream closed, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, reqmod);
+                    s->closed = 1;
+                }
+                return 0;
+            }
+            else {
+                log_finest_va("ICAP finished, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, reqmod);
+            }
+        }
+#endif /* !WITHOUT_ICAP */
+
         if (reqmod) {
             if (h3_ctx->src_h3) {
                 nghttp3_conn_close_stream(h3_ctx->src_h3, s->src_stream_id, app_error_code);
@@ -975,11 +1634,11 @@ quic_stream_close(ngtcp2_conn *conn, uint32_t flags,
         }
 
         if (!s->closed) {
-            log_finest_va("stream first close, stream id %" PRId64, stream_id);
+            log_finest_va("Set stream closed, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, reqmod);
             s->closed = 1;
         } else {
             /* Second close event: ready to tear down.                     */
-            log_finest_va("stream second close, request free, stream id %" PRId64, stream_id);
+            log_finest_va("Stream closed before, free completely and remove, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, reqmod);
             s->term = 1;
             protohttp3_request_free_stream_ctx(s, reqmod);
         }

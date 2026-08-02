@@ -260,7 +260,7 @@ privsep_server_opensock(const proxyspec_t *spec)
 	/*
 	 * HTTP/3 uses UDP.  Create a UDP socket for http3 proxyspecs.
 	 */
-	if (spec->http3) {
+	if (spec->h3) {
 		fd = socket(spec->listen_addr.ss_family, SOCK_DGRAM, IPPROTO_UDP);
 	} else {
 		fd = socket(spec->listen_addr.ss_family, SOCK_STREAM, IPPROTO_TCP);

@@ -76,7 +76,7 @@ protohttp_log_connect(pxy_conn_ctx_t *ctx, protohttp_ctx_t *http_ctx)
 	 */
 
 	if (!ctx->spec->ssl) {
-		rv = asprintf(&msg, "CONN: http %s %s %s %s %s %s %s %s %s"
+		rv = asprintf(&msg, "%s: %s %s %s %s %s %s %s %s %s %s"
 #ifdef HAVE_LOCAL_PROCINFO
 		              " %s"
 #endif /* HAVE_LOCAL_PROCINFO */
@@ -85,6 +85,8 @@ protohttp_log_connect(pxy_conn_ctx_t *ctx, protohttp_ctx_t *http_ctx)
 		              " user:%s"
 #endif /* !WITHOUT_USERAUTH */
 		              "\n",
+		              ctx->spec->h3 ? "STREAM" : "CONN",
+		              ctx->spec->h3 ? "h3" : "http",
 		              STRORDASH(ctx->srchost_str),
 		              STRORDASH(ctx->srcport_str),
 		              STRORDASH(ctx->dsthost_str),
@@ -1465,6 +1467,39 @@ protohttps_setup_child(pxy_conn_child_ctx_t *ctx)
 	memset(ctx->protoctx->arg, 0, sizeof(protohttp_ctx_t));
 
 	return PROTO_HTTPS;
+}
+
+#define HTTP_STATUS_REASONS_LEN (sizeof(http_status_reasons) / sizeof(http_status_reasons[0]))
+
+// Returns the standard reason phrase for a given status code.
+// If the code is not in our mapping table, falls back to a generic default
+// based on the HTTP status class (e.g., "Success", "Client Error").
+const char *
+http_get_reason_phrase(int status_code)
+{
+    int low = 0;
+    int high = HTTP_STATUS_REASONS_LEN - 1;
+
+    while (low <= high) {
+        int mid = low + (high - low) / 2;
+        if (http_status_reasons[mid].code == status_code) {
+            return http_status_reasons[mid].reason;
+        }
+        if (http_status_reasons[mid].code < status_code) {
+            low = mid + 1;
+        } else {
+            high = mid - 1;
+        }
+    }
+
+    // Fallback classes if we encounter custom/unlisted status codes
+    if (status_code >= 100 && status_code < 200) return "Informational";
+    if (status_code >= 200 && status_code < 300) return "Success";
+    if (status_code >= 300 && status_code < 400) return "Redirection";
+    if (status_code >= 400 && status_code < 500) return "Client Error";
+    if (status_code >= 500 && status_code < 600) return "Server Error";
+
+    return "Unknown Status";
 }
 
 /* vim: set noet ft=c: */

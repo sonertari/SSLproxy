@@ -1370,14 +1370,22 @@ icap_send_data(icap_ctx_t *icap_ctx)
 
 	pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
 
+	int h3 = icap_ctx->proto == PROTO_HTTP3;
+
 	// TODO: We may not have ctx and/or bevs, if the connection is terminated
-	if (ctx && ctx->src.bev && ctx->dst.bev) {
+	if ((ctx && ctx->src.bev && ctx->dst.bev) || h3) {
 		int h2 = icap_ctx->proto == PROTO_HTTP2;
 
 		if (h2) {
 			protohttp2_stream_ctx_t *s = icap_ctx->stream_ctx;
 			s->ref_count++;
-			log_finest_va("Increment stream ref_count, src_stream_id=%d, dst_stream_id=%d, ref_count=%d, deferred_free_pending=%d",
+			log_finest_va("Increment h2 stream ref_count, src_stream_id=%d, dst_stream_id=%d, ref_count=%d, deferred_free_pending=%d",
+				s->src_stream_id, s->dst_stream_id, s->ref_count, s->deferred_free_pending);
+		}
+		else if (h3) {
+			protohttp3_stream_ctx_t *s = icap_ctx->stream_ctx;
+			s->ref_count++;
+			log_finest_va("Increment h3 stream ref_count, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", ref_count=%d, deferred_free_pending=%d",
 				s->src_stream_id, s->dst_stream_id, s->ref_count, s->deferred_free_pending);
 		}
 
@@ -1386,11 +1394,22 @@ icap_send_data(icap_ctx_t *icap_ctx)
 		if (h2) {
 			protohttp2_stream_ctx_t *s = icap_ctx->stream_ctx;
 			s->ref_count--;
-			log_finest_va("Decrement stream ref_count, src_stream_id=%d, dst_stream_id=%d, ref_count=%d, deferred_free_pending=%d",
+			log_finest_va("Decrement h2 stream ref_count, src_stream_id=%d, dst_stream_id=%d, ref_count=%d, deferred_free_pending=%d",
 				s->src_stream_id, s->dst_stream_id, s->ref_count, s->deferred_free_pending);
 
 			if (!s->icap_ctx) {
-				log_finest_va("No ICAP context, return, src_stream_id=%d, dst_stream_id=%d", s->src_stream_id, s->dst_stream_id);
+				log_finest_va("No h2 ICAP context, return, src_stream_id=%d, dst_stream_id=%d", s->src_stream_id, s->dst_stream_id);
+				return;
+			}
+		}
+		else if (h3) {
+			protohttp3_stream_ctx_t *s = icap_ctx->stream_ctx;
+			s->ref_count--;
+			log_finest_va("Decrement h3 stream ref_count, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", ref_count=%d, deferred_free_pending=%d",
+				s->src_stream_id, s->dst_stream_id, s->ref_count, s->deferred_free_pending);
+
+			if (!s->icap_ctx) {
+				log_finest_va("No h3 ICAP context, return, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 "", s->src_stream_id, s->dst_stream_id);
 				return;
 			}
 		}
@@ -1403,7 +1422,7 @@ icap_send_data(icap_ctx_t *icap_ctx)
 		int service_idx = 0;
 		if (!made_progress || icap_have_data_to_process(icap_ctx, &service_idx) == 0) {
 			// TODO: Resume reading from stream, not the whole connection, in http2 mode
-			if (!h2) {
+			if (!h2 && !h3) {
 				log_finest("Enable reading from source, resume flow");
 
 				// TODO: Should we enable the current conn_bev only?
@@ -1448,6 +1467,9 @@ icap_get_http_content_length(icap_ctx_t *icap_ctx)
 		protohttp_ctx_t *http_ctx = NULL;
 		if (icap_ctx->proto == PROTO_HTTP2) {
 			http_ctx = ((protohttp2_stream_ctx_t *)(icap_ctx->stream_ctx))->http_ctx;
+		}
+		else if (icap_ctx->proto == PROTO_HTTP3) {
+			http_ctx = ((protohttp3_stream_ctx_t *)(icap_ctx->stream_ctx))->http_ctx;
 		}
 		else {
 			http_ctx = ctx->protoctx->arg;
@@ -3004,6 +3026,7 @@ icap_process_chain_cb(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 	icap_ctx->chain_ev = NULL;
 
 	pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
+	log_finest("ENTER");
 
 	/* Check for Veto: abort chain immediately if a previous service blocked the content */
 	if (icap_ctx->is_veto) {
@@ -3262,8 +3285,14 @@ icap_data_submit(icap_ctx_t *icap_ctx)
 {
 	pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
 
-	struct evbuffer *inbuf = bufferevent_get_input(icap_ctx->reqmod ? ctx->src.bev : ctx->dst.bev);
-	struct evbuffer *outbuf = bufferevent_get_output(icap_ctx->reqmod ? ctx->dst.bev : ctx->src.bev);
+	int h3 = icap_ctx->proto == PROTO_HTTP3;
+
+	struct evbuffer *inbuf = NULL;
+	struct evbuffer *outbuf = NULL;
+	if (!h3) {
+		inbuf = bufferevent_get_input(icap_ctx->reqmod ? ctx->src.bev : ctx->dst.bev);
+		outbuf = bufferevent_get_output(icap_ctx->reqmod ? ctx->dst.bev : ctx->src.bev);
+	}
 
 	icap_service_ctx_t *service_ctx = NULL;
 	struct evbuffer *out_hdr = NULL;
@@ -3286,7 +3315,7 @@ icap_data_submit(icap_ctx_t *icap_ctx)
 	}
 
 	log_finest_va("ENTER, inbuf=%zu, outbuf=%zu, out_hdr=%zu, out_body=%zu, is_veto=%d",
-		evbuffer_get_length(inbuf), evbuffer_get_length(outbuf),
+		inbuf ? evbuffer_get_length(inbuf) : 0, outbuf ? evbuffer_get_length(outbuf) : 0,
 		out_hdr ? evbuffer_get_length(out_hdr) : 0, out_body ? evbuffer_get_length(out_body) : 0,
 		icap_ctx->is_veto);
 
@@ -3312,9 +3341,10 @@ icap_data_submit(icap_ctx_t *icap_ctx)
 			icap_ctx->send_data_to_src_cb(icap_ctx);
 		}
 
+		// TODO: Handle h3 case as well, but we don't have a bufferevent for h3
 		// ATTENTION: Do NOT reset is_veto here - it must remain set until context is freed
-		evbuffer_drain(inbuf, evbuffer_get_length(inbuf));
-		evbuffer_drain(outbuf, evbuffer_get_length(outbuf));
+		if (inbuf) evbuffer_drain(inbuf, evbuffer_get_length(inbuf));
+		if (outbuf) evbuffer_drain(outbuf, evbuffer_get_length(outbuf));
 
 		if (out_hdr) evbuffer_drain(out_hdr, evbuffer_get_length(out_hdr));
 		if (out_body) evbuffer_drain(out_body, evbuffer_get_length(out_body));

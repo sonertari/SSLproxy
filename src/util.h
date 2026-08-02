@@ -35,6 +35,7 @@
 
 char * util_skipws(const char *) NONNULL(1) PURE;
 size_t util_get_first_word_len(char *, size_t) NONNULL(1);
+char *trim_whitespace(char *, size_t *) NONNULL(1);
 
 #define util_max(a,b) ((a) > (b) ? (a) : (b))
 
@@ -44,6 +45,15 @@ inline int INLINE WUNRES
 max(int a, int b)
 {
 	return a > b ? a : b;
+}
+
+// Fast, inline conversion of exactly 3 digits to an integer
+// This is used to convert the :status header value to an integer for ICAP processing
+// as a fast alternative to strtol() or atoi(), which are slower and more complex
+inline int
+http_parse_status_3dig(const uint8_t *val)
+{
+    return (val[0] - '0') * 100 + (val[1] - '0') * 10 + (val[2] - '0');
 }
 
 #endif /* !UTIL_H */

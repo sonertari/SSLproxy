@@ -127,7 +127,7 @@ proxy_setup_proto(pxy_conn_ctx_t *ctx)
 	prototcp_setup(ctx);
 
 	protocol_t proto;
-	if (ctx->spec->http3) {
+	if (ctx->spec->h3) {
 		proto = protohttp3_setup(ctx);
 	} else if (ctx->spec->upgrade) {
 		proto = protoautossl_setup(ctx);
@@ -596,7 +596,7 @@ proxy_listener_setup(struct event_base *evbase, pxy_thrmgr_ctx_t *thrmgr,
 	lctx->clisock = clisock;
 #endif /* !WITHOUT_USERAUTH */
 
-	if (spec->http3) {
+	if (spec->h3) {
 		/*
 		 * HTTP/3 over UDP: create a raw libevent event instead of
 		 * evconnlistener, because evconnlistener only supports TCP.
