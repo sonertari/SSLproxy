@@ -846,6 +846,7 @@ proxyspec_set_proto(proxyspec_t *spec, const char *value)
 		spec->smtp = 1;
 	} else
 	if (!strcmp(value, "http3")) {
+		spec->ssl = 1;
 		spec->http = 1;
 		spec->h3 = 1;
 	} else

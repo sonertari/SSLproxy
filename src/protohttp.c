@@ -117,8 +117,8 @@ protohttp_log_connect(pxy_conn_ctx_t *ctx, protohttp_ctx_t *http_ctx)
 		              " user:%s"
 #endif /* !WITHOUT_USERAUTH */
 		              "\n",
-		              ctx->sslctx->h2 ? "STREAM" : "CONN",
-		              ctx->sslctx->h2 ? "h2" : "https",
+		              ctx->sslctx->h2 || ctx->spec->h3 ? "STREAM" : "CONN",
+		              ctx->sslctx->h2 ? "h2" : (ctx->spec->h3 ? "h3" : "https"),
 		              STRORDASH(ctx->srchost_str),
 		              STRORDASH(ctx->srcport_str),
 		              STRORDASH(ctx->dsthost_str),
@@ -130,8 +130,8 @@ protohttp_log_connect(pxy_conn_ctx_t *ctx, protohttp_ctx_t *http_ctx)
 		              STRORDASH(http_ctx->http_content_length),
 		              STRORDASH(ctx->sslctx->sni),
 		              STRORDASH(ctx->sslctx->ssl_names),
-		              SSL_get_version(ctx->src.ssl),
-		              SSL_get_cipher(ctx->src.ssl),
+		              ctx->src.ssl ? SSL_get_version(ctx->src.ssl) : "-",
+		              ctx->src.ssl ? SSL_get_cipher(ctx->src.ssl) : "-",
 		              STRORDASH(ctx->sslctx->srvdst_ssl_version),
 		              STRORDASH(ctx->sslctx->srvdst_ssl_cipher),
 		              STRORDASH(ctx->sslctx->origcrtfpr),

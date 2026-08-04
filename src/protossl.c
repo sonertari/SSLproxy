@@ -1029,7 +1029,7 @@ protossl_apply_filter(pxy_conn_ctx_t *ctx)
  * Returns NULL if no suitable certificate could be found or the site should 
  * be passed through.
  */
-static SSL *
+SSL *
 protossl_srcssl_create(pxy_conn_ctx_t *ctx, SSL *origssl)
 {
 	cert_t *cert;

@@ -54,6 +54,7 @@
  *     mode) to keep the prototype simple.
  */
 
+#include "protossl.h"
 #include "protohttp.h"
 #include "protohttp3.h"
 #include "log.h"
@@ -2245,6 +2246,216 @@ keylog_callback(UNUSED const SSL *ssl, const char *line)
 }
 
 /*
+ * The SNI hostname has been resolved.  Fill the first resolved address into
+ * the context and continue connecting.
+ */
+static void
+protohttp3_sni_resolve_cb(int errcode, struct evutil_addrinfo *ai, void *arg)
+{
+	pxy_conn_ctx_t *ctx = arg;
+	log_finest("ENTER");
+
+	if (errcode) {
+		log_err_printf("Cannot resolve SNI hostname '%s': %s\n", ctx->sslctx->sni, evutil_gai_strerror(errcode));
+		pxy_conn_ctx_free(ctx, 1);
+		return;
+	}
+
+	memcpy(&ctx->dstaddr, ai->ai_addr, ai->ai_addrlen);
+	ctx->dstaddrlen = ai->ai_addrlen;
+	evutil_freeaddrinfo(ai);
+	pxy_conn_connect(ctx);
+}
+
+void crypto_stream_init(quic_crypto_stream_t *stream)
+{
+    stream->capacity = 2048; // ClientHello is usually < 2KB
+    stream->data = calloc(1, stream->capacity);
+    stream->contiguous_len = 0;
+}
+
+/* Inserts chunk at offset, expanding buffer if needed and updating contiguous length */
+void crypto_stream_write(quic_crypto_stream_t *stream, uint64_t offset, const uint8_t *data, size_t len)
+{
+    if (offset + len > stream->capacity) {
+        size_t new_cap = (offset + len > stream->capacity * 2) ? offset + len : stream->capacity * 2;
+        stream->data = realloc(stream->data, new_cap);
+        memset(stream->data + stream->capacity, 0, new_cap - stream->capacity);
+        stream->capacity = new_cap;
+    }
+
+    // Copy data into position
+    memcpy(stream->data + offset, data, len);
+
+    // Track contiguous byte length starting from 0
+    if (offset <= stream->contiguous_len) {
+        if (offset + len > stream->contiguous_len) {
+            stream->contiguous_len = offset + len;
+        }
+    }
+}
+
+// typedef struct {
+//     char sni[256];
+//     char alpn[64];
+// } tls_info_t;
+
+// int parse_client_hello_sni_alpn(const uint8_t *buf, size_t len, tls_info_t *out) {
+//     memset(out, 0, sizeof(*out));
+
+//     // 1. Minimum Handshake Header: Type(1) + Length(3) + Version(2) + Random(32) + SessionID_Len(1)
+//     if (len < 39 || buf[0] != 0x01 /* ClientHello */) return -1;
+
+//     size_t pos = 4; // Skip Handshake Type + 3-byte Length
+//     pos += 2 + 32;  // Skip Legacy Version & Random
+
+//     // 2. Skip Session ID
+//     if (pos >= len) return -1;
+//     uint8_t session_id_len = buf[pos++];
+//     pos += session_id_len;
+
+//     // 3. Skip Cipher Suites
+//     if (pos + 2 > len) return -1;
+//     uint16_t cipher_len = (buf[pos] << 8) | buf[pos + 1];
+//     pos += 2 + cipher_len;
+
+//     // 4. Skip Compression Methods
+//     if (pos >= len) return -1;
+//     uint8_t comp_len = buf[pos++];
+//     pos += comp_len;
+
+//     // 5. Extensions Block
+//     if (pos + 2 > len) return -1;
+//     uint16_t ext_len = (buf[pos] << 8) | buf[pos + 1];
+//     pos += 2;
+
+//     size_t ext_end = pos + ext_len;
+//     if (ext_end > len) return -1;
+
+//     // Walk TLS Extensions
+//     while (pos + 4 <= ext_end) {
+//         uint16_t ext_type = (buf[pos] << 8) | buf[pos + 1];
+//         uint16_t ext_size = (buf[pos + 2] << 8) | buf[pos + 3];
+//         pos += 4;
+
+//         if (pos + ext_size > ext_end) break;
+
+//         // --- SNI Extension (0x0000) ---
+//         if (ext_type == 0x0000 && ext_size >= 5) {
+//             size_t p = pos + 2; // Skip server_name_list length
+//             uint8_t name_type = buf[p++];
+//             uint16_t name_len = (buf[p] << 8) | buf[p + 1];
+//             p += 2;
+
+//             if (name_type == 0 /* host_name */ && name_len < sizeof(out->sni) && (p + name_len <= pos + ext_size)) {
+//                 memcpy(out->sni, &buf[p], name_len);
+//                 out->sni[name_len] = '\0';
+//             }
+//         }
+//         // --- ALPN Extension (0x0010) ---
+//         else if (ext_type == 0x0010 && ext_size >= 3) {
+//             size_t p = pos + 2; // Skip alpn_list length
+//             uint8_t alpn_len = buf[p++];
+//             if (alpn_len < sizeof(out->alpn) && (p + alpn_len <= pos + ext_size)) {
+//                 memcpy(out->alpn, &buf[p], alpn_len);
+//                 out->alpn[alpn_len] = '\0'; // e.g., "h3"
+//             }
+//         }
+
+//         pos += ext_size;
+//     }
+
+//     return 0;
+// }
+
+static int
+protohttp3_recv_crypto_data_cb(UNUSED ngtcp2_conn *conn,
+                    ngtcp2_encryption_level crypto_level,
+                    uint64_t offset,
+                    const uint8_t *data,
+                    size_t datalen,
+                    void *user_data)
+{
+    protohttp3_ctx_t *h3_ctx = user_data;
+    pxy_conn_ctx_t *ctx = h3_ctx->ctx;
+
+    log_finest("ENTER");
+
+    // We only care about Initial level for ClientHello
+    if (crypto_level != NGTCP2_ENCRYPTION_LEVEL_INITIAL) {
+        goto out;
+    }
+
+    crypto_stream_write(&h3_ctx->crypto_stream, offset, data, datalen);
+
+    // Wait until we have at least the 4-byte Handshake header
+    if (h3_ctx->crypto_stream.contiguous_len < 4) {
+        goto out; // Keep receiving packets
+    }
+
+    uint8_t *buf = h3_ctx->crypto_stream.data;
+    uint32_t msg_len = ((uint32_t)buf[1] << 16) | ((uint32_t)buf[2] << 8) | buf[3];
+    size_t full_handshake_size = 4 + msg_len;
+
+    // Wait until the ENTIRE ClientHello is reassembled
+    if (h3_ctx->crypto_stream.contiguous_len < full_handshake_size) {
+        goto out; // Not fully arrived yet; keep receiving
+    }
+
+    // Parse SNI & ALPN
+    // tls_info_t info;
+    // if (parse_client_hello_sni_alpn(buf, full_handshake_size, &info) == 0) {
+    //     // printf("Successfully extracted SNI: '%s', ALPN: '%s'\n", info.sni, info.alpn);
+    //     log_fine_va("Successfully extracted SNI: '%s', ALPN: '%s'", info.sni, info.alpn);
+    //     // Save to ctx or dispatch routing decision
+    // } else {
+    //     printf("Failed to parse ClientHello extensions\n");
+    // }
+
+	const unsigned char *chello;
+	int rv = ssl_tls_clienthello_parse(buf, full_handshake_size, 0, &chello, &ctx->sslctx->sni, &ctx->sslctx->alpn_protos, &ctx->sslctx->alpn_protos_len);
+	if ((rv == 1) && !chello) {
+		log_err_printf("Peeking did not yield a (truncated) ClientHello message, aborting connection\n");
+		log_fine("Peeking did not yield a (truncated) ClientHello message, aborting connection");
+		goto out;
+	}
+	if (OPTS_DEBUG(ctx->global)) {
+		log_dbg_printf("SNI peek: [%s] [%s], fd=%d\n", ctx->sslctx->sni ? ctx->sslctx->sni : "n/a",
+					   ((rv == 1) && chello) ? "incomplete" : "complete", ctx->fd);
+	}
+	if ((rv == 1) && chello && (ctx->sslctx->sni_peek_retries++ < 50)) {
+		/* ssl_tls_clienthello_parse indicates that we
+		 * should retry later when we have more data, and we
+		 * haven't reached the maximum retry count yet. */
+		log_fine("Continue peeking ClientHello message");
+		goto out;
+	}
+
+    log_fine("Stop peeking ClientHello message");
+
+	if (ctx->sslctx->sni && !ctx->dstaddrlen && ctx->spec->sni_port) {
+		char sniport[6];
+		struct evutil_addrinfo hints;
+
+		memset(&hints, 0, sizeof(hints));
+		hints.ai_family = ctx->af;
+		hints.ai_flags = EVUTIL_AI_ADDRCONFIG;
+		hints.ai_socktype = SOCK_STREAM;
+		hints.ai_protocol = IPPROTO_TCP;
+
+		snprintf(sniport, sizeof(sniport), "%i", ctx->spec->sni_port);
+        // TODO: Test protohttp3_sni_resolve_cb()
+		evdns_getaddrinfo(ctx->thr->dnsbase, ctx->sslctx->sni, sniport, &hints, protohttp3_sni_resolve_cb, ctx);
+		goto out;
+	}
+
+	pxy_conn_connect(ctx);
+out:
+    return ngtcp2_crypto_recv_crypto_data_cb(conn, crypto_level, offset,
+                                            data, datalen, user_data);
+}
+
+/*
  * protohttp3_new – create a fully wired QUIC/H3 server-side session.
  *
  * After this function returns:
@@ -2288,7 +2499,7 @@ protohttp3_new(pxy_conn_ctx_t *ctx, ngtcp2_version_cid vc)
     /* Real OpenSSL crypto hooks provided by ngtcp2_crypto_ossl.        */
     cb.client_initial           = ngtcp2_crypto_client_initial_cb;
     cb.recv_client_initial      = ngtcp2_crypto_recv_client_initial_cb;
-    cb.recv_crypto_data         = ngtcp2_crypto_recv_crypto_data_cb;
+    cb.recv_crypto_data         = protohttp3_recv_crypto_data_cb; // Override to peek ClientHello for SNI/ALPN
     cb.encrypt                  = ngtcp2_crypto_encrypt_cb;
     cb.decrypt                  = ngtcp2_crypto_decrypt_cb;
     cb.hp_mask                  = ngtcp2_crypto_hp_mask_cb;
@@ -2423,6 +2634,9 @@ protohttp3_new(pxy_conn_ctx_t *ctx, ngtcp2_version_cid vc)
 
     h3_ctx->src_ssl = SSL_new(ssl_ctx);
 
+    // TODO: Create using protossl_srcssl_create() instead
+    // h3_ctx->src_ssl = protossl_srcssl_create(ctx, h3_ctx->dst_ssl);
+
     SSL_set_accept_state(h3_ctx->src_ssl);
 
     ngtcp2_crypto_ossl_configure_server_session(h3_ctx->src_ssl);
@@ -2441,6 +2655,8 @@ protohttp3_new(pxy_conn_ctx_t *ctx, ngtcp2_version_cid vc)
 
     // TODO: Call ngtcp2_conn_get_tls_native_handle() if needed?
     // ngtcp2_crypto_ossl_ctx *ossl_ctx = ngtcp2_conn_get_tls_native_handle(h3_ctx->src_conn);
+
+    crypto_stream_init(&h3_ctx->crypto_stream);
 
     /* ------------------------------------------------------------------
      * Create Libevent events for the raw UDP file descriptor.
@@ -2520,6 +2736,12 @@ protohttp3_setup(pxy_conn_ctx_t *ctx)
     ctx->protoctx->discard_inbufcb = NULL;
     ctx->protoctx->discard_outbufcb = NULL;
 
+	ctx->sslctx = malloc(sizeof(ssl_ctx_t));
+	if (!ctx->sslctx) {
+		return PROTO_ERROR;
+	}
+	memset(ctx->sslctx, 0, sizeof(ssl_ctx_t));
+
     log_finest_va("EXIT, ctx->fd=%d", ctx->fd);
 
     return PROTO_HTTP3;
@@ -2550,10 +2772,12 @@ protohttp3_init_conn(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
     if (pxy_conn_init(ctx) == -1)
         return;
 
-    log_finest_va("Session initialised on fd=%d", ctx->fd);
-
-    /* Initiate upstream QUIC connection immediately for reverse proxy */
-    pxy_conn_connect(ctx);
+// No need to check for OPENSSL_NO_TLSEXT here, since h3 requires ALPN and TLS 1.3,
+// which are not available if OPENSSL_NO_TLSEXT is defined.
+// #ifdef OPENSSL_NO_TLSEXT
+// 	pxy_conn_connect(ctx);
+// 	return;
+// #endif /* !OPENSSL_NO_TLSEXT */
 
     // We create the h3 context in proxy_listener_acceptcb_udp()
     protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
@@ -2581,34 +2805,6 @@ protohttp3_conn_connect(pxy_conn_ctx_t *ctx)
 
     if (!h3_ctx || !h3_ctx->src_conn) {
         log_fine("No src session");
-        return -1;
-    }
-
-    /*
-     * Determine the upstream (dst) address.
-     * If we have a static target address, use it.  Otherwise fall back
-     * to NAT lookup.
-     */
-    if (!ctx->dstaddrlen) {
-        if (ctx->spec->connect_addrlen) {
-            memcpy(&ctx->dstaddr, &ctx->spec->connect_addr,
-                   ctx->spec->connect_addrlen);
-            ctx->dstaddrlen = ctx->spec->connect_addrlen;
-        } else if (ctx->spec->natlookup) {
-            if (ctx->spec->natlookup((struct sockaddr *)&ctx->dstaddr,
-                                     &ctx->dstaddrlen,
-                                     ctx->fd,
-                                     (struct sockaddr *)&ctx->srcaddr,
-                                     ctx->srcaddrlen) == -1) {
-                log_finest("NAT lookup failed");
-                return -1;
-            }
-        }
-    }
-
-    if (!ctx->dstaddrlen) {
-        log_finest("No upstream destination address");
-        pxy_conn_term(ctx, 1);
         return -1;
     }
 
@@ -2725,36 +2921,14 @@ protohttp3_conn_connect(pxy_conn_ctx_t *ctx)
     /* Note: For SSLproxy, we should derive the SSL_CTX from the proxyspec.
      * We'll use a local TLS method block for the QUIC prototype. */
 
-    // TODO: Use the SSL method from conn_opts if available, otherwise default to TLS_method()
-    // SSL_CTX *ssl_ctx = SSL_CTX_new(ctx->conn_opts->sslmethod());
-    SSL_CTX *ssl_ctx = SSL_CTX_new(TLS_method());
+    // TODO: QUIC requires TLS 1.3
+    // SSL_CTX_set_min_proto_version(ssl_ctx, TLS1_3_VERSION);
+    // SSL_CTX_set_max_proto_version(ssl_ctx, TLS1_3_VERSION);
 
-    // QUIC requires TLS 1.3
-    SSL_CTX_set_min_proto_version(ssl_ctx, TLS1_3_VERSION);
-    SSL_CTX_set_max_proto_version(ssl_ctx, TLS1_3_VERSION);
+    // TODO: Enable key logging for debugging purposes
+    // SSL_CTX_set_keylog_callback(ssl_ctx, keylog_callback);
 
-    // TODO: Enable ALPN selection on OpenSSL client context?
-    // SSL_CTX_set_alpn_select_cb(ssl_ctx, alpn_select_cb, NULL);
-
-    // Enable key logging for debugging purposes
-    SSL_CTX_set_keylog_callback(ssl_ctx, keylog_callback);
-
-    h3_ctx->dst_ssl = SSL_new(ssl_ctx);
-
-    // Set ALPN on client SSL instance (e.g. \x02h3)
-    unsigned char alpn[] = {0x02, 'h', '3'};
-    SSL_set_alpn_protos(h3_ctx->dst_ssl, alpn, sizeof(alpn));
-
-    /* Set SNI on the client SSL object */
-    // TODO: Get the hostname of the upstream server from the SNI in ClientHello on the client side,
-    // or from the proxyspec, if the target server is specified.
-    // For now we hardcode "localhost" for testing.
-    // if (ctx->hostname && strlen(ctx->hostname) > 0) {
-    //     SSL_set_tlsext_host_name(h3_ctx->dst_ssl, ctx->hostname);
-    // } else {
-        // Fallback if proxying by raw IP — e.g. "localhost" or target IP domain
-        SSL_set_tlsext_host_name(h3_ctx->dst_ssl, "localhost"); 
-    // }
+	h3_ctx->dst_ssl = protossl_dstssl_create(ctx);
 
     SSL_set_connect_state(h3_ctx->dst_ssl);
 
@@ -2881,6 +3055,11 @@ protohttp3_free(protohttp3_ctx_t *h3_ctx)
     pthread_mutex_unlock(&h3_ctx->pkt_queue_mutex);
 
     pthread_mutex_destroy(&h3_ctx->pkt_queue_mutex);
+
+    if (h3_ctx->crypto_stream.data) {
+        free(h3_ctx->crypto_stream.data);
+        h3_ctx->crypto_stream.data = NULL;
+    }
 
     free(h3_ctx);
 }

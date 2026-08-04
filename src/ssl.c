@@ -2151,8 +2151,8 @@ ssl_tls_clienthello_parse(const unsigned char *buf, ssize_t sz, int search,
 		}
 
 		if (search) {
-			/* Search for a potential ClientHello */
-			while ((n > 0) && (*p != 0x16) && (*p != 0x80)) {
+			/* Search for a potential ClientHello (0x80 = SSLv2, 0x16 = TLS Record, 0x01 = Raw QUIC Handshake) */
+			while ((n > 0) && (*p != 0x16) && (*p != 0x80) && (*p != 0x01)) {
 				p++; n--;
 			}
 			if (n <= 0) {
@@ -2170,8 +2170,9 @@ ssl_tls_clienthello_parse(const unsigned char *buf, ssize_t sz, int search,
 		DBG_printf("candidate at offset %td\n", p - buf);
 
 		DBG_printf("byte 0: %02x\n", *p);
-		/* +0 0x80 +2 0x01 SSLv2 short header, clientHello;
-		 * +0 0x16 +1 0x03 SSLv3/TLSv1.x handshake, clientHello */
+		/* +0 0x80 SSLv2 short header, clientHello;
+		 * +0 0x16 SSLv3/TLSv1.x handshake in TLS Record Layer;
+		 * +0 0x01 Raw TLS Handshake Message (QUIC / CRYPTO frame) */
 		if (*p == 0x80) {
 			/* SSLv2 handled here */
 			p++; n--;
@@ -2230,56 +2231,68 @@ ssl_tls_clienthello_parse(const unsigned char *buf, ssize_t sz, int search,
 			p += cipherspec_len + sessionid_len + challenge_len;
 			n -= cipherspec_len + sessionid_len + challenge_len;
 			goto done_parsing;
-		} else
-		if (*p != 0x16) {
-			/* this can only happen if search is 0 */
-			DBG_printf("===> No match: rv 1, *clienthello NULL\n");
-			*clienthello = NULL;
-			return 1;
 		}
-		p++; n--;
 
-		if (n < 2) {
-			DBG_printf("===> Truncated: rv 1, *clienthello set\n");
-			return 1;
+		int is_quic = (*p == 0x01);
+		ssize_t recordlen = -1;
+
+		if (!is_quic) {
+			if (*p != 0x16) {
+				/* this can only happen if search is 0 */
+				DBG_printf("===> No match: rv 1, *clienthello NULL\n");
+				*clienthello = NULL;
+				return 1;
+			}
+			p++; n--;
+
+			if (n < 2) {
+				DBG_printf("===> Truncated: rv 1, *clienthello set\n");
+				return 1;
+			}
+			DBG_printf("version: %02x %02x\n", p[0], p[1]);
+			/* Outer record version check (TLS 1.0 to TLS 1.3) */
+			if (p[0] != 0x03 || p[1] > 0x04)
+				continue;
+			p += 2; n -= 2;
+
+			if (n < 2) {
+				DBG_printf("===> Truncated: rv 1, *clienthello set\n");
+				return 1;
+			}
+			DBG_printf("length: %02x %02x\n", p[0], p[1]);
+			recordlen = len2(p[0], p[1]);
+			DBG_printf("recordlen=%zd\n", recordlen);
+			p += 2; n -= 2;
+			if (recordlen < 36) /* arbitrary size too small for a c-h */
+				continue;
+			if (n < recordlen) {
+				DBG_printf("n < recordlen: n=%zd\n", n);
+				DBG_printf("===> Truncated: rv 1, *clienthello set\n");
+				return 1;
+			}
 		}
-		DBG_printf("version: %02x %02x\n", p[0], p[1]);
-		/* This has been updated for TLS 1.3 (0x03 0x04);
-		 * see https://datatracker.ietf.org/doc/html/rfc8446#section-4.1.2
-		 * the inner version also updated below */
-		if (p[0] != 0x03 || p[1] > 0x04)
+
+		/* Standard Handshake Processing (QUIC or TLS Record body) */
+		if (n < 1) {
+			if (is_quic) {
+				DBG_printf("===> Truncated: rv 1, *clienthello set\n");
+				return 1;
+			}
 			continue;
-		p += 2; n -= 2;
-
-		if (n < 2) {
-			DBG_printf("===> Truncated: rv 1, *clienthello set\n");
-			return 1;
-		}
-		DBG_printf("length: %02x %02x\n", p[0], p[1]);
-		ssize_t recordlen = len2(p[0], p[1]);
-		DBG_printf("recordlen=%zd\n", recordlen);
-		p += 2; n -= 2;
-		if (recordlen < 36) /* arbitrary size too small for a c-h */
-			continue;
-		if (n < recordlen) {
-			DBG_printf("n < recordlen: n=%zd\n", n);
-			DBG_printf("===> Truncated: rv 1, *clienthello set\n");
-			return 1;
 		}
 
-		/* from here we give up on a candidate if there is not enough
-		 * data available in the buffer, because we already checked the
-		 * availability of the whole record. */
-
-		if (n < 1)
-			continue;
 		DBG_printf("message type: %i\n", *p);
 		if (*p != 0x01) /* message type: ClientHello */
 			continue;
 		p++; n--;
 
-		if (n < 3)
+		if (n < 3) {
+			if (is_quic) {
+				DBG_printf("===> Truncated: rv 1, *clienthello set\n");
+				return 1;
+			}
 			continue;
+		}
 		DBG_printf("message len: %02x %02x %02x\n", p[0], p[1], p[2]);
 
 		ssize_t msglen = len3(p[0], p[1], p[2]);
@@ -2287,18 +2300,25 @@ ssl_tls_clienthello_parse(const unsigned char *buf, ssize_t sz, int search,
 		p += 3; n -= 3;
 		if (msglen < 32) /* arbitrary size too small for a c-h */
 			continue;
-		if (msglen != recordlen - 4) {
+
+		if (!is_quic && msglen != recordlen - 4) {
 			DBG_printf("msglen != recordlen - 4\n");
 			continue;
 		}
-		if (n < msglen)
+
+		if (n < msglen) {
+			if (is_quic) {
+				DBG_printf("===> [QUIC] Truncated: rv 1, *clienthello set\n");
+				return 1;
+			}
 			continue;
+		}
 		n = msglen; /* only parse first message */
 
 		if (n < 2)
 			continue;
 		DBG_printf("clienthello version %02x %02x\n", p[0], p[1]);
-		/* inner version check, see outer one above */
+		/* inner version check */
 		if (p[0] != 0x03 || p[1] > 0x04)
 			continue;
 		p += 2; n -= 2;
@@ -2442,18 +2462,31 @@ ssl_tls_clienthello_parse(const unsigned char *buf, ssize_t sz, int search,
 				ssize_t count_n = extn;
 				while (count_n > 0) {
 					unsigned char plen = *count_p;
-					if (plen + 1 > count_n) break;
+					if ((ssize_t)plen + 1 > count_n) break;
 					count++;
 					count_p += plen + 1;
 					count_n -= plen + 1;
 				}
 
+				if (count_n != 0) {
+				    /* Trailing or truncated bytes in ALPN list */
+				    goto continue_search;
+				}
+
 				if (count > 0) {
 					alpn_protos = malloc(sizeof(char *) * count);
-					alpn_count = count;
+					if (!alpn_protos)
+						goto continue_search;
+				    alpn_count = count;
+
 					for (int i = 0; i < count; i++) {
+						if (extn < 1) goto continue_search;
 						unsigned char plen = *extp;
 						extp++;
+						extn--;
+
+						if (extn < plen) goto continue_search;
+
 						alpn_protos[i] = malloc(plen + 1);
 						if (!alpn_protos[i]) {
 							for (int j = 0; j < i; j++) {
@@ -2467,6 +2500,7 @@ ssl_tls_clienthello_parse(const unsigned char *buf, ssize_t sz, int search,
 						memcpy(alpn_protos[i], extp, plen);
 						alpn_protos[i][plen] = '\0';
 						extp += plen;
+						extn -= plen;
 						DBG_printf("Parsed ALPN proto: %s\n", alpn_protos[i]);
 					}
 					*alpn_wire = ssl_alpn_protos_to_wire(alpn_protos, alpn_count, alpn_wire_len);
@@ -2506,6 +2540,14 @@ done_parsing:
 continue_search:
 		if (sn)
 			free(sn);
+		if (alpn_protos) {
+			for (int i = 0; i < alpn_count; i++) {
+				free(alpn_protos[i]);
+			}
+			free(alpn_protos);
+			alpn_protos = NULL;
+			alpn_count = 0;
+		}
 	} while (search && n > 0);
 
 	/* No valid ClientHello messages found, not even a truncated one */

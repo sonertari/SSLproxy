@@ -2417,7 +2417,9 @@ pxy_conn_init(pxy_conn_ctx_t *ctx)
 	log_finest_va("srcaddr= [%s]:%s", ctx->srchost_str, ctx->srcport_str);
 	return 0;
 out:
-	evutil_closesocket(ctx->fd);
+	if (ctx->proto != PROTO_HTTP3) {
+		evutil_closesocket(ctx->fd);
+	}
 	pxy_conn_ctx_free(ctx, 1);
 	return -1;
 }

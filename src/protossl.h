@@ -37,6 +37,7 @@ void protossl_log_ssl_error(struct bufferevent *, pxy_conn_ctx_t *) NONNULL(1,2)
 
 // @todo Used externally by pxy_log_connect_src(), create tcp and ssl versions of that function instead?
 void protossl_srccert_write(pxy_conn_ctx_t *) NONNULL(1);
+SSL *protossl_srcssl_create(pxy_conn_ctx_t *, SSL *) NONNULL(1);
 SSL *protossl_dstssl_create(pxy_conn_ctx_t *) NONNULL(1);
 
 void protossl_free(pxy_conn_ctx_t *) NONNULL(1);
