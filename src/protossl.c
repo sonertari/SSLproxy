@@ -1030,7 +1030,7 @@ protossl_apply_filter(pxy_conn_ctx_t *ctx)
  * be passed through.
  */
 SSL *
-protossl_srcssl_create(pxy_conn_ctx_t *ctx, SSL *origssl)
+protossl_srcssl_create(pxy_conn_ctx_t *ctx, SSL *origssl, SSL *src_ssl)
 {
 	cert_t *cert;
 
@@ -1075,20 +1075,50 @@ protossl_srcssl_create(pxy_conn_ctx_t *ctx, SSL *origssl)
 
 	SSL_CTX *sslctx = protossl_srcsslctx_create(ctx, cert->crt, cert->chain,
 	                                       cert->key);
-	cert_free(cert);
-	if (!sslctx)
-		return NULL;
-	SSL *ssl = SSL_new(sslctx);
-	SSL_CTX_free(sslctx); /* SSL_new() increments refcount */
-	if (!ssl) {
-		ctx->enomem = 1;
+	if (!sslctx) {
+		cert_free(cert);
 		return NULL;
 	}
-#ifdef SSL_MODE_RELEASE_BUFFERS
-	/* lower memory footprint for idle connections */
-	SSL_set_mode(ssl, SSL_get_mode(ssl) | SSL_MODE_RELEASE_BUFFERS);
-#endif /* SSL_MODE_RELEASE_BUFFERS */
-	return ssl;
+
+	if (src_ssl) {
+		log_dbg_printf("===> Set SSL context of src_ssl\n");
+
+		// Remove any cert/key from the SSL object before setting the new SSL_CTX
+		SSL_certs_clear(src_ssl);
+
+		SSL_use_certificate(src_ssl, cert->crt);
+		SSL_use_PrivateKey(src_ssl, cert->key);
+
+		/* Attach intermediate chain if present */
+		if (cert->chain) {
+			for (int i = 0; i < sk_X509_num(cert->chain); i++) {
+				X509 *chain_crt = sk_X509_value(cert->chain, i);
+				SSL_add1_chain_cert(src_ssl, chain_crt);
+			}
+		}
+
+		SSL_set_SSL_CTX(src_ssl, sslctx);
+
+		SSL_CTX_free(sslctx); /* SSL_set_SSL_CTX increments refcount */
+		cert_free(cert);
+		return src_ssl;
+	}
+	else {
+		log_dbg_printf("===> Create new SSL\n");
+		SSL *ssl = SSL_new(sslctx);
+		SSL_CTX_free(sslctx); /* SSL_new() increments refcount */
+		if (!ssl) {
+			ctx->enomem = 1;
+			cert_free(cert);
+			return NULL;
+		}
+	#ifdef SSL_MODE_RELEASE_BUFFERS
+		/* lower memory footprint for idle connections */
+		SSL_set_mode(ssl, SSL_get_mode(ssl) | SSL_MODE_RELEASE_BUFFERS);
+	#endif /* SSL_MODE_RELEASE_BUFFERS */
+		cert_free(cert);
+		return ssl;
+	}
 }
 
 #ifndef OPENSSL_NO_TLSEXT
@@ -1742,7 +1772,7 @@ static int NONNULL(1)
 protossl_setup_src_ssl(pxy_conn_ctx_t *ctx)
 {
 	// @todo Make srvdst.ssl the origssl param
-	if (ctx->src.ssl || (ctx->src.ssl = protossl_srcssl_create(ctx, ctx->srvdst.ssl))) {
+	if (ctx->src.ssl || (ctx->src.ssl = protossl_srcssl_create(ctx, ctx->srvdst.ssl, NULL))) {
 		return 0;
 	}
 	else if (ctx->term) {
@@ -1768,7 +1798,7 @@ protossl_setup_src_ssl_from_dst(pxy_conn_ctx_t *ctx)
 	// This function is used by protoautossl only
 	// srvdst may or may not have been xfered to child, or it may be divert or split mode
 	// so make sure dst.ssl is not NULL
-	if (ctx->src.ssl || (ctx->src.ssl = protossl_srcssl_create(ctx, ctx->srvdst.ssl ? ctx->srvdst.ssl : ctx->dst.ssl))) {
+	if (ctx->src.ssl || (ctx->src.ssl = protossl_srcssl_create(ctx, ctx->srvdst.ssl ? ctx->srvdst.ssl : ctx->dst.ssl, NULL))) {
 		return 0;
 	}
 	else if (ctx->term) {
@@ -1789,7 +1819,7 @@ protossl_setup_src_ssl_from_child_dst(pxy_conn_child_ctx_t *ctx)
 {
 	// @attention We cannot engage passthrough mode upon ssl errors on already enabled src
 	// This function is used by protoautossl only
-	if (ctx->conn->src.ssl || (ctx->conn->src.ssl = protossl_srcssl_create(ctx->conn, ctx->dst.ssl))) {
+	if (ctx->conn->src.ssl || (ctx->conn->src.ssl = protossl_srcssl_create(ctx->conn, ctx->dst.ssl, NULL))) {
 		return 0;
 	}
 	else if (ctx->conn->term) {

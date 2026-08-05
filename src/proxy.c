@@ -447,7 +447,7 @@ proxy_listener_acceptcb_udp(evutil_socket_t fd, UNUSED short what, void *arg)
 			last->next = pkt_node;
 		}
 
-		if (!h3_ctx->src_process_pkt_ev) {
+		if (!h3_ctx->src_process_pkt_ev && !h3_ctx->wait_server_connected) {
 			log_finest("Schedule new src_process_pkt_ev");
 
 			h3_ctx->src_process_pkt_ev = event_new(ctx->thr->evbase, h3_ctx->src_fd, 0,
@@ -467,7 +467,7 @@ proxy_listener_acceptcb_udp(evutil_socket_t fd, UNUSED short what, void *arg)
 			}
 		}
 		else {
-			log_finest("Will not schedule new src_process_pkt_ev, already scheduled");
+			log_finest_va("Will not schedule new src_process_pkt_ev, %s", h3_ctx->src_process_pkt_ev ? "already scheduled" : "waiting for server connection");
 		}
 
 		pthread_mutex_unlock(&h3_ctx->pkt_queue_mutex);

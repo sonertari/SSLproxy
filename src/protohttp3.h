@@ -178,11 +178,11 @@ typedef struct pkt_node {
     struct pkt_node *next;
 } pkt_node_t;
 
-typedef struct {
-    uint8_t *data;
-    size_t capacity;
-    size_t contiguous_len;
-} quic_crypto_stream_t;
+// typedef struct {
+//     uint8_t *data;
+//     size_t capacity;
+//     size_t contiguous_len;
+// } quic_crypto_stream_t;
 
 /* -------------------------------------------------------------------------
  * Per-connection (QUIC session) state
@@ -208,7 +208,7 @@ struct protohttp3_conn_ctx {
     ngtcp2_crypto_conn_ref src_conn_ref;
     ngtcp2_crypto_conn_ref dst_conn_ref;
 
-    quic_crypto_stream_t crypto_stream;
+    // quic_crypto_stream_t crypto_stream;
 
     /*
      * Raw UDP sockets.  We cannot use Libevent bufferevents here because
@@ -258,6 +258,7 @@ struct protohttp3_conn_ctx {
 
     struct pkt_node *pkt_queue;
     pthread_mutex_t pkt_queue_mutex;
+    unsigned int wait_server_connected : 1;
 };
 
 /* -------------------------------------------------------------------------
