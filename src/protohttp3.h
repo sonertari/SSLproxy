@@ -40,9 +40,9 @@
  *
  *  - One protohttp3_conn_ctx_t represents the QUIC/H3 session between
  *    SSLproxy and a single client.  A parallel "upstream" ctx (dst side)
- *    would be added in the same way.
+ *    is added in the same way.
  *
- *  - Each QUIC stream is tracked by a stream_h3_ctx_t.  Streams are linked
+ *  - Each QUIC stream is tracked by a protohttp3_stream_ctx.  Streams are linked
  *    in a singly-linked list hanging off protohttp3_conn_ctx_t.
  *
  *  - nghttp3 framing sits on top of ngtcp2 transport.  The glue is:
@@ -60,7 +60,6 @@
 #include "pxyconn.h"
 #include "attrib.h"
 #include "khash.h"
-// #include <sys/queue.h>
 
 #include <stdint.h>
 #include <sys/socket.h>
@@ -127,11 +126,11 @@ typedef struct h3_session_map {
 } h3_session_map_t;
 
 h3_session_map_t *h3_session_map_new(void);
-void h3_session_map_free(h3_session_map_t *smap);
+void h3_session_map_free(h3_session_map_t *);
 
-protohttp3_ctx_t *h3_session_map_get(h3_session_map_t *smap, const quic_tuple_key_t *key);
-int h3_session_map_insert(h3_session_map_t *smap, const quic_tuple_key_t *key, protohttp3_ctx_t *conn);
-void h3_session_map_remove(h3_session_map_t *smap, const quic_tuple_key_t *key);
+protohttp3_ctx_t *h3_session_map_get(h3_session_map_t *, const quic_tuple_key_t *);
+int h3_session_map_insert(h3_session_map_t *, const quic_tuple_key_t *, protohttp3_ctx_t *);
+void h3_session_map_remove(h3_session_map_t *, const quic_tuple_key_t *);
 
 /* -------------------------------------------------------------------------
  * Per-stream state  (mirrors stream_ctx_t from protohttp2.h)
@@ -163,7 +162,7 @@ typedef struct protohttp3_stream_ctx {
     unsigned int closed           : 1; /* 1 after stream_close callback    */
     unsigned int term             : 1; /* 1 when safe to free              */
 
-    /* Deferred-free support (same pattern as protohttp2.c)                */
+    // Deferred-free support (same pattern as protohttp2.c)
     int ref_count;
     int deferred_free_pending;
     struct event *ev_free;
@@ -178,12 +177,6 @@ typedef struct pkt_node {
     struct pkt_node *next;
 } pkt_node_t;
 
-// typedef struct {
-//     uint8_t *data;
-//     size_t capacity;
-//     size_t contiguous_len;
-// } quic_crypto_stream_t;
-
 /* -------------------------------------------------------------------------
  * Per-connection (QUIC session) state
  * ---------------------------------------------------------------------- */
@@ -196,19 +189,19 @@ struct protohttp3_conn_ctx {
     ngtcp2_conn  *src_conn;
     ngtcp2_conn  *dst_conn;
 
+    ngtcp2_crypto_conn_ref src_conn_ref;
+    ngtcp2_crypto_conn_ref dst_conn_ref;
+
     /*
      * The HTTP/3 framing layer on top of each QUIC conn.
      */
     nghttp3_conn *src_h3;
     nghttp3_conn *dst_h3;
 
+    // TODO: Use the pxy_conn_desc src.ssl and dst.ssl in pxy_conn_ctx_t, instead of these two SSL pointers?
     /* TLS/SSL instances for the QUIC connections */
-    void *src_ssl; /* (SSL *) */
-    void *dst_ssl; /* (SSL *) */
-    ngtcp2_crypto_conn_ref src_conn_ref;
-    ngtcp2_crypto_conn_ref dst_conn_ref;
-
-    // quic_crypto_stream_t crypto_stream;
+    SSL *src_ssl;
+    SSL *dst_ssl;
 
     /*
      * Raw UDP sockets.  We cannot use Libevent bufferevents here because
@@ -265,41 +258,16 @@ struct protohttp3_conn_ctx {
  * Public interface
  * ---------------------------------------------------------------------- */
 
-protohttp3_ctx_t *protohttp3_new(pxy_conn_ctx_t    *ctx,
-                                      ngtcp2_version_cid vc) WUNRES;
-
-/* Tear down all sessions, free all streams, delete all events.           */
-void protohttp3_free(protohttp3_ctx_t *h3_ctx) NONNULL(1);
-
-/*
- * Receive helper for raw UDP sockets.
- */
-ssize_t protohttp3_recvmsg(int fd,
-                           uint8_t *buf, size_t bufsz,
-                           struct sockaddr_storage *peer_addr, socklen_t *peer_addrlen,
-                           int *ecn);
-
-/*
- * Process a raw UDP datagram through an existing QUIC session.
- * Called by the packet demuxer when a session is found in the hash table.
- * Returns 0 on success, -1 on error.
- */
-void protohttp3_process_packet_cb(evutil_socket_t fd, short what, void *arg) NONNULL(3);
-
-/*
- * Safely schedule a stream_h3_ctx_t for freeing.
- */
-void protohttp3_request_free_stream_ctx(protohttp3_stream_ctx_t      *s, int reqmod) NONNULL(1);
-
-/*
- * Set up the HTTP/3 protocol handler in the given proxy connection context.
- */
+protohttp3_ctx_t *protohttp3_new(pxy_conn_ctx_t *, ngtcp2_version_cid) WUNRES;
 protocol_t protohttp3_setup(pxy_conn_ctx_t *) NONNULL(1) WUNRES;
 
-/*
- * Build a hex-encoded CID key string from raw CID bytes.
- */
-void protohttp3_cid_to_hex(char *key, const uint8_t *cid, size_t cidlen) NONNULL(1,2);
+void protohttp3_free(protohttp3_ctx_t *) NONNULL(1);
+void protohttp3_request_free_stream_ctx(protohttp3_stream_ctx_t *, int) NONNULL(1);
+
+ssize_t protohttp3_recvmsg(int, uint8_t *, size_t, struct sockaddr_storage *, socklen_t *, int *);
+void protohttp3_process_packet_cb(evutil_socket_t, short, void *) NONNULL(3);
+
+void protohttp3_cid_to_hex(char *, const uint8_t *, size_t) NONNULL(1,2);
 
 #endif /* !PROTOHTTP3_H */
 

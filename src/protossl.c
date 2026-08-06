@@ -130,7 +130,7 @@ protossl_log_ssl_error(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
  * upstream TLS handshake completes before protossl_apply_filter() runs).
  * Keys are logged for all connections when -M is enabled globally.
  */
-static void
+void
 protossl_keylog_callback(const SSL *ssl, const char *line)
 {
 	(void)ssl;

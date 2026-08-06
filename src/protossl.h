@@ -32,6 +32,7 @@
 
 #include "pxyconn.h"
 
+void protossl_keylog_callback(const SSL *, const char *);
 int protossl_log_masterkey(pxy_conn_ctx_t *, pxy_conn_desc_t *) NONNULL(1,2);
 void protossl_log_ssl_error(struct bufferevent *, pxy_conn_ctx_t *) NONNULL(1,2);
 
