@@ -2359,7 +2359,7 @@ quic_sni_cert_cb(SSL *ssl, void *arg)
 
     // Now that we have the SNI and ALPN protos, we can proceed to connect to the server
     h3_ctx->wait_server_connected = 1;
-    protohttp3_conn_connect(ctx);
+    pxy_conn_connect(ctx);
 
     // ATTENTION: Return -1 so OpenSSL pauses handshake
     return -1;
