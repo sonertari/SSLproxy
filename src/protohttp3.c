@@ -627,6 +627,26 @@ protohttp3_trigger_write_loop(protohttp3_ctx_t *h3_ctx, int reqmod)
         if (pktlen <= 0) {
             if (pktlen < 0 && pktlen != NGTCP2_ERR_WRITE_MORE) {
                 log_finest_va("ngtcp2 write error: %s", ngtcp2_strerror((int)pktlen));
+
+                if (pktlen == NGTCP2_ERR_STREAM_SHUT_WR || pktlen == NGTCP2_ERR_STREAM_NOT_FOUND) {
+                    log_finest_va("ngtcp2 write error with ERR_STREAM_SHUT_WR, stream_id=%" PRId64 ", fd=%d", stream_id, h3_ctx->dst_fd);
+                    nghttp3_conn_close_stream(reqmod ? h3_ctx->src_h3 : h3_ctx->dst_h3, stream_id, NGHTTP3_H3_INTERNAL_ERROR);
+                }
+
+                // TODO: Check if this is enough on fatal errors
+                if (ngtcp2_err_is_fatal((int)pktlen)) {
+                    log_finest_va("Fatal ngtcp2 write error, terminating connection, fd=%d", h3_ctx->dst_fd);
+                    const ngtcp2_ccerr ccerr = {
+                        .type = NGTCP2_CCERR_TYPE_TRANSPORT,
+                        .error_code = (int)pktlen,
+                    };
+                    ngtcp2_conn_write_connection_close(reqmod ? h3_ctx->src_conn : h3_ctx->dst_conn,
+                        reqmod ? &h3_ctx->src_path : &h3_ctx->dst_path, &pi, pktbuf, sizeof(pktbuf),
+                        &ccerr, h3_timestamp());
+                    // TODO: Should we call ngtcp2_conn_del() here to free the connection?
+                    // ngtcp2_conn_del(reqmod ? h3_ctx->src_conn : h3_ctx->dst_conn);
+                    return;
+                }
             }
             log_finest_va("Drained all pending packets, pktlen=%zd, fd=%d", pktlen, h3_ctx->dst_fd);
             break; /* Drained all pending packets */
@@ -739,7 +759,10 @@ protohttp3_submit_data(protohttp3_ctx_t *h3_ctx, protohttp3_stream_ctx_t *s, int
     // Clean Data Wakeup Flush
     log_finest_va("Executing scheduled session frame serialization loop for stream, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, reqmod);
     // ATTENTION: We pass !reqmod here because the write loop is triggered on the opposite side of the connection from where the data is being submitted.
+    // The proxying flag is for the h3_stream_read_data callback to know which side of the connection is being written to.
+    h3_ctx->proxying = 1;
     protohttp3_trigger_write_loop(h3_ctx, !reqmod);
+    h3_ctx->proxying = 0;
 
     return 0;
 }
@@ -795,15 +818,22 @@ protohttp3_icap_send_data_to_dst_cb(icap_ctx_t *icap_ctx)
 
     if (icap_enabled(s->icap_ctx) && icap_is_finished(s->icap_ctx) && s->closed) {
         log_finest_va("ICAP finished and stream closed, send RST_STREAM, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, icap_ctx->reqmod);
-        if (icap_ctx->reqmod) {
-            if (h3_ctx->src_h3) {
-                nghttp3_conn_close_stream(h3_ctx->src_h3, s->src_stream_id, NGHTTP3_H3_NO_ERROR);
-            }
+        if (!s->closed) {
+            s->closed = 1;
+            // TODO: We should not close the stream here
+            // if (icap_ctx->reqmod) {
+            //     if (h3_ctx->src_h3) {
+            //         nghttp3_conn_close_stream(h3_ctx->src_h3, s->src_stream_id, NGHTTP3_H3_NO_ERROR);
+            //     }
+            // }
+            // else {
+            //     if (h3_ctx->dst_h3) {
+            //         nghttp3_conn_close_stream(h3_ctx->dst_h3, s->dst_stream_id, NGHTTP3_H3_NO_ERROR);
+            //     }
+            // }
         }
         else {
-            if (h3_ctx->dst_h3) {
-                nghttp3_conn_close_stream(h3_ctx->dst_h3, s->dst_stream_id, NGHTTP3_H3_NO_ERROR);
-            }
+            log_finest_va("But stream already closed, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", fd=%d", s->src_stream_id, s->dst_stream_id, h3_ctx->dst_fd);
         }
     }
 }
@@ -882,6 +912,13 @@ h3_on_recv_header(nghttp3_conn *conn, int64_t stream_id,
 
     log_finest_va("ENTER, reqmod=%d, fd=%d", reqmod, h3_ctx->dst_fd);
 
+    // TODO: Uni streams are control streams and do not carry HTTP headers, do we ever get here for uni streams?
+    if (!ngtcp2_is_bidi_stream(stream_id)) {
+        log_finest_va("Ignoring uni stream header, stream_id=%" PRId64, stream_id);
+        return 0;
+    }
+
+    // TODO: Is it possible we don't have a stream ctx yet for this stream_id? quic_stream_open() should have created one already.
     protohttp3_stream_ctx_t *s = protohttp3_get_stream_ctx(h3_ctx, stream_id, reqmod);
     if (!s) {
         /*
@@ -1238,8 +1275,17 @@ h3_on_end_headers(nghttp3_conn *conn, int64_t stream_id,
     }
 
     s->ref_count++;
-    if (fin)
-        s->end_stream = 1;
+    // ATTENTION: No need to set the *_end_stream flags here, because we can set them in h3_on_end_stream() when the stream is actually closed
+    // if (fin) {
+    //     if (reqmod) {
+    //         log_finest_va("FIN received request stream %" PRId64 " END_STREAM", stream_id);
+    //         s->src_end_stream = 1;
+    //     }
+    //     else {
+    //         log_finest_va("FIN received response stream %" PRId64 " END_STREAM", stream_id);
+    //         s->dst_end_stream = 1;
+    //     }
+    // }
 
     log_finest_va("stream %" PRId64 " END_HEADERS (%zu headers, fin=%d)", stream_id, s->headers_count, fin);
 
@@ -1324,8 +1370,8 @@ h3_on_recv_data(nghttp3_conn *conn, int64_t stream_id,
 
     protohttp3_stream_ctx_t *s = protohttp3_get_stream_ctx(h3_ctx, stream_id, reqmod);
     if (!s) {
-        /* Data before headers – should not normally happen.               */
-        log_finest_va("data on unknown stream %" PRId64 " (fd=%d)", stream_id, h3_ctx->dst_fd);
+        // Data before headers – should not normally happen
+        log_finest_va("Data on unknown stream %" PRId64 ", fd=%d, reqmod=%d", stream_id, h3_ctx->dst_fd, reqmod);
         return 0;
     }
 
@@ -1371,15 +1417,46 @@ h3_on_end_stream(nghttp3_conn *conn, int64_t stream_id,
     pxy_conn_ctx_t *ctx = h3_ctx->ctx;
     int reqmod = conn == h3_ctx->src_h3 ? 1 : 0;
 
-    log_finest_va("ENTER, reqmod=%d, fd=%d", reqmod, h3_ctx->dst_fd);
+    log_finest_va("ENTER, stream_id=%" PRId64 ", reqmod=%d, fd=%d", stream_id, reqmod, h3_ctx->dst_fd);
+
+    if (!ngtcp2_is_bidi_stream(stream_id)) {
+        log_finest_va("Ignoring uni stream end, stream_id=%" PRId64, stream_id);
+        return 0;
+    }
 
     protohttp3_stream_ctx_t *s = protohttp3_get_stream_ctx(h3_ctx, stream_id, reqmod);
-    if (!s)
+    if (!s) {
+        // TODO: Is this fatal? Should we return an error code to nghttp3?
+        log_finest_va("No stream context found for stream_id=%" PRId64 ", reqmod=%d, fd=%d", stream_id, reqmod, h3_ctx->dst_fd);
         return 0;
+    }
 
-    s->end_stream = 1;
+    if (reqmod) {
+        log_finest_va("Request stream %" PRId64 " END_STREAM", stream_id);
+        s->src_end_stream = 1;
 
-    log_finest_va("stream %" PRId64 " END_STREAM", stream_id);
+        /* WAKE UP the server-facing stream in nghttp3! */
+        nghttp3_conn_resume_stream(h3_ctx->dst_h3, s->dst_stream_id);
+    }
+    else {
+        log_finest_va("Response stream %" PRId64 " END_STREAM", stream_id);
+        s->dst_end_stream = 1;
+
+        /* WAKE UP the client-facing stream in nghttp3! */
+        nghttp3_conn_resume_stream(h3_ctx->src_h3, s->src_stream_id);
+    }
+
+    protohttp3_trigger_write_loop(h3_ctx, !reqmod);
+
+    if (reqmod) {
+        ngtcp2_conn_extend_max_streams_bidi(h3_ctx->src_conn, 1);
+
+        // Update HTTP/3 layer max stream boundary
+        h3_ctx->src_max_streams_bidi += 1;
+        nghttp3_conn_set_max_client_streams_bidi(h3_ctx->src_h3, h3_ctx->src_max_streams_bidi);
+
+        log_finest_va("Extend max bidi stream limit by 1, src_max_streams_bidi=%lu", (unsigned long)h3_ctx->src_max_streams_bidi);
+    }
 
     // Do NOT free the stream here
     return 0;
@@ -1403,14 +1480,19 @@ h3_stream_read_data(nghttp3_conn *conn, int64_t stream_id,
 
     protohttp3_ctx_t *h3_ctx = user_data;
     pxy_conn_ctx_t *ctx = h3_ctx->ctx;
+    // ATTENTION: h3_stream_read_data is called by trigger function
     int reqmod = conn == h3_ctx->src_h3 ? 1 : 0;
 
-    log_finest_va("ENTER, reqmod=%d, fd=%d", reqmod, h3_ctx->dst_fd);
+    log_finest_va("ENTER, reqmod=%d, proxying=%d, fd=%d", reqmod, h3_ctx->proxying, h3_ctx->dst_fd);
+
+    if (!ngtcp2_is_bidi_stream(stream_id)) {
+        log_finest_va("Ignoring uni stream data read, stream_id=%" PRId64, stream_id);
+        return 0;
+    }
 
     // TODO: Casting the stream pointer in stream_user_data does not work correctly
     // protohttp3_stream_ctx *s = stream_user_data;
     protohttp3_stream_ctx_t *s = protohttp3_get_stream_ctx(h3_ctx, stream_id, reqmod);
-
     if (!s) {
         log_finest_va("Cannot find stream %" PRId64 ", reqmod=%d, fd=%d", stream_id, reqmod, h3_ctx->dst_fd);
         return NGHTTP3_ERR_WOULDBLOCK;
@@ -1422,14 +1504,20 @@ h3_stream_read_data(nghttp3_conn *conn, int64_t stream_id,
     if (evbuffer_get_length(s->data_buf) == 0) {
         log_finest_va("evbuffer_get_length(s->data_buf) == 0, reqmod=%d, fd=%d", reqmod, h3_ctx->dst_fd);
 
-#ifndef WITHOUT_ICAP
-        if (s->end_stream && s->icap_ctx && icap_enabled(s->icap_ctx) && icap_is_finished(s->icap_ctx)) {
-            log_finest_va("Send FIN only, set NGHTTP3_DATA_FLAG_EOF for src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d",
+        if ((h3_ctx->proxying ? !reqmod : reqmod) ? s->src_end_stream : s->dst_end_stream) {
+            log_finest_va("End of stream reached, set NGHTTP3_DATA_FLAG_EOF for src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d",
                 s->src_stream_id, s->dst_stream_id, reqmod);
+#ifndef WITHOUT_ICAP
+            if (s->icap_ctx && icap_enabled(s->icap_ctx) && !icap_is_finished(s->icap_ctx)) {
+                log_finest_va("Do not set NGHTTP3_DATA_FLAG_EOF for src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, s->icap_ctx->reqmod);
+                return NGHTTP3_ERR_WOULDBLOCK;
+            }
+#endif /* !WITHOUT_ICAP */
+
+            log_finest_va("Set NGHTTP3_DATA_FLAG_EOF for src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, reqmod);
             *pflags |= NGHTTP3_DATA_FLAG_EOF;
             return 0;
         }
-#endif /* !WITHOUT_ICAP */
 
         /* Nothing buffered right now – tell nghttp3 to pause this stream. */
         return NGHTTP3_ERR_WOULDBLOCK;
@@ -1465,7 +1553,7 @@ h3_stream_read_data(nghttp3_conn *conn, int64_t stream_id,
     // Flag the end of stream
     // TODO: Do we need to check the len of s->data_buf too? But we drain it below anyway, so it should be empty after this callback.
     // if (s->end_stream && evbuffer_get_length(s->data_buf) == 0) {
-    if (s->end_stream) {
+    if ((h3_ctx->proxying ? !reqmod : reqmod) ? s->src_end_stream : s->dst_end_stream) {
 #ifndef WITHOUT_ICAP
         if (s->icap_ctx && icap_enabled(s->icap_ctx) && !icap_is_finished(s->icap_ctx)) {
             log_finest_va("Do not set NGHTTP3_DATA_FLAG_EOF for src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, s->icap_ctx->reqmod);
@@ -1518,8 +1606,15 @@ quic_recv_stream_data(ngtcp2_conn *conn, uint32_t flags,
     pxy_conn_ctx_t *ctx = h3_ctx->ctx;
     int reqmod = conn == h3_ctx->src_conn ? 1 : 0;
 
-    log_finest_va("ENTER, reqmod=%d, fd=%d", reqmod, h3_ctx->dst_fd);
+    log_finest_va("ENTER, reqmod=%d, fd=%d, stream_id=%" PRId64 ", datalen=%zu, flags=%x",
+                  reqmod, h3_ctx->dst_fd, stream_id, datalen, flags);
 
+    if (!ngtcp2_is_bidi_stream(stream_id)) {
+        log_finest_va("Ignoring uni stream recv data, stream_id=%" PRId64, stream_id);
+        return 0;
+    }
+
+    // ATTENTION: We cannot set *_end_stream flags here, because we need to wait for h3 callbacks
     int fin = (flags & NGTCP2_STREAM_DATA_FLAG_FIN) ? 1 : 0;
 
     /*
@@ -1527,7 +1622,16 @@ quic_recv_stream_data(ngtcp2_conn *conn, uint32_t flags,
      * h3_on_recv_header / h3_on_recv_data / h3_on_end_headers / h3_on_end_stream
      * callbacks as it parses complete frames.
      */
-    nghttp3_ssize nread = nghttp3_conn_read_stream(reqmod ? h3_ctx->src_h3 : h3_ctx->dst_h3, stream_id, data, datalen, fin);
+    // nghttp3_conn_read_stream is deprecated
+    // nghttp3_ssize nread = nghttp3_conn_read_stream(reqmod ? h3_ctx->src_h3 : h3_ctx->dst_h3, stream_id, data, datalen, fin);
+
+    /* Get current timestamp in nanoseconds for nghttp3 */
+    struct timeval tv;
+    evutil_gettimeofday(&tv, NULL);
+    nghttp3_tstamp ts = (nghttp3_tstamp)tv.tv_sec * 1000000000 + tv.tv_usec * 1000;
+
+    /* Feed the non-zero raw H3 frame bytes into nghttp3 */
+    nghttp3_ssize nread = nghttp3_conn_read_stream2(reqmod ? h3_ctx->src_h3 : h3_ctx->dst_h3, stream_id, data, datalen, fin, ts);
 
     if (nread < 0) {
         log_finest_va("nghttp3_conn_read_stream error: %s", nghttp3_strerror((int)nread));
@@ -1556,13 +1660,17 @@ quic_stream_open(ngtcp2_conn *conn, int64_t stream_id, void *user_data)
     pxy_conn_ctx_t *ctx = h3_ctx->ctx;
     int reqmod = conn == h3_ctx->src_conn ? 1 : 0;
 
-    log_finest_va("ENTER, reqmod=%d, fd=%d", reqmod, h3_ctx->dst_fd);
+    log_finest_va("ENTER, stream_id=%" PRId64 ", reqmod=%d, fd=%d", stream_id, reqmod, h3_ctx->dst_fd);
 
-    /*
-     * For unidirectional streams opened by the client we create a
-     * lightweight stream context.  nghttp3 identifies the stream type from
-     * the first byte it reads.
-     */
+    if (!ngtcp2_is_bidi_stream(stream_id)) {
+        /* Uni stream opened by peer.  nghttp3 will read the
+         * stream type and set up its internal state.  We don't need to
+         * track it in our stream ctx list.
+         */
+        log_finest_va("Ignoring uni stream open, stream_id=%" PRId64, stream_id);
+        return 0;
+    }
+
     protohttp3_stream_ctx_t *s = protohttp3_get_stream_ctx(h3_ctx, stream_id, reqmod);
 
     if (!s) {
@@ -1592,7 +1700,6 @@ quic_stream_open(ngtcp2_conn *conn, int64_t stream_id, void *user_data)
         }
     }
 
-    log_finest_va("stream opened %" PRId64, stream_id);
     return 0;
 }
 
@@ -1611,7 +1718,12 @@ quic_stream_close(ngtcp2_conn *conn, uint32_t flags,
     pxy_conn_ctx_t *ctx = h3_ctx->ctx;
     int reqmod = conn == h3_ctx->src_conn ? 1 : 0;
 
-    log_finest_va("ENTER, reqmod=%d, fd=%d", reqmod, h3_ctx->dst_fd);
+    log_finest_va("ENTER, stream_id=%" PRId64 ", reqmod=%d, fd=%d", stream_id, reqmod, h3_ctx->dst_fd);
+
+    if (!ngtcp2_is_bidi_stream(stream_id)) {
+        log_finest_va("Ignoring uni stream close, stream_id=%" PRId64, stream_id);
+        return 0;
+    }
 
     protohttp3_stream_ctx_t *s = protohttp3_get_stream_ctx(h3_ctx, stream_id, reqmod);
     if (s) {
@@ -1630,17 +1742,6 @@ quic_stream_close(ngtcp2_conn *conn, uint32_t flags,
             }
         }
 #endif /* !WITHOUT_ICAP */
-
-        if (reqmod) {
-            if (h3_ctx->src_h3) {
-                nghttp3_conn_close_stream(h3_ctx->src_h3, s->src_stream_id, app_error_code);
-            }
-        }
-        else {
-            if (h3_ctx->dst_h3) {
-                nghttp3_conn_close_stream(h3_ctx->dst_h3, s->dst_stream_id, app_error_code);
-            }
-        }
 
         if (!s->closed) {
             log_finest_va("Set stream closed, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, reqmod);
@@ -1695,24 +1796,52 @@ quic_handshake_completed(ngtcp2_conn *conn, void *user_data)
     nghttp3_settings h3settings;
     nghttp3_settings_default(&h3settings);
 
-    nghttp3_conn **h3_conn_ptr = reqmod ? &h3_ctx->src_h3 : &h3_ctx->dst_h3;
+    /*
+     * Bind the three mandatory H3 unidirectional control streams that we
+     * own:
+     *   - Control stream  (type 0x00)
+     *   - QPACK encoder   (type 0x02)
+     *   - QPACK decoder   (type 0x03)
+     */
 
-    int rv;
-    if (reqmod) {
-        rv = nghttp3_conn_server_new(h3_conn_ptr, &h3cb, &h3settings, NULL, h3_ctx);
-    } else {
-        rv = nghttp3_conn_client_new(h3_conn_ptr, &h3cb, &h3settings, NULL, h3_ctx);
+    if (!reqmod) {
+        int rv = nghttp3_conn_client_new(&h3_ctx->dst_h3, &h3cb, &h3settings, NULL, h3_ctx);
+        if (rv != 0) {
+            log_finest_va("nghttp3_conn_client_new: %s", nghttp3_strerror(rv));
+            return NGTCP2_ERR_CALLBACK_FAILURE;
+        }
+
+        if (ngtcp2_conn_open_uni_stream(conn, &h3_ctx->dst_ctrl_stream_id, NULL) != 0 ||
+            ngtcp2_conn_open_uni_stream(conn, &h3_ctx->dst_qenc_stream_id, NULL) != 0 ||
+            ngtcp2_conn_open_uni_stream(conn, &h3_ctx->dst_qdec_stream_id, NULL) != 0) {
+            log_finest("failed to open H3 control streams");
+            return NGTCP2_ERR_CALLBACK_FAILURE;
+        }
+
+        rv = nghttp3_conn_bind_control_stream(h3_ctx->dst_h3, h3_ctx->dst_ctrl_stream_id);
+        if (rv != 0) {
+            log_finest_va("bind_control_stream: %s", nghttp3_strerror(rv));
+            return NGTCP2_ERR_CALLBACK_FAILURE;
+        }
+
+        rv = nghttp3_conn_bind_qpack_streams(h3_ctx->dst_h3, h3_ctx->dst_qenc_stream_id, h3_ctx->dst_qdec_stream_id);
+        if (rv != 0) {
+            log_finest_va("bind_qpack_streams: %s", nghttp3_strerror(rv));
+            return NGTCP2_ERR_CALLBACK_FAILURE;
+        }
+        protohttp3_trigger_write_loop(h3_ctx, 0);
 
         log_finest_va("Forge server cert and resume handshake with client, fd=%d", h3_ctx->dst_fd);
 
         // protossl_srcssl_create() forges the server cert
         h3_ctx->src_ssl = protossl_srcssl_create(ctx, h3_ctx->dst_ssl, h3_ctx->src_ssl);
+
         h3_ctx->wait_server_connected = 0;
 
         // Now we can continue with the deferred handshake
         // OpenSSL now resumes and generates ServerHello using the forged cert
         ERR_clear_error();
-        int rv = SSL_do_handshake(h3_ctx->src_ssl);
+        rv = SSL_do_handshake(h3_ctx->src_ssl);
         if (rv <= 0) {
             int err = SSL_get_error(h3_ctx->src_ssl, rv);
             if (err != SSL_ERROR_WANT_READ && err != SSL_ERROR_WANT_WRITE &&
@@ -1730,39 +1859,61 @@ quic_handshake_completed(ngtcp2_conn *conn, void *user_data)
         // Flush the client socket to send the handshake payload to the client
         protohttp3_trigger_write_loop(h3_ctx, 1);
     }
+    else {
+        int rv = nghttp3_conn_server_new(&h3_ctx->src_h3, &h3cb, &h3settings, NULL, h3_ctx);
+        if (rv != 0) {
+            log_finest_va("nghttp3_conn_server_new: %s", nghttp3_strerror(rv));
+            return NGTCP2_ERR_CALLBACK_FAILURE;
+        }
 
-    if (rv != 0) {
-        log_finest_va("nghttp3_conn_new: %s", nghttp3_strerror(rv));
-        return NGTCP2_ERR_CALLBACK_FAILURE;
+        /* Set max client streams from QUIC transport params so nghttp3
+         * can validate stream IDs in PRIORITY_UPDATE frames. Without this,
+         * max_client_streams defaults to 0, causing ERR_H3_ID_ERROR and
+         * eventual assertion failure in nghttp3_conn_read_control. */
+
+        // TODO: Should we use local or remote transport params? We are the server, so we should use the remote params from the client.
+        // But the client may not have sent them yet, so we may need to wait until we receive them. For now, we use local params as a workaround.
+        // const ngtcp2_transport_params *params = ngtcp2_conn_get_remote_transport_params(h3_ctx->src_conn);
+        const ngtcp2_transport_params *params = ngtcp2_conn_get_local_transport_params(h3_ctx->src_conn);
+        if (params) {
+            h3_ctx->src_max_streams_bidi = params->initial_max_streams_bidi;
+            nghttp3_conn_set_max_client_streams_bidi(h3_ctx->src_h3, h3_ctx->src_max_streams_bidi);
+            log_finest_va("Initialized H3 server stream quota from QUIC transport params, src_max_streams_bidi=%lu", (unsigned long)h3_ctx->src_max_streams_bidi);
+
+            // TODO: Do we need to set max_offset in nghttp3?
+            // It seems not needed, as nghttp3 does not have a max_offset setting. It uses the stream-level flow control from ngtcp2.
+            // So we just extend the max_offset in ngtcp2 when we receive data.
+            // nghttp3_conn_set_max_concurrent_streams(h3_ctx->src_h3, params->initial_max_streams_bidi);
+        }
+
+        if ((rv = ngtcp2_conn_open_uni_stream(h3_ctx->src_conn, &h3_ctx->src_ctrl_stream_id, NULL)) != 0 ||
+            (rv = ngtcp2_conn_open_uni_stream(h3_ctx->src_conn, &h3_ctx->src_qenc_stream_id, NULL)) != 0 ||
+            (rv = ngtcp2_conn_open_uni_stream(h3_ctx->src_conn, &h3_ctx->src_qdec_stream_id, NULL)) != 0) {
+            log_finest_va("failed to open H3 control streams: %s", nghttp3_strerror(rv));
+            return NGTCP2_ERR_CALLBACK_FAILURE;
+        }
+
+        log_finest_va("Successfully opened H3 control streams, h3_ctx->src_ctrl_stream_id=%" PRId64 " h3_ctx->src_qenc_stream_id=%" PRId64 " h3_ctx->src_qdec_stream_id=%" PRId64,
+                      h3_ctx->src_ctrl_stream_id, h3_ctx->src_qenc_stream_id, h3_ctx->src_qdec_stream_id);
+
+        rv = nghttp3_conn_bind_control_stream(h3_ctx->src_h3, h3_ctx->src_ctrl_stream_id);
+        if (rv != 0) {
+            log_finest_va("bind_control_stream: %s", nghttp3_strerror(rv));
+            return NGTCP2_ERR_CALLBACK_FAILURE;
+        }
+
+        rv = nghttp3_conn_bind_qpack_streams(h3_ctx->src_h3, h3_ctx->src_qenc_stream_id, h3_ctx->src_qdec_stream_id);
+        if (rv != 0) {
+            log_finest_va("bind_qpack_streams: %s", nghttp3_strerror(rv));
+            return NGTCP2_ERR_CALLBACK_FAILURE;
+        }
+
+        protohttp3_trigger_write_loop(h3_ctx, 1);
     }
 
-    /*
-     * Bind the three mandatory H3 unidirectional control streams that we
-     * own:
-     *   - Control stream  (type 0x00)
-     *   - QPACK encoder   (type 0x02)
-     *   - QPACK decoder   (type 0x03)
-     */
-    int64_t ctrl_stream_id, qenc_stream_id, qdec_stream_id;
-
-    if (ngtcp2_conn_open_uni_stream(conn, &ctrl_stream_id, NULL) != 0 ||
-        ngtcp2_conn_open_uni_stream(conn, &qenc_stream_id, NULL) != 0 ||
-        ngtcp2_conn_open_uni_stream(conn, &qdec_stream_id, NULL) != 0) {
-        log_finest("failed to open H3 control streams");
-        return NGTCP2_ERR_CALLBACK_FAILURE;
-    }
-
-    rv = nghttp3_conn_bind_control_stream(*h3_conn_ptr, ctrl_stream_id);
-    if (rv != 0) {
-        log_finest_va("bind_control_stream: %s", nghttp3_strerror(rv));
-        return NGTCP2_ERR_CALLBACK_FAILURE;
-    }
-
-    rv = nghttp3_conn_bind_qpack_streams(*h3_conn_ptr, qenc_stream_id, qdec_stream_id);
-    if (rv != 0) {
-        log_finest_va("bind_qpack_streams: %s", nghttp3_strerror(rv));
-        return NGTCP2_ERR_CALLBACK_FAILURE;
-    }
+    // Tried, but does not help
+    // protohttp3_trigger_write_loop(h3_ctx, 1);
+    // protohttp3_trigger_write_loop(h3_ctx, 0);
 
     /* Arm the write event so SETTINGS / QPACK streams are flushed.       */
     event_add(h3_ctx->src_wev, NULL);
@@ -1963,7 +2114,10 @@ protohttp3_dst_read_cb(evutil_socket_t fd, short what, void *arg)
                 log_finest_va("OpenSSL error during ngtcp2_conn_read_pkt: %s", err_buf);
             }
         }
-        // TODO: See ngtcp2_conn_read_pkt() for specific error codes that indicate the connection should be closed
+        if (rv != NGTCP2_ERR_DRAINING && rv != NGTCP2_ERR_DROP_CONN) {
+            // TODO: pxy_conn_term() set the term flag only, do as TCP proxyspecs do
+            pxy_conn_term(h3_ctx->ctx, 1);
+        }
         return;
     }
 
@@ -2031,6 +2185,9 @@ protohttp3_timer_cb(evutil_socket_t fd, short what, void *arg)
     int rv = ngtcp2_conn_handle_expiry(h3_ctx->src_conn, h3_timestamp());
     if (rv != 0) {
         log_finest_va("ngtcp2_conn_handle_expiry: %s", ngtcp2_strerror(rv));
+        if (rv != NGTCP2_ERR_DRAINING && rv != NGTCP2_ERR_DROP_CONN) {
+            pxy_conn_term(ctx, 1);
+        }
         return;
     }
 
@@ -2215,7 +2372,9 @@ protohttp3_process_packet_cb(UNUSED evutil_socket_t fd, UNUSED short what, void 
             else if (rv == NGTCP2_ERR_DRAINING) {
                 log_finest("Connection is draining, no more packets will be processed");
             }
-            // TODO: See ngtcp2_conn_read_pkt() for specific error codes that indicate the connection should be closed
+            if (rv != NGTCP2_ERR_DRAINING && rv != NGTCP2_ERR_DROP_CONN) {
+                pxy_conn_term(h3_ctx->ctx, 1);
+            }
             return;
         }
     }
@@ -2400,6 +2559,14 @@ protohttp3_new(pxy_conn_ctx_t *ctx, ngtcp2_version_cid vc)
 
     protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
     http_ctx->arg = h3_ctx;
+
+    // TODO: Do we need these stream IDs? They are not useful in the current implementation.
+    h3_ctx->src_ctrl_stream_id = -1;
+    h3_ctx->src_qenc_stream_id = -1;
+    h3_ctx->src_qdec_stream_id = -1;
+    h3_ctx->dst_ctrl_stream_id = -1;
+    h3_ctx->dst_qenc_stream_id = -1;
+    h3_ctx->dst_qdec_stream_id = -1;
 
     /* ------------------------------------------------------------------
      * Build the ngtcp2 server callbacks table.

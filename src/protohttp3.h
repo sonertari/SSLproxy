@@ -158,7 +158,8 @@ typedef struct protohttp3_stream_ctx {
     protohttp_ctx_t *http_ctx;
 
     /* Flags (same bit-field idiom used throughout sslproxy)               */
-    unsigned int end_stream       : 1; /* 1 after FIN/END_STREAM           */
+    unsigned int src_end_stream   : 1; /* 1 after FIN/END_STREAM           */
+    unsigned int dst_end_stream   : 1; /* 1 after FIN/END_STREAM           */
     unsigned int closed           : 1; /* 1 after stream_close callback    */
     unsigned int term             : 1; /* 1 when safe to free              */
 
@@ -197,6 +198,14 @@ struct protohttp3_conn_ctx {
      */
     nghttp3_conn *src_h3;
     nghttp3_conn *dst_h3;
+
+    /* max cummulative bidi streams on src side,
+     * incremented each time a bidi stream is closed,
+     * to allow new streams to be opened. */
+    uint64_t src_max_streams_bidi;
+
+    int64_t src_ctrl_stream_id, src_qenc_stream_id, src_qdec_stream_id;
+    int64_t dst_ctrl_stream_id, dst_qenc_stream_id, dst_qdec_stream_id;
 
     // TODO: Use the pxy_conn_desc src.ssl and dst.ssl in pxy_conn_ctx_t, instead of these two SSL pointers?
     /* TLS/SSL instances for the QUIC connections */
@@ -252,6 +261,7 @@ struct protohttp3_conn_ctx {
     struct pkt_node *pkt_queue;
     pthread_mutex_t pkt_queue_mutex;
     unsigned int wait_server_connected : 1;
+    unsigned int proxying : 1;
 };
 
 /* -------------------------------------------------------------------------
