@@ -85,8 +85,8 @@ rules.
 In Icap mode, SSLproxy sends decrypted contents to configured ICAP services 
 for inspection. Icap mode is not a direct alternative to the other modes of 
 operation. Instead, it should be combined with either Divert or Split mode. 
-For example, SSLproxy can send ICAP requests for the content in a connection 
-that it also diverts to the listening program configured for it.
+For example, SSLproxy can send ICAP requests for the content in an HTTPS 
+connection that it also diverts to the listening program configured for it.
 
 ![Icap Mode Diagram](docs/IcapMode.png)
 
@@ -111,7 +111,7 @@ for short, which can be in divert or split style.
 
 The syntax of command line proxyspecs is as follows:
 
-	(tcp|ssl|http|https|pop3|pop3s|smtp|smtps|autossl)
+	(tcp|ssl|http|https|http3|pop3|pop3s|smtp|smtps|autossl)
 	  listenaddr listenport
 	  [up:divertport [ua:divertaddr ra:returnaddr]]
 	  [(targetaddr targetport|sni sniport|natengine)]
@@ -119,7 +119,7 @@ The syntax of command line proxyspecs is as follows:
 The syntax of one line proxyspecs is the same as the syntax of command line 
 proxyspecs, except for the leading `ProxySpec` keyword:
 
-	ProxySpec (tcp|ssl|http|https|pop3|pop3s|smtp|smtps|autossl)
+	ProxySpec (tcp|ssl|http|https|http3|pop3|pop3s|smtp|smtps|autossl)
 	  listenaddr listenport
 	  [up:divertport [ua:divertaddr ra:returnaddr]]
 	  [(targetaddr targetport|sni sniport|natengine)]
@@ -128,7 +128,7 @@ The syntax of structured proxyspecs is as follows, and they can configure
 connection options too:
 
 	ProxySpec {
-	    Proto (tcp|ssl|http|https|pop3|pop3s|smtp|smtps|autossl)
+	    Proto (tcp|ssl|http|https|http3|pop3|pop3s|smtp|smtps|autossl)
 	    Addr listenaddr       # inline
 	    Port listenport       # comments
 	    DivertPort divertport # allowed
@@ -187,6 +187,7 @@ connection options too:
 	    StripClientHello (yes|no)
 	    MaxHTTPHeaderSize 8192
 	    ValidateProto (yes|no)
+		RewriteAltSvcPort h3port
 
 	    UserAuth (yes|no)
 	    UserTimeout 300
@@ -394,6 +395,7 @@ rules cannot specify connection options or ICAP services.
 	    StripClientHello (yes|no)
 	    MaxHTTPHeaderSize 8192
 	    ValidateProto (yes|no)
+		RewriteAltSvcPort h3port
 
 	    UserAuth (yes|no)
 	    UserTimeout 300
@@ -718,14 +720,23 @@ only.
 
 #### Supported protocols
 
-SSLproxy supports plain TCP, plain SSL, HTTP, HTTPS, POP3, POP3S, SMTP, and 
-SMTPS connections over both IPv4 and IPv6. It also has the ability to 
-dynamically upgrade plain TCP to SSL in order to generically support SMTP 
-STARTTLS and similar upgrade mechanisms. Depending on the version of OpenSSL, 
-SSLproxy supports SSL 3.0, TLS 1.0, TLS 1.1, TLS 1.2, and TLS 1.3, and 
-optionally SSL 2.0 as well. SSLproxy supports Server Name Indication (SNI), 
+SSLproxy supports plain TCP, plain SSL, HTTP, HTTPS, HTTP/2, HTTP/3 (QUIC), 
+POP3, POP3S, SMTP, and SMTPS connections over both IPv4 and IPv6. It also has 
+the ability to dynamically upgrade plain TCP to SSL in order to generically 
+support SMTP STARTTLS and similar upgrade mechanisms. Depending on the version 
+of OpenSSL, SSLproxy supports SSL 3.0, TLS 1.0, TLS 1.1, TLS 1.2, and TLS 1.3, 
+and optionally SSL 2.0 as well. SSLproxy supports Server Name Indication (SNI), 
 but not Encrypted SNI in TLS 1.3. It is able to work with RSA, DSA and ECDSA 
 keys and DHE and ECDHE cipher suites.
+
+SSLproxy supports ALPN negotiation during SSL/TLS handshake to upgrade HTTPS to 
+HTTP/2 or to select HTTP/3 with QUIC.
+
+UDP is supported with QUIC only. The RewriteAltSvcPort option can be used to rewrite the UDP port number advertised in Alt-Svc headers for upgrade to HTTP/3 (QUIC).
+
+Divert mode is not supported with HTTP/2 and HTTP/3 (QUIC).
+
+Note that HTTP/3 support in SSLproxy requires very recent versions of OpenSSL, ngtcp2, and nghttp3 libraries.
 
 The following features of SSLproxy are IPv4 only:
 
@@ -742,8 +753,8 @@ normally prevent MitM attacks or make them more difficult. SSLproxy can deny
 OCSP requests in a generic way. For HTTP and HTTPS connections, SSLproxy
 mangles headers to prevent server-instructed public key pinning (HPKP), avoid
 strict transport security restrictions (HSTS), avoid Certificate Transparency
-enforcement (Expect-CT), and prevent switching to QUIC/SPDY, HTTP/2 or
-WebSockets (Upgrade, Alternate Protocols). HTTP compression, encodings and
+enforcement (Expect-CT), and prevent switching to SPDY, cleartext HTTP/2 (h2c) 
+or WebSockets (Upgrade, Alternate Protocols). HTTP compression, encodings and
 keep-alive are disabled to make the logs more readable.
 
 Another reason to disable persistent connections is to reduce file descriptor 

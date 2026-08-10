@@ -1118,7 +1118,9 @@ icap_set_extended_headers(icap_ctx_t *icap_ctx, UNUSED int upgraded)
 
 	// Either tcp or udp, for now we only support tcp
 	const char *proto = "tcp";
-	// if (ctx->spec->http) proto = ctx->spec->ssl || upgraded ? "https" : "http";
+	if (icap_ctx->proto == PROTO_HTTP3) proto = "http3";
+	else if (icap_ctx->proto == PROTO_HTTP2) proto = "http2";
+	else if (ctx->spec->http) proto = ctx->spec->ssl || upgraded ? "https" : "http";
 	// else if (ctx->spec->pop3) proto = ctx->spec->ssl || upgraded ? "pop3s" : "pop3";
 	// else if (ctx->spec->smtp) proto = ctx->spec->ssl || upgraded ? "smtps" : "smtp";
 	// else if (ctx->spec->upgrade) proto = upgraded ? "autossl-tls" : "autossl";
