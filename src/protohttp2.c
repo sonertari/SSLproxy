@@ -261,6 +261,48 @@ protohttp2_request_free_stream_ctx(protohttp2_stream_ctx_t *s)
     protohttp2_free_stream_ctx(s);
 }
 
+static int
+protohttp2_add_nv_header(protohttp2_stream_ctx_t *s, const char *name, size_t namelen, const char *value, size_t valuelen)
+{
+    UNUSED pxy_conn_ctx_t *ctx = s->ctx;
+    log_finest_va("%.*s: %.*s", (int)namelen, name, (int)valuelen, value);
+
+    if (s->headers_count >= s->headers_capacity) {
+        size_t new_capacity = s->headers_capacity == 0 ? 16 : s->headers_capacity * 2;
+        nghttp2_nv *tmp = realloc(s->headers, new_capacity * sizeof(nghttp2_nv));
+        if (!tmp) {
+            log_fine("Failed reallocating headers");
+            return -1;
+        }
+        s->headers = tmp;
+        s->headers_capacity = new_capacity;
+    }
+
+    nghttp2_nv *nv = &s->headers[s->headers_count];
+
+    nv->name = malloc(namelen);
+    if (!nv->name) return -1;
+    memcpy(nv->name, name, namelen);
+    nv->namelen = namelen;
+
+    // HTTP/2 mandates strict lowercase header names
+    for (size_t i = 0; i < nv->namelen; i++) {
+        nv->name[i] = tolower(nv->name[i]);
+    }
+
+    nv->value = malloc(valuelen);
+    if (!nv->value) {
+        free(nv->name);
+        return -1;
+    }
+    memcpy(nv->value, value, valuelen);
+    nv->valuelen = valuelen;
+
+    nv->flags = NGHTTP2_NV_FLAG_NONE;
+    s->headers_count++;
+    return 0;
+}
+
 #ifndef WITHOUT_ICAP
 static struct evbuffer *
 protohttp2_get_h1_headers(protohttp2_stream_ctx_t *s)
@@ -330,48 +372,6 @@ protohttp2_get_h1_headers(protohttp2_stream_ctx_t *s)
     evbuffer_add_printf(buf, "\r\n");
 
     return buf;
-}
-
-static int
-protohttp2_add_nv_header(protohttp2_stream_ctx_t *s, const char *name, size_t namelen, const char *value, size_t valuelen)
-{
-    UNUSED pxy_conn_ctx_t *ctx = s->ctx;
-    log_finest_va("%.*s: %.*s", (int)namelen, name, (int)valuelen, value);
-
-    if (s->headers_count >= s->headers_capacity) {
-        size_t new_capacity = s->headers_capacity == 0 ? 16 : s->headers_capacity * 2;
-        nghttp2_nv *tmp = realloc(s->headers, new_capacity * sizeof(nghttp2_nv));
-        if (!tmp) {
-            log_fine("Failed reallocating headers");
-            return -1;
-        }
-        s->headers = tmp;
-        s->headers_capacity = new_capacity;
-    }
-
-    nghttp2_nv *nv = &s->headers[s->headers_count];
-
-    nv->name = malloc(namelen);
-    if (!nv->name) return -1;
-    memcpy(nv->name, name, namelen);
-    nv->namelen = namelen;
-
-    // HTTP/2 mandates strict lowercase header names
-    for (size_t i = 0; i < nv->namelen; i++) {
-        nv->name[i] = tolower(nv->name[i]);
-    }
-
-    nv->value = malloc(valuelen);
-    if (!nv->value) {
-        free(nv->name);
-        return -1;
-    }
-    memcpy(nv->value, value, valuelen);
-    nv->valuelen = valuelen;
-
-    nv->flags = NGHTTP2_NV_FLAG_NONE;
-    s->headers_count++;
-    return 0;
 }
 
 int
