@@ -56,7 +56,11 @@ ssl_session_from_file(const char *filename)
 	sess = PEM_read_SSL_SESSION(f, NULL, NULL, NULL);
 	fclose(f);
 	/* to avoid having to regenerate the session, just bump its time */
+#if OPENSSL_VERSION_NUMBER < 0x30400000L || defined(LIBRESSL_VERSION_NUMBER)
 	SSL_SESSION_set_time(sess, time(NULL) - 1);
+#else /* OPENSSL_VERSION_NUMBER >= 0x30400000L */
+	SSL_SESSION_set_time_ex(sess, time(NULL) - 1);
+#endif /* OPENSSL_VERSION_NUMBER >= 0x30400000L */
 	return sess;
 }
 
