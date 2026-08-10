@@ -986,6 +986,17 @@ protohttp_filter_response_header_line(const char *line, protohttp_ctx_t *http_ct
 		     * and more importantly, WebSockets and HTTP/2 */
 		    !strncasecmp(line, "Upgrade:", 8)) {
 			return NULL;
+		} else if (ctx->conn_opts->rewrite_alt_svc_port && !strncasecmp(line, "Alt-Svc:", 8)) {
+			// TODO: Rewrite only the port number in the Alt-Svc header, keep the rest
+			// Alt-Svc: h3=":8443"; ma=86400
+			size_t len = strlen("Alt-Svc: h3=\"\":") + strlen(ctx->conn_opts->rewrite_alt_svc_port) + strlen("; ma=86400") + 1;
+			char *new_line = malloc(len);
+			if (!new_line) {
+				ctx->enomem = 1;
+				return NULL;
+			}
+			snprintf(new_line, len, "Alt-Svc: h3=\":%s\"; ma=86400", ctx->conn_opts->rewrite_alt_svc_port);
+			return new_line;
 		} else if (line[0] == '\0') {
 			http_ctx->seen_resp_header = 1;
 		}

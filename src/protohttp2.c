@@ -1043,9 +1043,23 @@ protohttp2_filter_response_header(protohttp2_stream_ctx_t *s)
                  (headers[i].namelen == 26 && !memcmp(headers[i].name, "strict-transport-security", 26)) ||
                  (headers[i].namelen == 9 && !memcmp(headers[i].name, "expect-ct", 9)) ||
                  (headers[i].namelen == 18 && !memcmp(headers[i].name, "alternate-protocol", 18)) ||
-                 (headers[i].namelen == 7 && !memcmp(headers[i].name, "alt-svc", 7)) ||
                  (headers[i].namelen == 7 && !memcmp(headers[i].name, "upgrade", 7))) {
             protohttp2_delete_nv_header(s, i);
+		}
+        else if (s->ctx->conn_opts->rewrite_alt_svc_port && !memcmp(headers[i].name, "alt-svc", 7)) {
+            // TODO: Rewrite only the port number in the alt-svc header, keep the rest
+            protohttp2_delete_nv_header(s, i);
+
+            size_t len = strlen("h3=\"\":") + strlen(s->ctx->conn_opts->rewrite_alt_svc_port) + strlen("; ma=86400") + 1;
+			char *new_value = malloc(len);
+			if (!new_value) {
+				s->ctx->enomem = 1;
+				return -1;
+			}
+			snprintf(new_value, len, "h3=\":%s\"; ma=86400", s->ctx->conn_opts->rewrite_alt_svc_port);
+
+            protohttp2_add_nv_header(s, "alt-svc", strlen("alt-svc"), new_value, strlen(new_value));
+            free(new_value);
         }
     }
 

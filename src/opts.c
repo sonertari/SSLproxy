@@ -261,6 +261,9 @@ conn_opts_free(conn_opts_t *conn_opts)
 	if (conn_opts->ciphersuites) {
 		free(conn_opts->ciphersuites);
 	}
+	if (conn_opts->rewrite_alt_svc_port) {
+		free(conn_opts->rewrite_alt_svc_port);
+	}
 #ifndef WITHOUT_USERAUTH
 	if (conn_opts->user_auth_url) {
 		free(conn_opts->user_auth_url);
@@ -542,6 +545,20 @@ global_has_cakey_spec(global_t *global)
 	return 0;
 }
 
+static int WUNRES
+opts_set_rewrite_alt_svc_port(conn_opts_t *conn_opts, const char * argv0, const char *optarg)
+{
+	if (conn_opts->rewrite_alt_svc_port)
+		free(conn_opts->rewrite_alt_svc_port);
+	conn_opts->rewrite_alt_svc_port = strdup(optarg);
+	if (!conn_opts->rewrite_alt_svc_port)
+		return oom_return(argv0);
+#ifdef DEBUG_OPTS
+	log_dbg_printf("RewriteAltSvcPort: %s\n", conn_opts->rewrite_alt_svc_port);
+#endif /* DEBUG_OPTS */
+	return 0;
+}
+
 #ifndef WITHOUT_USERAUTH
 static int WUNRES
 opts_set_user_auth_url(conn_opts_t *conn_opts, const char * argv0, const char *optarg)
@@ -752,6 +769,10 @@ conn_opts_copy(conn_opts_t *conn_opts, const char *argv0, tmp_opts_t *tmp_opts)
 	}
 	if (conn_opts->ciphersuites) {
 		if (opts_set_ciphersuites(cops, argv0, conn_opts->ciphersuites) == -1)
+			return NULL;
+	}
+	if (conn_opts->rewrite_alt_svc_port) {
+		if (opts_set_rewrite_alt_svc_port(cops, argv0, conn_opts->rewrite_alt_svc_port) == -1)
 			return NULL;
 	}
 #ifndef WITHOUT_USERAUTH
@@ -1175,7 +1196,7 @@ conn_opts_str(conn_opts_t *conn_opts)
 #ifndef WITHOUT_USERAUTH
 				 "%s|%s|%d"
 #endif /* !WITHOUT_USERAUTH */
-				 "%s%s%s|%d",
+				 "%s%s%s|%s|%d",
 #if (OPENSSL_VERSION_NUMBER < 0x10100000L) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER < 0x20702000L)
 #ifdef HAVE_SSLV2
 	               (conn_opts->sslmethod == SSLv2_method) ? "ssl2" :
@@ -1311,6 +1332,7 @@ conn_opts_str(conn_opts_t *conn_opts)
 	             (conn_opts->validate_proto ? "|validate_proto" : ""),
 	             (conn_opts->reconnect_ssl ? "|reconnect_ssl" : ""),
 	             (conn_opts->stripclienthello ? "|stripclienthello" : ""),
+	             (conn_opts->rewrite_alt_svc_port ? conn_opts->rewrite_alt_svc_port : "no rewrite_alt_svc_port"),
 	             conn_opts->max_http_header_size
 	               ) < 0) {
 		return oom_return_na_null();
@@ -2772,6 +2794,8 @@ set_conn_opts_option(conn_opts_t *conn_opts, const char *argv0,
 		return opts_set_ciphers(conn_opts, argv0, value);
 	} else if (equal(name, "CipherSuites")) {
 		return opts_set_ciphersuites(conn_opts, argv0, value);
+	} else if (equal(name, "RewriteAltSvcPort")) {
+		return opts_set_rewrite_alt_svc_port(conn_opts, argv0, value);
 #ifndef WITHOUT_USERAUTH
 	} else if (equal(name, "UserAuth")) {
 		yes = check_value_yesno(value, "UserAuth", *line_num);

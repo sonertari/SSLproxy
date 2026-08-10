@@ -137,6 +137,7 @@ typedef struct conn_opts {
 	unsigned int remove_http_referer: 1;
 	unsigned int verify_peer: 1;
 	unsigned int allow_wrong_host: 1;
+	char *rewrite_alt_svc_port;
 #ifndef WITHOUT_USERAUTH
 	unsigned int user_auth: 1;
 	char *user_auth_url;
