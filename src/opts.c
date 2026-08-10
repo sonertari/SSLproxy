@@ -865,13 +865,15 @@ proxyspec_set_proto(proxyspec_t *spec, const char *value)
 	} else
 	if (!strcmp(value, "smtp")) {
 		spec->smtp = 1;
-	} else
-	if (!strcmp(value, "http3")) {
+	}
+#ifndef WITHOUT_HTTP3
+	else if (!strcmp(value, "http3")) {
 		spec->ssl = 1;
 		spec->http = 1;
 		spec->h3 = 1;
-	} else
-	if (!strcmp(value, "smtps")) {
+	}
+#endif /* !WITHOUT_HTTP3 */
+	else if (!strcmp(value, "smtps")) {
 		spec->ssl = 1;
 		spec->smtp = 1;
 	} else {
@@ -1479,11 +1481,22 @@ proxyspec_str(proxyspec_t *spec)
 	if (!optsstr) {
 		goto out;
 	}
-	if (asprintf(&s, "listen=[%s]:%s %s%s%s%s%s%s %s%s%s\n%s%s", lhbuf, lpbuf,
-	             (spec->ssl ? "ssl" : (spec->h3 ? "udp" : "tcp")),
+	if (asprintf(&s, "listen=[%s]:%s %s%s%s"
+#ifndef WITHOUT_HTTP3
+		"%s"
+#endif /* !WITHOUT_HTTP3 */
+		"%s%s %s%s%s\n%s%s", lhbuf, lpbuf,
+	             (spec->ssl ? "ssl" : 
+#ifndef WITHOUT_HTTP3
+	             (spec->h3 ? "udp" : "tcp")),
+#else /* WITHOUT_HTTP3 */
+	             "tcp"),
+#endif /* !WITHOUT_HTTP3 */
 	             (spec->upgrade ? "|autossl" : ""),
 	             (spec->http ? "|http" : ""),
+#ifndef WITHOUT_HTTP3
 	             (spec->h3 ? "|h3" : ""),
+#endif /* !WITHOUT_HTTP3 */
 	             (spec->pop3 ? "|pop3" : ""),
 	             (spec->smtp ? "|smtp" : ""),
 	             (spec->natengine ? spec->natengine : cbuf),

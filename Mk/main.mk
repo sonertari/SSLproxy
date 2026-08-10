@@ -98,6 +98,14 @@ endif
 # configured for content adaptation.
 #FEATURES+=	-DWITHOUT_ICAP
 
+### HTTP/3 (QUIC) Support
+
+# Define to disable support for HTTP/3 (QUIC).
+# With HTTP/3 enabled, SSLproxy can use QUIC for HTTP/3 connections.
+# Note that this feature requires very recent versions of OpenSSL, libnghttp3, and libngtcp2.
+# You may need to build with OPENSSL_BASE, LIBNGHTTP3_BASE, and LIBNGTCP2_BASE.
+FEATURES+=	-DWITHOUT_HTTP3
+
 ### Debugging
 
 # These flags are added to CFLAGS iff building from a git repo.

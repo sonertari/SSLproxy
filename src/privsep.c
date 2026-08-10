@@ -257,14 +257,18 @@ privsep_server_opensock(const proxyspec_t *spec)
 	int on = 1;
 	int rv;
 
+#ifndef WITHOUT_HTTP3
 	/*
 	 * HTTP/3 uses UDP.  Create a UDP socket for http3 proxyspecs.
 	 */
 	if (spec->h3) {
 		fd = socket(spec->listen_addr.ss_family, SOCK_DGRAM, IPPROTO_UDP);
 	} else {
+#endif /* !WITHOUT_HTTP3 */
 		fd = socket(spec->listen_addr.ss_family, SOCK_STREAM, IPPROTO_TCP);
+#ifndef WITHOUT_HTTP3
 	}
+#endif /* !WITHOUT_HTTP3 */
 	if (fd == -1) {
 		log_err_level_printf(LOG_CRIT, "Error from socket(): %s (%i)\n",
 		               strerror(errno), errno);

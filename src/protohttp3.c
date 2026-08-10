@@ -25,6 +25,8 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#ifndef WITHOUT_HTTP3
+
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
 #endif
@@ -3172,5 +3174,9 @@ protohttp3_free(protohttp3_ctx_t *h3_ctx)
 
     free(h3_ctx);
 }
+
+#endif /* !WITHOUT_HTTP3 */
+
+typedef int dummy_declaration_to_avoid_empty_translation_unit;
 
 /* vim: set noet ft=c: */

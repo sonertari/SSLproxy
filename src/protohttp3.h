@@ -25,6 +25,8 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#ifndef WITHOUT_HTTP3
+
 #ifndef PROTOHTTP3_H
 #define PROTOHTTP3_H
 
@@ -280,5 +282,6 @@ void protohttp3_process_packet_cb(evutil_socket_t, short, void *) NONNULL(3);
 void protohttp3_cid_to_hex(char *, const uint8_t *, size_t) NONNULL(1,2);
 
 #endif /* !PROTOHTTP3_H */
+#endif /* !WITHOUT_HTTP3 */
 
 /* vim: set noet ft=c: */

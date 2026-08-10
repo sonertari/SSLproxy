@@ -297,6 +297,7 @@ icap_ctx_free(icap_ctx_t *icap_ctx, int term_owner)
 			}
 		}
 	}
+#ifndef WITHOUT_HTTP3
 	else if (icap_ctx->proto == PROTO_HTTP3) {
 		// TODO: Free h3 conn if all h3 streams are finished?
 		protohttp3_stream_ctx_t *s = icap_ctx->stream_ctx;
@@ -310,6 +311,7 @@ icap_ctx_free(icap_ctx_t *icap_ctx, int term_owner)
 			}
 		}
 	}
+#endif /* !WITHOUT_HTTP3 */
 	else {
 		ctx->icap_ctx = NULL;
 
@@ -343,9 +345,11 @@ icap_ctx_new(pxy_conn_ctx_t *ctx, protocol_t proto, void *stream_ctx, void *hx_c
 	if (proto == PROTO_HTTP2) {
 		((protohttp2_stream_ctx_t *)stream_ctx)->icap_ctx = icap_ctx;
 	}
+#ifndef WITHOUT_HTTP3
 	else if (proto == PROTO_HTTP3) {
 		((protohttp3_stream_ctx_t *)stream_ctx)->icap_ctx = icap_ctx;
 	}
+#endif /* !WITHOUT_HTTP3 */
 	else {
 		ctx->icap_ctx = icap_ctx;
 	}
@@ -376,9 +380,11 @@ icap_init(pxy_conn_ctx_t *ctx, protocol_t proto, void *stream_ctx, void *hx_ctx)
 	if (proto == PROTO_HTTP2) {
 		icap_ctx = ((protohttp2_stream_ctx_t *)stream_ctx)->icap_ctx;
 	}
+#ifndef WITHOUT_HTTP3
 	else if (proto == PROTO_HTTP3) {
 		icap_ctx = ((protohttp3_stream_ctx_t *)stream_ctx)->icap_ctx;
 	}
+#endif /* !WITHOUT_HTTP3 */
 	else {
 		icap_ctx = ctx->icap_ctx;
 	}
@@ -1384,12 +1390,14 @@ icap_send_data(icap_ctx_t *icap_ctx)
 			log_finest_va("Increment h2 stream ref_count, src_stream_id=%d, dst_stream_id=%d, ref_count=%d, deferred_free_pending=%d",
 				s->src_stream_id, s->dst_stream_id, s->ref_count, s->deferred_free_pending);
 		}
+#ifndef WITHOUT_HTTP3
 		else if (h3) {
 			protohttp3_stream_ctx_t *s = icap_ctx->stream_ctx;
 			s->ref_count++;
 			log_finest_va("Increment h3 stream ref_count, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", ref_count=%d, deferred_free_pending=%d",
 				s->src_stream_id, s->dst_stream_id, s->ref_count, s->deferred_free_pending);
 		}
+#endif /* !WITHOUT_HTTP3 */
 
 		icap_data_submit(icap_ctx);
 
@@ -1404,6 +1412,7 @@ icap_send_data(icap_ctx_t *icap_ctx)
 				return;
 			}
 		}
+#ifndef WITHOUT_HTTP3
 		else if (h3) {
 			protohttp3_stream_ctx_t *s = icap_ctx->stream_ctx;
 			s->ref_count--;
@@ -1415,6 +1424,7 @@ icap_send_data(icap_ctx_t *icap_ctx)
 				return;
 			}
 		}
+#endif /* !WITHOUT_HTTP3 */
 
 		unsigned int made_progress = icap_ctx->made_progress;
 
@@ -1470,9 +1480,11 @@ icap_get_http_content_length(icap_ctx_t *icap_ctx)
 		if (icap_ctx->proto == PROTO_HTTP2) {
 			http_ctx = ((protohttp2_stream_ctx_t *)(icap_ctx->stream_ctx))->http_ctx;
 		}
+#ifndef WITHOUT_HTTP3
 		else if (icap_ctx->proto == PROTO_HTTP3) {
 			http_ctx = ((protohttp3_stream_ctx_t *)(icap_ctx->stream_ctx))->http_ctx;
 		}
+#endif /* !WITHOUT_HTTP3 */
 		else {
 			http_ctx = ctx->protoctx->arg;
 		}

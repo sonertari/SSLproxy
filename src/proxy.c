@@ -104,10 +104,12 @@ proxy_listener_ctx_free(proxy_listener_ctx_t *ctx)
 	if (ctx->udp_fd >= 0) {
 		evutil_closesocket(ctx->udp_fd);
 	}
+#ifndef WITHOUT_HTTP3
 	if (ctx->h3_sessions) {
 		h3_session_map_free(ctx->h3_sessions);
 		ctx->h3_sessions = NULL;
 	}
+#endif /* !WITHOUT_HTTP3 */
 	if (ctx->next) {
 		proxy_listener_ctx_free(ctx->next);
 	}
@@ -127,9 +129,12 @@ proxy_setup_proto(pxy_conn_ctx_t *ctx)
 	prototcp_setup(ctx);
 
 	protocol_t proto;
+#ifndef WITHOUT_HTTP3
 	if (ctx->spec->h3) {
 		proto = protohttp3_setup(ctx);
-	} else if (ctx->spec->upgrade) {
+	} else
+#endif /* !WITHOUT_HTTP3 */
+	if (ctx->spec->upgrade) {
 		proto = protoautossl_setup(ctx);
 	} else if (ctx->spec->http) {
 		if (ctx->spec->ssl) {
@@ -351,6 +356,7 @@ proxy_debug_base(const struct event_base *ev_base)
 	               ((f & EV_FEATURE_FDS) ? "yes" : "no"));
 }
 
+#ifndef WITHOUT_HTTP3
 /*
  * UDP accept callback for HTTP/3.
  *
@@ -563,6 +569,7 @@ err:
 		proxy_conn_ctx_free(ctx);
 	}
 }
+#endif /* !WITHOUT_HTTP3 */
 
 /*
  * Set up the listener for a single proxyspec and add it to evbase.
@@ -596,6 +603,7 @@ proxy_listener_setup(struct event_base *evbase, pxy_thrmgr_ctx_t *thrmgr,
 	lctx->clisock = clisock;
 #endif /* !WITHOUT_USERAUTH */
 
+#ifndef WITHOUT_HTTP3
 	if (spec->h3) {
 		/*
 		 * HTTP/3 over UDP: create a raw libevent event instead of
@@ -624,6 +632,7 @@ proxy_listener_setup(struct event_base *evbase, pxy_thrmgr_ctx_t *thrmgr,
 		}
 		log_dbg_printf("UDP listener created on fd=%d for HTTP/3\n", fd);
 	} else {
+#endif /* !WITHOUT_HTTP3 */
 		// @attention Do not pass NULL as user-supplied pointer
 		lctx->evcl = evconnlistener_new(evbase, proxy_listener_acceptcb,
 		                               lctx, LEV_OPT_CLOSE_ON_FREE, 1024, fd);
@@ -635,7 +644,9 @@ proxy_listener_setup(struct event_base *evbase, pxy_thrmgr_ctx_t *thrmgr,
 			return NULL;
 		}
 		evconnlistener_set_error_cb(lctx->evcl, proxy_listener_errorcb);
+#ifndef WITHOUT_HTTP3
 	}
+#endif /* !WITHOUT_HTTP3 */
 	return lctx;
 }
 

@@ -85,8 +85,13 @@ protohttp_log_connect(pxy_conn_ctx_t *ctx, protohttp_ctx_t *http_ctx)
 		              " user:%s"
 #endif /* !WITHOUT_USERAUTH */
 		              "\n",
+#ifndef WITHOUT_HTTP3
 		              ctx->spec->h3 ? "STREAM" : "CONN",
 		              ctx->spec->h3 ? "h3" : "http",
+#else /* WITHOUT_HTTP3 */
+		              "CONN",
+		              "http",
+#endif /* !WITHOUT_HTTP3 */
 		              STRORDASH(ctx->srchost_str),
 		              STRORDASH(ctx->srcport_str),
 		              STRORDASH(ctx->dsthost_str),
@@ -117,8 +122,13 @@ protohttp_log_connect(pxy_conn_ctx_t *ctx, protohttp_ctx_t *http_ctx)
 		              " user:%s"
 #endif /* !WITHOUT_USERAUTH */
 		              "\n",
+#ifndef WITHOUT_HTTP3
 		              ctx->sslctx->h2 || ctx->spec->h3 ? "STREAM" : "CONN",
 		              ctx->sslctx->h2 ? "h2" : (ctx->spec->h3 ? "h3" : "https"),
+#else /* WITHOUT_HTTP3 */
+		              ctx->sslctx->h2 ? "STREAM" : "CONN",
+		              ctx->sslctx->h2 ? "h2" : "https",
+#endif /* !WITHOUT_HTTP3 */
 		              STRORDASH(ctx->srchost_str),
 		              STRORDASH(ctx->srcport_str),
 		              STRORDASH(ctx->dsthost_str),
