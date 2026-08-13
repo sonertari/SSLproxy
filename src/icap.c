@@ -307,7 +307,7 @@ icap_ctx_free(icap_ctx_t *icap_ctx, int term_owner)
 			if (term_owner && s->term) {
 				log_finest("Stream term flag set, free stream ctx");
 				// TODO: Remove reqmod param
-				protohttp3_request_free_stream_ctx(s, icap_ctx->reqmod);
+				protohttp3_request_free_stream_ctx(s);
 			}
 		}
 	}

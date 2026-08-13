@@ -313,7 +313,7 @@ protohttp3_deferred_free_stream_ctx_cb(UNUSED evutil_socket_t fd, UNUSED short w
 }
 
 void
-protohttp3_request_free_stream_ctx(protohttp3_stream_ctx_t *s, int reqmod)
+protohttp3_request_free_stream_ctx(protohttp3_stream_ctx_t *s)
 {
     UNUSED pxy_conn_ctx_t *ctx = s->ctx;
     log_finest_va("stream %" PRId64 " free requested", s->src_stream_id);
@@ -341,13 +341,9 @@ protohttp3_request_free_stream_ctx(protohttp3_stream_ctx_t *s, int reqmod)
         return;
     }
 
-    if (!reqmod) {
-        log_finest_va("stream %" PRId64 " is server-side, free immediately", s->src_stream_id);
-        // Safe to destroy immediately
-        protohttp3_free_stream_ctx(s);
-    } else {
-        log_finest_va("stream %" PRId64 " is client-side, wait for server side", s->src_stream_id);
-    }
+    log_finest_va("stream %" PRId64 " is server-side, free immediately", s->src_stream_id);
+    // Safe to destroy immediately
+    protohttp3_free_stream_ctx(s);
 }
 
 /*
@@ -917,16 +913,6 @@ h3_on_recv_header(nghttp3_conn *conn, int64_t stream_id,
     if (!s) {
         log_fine_va("ERROR: No stream context for stream_id=%" PRId64, stream_id);
         return NGHTTP3_ERR_CALLBACK_FAILURE;
-        /*
-         * First header for this stream – allocate a stream context.
-         * In H3, the stream id is already known by the time nghttp3
-         * delivers headers (ngtcp2 opened the stream first).
-         */
-        // s = protohttp3_new_stream_ctx(h3_ctx, stream_id);
-        // if (!s) {
-        //     log_fine_va("Failed to create new stream context for stream_id=%" PRId64, stream_id);
-        //     return NGHTTP3_ERR_CALLBACK_FAILURE;
-        // }
     }
 
     nghttp3_vec name_vec  = nghttp3_rcbuf_get_buf(name);
@@ -1079,12 +1065,12 @@ protohttp3_filter_request_header(protohttp3_stream_ctx_t *s)
     }
 
 	if (http_ctx->seen_req_header) {
-        // TODO: Implement Host and URI filter rules with H2 streams
+        // TODO: Implement Host and URI filter rules with H3 streams
         // if (protohttp_apply_filter(ctx)) {
         //     return -1;
         // }
 
-        // TODO: Implement deny OCSP at TLS level in HTTP/2?
+        // TODO: Implement deny OCSP at TLS level in HTTP/3?
         // if (ctx->conn_opts->deny_ocsp) {
         //     protohttp_ocsp_deny(ctx, http_ctx);
         // }
@@ -1292,8 +1278,6 @@ h3_on_end_headers(nghttp3_conn *conn, int64_t stream_id,
         return NGHTTP3_ERR_CALLBACK_FAILURE;
     }
 
-    s->ref_count++;
-
     // No need to set the *_end_stream flags here, because we set them in h3_on_end_stream() when the stream is actually closed
     log_finest_va("stream %" PRId64 " END_HEADERS (%zu headers, fin=%d)", stream_id, s->headers_count, fin);
 
@@ -1353,10 +1337,7 @@ h3_on_end_headers(nghttp3_conn *conn, int64_t stream_id,
     }
 #endif /* !WITHOUT_ICAP */
 
-    protohttp3_submit_data(h3_ctx, s, reqmod);
-
-    s->ref_count--;
-    return 0;
+    return protohttp3_submit_data(h3_ctx, s, reqmod);
 }
 
 /*
@@ -1381,8 +1362,6 @@ h3_on_recv_data(nghttp3_conn *conn, int64_t stream_id,
         return 0;
     }
 
-    s->ref_count++;
-
 #ifdef DEBUG_PROXY
 	/* Log first 400 bytes for debugging */
 	size_t log_len = datalen < 400 ? datalen : 400;
@@ -1403,10 +1382,7 @@ h3_on_recv_data(nghttp3_conn *conn, int64_t stream_id,
 #endif /* !WITHOUT_ICAP */
 
     // Resume nghttp3 stream so it calls h3_stream_read_data
-    protohttp3_submit_data(h3_ctx, s, reqmod);
-
-    s->ref_count--;
-    return 0;
+    return protohttp3_submit_data(h3_ctx, s, reqmod);
 }
 
 /*
@@ -1754,7 +1730,7 @@ quic_stream_close(ngtcp2_conn *conn, UNUSED uint32_t flags,
             /* Second close event: ready to tear down.                     */
             log_finest_va("Stream closed before, free completely and remove, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, reqmod);
             s->term = 1;
-            protohttp3_request_free_stream_ctx(s, reqmod);
+            protohttp3_request_free_stream_ctx(s);
         }
     }
     else {

@@ -274,7 +274,7 @@ protohttp3_ctx_t *protohttp3_new(pxy_conn_ctx_t *, ngtcp2_version_cid) WUNRES;
 protocol_t protohttp3_setup(pxy_conn_ctx_t *) NONNULL(1) WUNRES;
 
 void protohttp3_free(protohttp3_ctx_t *) NONNULL(1);
-void protohttp3_request_free_stream_ctx(protohttp3_stream_ctx_t *, int) NONNULL(1);
+void protohttp3_request_free_stream_ctx(protohttp3_stream_ctx_t *) NONNULL(1);
 
 ssize_t protohttp3_recvmsg(int, uint8_t *, size_t, struct sockaddr_storage *, socklen_t *, int *);
 void protohttp3_process_packet_cb(evutil_socket_t, short, void *) NONNULL(3);
