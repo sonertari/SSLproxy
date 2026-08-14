@@ -436,6 +436,8 @@ struct pxy_conn_child_ctx {
 int pxy_prepare_logging_local_procinfo(pxy_conn_ctx_t *) NONNULL(1);
 #endif /* HAVE_LOCAL_PROCINFO */
 
+int pxy_prepare_logging(pxy_conn_ctx_t *) NONNULL(1);
+
 void pxy_log_connect_src(pxy_conn_ctx_t *) NONNULL(1);
 void pxy_log_connect_srvdst(pxy_conn_ctx_t *) NONNULL(1);
 void pxy_log_connect_nonhttp(pxy_conn_ctx_t *) NONNULL(1);
@@ -457,6 +459,8 @@ int pxy_conn_init(pxy_conn_ctx_t *) NONNULL(1);
 void pxy_conn_ctx_free(pxy_conn_ctx_t *, int) NONNULL(1);
 void pxy_conn_free(pxy_conn_ctx_t *, int) NONNULL(1);
 void pxy_conn_term(pxy_conn_ctx_t *, int) NONNULL(1);
+int pxy_log_content_inbuf(pxy_conn_ctx_t *, struct evbuffer *, int) NONNULL(1,2);
+
 void pxy_conn_term_child(pxy_conn_child_ctx_t *) NONNULL(1);
 void pxy_conn_free_children(pxy_conn_ctx_t *) NONNULL(1);
 

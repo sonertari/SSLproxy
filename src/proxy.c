@@ -409,7 +409,22 @@ proxy_listener_acceptcb_udp(evutil_socket_t fd, UNUSED short what, void *arg)
 	log_finest_main_va("Packet dcid=0x%s scid=0x%s, size=%zu, on fd=%d", dcid_hex, scid_hex, (size_t)n, fd);
 
 	pxy_conn_ctx_t *ctx = NULL;
-	pkt_node_t *pkt_node = NULL;
+
+	pkt_node_t *pkt_node = malloc(sizeof(pkt_node_t));
+	if (!pkt_node) {
+		log_err_level_printf(LOG_CRIT, "Failed to allocate h3_pkt_node_t\n");
+		goto err;
+	}
+	pkt_node->buf = malloc((size_t)n);
+	if (!pkt_node->buf) {
+		log_err_level_printf(LOG_CRIT, "Failed to allocate buffer for h3_pkt_node_t\n");
+		goto err;
+	}
+
+	memcpy(pkt_node->buf, buf, (size_t)n);
+	pkt_node->len = (size_t)n;
+	pkt_node->ecn = ecn;
+	pkt_node->next = NULL;
 
 	quic_tuple_key_t key;
 	memset(&key, 0, sizeof(key));
@@ -422,22 +437,6 @@ proxy_listener_acceptcb_udp(evutil_socket_t fd, UNUSED short what, void *arg)
 	if (h3_ctx) {
 		pxy_conn_ctx_t *ctx = h3_ctx->ctx;
 		log_finest_va("H3 session found, fd=%d", fd);
-
-		pkt_node = malloc(sizeof(pkt_node_t));
-		if (!pkt_node) {
-			log_err_level_printf(LOG_CRIT, "Failed to allocate h3_pkt_node_t\n");
-			goto err;
-		}
-		pkt_node->buf = malloc((size_t)n);
-		if (!pkt_node->buf) {
-			log_err_level_printf(LOG_CRIT, "Failed to allocate buffer for h3_pkt_node_t\n");
-			goto err;
-		}
-
-		memcpy(pkt_node->buf, buf, (size_t)n);
-		pkt_node->len = (size_t)n;
-		pkt_node->ecn = ecn;
-		pkt_node->next = NULL;
 
 		pthread_mutex_lock(&h3_ctx->pkt_queue_mutex);
 
@@ -511,22 +510,6 @@ proxy_listener_acceptcb_udp(evutil_socket_t fd, UNUSED short what, void *arg)
 		log_finest("Failed to create protohttp3 session context");
 		goto err;
 	}
-
-	pkt_node = malloc(sizeof(pkt_node_t));
-	if (!pkt_node) {
-		log_finest("Failed to allocate h3_pkt_node_t");
-		goto err;
-	}
-	pkt_node->buf = malloc((size_t)n);
-	if (!pkt_node->buf) {
-		log_finest("Failed to allocate buffer for h3_pkt_node_t");
-		goto err;
-	}
-
-	memcpy(pkt_node->buf, buf, (size_t)n);
-	pkt_node->len = (size_t)n;
-	pkt_node->ecn = ecn;
-	pkt_node->next = NULL;
 
     pthread_mutex_init(&h3_ctx->pkt_queue_mutex, NULL);
 

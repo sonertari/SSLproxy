@@ -653,6 +653,11 @@ protohttp3_trigger_write_loop(protohttp3_ctx_t *h3_ctx, int reqmod)
         }
 
         log_finest_va("Transmit packet, pktlen=%zd, fd=%d", pktlen, h3_ctx->dst_fd);
+        if (reqmod) {
+            ctx->thr->intif_out_bytes += pktlen;
+        } else {
+            ctx->thr->extif_out_bytes += pktlen;
+        }
 
         /* 3. Transmit via UDP socket */
         struct iovec iov = { .iov_base = pktbuf, .iov_len = (size_t)pktlen };
@@ -1608,6 +1613,13 @@ quic_recv_stream_data(ngtcp2_conn *conn, uint32_t flags,
      * callbacks as it parses complete frames.
      */
 
+    if (WANT_CONTENT_LOG(ctx)) {
+        struct evbuffer *inbuf = evbuffer_new();
+        evbuffer_add(inbuf, data, datalen);
+        pxy_log_content_inbuf(ctx, inbuf, reqmod);
+        evbuffer_free(inbuf);
+    }
+
      /* Get current timestamp in nanoseconds for nghttp3 */
     struct timeval tv;
     evutil_gettimeofday(&tv, NULL);
@@ -1899,6 +1911,13 @@ quic_handshake_completed(ngtcp2_conn *conn, void *user_data)
         }
 
         protohttp3_trigger_write_loop(h3_ctx, 1);
+
+        // The connected flag does not seem useful with h3, but we set for completeness
+        ctx->connected = 1;
+
+        if (pxy_prepare_logging(ctx) == -1) {
+            return -1;
+        }
     }
 
     /* Arm the write event so SETTINGS / QPACK streams are flushed.       */
@@ -2078,6 +2097,7 @@ protohttp3_dst_read_cb(evutil_socket_t fd, UNUSED short what, void *arg)
 	}
 
     log_finest_va("Read %zd bytes from server-side UDP socket", n);
+    ctx->thr->extif_in_bytes += n;
 
 #ifdef DEBUG_PROXY
     protohttp3_debug_print_addr(&peer_addr, "pkt dst_peer_addr");
@@ -2369,6 +2389,8 @@ protohttp3_process_packet_cb(UNUSED evutil_socket_t fd, UNUSED short what, void 
     }
 
     log_finest_va("Processed total of %d packets and %zu bytes", pkt_count, total_bytes_processed);
+    ctx->thr->intif_in_bytes += total_bytes_processed;
+
     protohttp3_trigger_write_loop(h3_ctx, 1);
 }
 
@@ -3009,13 +3031,6 @@ protohttp3_conn_connect(pxy_conn_ctx_t *ctx)
 
     if (event_add(h3_ctx->dst_wev, NULL) != 0)
         goto err;
-
-    /*
-     * Mark the connection as connected so the proxy framework considers
-     * it ready.  HTTP/3 will still need to perform the QUIC handshake
-     * via the existing ngtcp2 events.
-     */
-    // ctx->connected = 1;
 
     log_finest_va("Upstream connection configured to dst_fd=%d", dst_fd);
 

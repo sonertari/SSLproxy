@@ -557,7 +557,7 @@ out:
 	return;
 }
 
-static int NONNULL(1)
+int NONNULL(1)
 pxy_log_content_inbuf(pxy_conn_ctx_t *ctx, struct evbuffer *inbuf, int req)
 {
 	if (!ctx->log_content && !ctx->log_pcap
@@ -637,7 +637,7 @@ static int check_fd_usage(
 #endif /* DEBUG_PROXY */
 );
 
-static int
+int
 pxy_prepare_logging(pxy_conn_ctx_t *ctx)
 {
 	/* prepare logging, part 2 */
