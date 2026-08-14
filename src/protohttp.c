@@ -1276,7 +1276,8 @@ protohttps_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 
 		if (events & BEV_EVENT_CONNECTED) {
 			if (ctx->sslctx->h2) {
-				protohttp2_setup(ctx);
+				// We set ctx->enomem to 1 on error in protohttp2_setup(), and cannot do anything more here
+				ctx->proto = protohttp2_setup(ctx);
 			}
 		}
 	} else if (bev == ctx->dst.bev) {
@@ -1286,7 +1287,7 @@ protohttps_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 
 		if (events & BEV_EVENT_CONNECTED) {
 			if (ctx->sslctx->h2) {
-				protohttp2_setup(ctx);
+				ctx->proto = protohttp2_setup(ctx);
 			}
 		}
 	} else {

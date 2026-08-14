@@ -344,6 +344,8 @@ protossl_alpn_select_cb(UNUSED SSL *ssl, const unsigned char **out, unsigned cha
 		log_fine_va("Selected proto via ALPN with client: %.*s", *outlen, *out);
 
 		if (*outlen == 2 && memcmp(*out, "h2", 2) == 0) {
+			// ATTENTION: We cannot setup HTTP/2 by protohttp2_setup() here, because the connection is not yet established.
+			// We call protohttp2_setup() in protohttps_bev_eventcb() when the connection is established. Hence, the h2 flag.
 			ctx->sslctx->h2 = 1;
 		}
 

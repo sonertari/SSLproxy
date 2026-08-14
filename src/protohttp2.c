@@ -1434,6 +1434,7 @@ protocol_t protohttp2_setup(pxy_conn_ctx_t *ctx)
 
     protohttp2_ctx_t *h2_ctx = malloc(sizeof(protohttp2_ctx_t));
     if (!h2_ctx) {
+        ctx->enomem = 1;
         return PROTO_ERROR;
     }
     memset(h2_ctx, 0, sizeof(protohttp2_ctx_t));
