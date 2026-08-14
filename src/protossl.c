@@ -357,17 +357,17 @@ protossl_alpn_select_cb(UNUSED SSL *ssl, const unsigned char **out, unsigned cha
 
 /*
  * This function is used to check if the negotiated protocol with the server is h2,
- * and if so, set the flag in sslctx to offer h2 to client in ALPN select callback.
+ * and if so, set the selected proto in sslctx to offer to the client in ALPN select callback.
  */
-static void
-protossl_check_h2_enabled(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
+void
+protossl_set_alpn_selected(SSL *ssl, pxy_conn_ctx_t *ctx)
 {
 	const unsigned char *data = NULL;
 	unsigned int len = 0;
 
 	log_finest("ENTER");
 
-	SSL_get0_alpn_selected(bufferevent_openssl_get_ssl(bev), &data, &len);
+	SSL_get0_alpn_selected(ssl, &data, &len);
 
 	if (data && len > 0) {
 		ctx->sslctx->alpn_selected = malloc(len + 1);
@@ -1914,10 +1914,10 @@ protossl_bev_eventcb_connected_srvdst(UNUSED struct bufferevent *bev, pxy_conn_c
 #ifndef OPENSSL_NO_TLSEXT
 	if (ctx->sslctx->alpn_protos_len > 0) {
 		ctx->sslctx->alpn_negotiating = 1;
-		protossl_check_h2_enabled(bev, ctx);
+		protossl_set_alpn_selected(bufferevent_openssl_get_ssl(bev), ctx);
 	}
 	else {
-		log_dbg_printf("Will not check ALPN protocols enabled with server, client did not provide ALPN protocols to negotiate\n");
+		log_dbg_printf("Will not set ALPN protocols enabled with server, client did not provide ALPN protocols to negotiate\n");
 		ctx->sslctx->alpn_negotiating = 0;
 	}
 #endif /* !OPENSSL_NO_TLSEXT */

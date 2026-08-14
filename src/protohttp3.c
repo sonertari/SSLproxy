@@ -1818,6 +1818,13 @@ quic_handshake_completed(ngtcp2_conn *conn, void *user_data)
 
         log_finest_va("Forge server cert and resume handshake with client, fd=%d", h3_ctx->dst_fd);
 
+        if (ctx->sslctx->alpn_protos_len > 0) {
+            protossl_set_alpn_selected(h3_ctx->dst_ssl, ctx);
+        }
+        else {
+            log_finest("Will not set ALPN protocols enabled with server, client did not provide ALPN protocols to negotiate");
+        }
+
         // protossl_srcssl_create() forges the server cert
         h3_ctx->src_ssl = protossl_srcssl_create(ctx, h3_ctx->dst_ssl, h3_ctx->src_ssl);
 
@@ -2379,26 +2386,6 @@ get_dst_conn(ngtcp2_crypto_conn_ref *conn_ref)
     return h3_ctx->dst_conn;
 }
 
-static int
-alpn_select_cb(SSL *ssl, const unsigned char **out,
-                          unsigned char *outlen, const unsigned char *in,
-                          unsigned int inlen, void *arg)
-{
-    (void)ssl;
-    (void)arg;
-
-    // Wire format: 1 byte length (2) followed by "h3"
-    static const unsigned char h3_alpn[] = "\x02h3";
-
-    if (SSL_select_next_proto((unsigned char **)out, outlen,
-                              h3_alpn, sizeof(h3_alpn) - 1,
-                              in, inlen) != OPENSSL_NPN_NEGOTIATED) {
-        return SSL_TLSEXT_ERR_ALERT_FATAL;
-    }
-
-    return SSL_TLSEXT_ERR_OK;
-}
-
 #ifdef DEBUG_PROXY
 // Debug logging callbacks for ngtcp2.  These are set in ngtcp2_settings.log_printf.
 void
@@ -2425,9 +2412,8 @@ debug_log_dst(UNUSED void *user_data, const char *fmt, ...) {
 /*
  * We need the SNI and ALPN protos from the client's ClientHello before we can connect to the server.
  * But we also need the server cert and forge it, before we can continue with the TLS handshake with the client.
- * We break this deadlock by these quic_client_hello_cb() and quic_sni_cert_cb() functions,
- * and then suspending and deferring the TLS handshake with the client until we have connected 
- * to the server and obtained and forged its cert.
+ * We break this deadlock by this quic_client_hello_cb() and then suspending and deferring the TLS handshake with the client,
+ * until we have connected to the server and obtained and forged its cert.
  * See quic_handshake_completed() for where we resume the TLS handshake with the client.
  */
 static int
@@ -2447,7 +2433,8 @@ quic_client_hello_cb(SSL *ssl, UNUSED int *al, void *arg)
         log_finest_va("Found ALPN protos in ClientHello, alpn_list_len=%zu", alpn_list_len);
         if (alpn_list_len >= 2) {
             uint16_t list_len = (alpn_list[0] << 8) | alpn_list[1];
-            
+
+            /* Sanity check outer list length */
             if ((size_t)(list_len + 2) <= alpn_list_len) {
                 if (ctx->sslctx->alpn_protos) {
                     log_finest_va("Overwriting ALPN protos: %s", ssl_wire_to_printable(ctx->sslctx->alpn_protos, ctx->sslctx->alpn_protos_len));
@@ -2461,44 +2448,43 @@ quic_client_hello_cb(SSL *ssl, UNUSED int *al, void *arg)
                 log_finest_va("ALPN protos in ClientHello: %s", ssl_wire_to_printable(ctx->sslctx->alpn_protos, ctx->sslctx->alpn_protos_len));
             }
         }
-
     }
     else {
         log_finest("Cannot find ALPN protos in ClientHello");
     }
 
-    /* Return 1 so OpenSSL continues with the handshake */
-    return 1;
-}
+    const unsigned char *sni = NULL;
+    size_t sni_len = 0;
 
-static int
-quic_sni_cert_cb(SSL *ssl, void *arg)
-{
-    protohttp3_ctx_t *h3_ctx = (protohttp3_ctx_t *)arg;
-    pxy_conn_ctx_t *ctx = h3_ctx->ctx;
+    if (SSL_client_hello_get0_ext(ssl, TLSEXT_TYPE_server_name, &sni, &sni_len)) {
+        log_finest_va("Found SNI in ClientHello, sni_len=%zu", sni_len);
+        /* Minimum valid SNI extension payload length: 
+        * 2 (list len) + 1 (type) + 2 (name len) + at least 1 byte name = 6 bytes */
+        if (sni_len >= 5) {
+            uint16_t list_len = (sni[0] << 8) | sni[1];
 
-    log_finest("ENTER");
+            /* Sanity check outer list length */
+            if ((size_t)(list_len + 2) <= sni_len) {
+                uint8_t name_type = sni[2];
+                uint16_t name_len = (sni[3] << 8) | sni[4];
 
-    const char *sni = SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name);
+                /* TLSEXT_NAMETYPE_host_name is 0 */
+                if (name_type == TLSEXT_NAMETYPE_host_name && (size_t)(name_len + 5) <= sni_len) {
+                    if (ctx->sslctx->sni) {
+                        log_finest_va("Overwriting SNI: %s", ctx->sslctx->sni);
+                        free(ctx->sslctx->sni);
+                    }
 
-    if (sni) {
-        if (ctx->sslctx->sni) {
-            log_finest_va("Overwriting SNI: %s", ctx->sslctx->sni);
-            free(ctx->sslctx->sni);
+                    /* Hostname string starts at offset sni + 5 */
+                    ctx->sslctx->sni = strndup((const char *)(sni + 5), name_len);
+
+                    log_finest_va("Extracted SNI from ClientHello: %s", ctx->sslctx->sni);
+                }
+            }
         }
-        ctx->sslctx->sni = strdup(sni);
-        log_finest_va("SNI: %s", ctx->sslctx->sni);
     } else {
-        log_finest("No SNI found in ClientHello");
+        log_finest("Cannot find SNI in ClientHello");
     }
-
-    // We don't use the selected alpn, this is just for logging/debugging purposes.
-    // The ALPN protocols are obtained in quic_client_hello_cb().
-    const unsigned char *alpn = NULL;
-    unsigned int alpn_len = 0;
-    SSL_get0_alpn_selected(ssl, &alpn, &alpn_len);
-
-    log_finest_va("ALPN selected: %.*s", alpn_len, alpn ? (const char *)alpn : "(none)");
 
     // Now that we have the SNI and ALPN protos, we can proceed to connect to the server
     h3_ctx->wait_server_connected = 1;
@@ -2673,27 +2659,27 @@ protohttp3_new(pxy_conn_ctx_t *ctx, ngtcp2_version_cid vc)
      * ------------------------------------------------------------------ */
     /* Note: For SSLproxy, we derive the SSL_CTX from the proxyspec.
      * We'll use a local TLS method block for minimal initialization. */
-    SSL_CTX *ssl_ctx = SSL_CTX_new(TLS_method());
+    SSL_CTX *sslctx = SSL_CTX_new(TLS_method());
 
     // QUIC requires TLS 1.3
-    SSL_CTX_set_min_proto_version(ssl_ctx, TLS1_3_VERSION);
-    SSL_CTX_set_max_proto_version(ssl_ctx, TLS1_3_VERSION);
+    SSL_CTX_set_min_proto_version(sslctx, TLS1_3_VERSION);
+    SSL_CTX_set_max_proto_version(sslctx, TLS1_3_VERSION);
 
-    SSL_CTX_set_client_hello_cb(ssl_ctx, quic_client_hello_cb, h3_ctx);
-    SSL_CTX_set_cert_cb(ssl_ctx, quic_sni_cert_cb, h3_ctx);
+    SSL_CTX_set_client_hello_cb(sslctx, quic_client_hello_cb, h3_ctx);
 
-    // Enable ALPN selection on OpenSSL server context
-    SSL_CTX_set_alpn_select_cb(ssl_ctx, alpn_select_cb, NULL);
+    // We will set the alpn_select_cb when we create a new SSL_CTX and replace the one here,
+    // after completing the TLS handshake with the server and forging the server cert
+    // SSL_CTX_set_alpn_select_cb(sslctx, protossl_alpn_select_cb, ctx);
 
     // ATTENTION: We do not load a cert/key here, because we will forge the server cert
 
 #if OPENSSL_VERSION_NUMBER >= 0x10101000L && !defined(LIBRESSL_VERSION_NUMBER)
 	if (ctx->global->masterkeylog) {
-		SSL_CTX_set_keylog_callback(ssl_ctx, protossl_keylog_callback);
+		SSL_CTX_set_keylog_callback(sslctx, protossl_keylog_callback);
 	}
 #endif
 
-    h3_ctx->src_ssl = SSL_new(ssl_ctx);
+    h3_ctx->src_ssl = SSL_new(sslctx);
 
     SSL_set_accept_state(h3_ctx->src_ssl);
 
@@ -2982,8 +2968,8 @@ protohttp3_conn_connect(pxy_conn_ctx_t *ctx)
      * We'll use a local TLS method block for the QUIC prototype. */
 
     // TODO: QUIC requires TLS 1.3
-    // SSL_CTX_set_min_proto_version(ssl_ctx, TLS1_3_VERSION);
-    // SSL_CTX_set_max_proto_version(ssl_ctx, TLS1_3_VERSION);
+    // SSL_CTX_set_min_proto_version(sslctx, TLS1_3_VERSION);
+    // SSL_CTX_set_max_proto_version(sslctx, TLS1_3_VERSION);
 
 	h3_ctx->dst_ssl = protossl_dstssl_create(ctx);
 
