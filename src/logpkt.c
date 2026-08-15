@@ -112,6 +112,13 @@ typedef struct __attribute__((packed)) {
 	uint16_t urgp;
 } tcp_hdr_t;
 
+typedef struct __attribute__((packed)) {
+	uint16_t src_port;
+	uint16_t dst_port;
+	uint16_t len;
+	uint16_t chksum;
+} udp_hdr_t;
+
 #ifndef TH_FIN
 #define TH_FIN          0x01
 #endif
@@ -330,7 +337,7 @@ logpkt_pcap_write(const uint8_t *pkt, size_t pktsz, int fd)
  * the checksums on all layers.  The receiving buffer must be at least
  * MAX_PKTSZ bytes large and payload must be a maximum of MSS_IP4 or MSS_IP6
  * respectively.  Layer 2 is Ethernet II, layer 3 is IPv4 or IPv6 depending on
- * the address family of *dst_addr*, and layer 4 is TCP.
+ * the address family of *dst_addr*, and layer 4 is TCP or UDP.
  *
  * This function is stateless.  For header fields that cannot be directly
  * derived from the arguments, default values will be used.
@@ -341,12 +348,13 @@ logpkt_pcap_build(uint8_t *pkt,
                   const struct sockaddr *src_addr,
                   const struct sockaddr *dst_addr,
                   char flags, uint32_t seq, uint32_t ack,
-                  const uint8_t *payload, size_t payloadlen)
+                  const uint8_t *payload, size_t payloadlen, int proto)
 {
 	ether_hdr_t *ether_hdr;
 	ip4_hdr_t *ip4_hdr;
 	ip6_hdr_t *ip6_hdr;
 	tcp_hdr_t *tcp_hdr;
+	udp_hdr_t *udp_hdr;
 	size_t sz;
 	uint32_t sum;
 
@@ -362,11 +370,11 @@ logpkt_pcap_build(uint8_t *pkt,
 		ip4_hdr->version_ihl = 0x45;
 		ip4_hdr->dscp_ecn = 0;
 		ip4_hdr->len = htons(sizeof(ip4_hdr_t) +
-		                     sizeof(tcp_hdr_t) + payloadlen);
-		ip4_hdr->id = sys_rand16(),
+		                     (proto == IPPROTO_TCP ? sizeof(tcp_hdr_t) : sizeof(udp_hdr_t)) + payloadlen);
+		ip4_hdr->id = sys_rand16();
 		ip4_hdr->frag = 0;
 		ip4_hdr->ttl = 64;
-		ip4_hdr->proto = IPPROTO_TCP;
+		ip4_hdr->proto = proto;
 		ip4_hdr->src_addr = CSIN(src_addr)->sin_addr.s_addr;
 		ip4_hdr->dst_addr = CSIN(dst_addr)->sin_addr.s_addr;
 		ip4_hdr->chksum = 0;
@@ -375,33 +383,55 @@ logpkt_pcap_build(uint8_t *pkt,
 		CHKSUM_FINALIZE(sum);
 		ip4_hdr->chksum = sum;
 		sz += sizeof(ip4_hdr_t);
-		tcp_hdr = (tcp_hdr_t *)(((uint8_t *)ip4_hdr) +
-		                        sizeof(ip4_hdr_t));
-		tcp_hdr->src_port = CSIN(src_addr)->sin_port;
-		tcp_hdr->dst_port = CSIN(dst_addr)->sin_port;
-		/* pseudo header */
-		CHKSUM_INIT(sum);
-		CHKSUM_ADD_UINT32(sum, ip4_hdr->src_addr);
-		CHKSUM_ADD_UINT32(sum, ip4_hdr->dst_addr);
-		CHKSUM_ADD_UINT16(sum, htons(ip4_hdr->proto));
-		CHKSUM_ADD_UINT16(sum, htons(sizeof(tcp_hdr_t) + payloadlen));
+		if (proto == IPPROTO_TCP) {
+			tcp_hdr = (tcp_hdr_t *)(((uint8_t *)ip4_hdr) +
+			                        sizeof(ip4_hdr_t));
+			tcp_hdr->src_port = CSIN(src_addr)->sin_port;
+			tcp_hdr->dst_port = CSIN(dst_addr)->sin_port;
+			/* pseudo header */
+			CHKSUM_INIT(sum);
+			CHKSUM_ADD_UINT32(sum, ip4_hdr->src_addr);
+			CHKSUM_ADD_UINT32(sum, ip4_hdr->dst_addr);
+			CHKSUM_ADD_UINT16(sum, htons(ip4_hdr->proto));
+			CHKSUM_ADD_UINT16(sum, htons(sizeof(tcp_hdr_t) + payloadlen));
+		} else /* if (proto == IPPROTO_UDP) */ {
+			udp_hdr = (udp_hdr_t *)(((uint8_t *)ip4_hdr) +
+			                                   sizeof(ip4_hdr_t));
+			udp_hdr->src_port = CSIN(src_addr)->sin_port;
+			udp_hdr->dst_port = CSIN(dst_addr)->sin_port;
+			udp_hdr->len = htons(sizeof(udp_hdr_t) + payloadlen);
+			/* pseudo header */
+			CHKSUM_INIT(sum);
+			CHKSUM_ADD_UINT32(sum, ip4_hdr->src_addr);
+			CHKSUM_ADD_UINT32(sum, ip4_hdr->dst_addr);
+			CHKSUM_ADD_UINT16(sum, htons(ip4_hdr->proto));
+			CHKSUM_ADD_UINT16(sum, htons(sizeof(udp_hdr_t) + payloadlen));
+		}
 	} else {
 		ether_hdr->ethertype = htons(ETHERTYPE_IPV6);
 		ip6_hdr = (ip6_hdr_t *)(((uint8_t *)ether_hdr) +
 		                        sizeof(ether_hdr_t));
 		ip6_hdr->flags = htonl(0x60000000UL);
-		ip6_hdr->len = htons(sizeof(tcp_hdr_t) + payloadlen);
-		ip6_hdr->next_hdr = IPPROTO_TCP;
 		ip6_hdr->hop_limit = 255;
 		memcpy(ip6_hdr->src_addr, CSIN6(src_addr)->sin6_addr.s6_addr,
-		       sizeof(ip6_hdr->src_addr));
+			sizeof(ip6_hdr->src_addr));
 		memcpy(ip6_hdr->dst_addr, CSIN6(dst_addr)->sin6_addr.s6_addr,
-		       sizeof(ip6_hdr->dst_addr));
+			sizeof(ip6_hdr->dst_addr));
 		sz += sizeof(ip6_hdr_t);
-		tcp_hdr = (tcp_hdr_t *)(((uint8_t *)ip6_hdr) +
-		                        sizeof(ip6_hdr_t));
-		tcp_hdr->src_port = CSIN6(src_addr)->sin6_port;
-		tcp_hdr->dst_port = CSIN6(dst_addr)->sin6_port;
+		if (proto == IPPROTO_TCP) {
+			ip6_hdr->len = htons(sizeof(tcp_hdr_t) + payloadlen);
+			ip6_hdr->next_hdr = IPPROTO_TCP;
+			tcp_hdr = (tcp_hdr_t *)(((uint8_t *)ip6_hdr) + sizeof(ip6_hdr_t));
+			tcp_hdr->src_port = CSIN6(src_addr)->sin6_port;
+			tcp_hdr->dst_port = CSIN6(dst_addr)->sin6_port;
+		}
+		else /* if (proto == IPPROTO_UDP) */ {
+			ip6_hdr->len = htons(sizeof(udp_hdr_t) + payloadlen);
+			ip6_hdr->next_hdr = IPPROTO_UDP;
+			udp_hdr = (udp_hdr_t *)(((uint8_t *)ip6_hdr) + sizeof(ip6_hdr_t));
+			udp_hdr->src_port = CSIN6(src_addr)->sin6_port;
+			udp_hdr->dst_port = CSIN6(dst_addr)->sin6_port;
+		}
 		/* pseudo header */
 		CHKSUM_INIT(sum);
 		CHKSUM_ADD_RANGE(sum, ip6_hdr->src_addr,
@@ -409,19 +439,32 @@ logpkt_pcap_build(uint8_t *pkt,
 		CHKSUM_ADD_RANGE(sum, ip6_hdr->dst_addr,
 		                 sizeof(ip6_hdr->dst_addr));
 		CHKSUM_ADD_UINT32(sum, (uint32_t)ip6_hdr->len);
-		CHKSUM_ADD_UINT16(sum, htons(IPPROTO_TCP));
+		CHKSUM_ADD_UINT16(sum, proto == IPPROTO_TCP ? htons(IPPROTO_TCP) : htons(IPPROTO_UDP));
 	}
-	tcp_hdr->seq = htonl(seq);
-	tcp_hdr->ack = htonl(ack);
-	tcp_hdr->flags = htons(0x5000|flags);
-	tcp_hdr->win = htons(32767);
-	tcp_hdr->urgp = 0;
-	tcp_hdr->chksum = 0;
-	sz += sizeof(tcp_hdr_t);
-	memcpy(((uint8_t *)tcp_hdr) + sizeof(tcp_hdr_t), payload, payloadlen);
-	CHKSUM_ADD_RANGE(sum, tcp_hdr, sizeof(tcp_hdr_t) + payloadlen);
-	CHKSUM_FINALIZE(sum);
-	tcp_hdr->chksum = sum;
+	if (proto == IPPROTO_TCP) {
+		tcp_hdr->seq = htonl(seq);
+		tcp_hdr->ack = htonl(ack);
+		tcp_hdr->flags = htons(0x5000|flags);
+		tcp_hdr->win = htons(32767);
+		tcp_hdr->urgp = 0;
+		tcp_hdr->chksum = 0;
+		sz += sizeof(tcp_hdr_t);
+		memcpy(((uint8_t *)tcp_hdr) + sizeof(tcp_hdr_t), payload, payloadlen);
+		CHKSUM_ADD_RANGE(sum, tcp_hdr, sizeof(tcp_hdr_t) + payloadlen);
+		CHKSUM_FINALIZE(sum);
+		tcp_hdr->chksum = sum;
+	}
+	else /* if (proto == IPPROTO_UDP) */ {
+		udp_hdr->src_port = CSIN(src_addr)->sin_port;
+		udp_hdr->dst_port = CSIN(dst_addr)->sin_port;
+		udp_hdr->len = htons(sizeof(udp_hdr_t) + payloadlen);
+		udp_hdr->chksum = 0;
+		sz += sizeof(udp_hdr_t);
+		memcpy(((uint8_t *)udp_hdr) + sizeof(udp_hdr_t), payload, payloadlen);
+		CHKSUM_ADD_RANGE(sum, udp_hdr, sizeof(udp_hdr_t) + payloadlen);
+		CHKSUM_FINALIZE(sum);
+		udp_hdr->chksum = sum;
+	}
 	return sz + payloadlen;
 }
 
@@ -436,40 +479,58 @@ logpkt_mirror_build(libnet_t *libnet,
                     const struct sockaddr *src_addr,
                     const struct sockaddr *dst_addr,
                     char flags, uint32_t seq, uint32_t ack,
-                    const uint8_t *payload, size_t payloadlen)
+                    const uint8_t *payload, size_t payloadlen, int proto)
 {
 	libnet_ptag_t ptag;
 
-	ptag = libnet_build_tcp(src_addr->sa_family == AF_INET
-	                        ? htons(CSIN(src_addr)->sin_port)
-	                        : htons(CSIN6(src_addr)->sin6_port),
-	                        dst_addr->sa_family == AF_INET
-	                        ? htons(CSIN(dst_addr)->sin_port)
-	                        : htons(CSIN6(dst_addr)->sin6_port),
-	                        seq,
-	                        ack,
-	                        flags,
-	                        32767,          /* window size */
-	                        0,              /* checksum */
-	                        0,              /* urgent pointer */
-	                        LIBNET_TCP_H + payloadlen,
-	                        (uint8_t *)payload, payloadlen,
-	                        libnet, 0);
-	if (ptag == -1) {
-		log_err_printf("Error building tcp header: %s",
-		               libnet_geterror(libnet));
-		return -1;
+	if (proto == IPPROTO_TCP) {
+		ptag = libnet_build_tcp(src_addr->sa_family == AF_INET
+								? htons(CSIN(src_addr)->sin_port)
+								: htons(CSIN6(src_addr)->sin6_port),
+								dst_addr->sa_family == AF_INET
+								? htons(CSIN(dst_addr)->sin_port)
+								: htons(CSIN6(dst_addr)->sin6_port),
+								seq,
+								ack,
+								flags,
+								32767,          /* window size */
+								0,              /* checksum */
+								0,              /* urgent pointer */
+								LIBNET_TCP_H + payloadlen,
+								(uint8_t *)payload, payloadlen,
+								libnet, 0);
+		if (ptag == -1) {
+			log_err_printf("Error building tcp header: %s",
+						libnet_geterror(libnet));
+			return -1;
+		}
+	} else /* if (proto == IPPROTO_UDP) */ {
+		ptag = libnet_build_udp(src_addr->sa_family == AF_INET
+								? htons(CSIN(src_addr)->sin_port)
+								: htons(CSIN6(src_addr)->sin6_port),
+								dst_addr->sa_family == AF_INET
+								? htons(CSIN(dst_addr)->sin_port)
+								: htons(CSIN6(dst_addr)->sin6_port),
+								LIBNET_UDP_H + payloadlen,
+								0,              /* checksum */
+								(uint8_t *)payload, payloadlen,
+								libnet, 0);
+		if (ptag == -1) {
+			log_err_printf("Error building udp header: %s",
+						libnet_geterror(libnet));
+			return -1;
+		}
 	}
 
 	if (dst_addr->sa_family == AF_INET) {
-		ptag = libnet_build_ipv4(LIBNET_IPV4_H + LIBNET_TCP_H +
+		ptag = libnet_build_ipv4(LIBNET_IPV4_H + (proto == IPPROTO_TCP ? LIBNET_TCP_H : LIBNET_UDP_H) +
 		                         payloadlen,
 		                         0,             /* TOS */
 		                         (uint16_t)
 		                         sys_rand16(),  /* id */
 		                         0x4000,        /* frag */
 		                         64,            /* TTL */
-		                         IPPROTO_TCP,   /* protocol */
+		                         proto,   /* protocol */
 		                         0,             /* checksum */
 		                         CSIN(src_addr)->sin_addr.s_addr,
 		                         CSIN(dst_addr)->sin_addr.s_addr,
@@ -478,8 +539,8 @@ logpkt_mirror_build(libnet_t *libnet,
 	} else {
 		ptag = libnet_build_ipv6(0,             /* traffic class */
 		                         0,             /* flow label */
-		                         LIBNET_TCP_H + payloadlen,
-		                         IPPROTO_TCP,
+		                         (proto == IPPROTO_TCP ? LIBNET_TCP_H : LIBNET_UDP_H) + payloadlen,
+		                         proto,
 		                         255,           /* hop limit */
 		                         *(struct libnet_in6_addr *)
 		                         &CSIN6(src_addr)->sin6_addr,
@@ -521,7 +582,7 @@ logpkt_mirror_build(libnet_t *libnet,
  */
 static int
 logpkt_write_packet(logpkt_ctx_t *ctx, int fd, int direction, char flags,
-                    const uint8_t *payload, size_t payloadlen)
+                    const uint8_t *payload, size_t payloadlen, int proto)
 {
 	int rv;
 
@@ -535,7 +596,7 @@ logpkt_write_packet(logpkt_ctx_t *ctx, int fd, int direction, char flags,
 			                       CSA(&ctx->dst_addr),
 			                       flags,
 			                       ctx->src_seq, ctx->dst_seq,
-			                       payload, payloadlen);
+			                       payload, payloadlen, proto);
 		} else {
 			sz = logpkt_pcap_build(buf,
 			                       ctx->dst_ether, ctx->src_ether,
@@ -543,7 +604,7 @@ logpkt_write_packet(logpkt_ctx_t *ctx, int fd, int direction, char flags,
 			                       CSA(&ctx->src_addr),
 			                       flags,
 			                       ctx->dst_seq, ctx->src_seq,
-			                       payload, payloadlen);
+			                       payload, payloadlen, proto);
 		}
 		rv = logpkt_pcap_write(buf, sz, fd);
 		if (rv == -1) {
@@ -562,7 +623,7 @@ logpkt_write_packet(logpkt_ctx_t *ctx, int fd, int direction, char flags,
 			                         CSA(&ctx->dst_addr),
 			                         flags,
 			                         ctx->src_seq, ctx->dst_seq,
-			                         payload, payloadlen);
+			                         payload, payloadlen, proto);
 		} else {
 			rv = logpkt_mirror_build(ctx->libnet,
 			                         ctx->dst_ether, ctx->src_ether,
@@ -570,7 +631,7 @@ logpkt_write_packet(logpkt_ctx_t *ctx, int fd, int direction, char flags,
 			                         CSA(&ctx->src_addr),
 			                         flags,
 			                         ctx->dst_seq, ctx->src_seq,
-			                         payload, payloadlen);
+			                         payload, payloadlen, proto);
 		}
 		if (rv == -1) {
 			log_err_printf("Error building packet\n");
@@ -597,16 +658,16 @@ logpkt_write_syn_handshake(logpkt_ctx_t *ctx, int fd)
 {
 	ctx->src_seq = sys_rand32();
 	if (logpkt_write_packet(ctx, fd, LOGPKT_REQUEST,
-	                        TH_SYN, NULL, 0) == -1)
+	                        TH_SYN, NULL, 0, IPPROTO_TCP) == -1)
 		return -1;
 	ctx->src_seq += 1;
 	ctx->dst_seq = sys_rand32();
 	if (logpkt_write_packet(ctx, fd, LOGPKT_RESPONSE,
-	                        TH_SYN|TH_ACK, NULL, 0) == -1)
+	                        TH_SYN|TH_ACK, NULL, 0, IPPROTO_TCP) == -1)
 		return -1;
 	ctx->dst_seq += 1;
 	if (logpkt_write_packet(ctx, fd, LOGPKT_REQUEST,
-	                        TH_ACK, NULL, 0) == -1)
+	                        TH_ACK, NULL, 0, IPPROTO_TCP) == -1)
 		return -1;
 	return 0;
 }
@@ -618,12 +679,12 @@ logpkt_write_syn_handshake(logpkt_ctx_t *ctx, int fd)
  */
 int
 logpkt_write_payload(logpkt_ctx_t *ctx, int fd, int direction,
-                     const uint8_t *payload, size_t payloadlen)
+                     const uint8_t *payload, size_t payloadlen, int proto)
 {
 	int other_direction = (direction == LOGPKT_REQUEST) ? LOGPKT_RESPONSE
 	                                                    : LOGPKT_REQUEST;
 
-	if (ctx->src_seq == 0) {
+	if (proto == IPPROTO_TCP && ctx->src_seq == 0) {
 		if (logpkt_write_syn_handshake(ctx, fd) == -1)
 			return -1;
 	}
@@ -631,9 +692,9 @@ logpkt_write_payload(logpkt_ctx_t *ctx, int fd, int direction,
 	while (payloadlen > 0) {
 		size_t n = payloadlen > ctx->mss ? ctx->mss : payloadlen;
 		if (logpkt_write_packet(ctx, fd, direction,
-		                        TH_PUSH|TH_ACK, payload, n) == -1) {
+								proto == IPPROTO_TCP ? TH_PUSH|TH_ACK : 0, payload, n, proto) == -1) {
 			log_err_printf("Warning: Failed to write to pcap log"
-			               ": %s\n", strerror(errno));
+							": %s\n", strerror(errno));
 			return -1;
 		}
 		if (direction == LOGPKT_REQUEST) {
@@ -645,11 +706,13 @@ logpkt_write_payload(logpkt_ctx_t *ctx, int fd, int direction,
 		payloadlen -= n;
 	}
 
-	if (logpkt_write_packet(ctx, fd, other_direction,
-	                        TH_ACK, NULL, 0) == -1) {
-		log_err_printf("Warning: Failed to write to pcap log: %s\n",
-		               strerror(errno));
-		return -1;
+	if (proto == IPPROTO_TCP) {
+		if (logpkt_write_packet(ctx, fd, other_direction,
+								TH_ACK, NULL, 0, IPPROTO_TCP) == -1) {
+			log_err_printf("Warning: Failed to write to pcap log: %s\n",
+						strerror(errno));
+			return -1;
+		}
 	}
 	return 0;
 }
@@ -669,7 +732,7 @@ logpkt_write_close(logpkt_ctx_t *ctx, int fd, int direction) {
 	}
 
 	if (logpkt_write_packet(ctx, fd, direction,
-	                        TH_FIN|TH_ACK, NULL, 0) == -1) {
+	                        TH_FIN|TH_ACK, NULL, 0, IPPROTO_TCP) == -1) {
 		log_err_printf("Warning: Failed to write packet\n");
 		return -1;
 	}
@@ -680,7 +743,7 @@ logpkt_write_close(logpkt_ctx_t *ctx, int fd, int direction) {
 	}
 
 	if (logpkt_write_packet(ctx, fd, other_direction,
-	                        TH_FIN|TH_ACK, NULL, 0) == -1) {
+	                        TH_FIN|TH_ACK, NULL, 0, IPPROTO_TCP) == -1) {
 		log_err_printf("Warning: Failed to write packet\n");
 		return -1;
 	}
@@ -691,7 +754,7 @@ logpkt_write_close(logpkt_ctx_t *ctx, int fd, int direction) {
 	}
 
 	if (logpkt_write_packet(ctx, fd, direction,
-	                        TH_ACK, NULL, 0) == -1) {
+	                        TH_ACK, NULL, 0, IPPROTO_TCP) == -1) {
 		log_err_printf("Warning: Failed to write packet\n");
 		return -1;
 	}

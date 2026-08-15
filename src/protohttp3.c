@@ -1616,7 +1616,7 @@ quic_recv_stream_data(ngtcp2_conn *conn, uint32_t flags,
     if (WANT_CONTENT_LOG(ctx)) {
         struct evbuffer *inbuf = evbuffer_new();
         evbuffer_add(inbuf, data, datalen);
-        pxy_log_content_inbuf(ctx, inbuf, reqmod);
+        pxy_log_content_inbuf(ctx, inbuf, reqmod, IPPROTO_UDP);
         evbuffer_free(inbuf);
     }
 
@@ -1914,10 +1914,6 @@ quic_handshake_completed(ngtcp2_conn *conn, void *user_data)
 
         // The connected flag does not seem useful with h3, but we set for completeness
         ctx->connected = 1;
-
-        if (pxy_prepare_logging(ctx) == -1) {
-            return -1;
-        }
     }
 
     /* Arm the write event so SETTINGS / QPACK streams are flushed.       */
@@ -3033,6 +3029,10 @@ protohttp3_conn_connect(pxy_conn_ctx_t *ctx)
         goto err;
 
     log_finest_va("Upstream connection configured to dst_fd=%d", dst_fd);
+
+    if (pxy_prepare_logging(ctx) == -1) {
+        goto err;
+    }
 
     protohttp3_trigger_write_loop(h3_ctx, 0);
 

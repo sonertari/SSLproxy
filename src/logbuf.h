@@ -65,6 +65,7 @@ void logbuf_free(logbuf_t *) NONNULL(1);
 #define LBFLAG_CLOSE    (1 << 2)        /* logger */
 #define LBFLAG_IS_REQ   (1 << 3)        /* pcap/mirror content log */
 #define LBFLAG_IS_RESP  (1 << 4)        /* pcap/mirror content log */
+#define LBFLAG_IS_TCP   (1 << 5)        /* pcap/mirror content log */
 
 #endif /* !LOGBUF_H */
 

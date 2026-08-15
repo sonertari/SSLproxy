@@ -62,7 +62,7 @@ void logpkt_ctx_init(logpkt_ctx_t *, libnet_t *, size_t,
                      const struct sockaddr *, socklen_t,
                      const struct sockaddr *, socklen_t);
 int logpkt_write_payload(logpkt_ctx_t *, int, int,
-                         const unsigned char *, size_t) WUNRES;
+                         const unsigned char *, size_t, int) WUNRES;
 int logpkt_write_close(logpkt_ctx_t *, int, int);
 int logpkt_ether_lookup(libnet_t *, uint8_t *, uint8_t *,
                         const char *, const char *) WUNRES;

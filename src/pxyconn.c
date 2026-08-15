@@ -312,7 +312,7 @@ pxy_conn_ctx_free(pxy_conn_ctx_t *ctx, int by_requestor)
 		// Always try to close log files, even if content, pcap, or mirror logging is disabled by filter rules
 		// The log files may have been initialized and opened
 		// so, do not pass down the log_content, log_pcap, and log_mirror fields of ctx
-		if (log_content_close(&ctx->logctx, by_requestor) == -1) {
+		if (log_content_close(&ctx->logctx, by_requestor, ctx->proto != PROTO_HTTP3 ? IPPROTO_TCP : IPPROTO_UDP) == -1) {
 			log_err_level_printf(LOG_WARNING, "Content log close failed\n");
 		}
 	}
@@ -558,7 +558,7 @@ out:
 }
 
 int NONNULL(1)
-pxy_log_content_inbuf(pxy_conn_ctx_t *ctx, struct evbuffer *inbuf, int req)
+pxy_log_content_inbuf(pxy_conn_ctx_t *ctx, struct evbuffer *inbuf, int req, int proto)
 {
 	if (!ctx->log_content && !ctx->log_pcap
 #ifndef WITHOUT_MIRROR
@@ -586,7 +586,7 @@ pxy_log_content_inbuf(pxy_conn_ctx_t *ctx, struct evbuffer *inbuf, int req)
 	}
 	memcpy(lb->buf, buf, lb->sz);
 	free(buf);
-	if (log_content_submit(&ctx->logctx, lb, req, ctx->log_content, ctx->log_pcap
+	if (log_content_submit(&ctx->logctx, lb, req, proto, ctx->log_content, ctx->log_pcap
 #ifndef WITHOUT_MIRROR
 		, ctx->log_mirror
 #endif /* !WITHOUT_MIRROR */
@@ -1362,7 +1362,7 @@ pxy_bev_readcb_preexec_logging_and_stats(struct bufferevent *bev, pxy_conn_ctx_t
 				}
 			}
 			// HTTP content logging at this point may record certain header lines twice, if we have not seen all headers yet
-			return pxy_log_content_inbuf(ctx, inbuf, (bev == ctx->src.bev));
+			return pxy_log_content_inbuf(ctx, inbuf, (bev == ctx->src.bev), IPPROTO_TCP);
 		}
 	}
 	return 0;
@@ -1409,7 +1409,7 @@ pxy_bev_readcb_preexec_logging_and_stats_child(struct bufferevent *bev, pxy_conn
 	}
 
 	if (WANT_CONTENT_LOG(ctx->conn)) {
-		return pxy_log_content_inbuf(ctx->conn, inbuf, (bev == ctx->src.bev));
+		return pxy_log_content_inbuf(ctx->conn, inbuf, (bev == ctx->src.bev), IPPROTO_TCP);
 	}
 	return 0;
 }
