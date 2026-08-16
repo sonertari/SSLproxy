@@ -224,9 +224,8 @@ protohttp3_free_stream_headers(protohttp3_stream_ctx_t *s)
 static void NONNULL(1)
 protohttp3_free_stream_ctx(protohttp3_stream_ctx_t *s)
 {
-    UNUSED pxy_conn_ctx_t *ctx = s->ctx;
-    UNUSED protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
-    protohttp3_ctx_t *h3_ctx = http_ctx->arg;
+    pxy_conn_ctx_t *ctx = s->ctx;
+    protohttp3_ctx_t *h3_ctx = ctx->protoctx->arg;
 #ifndef WITHOUT_ICAP
     log_finest_va("ENTER, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, s->icap_ctx ? s->icap_ctx->reqmod : -1);
 #else /* !WITHOUT_ICAP */
@@ -2538,15 +2537,7 @@ protohttp3_new(pxy_conn_ctx_t *ctx, ngtcp2_version_cid vc)
     h3_ctx->dst_fd  = -1;
     h3_ctx->ctx     = ctx;
 
-	ctx->protoctx->arg = malloc(sizeof(protohttp_ctx_t));
-	if (!ctx->protoctx->arg) {
-        free(h3_ctx);
-		return NULL;
-	}
-	memset(ctx->protoctx->arg, 0, sizeof(protohttp_ctx_t));
-
-    protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
-    http_ctx->arg = h3_ctx;
+	ctx->protoctx->arg = h3_ctx;
 
     // TODO: Do we need these stream IDs? They are not useful in the current implementation.
     h3_ctx->src_ctrl_stream_id = -1;
@@ -2664,9 +2655,8 @@ protohttp3_new(pxy_conn_ctx_t *ctx, ngtcp2_version_cid vc)
                                     NGTCP2_PROTO_VER_V1, &cb, &settings,
                                     &params, NULL, h3_ctx);
     if (rv != 0) {
-        log_finest_va("ngtcp2_conn_server_new: %s", ngtcp2_strerror(rv));
-        protohttp3_free(h3_ctx);
-        return NULL;
+        log_finest_va("Failed to create ngtcp2_conn_server_new: %s", ngtcp2_strerror(rv));
+        goto err;
     }
 
     // TODO: Set params for server only, to update params, otherwise ngtcp2_conn_server_new() already sets them
@@ -2709,8 +2699,8 @@ protohttp3_new(pxy_conn_ctx_t *ctx, ngtcp2_version_cid vc)
 
     h3_ctx->src_ossl_ctx = NULL;
     if (ngtcp2_crypto_ossl_ctx_new(&h3_ctx->src_ossl_ctx, h3_ctx->src_ssl) != 0) {
-        log_finest("failed to create ngtcp2_crypto_ossl_ctx");
-        return NULL;
+        log_finest("Failed to create ngtcp2_crypto_ossl_ctx");
+        goto err;
     }
 
     ngtcp2_conn_set_tls_native_handle(h3_ctx->src_conn, h3_ctx->src_ossl_ctx);
@@ -2742,7 +2732,8 @@ err_timer:
     event_free(h3_ctx->src_wev);
 err_wev:
     ngtcp2_conn_del(h3_ctx->src_conn);
-    free(h3_ctx);
+err:
+    protohttp3_free(h3_ctx);
     return NULL;
 }
 
@@ -2840,8 +2831,7 @@ protohttp3_init_conn(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 // #endif /* !OPENSSL_NO_TLSEXT */
 
     // We create the h3 context in proxy_listener_acceptcb_udp()
-    protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
-    protohttp3_ctx_t *h3_ctx = http_ctx->arg;
+    protohttp3_ctx_t *h3_ctx = ctx->protoctx->arg;
 
     // Directly call the packet processing callback to handle the first queued packet
     protohttp3_process_packet_cb(h3_ctx->src_fd, 0, h3_ctx);
@@ -2858,11 +2848,9 @@ protohttp3_init_conn(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 static int
 protohttp3_conn_connect(pxy_conn_ctx_t *ctx)
 {
-    protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
-    protohttp3_ctx_t *h3_ctx = http_ctx->arg;
-
     log_finest("ENTER");
 
+    protohttp3_ctx_t *h3_ctx = ctx->protoctx->arg;
     if (!h3_ctx || !h3_ctx->src_conn) {
         log_fine("No src session");
         return -1;
@@ -3053,12 +3041,10 @@ err:
 static void
 protohttp3_conn_free(pxy_conn_ctx_t *ctx)
 {
-    protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
-    protohttp3_ctx_t *h3_ctx = http_ctx->arg;
+    log_finest("ENTER");
+    protohttp3_ctx_t *h3_ctx = ctx->protoctx->arg;
     if (h3_ctx) {
-        log_finest("freeing session");
         protohttp3_free(h3_ctx);
-        http_ctx->arg = NULL;
     }
 }
 
@@ -3093,7 +3079,7 @@ void
 protohttp3_free(protohttp3_ctx_t *h3_ctx)
 {
     pxy_conn_ctx_t *ctx = h3_ctx->ctx;
-    log_finest("Free session");
+    log_finest("ENTER");
 
     if (h3_ctx->src_ossl_ctx) {
         ngtcp2_crypto_ossl_ctx_del(h3_ctx->src_ossl_ctx);
@@ -3150,6 +3136,7 @@ protohttp3_free(protohttp3_ctx_t *h3_ctx)
     pthread_mutex_destroy(&h3_ctx->pkt_queue_mutex);
 
     free(h3_ctx);
+    ctx->protoctx->arg = NULL;
 }
 
 #endif /* !WITHOUT_HTTP3 */
