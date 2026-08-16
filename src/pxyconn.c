@@ -73,21 +73,6 @@
 // getdtablecount() returns int, hence we don't use size_t here
 int descriptor_table_size = 0;
 
-// @attention The order of names should match the order in protocol enum
-char *protocol_names[] = {
-	// ERROR = -1
-	"PASSTHROUGH", // = 0
-	"HTTP",
-	"HTTPS",
-	"POP3",
-	"POP3S",
-	"SMTP",
-	"SMTPS",
-	"AUTOSSL",
-	"TCP",
-	"SSL",
-};
-
 static protocol_t NONNULL(1)
 pxy_setup_proto_child(pxy_conn_child_ctx_t *ctx)
 {
@@ -695,7 +680,7 @@ pxy_log_dbg_connect_type(pxy_conn_ctx_t *ctx, pxy_conn_desc_t *this)
 			char *keystr;
 			/* for SSL, we get two connect events */
 			log_dbg_printf("%s connected to [%s]:%s %s %s\n",
-						   protocol_names[ctx->proto],
+						   protocol_names(ctx->proto),
 						   STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
 						   SSL_get_version(this->ssl), SSL_get_cipher(this->ssl));
 			keystr = ssl_ssl_masterkey_to_str(this->ssl);
@@ -709,10 +694,10 @@ pxy_log_dbg_connect_type(pxy_conn_ctx_t *ctx, pxy_conn_desc_t *this)
 			 * in order not to confuse anyone who might be
 			 * looking closely at the output */
 			log_dbg_printf("%s connected to [%s]:%s\n",
-						   protocol_names[ctx->proto],
+						   protocol_names(ctx->proto),
 						   STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str));
 			log_dbg_printf("%s connected from [%s]:%s\n",
-						   protocol_names[ctx->proto],
+						   protocol_names(ctx->proto),
 						   STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str));
 		}
 	}
@@ -762,10 +747,10 @@ pxy_log_dbg_disconnect(pxy_conn_ctx_t *ctx)
 	/* we only get a single disconnect event here for both connections */
 	if (OPTS_DEBUG(ctx->global)) {
 		log_dbg_printf("%s disconnected to [%s]:%s, fd=%d\n",
-					   protocol_names[ctx->proto],
+					   protocol_names(ctx->proto),
 					   STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str), ctx->fd);
 		log_dbg_printf("%s disconnected from [%s]:%s, fd=%d\n",
-					   protocol_names[ctx->proto],
+					   protocol_names(ctx->proto),
 					   STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), ctx->fd);
 	}
 }
@@ -776,10 +761,10 @@ pxy_log_dbg_disconnect_child(pxy_conn_child_ctx_t *ctx)
 	/* we only get a single disconnect event here for both connections */
 	if (OPTS_DEBUG(ctx->conn->global)) {
 		log_dbg_printf("Child %s disconnected to [%s]:%s, child fd=%d, fd=%d\n",
-					   protocol_names[ctx->conn->proto],
+					   protocol_names(ctx->conn->proto),
 					   STRORDASH(ctx->conn->dsthost_str), STRORDASH(ctx->conn->dstport_str), ctx->fd, ctx->conn->fd);
 		log_dbg_printf("Child %s disconnected from [%s]:%s, child fd=%d, fd=%d\n",
-					   protocol_names[ctx->conn->proto],
+					   protocol_names(ctx->conn->proto),
 					   STRORDASH(ctx->conn->srchost_str), STRORDASH(ctx->conn->srcport_str), ctx->fd, ctx->conn->fd);
 	}
 }

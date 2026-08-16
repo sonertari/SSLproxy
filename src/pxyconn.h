@@ -119,6 +119,7 @@ enum conn_type {
 	CONN_TYPE_CHILD,
 };
 
+// ATTENTION: Update protocol_names() after updating this enum
 typedef enum protocol {
 	PROTO_ERROR = -1,
 	PROTO_PASSTHROUGH = 0,
@@ -134,6 +135,27 @@ typedef enum protocol {
 	PROTO_HTTP2,
 	PROTO_HTTP3,
 } protocol_t;
+
+static inline const char *
+protocol_names(protocol_t proto)
+{
+	switch (proto) {
+	case PROTO_ERROR: return "ERROR";
+	case PROTO_PASSTHROUGH: return "PASSTHROUGH";
+	case PROTO_HTTP: return "HTTP";
+	case PROTO_HTTPS: return "HTTPS";
+	case PROTO_POP3: return "POP3";
+	case PROTO_POP3S: return "POP3S";
+	case PROTO_SMTP: return "SMTP";
+	case PROTO_SMTPS: return "SMTPS";
+	case PROTO_AUTOSSL: return "AUTOSSL";
+	case PROTO_TCP: return "TCP";
+	case PROTO_SSL: return "SSL";
+	case PROTO_HTTP2: return "HTTP/2";
+	case PROTO_HTTP3: return "HTTP/3";
+	default: return "UNKNOWN";
+	}
+}
 
 typedef struct ssl_ctx ssl_ctx_t;
 
