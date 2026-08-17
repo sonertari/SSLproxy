@@ -119,43 +119,32 @@ enum conn_type {
 	CONN_TYPE_CHILD,
 };
 
-// ATTENTION: Update protocol_names() after updating this enum
-typedef enum protocol {
-	PROTO_ERROR = -1,
-	PROTO_PASSTHROUGH = 0,
-	PROTO_HTTP,
-	PROTO_HTTPS,
-	PROTO_POP3,
-	PROTO_POP3S,
-	PROTO_SMTP,
-	PROTO_SMTPS,
-	PROTO_AUTOSSL,
-	PROTO_TCP,
-	PROTO_SSL,
-	PROTO_HTTP2,
-	PROTO_HTTP3,
-} protocol_t;
+// ATTENTION: The X-Macro solution is used to define the protocol enum and string array in a single place, ensuring consistency between the two.
+// The PROTOCOL_LIST macro defines the protocol names and their string representations,
+// which are then used to generate both the enum values and the corresponding string array.
+// Define the protocol master list once: (Enum_Name, String_Representation)
+#define PROTOCOL_LIST(X) \
+    X(HTTP,        "HTTP")        \
+    X(HTTPS,       "HTTPS")       \
+    X(HTTP2,       "HTTP/2")      \
+    X(HTTP3,       "HTTP/3")      \
+    X(POP3,        "POP3")        \
+    X(POP3S,       "POP3S")       \
+    X(SMTP,        "SMTP")        \
+    X(SMTPS,       "SMTPS")       \
+    X(AUTOSSL,     "AUTOSSL")     \
+    X(SSL,         "SSL")         \
+    X(TCP,         "TCP")         \
+    X(PASSTHROUGH, "PASSTHROUGH")
 
-static inline const char *
-protocol_names(protocol_t proto)
-{
-	switch (proto) {
-	case PROTO_ERROR: return "ERROR";
-	case PROTO_PASSTHROUGH: return "PASSTHROUGH";
-	case PROTO_HTTP: return "HTTP";
-	case PROTO_HTTPS: return "HTTPS";
-	case PROTO_POP3: return "POP3";
-	case PROTO_POP3S: return "POP3S";
-	case PROTO_SMTP: return "SMTP";
-	case PROTO_SMTPS: return "SMTPS";
-	case PROTO_AUTOSSL: return "AUTOSSL";
-	case PROTO_TCP: return "TCP";
-	case PROTO_SSL: return "SSL";
-	case PROTO_HTTP2: return "HTTP/2";
-	case PROTO_HTTP3: return "HTTP/3";
-	default: return "UNKNOWN";
-	}
-}
+// Automatically generate protocol enum values from PROTOCOL_LIST
+// We never use PROTO_ERROR with protocol_names[], hence not in PROTOCOL_LIST
+typedef enum protocol {
+    PROTO_ERROR = -1,
+#define X_ENUM(name, str) PROTO_##name,
+    PROTOCOL_LIST(X_ENUM)
+#undef X_ENUM
+} protocol_t;
 
 typedef struct ssl_ctx ssl_ctx_t;
 
