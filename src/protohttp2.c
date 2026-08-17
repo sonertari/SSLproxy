@@ -147,9 +147,8 @@ protohttp2_free_stream_headers(protohttp2_stream_ctx_t *s)
 void NONNULL(1)
 protohttp2_free_stream_ctx(protohttp2_stream_ctx_t *s)
 {
-    UNUSED pxy_conn_ctx_t *ctx = s->ctx;
-    protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
-    protohttp2_ctx_t *h2_ctx = http_ctx->arg;
+    pxy_conn_ctx_t *ctx = s->ctx;
+    protohttp2_ctx_t *h2_ctx = ctx->protoctx->arg;
 #ifndef WITHOUT_ICAP
     log_finest_va("ENTER, src_stream_id=%d, dst_stream_id=%d, reqmod=%d", s->src_stream_id, s->dst_stream_id, s->icap_ctx ? s->icap_ctx->reqmod : -1);
 #else /* !WITHOUT_ICAP */
@@ -509,8 +508,7 @@ protohttp2_bev_writecb(UNUSED struct bufferevent *bev, UNUSED void *arg)
     pxy_conn_ctx_t *ctx = arg;
     log_finest("ENTER");
 
-    protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
-    protohttp2_ctx_t *h2_ctx = http_ctx->arg;
+    protohttp2_ctx_t *h2_ctx = ctx->protoctx->arg;
 
     // Always call nghttp2_session_send() to flush any remaining data in the session's output buffer
     nghttp2_session_send(h2_ctx->src_session);
@@ -1315,8 +1313,7 @@ protohttp2_on_stream_close_callback_dst(UNUSED nghttp2_session *session, int32_t
 int
 protohttp2_icap_is_finished(pxy_conn_ctx_t *ctx)
 {
-    protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
-    protohttp2_ctx_t *h2_ctx = http_ctx->arg;
+    protohttp2_ctx_t *h2_ctx = ctx->protoctx->arg;
     protohttp2_stream_ctx_t *s = h2_ctx->streams;
     while (s) {
         if (icap_enabled(s->icap_ctx) && !icap_is_finished(s->icap_ctx)) {
@@ -1334,12 +1331,7 @@ protohttp2_free(pxy_conn_ctx_t *ctx)
 {
     log_finest("ENTER");
 
-    protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
-    if (!http_ctx) {
-        return;
-    }
-
-    protohttp2_ctx_t *h2_ctx = http_ctx->arg;
+    protohttp2_ctx_t *h2_ctx = ctx->protoctx->arg;
     if (h2_ctx) {
         if (h2_ctx->src_session) {
             nghttp2_session_del(h2_ctx->src_session);
@@ -1352,7 +1344,7 @@ protohttp2_free(pxy_conn_ctx_t *ctx)
         while (h2_ctx->streams)
             protohttp2_free_stream_ctx(h2_ctx->streams);
         free(h2_ctx);
-        http_ctx->arg = NULL;
+        ctx->protoctx->arg = NULL;
     }
     protohttps_free(ctx);
 }
@@ -1361,17 +1353,12 @@ static void NONNULL(1)
 protohttp2_bev_readcb(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
-	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
-    if (!http_ctx) {
-        log_finest("http_ctx is NULL");
-        return;
-    }
 
 	if (bev == ctx->src.bev || bev == ctx->dst.bev) {
         int reqmod = bev == ctx->src.bev;
         log_finest_va("ENTER, reqmod=%d", reqmod);
 
-        protohttp2_ctx_t *h2_ctx = http_ctx->arg;
+        protohttp2_ctx_t *h2_ctx = ctx->protoctx->arg;
         if (!h2_ctx) {
             log_finest("h2_ctx is NULL");
             return;
@@ -1439,10 +1426,15 @@ protocol_t protohttp2_setup(pxy_conn_ctx_t *ctx)
     }
     memset(h2_ctx, 0, sizeof(protohttp2_ctx_t));
 
-    protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
-    http_ctx->arg = h2_ctx;
-
     h2_ctx->ctx = ctx;
+
+    // protoctx->arg is assigned to protohttp_ctx_t by protohttp_setup() initially,
+    // after ALPN negotiation to h2, we need to free it before reassigning to protohttp2_ctx_t
+    if (ctx->protoctx->arg) {
+        log_finest("protoctx->arg is not NULL, freeing previous arg");
+        protohttp_free_ctx((protohttp_ctx_t *)ctx->protoctx->arg);
+    }
+    ctx->protoctx->arg = h2_ctx;
 
     // Initialize session for H2 connections
     nghttp2_session_callbacks *cb;
