@@ -30,6 +30,7 @@
 
 #include "pxyconn.h"
 #include "protohttp.h"
+#include "icap.h"
 
 #include <nghttp2/nghttp2.h>
 
@@ -69,6 +70,17 @@ typedef struct protohttp2_ctx {
 
     protohttp2_stream_ctx_t *streams;
 } protohttp2_ctx_t;
+
+#ifndef WITHOUT_ICAP
+// Forward declaration
+struct icap_service_ctx;
+
+void protohttp2_close_stream(protohttp2_stream_ctx_t *);
+
+void protohttp2_icap_send_data_to_src_cb(icap_ctx_t *) NONNULL(1);
+void protohttp2_icap_send_data_to_dst_cb(icap_ctx_t *) NONNULL(1);
+void protohttp2_icap_failopen_to_dest_cb(struct icap_service_ctx *) NONNULL(1);
+#endif /* !WITHOUT_ICAP */
 
 int protohttp2_icap_is_finished(pxy_conn_ctx_t *) NONNULL(1);
 void protohttp2_free(pxy_conn_ctx_t *) NONNULL(1);

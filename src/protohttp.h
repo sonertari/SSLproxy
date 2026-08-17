@@ -56,6 +56,8 @@ typedef struct protohttp_ctx {
 	unsigned int seen_keyword_count;
 	long long unsigned int seen_bytes;
 
+	pxy_conn_ctx_t *ctx;
+
 	// For h2 specific fields, if upgraded
 	void *arg;
 } protohttp_ctx_t;
@@ -131,6 +133,8 @@ static const http_status_reason_t http_status_reasons[] = {
 };
 
 void protohttp_log_connect(pxy_conn_ctx_t *, protohttp_ctx_t *) NONNULL(1,2);
+
+int protohttpx_apply_filter(void *, protocol_t);
 
 int protohttp_filter_request_header(struct evbuffer *, struct evbuffer *, protohttp_ctx_t *, enum conn_type, pxy_conn_ctx_t *) WUNRES NONNULL(1,2,3,5);
 void protohttp_filter_response_header(struct evbuffer *, struct evbuffer *, protohttp_ctx_t *, pxy_conn_ctx_t *) NONNULL(1,2,3,4);

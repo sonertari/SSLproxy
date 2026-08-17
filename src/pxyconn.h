@@ -97,7 +97,7 @@ typedef int (*outbuf_has_data_func_t)(struct bufferevent *
 typedef void (*log_dbg_evbuf_info_func_t)(pxy_conn_ctx_t *, pxy_conn_desc_t *, pxy_conn_desc_t *) NONNULL(1,2,3);
 #endif /* DEBUG_PROXY */
 
-typedef filter_action_t * (*proto_filter_func_t)(pxy_conn_ctx_t *, filter_list_t *) NONNULL(1,2) WUNRES;
+typedef filter_action_t * (*proto_filter_func_t)(pxy_conn_ctx_t *, void *stream_ctx, filter_list_t *) NONNULL(1,3) WUNRES;
 
 /*
  * Proxy connection context state, describes a proxy connection
@@ -509,8 +509,8 @@ filter_action_t *pxy_conn_set_filter_action(filter_action_t *, filter_action_t *
 	, pxy_conn_ctx_t *, char *, char *
 #endif /* DEBUG_PROXY */
 	) WUNRES;
-filter_action_t *pxy_conn_filter_port(pxy_conn_ctx_t *, filter_site_t *) NONNULL(1,2);
-filter_action_t * pxy_conn_filter(pxy_conn_ctx_t *, proto_filter_func_t) NONNULL(1) WUNRES;
+filter_action_t *pxy_conn_filter_port(pxy_conn_ctx_t *, void *, filter_site_t *) NONNULL(1,3);
+filter_action_t * pxy_conn_filter(pxy_conn_ctx_t *, void *, proto_filter_func_t) NONNULL(1) WUNRES;
 void pxy_conn_setup(evutil_socket_t, struct sockaddr *, int,
                     pxy_thrmgr_ctx_t *, proxyspec_t *, global_t *,
 					evutil_socket_t)

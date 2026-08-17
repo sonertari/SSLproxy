@@ -62,10 +62,6 @@
 #include "log.h"
 #include "util.h"
 
-#ifndef WITHOUT_ICAP
-#include "icap.h"
-#endif /* !WITHOUT_ICAP */
-
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
@@ -82,12 +78,6 @@
 
 // For debugging, we need to include arpa/inet.h for inet_ntop() to print IP addresses.
 #include <arpa/inet.h>
-
-#ifndef WITHOUT_ICAP
-static void NONNULL(1) protohttp3_icap_send_data_to_src_cb(icap_ctx_t *icap_ctx);
-static void NONNULL(1) protohttp3_icap_send_data_to_dst_cb(icap_ctx_t *icap_ctx);
-static void NONNULL(1) protohttp3_icap_failopen_to_dest_cb(icap_service_ctx_t *service_ctx);
-#endif /* !WITHOUT_ICAP */
 
 /*
  * h3_timestamp – return a ngtcp2_tstamp (nanoseconds, CLOCK_MONOTONIC).
@@ -176,6 +166,8 @@ protohttp3_new_stream_ctx(protohttp3_ctx_t *h3_ctx, int64_t stream_id)
 	}
 	memset(s->http_ctx, 0, sizeof(protohttp_ctx_t));
 
+	s->http_ctx->ctx = ctx;
+
 #ifndef WITHOUT_ICAP
     s->icap_ctx = icap_init(ctx, PROTO_HTTP3, s, h3_ctx);
 	if (!s->icap_ctx) {
@@ -183,9 +175,6 @@ protohttp3_new_stream_ctx(protohttp3_ctx_t *h3_ctx, int64_t stream_id)
         free(s);
 		return NULL;
     }
-    s->icap_ctx->send_data_to_src_cb = protohttp3_icap_send_data_to_src_cb;
-    s->icap_ctx->send_data_to_dst_cb = protohttp3_icap_send_data_to_dst_cb;
-    s->icap_ctx->failopen_to_dest_cb = protohttp3_icap_failopen_to_dest_cb;
 #endif /* !WITHOUT_ICAP */
 
     // Prepend to the stream list
@@ -340,7 +329,7 @@ protohttp3_request_free_stream_ctx(protohttp3_stream_ctx_t *s)
         return;
     }
 
-    log_finest_va("stream %" PRId64 " is server-side, free immediately", s->src_stream_id);
+    log_finest_va("stream %" PRId64 " free immediately", s->src_stream_id);
     // Safe to destroy immediately
     protohttp3_free_stream_ctx(s);
 }
@@ -772,7 +761,7 @@ protohttp3_submit_data(protohttp3_ctx_t *h3_ctx, protohttp3_stream_ctx_t *s, int
 }
 
 #ifndef WITHOUT_ICAP
-static void NONNULL(1)
+void NONNULL(1)
 protohttp3_icap_send_data_to_src_cb(icap_ctx_t *icap_ctx)
 {
     protohttp3_stream_ctx_t *s = icap_ctx->stream_ctx;
@@ -795,7 +784,7 @@ protohttp3_icap_send_data_to_src_cb(icap_ctx_t *icap_ctx)
     }
 }
 
-static void NONNULL(1)
+void NONNULL(1)
 protohttp3_icap_send_data_to_dst_cb(icap_ctx_t *icap_ctx)
 {
     protohttp3_stream_ctx_t *s = icap_ctx->stream_ctx;
@@ -832,7 +821,7 @@ protohttp3_icap_send_data_to_dst_cb(icap_ctx_t *icap_ctx)
     }
 }
 
-static void NONNULL(1)
+void NONNULL(1)
 protohttp3_icap_failopen_to_dest_cb(icap_service_ctx_t *service_ctx)
 {
 	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
@@ -1069,10 +1058,11 @@ protohttp3_filter_request_header(protohttp3_stream_ctx_t *s)
     }
 
 	if (http_ctx->seen_req_header) {
-        // TODO: Implement Host and URI filter rules with H3 streams
-        // if (protohttp_apply_filter(ctx)) {
-        //     return -1;
-        // }
+        // ATTENTION: Do not return -1 if protohttpx_apply_filter() fails, ignore the retval.
+        // Otherwise, the caller h3_on_end_headers() returns NGHTTP3_ERR_CALLBACK_FAILURE,
+        // which is a fatal error after ngtcp2_conn_read_pkt() in protohttp3_process_packet_cb(),
+        // a reason to close the connection altogether
+        protohttpx_apply_filter(s, PROTO_HTTP3);
 
         // TODO: Implement deny OCSP at TLS level in HTTP/3?
         // if (ctx->conn_opts->deny_ocsp) {
@@ -2025,6 +2015,31 @@ protohttp3_recvmsg(int fd,
 
 	log_finest_main_va("EXIT, fd=%d, bytes received=%zd, ecn=%d", fd, n, *ecn);
     return n;
+}
+
+void
+protohttp3_close_stream(protohttp3_stream_ctx_t *s)
+{
+    pxy_conn_ctx_t *ctx = s->ctx;
+    protohttp3_ctx_t *h3_ctx = ctx->protoctx->arg;
+    log_finest_va("Close src stream, stream_id=%" PRId64 ", fd=%d", s->src_stream_id, h3_ctx->dst_fd);
+
+    /* Tell nghttp3 the stream is closed locally */
+    nghttp3_conn_close_stream(h3_ctx->src_h3, s->src_stream_id, NGHTTP3_H3_REQUEST_CANCELLED);
+
+    /* Instruct ngtcp2 (QUIC layer) to immediately reset transmission on QUIC stream */
+    ngtcp2_conn_shutdown_stream_write(h3_ctx->src_conn, 0, s->src_stream_id, NGHTTP3_H3_REQUEST_CANCELLED);
+
+    /* Tell the client to stop sending any remaining request body */
+    ngtcp2_conn_shutdown_stream_read(h3_ctx->src_conn, 0, s->src_stream_id, NGHTTP3_H3_REQUEST_CANCELLED);
+
+    // TODO: Should we or can we flush the stream buffers after the shutdown calls above?
+    // protohttp3_trigger_write_loop(h3_ctx, 1);
+
+    // ATTENTION: Do not free the stream here, otherwise Brave hangs
+    // s->ref_count++;
+    // protohttp3_request_free_stream_ctx(s);
+    // s->ref_count--;
 }
 
 #ifdef DEBUG_PROXY

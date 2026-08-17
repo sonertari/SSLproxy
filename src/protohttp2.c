@@ -32,10 +32,6 @@
 #include "pxyconn.h"
 #include "util.h"
 
-#ifndef WITHOUT_ICAP
-#include "icap.h"
-#endif /* !WITHOUT_ICAP */
-
 #include <event2/bufferevent.h>
 #include <nghttp2/nghttp2.h>
 #include <string.h>
@@ -47,12 +43,6 @@ static ssize_t
 protohttp2_provider_read_callback(nghttp2_session *session, int32_t stream_id, uint8_t *buf, size_t length,
     uint32_t *data_flags, nghttp2_data_source *source, void *user_data);
 static void protohttp2_trigger_write_loop(protohttp2_ctx_t *h2_ctx, int reqmod);
-
-#ifndef WITHOUT_ICAP
-static void NONNULL(1) protohttp2_icap_send_data_to_src_cb(icap_ctx_t *icap_ctx);
-static void NONNULL(1) protohttp2_icap_send_data_to_dst_cb(icap_ctx_t *icap_ctx);
-static void NONNULL(1) protohttp2_icap_failopen_to_dest_cb(icap_service_ctx_t *service_ctx);
-#endif /* !WITHOUT_ICAP */
 
 static protohttp2_stream_ctx_t *
 protohttp2_get_stream_ctx(protohttp2_ctx_t *h2_ctx, int32_t stream_id, int reqmod)
@@ -99,6 +89,8 @@ protohttp2_new_stream_ctx(protohttp2_ctx_t *h2_ctx, int32_t stream_id)
 	}
 	memset(s->http_ctx, 0, sizeof(protohttp_ctx_t));
 
+	s->http_ctx->ctx = ctx;
+
 #ifndef WITHOUT_ICAP
     s->icap_ctx = icap_init(ctx, PROTO_HTTP2, s, h2_ctx);
 	if (!s->icap_ctx) {
@@ -107,9 +99,6 @@ protohttp2_new_stream_ctx(protohttp2_ctx_t *h2_ctx, int32_t stream_id)
         free(s);
 		return NULL;
     }
-    s->icap_ctx->send_data_to_src_cb = protohttp2_icap_send_data_to_src_cb;
-    s->icap_ctx->send_data_to_dst_cb = protohttp2_icap_send_data_to_dst_cb;
-    s->icap_ctx->failopen_to_dest_cb = protohttp2_icap_failopen_to_dest_cb;
 #endif /* !WITHOUT_ICAP */
 
     s->next = h2_ctx->streams;
@@ -258,6 +247,26 @@ protohttp2_request_free_stream_ctx(protohttp2_stream_ctx_t *s)
     log_finest_va("Stream is safe to destroy, free immediately, src_stream_id=%d, dst_stream_id=%d, ref_count=%d",
                     s->src_stream_id, s->dst_stream_id, s->ref_count);
     protohttp2_free_stream_ctx(s);
+}
+
+void
+protohttp2_close_stream(protohttp2_stream_ctx_t *s)
+{
+    pxy_conn_ctx_t *ctx = s->ctx;
+    protohttp2_ctx_t *h2_ctx = ctx->protoctx->arg;
+    log_finest_va("Close src stream, src_stream_id=%d dst_stream_id=%d", s->src_stream_id, s->dst_stream_id);
+
+    /* Send an H2 RST_STREAM frame to the client */
+    // We send NGHTTP2_CANCEL, because if we send the NGHTTP2_REFUSED_STREAM errorcode, curl tries 4 more times.
+    nghttp2_submit_rst_stream(h2_ctx->src_session, NGHTTP2_FLAG_NONE, s->src_stream_id, NGHTTP2_CANCEL);
+
+    /* Flush outbound H2 buffer to send the RST_STREAM frame down the socket */
+    protohttp2_trigger_write_loop(h2_ctx, 1);
+
+    // ATTENTION: Do not free the stream here, otherwise Brave hangs
+    // s->ref_count++;
+    // protohttp2_request_free_stream_ctx(s);
+    // s->ref_count--;
 }
 
 static int
@@ -716,7 +725,7 @@ protohttp2_submit_data(protohttp2_ctx_t *h2_ctx, protohttp2_stream_ctx_t *s, int
 }
 
 #ifndef WITHOUT_ICAP
-static void NONNULL(1)
+void NONNULL(1)
 protohttp2_icap_send_data_to_src_cb(icap_ctx_t *icap_ctx)
 {
     protohttp2_stream_ctx_t *s = icap_ctx->stream_ctx;
@@ -737,7 +746,7 @@ protohttp2_icap_send_data_to_src_cb(icap_ctx_t *icap_ctx)
     }
 }
 
-static void NONNULL(1)
+void NONNULL(1)
 protohttp2_icap_send_data_to_dst_cb(icap_ctx_t *icap_ctx)
 {
     protohttp2_stream_ctx_t *s = icap_ctx->stream_ctx;
@@ -769,7 +778,7 @@ protohttp2_icap_send_data_to_dst_cb(icap_ctx_t *icap_ctx)
     }
 }
 
-static void NONNULL(1)
+void NONNULL(1)
 protohttp2_icap_failopen_to_dest_cb(icap_service_ctx_t *service_ctx)
 {
 	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
@@ -956,10 +965,9 @@ protohttp2_filter_request_header(protohttp2_stream_ctx_t *s)
     }
 
 	if (http_ctx->seen_req_header) {
-        // TODO: Implement Host and URI filter rules with H2 streams
-        // if (protohttp_apply_filter(ctx)) {
-        //     return -1;
-        // }
+        // ATTENTION: Do not return -1 if protohttpx_apply_filter() fails, ignore the retval.
+        // Otherwise, the caller nghttp2_session_mem_recv() in protohttp2_bev_readcb() fails.
+        protohttpx_apply_filter(s, PROTO_HTTP2);
 
         // TODO: Implement deny OCSP at TLS level in HTTP/2?
         // if (ctx->conn_opts->deny_ocsp) {

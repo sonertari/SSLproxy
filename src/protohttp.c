@@ -28,6 +28,7 @@
 
 #include "protohttp.h"
 #include "protohttp2.h"
+#include "protohttp3.h"
 #include "prototcp.h"
 #include "protossl.h"
 #include "protopassthrough.h"
@@ -403,9 +404,9 @@ protohttp_filter_request_header_line(const char *line, protohttp_ctx_t *http_ctx
 }
 
 static filter_action_t * NONNULL(1,2)
-protohttp_filter_match_host(pxy_conn_ctx_t *ctx, filter_list_t *list)
+protohttp_filter_match_host(protohttp_ctx_t *http_ctx, filter_list_t *list)
 {
-	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
+	pxy_conn_ctx_t *ctx = http_ctx->ctx;
 
 	filter_site_t *site = filter_site_find(list->host_btree, list->host_acm, list->host_all, http_ctx->http_host);
 	if (!site)
@@ -435,7 +436,8 @@ protohttp_filter_match_host(pxy_conn_ctx_t *ctx, filter_list_t *list)
 		log_finest_va("Match substring in host (line=%d): %s, %s", site->action.line_num, site->site, http_ctx->http_host);
 #endif /* DEBUG_PROXY */
 
-	filter_action_t *port_action = pxy_conn_filter_port(ctx, site);
+	// Port filter does not need stream ctx, because it is only used for connection filtering, not stream filtering
+	filter_action_t *port_action = pxy_conn_filter_port(ctx, NULL, site);
 	if (port_action)
 		return port_action;
 
@@ -443,9 +445,9 @@ protohttp_filter_match_host(pxy_conn_ctx_t *ctx, filter_list_t *list)
 }
 
 static filter_action_t * NONNULL(1,2)
-protohttp_filter_match_uri(pxy_conn_ctx_t *ctx, filter_list_t *list)
+protohttp_filter_match_uri(protohttp_ctx_t *http_ctx, filter_list_t *list)
 {
-	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
+	pxy_conn_ctx_t *ctx = http_ctx->ctx;
 
 	filter_site_t *site = filter_site_find(list->uri_btree, list->uri_acm, list->uri_all, http_ctx->http_uri);
 	if (!site)
@@ -475,7 +477,8 @@ protohttp_filter_match_uri(pxy_conn_ctx_t *ctx, filter_list_t *list)
 		log_finest_va("Match substring in uri (line=%d): %s, %s", site->action.line_num, site->site, http_ctx->http_uri);
 #endif /* DEBUG_PROXY */
 
-	filter_action_t *port_action = pxy_conn_filter_port(ctx, site);
+	// Port filter does not need stream ctx, because it is only used for connection filtering, not stream filtering
+	filter_action_t *port_action = pxy_conn_filter_port(ctx, NULL, site);
 	if (port_action)
 		return port_action;
 
@@ -483,15 +486,26 @@ protohttp_filter_match_uri(pxy_conn_ctx_t *ctx, filter_list_t *list)
 }
 
 static filter_action_t * NONNULL(1,2)
-protohttp_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
+protohttp_filter(pxy_conn_ctx_t *ctx, void *stream_ctx, filter_list_t *list)
 {
-	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
+	protohttp_ctx_t *http_ctx = NULL;
+	if (ctx->proto == PROTO_HTTP2) {
+		http_ctx = ((protohttp2_stream_ctx_t *)stream_ctx)->http_ctx;
+	}
+#ifndef WITHOUT_HTTP3
+	else if (ctx->proto == PROTO_HTTP3) {
+		http_ctx = ((protohttp3_stream_ctx_t *)stream_ctx)->http_ctx;
+	}
+#endif /* !WITHOUT_HTTP3 */
+	else {
+		http_ctx = ctx->protoctx->arg;
+	}
 
 	filter_action_t *action_host = NULL;
 	filter_action_t *action_uri = NULL;
 
 	if (http_ctx->http_host) {
-		if (!(action_host = protohttp_filter_match_host(ctx, list))) {
+		if (!(action_host = protohttp_filter_match_host(http_ctx, list))) {
 #ifndef WITHOUT_USERAUTH
 			log_finest_va("No filter match with host: %s:%s, %s:%s, %s, %s, %s, %s",
 				STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
@@ -505,7 +519,7 @@ protohttp_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
 	}
 
 	if (http_ctx->http_uri) {
-		if (!(action_uri = protohttp_filter_match_uri(ctx, list))) {
+		if (!(action_uri = protohttp_filter_match_uri(http_ctx, list))) {
 #ifndef WITHOUT_USERAUTH
 			log_finest_va("No filter match with uri: %s:%s, %s:%s, %s, %s, %s, %s",
 				STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
@@ -533,7 +547,8 @@ protohttp_apply_filter(pxy_conn_ctx_t *ctx)
 {
 	int rv = 0;
 	filter_action_t *a;
-	if ((a = pxy_conn_filter(ctx, protohttp_filter))) {
+	// H1 filter is a conn filter, but H2/H3 stream filter calls protohttpx_apply_filter() with stream ctx
+	if ((a = pxy_conn_filter(ctx, NULL, protohttp_filter))) {
 		unsigned int action = pxy_conn_translate_filter_action(ctx, a);
 
 		ctx->filter_precedence = action & FILTER_PRECEDENCE;
@@ -620,6 +635,148 @@ protohttp_apply_filter(pxy_conn_ctx_t *ctx)
 	// Match action should not override any deferred action, hence no 'else if'
 	if (pxy_conn_apply_deferred_block_action(ctx))
 		rv = 1;
+
+	return rv;
+}
+
+int
+protohttpx_apply_filter(void *stream_ctx, protocol_t proto)
+{
+	pxy_conn_ctx_t *ctx = NULL;
+
+	if (proto == PROTO_HTTP2) {
+		protohttp2_stream_ctx_t *s = (protohttp2_stream_ctx_t *)stream_ctx;
+		ctx = s->ctx;
+	}
+#ifndef WITHOUT_HTTP3
+	else if (proto == PROTO_HTTP3) {
+		protohttp3_stream_ctx_t *s = (protohttp3_stream_ctx_t *)stream_ctx;
+		ctx = s->ctx;
+	}
+#endif /* !WITHOUT_HTTP3 */
+
+	log_finest("ENTER");
+
+	int rv = 0;
+	filter_action_t *a;
+	// H2/H3 filter is a stream filter
+	if ((a = pxy_conn_filter(ctx, stream_ctx, protohttp_filter))) {
+		unsigned int action = pxy_conn_translate_filter_action(ctx, a);
+
+		ctx->filter_precedence = action & FILTER_PRECEDENCE;
+
+		if (action & FILTER_ACTION_DIVERT) {
+			if (ctx->divert) {
+				// Override any deferred block action, if already in divert mode (keep divert mode)
+				ctx->deferred_action = FILTER_ACTION_NONE;
+			} else {
+				log_fine("HTTP filter cannot enable divert mode");
+			}
+		}
+		else if (action & FILTER_ACTION_SPLIT) {
+			if (!ctx->divert) {
+				// Override any deferred block action, if already in split mode (keep split mode)
+				ctx->deferred_action = FILTER_ACTION_NONE;
+			} else {
+				log_fine("HTTP filter cannot enable split mode");
+			}
+		}
+		else if (action & FILTER_ACTION_PASS) {
+			log_fine("HTTP filter cannot take pass action");
+		}
+		else if (action & FILTER_ACTION_BLOCK) {
+			ctx->deferred_action = FILTER_ACTION_NONE;
+			if (proto == PROTO_HTTP2) {
+				protohttp2_close_stream(stream_ctx);
+			}
+#ifndef WITHOUT_HTTP3
+			else if (proto == PROTO_HTTP3) {
+				protohttp3_close_stream(stream_ctx);
+			}
+#endif /* !WITHOUT_HTTP3 */
+			rv = 1;
+		}
+		//else { /* FILTER_ACTION_MATCH */ }
+
+		if (action & (FILTER_LOG_CONTENT | FILTER_LOG_PCAP
+#ifndef WITHOUT_MIRROR
+				| FILTER_LOG_MIRROR
+#endif /* !WITHOUT_MIRROR */
+				)) {
+#ifndef WITHOUT_MIRROR
+			log_fine("HTTP filter cannot enable content, pcap, or mirror logging");
+#else /* !WITHOUT_MIRROR */
+			log_fine("HTTP filter cannot enable content or pcap logging");
+#endif /* WITHOUT_MIRROR */
+		}
+
+		// Note that connect, master, and cert logs have already been written by now
+		// so enabling or disabling those logs here will not have any effect
+		if (action & FILTER_LOG_CONNECT)
+			ctx->log_connect = 1;
+		else if (action & FILTER_LOG_NOCONNECT)
+			ctx->log_connect = 0;
+		if (action & FILTER_LOG_MASTER)
+			ctx->log_master = 1;
+		else if (action & FILTER_LOG_NOMASTER)
+			ctx->log_master = 0;
+		if (action & FILTER_LOG_CERT)
+			ctx->log_cert = 1;
+		else if (action & FILTER_LOG_NOCERT)
+			ctx->log_cert = 0;
+
+		// content, pcap, and mirror logging can be disabled only
+		// loggers will stop writing further contents
+		if (action & FILTER_LOG_NOCONTENT)
+			ctx->log_content = 0;
+		if (action & FILTER_LOG_NOPCAP)
+			ctx->log_pcap = 0;
+#ifndef WITHOUT_MIRROR
+		if (action & FILTER_LOG_NOMIRROR)
+			ctx->log_mirror = 0;
+#endif /* !WITHOUT_MIRROR */
+
+		if (a->conn_opts) {
+			ctx->conn_opts = a->conn_opts;
+#ifndef WITHOUT_ICAP
+			if (a->conn_opts->icap_chain) {
+				if (proto == PROTO_HTTP2) {
+					protohttp2_stream_ctx_t *s = (protohttp2_stream_ctx_t *)stream_ctx;
+					s->icap_ctx = icap_init(ctx, proto, stream_ctx, ctx->protoctx->arg);
+					if (!s->icap_ctx) {
+						ctx->enomem = 1;
+						return 1;
+					}
+				}
+#ifndef WITHOUT_HTTP3
+				else if (proto == PROTO_HTTP3) {
+					protohttp3_stream_ctx_t *s = (protohttp3_stream_ctx_t *)stream_ctx;
+					s->icap_ctx = icap_init(ctx, proto, stream_ctx, ctx->protoctx->arg);
+					if (!s->icap_ctx) {
+						ctx->enomem = 1;
+						return 1;
+					}
+				}
+#endif /* !WITHOUT_HTTP3 */
+			}
+#endif /* !WITHOUT_ICAP */
+		}
+	}
+
+	// Cannot defer block action any longer
+	// Match action should not override any deferred action, hence no 'else if'
+	if (ctx->deferred_action & FILTER_ACTION_BLOCK) {
+		log_fine("Applying deferred block action");
+		if (proto == PROTO_HTTP2) {
+			protohttp2_close_stream(stream_ctx);
+		}
+#ifndef WITHOUT_HTTP3
+		else if (proto == PROTO_HTTP3) {
+			protohttp3_close_stream(stream_ctx);
+		}
+#endif /* !WITHOUT_HTTP3 */
+		rv = 1;
+	}
 
 	return rv;
 }
@@ -1399,8 +1556,10 @@ protohttp_setup(pxy_conn_ctx_t *ctx)
 	}
 	memset(ctx->protoctx->arg, 0, sizeof(protohttp_ctx_t));
 
-#ifndef WITHOUT_ICAP
 	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
+	http_ctx->ctx = ctx;
+
+#ifndef WITHOUT_ICAP
 	http_ctx->in_hdr = evbuffer_new();
 	if (!http_ctx->in_hdr) {
 		free(ctx->protoctx->arg);
@@ -1431,8 +1590,10 @@ protohttps_setup(pxy_conn_ctx_t *ctx)
 	}
 	memset(ctx->protoctx->arg, 0, sizeof(protohttp_ctx_t));
 
-#ifndef WITHOUT_ICAP
 	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
+	http_ctx->ctx = ctx;
+
+#ifndef WITHOUT_ICAP
 	http_ctx->in_hdr = evbuffer_new();
 	if (!http_ctx->in_hdr) {
 		free(ctx->protoctx->arg);
@@ -1468,6 +1629,9 @@ protohttp_setup_child(pxy_conn_child_ctx_t *ctx)
 	}
 	memset(ctx->protoctx->arg, 0, sizeof(protohttp_ctx_t));
 
+	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
+	http_ctx->ctx = ctx->conn;
+
 	return PROTO_HTTP;
 }
 
@@ -1487,6 +1651,9 @@ protohttps_setup_child(pxy_conn_child_ctx_t *ctx)
 		return PROTO_ERROR;
 	}
 	memset(ctx->protoctx->arg, 0, sizeof(protohttp_ctx_t));
+
+	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
+	http_ctx->ctx = ctx->conn;
 
 	return PROTO_HTTPS;
 }

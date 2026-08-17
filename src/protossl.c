@@ -777,7 +777,7 @@ protossl_filter_match_sni(pxy_conn_ctx_t *ctx, filter_list_t *list)
 		log_finest_va("Match substring in sni (line=%d): %s, %s", site->action.line_num, site->site, ctx->sslctx->sni);
 #endif /* DEBUG_PROXY */
 
-	filter_action_t *port_action = pxy_conn_filter_port(ctx, site);
+	filter_action_t *port_action = pxy_conn_filter_port(ctx, NULL, site);
 	if (port_action)
 		return port_action;
 
@@ -854,7 +854,7 @@ protossl_filter_match_cn(pxy_conn_ctx_t *ctx, filter_list_t *list)
 	if (site->all_sites)
 		log_finest_va("Match all common names (line=%d): %s, %s", site->action.line_num, site->site, ctx->sslctx->ssl_names);
 
-	filter_action_t *port_action = pxy_conn_filter_port(ctx, site);
+	filter_action_t *port_action = pxy_conn_filter_port(ctx, NULL, site);
 	if (port_action)
 		return port_action;
 
@@ -862,7 +862,7 @@ protossl_filter_match_cn(pxy_conn_ctx_t *ctx, filter_list_t *list)
 }
 
 static filter_action_t * NONNULL(1,2)
-protossl_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
+protossl_filter(pxy_conn_ctx_t *ctx, UNUSED void *stream_ctx, filter_list_t *list)
 {
 	filter_action_t *action_sni = NULL;
 	filter_action_t *action_cn = NULL;
@@ -933,7 +933,7 @@ protossl_apply_filter(pxy_conn_ctx_t *ctx)
 {
 	int rv = 0;
 	filter_action_t *a;
-	if ((a = pxy_conn_filter(ctx, protossl_filter))) {
+	if ((a = pxy_conn_filter(ctx, NULL, protossl_filter))) {
 		unsigned int action = pxy_conn_translate_filter_action(ctx, a);
 
 		ctx->filter_precedence = action & FILTER_PRECEDENCE;
