@@ -132,7 +132,7 @@ static const http_status_reason_t http_status_reasons[] = {
     { 511, "Network Authentication Required" }
 };
 
-void protohttp_log_connect(pxy_conn_ctx_t *, protohttp_ctx_t *) NONNULL(1,2);
+void protohttp_log_connect(pxy_conn_ctx_t *, protohttp_ctx_t *, unsigned int) NONNULL(1,2);
 
 int protohttpx_apply_filter(void *, protocol_t);
 

@@ -61,6 +61,17 @@ typedef struct protohttp2_stream_ctx {
 
     conn_opts_t *conn_opts;
 
+	unsigned int log_connect : 1;
+	unsigned int log_content : 1;
+	unsigned int log_pcap : 1;
+#ifndef WITHOUT_MIRROR
+	unsigned int log_mirror : 1;
+#endif /* !WITHOUT_MIRROR */
+
+	// The precedence of filtering rule applied
+	// precedence can only go up not down
+	unsigned int filter_precedence;
+
     struct protohttp2_stream_ctx *next;
 } protohttp2_stream_ctx_t;
 

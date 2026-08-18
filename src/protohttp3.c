@@ -950,6 +950,7 @@ protohttp3_filter_request_header(protohttp3_stream_ctx_t *s)
     nghttp3_nv *headers = s->headers;
     size_t count = s->headers_count;
     protohttp_ctx_t *http_ctx = s->http_ctx;
+    conn_opts_t *conn_opts = s->conn_opts ? s->conn_opts : ctx->conn_opts;
 
     for (size_t i = 0; i < count; i++) {
         log_finest_va("Processing header '%.*s=%.*s', idx=%zu, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64,
@@ -1035,11 +1036,11 @@ protohttp3_filter_request_header(protohttp3_stream_ctx_t *s)
             log_finest_va("Http content-type '%s', idx=%zu, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64,
                 http_ctx->http_content_type, i, s->src_stream_id, s->dst_stream_id);
         }
-        else if (s->ctx->conn_opts->remove_http_accept_encoding && (headers[i].namelen == 15 && !memcmp(headers[i].name, "accept-encoding", 15))) {
+        else if (conn_opts->remove_http_accept_encoding && (headers[i].namelen == 15 && !memcmp(headers[i].name, "accept-encoding", 15))) {
             protohttp3_delete_nv_header(s, i);
 			http_ctx->seen_keyword_count++;
         }
-        else if (s->ctx->conn_opts->remove_http_referer && (headers[i].namelen == 7 && !memcmp(headers[i].name, "referer", 7))) {
+        else if (conn_opts->remove_http_referer && (headers[i].namelen == 7 && !memcmp(headers[i].name, "referer", 7))) {
             protohttp3_delete_nv_header(s, i);
 			http_ctx->seen_keyword_count++;
 		}
@@ -1085,6 +1086,7 @@ protohttp3_filter_response_header(protohttp3_stream_ctx_t *s)
     nghttp3_nv *headers = s->headers;
     size_t count = s->headers_count;
     protohttp_ctx_t *http_ctx = s->http_ctx;
+    conn_opts_t *conn_opts = s->conn_opts ? s->conn_opts : ctx->conn_opts;
 
     for (size_t i = 0; i < count; i++) {
         log_finest_va("Processing header '%.*s=%.*s', idx=%zu, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64,
@@ -1136,7 +1138,7 @@ protohttp3_filter_response_header(protohttp3_stream_ctx_t *s)
                 http_ctx->http_content_type, i, s->src_stream_id, s->dst_stream_id);
         }
         // Normally not possible in response
-        else if (s->ctx->conn_opts->remove_http_referer && (headers[i].namelen == 7 && !memcmp(headers[i].name, "referer", 7))) {
+        else if (conn_opts->remove_http_referer && (headers[i].namelen == 7 && !memcmp(headers[i].name, "referer", 7))) {
             protohttp3_delete_nv_header(s, i);
 		}
         else if ((headers[i].namelen == 15 && !memcmp(headers[i].name, "public-key-pins", 15)) ||
@@ -1149,17 +1151,17 @@ protohttp3_filter_response_header(protohttp3_stream_ctx_t *s)
         }
         // We should not receive alt-svc on an already h3 stream, but if we do, rewrite it to the configured port
         // And h3 proxyspecs should not be configured to rewrite alt-svc anyway
-        else if (s->ctx->conn_opts->rewrite_alt_svc_port && !memcmp(headers[i].name, "alt-svc", 7)) {
+        else if (conn_opts->rewrite_alt_svc_port && !memcmp(headers[i].name, "alt-svc", 7)) {
             // TODO: Rewrite only the port number in the alt-svc header, keep the rest
             protohttp3_delete_nv_header(s, i);
 
-            size_t len = strlen("h3=\"\":") + strlen(s->ctx->conn_opts->rewrite_alt_svc_port) + strlen("; ma=86400") + 1;
+            size_t len = strlen("h3=\"\":") + strlen(conn_opts->rewrite_alt_svc_port) + strlen("; ma=86400") + 1;
 			char *new_value = malloc(len);
 			if (!new_value) {
 				s->ctx->enomem = 1;
 				return -1;
 			}
-			snprintf(new_value, len, "h3=\":%s\"; ma=86400", s->ctx->conn_opts->rewrite_alt_svc_port);
+			snprintf(new_value, len, "h3=\":%s\"; ma=86400", conn_opts->rewrite_alt_svc_port);
 
             protohttp3_add_nv_header(s, "alt-svc", strlen("alt-svc"), new_value, strlen(new_value));
             free(new_value);
@@ -1312,7 +1314,7 @@ h3_on_end_headers(nghttp3_conn *conn, int64_t stream_id,
         /* header complete: log connection */
         if (WANT_CONNECT_LOG(ctx->conn)) {
             // TODO: Implement h3 specific logging with stream info
-            protohttp_log_connect(ctx, s->http_ctx);
+            protohttp_log_connect(ctx, s->http_ctx, s->log_connect);
         }
     }
 
@@ -1596,18 +1598,28 @@ quic_recv_stream_data(ngtcp2_conn *conn, uint32_t flags,
     // ATTENTION: We cannot set *_end_stream flags here, because we need to wait for h3 callbacks
     int fin = (flags & NGTCP2_STREAM_DATA_FLAG_FIN) ? 1 : 0;
 
+    if (WANT_CONTENT_LOG(ctx)) {
+        protohttp3_stream_ctx_t *s = protohttp3_get_stream_ctx(h3_ctx, stream_id, reqmod);
+        if (!s) {
+            log_fine_va("No stream context found for stream_id=%" PRId64 ", reqmod=%d, fd=%d", stream_id, reqmod, h3_ctx->dst_fd);
+            return NGHTTP3_ERR_CALLBACK_FAILURE;
+        }
+
+        struct evbuffer *inbuf = evbuffer_new();
+        evbuffer_add(inbuf, data, datalen);
+        pxy_log_content_inbuf(ctx, inbuf, reqmod, IPPROTO_UDP, s->log_content, s->log_pcap
+#ifndef WITHOUT_MIRROR
+            , s->log_mirror
+#endif /* !WITHOUT_MIRROR */
+            );
+        evbuffer_free(inbuf);
+    }
+
     /*
      * Feed the raw H3 frame bytes into nghttp3.  nghttp3 will call our
      * h3_on_recv_header / h3_on_recv_data / h3_on_end_headers / h3_on_end_stream
      * callbacks as it parses complete frames.
      */
-
-    if (WANT_CONTENT_LOG(ctx)) {
-        struct evbuffer *inbuf = evbuffer_new();
-        evbuffer_add(inbuf, data, datalen);
-        pxy_log_content_inbuf(ctx, inbuf, reqmod, IPPROTO_UDP);
-        evbuffer_free(inbuf);
-    }
 
      /* Get current timestamp in nanoseconds for nghttp3 */
     struct timeval tv;

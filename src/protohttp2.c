@@ -857,6 +857,7 @@ protohttp2_filter_request_header(protohttp2_stream_ctx_t *s)
     nghttp2_nv *headers = s->headers;
     size_t count = s->headers_count;
     protohttp_ctx_t *http_ctx = s->http_ctx;
+    conn_opts_t *conn_opts = s->conn_opts ? s->conn_opts : ctx->conn_opts;
 
     for (size_t i = 0; i < count; i++) {
         log_finest_va("Processing header '%.*s=%.*s', idx=%zu, src_stream_id=%d, dst_stream_id=%d",
@@ -942,11 +943,11 @@ protohttp2_filter_request_header(protohttp2_stream_ctx_t *s)
             log_finest_va("Http content-type '%s', idx=%zu, src_stream_id=%d, dst_stream_id=%d",
                 http_ctx->http_content_type, i, s->src_stream_id, s->dst_stream_id);
         }
-        else if (s->ctx->conn_opts->remove_http_accept_encoding && (headers[i].namelen == 15 && !memcmp(headers[i].name, "accept-encoding", 15))) {
+        else if (conn_opts->remove_http_accept_encoding && (headers[i].namelen == 15 && !memcmp(headers[i].name, "accept-encoding", 15))) {
             protohttp2_delete_nv_header(s, i);
 			http_ctx->seen_keyword_count++;
         }
-        else if (s->ctx->conn_opts->remove_http_referer && (headers[i].namelen == 7 && !memcmp(headers[i].name, "referer", 7))) {
+        else if (conn_opts->remove_http_referer && (headers[i].namelen == 7 && !memcmp(headers[i].name, "referer", 7))) {
             protohttp2_delete_nv_header(s, i);
 			http_ctx->seen_keyword_count++;
 		}
@@ -990,6 +991,7 @@ protohttp2_filter_response_header(protohttp2_stream_ctx_t *s)
     nghttp2_nv *headers = s->headers;
     size_t count = s->headers_count;
     protohttp_ctx_t *http_ctx = s->http_ctx;
+    conn_opts_t *conn_opts = s->conn_opts ? s->conn_opts : ctx->conn_opts;
 
     for (size_t i = 0; i < count; i++) {
         log_finest_va("Processing header '%.*s=%.*s', idx=%zu, src_stream_id=%d, dst_stream_id=%d",
@@ -1041,7 +1043,7 @@ protohttp2_filter_response_header(protohttp2_stream_ctx_t *s)
                 http_ctx->http_content_type, i, s->src_stream_id, s->dst_stream_id);
         }
         // Normally not possible in response
-        else if (s->ctx->conn_opts->remove_http_referer && (headers[i].namelen == 7 && !memcmp(headers[i].name, "referer", 7))) {
+        else if (conn_opts->remove_http_referer && (headers[i].namelen == 7 && !memcmp(headers[i].name, "referer", 7))) {
             protohttp2_delete_nv_header(s, i);
 		}
         else if ((headers[i].namelen == 15 && !memcmp(headers[i].name, "public-key-pins", 15)) ||
@@ -1052,17 +1054,17 @@ protohttp2_filter_response_header(protohttp2_stream_ctx_t *s)
                  (headers[i].namelen == 7 && !memcmp(headers[i].name, "upgrade", 7))) {
             protohttp2_delete_nv_header(s, i);
 		}
-        else if (s->ctx->conn_opts->rewrite_alt_svc_port && !memcmp(headers[i].name, "alt-svc", 7)) {
+        else if (conn_opts->rewrite_alt_svc_port && !memcmp(headers[i].name, "alt-svc", 7)) {
             // TODO: Rewrite only the port number in the alt-svc header, keep the rest
             protohttp2_delete_nv_header(s, i);
 
-            size_t len = strlen("h3=\"\":") + strlen(s->ctx->conn_opts->rewrite_alt_svc_port) + strlen("; ma=86400") + 1;
+            size_t len = strlen("h3=\"\":") + strlen(conn_opts->rewrite_alt_svc_port) + strlen("; ma=86400") + 1;
 			char *new_value = malloc(len);
 			if (!new_value) {
 				s->ctx->enomem = 1;
 				return -1;
 			}
-			snprintf(new_value, len, "h3=\":%s\"; ma=86400", s->ctx->conn_opts->rewrite_alt_svc_port);
+			snprintf(new_value, len, "h3=\":%s\"; ma=86400", conn_opts->rewrite_alt_svc_port);
 
             protohttp2_add_nv_header(s, "alt-svc", strlen("alt-svc"), new_value, strlen(new_value));
             free(new_value);
@@ -1164,7 +1166,7 @@ protohttp2_on_frame_recv(UNUSED nghttp2_session *session, const nghttp2_frame *f
                 /* header complete: log connection */
                 if (WANT_CONNECT_LOG(ctx->conn)) {
                     // TODO: Implement h2 specific logging with stream info
-                    protohttp_log_connect(ctx, s->http_ctx);
+                    protohttp_log_connect(ctx, s->http_ctx, s->log_connect);
                 }
             }
 

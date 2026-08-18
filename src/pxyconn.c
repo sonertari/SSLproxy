@@ -563,11 +563,16 @@ out:
 }
 
 int NONNULL(1)
-pxy_log_content_inbuf(pxy_conn_ctx_t *ctx, struct evbuffer *inbuf, int req, int proto)
-{
-	if (!ctx->log_content && !ctx->log_pcap
+pxy_log_content_inbuf(pxy_conn_ctx_t *ctx, struct evbuffer *inbuf, int req, int proto,
+	unsigned int log_content, unsigned int log_pcap
 #ifndef WITHOUT_MIRROR
-		&& !ctx->log_mirror
+	, unsigned int log_mirror
+#endif /* !WITHOUT_MIRROR */
+)
+{
+	if (!log_content && !log_pcap
+#ifndef WITHOUT_MIRROR
+		&& !log_mirror
 #endif /* !WITHOUT_MIRROR */
 		) {
 		return 0;
@@ -591,9 +596,9 @@ pxy_log_content_inbuf(pxy_conn_ctx_t *ctx, struct evbuffer *inbuf, int req, int 
 	}
 	memcpy(lb->buf, buf, lb->sz);
 	free(buf);
-	if (log_content_submit(&ctx->logctx, lb, req, proto, ctx->log_content, ctx->log_pcap
+	if (log_content_submit(&ctx->logctx, lb, req, proto, log_content, log_pcap
 #ifndef WITHOUT_MIRROR
-		, ctx->log_mirror
+		, log_mirror
 #endif /* !WITHOUT_MIRROR */
 		) == -1) {
 		logbuf_free(lb);
@@ -1367,7 +1372,11 @@ pxy_bev_readcb_preexec_logging_and_stats(struct bufferevent *bev, pxy_conn_ctx_t
 				}
 			}
 			// HTTP content logging at this point may record certain header lines twice, if we have not seen all headers yet
-			return pxy_log_content_inbuf(ctx, inbuf, (bev == ctx->src.bev), IPPROTO_TCP);
+			return pxy_log_content_inbuf(ctx, inbuf, (bev == ctx->src.bev), IPPROTO_TCP, ctx->log_content, ctx->log_pcap
+#ifndef WITHOUT_MIRROR
+				, ctx->log_mirror
+#endif /* !WITHOUT_MIRROR */
+				);
 		}
 	}
 	return 0;
@@ -1414,7 +1423,11 @@ pxy_bev_readcb_preexec_logging_and_stats_child(struct bufferevent *bev, pxy_conn
 	}
 
 	if (WANT_CONTENT_LOG(ctx->conn)) {
-		return pxy_log_content_inbuf(ctx->conn, inbuf, (bev == ctx->src.bev), IPPROTO_TCP);
+		return pxy_log_content_inbuf(ctx->conn, inbuf, (bev == ctx->src.bev), IPPROTO_TCP, ctx->conn->log_content, ctx->conn->log_pcap
+#ifndef WITHOUT_MIRROR
+			, ctx->conn->log_mirror
+#endif /* !WITHOUT_MIRROR */
+			);
 	}
 	return 0;
 }

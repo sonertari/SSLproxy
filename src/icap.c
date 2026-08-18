@@ -1655,9 +1655,7 @@ icap_handle_service_error(icap_service_ctx_t *service_ctx)
 	// TODO: ctx may be NULL?
 	pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
 
-	log_fine_icap_va("ICAP service in error state, conn_opts conn_fail_open=%s, conn_opts icap_fail_open=%s, svc conn_fail_open=%s, svc icap_fail_open=%s",
-		ctx ? (ctx->conn_opts->icap_conn_fail_open == ICAP_FAIL_CLOSE ? "fail-close" : "fail-open") : "-",
-		ctx ? (ctx->conn_opts->icap_fail_open == ICAP_FAIL_CLOSE ? "fail-close" : "fail-open") : "-",
+	log_fine_icap_va("ICAP service in error state, svc conn_fail_open=%s, svc icap_fail_open=%s",
 		service_ctx->svc->conn_fail_open == ICAP_FAIL_CLOSE ? "fail-close" : "fail-open",
 		service_ctx->svc->icap_fail_open == ICAP_FAIL_CLOSE ? "fail-close" : "fail-open");
 
