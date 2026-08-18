@@ -59,6 +59,8 @@ typedef struct protohttp2_stream_ctx {
     int deferred_free_pending; /* Flag indicating we want to free this */
     struct event *ev_free;     /* Libevent timer event to execute the free */
 
+    conn_opts_t *conn_opts;
+
     struct protohttp2_stream_ctx *next;
 } protohttp2_stream_ctx_t;
 

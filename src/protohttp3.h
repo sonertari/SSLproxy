@@ -171,6 +171,8 @@ typedef struct protohttp3_stream_ctx {
     int deferred_free_pending;
     struct event *ev_free;
 
+    conn_opts_t *conn_opts;
+
     struct protohttp3_stream_ctx *next;
 } protohttp3_stream_ctx_t;
 

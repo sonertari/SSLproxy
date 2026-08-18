@@ -325,7 +325,7 @@ icap_ctx_free(icap_ctx_t *icap_ctx, int term_owner)
 }
 
 static icap_ctx_t *
-icap_ctx_new(pxy_conn_ctx_t *ctx, protocol_t proto, void *stream_ctx, void *hx_ctx)
+icap_ctx_new(pxy_conn_ctx_t *ctx, protocol_t proto, void *stream_ctx, void *hx_ctx, struct icap_service *icap_chain)
 {
 	log_finest("ENTER");
 
@@ -354,7 +354,7 @@ icap_ctx_new(pxy_conn_ctx_t *ctx, protocol_t proto, void *stream_ctx, void *hx_c
 		ctx->icap_ctx = icap_ctx;
 	}
 
-	icap_service_t *svc = ctx->conn_opts->icap_chain;
+	icap_service_t *svc = icap_chain;
 	icap_ctx->service_count = 0;
 
 	while (svc && icap_ctx->service_count < ICAP_MAX_SERVICES) {
@@ -372,35 +372,36 @@ icap_ctx_new(pxy_conn_ctx_t *ctx, protocol_t proto, void *stream_ctx, void *hx_c
 }
 
 icap_ctx_t *
-icap_init(pxy_conn_ctx_t *ctx, protocol_t proto, void *stream_ctx, void *hx_ctx)
+icap_init(pxy_conn_ctx_t *ctx, protocol_t proto, void *stream_ctx, void *hx_ctx, struct icap_service *icap_chain)
 {
 	log_finest_va("ENTER, processing %s, stream_id=%d", stream_ctx ? "stream" : "connection", stream_ctx ? ((protohttp2_stream_ctx_t *)stream_ctx)->src_stream_id : -1);
 
 	icap_ctx_t *icap_ctx = NULL;
 	if (proto == PROTO_HTTP2) {
 		icap_ctx = ((protohttp2_stream_ctx_t *)stream_ctx)->icap_ctx;
+		if (icap_ctx) {
+			log_fine_va("H2 stream ICAP context already initialized, reinitializing, stream_id=%d", ((protohttp2_stream_ctx_t *)stream_ctx)->src_stream_id);
+			icap_ctx_free(((protohttp2_stream_ctx_t *)stream_ctx)->icap_ctx, 0);
+		}
 	}
 #ifndef WITHOUT_HTTP3
 	else if (proto == PROTO_HTTP3) {
 		icap_ctx = ((protohttp3_stream_ctx_t *)stream_ctx)->icap_ctx;
+		if (icap_ctx) {
+			log_fine_va("H3 stream ICAP context already initialized, reinitializing, stream_id=%" PRId64, ((protohttp3_stream_ctx_t *)stream_ctx)->src_stream_id);
+			icap_ctx_free(((protohttp3_stream_ctx_t *)stream_ctx)->icap_ctx, 0);
+		}
 	}
 #endif /* !WITHOUT_HTTP3 */
 	else {
 		icap_ctx = ctx->icap_ctx;
-	}
-
-	if (icap_ctx) {
-		if (!stream_ctx) {
+		if (icap_ctx) {
 			log_fine("Conn ICAP context already initialized, reinitializing");
 			icap_ctx_free(ctx->icap_ctx, 0);
 		}
-		else {
-			log_fine_va("Stream ICAP context already initialized, reinitializing, stream_id=%d", ((protohttp2_stream_ctx_t *)stream_ctx)->src_stream_id);
-			icap_ctx_free(((protohttp2_stream_ctx_t *)stream_ctx)->icap_ctx, 0);
-		}
 	}
 
-	icap_ctx = icap_ctx_new(ctx, proto, stream_ctx, hx_ctx);
+	icap_ctx = icap_ctx_new(ctx, proto, stream_ctx, hx_ctx, icap_chain);
 	if (!icap_ctx)
 		return NULL;
 

@@ -92,7 +92,7 @@ protohttp2_new_stream_ctx(protohttp2_ctx_t *h2_ctx, int32_t stream_id)
 	s->http_ctx->ctx = ctx;
 
 #ifndef WITHOUT_ICAP
-    s->icap_ctx = icap_init(ctx, PROTO_HTTP2, s, h2_ctx);
+    s->icap_ctx = icap_init(ctx, PROTO_HTTP2, s, h2_ctx, ctx->conn_opts->icap_chain);
 	if (!s->icap_ctx) {
         evbuffer_free(s->data_buf);
         free(s->http_ctx);

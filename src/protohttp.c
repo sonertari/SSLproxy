@@ -621,7 +621,7 @@ protohttp_apply_filter(pxy_conn_ctx_t *ctx)
 			ctx->conn_opts = a->conn_opts;
 #ifndef WITHOUT_ICAP
 			if (a->conn_opts->icap_chain) {
-				ctx->icap_ctx = icap_init(ctx, PROTO_HTTP, NULL, NULL);
+				ctx->icap_ctx = icap_init(ctx, PROTO_HTTP, NULL, NULL, a->conn_opts->icap_chain);
 				if (!ctx->icap_ctx) {
 					ctx->enomem = 1;
 					return 1;
@@ -665,24 +665,13 @@ protohttpx_apply_filter(void *stream_ctx, protocol_t proto)
 
 		ctx->filter_precedence = action & FILTER_PRECEDENCE;
 
-		if (action & FILTER_ACTION_DIVERT) {
-			if (ctx->divert) {
-				// Override any deferred block action, if already in divert mode (keep divert mode)
-				ctx->deferred_action = FILTER_ACTION_NONE;
-			} else {
-				log_fine("HTTP filter cannot enable divert mode");
-			}
-		}
-		else if (action & FILTER_ACTION_SPLIT) {
-			if (!ctx->divert) {
-				// Override any deferred block action, if already in split mode (keep split mode)
-				ctx->deferred_action = FILTER_ACTION_NONE;
-			} else {
-				log_fine("HTTP filter cannot enable split mode");
-			}
+		if (action & (FILTER_ACTION_DIVERT | FILTER_ACTION_SPLIT)) {
+			// Override any deferred block action
+			ctx->deferred_action = FILTER_ACTION_NONE;
+			log_fine("H2/H3 filter cannot enable/disable divert or split mode");
 		}
 		else if (action & FILTER_ACTION_PASS) {
-			log_fine("HTTP filter cannot take pass action");
+			log_fine("H2/H3 filter cannot take pass action");
 		}
 		else if (action & FILTER_ACTION_BLOCK) {
 			ctx->deferred_action = FILTER_ACTION_NONE;
@@ -704,9 +693,9 @@ protohttpx_apply_filter(void *stream_ctx, protocol_t proto)
 #endif /* !WITHOUT_MIRROR */
 				)) {
 #ifndef WITHOUT_MIRROR
-			log_fine("HTTP filter cannot enable content, pcap, or mirror logging");
+			log_fine("H2/H3 filter cannot enable content, pcap, or mirror logging");
 #else /* !WITHOUT_MIRROR */
-			log_fine("HTTP filter cannot enable content or pcap logging");
+			log_fine("H2/H3 filter cannot enable content or pcap logging");
 #endif /* WITHOUT_MIRROR */
 		}
 
@@ -737,21 +726,26 @@ protohttpx_apply_filter(void *stream_ctx, protocol_t proto)
 #endif /* !WITHOUT_MIRROR */
 
 		if (a->conn_opts) {
-			ctx->conn_opts = a->conn_opts;
 #ifndef WITHOUT_ICAP
-			if (a->conn_opts->icap_chain) {
-				if (proto == PROTO_HTTP2) {
-					protohttp2_stream_ctx_t *s = (protohttp2_stream_ctx_t *)stream_ctx;
-					s->icap_ctx = icap_init(ctx, proto, stream_ctx, ctx->protoctx->arg);
+			if (proto == PROTO_HTTP2) {
+				protohttp2_stream_ctx_t *s = (protohttp2_stream_ctx_t *)stream_ctx;
+				s->conn_opts = a->conn_opts;
+
+				if (a->conn_opts->icap_chain) {
+					s->icap_ctx = icap_init(ctx, proto, stream_ctx, ctx->protoctx->arg, a->conn_opts->icap_chain);
 					if (!s->icap_ctx) {
 						ctx->enomem = 1;
 						return 1;
 					}
 				}
+			}
 #ifndef WITHOUT_HTTP3
-				else if (proto == PROTO_HTTP3) {
-					protohttp3_stream_ctx_t *s = (protohttp3_stream_ctx_t *)stream_ctx;
-					s->icap_ctx = icap_init(ctx, proto, stream_ctx, ctx->protoctx->arg);
+			else if (proto == PROTO_HTTP3) {
+				protohttp3_stream_ctx_t *s = (protohttp3_stream_ctx_t *)stream_ctx;
+				s->conn_opts = a->conn_opts;
+
+				if (a->conn_opts->icap_chain) {
+					s->icap_ctx = icap_init(ctx, proto, stream_ctx, ctx->protoctx->arg, a->conn_opts->icap_chain);
 					if (!s->icap_ctx) {
 						ctx->enomem = 1;
 						return 1;

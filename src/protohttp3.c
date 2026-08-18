@@ -169,7 +169,7 @@ protohttp3_new_stream_ctx(protohttp3_ctx_t *h3_ctx, int64_t stream_id)
 	s->http_ctx->ctx = ctx;
 
 #ifndef WITHOUT_ICAP
-    s->icap_ctx = icap_init(ctx, PROTO_HTTP3, s, h3_ctx);
+    s->icap_ctx = icap_init(ctx, PROTO_HTTP3, s, h3_ctx, ctx->conn_opts->icap_chain);
 	if (!s->icap_ctx) {
         free(s->http_ctx);
         free(s);
