@@ -77,8 +77,8 @@ typedef void (*proto_failopen_to_dest_cb)(icap_service_ctx_t *) NONNULL(1);
 struct icap_ctx {
 	pxy_conn_ctx_t *conn_ctx;
 	protocol_t proto;
-	void *stream_ctx;         /* For HTTP/2/3, the stream context */
-	void *hx_ctx;             /* For HTTP/2/3, the HTTP/2 or HTTP/3 context */
+	protohttpx_stream_ctx_t *stream_ctx; /* H2/H3 stream context */
+	void *hx_ctx;                        /* H2/H3 context */
 
 	unsigned int is_veto : 1;         /* 1 if ICAP server vetoed the transaction */
 	unsigned int sent_veto_page : 1;  /* 1 if veto page sent to client */

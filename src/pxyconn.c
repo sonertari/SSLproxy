@@ -1639,7 +1639,7 @@ pxy_conn_filter_match_ip(pxy_conn_ctx_t *ctx, filter_list_t *list)
 }
 
 static filter_action_t * NONNULL(1,2)
-pxy_conn_dsthost_filter(pxy_conn_ctx_t *ctx, UNUSED void *stream_ctx, filter_list_t *list)
+pxy_conn_dsthost_filter(pxy_conn_ctx_t *ctx, UNUSED protohttpx_stream_ctx_t *s, filter_list_t *list)
 {
 	if (ctx->dsthost_str) {
 		filter_action_t *action;

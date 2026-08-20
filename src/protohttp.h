@@ -80,7 +80,7 @@ typedef struct {
 #endif
 
 #define PROTOHTTPX_STREAM_CTX \
-    /* We use int64_t for stream ids not int32_t to use common stream id type for both H2 and H3, as H3 uses int64_t stream ids. */ \
+    /* We use int64_t for stream ids to use common stream id type for both H2 and H3, as H3 uses int64_t stream ids. */ \
     int64_t src_stream_id; /* stream id on the client side */ \
     int64_t dst_stream_id; /* stream id on the server side */ \
     pxy_conn_ctx_t *ctx; \
@@ -89,8 +89,8 @@ typedef struct {
     struct evbuffer *data_buf; \
     PROTOHTTPX_ICAP_FIELD \
     protohttp_ctx_t *http_ctx; \
-    unsigned int closed : 1; /* 1 if stream is closing, set after the first on_stream_close event */ \
-    unsigned int term : 1;   /* 1 if stream is ready to be terminated */ \
+    unsigned int closed : 1;   /* 1 if stream is closing, set after the first on_stream_close event */ \
+    unsigned int term : 1;     /* 1 if stream is ready to be terminated */ \
     int ref_count;             /* Active users on the C call stack */ \
     int deferred_free_pending; /* Flag indicating we want to free this */ \
     struct event *ev_free;     /* Libevent timer event to execute the free */ \
@@ -99,12 +99,23 @@ typedef struct {
 	unsigned int log_content : 1; \
 	unsigned int log_pcap : 1; \
     PROTOHTTPX_MIRROR_FIELD \
-	/* The precedence of filtering rule applied precedence can only go up not down */ \
+	/* The precedence of filtering rule applied, precedence can only go up not down */ \
 	unsigned int filter_precedence;
 
 typedef struct protohttpx_stream_ctx {
     PROTOHTTPX_STREAM_CTX
 } protohttpx_stream_ctx_t;
+
+typedef struct {
+    const uint8_t *name;
+    size_t namelen;
+    const uint8_t *value;
+    size_t valuelen;
+} protohttpx_nv_t;
+
+typedef void (*delete_nv_cb_t)(protohttpx_stream_ctx_t *, size_t);
+typedef int (*add_nv_header_t)(protohttpx_stream_ctx_t *, const char *,  size_t, const char *, size_t);
+typedef int (*filter_header_t)(protohttpx_stream_ctx_t *, void *, int, delete_nv_cb_t, add_nv_header_t);
 
 // Common HTTP status codes and their standard reason phrases, sorted by code
 static const http_status_reason_t http_status_reasons[] = {
@@ -173,7 +184,11 @@ static const http_status_reason_t http_status_reasons[] = {
 
 void protohttp_log_connect(pxy_conn_ctx_t *, protohttp_ctx_t *, unsigned int) NONNULL(1,2);
 
-int protohttpx_apply_filter(void *, protocol_t);
+int protohttpx_apply_filter(protohttpx_stream_ctx_t *, protocol_t);
+int protohttpx_filter_request_header(protohttpx_stream_ctx_t *s, void *headers, int proto,
+    delete_nv_cb_t delete_nv_cb, add_nv_header_t add_nv_header) WUNRES NONNULL(1);
+int protohttpx_filter_response_header(protohttpx_stream_ctx_t *s, void *headers, int proto,
+    delete_nv_cb_t delete_nv_cb, add_nv_header_t add_nv_header) WUNRES NONNULL(1);
 
 int protohttp_filter_request_header(struct evbuffer *, struct evbuffer *, protohttp_ctx_t *, enum conn_type, pxy_conn_ctx_t *) WUNRES NONNULL(1,2,3,5);
 void protohttp_filter_response_header(struct evbuffer *, struct evbuffer *, protohttp_ctx_t *, pxy_conn_ctx_t *) NONNULL(1,2,3,4);

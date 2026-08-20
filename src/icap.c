@@ -285,33 +285,25 @@ icap_ctx_free(icap_ctx_t *icap_ctx, int term_owner)
 		free(icap_ctx->icap_extended_headers);
 	}
 
-	if (icap_ctx->proto == PROTO_HTTP2) {
-		// TODO: Free h2 conn if all h2 streams are finished?
-		protohttp2_stream_ctx_t *s = icap_ctx->stream_ctx;
+	if (icap_ctx->proto == PROTO_HTTP2 || icap_ctx->proto == PROTO_HTTP3) {
+		// TODO: Free h2/h3 conn if all h2/h3 streams are finished?
+		protohttpx_stream_ctx_t *s = icap_ctx->stream_ctx;
 		if (s) {
 			s->icap_ctx = NULL;
 			// Do not term the stream if it's not marked as ready to be terminated
 			if (term_owner && s->term) {
 				log_finest("Stream term flag set, free stream ctx");
-				protohttp2_request_free_stream_ctx(s);
-			}
-		}
-	}
+				if (icap_ctx->proto == PROTO_HTTP2) {
+					protohttp2_request_free_stream_ctx((protohttp2_stream_ctx_t *)s);
+				}
 #ifndef WITHOUT_HTTP3
-	else if (icap_ctx->proto == PROTO_HTTP3) {
-		// TODO: Free h3 conn if all h3 streams are finished?
-		protohttp3_stream_ctx_t *s = icap_ctx->stream_ctx;
-		if (s) {
-			s->icap_ctx = NULL;
-			// Do not term the stream if it's not marked as ready to be terminated
-			if (term_owner && s->term) {
-				log_finest("Stream term flag set, free stream ctx");
-				// TODO: Remove reqmod param
-				protohttp3_request_free_stream_ctx(s);
+				else {
+					protohttp3_request_free_stream_ctx((protohttp3_stream_ctx_t *)s);
+				}
+#endif /* !WITHOUT_HTTP3 */
 			}
 		}
 	}
-#endif /* !WITHOUT_HTTP3 */
 	else {
 		ctx->icap_ctx = NULL;
 
@@ -325,7 +317,7 @@ icap_ctx_free(icap_ctx_t *icap_ctx, int term_owner)
 }
 
 static icap_ctx_t *
-icap_ctx_new(pxy_conn_ctx_t *ctx, protocol_t proto, void *stream_ctx, void *hx_ctx, struct icap_service *icap_chain)
+icap_ctx_new(pxy_conn_ctx_t *ctx, protocol_t proto, protohttpx_stream_ctx_t *s, void *hx_ctx, struct icap_service *icap_chain)
 {
 	log_finest("ENTER");
 
@@ -339,17 +331,12 @@ icap_ctx_new(pxy_conn_ctx_t *ctx, protocol_t proto, void *stream_ctx, void *hx_c
 
 	icap_ctx->conn_ctx = ctx;
 	icap_ctx->proto = proto;
-	icap_ctx->stream_ctx = stream_ctx;
+	icap_ctx->stream_ctx = s;
 	icap_ctx->hx_ctx = hx_ctx;
 
-	if (proto == PROTO_HTTP2) {
-		((protohttp2_stream_ctx_t *)stream_ctx)->icap_ctx = icap_ctx;
+	if (proto == PROTO_HTTP2 || proto == PROTO_HTTP3) {
+		s->icap_ctx = icap_ctx;
 	}
-#ifndef WITHOUT_HTTP3
-	else if (proto == PROTO_HTTP3) {
-		((protohttp3_stream_ctx_t *)stream_ctx)->icap_ctx = icap_ctx;
-	}
-#endif /* !WITHOUT_HTTP3 */
 	else {
 		ctx->icap_ctx = icap_ctx;
 	}
@@ -372,19 +359,15 @@ icap_ctx_new(pxy_conn_ctx_t *ctx, protocol_t proto, void *stream_ctx, void *hx_c
 }
 
 icap_ctx_t *
-icap_init(pxy_conn_ctx_t *ctx, protocol_t proto, protohttpx_stream_ctx_t *stream_ctx, void *hx_ctx, struct icap_service *icap_chain)
+icap_init(pxy_conn_ctx_t *ctx, protocol_t proto, protohttpx_stream_ctx_t *s, void *hx_ctx, struct icap_service *icap_chain)
 {
-	log_finest_va("ENTER, processing %s, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64, stream_ctx ? "stream" : "connection", stream_ctx ? stream_ctx->src_stream_id : -1, stream_ctx ? stream_ctx->dst_stream_id : -1);
+	log_finest_va("ENTER, processing %s, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64, s ? "stream" : "connection", s ? s->src_stream_id : -1, s ? s->dst_stream_id : -1);
 
 	icap_ctx_t *icap_ctx = NULL;
-	if (proto == PROTO_HTTP2
-#ifndef WITHOUT_HTTP3
-		|| proto == PROTO_HTTP3
-#endif /* !WITHOUT_HTTP3 */
-		) {
-		if (stream_ctx->icap_ctx) {
-			log_fine_va("Stream ICAP context already initialized, reinitializing, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64, stream_ctx->src_stream_id, stream_ctx->dst_stream_id);
-			icap_ctx_free(stream_ctx->icap_ctx, 0);
+	if (proto == PROTO_HTTP2 || proto == PROTO_HTTP3) {
+		if (s->icap_ctx) {
+			log_fine_va("Stream ICAP context already initialized, reinitializing, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64, s->src_stream_id, s->dst_stream_id);
+			icap_ctx_free(s->icap_ctx, 0);
 		}
 	}
 	else {
@@ -395,7 +378,7 @@ icap_init(pxy_conn_ctx_t *ctx, protocol_t proto, protohttpx_stream_ctx_t *stream
 		}
 	}
 
-	icap_ctx = icap_ctx_new(ctx, proto, stream_ctx, hx_ctx, icap_chain);
+	icap_ctx = icap_ctx_new(ctx, proto, s, hx_ctx, icap_chain);
 	if (!icap_ctx)
 		return NULL;
 
@@ -406,14 +389,14 @@ icap_init(pxy_conn_ctx_t *ctx, protocol_t proto, protohttpx_stream_ctx_t *stream
 	}
 
 	if (proto == PROTO_HTTP2) {
-		icap_ctx = ((protohttp2_stream_ctx_t *)stream_ctx)->icap_ctx;
+		icap_ctx = s->icap_ctx;
 		icap_ctx->send_data_to_src_cb = protohttp2_icap_send_data_to_src_cb;
 		icap_ctx->send_data_to_dst_cb = protohttp2_icap_send_data_to_dst_cb;
 		icap_ctx->failopen_to_dest_cb = protohttp2_icap_failopen_to_dest_cb;
 	}
 #ifndef WITHOUT_HTTP3
 	else if (proto == PROTO_HTTP3) {
-		icap_ctx = ((protohttp3_stream_ctx_t *)stream_ctx)->icap_ctx;
+		icap_ctx = s->icap_ctx;
 		icap_ctx->send_data_to_src_cb = protohttp3_icap_send_data_to_src_cb;
 		icap_ctx->send_data_to_dst_cb = protohttp3_icap_send_data_to_dst_cb;
 		icap_ctx->failopen_to_dest_cb = protohttp3_icap_failopen_to_dest_cb;
@@ -1462,14 +1445,9 @@ icap_get_http_content_length(icap_ctx_t *icap_ctx)
 	unsigned int http_content_length_set = icap_ctx->reqmod ? icap_ctx->src_http_content_length_set : icap_ctx->dst_http_content_length_set;
 	if (http_content_length_set == 0) {
 		protohttp_ctx_t *http_ctx = NULL;
-		if (icap_ctx->proto == PROTO_HTTP2) {
-			http_ctx = ((protohttp2_stream_ctx_t *)(icap_ctx->stream_ctx))->http_ctx;
+		if (icap_ctx->proto == PROTO_HTTP2 || icap_ctx->proto == PROTO_HTTP3) {
+			http_ctx = icap_ctx->stream_ctx->http_ctx;
 		}
-#ifndef WITHOUT_HTTP3
-		else if (icap_ctx->proto == PROTO_HTTP3) {
-			http_ctx = ((protohttp3_stream_ctx_t *)(icap_ctx->stream_ctx))->http_ctx;
-		}
-#endif /* !WITHOUT_HTTP3 */
 		else {
 			http_ctx = ctx->protoctx->arg;
 		}

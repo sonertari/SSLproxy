@@ -97,7 +97,9 @@ typedef int (*outbuf_has_data_func_t)(struct bufferevent *
 typedef void (*log_dbg_evbuf_info_func_t)(pxy_conn_ctx_t *, pxy_conn_desc_t *, pxy_conn_desc_t *) NONNULL(1,2,3);
 #endif /* DEBUG_PROXY */
 
-typedef filter_action_t * (*proto_filter_func_t)(pxy_conn_ctx_t *, void *stream_ctx, filter_list_t *) NONNULL(1,3) WUNRES;
+// Forward declaration
+struct protohttpx_stream_ctx;
+typedef filter_action_t * (*proto_filter_func_t)(pxy_conn_ctx_t *, struct protohttpx_stream_ctx *, filter_list_t *) NONNULL(1,3) WUNRES;
 
 /*
  * Proxy connection context state, describes a proxy connection
