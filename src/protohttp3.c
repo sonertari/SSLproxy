@@ -239,7 +239,6 @@ protohttp3_free_stream_ctx(protohttp3_stream_ctx_t *s)
     if (s->body_buf) {
         free(s->body_buf);
         s->body_buf = NULL;
-        s->body_len = 0;
     }
 
 #ifndef WITHOUT_ICAP
@@ -1518,16 +1517,15 @@ h3_stream_read_data(nghttp3_conn *conn, int64_t stream_id,
     if (s->body_buf) {
         free(s->body_buf);
         s->body_buf = NULL;
-        s->body_len = 0;
     }
 
-    s->body_buf = malloc(evbuffer_get_length(s->data_buf));
-    memcpy(s->body_buf, evbuffer_pullup(s->data_buf, evbuffer_get_length(s->data_buf)), evbuffer_get_length(s->data_buf));
-    s->body_len = evbuffer_get_length(s->data_buf);
+    size_t data_len = evbuffer_get_length(s->data_buf);
+    s->body_buf = malloc(data_len);
+    memcpy(s->body_buf, evbuffer_pullup(s->data_buf, data_len), data_len);
 
     // TODO: Do we need to fill more than one vector? For now, we just fill one vector with the entire body.
     vec[0].base = s->body_buf;
-    vec[0].len  = s->body_len;
+    vec[0].len  = data_len;
 
     // TODO: Do we need to double check the *_end_stream flags here, as we already check them above?
     // But this sets the NGHTTP3_DATA_FLAG_EOF flag asap, instead of waiting for the next call to h3_stream_read_data() to set it.
@@ -1548,7 +1546,7 @@ h3_stream_read_data(nghttp3_conn *conn, int64_t stream_id,
 #ifndef WITHOUT_ICAP
 out:
 #endif /* !WITHOUT_ICAP */
-    log_finest_va("stream %" PRId64 " READ, reqmod=%d, fd=%d, len=%zu", stream_id, reqmod, h3_ctx->dst_fd, evbuffer_get_length(s->data_buf));
+    log_finest_va("stream %" PRId64 " READ, reqmod=%d, fd=%d, len=%zu", stream_id, reqmod, h3_ctx->dst_fd, data_len);
 
     /*
      * Drain data_buf so a second call to this callback (e.g. after a
@@ -1557,7 +1555,7 @@ out:
      * the payload into its own packet buffer within the same flush loop
      * before we ever return here again.
      */
-    evbuffer_drain(s->data_buf, evbuffer_get_length(s->data_buf));
+    evbuffer_drain(s->data_buf, data_len);
 
     // ATTENTION: Return the number of vectors filled, not the number of bytes placed in vec[0..*pcnt-1].
     // return s->body_len; // Number of bytes placed in vec[0..*pcnt-1]

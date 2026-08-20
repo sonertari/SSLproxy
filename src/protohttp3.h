@@ -151,7 +151,6 @@ typedef struct protohttp3_stream_ctx {
     struct evbuffer *data_buf;
     // Persistent buffer for evbuffer_pullup() to survive until the data is sent or the stream is freed
     uint8_t     *body_buf;
-    size_t       body_len;
     nghttp3_data_reader dr;
 
 #ifndef WITHOUT_ICAP
