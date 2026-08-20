@@ -67,6 +67,45 @@ typedef struct {
     const char *reason;
 } http_status_reason_t;
 
+#ifndef WITHOUT_ICAP
+#define PROTOHTTPX_ICAP_FIELD icap_ctx_t *icap_ctx;
+#else
+#define PROTOHTTPX_ICAP_FIELD
+#endif
+
+#ifndef WITHOUT_MIRROR
+#define PROTOHTTPX_MIRROR_FIELD unsigned int log_mirror : 1;
+#else
+#define PROTOHTTPX_MIRROR_FIELD
+#endif
+
+#define PROTOHTTPX_STREAM_CTX \
+    /* We use int64_t for stream ids not int32_t to use common stream id type for both H2 and H3, as H3 uses int64_t stream ids. */ \
+    int64_t src_stream_id; /* stream id on the client side */ \
+    int64_t dst_stream_id; /* stream id on the server side */ \
+    pxy_conn_ctx_t *ctx; \
+    size_t headers_count; \
+    size_t headers_capacity; \
+    struct evbuffer *data_buf; \
+    PROTOHTTPX_ICAP_FIELD \
+    protohttp_ctx_t *http_ctx; \
+    unsigned int closed : 1; /* 1 if stream is closing, set after the first on_stream_close event */ \
+    unsigned int term : 1;   /* 1 if stream is ready to be terminated */ \
+    int ref_count;             /* Active users on the C call stack */ \
+    int deferred_free_pending; /* Flag indicating we want to free this */ \
+    struct event *ev_free;     /* Libevent timer event to execute the free */ \
+    conn_opts_t *conn_opts; \
+	unsigned int log_connect : 1; \
+	unsigned int log_content : 1; \
+	unsigned int log_pcap : 1; \
+    PROTOHTTPX_MIRROR_FIELD \
+	/* The precedence of filtering rule applied precedence can only go up not down */ \
+	unsigned int filter_precedence;
+
+typedef struct protohttpx_stream_ctx {
+    PROTOHTTPX_STREAM_CTX
+} protohttpx_stream_ctx_t;
+
 // Common HTTP status codes and their standard reason phrases, sorted by code
 static const http_status_reason_t http_status_reasons[] = {
     { 100, "Continue" },

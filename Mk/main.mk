@@ -579,7 +579,7 @@ TPKG_CPPFLAGS:=	$(subst -I,-isystem,$(TPKG_CPPFLAGS))
 endif
 
 CFLAGS+=	$(PKG_CFLAGS) \
-		-std=c99 -Wall -Wextra -pedantic \
+		-std=c99 -Wall -Wextra -pedantic -fno-strict-aliasing \
 		-D_FORTIFY_SOURCE=2 -fstack-protector-all
 CPPFLAGS+=	$(PKG_CPPFLAGS) $(CPPDEFS) $(FEATURES)
 TCPPFLAGS+=	$(TPKG_CPPFLAGS)

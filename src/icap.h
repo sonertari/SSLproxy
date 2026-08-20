@@ -31,6 +31,7 @@
 #ifndef WITHOUT_ICAP
 
 #include "pxyconn.h"
+#include "protohttp.h"
 #include "protohttp2.h"
 #include "protohttp3.h"
 #include "attrib.h"
@@ -159,7 +160,7 @@ struct icap_service_ctx {
 };
 
 void icap_ctx_free(icap_ctx_t *, int);
-icap_ctx_t *icap_init(pxy_conn_ctx_t *, protocol_t, void *, void *, struct icap_service *) NONNULL(1);
+icap_ctx_t *icap_init(pxy_conn_ctx_t *, protocol_t, protohttpx_stream_ctx_t *, void *, struct icap_service *) NONNULL(1);
 char *icap_chain_str(conn_opts_t *);
 
 /*

@@ -60,6 +60,7 @@
  */
 
 #include "pxyconn.h"
+#include "protohttp.h"
 #include "attrib.h"
 #include "khash.h"
 #include "icap.h"
@@ -140,50 +141,17 @@ void h3_session_map_remove(h3_session_map_t *, const quic_tuple_key_t *);
  * ---------------------------------------------------------------------- */
 
 typedef struct protohttp3_stream_ctx {
-    int64_t src_stream_id;     /* ngtcp2/QUIC stream id on the client side */
-    int64_t dst_stream_id;     /* ngtcp2/QUIC stream id on the server side */
-    pxy_conn_ctx_t *ctx;
+    PROTOHTTPX_STREAM_CTX
+
+    struct protohttp3_stream_ctx *next;
 
     nghttp3_nv  *headers;
-    size_t       headers_count;
-    size_t       headers_capacity;
-
-    struct evbuffer *data_buf;
     // Persistent buffer for evbuffer_pullup() to survive until the data is sent or the stream is freed
     uint8_t     *body_buf;
     nghttp3_data_reader dr;
 
-#ifndef WITHOUT_ICAP
-	icap_ctx_t *icap_ctx;
-#endif /* !WITHOUT_ICAP */
-
-    protohttp_ctx_t *http_ctx;
-
-    /* Flags (same bit-field idiom used throughout sslproxy)               */
     unsigned int src_end_stream   : 1; /* 1 after FIN/END_STREAM           */
     unsigned int dst_end_stream   : 1; /* 1 after FIN/END_STREAM           */
-    unsigned int closed           : 1; /* 1 after stream_close callback    */
-    unsigned int term             : 1; /* 1 when safe to free              */
-
-    // Deferred-free support (same pattern as protohttp2.c)
-    int ref_count;
-    int deferred_free_pending;
-    struct event *ev_free;
-
-    conn_opts_t *conn_opts;
-
-	unsigned int log_connect : 1;
-	unsigned int log_content : 1;
-	unsigned int log_pcap : 1;
-#ifndef WITHOUT_MIRROR
-	unsigned int log_mirror : 1;
-#endif /* !WITHOUT_MIRROR */
-
-	// The precedence of filtering rule applied
-	// precedence can only go up not down
-	unsigned int filter_precedence;
-
-    struct protohttp3_stream_ctx *next;
 } protohttp3_stream_ctx_t;
 
 typedef struct pkt_node {

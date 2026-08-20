@@ -35,44 +35,12 @@
 #include <nghttp2/nghttp2.h>
 
 typedef struct protohttp2_stream_ctx {
-    int32_t src_stream_id;
-    int32_t dst_stream_id;
-    pxy_conn_ctx_t *ctx;
-
-    nghttp2_nv *headers;
-    size_t headers_count;
-    size_t headers_capacity;
-
-    struct evbuffer *data_buf;
-    nghttp2_data_provider provider;
-
-#ifndef WITHOUT_ICAP
-	icap_ctx_t *icap_ctx;
-#endif /* !WITHOUT_ICAP */
-
-    protohttp_ctx_t *http_ctx;
-
-    unsigned int closed : 1; /* 1 if stream is closing, set after the first on_stream_close event */
-    unsigned int term : 1;   /* 1 if stream is ready to be terminated */
-
-    int ref_count;             /* Active users on the C call stack */
-    int deferred_free_pending; /* Flag indicating we want to free this */
-    struct event *ev_free;     /* Libevent timer event to execute the free */
-
-    conn_opts_t *conn_opts;
-
-	unsigned int log_connect : 1;
-	unsigned int log_content : 1;
-	unsigned int log_pcap : 1;
-#ifndef WITHOUT_MIRROR
-	unsigned int log_mirror : 1;
-#endif /* !WITHOUT_MIRROR */
-
-	// The precedence of filtering rule applied
-	// precedence can only go up not down
-	unsigned int filter_precedence;
+    PROTOHTTPX_STREAM_CTX
 
     struct protohttp2_stream_ctx *next;
+
+    nghttp2_nv *headers;
+    nghttp2_data_provider provider;
 } protohttp2_stream_ctx_t;
 
 typedef struct protohttp2_ctx {
