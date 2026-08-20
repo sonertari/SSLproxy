@@ -619,7 +619,7 @@ protohttp_apply_filter(pxy_conn_ctx_t *ctx)
 			ctx->conn_opts = a->conn_opts;
 #ifndef WITHOUT_ICAP
 			if (a->conn_opts->icap_chain) {
-				ctx->icap_ctx = icap_init(ctx, PROTO_HTTP, NULL, NULL, a->conn_opts->icap_chain);
+				ctx->icap_ctx = icap_init(ctx, NULL, NULL, a->conn_opts->icap_chain);
 				if (!ctx->icap_ctx) {
 					ctx->enomem = 1;
 					return 1;
@@ -638,7 +638,7 @@ protohttp_apply_filter(pxy_conn_ctx_t *ctx)
 }
 
 int
-protohttpx_apply_filter(protohttpx_stream_ctx_t *s, protocol_t proto)
+protohttpx_apply_filter(protohttpx_stream_ctx_t *s)
 {
 	pxy_conn_ctx_t *ctx = s->ctx;
 	log_finest("ENTER");
@@ -660,7 +660,7 @@ protohttpx_apply_filter(protohttpx_stream_ctx_t *s, protocol_t proto)
 			log_fine("H2/H3 filter cannot take pass action");
 		}
 		else if (action & FILTER_ACTION_BLOCK) {
-			if (proto == PROTO_HTTP2) {
+			if (ctx->proto == PROTO_HTTP2) {
 				protohttp2_close_stream((protohttp2_stream_ctx_t *)s);
 			}
 #ifndef WITHOUT_HTTP3
@@ -708,7 +708,7 @@ protohttpx_apply_filter(protohttpx_stream_ctx_t *s, protocol_t proto)
 			s->conn_opts = a->conn_opts;
 #ifndef WITHOUT_ICAP
 			if (a->conn_opts->icap_chain) {
-				s->icap_ctx = icap_init(ctx, proto, s, ctx->protoctx->arg, a->conn_opts->icap_chain);
+				s->icap_ctx = icap_init(ctx, s, ctx->protoctx->arg, a->conn_opts->icap_chain);
 				if (!s->icap_ctx) {
 					ctx->enomem = 1;
 					return 1;
@@ -722,7 +722,7 @@ protohttpx_apply_filter(protohttpx_stream_ctx_t *s, protocol_t proto)
 	// Cannot defer block action any longer
 	if (ctx->deferred_action & FILTER_ACTION_BLOCK) {
 		log_fine("Applying deferred block action");
-		if (proto == PROTO_HTTP2) {
+		if (ctx->proto == PROTO_HTTP2) {
 			protohttp2_close_stream((protohttp2_stream_ctx_t *)s);
 		}
 #ifndef WITHOUT_HTTP3
@@ -737,7 +737,7 @@ protohttpx_apply_filter(protohttpx_stream_ctx_t *s, protocol_t proto)
 }
 
 static inline protohttpx_nv_t
-protohttpx_get_nv(void *headers, int proto, size_t idx)
+protohttpx_get_nv(void *headers, protocol_t proto, size_t idx)
 {
     protohttpx_nv_t nv;
     if (proto == PROTO_HTTP2) {
@@ -757,7 +757,7 @@ protohttpx_get_nv(void *headers, int proto, size_t idx)
 }
 
 int WUNRES NONNULL(1)
-protohttpx_filter_request_header(protohttpx_stream_ctx_t *s, void *headers, int proto,
+protohttpx_filter_request_header(protohttpx_stream_ctx_t *s, void *headers,
     delete_nv_cb_t delete_nv_cb, UNUSED add_nv_header_t add_nv_header)
 {
     UNUSED pxy_conn_ctx_t *ctx = s->ctx;
@@ -768,7 +768,7 @@ protohttpx_filter_request_header(protohttpx_stream_ctx_t *s, void *headers, int 
     conn_opts_t *conn_opts = s->conn_opts ? s->conn_opts : ctx->conn_opts;
 
     for (size_t i = 0; i < count; i++) {
-        protohttpx_nv_t nv = protohttpx_get_nv(headers, proto, i);
+        protohttpx_nv_t nv = protohttpx_get_nv(headers, ctx->proto, i);
 
         log_finest_va("Processing header '%.*s=%.*s', idx=%zu, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64,
             (int)nv.namelen, nv.name, (int)nv.valuelen, nv.value, i, s->src_stream_id, s->dst_stream_id);
@@ -881,7 +881,7 @@ protohttpx_filter_request_header(protohttpx_stream_ctx_t *s, void *headers, int 
         // Otherwise with h3, the caller h3_on_end_headers() returns NGHTTP3_ERR_CALLBACK_FAILURE,
         // which is a fatal error after ngtcp2_conn_read_pkt() in protohttp3_process_packet_cb(),
         // a reason to close the connection altogether
-        protohttpx_apply_filter(s, proto);
+        protohttpx_apply_filter(s);
 
         // TODO: Implement deny OCSP at TLS level in H2/H3?
         // if (ctx->conn_opts->deny_ocsp) {
@@ -896,7 +896,7 @@ protohttpx_filter_request_header(protohttpx_stream_ctx_t *s, void *headers, int 
 }
 
 int WUNRES NONNULL(1)
-protohttpx_filter_response_header(protohttpx_stream_ctx_t *s, void *headers, int proto,
+protohttpx_filter_response_header(protohttpx_stream_ctx_t *s, void *headers,
     delete_nv_cb_t delete_nv_cb, add_nv_header_t add_nv_header)
 {
     UNUSED pxy_conn_ctx_t *ctx = s->ctx;
@@ -908,7 +908,7 @@ protohttpx_filter_response_header(protohttpx_stream_ctx_t *s, void *headers, int
     conn_opts_t *conn_opts = s->conn_opts ? s->conn_opts : ctx->conn_opts;
 
     for (size_t i = 0; i < count; i++) {
-        protohttpx_nv_t nv = protohttpx_get_nv(headers, proto, i);
+        protohttpx_nv_t nv = protohttpx_get_nv(headers, ctx->proto, i);
 
         log_finest_va("Processing header '%.*s=%.*s', idx=%zu, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64,
             (int)nv.namelen, nv.name, (int)nv.valuelen, nv.value, i, s->src_stream_id, s->dst_stream_id);

@@ -285,7 +285,7 @@ icap_ctx_free(icap_ctx_t *icap_ctx, int term_owner)
 		free(icap_ctx->icap_extended_headers);
 	}
 
-	if (icap_ctx->proto == PROTO_HTTP2 || icap_ctx->proto == PROTO_HTTP3) {
+	if (ctx->proto == PROTO_HTTP2 || ctx->proto == PROTO_HTTP3) {
 		// TODO: Free h2/h3 conn if all h2/h3 streams are finished?
 		protohttpx_stream_ctx_t *s = icap_ctx->stream_ctx;
 		if (s) {
@@ -293,7 +293,7 @@ icap_ctx_free(icap_ctx_t *icap_ctx, int term_owner)
 			// Do not term the stream if it's not marked as ready to be terminated
 			if (term_owner && s->term) {
 				log_finest("Stream term flag set, free stream ctx");
-				if (icap_ctx->proto == PROTO_HTTP2) {
+				if (ctx->proto == PROTO_HTTP2) {
 					protohttp2_request_free_stream_ctx((protohttp2_stream_ctx_t *)s);
 				}
 #ifndef WITHOUT_HTTP3
@@ -317,7 +317,7 @@ icap_ctx_free(icap_ctx_t *icap_ctx, int term_owner)
 }
 
 static icap_ctx_t *
-icap_ctx_new(pxy_conn_ctx_t *ctx, protocol_t proto, protohttpx_stream_ctx_t *s, void *hx_ctx, struct icap_service *icap_chain)
+icap_ctx_new(pxy_conn_ctx_t *ctx, protohttpx_stream_ctx_t *s, void *hx_ctx, struct icap_service *icap_chain)
 {
 	log_finest("ENTER");
 
@@ -330,11 +330,12 @@ icap_ctx_new(pxy_conn_ctx_t *ctx, protocol_t proto, protohttpx_stream_ctx_t *s, 
 	memset(icap_ctx, 0, sizeof(icap_ctx_t));
 
 	icap_ctx->conn_ctx = ctx;
-	icap_ctx->proto = proto;
 	icap_ctx->stream_ctx = s;
 	icap_ctx->hx_ctx = hx_ctx;
 
-	if (proto == PROTO_HTTP2 || proto == PROTO_HTTP3) {
+	// ATTENTION: s is NULL when creating a new h2/h3 connection, but the proto is h2/h3,
+	// so check s is not NULL before accessing s->icap_ctx
+	if (s && (ctx->proto == PROTO_HTTP2 || ctx->proto == PROTO_HTTP3)) {
 		s->icap_ctx = icap_ctx;
 	}
 	else {
@@ -359,12 +360,15 @@ icap_ctx_new(pxy_conn_ctx_t *ctx, protocol_t proto, protohttpx_stream_ctx_t *s, 
 }
 
 icap_ctx_t *
-icap_init(pxy_conn_ctx_t *ctx, protocol_t proto, protohttpx_stream_ctx_t *s, void *hx_ctx, struct icap_service *icap_chain)
+icap_init(pxy_conn_ctx_t *ctx, protohttpx_stream_ctx_t *s, void *hx_ctx, struct icap_service *icap_chain)
 {
 	log_finest_va("ENTER, processing %s, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64, s ? "stream" : "connection", s ? s->src_stream_id : -1, s ? s->dst_stream_id : -1);
 
 	icap_ctx_t *icap_ctx = NULL;
-	if (proto == PROTO_HTTP2 || proto == PROTO_HTTP3) {
+
+	// ATTENTION: s is NULL when creating a new h2/h3 connection, but the proto is h2/h3,
+	// so check s is not NULL before accessing s->icap_ctx
+	if (s && (ctx->proto == PROTO_HTTP2 || ctx->proto == PROTO_HTTP3)) {
 		if (s->icap_ctx) {
 			log_fine_va("Stream ICAP context already initialized, reinitializing, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64, s->src_stream_id, s->dst_stream_id);
 			icap_ctx_free(s->icap_ctx, 0);
@@ -378,7 +382,7 @@ icap_init(pxy_conn_ctx_t *ctx, protocol_t proto, protohttpx_stream_ctx_t *s, voi
 		}
 	}
 
-	icap_ctx = icap_ctx_new(ctx, proto, s, hx_ctx, icap_chain);
+	icap_ctx = icap_ctx_new(ctx, s, hx_ctx, icap_chain);
 	if (!icap_ctx)
 		return NULL;
 
@@ -388,14 +392,14 @@ icap_init(pxy_conn_ctx_t *ctx, protocol_t proto, protohttpx_stream_ctx_t *s, voi
 		return NULL;
 	}
 
-	if (proto == PROTO_HTTP2) {
+	if (s && ctx->proto == PROTO_HTTP2) {
 		icap_ctx = s->icap_ctx;
 		icap_ctx->send_data_to_src_cb = protohttp2_icap_send_data_to_src_cb;
 		icap_ctx->send_data_to_dst_cb = protohttp2_icap_send_data_to_dst_cb;
 		icap_ctx->failopen_to_dest_cb = protohttp2_icap_failopen_to_dest_cb;
 	}
 #ifndef WITHOUT_HTTP3
-	else if (proto == PROTO_HTTP3) {
+	else if (s && ctx->proto == PROTO_HTTP3) {
 		icap_ctx = s->icap_ctx;
 		icap_ctx->send_data_to_src_cb = protohttp3_icap_send_data_to_src_cb;
 		icap_ctx->send_data_to_dst_cb = protohttp3_icap_send_data_to_dst_cb;
@@ -1118,8 +1122,8 @@ icap_set_extended_headers(icap_ctx_t *icap_ctx, UNUSED int upgraded)
 
 	// Either tcp or udp, for now we only support tcp
 	const char *proto = "tcp";
-	if (icap_ctx->proto == PROTO_HTTP3) proto = "http3";
-	else if (icap_ctx->proto == PROTO_HTTP2) proto = "http2";
+	if (ctx->proto == PROTO_HTTP3) proto = "http3";
+	else if (ctx->proto == PROTO_HTTP2) proto = "http2";
 	else if (ctx->spec->http) proto = ctx->spec->ssl || upgraded ? "https" : "http";
 	// else if (ctx->spec->pop3) proto = ctx->spec->ssl || upgraded ? "pop3s" : "pop3";
 	// else if (ctx->spec->smtp) proto = ctx->spec->ssl || upgraded ? "smtps" : "smtp";
@@ -1372,11 +1376,11 @@ icap_send_data(icap_ctx_t *icap_ctx)
 
 	pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
 
-	int h3 = icap_ctx->proto == PROTO_HTTP3;
+	int h3 = ctx->proto == PROTO_HTTP3;
 
 	// TODO: We may not have ctx and/or bevs, if the connection is terminated
 	if ((ctx && ctx->src.bev && ctx->dst.bev) || h3) {
-		int h2 = icap_ctx->proto == PROTO_HTTP2;
+		int h2 = ctx->proto == PROTO_HTTP2;
 
 		if (h2 || h3) {
 			protohttpx_stream_ctx_t *s = icap_ctx->stream_ctx;
@@ -1445,7 +1449,7 @@ icap_get_http_content_length(icap_ctx_t *icap_ctx)
 	unsigned int http_content_length_set = icap_ctx->reqmod ? icap_ctx->src_http_content_length_set : icap_ctx->dst_http_content_length_set;
 	if (http_content_length_set == 0) {
 		protohttp_ctx_t *http_ctx = NULL;
-		if (icap_ctx->proto == PROTO_HTTP2 || icap_ctx->proto == PROTO_HTTP3) {
+		if (ctx->proto == PROTO_HTTP2 || ctx->proto == PROTO_HTTP3) {
 			http_ctx = icap_ctx->stream_ctx->http_ctx;
 		}
 		else {
@@ -3260,7 +3264,7 @@ icap_data_submit(icap_ctx_t *icap_ctx)
 {
 	pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
 
-	int h3 = icap_ctx->proto == PROTO_HTTP3;
+	int h3 = ctx->proto == PROTO_HTTP3;
 
 	struct evbuffer *inbuf = NULL;
 	struct evbuffer *outbuf = NULL;
@@ -3356,7 +3360,7 @@ icap_process_data(struct evbuffer *inbuf, icap_ctx_t *icap_ctx)
 		}
 
 		// TODO: Pause reading from stream, not the whole connection, in http2 mode
-		if (icap_ctx->proto != PROTO_HTTP2 && icap_ctx->proto != PROTO_HTTP3) {
+		if (ctx->proto != PROTO_HTTP2 && ctx->proto != PROTO_HTTP3) {
 			/* Pause reading from src or dst: disable read callback temporarily */
 			// TODO: Should we disable the current conn_bev only?
 			bufferevent_disable(icap_ctx->reqmod ? ctx->src.bev : ctx->dst.bev, EV_READ);

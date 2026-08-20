@@ -169,7 +169,7 @@ protohttp3_new_stream_ctx(protohttp3_ctx_t *h3_ctx, int64_t stream_id)
 	s->http_ctx->ctx = ctx;
 
 #ifndef WITHOUT_ICAP
-    s->icap_ctx = icap_init(ctx, PROTO_HTTP3, (protohttpx_stream_ctx_t *)s, h3_ctx, ctx->conn_opts->icap_chain);
+    s->icap_ctx = icap_init(ctx, (protohttpx_stream_ctx_t *)s, h3_ctx, ctx->conn_opts->icap_chain);
 	if (!s->icap_ctx) {
         free(s->http_ctx);
         free(s);
@@ -1071,7 +1071,7 @@ h3_on_end_headers(nghttp3_conn *conn, int64_t stream_id,
     // int seen_header_on_entry = reqmod ? s->http_ctx->seen_req_header : s->http_ctx->seen_resp_header;
 
     filter_header_t filter_header = reqmod ? protohttpx_filter_request_header : protohttpx_filter_response_header;
-    if (filter_header((protohttpx_stream_ctx_t *)s, s->headers, PROTO_HTTP3, protohttp3_delete_nv_header, protohttp3_add_nv_header) == -1) {
+    if (filter_header((protohttpx_stream_ctx_t *)s, s->headers, protohttp3_delete_nv_header, protohttp3_add_nv_header) == -1) {
         return -1;
     }
 

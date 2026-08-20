@@ -115,7 +115,7 @@ typedef struct {
 
 typedef void (*delete_nv_cb_t)(protohttpx_stream_ctx_t *, size_t);
 typedef int (*add_nv_header_t)(protohttpx_stream_ctx_t *, const char *,  size_t, const char *, size_t);
-typedef int (*filter_header_t)(protohttpx_stream_ctx_t *, void *, int, delete_nv_cb_t, add_nv_header_t);
+typedef int (*filter_header_t)(protohttpx_stream_ctx_t *, void *, delete_nv_cb_t, add_nv_header_t);
 
 // Common HTTP status codes and their standard reason phrases, sorted by code
 static const http_status_reason_t http_status_reasons[] = {
@@ -184,10 +184,10 @@ static const http_status_reason_t http_status_reasons[] = {
 
 void protohttp_log_connect(pxy_conn_ctx_t *, protohttp_ctx_t *, unsigned int) NONNULL(1,2);
 
-int protohttpx_apply_filter(protohttpx_stream_ctx_t *, protocol_t);
-int protohttpx_filter_request_header(protohttpx_stream_ctx_t *s, void *headers, int proto,
+int protohttpx_apply_filter(protohttpx_stream_ctx_t *);
+int protohttpx_filter_request_header(protohttpx_stream_ctx_t *s, void *headers,
     delete_nv_cb_t delete_nv_cb, add_nv_header_t add_nv_header) WUNRES NONNULL(1);
-int protohttpx_filter_response_header(protohttpx_stream_ctx_t *s, void *headers, int proto,
+int protohttpx_filter_response_header(protohttpx_stream_ctx_t *s, void *headers,
     delete_nv_cb_t delete_nv_cb, add_nv_header_t add_nv_header) WUNRES NONNULL(1);
 
 int protohttp_filter_request_header(struct evbuffer *, struct evbuffer *, protohttp_ctx_t *, enum conn_type, pxy_conn_ctx_t *) WUNRES NONNULL(1,2,3,5);

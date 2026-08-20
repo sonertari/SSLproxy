@@ -220,7 +220,7 @@ proxy_conn_ctx_new(evutil_socket_t fd,
 #ifndef WITHOUT_ICAP
 	// ATTENTION: We initialize ICAP context for all connections, even if ICAP is not enabled for the proxyspec,
 	// because filter rules may enable ICAP for certain connections. We cannot continue without an ICAP context.
-	ctx->icap_ctx = icap_init(ctx, PROTO_TCP, NULL, NULL, ctx->conn_opts->icap_chain);
+	ctx->icap_ctx = icap_init(ctx, NULL, NULL, ctx->conn_opts->icap_chain);
 	if (!ctx->icap_ctx) {
 		log_finest("Failed to initialize ICAP context");
 		free(ctx);

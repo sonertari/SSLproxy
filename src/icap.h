@@ -76,7 +76,6 @@ typedef void (*proto_failopen_to_dest_cb)(icap_service_ctx_t *) NONNULL(1);
  */
 struct icap_ctx {
 	pxy_conn_ctx_t *conn_ctx;
-	protocol_t proto;
 	protohttpx_stream_ctx_t *stream_ctx; /* H2/H3 stream context */
 	void *hx_ctx;                        /* H2/H3 context */
 
@@ -160,7 +159,7 @@ struct icap_service_ctx {
 };
 
 void icap_ctx_free(icap_ctx_t *, int);
-icap_ctx_t *icap_init(pxy_conn_ctx_t *, protocol_t, protohttpx_stream_ctx_t *, void *, struct icap_service *) NONNULL(1);
+icap_ctx_t *icap_init(pxy_conn_ctx_t *, protohttpx_stream_ctx_t *, void *, struct icap_service *) NONNULL(1);
 char *icap_chain_str(conn_opts_t *);
 
 /*

@@ -92,7 +92,7 @@ protohttp2_new_stream_ctx(protohttp2_ctx_t *h2_ctx, int32_t stream_id)
 	s->http_ctx->ctx = ctx;
 
 #ifndef WITHOUT_ICAP
-    s->icap_ctx = icap_init(ctx, PROTO_HTTP2, (protohttpx_stream_ctx_t *)s, h2_ctx, ctx->conn_opts->icap_chain);
+    s->icap_ctx = icap_init(ctx, (protohttpx_stream_ctx_t *)s, h2_ctx, ctx->conn_opts->icap_chain);
 	if (!s->icap_ctx) {
         evbuffer_free(s->data_buf);
         free(s->http_ctx);
@@ -930,7 +930,7 @@ protohttp2_on_frame_recv(UNUSED nghttp2_session *session, const nghttp2_frame *f
             }
 
             filter_header_t filter_header = reqmod ? protohttpx_filter_request_header : protohttpx_filter_response_header;
-            if (filter_header((protohttpx_stream_ctx_t *)s, s->headers, PROTO_HTTP2, protohttp2_delete_nv_header, protohttp2_add_nv_header) == -1) {
+            if (filter_header((protohttpx_stream_ctx_t *)s, s->headers, protohttp2_delete_nv_header, protohttp2_add_nv_header) == -1) {
                 return -1;
             }
 
