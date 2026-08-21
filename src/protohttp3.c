@@ -67,7 +67,6 @@
 #include <errno.h>
 #include <unistd.h>
 #include <time.h>       /* clock_gettime(CLOCK_MONOTONIC) */
-#include <ctype.h>      /* for tolower() in header filtering */
 
 /* recvmsg() ancillary data for ECN and destination-address extraction */
 #include <sys/socket.h>
@@ -304,62 +303,6 @@ protohttp3_request_free_stream_ctx(protohttp3_stream_ctx_t *s)
     log_finest_va("stream %" PRId64 " free immediately", s->src_stream_id);
     // Safe to destroy immediately
     protohttp3_free_stream_ctx(s);
-}
-
-/*
- * Append a single name-value header pair to the stream's header array,
- * growing the backing array by doubling as needed.
- *
- * Returns 0 on success, -1 on OOM.
- */
-static int
-protohttp3_add_nv_header(protohttpx_stream_ctx_t *sx, const char *name,  size_t namelen, const char *value, size_t valuelen)
-{
-    UNUSED pxy_conn_ctx_t *ctx = sx->ctx;
-    log_finest_va("%.*s: %.*s", (int)namelen, name, (int)valuelen, value);
-
-    protohttp3_stream_ctx_t *s = (protohttp3_stream_ctx_t *)sx;
-
-    if (s->headers_count >= s->headers_capacity) {
-        size_t new_capacity = s->headers_capacity == 0 ? 16 : s->headers_capacity * 2;
-        nghttp3_nv *tmp = realloc(s->headers, new_capacity * sizeof(nghttp3_nv));
-        if (!tmp) {
-            log_fine("Failed reallocating headers");
-            return -1;
-        }
-        s->headers = tmp;
-        s->headers_capacity = new_capacity;
-    }
-
-    nghttp3_nv *nv = &s->headers[s->headers_count];
-
-    nv->name = malloc(namelen);
-    if (!nv->name)
-        return -1;
-
-    // TODO: HTTP/3 mandates strict lowercase header names?
-    // Note that nghttp3 seems to convert to lowercase automatically, but we will do it here for safety.
-    char name_lower[namelen];
-    memcpy(name_lower, name, namelen);
-    for (size_t i = 0; i < namelen; i++) {
-        name_lower[i] = tolower(name[i]);
-    }
-
-    // Cast to void* to avoid warnings about discarding const qualifier
-    memcpy((void *)nv->name, name_lower, namelen);
-    nv->namelen = namelen;
-
-    nv->value = malloc(valuelen);
-    if (!nv->value) {
-        free((void *)nv->name);
-        return -1;
-    }
-    memcpy((void *)nv->value, value, valuelen);
-    nv->valuelen = valuelen;
-
-    nv->flags = NGHTTP3_NV_FLAG_NONE;
-    s->headers_count++;
-    return 0;
 }
 
 /* =========================================================================
@@ -613,7 +556,7 @@ protohttp3_icap_send_data_to_src_cb(icap_ctx_t *icap_ctx)
     log_finest_va("ENTER, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", veto_hdr=%zu, veto_body=%zu, data_buf=%zu", s->src_stream_id, s->dst_stream_id,
         evbuffer_get_length(icap_ctx->veto_hdr), evbuffer_get_length(icap_ctx->veto_body), evbuffer_get_length(s->data_buf));
 
-    if (protohttpx_get_hx_headers((protohttpx_stream_ctx_t *)s, icap_ctx->veto_hdr, 1, protohttp3_add_nv_header) < 0) {
+    if (protohttpx_get_hx_headers((protohttpx_stream_ctx_t *)s, icap_ctx->veto_hdr, 1) < 0) {
         log_finest_va("Failed to add veto headers for src_stream_id=%" PRId64, s->src_stream_id);
         return;
     }
@@ -642,7 +585,7 @@ protohttp3_icap_send_data_to_dst_cb(icap_ctx_t *icap_ctx)
     UNUSED pxy_conn_ctx_t *ctx = h3_ctx->ctx;
 
     struct evbuffer *out_hdr = icap_get_last_service_out_hdr(icap_ctx);
-    if (protohttpx_get_hx_headers((protohttpx_stream_ctx_t *)s, out_hdr, 1, protohttp3_add_nv_header) < 0) {
+    if (protohttpx_get_hx_headers((protohttpx_stream_ctx_t *)s, out_hdr, 1) < 0) {
         log_finest_va("Failed to add out headers for dst_stream_id=%" PRId64, s->dst_stream_id);
         return;
     }
@@ -689,7 +632,7 @@ protohttp3_icap_failopen_to_dest_cb(icap_service_ctx_t *service_ctx)
 
     // TODO: Non-http protocols do not have hdr
 	if (evbuffer_get_length(sent_hdr) > 0) {
-        if (protohttpx_get_hx_headers((protohttpx_stream_ctx_t *)s, sent_hdr, 1, protohttp3_add_nv_header) < 0) {
+        if (protohttpx_get_hx_headers((protohttpx_stream_ctx_t *)s, sent_hdr, 1) < 0) {
             log_finest_va("Failed to add sent headers for src_stream_id=%" PRId64, s->src_stream_id);
             return;
         }
@@ -701,7 +644,7 @@ protohttp3_icap_failopen_to_dest_cb(icap_service_ctx_t *service_ctx)
 	}
 	if (evbuffer_get_length(in_hdr) > 0) {
         // Do not init h3 headers, just append to existing headers from sent_hdr, if any
-        if (protohttpx_get_hx_headers((protohttpx_stream_ctx_t *)s, in_hdr, 0, protohttp3_add_nv_header) < 0) {
+        if (protohttpx_get_hx_headers((protohttpx_stream_ctx_t *)s, in_hdr, 0) < 0) {
             log_finest_va("Failed to add in headers for src_stream_id=%" PRId64, s->src_stream_id);
             return;
         }
@@ -765,7 +708,7 @@ h3_on_recv_header(nghttp3_conn *conn, int64_t stream_id,
     nghttp3_vec name_vec  = nghttp3_rcbuf_get_buf(name);
     nghttp3_vec value_vec = nghttp3_rcbuf_get_buf(value);
 
-    if (protohttp3_add_nv_header((protohttpx_stream_ctx_t *)s, (char *)name_vec.base,  name_vec.len, (char *)value_vec.base, value_vec.len) != 0) {
+    if (protohttpx_add_nv_header((protohttpx_stream_ctx_t *)s, (char *)name_vec.base,  name_vec.len, (char *)value_vec.base, value_vec.len) != 0) {
         log_fine_va("Failed to add header for stream_id=%" PRId64, stream_id);
         return NGHTTP3_ERR_CALLBACK_FAILURE;
     }
@@ -830,7 +773,7 @@ h3_on_end_headers(nghttp3_conn *conn, int64_t stream_id,
     // int seen_header_on_entry = reqmod ? s->http_ctx->seen_req_header : s->http_ctx->seen_resp_header;
 
     filter_header_t filter_header = reqmod ? protohttpx_filter_request_header : protohttpx_filter_response_header;
-    if (filter_header((protohttpx_stream_ctx_t *)s, s->headers, protohttp3_add_nv_header) == -1) {
+    if (filter_header((protohttpx_stream_ctx_t *)s) == -1) {
         return -1;
     }
 

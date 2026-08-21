@@ -106,16 +106,6 @@ typedef struct protohttpx_stream_ctx {
     PROTOHTTPX_STREAM_CTX
 } protohttpx_stream_ctx_t;
 
-typedef struct {
-    const uint8_t *name;
-    size_t namelen;
-    const uint8_t *value;
-    size_t valuelen;
-} protohttpx_nv_t;
-
-typedef int (*add_nv_header_t)(protohttpx_stream_ctx_t *, const char *,  size_t, const char *, size_t);
-typedef int (*filter_header_t)(protohttpx_stream_ctx_t *, void *, add_nv_header_t);
-
 // Dummy common nv header struct for H2/H3
 typedef struct {
     uint8_t *name;
@@ -123,7 +113,9 @@ typedef struct {
     size_t namelen;
     size_t valuelen;
     uint8_t flags;
-} hx_nv_header_t;
+} protohttpx_nv_t;
+
+typedef int (*filter_header_t)(protohttpx_stream_ctx_t *);
 
 // Common HTTP status codes and their standard reason phrases, sorted by code
 static const http_status_reason_t http_status_reasons[] = {
@@ -194,14 +186,15 @@ void protohttp_log_connect(pxy_conn_ctx_t *, protohttp_ctx_t *, unsigned int) NO
 
 int protohttpx_apply_filter(protohttpx_stream_ctx_t *);
 void protohttpx_free_nv_headers(protohttpx_stream_ctx_t *) NONNULL(1);
+int protohttpx_add_nv_header(protohttpx_stream_ctx_t *, const char *,  size_t, const char *, size_t) WUNRES NONNULL(1,2,4);
 
 #ifndef WITHOUT_ICAP
 struct evbuffer *protohttpx_get_h1_headers(protohttpx_stream_ctx_t *) WUNRES NONNULL(1);
-int protohttpx_get_hx_headers(protohttpx_stream_ctx_t *, struct evbuffer *, int, add_nv_header_t) WUNRES NONNULL(1,2);
+int protohttpx_get_hx_headers(protohttpx_stream_ctx_t *, struct evbuffer *, int) WUNRES NONNULL(1,2);
 #endif /* !WITHOUT_ICAP */
 
-int protohttpx_filter_request_header(protohttpx_stream_ctx_t *s, void *headers, add_nv_header_t add_nv_header) WUNRES NONNULL(1);
-int protohttpx_filter_response_header(protohttpx_stream_ctx_t *s, void *headers, add_nv_header_t add_nv_header) WUNRES NONNULL(1);
+int protohttpx_filter_request_header(protohttpx_stream_ctx_t *s) WUNRES NONNULL(1);
+int protohttpx_filter_response_header(protohttpx_stream_ctx_t *s) WUNRES NONNULL(1);
 
 int protohttp_filter_request_header(struct evbuffer *, struct evbuffer *, protohttp_ctx_t *, enum conn_type, pxy_conn_ctx_t *) WUNRES NONNULL(1,2,3,5);
 void protohttp_filter_response_header(struct evbuffer *, struct evbuffer *, protohttp_ctx_t *, pxy_conn_ctx_t *) NONNULL(1,2,3,4);

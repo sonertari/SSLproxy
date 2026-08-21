@@ -37,7 +37,6 @@
 #include <string.h>
 #include <stdlib.h>
 #include <sys/param.h>
-#include <ctype.h>
 
 static ssize_t
 protohttp2_provider_read_callback(nghttp2_session *session, int32_t stream_id, uint8_t *buf, size_t length,
@@ -242,50 +241,6 @@ protohttp2_close_stream(protohttp2_stream_ctx_t *s)
     // s->ref_count--;
 }
 
-static int
-protohttp2_add_nv_header(protohttpx_stream_ctx_t *sx, const char *name, size_t namelen, const char *value, size_t valuelen)
-{
-    UNUSED pxy_conn_ctx_t *ctx = sx->ctx;
-    log_finest_va("%.*s: %.*s", (int)namelen, name, (int)valuelen, value);
-
-    protohttp2_stream_ctx_t *s = (protohttp2_stream_ctx_t *)sx;
-
-    if (s->headers_count >= s->headers_capacity) {
-        size_t new_capacity = s->headers_capacity == 0 ? 16 : s->headers_capacity * 2;
-        nghttp2_nv *tmp = realloc(s->headers, new_capacity * sizeof(nghttp2_nv));
-        if (!tmp) {
-            log_fine("Failed reallocating headers");
-            return -1;
-        }
-        s->headers = tmp;
-        s->headers_capacity = new_capacity;
-    }
-
-    nghttp2_nv *nv = &s->headers[s->headers_count];
-
-    nv->name = malloc(namelen);
-    if (!nv->name) return -1;
-    memcpy(nv->name, name, namelen);
-    nv->namelen = namelen;
-
-    // HTTP/2 mandates strict lowercase header names
-    for (size_t i = 0; i < nv->namelen; i++) {
-        nv->name[i] = tolower(nv->name[i]);
-    }
-
-    nv->value = malloc(valuelen);
-    if (!nv->value) {
-        free(nv->name);
-        return -1;
-    }
-    memcpy(nv->value, value, valuelen);
-    nv->valuelen = valuelen;
-
-    nv->flags = NGHTTP2_NV_FLAG_NONE;
-    s->headers_count++;
-    return 0;
-}
-
 static void NONNULL(1, 2)
 protohttp2_bev_writecb(UNUSED struct bufferevent *bev, UNUSED void *arg)
 {
@@ -354,10 +309,6 @@ protohttp2_on_header_callback(nghttp2_session *session, const nghttp2_frame *fra
 
     log_finest_va("ENTER, stream_id=%d, session=%s", frame->hd.stream_id, session == h2_ctx->src_session ? "src" : "dst");
 
-    // if (frame->hd.type != NGHTTP2_HEADERS) {
-    //     log_finest("Not a HEADERS frame, ignoring");
-    //     return 0;
-    // }
     int reqmod = (session == h2_ctx->src_session) ? 1 : 0;
 
     protohttp2_stream_ctx_t *s = protohttp2_get_stream_ctx(h2_ctx, frame->hd.stream_id, reqmod);
@@ -369,7 +320,7 @@ protohttp2_on_header_callback(nghttp2_session *session, const nghttp2_frame *fra
         }
     }
 
-    if (protohttp2_add_nv_header((protohttpx_stream_ctx_t *)s, (const char *)name, namelen, (const char *)value, valuelen) < 0) {
+    if (protohttpx_add_nv_header((protohttpx_stream_ctx_t *)s, (const char *)name, namelen, (const char *)value, valuelen) < 0) {
         log_fine_va("Failed to add header for stream_id=%d: %.*s=%.*s", frame->hd.stream_id, (int)namelen, name, (int)valuelen, value);
         return NGHTTP2_ERR_CALLBACK_FAILURE;
     }
@@ -510,7 +461,7 @@ protohttp2_icap_send_data_to_src_cb(icap_ctx_t *icap_ctx)
     log_finest_va("ENTER, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", veto_hdr=%zu, veto_body=%zu, data_buf=%zu", s->src_stream_id, s->dst_stream_id,
         evbuffer_get_length(icap_ctx->veto_hdr), evbuffer_get_length(icap_ctx->veto_body), evbuffer_get_length(s->data_buf));
 
-    if (protohttpx_get_hx_headers((protohttpx_stream_ctx_t *)s, icap_ctx->veto_hdr, 1, protohttp2_add_nv_header) < 0) {
+    if (protohttpx_get_hx_headers((protohttpx_stream_ctx_t *)s, icap_ctx->veto_hdr, 1) < 0) {
         log_finest_va("Failed to add veto headers for src_stream_id=%" PRId64 "", s->src_stream_id);
         return;
     }
@@ -537,7 +488,7 @@ protohttp2_icap_send_data_to_dst_cb(icap_ctx_t *icap_ctx)
     UNUSED pxy_conn_ctx_t *ctx = h2_ctx->ctx;
 
     struct evbuffer *out_hdr = icap_get_last_service_out_hdr(icap_ctx);
-    if (protohttpx_get_hx_headers((protohttpx_stream_ctx_t *)s, out_hdr, 1, protohttp2_add_nv_header) < 0) {
+    if (protohttpx_get_hx_headers((protohttpx_stream_ctx_t *)s, out_hdr, 1) < 0) {
         log_finest_va("Failed to add out headers for src_stream_id=%" PRId64 "", s->src_stream_id);
         return;
     }
@@ -579,7 +530,7 @@ protohttp2_icap_failopen_to_dest_cb(icap_service_ctx_t *service_ctx)
 
     // TODO: Non-http protocols do not have hdr
 	if (evbuffer_get_length(sent_hdr) > 0) {
-        if (protohttpx_get_hx_headers((protohttpx_stream_ctx_t *)s, sent_hdr, 1, protohttp2_add_nv_header) < 0) {
+        if (protohttpx_get_hx_headers((protohttpx_stream_ctx_t *)s, sent_hdr, 1) < 0) {
             log_finest_va("Failed to add sent headers for src_stream_id=%" PRId64 "", s->src_stream_id);
             return;
         }
@@ -591,7 +542,7 @@ protohttp2_icap_failopen_to_dest_cb(icap_service_ctx_t *service_ctx)
 	}
 	if (evbuffer_get_length(in_hdr) > 0) {
         // Do not init h2 headers, just append to existing headers from sent_hdr, if any
-        if (protohttpx_get_hx_headers((protohttpx_stream_ctx_t *)s, in_hdr, 0, protohttp2_add_nv_header) < 0) {
+        if (protohttpx_get_hx_headers((protohttpx_stream_ctx_t *)s, in_hdr, 0) < 0) {
             log_finest_va("Failed to add in headers for src_stream_id=%" PRId64 "", s->src_stream_id);
             return;
         }
@@ -692,7 +643,7 @@ protohttp2_on_frame_recv(UNUSED nghttp2_session *session, const nghttp2_frame *f
             }
 
             filter_header_t filter_header = reqmod ? protohttpx_filter_request_header : protohttpx_filter_response_header;
-            if (filter_header((protohttpx_stream_ctx_t *)s, s->headers, protohttp2_add_nv_header) == -1) {
+            if (filter_header((protohttpx_stream_ctx_t *)s) == -1) {
                 return -1;
             }
 
