@@ -435,8 +435,6 @@ protosmtp_free(pxy_conn_ctx_t *ctx)
 protocol_t
 protosmtp_setup(pxy_conn_ctx_t *ctx)
 {
-	ctx->protoctx->proto = PROTO_SMTP;
-
 	ctx->protoctx->connectcb = protosmtp_conn_connect;
 
 	ctx->protoctx->bev_readcb = protosmtp_bev_readcb;
@@ -465,8 +463,6 @@ protosmtps_free(pxy_conn_ctx_t *ctx)
 protocol_t
 protosmtps_setup(pxy_conn_ctx_t *ctx)
 {
-	ctx->protoctx->proto = PROTO_SMTPS;
-
 	ctx->protoctx->connectcb = protosmtps_conn_connect;
 	ctx->protoctx->init_conn = protossl_init_conn;
 	

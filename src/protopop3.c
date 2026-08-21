@@ -216,8 +216,6 @@ protopop3_free(pxy_conn_ctx_t *ctx)
 protocol_t
 protopop3_setup(pxy_conn_ctx_t *ctx)
 {
-	ctx->protoctx->proto = PROTO_POP3;
-
 	ctx->protoctx->proto_free = protopop3_free;
 	ctx->protoctx->validatecb = protopop3_validate;
 	ctx->protoctx->bev_readcb = protopop3_bev_readcb;
@@ -242,8 +240,6 @@ protopop3s_free(pxy_conn_ctx_t *ctx)
 protocol_t
 protopop3s_setup(pxy_conn_ctx_t *ctx)
 {
-	ctx->protoctx->proto = PROTO_POP3S;
-
 	ctx->protoctx->connectcb = protossl_conn_connect;
 	ctx->protoctx->init_conn = protossl_init_conn;
 	

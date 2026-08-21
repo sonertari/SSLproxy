@@ -911,7 +911,6 @@ protocol_t protohttp2_setup(pxy_conn_ctx_t *ctx)
     // nghttp2_submit_goaway(h2_ctx->session, NGHTTP2_FLAG_NONE, 1, NGHTTP2_NO_ERROR, NULL, 0);
     // nghttp2_session_send(h2_ctx->session);
 
-    ctx->protoctx->proto = PROTO_HTTP2;
     ctx->protoctx->bev_readcb = protohttp2_bev_readcb;
     ctx->protoctx->bev_writecb = protohttp2_bev_writecb;
     ctx->protoctx->proto_free = protohttp2_free;

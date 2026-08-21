@@ -2097,8 +2097,6 @@ protohttp_free_child(pxy_conn_child_ctx_t *ctx)
 protocol_t
 protohttp_setup(pxy_conn_ctx_t *ctx)
 {
-	ctx->protoctx->proto = PROTO_HTTP;
-	
 	ctx->protoctx->bev_readcb = protohttp_bev_readcb;
 	ctx->protoctx->bev_writecb = protohttp_bev_writecb;
 	ctx->protoctx->proto_free = protohttp_free;
@@ -2127,7 +2125,6 @@ protohttp_setup(pxy_conn_ctx_t *ctx)
 protocol_t
 protohttps_setup(pxy_conn_ctx_t *ctx)
 {
-	ctx->protoctx->proto = PROTO_HTTPS;
 	ctx->protoctx->connectcb = protossl_conn_connect;
 	ctx->protoctx->init_conn = protossl_init_conn;
 
@@ -2170,8 +2167,6 @@ protohttps_setup(pxy_conn_ctx_t *ctx)
 protocol_t
 protohttp_setup_child(pxy_conn_child_ctx_t *ctx)
 {
-	ctx->protoctx->proto = PROTO_HTTP;
-
 	// @todo Should HTTP child conns do any http related processing, so use tcp defaults instead?
 	ctx->protoctx->bev_readcb = protohttp_bev_readcb_child;
 	ctx->protoctx->proto_free = protohttp_free_child;
@@ -2191,7 +2186,6 @@ protohttp_setup_child(pxy_conn_child_ctx_t *ctx)
 protocol_t
 protohttps_setup_child(pxy_conn_child_ctx_t *ctx)
 {
-	ctx->protoctx->proto = PROTO_HTTPS;
 	ctx->protoctx->connectcb = protossl_connect_child;
 
 	ctx->protoctx->bev_readcb = protohttp_bev_readcb_child;

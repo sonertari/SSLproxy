@@ -2030,7 +2030,6 @@ protossl_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 protocol_t
 protossl_setup(pxy_conn_ctx_t *ctx)
 {
-	ctx->protoctx->proto = PROTO_SSL;
 	ctx->protoctx->connectcb = protossl_conn_connect;
 	ctx->protoctx->init_conn = protossl_init_conn;
 	
@@ -2050,7 +2049,6 @@ protossl_setup(pxy_conn_ctx_t *ctx)
 protocol_t
 protossl_setup_child(pxy_conn_child_ctx_t *ctx)
 {
-	ctx->protoctx->proto = PROTO_SSL;
 	ctx->protoctx->connectcb = protossl_connect_child;
 
 	ctx->protoctx->bev_eventcb = protossl_bev_eventcb_child;

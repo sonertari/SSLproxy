@@ -872,7 +872,6 @@ protoautossl_free(pxy_conn_ctx_t *ctx)
 protocol_t
 protoautossl_setup(pxy_conn_ctx_t *ctx)
 {
-	ctx->protoctx->proto = PROTO_AUTOSSL;
 	ctx->protoctx->connectcb = protoautossl_conn_connect;
 	ctx->protoctx->init_conn = prototcp_init_conn;
 
@@ -916,8 +915,6 @@ protoautossl_setup(pxy_conn_ctx_t *ctx)
 protocol_t
 protoautossl_setup_child(pxy_conn_child_ctx_t *ctx)
 {
-	ctx->protoctx->proto = PROTO_AUTOSSL;
-
 	ctx->protoctx->bev_writecb = prototcp_bev_writecb_child;
 	ctx->protoctx->bev_eventcb = protoautossl_bev_eventcb_child;
 

@@ -187,8 +187,6 @@ struct ssl_ctx {
 };
 
 struct proto_ctx {
-	protocol_t proto;
-
 	connect_func_t connectcb;
 	init_conn_func_t init_conn;
 
@@ -221,8 +219,6 @@ struct proto_ctx {
 };
 
 struct proto_child_ctx {
-	protocol_t proto;
-
 	child_connect_func_t connectcb;
 
 	callback_func_t bev_readcb;

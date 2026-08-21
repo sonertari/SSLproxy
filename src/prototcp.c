@@ -1098,7 +1098,6 @@ prototcp_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 protocol_t
 prototcp_setup(pxy_conn_ctx_t *ctx)
 {
-	ctx->protoctx->proto = PROTO_TCP;
 	ctx->protoctx->connectcb = prototcp_conn_connect;
 	ctx->protoctx->init_conn = prototcp_init_conn;
 	
@@ -1125,7 +1124,6 @@ prototcp_setup(pxy_conn_ctx_t *ctx)
 protocol_t
 prototcp_setup_child(pxy_conn_child_ctx_t *ctx)
 {
-	ctx->protoctx->proto = PROTO_TCP;
 	ctx->protoctx->connectcb = prototcp_connect_child;
 
 	ctx->protoctx->bev_readcb = prototcp_bev_readcb_child;

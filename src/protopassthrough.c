@@ -433,7 +433,6 @@ protopassthrough_setup(pxy_conn_ctx_t *ctx)
 {
 	// @attention Reset all callbacks while switching to passthrough mode, because we should override any/all protocol settings of the previous protocol.
 	// This is different from initial protocol setup, which may choose to keep the default tcp settings.
-	ctx->protoctx->proto = PROTO_PASSTHROUGH;
 	ctx->protoctx->connectcb = protopassthrough_conn_connect;
 	// Never used, but set it to the correct callback anyway
 	ctx->protoctx->init_conn = prototcp_init_conn;

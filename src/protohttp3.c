@@ -2259,7 +2259,6 @@ protohttp3_setup(pxy_conn_ctx_t *ctx)
 {
     log_finest_va("ENTER, ctx->fd=%d", ctx->fd);
 
-    ctx->protoctx->proto = PROTO_HTTP3;
     ctx->protoctx->connectcb = protohttp3_conn_connect;
     ctx->protoctx->init_conn = protohttp3_init_conn;
     ctx->protoctx->proto_free = protohttp3_conn_free;
