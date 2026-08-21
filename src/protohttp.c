@@ -773,6 +773,79 @@ protohttpx_free_nv_headers(protohttpx_stream_ctx_t *s)
 }
 
 #ifndef WITHOUT_ICAP
+struct evbuffer *
+protohttpx_get_h1_headers(protohttpx_stream_ctx_t *s)
+{
+    pxy_conn_ctx_t *ctx = s->ctx;
+    log_finest_va("ENTER, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, s->icap_ctx->reqmod);
+
+    struct evbuffer *buf = evbuffer_new();
+    if (!buf)
+        return NULL;
+
+    int method_idx = -1, path_idx = -1, status_idx = -1, authority_idx = -1;
+
+    hx_nv_header_t *headers = (ctx->proto == PROTO_HTTP2) ?
+		(hx_nv_header_t *)((protohttp2_stream_ctx_t *)s)->headers :
+		(hx_nv_header_t *)((protohttp3_stream_ctx_t *)s)->headers;
+
+	size_t count = s->headers_count;
+
+    for (size_t i = 0; i < count; i++) {
+        if (headers[i].namelen == 7 && !memcmp(headers[i].name, ":method", 7))
+            method_idx = (int)i;
+        else if (headers[i].namelen == 5 && !memcmp(headers[i].name, ":path", 5))
+            path_idx = (int)i;
+        else if (headers[i].namelen == 7 && !memcmp(headers[i].name, ":status", 7))
+            status_idx = (int)i;
+        else if (headers[i].namelen == 10 && !memcmp(headers[i].name, ":authority", 10))
+            authority_idx = (int)i;
+    }
+
+    if (method_idx != -1) {
+        // log_finest_va("method_idx=%d", method_idx);
+        log_finest_va("%.*s %.*s HTTP/1.1", (int)headers[method_idx].valuelen, (char *)headers[method_idx].value,
+            (path_idx != -1) ? (int)headers[path_idx].valuelen : 1, (path_idx != -1) ? (char *)headers[path_idx].value : "/");
+
+        evbuffer_add_printf(buf, "%.*s %.*s HTTP/1.1\r\n", (int)headers[method_idx].valuelen, (char *)headers[method_idx].value,
+            (path_idx != -1) ? (int)headers[path_idx].valuelen : 1, (path_idx != -1) ? (char *)headers[path_idx].value : "/");
+
+        if (authority_idx != -1) {
+            evbuffer_add_printf(buf, "Host: %.*s\r\n", (int)headers[authority_idx].valuelen, (char *)headers[authority_idx].value);
+        }
+    }
+
+    if (status_idx != -1 && headers[status_idx].valuelen == 3) {
+        // log_finest_va("status_idx=%d", status_idx);
+        log_finest_va("HTTP/1.1 %.*s", (int)headers[status_idx].valuelen, (char *)headers[status_idx].value);
+
+        int status_code = http_parse_status_3dig(headers[status_idx].value);
+        const char *reason = http_get_reason_phrase(status_code);
+
+        // Add the correct reason phrase, otherwise E2Guardian icap service does not respond
+        evbuffer_add_printf(buf, "HTTP/1.1 %d %s\r\n", status_code, reason);
+    }
+
+    for (size_t i = 0; i < count; i++) {
+        if (headers[i].name[0] == ':')
+            continue;
+        // Skip Host to avoid duplicates
+        if (headers[i].namelen == 4 && !strncasecmp((char *)headers[i].name, "Host", 4))
+            continue;
+        log_finest_va("%.*s: %.*s", (int)headers[i].namelen, headers[i].name, (int)headers[i].valuelen, headers[i].value);
+        evbuffer_add_printf(buf, "%.*s: %.*s\r\n", (int)headers[i].namelen, headers[i].name, (int)headers[i].valuelen, headers[i].value);
+    }
+
+    // Do not append Transfer-Encoding, otherwise we have to wait for body of GET requests too
+    // see protohttp2_bev_readcb_src()
+    // evbuffer_add_printf(buf, "Transfer-Encoding: chunked\r\n\r\n");
+
+    // Add an extra CRLF to signal end of headers.
+    evbuffer_add_printf(buf, "\r\n");
+
+    return buf;
+}
+
 int
 protohttpx_get_hx_headers(protohttpx_stream_ctx_t *s, struct evbuffer *h1_buf, int init, add_nv_header_t add_nv_header)
 {

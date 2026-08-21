@@ -195,9 +195,12 @@ void protohttp_log_connect(pxy_conn_ctx_t *, protohttp_ctx_t *, unsigned int) NO
 
 int protohttpx_apply_filter(protohttpx_stream_ctx_t *);
 void protohttpx_free_nv_headers(protohttpx_stream_ctx_t *) NONNULL(1);
+
 #ifndef WITHOUT_ICAP
+struct evbuffer *protohttpx_get_h1_headers(protohttpx_stream_ctx_t *) WUNRES NONNULL(1);
 int protohttpx_get_hx_headers(protohttpx_stream_ctx_t *, struct evbuffer *, int, add_nv_header_t) WUNRES NONNULL(1,2);
 #endif /* !WITHOUT_ICAP */
+
 int protohttpx_filter_request_header(protohttpx_stream_ctx_t *s, void *headers,
     delete_nv_cb_t delete_nv_cb, add_nv_header_t add_nv_header) WUNRES NONNULL(1);
 int protohttpx_filter_response_header(protohttpx_stream_ctx_t *s, void *headers,
