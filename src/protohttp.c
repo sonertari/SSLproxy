@@ -736,6 +736,172 @@ protohttpx_apply_filter(protohttpx_stream_ctx_t *s)
 	return rv;
 }
 
+void
+protohttpx_free_nv_headers(protohttpx_stream_ctx_t *s)
+{
+    UNUSED pxy_conn_ctx_t *ctx = s->ctx;
+#ifndef WITHOUT_ICAP
+    log_finest_va("ENTER, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", headers count=%zu, reqmod=%d", s->src_stream_id, s->dst_stream_id, s->headers_count, s->icap_ctx->reqmod);
+#else /* !WITHOUT_ICAP */
+    log_finest_va("ENTER, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", headers count=%zu", s->src_stream_id, s->dst_stream_id, s->headers_count);
+#endif /* !WITHOUT_ICAP */
+
+    hx_nv_header_t **h = (ctx->proto == PROTO_HTTP2) ?
+        (hx_nv_header_t **)&((protohttp2_stream_ctx_t *)s)->headers :
+        (hx_nv_header_t **)&((protohttp3_stream_ctx_t *)s)->headers;
+
+    if (!*h) {
+        log_finest("No headers to free");
+        return;
+    }
+
+    for (size_t i = 0; i < s->headers_count; i++) {
+        if ((*h)[i].name) {
+            free((void *)(*h)[i].name);
+            (*h)[i].name = NULL;
+        }
+        if ((*h)[i].value) {
+            free((void *)(*h)[i].value);
+            (*h)[i].value = NULL;
+        }
+    }
+    s->headers_count = 0;
+    s->headers_capacity = 0;
+
+    free(*h);
+    *h = NULL;
+}
+
+#ifndef WITHOUT_ICAP
+int
+protohttpx_get_hx_headers(protohttpx_stream_ctx_t *s, struct evbuffer *h1_buf, int init, add_nv_header_t add_nv_header)
+{
+    UNUSED pxy_conn_ctx_t *ctx = s->ctx;
+    log_finest_va("ENTER, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, s->icap_ctx->reqmod);
+
+    // Clean slate for this stream context's header holder
+    if (init == 1) {
+        protohttpx_free_nv_headers(s);
+    }
+
+    size_t line_len;
+    char *line;
+    int is_first_line = 1;
+
+    while ((line = evbuffer_readln(h1_buf, &line_len, EVBUFFER_EOL_CRLF)) != NULL) {
+        if (line_len == 0) {
+            free(line);
+            break;
+        }
+
+        if (is_first_line) {
+            is_first_line = 0;
+
+            // Request Line
+            if (memcmp(line, "HTTP/", 5) != 0) {
+                char *method = line;
+                char *path = strchr(line, ' ');
+                if (path) {
+                    *path = '\0';
+                    path++;
+                    char *version = strchr(path, ' ');
+                    if (version) {
+                        *version = '\0';
+                    }
+
+                    // Strip absolute uri scheme and authority
+                    // If path starts with "http://" or "https://", skip to the relative path component
+                    if (strncasecmp(path, "http://", 7) == 0) {
+                        char *relative_path = strchr(path + 7, '/');
+                        if (relative_path) {
+                            path = relative_path;
+                        } else {
+                            path = "/"; // Fallback if no trailing slash was provided
+                        }
+                    } else if (strncasecmp(path, "https://", 8) == 0) {
+                        char *relative_path = strchr(path + 8, '/');
+                        if (relative_path) {
+                            path = relative_path;
+                        } else {
+                            path = "/"; // Fallback if no trailing slash was provided
+                        }
+                    }
+
+                    size_t m_len = strlen(method);
+                    size_t p_len = strlen(path);
+
+                    log_finest_va("Translate Request Line: :method=%.*s, :path=%.*s, and add :scheme=https", (int)m_len, method, (int)p_len, path);
+                    if (add_nv_header((protohttpx_stream_ctx_t *)s, ":method", 7, method, m_len) < 0 ||
+                        add_nv_header((protohttpx_stream_ctx_t *)s, ":path", 5, path, p_len) < 0 ||
+                        add_nv_header((protohttpx_stream_ctx_t *)s, ":scheme", 7, "https", 5) < 0) {
+                        free(line);
+                        return -1;
+                    }
+                }
+            }
+            // Status Line
+            else {
+                char *status = strchr(line, ' ');
+                if (status) {
+                    while (*status == ' ') status++; // Skip spaces
+                    char *phrase = strchr(status, ' ');
+                    if (phrase) {
+                        // We only want the status digit group (e.g. "200"), not the reason phrase (e.g. "OK")
+                        *phrase = '\0';
+                    }
+                    size_t s_len = strlen(status);
+                    log_finest_va("Translate Status Line: :status=%.*s", (int)s_len, status);
+                    if (add_nv_header((protohttpx_stream_ctx_t *)s, ":status", 7, status, s_len) < 0) {
+                        free(line);
+                        return -1;
+                    }
+                }
+            }
+            free(line);
+            continue;
+        }
+
+        // Process regular headers "Name: Value"
+        char *colon = strchr(line, ':');
+        if (colon) {
+            *colon = '\0';
+            char *h_name = line;
+            char *h_value = colon + 1;
+
+            size_t n_len = 0;
+            size_t v_len = 0;
+            h_name = trim_whitespace(h_name, &n_len);
+            h_value = trim_whitespace(h_value, &v_len);
+
+            if (n_len == 4 && !strncasecmp(h_name, "Host", 4)) {
+                log_finest_va("Translate Host to :authority: %.*s", (int)v_len, h_value);
+                if (add_nv_header((protohttpx_stream_ctx_t *)s, ":authority", 10, h_value, v_len) < 0) {
+                    free(line);
+                    return -1;
+                }
+            }
+            // Filter out Connection headers that are forbidden or invalid in H2
+            else if ((n_len == 10 && !strncasecmp(h_name, "Connection", 10)) ||
+                     (n_len == 17 && !strncasecmp(h_name, "Transfer-Encoding", 17)) ||
+                     (n_len == 10 && !strncasecmp(h_name, "Keep-Alive", 10)) ||
+                     (n_len == 5  && !strncasecmp(h_name, "Proxy", 5))) {
+                log_finest_va("Skip H1 specific connection header: %s", h_name);
+            }
+            // Regular Header Pass-through
+            else {
+                if (add_nv_header((protohttpx_stream_ctx_t *)s, h_name, n_len, h_value, v_len) < 0) {
+                    free(line);
+                    return -1;
+                }
+            }
+        }
+        free(line);
+    }
+
+    return 0;
+}
+#endif /* !WITHOUT_ICAP */
+
 static inline protohttpx_nv_t
 protohttpx_get_nv(void *headers, protocol_t proto, size_t idx)
 {
