@@ -747,34 +747,41 @@ protohttpx_free_nv_headers(protohttpx_stream_ctx_t *s)
     log_finest_va("ENTER, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", headers count=%zu", s->src_stream_id, s->dst_stream_id, s->headers_count);
 #endif /* !WITHOUT_ICAP */
 
-    protohttpx_nv_t **h = (ctx->proto == PROTO_HTTP2) ?
-        (protohttpx_nv_t **)&((protohttp2_stream_ctx_t *)s)->headers :
+    protohttpx_nv_t **headers = NULL;
+	if (ctx->proto == PROTO_HTTP2) {
+        headers = (protohttpx_nv_t **)&((protohttp2_stream_ctx_t *)s)->headers;
+	}
 #ifndef WITHOUT_HTTP3
-        (protohttpx_nv_t **)&((protohttp3_stream_ctx_t *)s)->headers;
+	else /* if (ctx->proto == PROTO_HTTP3) */ {
+        headers = (protohttpx_nv_t **)&((protohttp3_stream_ctx_t *)s)->headers;
+	}
 #else /* !WITHOUT_HTTP3 */
-		NULL;
+	else {
+		log_finest("No headers to free for non-H2 protocol");
+		return;
+	}
 #endif /* !WITHOUT_HTTP3 */
 
-    if (!*h) {
+    if (!*headers) {
         log_finest("No headers to free");
         return;
     }
 
     for (size_t i = 0; i < s->headers_count; i++) {
-        if ((*h)[i].name) {
-            free((void *)(*h)[i].name);
-            (*h)[i].name = NULL;
+        if ((*headers)[i].name) {
+            free((void *)(*headers)[i].name);
+            (*headers)[i].name = NULL;
         }
-        if ((*h)[i].value) {
-            free((void *)(*h)[i].value);
-            (*h)[i].value = NULL;
+        if ((*headers)[i].value) {
+            free((void *)(*headers)[i].value);
+            (*headers)[i].value = NULL;
         }
     }
     s->headers_count = 0;
     s->headers_capacity = 0;
 
-    free(*h);
-    *h = NULL;
+    free(*headers);
+    *headers = NULL;
 }
 
 static void
@@ -784,15 +791,23 @@ protohttpx_delete_nv_header(protohttpx_stream_ctx_t *s, size_t idx)
     log_finest_va("ENTER, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", remove idx=%zu", s->src_stream_id, s->dst_stream_id, idx);
 
     if (s->headers_count == 0 || idx >= s->headers_count) {
-        return; // Invalid index or empty headers
+		log_finest("Invalid index or empty headers");
+        return;
     }
 
-    protohttpx_nv_t *headers = (ctx->proto == PROTO_HTTP2) ?
-		(protohttpx_nv_t *)((protohttp2_stream_ctx_t *)s)->headers :
+    protohttpx_nv_t *headers = NULL;
+	if (ctx->proto == PROTO_HTTP2) {
+		headers = (protohttpx_nv_t *)((protohttp2_stream_ctx_t *)s)->headers;
+	}
 #ifndef WITHOUT_HTTP3
-		(protohttpx_nv_t *)((protohttp3_stream_ctx_t *)s)->headers;
+	else /*	if (ctx->proto == PROTO_HTTP3) */ {
+		headers = (protohttpx_nv_t *)((protohttp3_stream_ctx_t *)s)->headers;
+	}
 #else /* !WITHOUT_HTTP3 */
-		NULL;
+	else {
+		log_finest("No headers to delete for non-H2 protocol");
+		return;
+	}
 #endif /* !WITHOUT_HTTP3 */
 
     // TODO: How to properly free the name and value buffers in h3? They are allocated with malloc in protohttp3_add_nv_header.
@@ -820,12 +835,19 @@ protohttpx_add_nv_header(protohttpx_stream_ctx_t *s, const char *name,  size_t n
     pxy_conn_ctx_t *ctx = s->ctx;
     log_finest_va("%.*s: %.*s", (int)namelen, name, (int)valuelen, value);
 
-    protohttpx_nv_t **headers = (ctx->proto == PROTO_HTTP2) ?
-        (protohttpx_nv_t **)&((protohttp2_stream_ctx_t *)s)->headers :
+    protohttpx_nv_t **headers = NULL;
+	if (ctx->proto == PROTO_HTTP2) {
+        headers = (protohttpx_nv_t **)&((protohttp2_stream_ctx_t *)s)->headers;
+	}
 #ifndef WITHOUT_HTTP3
-        (protohttpx_nv_t **)&((protohttp3_stream_ctx_t *)s)->headers;
+	else /* if (ctx->proto == PROTO_HTTP3) */ {
+        headers = (protohttpx_nv_t **)&((protohttp3_stream_ctx_t *)s)->headers;
+	}
 #else /* !WITHOUT_HTTP3 */
-		NULL;
+	else {
+		log_finest("No headers to add for non-H2 protocol");
+		return -1;
+	}
 #endif /* !WITHOUT_HTTP3 */
 
     if (s->headers_count >= s->headers_capacity) {
@@ -987,12 +1009,19 @@ protohttpx_get_h1_headers(protohttpx_stream_ctx_t *s)
 
     int method_idx = -1, path_idx = -1, status_idx = -1, authority_idx = -1;
 
-    protohttpx_nv_t *headers = (ctx->proto == PROTO_HTTP2) ?
-		(protohttpx_nv_t *)((protohttp2_stream_ctx_t *)s)->headers :
+	protohttpx_nv_t *headers = NULL;
+	if (ctx->proto == PROTO_HTTP2) {
+		headers = (protohttpx_nv_t *)((protohttp2_stream_ctx_t *)s)->headers;
+	}
 #ifndef WITHOUT_HTTP3
-		(protohttpx_nv_t *)((protohttp3_stream_ctx_t *)s)->headers;
+	else /*	if (ctx->proto == PROTO_HTTP3) */ {
+		headers = (protohttpx_nv_t *)((protohttp3_stream_ctx_t *)s)->headers;
+	}
 #else /* !WITHOUT_HTTP3 */
-		NULL;
+	else {
+		log_finest("No headers to get h1 headers for non-H2 protocol");
+		return buf;
+	}
 #endif /* !WITHOUT_HTTP3 */
 
 	size_t count = s->headers_count;
@@ -1191,12 +1220,19 @@ protohttpx_filter_request_header(protohttpx_stream_ctx_t *s)
     protohttp_ctx_t *http_ctx = s->http_ctx;
     conn_opts_t *conn_opts = s->conn_opts ? s->conn_opts : ctx->conn_opts;
 
-    protohttpx_nv_t *headers = (ctx->proto == PROTO_HTTP2) ?
-		(protohttpx_nv_t *)((protohttp2_stream_ctx_t *)s)->headers :
+	protohttpx_nv_t *headers = NULL;
+	if (ctx->proto == PROTO_HTTP2) {
+		headers = (protohttpx_nv_t *)((protohttp2_stream_ctx_t *)s)->headers;
+	}
 #ifndef WITHOUT_HTTP3
-		(protohttpx_nv_t *)((protohttp3_stream_ctx_t *)s)->headers;
+	else /*	if (ctx->proto == PROTO_HTTP3) */ {
+		headers = (protohttpx_nv_t *)((protohttp3_stream_ctx_t *)s)->headers;
+	}
 #else /* !WITHOUT_HTTP3 */
-		NULL;
+	else {
+		log_finest("No headers to filter for non-H2 protocol");
+		return -1;
+	}
 #endif /* !WITHOUT_HTTP3 */
 
 	for (size_t i = 0; i < count; i++) {
@@ -1336,12 +1372,19 @@ protohttpx_filter_response_header(protohttpx_stream_ctx_t *s)
     protohttp_ctx_t *http_ctx = s->http_ctx;
     conn_opts_t *conn_opts = s->conn_opts ? s->conn_opts : ctx->conn_opts;
 
-    protohttpx_nv_t *headers = (ctx->proto == PROTO_HTTP2) ?
-		(protohttpx_nv_t *)((protohttp2_stream_ctx_t *)s)->headers :
+	protohttpx_nv_t *headers = NULL;
+	if (ctx->proto == PROTO_HTTP2) {
+		headers = (protohttpx_nv_t *)((protohttp2_stream_ctx_t *)s)->headers;
+	}
 #ifndef WITHOUT_HTTP3
-		(protohttpx_nv_t *)((protohttp3_stream_ctx_t *)s)->headers;
+	else /*	if (ctx->proto == PROTO_HTTP3) */ {
+		headers = (protohttpx_nv_t *)((protohttp3_stream_ctx_t *)s)->headers;
+	}
 #else /* !WITHOUT_HTTP3 */
-		NULL;
+	else {
+		log_finest("No headers to filter for non-H2 protocol");
+		return -1;
+	}
 #endif /* !WITHOUT_HTTP3 */
 
     for (size_t i = 0; i < count; i++) {

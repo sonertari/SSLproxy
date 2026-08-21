@@ -392,20 +392,22 @@ icap_init(pxy_conn_ctx_t *ctx, protohttpx_stream_ctx_t *s, void *hx_ctx, struct 
 		return NULL;
 	}
 
-	if (s && ctx->proto == PROTO_HTTP2) {
-		icap_ctx = s->icap_ctx;
-		icap_ctx->send_data_to_src_cb = protohttp2_icap_send_data_to_src_cb;
-		icap_ctx->send_data_to_dst_cb = protohttp2_icap_send_data_to_dst_cb;
-		icap_ctx->failopen_to_dest_cb = protohttp2_icap_failopen_to_dest_cb;
-	}
+	if (s) {
+		if (ctx->proto == PROTO_HTTP2) {
+			icap_ctx = s->icap_ctx;
+			icap_ctx->send_data_to_src_cb = protohttp2_icap_send_data_to_src_cb;
+			icap_ctx->send_data_to_dst_cb = protohttp2_icap_send_data_to_dst_cb;
+			icap_ctx->failopen_to_dest_cb = protohttp2_icap_failopen_to_dest_cb;
+		}
 #ifndef WITHOUT_HTTP3
-	else if (s && ctx->proto == PROTO_HTTP3) {
-		icap_ctx = s->icap_ctx;
-		icap_ctx->send_data_to_src_cb = protohttp3_icap_send_data_to_src_cb;
-		icap_ctx->send_data_to_dst_cb = protohttp3_icap_send_data_to_dst_cb;
-		icap_ctx->failopen_to_dest_cb = protohttp3_icap_failopen_to_dest_cb;
-	}
+		else /* if (ctx->proto == PROTO_HTTP3) */ {
+			icap_ctx = s->icap_ctx;
+			icap_ctx->send_data_to_src_cb = protohttp3_icap_send_data_to_src_cb;
+			icap_ctx->send_data_to_dst_cb = protohttp3_icap_send_data_to_dst_cb;
+			icap_ctx->failopen_to_dest_cb = protohttp3_icap_failopen_to_dest_cb;
+		}
 #endif /* !WITHOUT_HTTP3 */
+	}
 	else {
 		icap_ctx->send_data_to_src_cb = icap_send_data_to_src_cb;
 		icap_ctx->send_data_to_dst_cb = icap_send_data_to_dst_cb;
@@ -1122,8 +1124,10 @@ icap_set_extended_headers(icap_ctx_t *icap_ctx, UNUSED int upgraded)
 
 	// Either tcp or udp, for now we only support tcp
 	const char *proto = "tcp";
-	if (ctx->proto == PROTO_HTTP3) proto = "http3";
-	else if (ctx->proto == PROTO_HTTP2) proto = "http2";
+	if (ctx->proto == PROTO_HTTP2) proto = "http2";
+#ifndef WITHOUT_HTTP3
+	else if (ctx->proto == PROTO_HTTP3) proto = "http3";
+#endif /* !WITHOUT_HTTP3 */
 	else if (ctx->spec->http) proto = ctx->spec->ssl || upgraded ? "https" : "http";
 	// else if (ctx->spec->pop3) proto = ctx->spec->ssl || upgraded ? "pop3s" : "pop3";
 	// else if (ctx->spec->smtp) proto = ctx->spec->ssl || upgraded ? "smtps" : "smtp";
