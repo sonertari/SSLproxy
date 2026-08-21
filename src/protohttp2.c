@@ -613,29 +613,6 @@ protohttp2_icap_failopen_to_dest_cb(icap_service_ctx_t *service_ctx)
 }
 #endif /* !WITHOUT_ICAP */
 
-static void
-protohttp2_delete_nv_header(protohttpx_stream_ctx_t *sx, size_t idx)
-{
-    UNUSED pxy_conn_ctx_t *ctx = sx->ctx;
-    protohttp2_stream_ctx_t *s = (protohttp2_stream_ctx_t *)sx;
-    log_finest_va("ENTER, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", remove idx=%zu", s->src_stream_id, s->dst_stream_id, idx);
-
-    if (s->headers_count == 0 || idx >= s->headers_count) {
-        return; // Invalid index or empty headers
-    }
-
-    free(s->headers[idx].name);
-    free(s->headers[idx].value);
-
-    // Move the remaining headers up to fill the gap left by the removed header
-    for (size_t i = idx; i < s->headers_count - 1; i++) {
-        memcpy(&s->headers[i], &s->headers[i + 1], sizeof(nghttp2_nv));
-    }
-
-    memset(&s->headers[s->headers_count - 1], 0, sizeof(nghttp2_nv));
-    s->headers_count--;
-}
-
 static int
 protohttp2_on_frame_recv(UNUSED nghttp2_session *session, const nghttp2_frame *frame, void *user_data, int reqmod)
 {
@@ -715,7 +692,7 @@ protohttp2_on_frame_recv(UNUSED nghttp2_session *session, const nghttp2_frame *f
             }
 
             filter_header_t filter_header = reqmod ? protohttpx_filter_request_header : protohttpx_filter_response_header;
-            if (filter_header((protohttpx_stream_ctx_t *)s, s->headers, protohttp2_delete_nv_header, protohttp2_add_nv_header) == -1) {
+            if (filter_header((protohttpx_stream_ctx_t *)s, s->headers, protohttp2_add_nv_header) == -1) {
                 return -1;
             }
 

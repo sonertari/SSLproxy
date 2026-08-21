@@ -113,9 +113,8 @@ typedef struct {
     size_t valuelen;
 } protohttpx_nv_t;
 
-typedef void (*delete_nv_cb_t)(protohttpx_stream_ctx_t *, size_t);
 typedef int (*add_nv_header_t)(protohttpx_stream_ctx_t *, const char *,  size_t, const char *, size_t);
-typedef int (*filter_header_t)(protohttpx_stream_ctx_t *, void *, delete_nv_cb_t, add_nv_header_t);
+typedef int (*filter_header_t)(protohttpx_stream_ctx_t *, void *, add_nv_header_t);
 
 // Dummy common nv header struct for H2/H3
 typedef struct {
@@ -201,10 +200,8 @@ struct evbuffer *protohttpx_get_h1_headers(protohttpx_stream_ctx_t *) WUNRES NON
 int protohttpx_get_hx_headers(protohttpx_stream_ctx_t *, struct evbuffer *, int, add_nv_header_t) WUNRES NONNULL(1,2);
 #endif /* !WITHOUT_ICAP */
 
-int protohttpx_filter_request_header(protohttpx_stream_ctx_t *s, void *headers,
-    delete_nv_cb_t delete_nv_cb, add_nv_header_t add_nv_header) WUNRES NONNULL(1);
-int protohttpx_filter_response_header(protohttpx_stream_ctx_t *s, void *headers,
-    delete_nv_cb_t delete_nv_cb, add_nv_header_t add_nv_header) WUNRES NONNULL(1);
+int protohttpx_filter_request_header(protohttpx_stream_ctx_t *s, void *headers, add_nv_header_t add_nv_header) WUNRES NONNULL(1);
+int protohttpx_filter_response_header(protohttpx_stream_ctx_t *s, void *headers, add_nv_header_t add_nv_header) WUNRES NONNULL(1);
 
 int protohttp_filter_request_header(struct evbuffer *, struct evbuffer *, protohttp_ctx_t *, enum conn_type, pxy_conn_ctx_t *) WUNRES NONNULL(1,2,3,5);
 void protohttp_filter_response_header(struct evbuffer *, struct evbuffer *, protohttp_ctx_t *, pxy_conn_ctx_t *) NONNULL(1,2,3,4);

@@ -772,30 +772,6 @@ h3_on_recv_header(nghttp3_conn *conn, int64_t stream_id,
     return 0;
 }
 
-static void
-protohttp3_delete_nv_header(protohttpx_stream_ctx_t *sx, size_t idx)
-{
-    UNUSED pxy_conn_ctx_t *ctx = sx->ctx;
-    protohttp3_stream_ctx_t *s = (protohttp3_stream_ctx_t *)sx;
-    log_finest_va("ENTER, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", remove idx=%zu", s->src_stream_id, s->dst_stream_id, idx);
-
-    if (s->headers_count == 0 || idx >= s->headers_count) {
-        return; // Invalid index or empty headers
-    }
-
-    // TODO: How to free the name and value buffers properly? They are allocated with malloc in protohttp3_add_nv_header.
-    free((void *)s->headers[idx].name);
-    free((void *)s->headers[idx].value);
-
-    // Move the remaining headers up to fill the gap left by the removed header
-    for (size_t i = idx; i < s->headers_count - 1; i++) {
-        memcpy(&s->headers[i], &s->headers[i + 1], sizeof(nghttp3_nv));
-    }
-
-    memset(&s->headers[s->headers_count - 1], 0, sizeof(nghttp3_nv));
-    s->headers_count--;
-}
-
 /*
  * Called when the HEADERS block is fully decoded (analogous to H2's
  * NGHTTP2_FLAG_END_HEADERS).  This is the correct place to act on the
@@ -854,7 +830,7 @@ h3_on_end_headers(nghttp3_conn *conn, int64_t stream_id,
     // int seen_header_on_entry = reqmod ? s->http_ctx->seen_req_header : s->http_ctx->seen_resp_header;
 
     filter_header_t filter_header = reqmod ? protohttpx_filter_request_header : protohttpx_filter_response_header;
-    if (filter_header((protohttpx_stream_ctx_t *)s, s->headers, protohttp3_delete_nv_header, protohttp3_add_nv_header) == -1) {
+    if (filter_header((protohttpx_stream_ctx_t *)s, s->headers, protohttp3_add_nv_header) == -1) {
         return -1;
     }
 

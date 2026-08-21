@@ -772,6 +772,33 @@ protohttpx_free_nv_headers(protohttpx_stream_ctx_t *s)
     *h = NULL;
 }
 
+static void
+protohttpx_delete_nv_header(protohttpx_stream_ctx_t *s, size_t idx)
+{
+    pxy_conn_ctx_t *ctx = s->ctx;
+    log_finest_va("ENTER, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", remove idx=%zu", s->src_stream_id, s->dst_stream_id, idx);
+
+    if (s->headers_count == 0 || idx >= s->headers_count) {
+        return; // Invalid index or empty headers
+    }
+
+    hx_nv_header_t *headers = (ctx->proto == PROTO_HTTP2) ?
+		(hx_nv_header_t *)((protohttp2_stream_ctx_t *)s)->headers :
+		(hx_nv_header_t *)((protohttp3_stream_ctx_t *)s)->headers;
+
+    // TODO: How to properly free the name and value buffers in h3? They are allocated with malloc in protohttp3_add_nv_header.
+    free((void *)headers[idx].name);
+    free((void *)headers[idx].value);
+
+    // Move the remaining headers up to fill the gap left by the removed header
+    for (size_t i = idx; i < s->headers_count - 1; i++) {
+        memcpy(&headers[i], &headers[i + 1], sizeof(hx_nv_header_t));
+    }
+
+    memset(&headers[s->headers_count - 1], 0, sizeof(hx_nv_header_t));
+    s->headers_count--;
+}
+
 #ifndef WITHOUT_ICAP
 struct evbuffer *
 protohttpx_get_h1_headers(protohttpx_stream_ctx_t *s)
@@ -996,8 +1023,7 @@ protohttpx_get_nv(void *headers, protocol_t proto, size_t idx)
 }
 
 int WUNRES NONNULL(1)
-protohttpx_filter_request_header(protohttpx_stream_ctx_t *s, void *headers,
-    delete_nv_cb_t delete_nv_cb, UNUSED add_nv_header_t add_nv_header)
+protohttpx_filter_request_header(protohttpx_stream_ctx_t *s, void *headers, UNUSED add_nv_header_t add_nv_header)
 {
     UNUSED pxy_conn_ctx_t *ctx = s->ctx;
     log_finest_va("ENTER, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64, s->src_stream_id, s->dst_stream_id);
@@ -1093,11 +1119,11 @@ protohttpx_filter_request_header(protohttpx_stream_ctx_t *s, void *headers,
                 http_ctx->http_content_type, i, s->src_stream_id, s->dst_stream_id);
         }
         else if (conn_opts->remove_http_accept_encoding && (nv.namelen == 15 && !memcmp(nv.name, "accept-encoding", 15))) {
-            delete_nv_cb(s, i);
+            protohttpx_delete_nv_header(s, i);
 			http_ctx->seen_keyword_count++;
         }
         else if (conn_opts->remove_http_referer && (nv.namelen == 7 && !memcmp(nv.name, "referer", 7))) {
-            delete_nv_cb(s, i);
+            protohttpx_delete_nv_header(s, i);
 			http_ctx->seen_keyword_count++;
 		}
 		         // Not possible in HTTP/2
@@ -1110,7 +1136,7 @@ protohttpx_filter_request_header(protohttpx_stream_ctx_t *s, void *headers,
 		         (nv.namelen == 4 && !memcmp(nv.name, "via", 4)) ||
 				 // Also do not send the loopback address to the Internet
 		         (nv.namelen == 15 && !memcmp(nv.name, "x-forwarded-for", 15))) {
-            delete_nv_cb(s, i);
+            protohttpx_delete_nv_header(s, i);
         }
     }
 
@@ -1135,8 +1161,7 @@ protohttpx_filter_request_header(protohttpx_stream_ctx_t *s, void *headers,
 }
 
 int WUNRES NONNULL(1)
-protohttpx_filter_response_header(protohttpx_stream_ctx_t *s, void *headers,
-    delete_nv_cb_t delete_nv_cb, add_nv_header_t add_nv_header)
+protohttpx_filter_response_header(protohttpx_stream_ctx_t *s, void *headers, add_nv_header_t add_nv_header)
 {
     UNUSED pxy_conn_ctx_t *ctx = s->ctx;
     log_finest_va("ENTER, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64, s->src_stream_id, s->dst_stream_id);
@@ -1199,7 +1224,7 @@ protohttpx_filter_response_header(protohttpx_stream_ctx_t *s, void *headers,
         }
         // Normally not possible in response
         else if (conn_opts->remove_http_referer && (nv.namelen == 7 && !memcmp(nv.name, "referer", 7))) {
-            delete_nv_cb(s, i);
+            protohttpx_delete_nv_header(s, i);
 		}
         else if ((nv.namelen == 15 && !memcmp(nv.name, "public-key-pins", 15)) ||
                  (nv.namelen == 27 && !memcmp(nv.name, "public-key-pins-report-only", 27)) ||
@@ -1207,13 +1232,13 @@ protohttpx_filter_response_header(protohttpx_stream_ctx_t *s, void *headers,
                  (nv.namelen == 9 && !memcmp(nv.name, "expect-ct", 9)) ||
                  (nv.namelen == 18 && !memcmp(nv.name, "alternate-protocol", 18)) ||
                  (nv.namelen == 7 && !memcmp(nv.name, "upgrade", 7))) {
-            delete_nv_cb(s, i);
+            protohttpx_delete_nv_header(s, i);
         }
         // We should not receive alt-svc on an already h3 stream, but if we do, rewrite it to the configured port
         // And h3 proxyspecs should not be configured to rewrite alt-svc anyway
         else if (conn_opts->rewrite_alt_svc_port && !memcmp(nv.name, "alt-svc", 7)) {
             // TODO: Rewrite only the port number in the alt-svc header, keep the rest
-            delete_nv_cb(s, i);
+            protohttpx_delete_nv_header(s, i);
 
             size_t len = strlen("h3=\"\":") + strlen(conn_opts->rewrite_alt_svc_port) + strlen("; ma=86400") + 1;
 			char *new_value = malloc(len);
