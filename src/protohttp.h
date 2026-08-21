@@ -57,9 +57,6 @@ typedef struct protohttp_ctx {
 	long long unsigned int seen_bytes;
 
 	pxy_conn_ctx_t *ctx;
-
-	// For h2 specific fields, if upgraded
-	void *arg;
 } protohttp_ctx_t;
 
 typedef struct {
