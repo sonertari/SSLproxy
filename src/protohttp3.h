@@ -150,8 +150,8 @@ typedef struct protohttp3_stream_ctx {
     uint8_t     *body_buf;
     nghttp3_data_reader dr;
 
-    unsigned int src_end_stream   : 1; /* 1 after FIN/END_STREAM           */
-    unsigned int dst_end_stream   : 1; /* 1 after FIN/END_STREAM           */
+    unsigned int src_end_stream   : 1; /* 1 after FIN/END_STREAM */
+    unsigned int dst_end_stream   : 1;
 } protohttp3_stream_ctx_t;
 
 typedef struct pkt_node {
@@ -176,9 +176,7 @@ struct protohttp3_conn_ctx {
     ngtcp2_crypto_conn_ref src_conn_ref;
     ngtcp2_crypto_conn_ref dst_conn_ref;
 
-    /*
-     * The HTTP/3 framing layer on top of each QUIC conn.
-     */
+    /* The HTTP/3 framing layer on top of each QUIC conn */
     nghttp3_conn *src_h3;
     nghttp3_conn *dst_h3;
 
@@ -200,44 +198,41 @@ struct protohttp3_conn_ctx {
      * ngtcp2 needs recvmsg() to extract per-datagram ancillary data (ECN
      * bits, destination IP for path validation).
      */
-    int src_fd;   /* listener fd for QUIC UDP server    */
-    int dst_fd;   /* connected UDP fd towards the upstream server    */
+    int src_fd;   /* listener fd for QUIC UDP server */
+    int dst_fd;   /* connected UDP fd towards the upstream server */
 
-    /* Libevent 'struct event' wrappers around the raw fds.               */
-    struct event *src_wev;   /* write-ready event on src_fd (armed on    */
-                             /* demand when ngtcp2 has output queued)    */
+    /* Libevent 'struct event' wrappers around the raw fds */
+    struct event *src_wev;   /* write-ready event on src_fd (armed on */
+                             /* demand when ngtcp2 has output queued) */
     struct event *dst_rev;
     struct event *dst_wev;
 
     struct event *src_process_pkt_ev; /* event to process a received packet on client side */
 
-    /* Timer event that drives ngtcp2's loss-detection / keep-alive.       */
+    /* Timer event that drives ngtcp2's loss-detection / keep-alive */
     struct event *timer_ev;
 
-    /* Back-pointer to the owning SSLproxy connection context.             */
+    /* Back-pointer to the owning SSLproxy connection context */
     pxy_conn_ctx_t *ctx;
 
-    /* Peer addresses cached from the first recvmsg() call.                */
-    struct sockaddr_storage dst_peer_addr;
-    socklen_t               dst_peer_addrlen;
-
+    /* Persistent storage for dst_path.local used with ngtcp2_addr_init() */
     struct sockaddr_storage dst_local_addr;
 	socklen_t dst_local_addrlen;
 
-    /* Local and peer addresses on client side (needed by ngtcp2 path tracking). */
+    /* Local and peer addresses on client side (needed by ngtcp2 path tracking) */
     ngtcp2_path src_path;
     ngtcp2_path dst_path;
 
     ngtcp2_crypto_ossl_ctx *src_ossl_ctx;
     ngtcp2_crypto_ossl_ctx *dst_ossl_ctx;
 
-    /* Linked list of active H3 streams.                                   */
+    /* Linked list of active H3 streams */
     protohttp3_stream_ctx_t *streams;
 
-    /* Termination flag.                                                    */
+    /* Termination flag */
     unsigned int term : 1;
 
-    /* Session hash table key (5-tuple) & container reference.             */
+    /* Session hash table key (5-tuple) & container reference */
     quic_tuple_key_t key;
     h3_session_map_t *h3_sessions;
 

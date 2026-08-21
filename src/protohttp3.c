@@ -435,8 +435,8 @@ protohttp3_trigger_write_loop(protohttp3_ctx_t *h3_ctx, int reqmod)
         /* 3. Transmit via UDP socket */
         struct iovec iov = { .iov_base = pktbuf, .iov_len = (size_t)pktlen };
         struct msghdr mhdr = {
-            .msg_name    = reqmod ? (struct sockaddr *)&h3_ctx->ctx->srcaddr : (struct sockaddr *)&h3_ctx->dst_peer_addr,
-            .msg_namelen = reqmod ? h3_ctx->ctx->srcaddrlen : h3_ctx->dst_peer_addrlen,
+            .msg_name    = reqmod ? (struct sockaddr *)&h3_ctx->ctx->srcaddr : (struct sockaddr *)&ctx->dstaddr,
+            .msg_namelen = reqmod ? h3_ctx->ctx->srcaddrlen : ctx->dstaddrlen,
             .msg_iov     = &iov,
             .msg_iovlen  = 1,
         };
@@ -2380,12 +2380,6 @@ protohttp3_conn_connect(pxy_conn_ctx_t *ctx)
     h3_ctx->dst_fd = dst_fd;
 
     /*
-     * Cache the peer address for the upstream.
-     */
-    memcpy(&h3_ctx->dst_peer_addr, &ctx->dstaddr, ctx->dstaddrlen);
-    h3_ctx->dst_peer_addrlen = ctx->dstaddrlen;
-
-    /*
      * Instantiate the upstream QUIC client session.
      */
     ngtcp2_callbacks cb = {0};
@@ -2434,7 +2428,7 @@ protohttp3_conn_connect(pxy_conn_ctx_t *ctx)
     dcid.datalen = NGTCP2_MAX_CIDLEN;
     arc4random_buf(dcid.data, dcid.datalen);
 
-    // ATTENTION: We need a persistent var for dst_local_addr, hence h3_ctx->dst_local_addr,
+    // ATTENTION: We need a persistent storage for dst_local_addr,
     // because ngtcp2_addr_init() does not copy the sockaddr, it just stores a pointer to it.
 	h3_ctx->dst_local_addrlen = sizeof(h3_ctx->dst_local_addr);
 	if (getsockname(dst_fd, (struct sockaddr *)&h3_ctx->dst_local_addr, &h3_ctx->dst_local_addrlen) < 0) {
