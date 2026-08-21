@@ -877,6 +877,104 @@ protohttpx_add_nv_header(protohttpx_stream_ctx_t *s, const char *name,  size_t n
 }
 
 #ifndef WITHOUT_ICAP
+// Common HTTP status codes and their standard reason phrases, sorted by code
+static const http_status_reason_t http_status_reasons[] = {
+    { 100, "Continue" },
+    { 101, "Switching Protocols" },
+    { 102, "Processing" },
+    { 103, "Early Hints" },
+    { 200, "OK" },
+    { 201, "Created" },
+    { 202, "Accepted" },
+    { 203, "Non-Authoritative Information" },
+    { 204, "No Content" },
+    { 205, "Reset Content" },
+    { 206, "Partial Content" },
+    { 207, "Multi-Status" },
+    { 208, "Already Reported" },
+    { 226, "IM Used" },
+    { 300, "Multiple Choices" },
+    { 301, "Moved Permanently" },
+    { 302, "Found" },
+    { 303, "See Other" },
+    { 304, "Not Modified" },
+    { 305, "Use Proxy" },
+    { 307, "Temporary Redirect" },
+    { 308, "Permanent Redirect" },
+    { 400, "Bad Request" },
+    { 401, "Unauthorized" },
+    { 402, "Payment Required" },
+    { 403, "Forbidden" },
+    { 404, "Not Found" },
+    { 405, "Method Not Allowed" },
+    { 406, "Not Acceptable" },
+    { 407, "Proxy Authentication Required" },
+    { 408, "Request Timeout" },
+    { 409, "Conflict" },
+    { 410, "Gone" },
+    { 411, "Length Required" },
+    { 412, "Precondition Failed" },
+    { 413, "Payload Too Large" },
+    { 414, "URI Too Long" },
+    { 415, "Unsupported Media Type" },
+    { 416, "Range Not Satisfied" },
+    { 417, "Expectation Failed" },
+    { 421, "Misdirected Request" },
+    { 422, "Unprocessable Entity" },
+    { 423, "Locked" },
+    { 424, "Failed Dependency" },
+    { 425, "Too Early" },
+    { 426, "Upgrade Required" },
+    { 428, "Precondition Required" },
+    { 429, "Too Many Requests" },
+    { 431, "Request Header Fields Too Large" },
+    { 451, "Unavailable For Legal Reasons" },
+    { 500, "Internal Server Error" },
+    { 501, "Not Implemented" },
+    { 502, "Bad Gateway" },
+    { 503, "Service Unavailable" },
+    { 504, "Gateway Timeout" },
+    { 505, "HTTP Version Not Supported" },
+    { 506, "Variant Also Negotiates" },
+    { 507, "Insufficient Storage" },
+    { 508, "Loop Detected" },
+    { 510, "Not Extended" },
+    { 511, "Network Authentication Required" }
+};
+
+#define HTTP_STATUS_REASONS_LEN (sizeof(http_status_reasons) / sizeof(http_status_reasons[0]))
+
+// Returns the standard reason phrase for a given status code.
+// If the code is not in our mapping table, falls back to a generic default
+// based on the HTTP status class (e.g., "Success", "Client Error").
+const char *
+http_get_reason_phrase(int status_code)
+{
+    int low = 0;
+    int high = HTTP_STATUS_REASONS_LEN - 1;
+
+    while (low <= high) {
+        int mid = low + (high - low) / 2;
+        if (http_status_reasons[mid].code == status_code) {
+            return http_status_reasons[mid].reason;
+        }
+        if (http_status_reasons[mid].code < status_code) {
+            low = mid + 1;
+        } else {
+            high = mid - 1;
+        }
+    }
+
+    // Fallback classes if we encounter custom/unlisted status codes
+    if (status_code >= 100 && status_code < 200) return "Informational";
+    if (status_code >= 200 && status_code < 300) return "Success";
+    if (status_code >= 300 && status_code < 400) return "Redirection";
+    if (status_code >= 400 && status_code < 500) return "Client Error";
+    if (status_code >= 500 && status_code < 600) return "Server Error";
+
+    return "Unknown Status";
+}
+
 struct evbuffer *
 protohttpx_get_h1_headers(protohttpx_stream_ctx_t *s)
 {
@@ -2203,39 +2301,6 @@ protohttps_setup_child(pxy_conn_child_ctx_t *ctx)
 	http_ctx->ctx = ctx->conn;
 
 	return PROTO_HTTPS;
-}
-
-#define HTTP_STATUS_REASONS_LEN (sizeof(http_status_reasons) / sizeof(http_status_reasons[0]))
-
-// Returns the standard reason phrase for a given status code.
-// If the code is not in our mapping table, falls back to a generic default
-// based on the HTTP status class (e.g., "Success", "Client Error").
-const char *
-http_get_reason_phrase(int status_code)
-{
-    int low = 0;
-    int high = HTTP_STATUS_REASONS_LEN - 1;
-
-    while (low <= high) {
-        int mid = low + (high - low) / 2;
-        if (http_status_reasons[mid].code == status_code) {
-            return http_status_reasons[mid].reason;
-        }
-        if (http_status_reasons[mid].code < status_code) {
-            low = mid + 1;
-        } else {
-            high = mid - 1;
-        }
-    }
-
-    // Fallback classes if we encounter custom/unlisted status codes
-    if (status_code >= 100 && status_code < 200) return "Informational";
-    if (status_code >= 200 && status_code < 300) return "Success";
-    if (status_code >= 300 && status_code < 400) return "Redirection";
-    if (status_code >= 400 && status_code < 500) return "Client Error";
-    if (status_code >= 500 && status_code < 600) return "Server Error";
-
-    return "Unknown Status";
 }
 
 /* vim: set noet ft=c: */

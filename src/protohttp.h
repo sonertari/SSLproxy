@@ -114,71 +114,6 @@ typedef struct {
 
 typedef int (*filter_header_t)(protohttpx_stream_ctx_t *);
 
-// Common HTTP status codes and their standard reason phrases, sorted by code
-static const http_status_reason_t http_status_reasons[] = {
-    { 100, "Continue" },
-    { 101, "Switching Protocols" },
-    { 102, "Processing" },
-    { 103, "Early Hints" },
-    { 200, "OK" },
-    { 201, "Created" },
-    { 202, "Accepted" },
-    { 203, "Non-Authoritative Information" },
-    { 204, "No Content" },
-    { 205, "Reset Content" },
-    { 206, "Partial Content" },
-    { 207, "Multi-Status" },
-    { 208, "Already Reported" },
-    { 226, "IM Used" },
-    { 300, "Multiple Choices" },
-    { 301, "Moved Permanently" },
-    { 302, "Found" },
-    { 303, "See Other" },
-    { 304, "Not Modified" },
-    { 305, "Use Proxy" },
-    { 307, "Temporary Redirect" },
-    { 308, "Permanent Redirect" },
-    { 400, "Bad Request" },
-    { 401, "Unauthorized" },
-    { 402, "Payment Required" },
-    { 403, "Forbidden" },
-    { 404, "Not Found" },
-    { 405, "Method Not Allowed" },
-    { 406, "Not Acceptable" },
-    { 407, "Proxy Authentication Required" },
-    { 408, "Request Timeout" },
-    { 409, "Conflict" },
-    { 410, "Gone" },
-    { 411, "Length Required" },
-    { 412, "Precondition Failed" },
-    { 413, "Payload Too Large" },
-    { 414, "URI Too Long" },
-    { 415, "Unsupported Media Type" },
-    { 416, "Range Not Satisfied" },
-    { 417, "Expectation Failed" },
-    { 421, "Misdirected Request" },
-    { 422, "Unprocessable Entity" },
-    { 423, "Locked" },
-    { 424, "Failed Dependency" },
-    { 425, "Too Early" },
-    { 426, "Upgrade Required" },
-    { 428, "Precondition Required" },
-    { 429, "Too Many Requests" },
-    { 431, "Request Header Fields Too Large" },
-    { 451, "Unavailable For Legal Reasons" },
-    { 500, "Internal Server Error" },
-    { 501, "Not Implemented" },
-    { 502, "Bad Gateway" },
-    { 503, "Service Unavailable" },
-    { 504, "Gateway Timeout" },
-    { 505, "HTTP Version Not Supported" },
-    { 506, "Variant Also Negotiates" },
-    { 507, "Insufficient Storage" },
-    { 508, "Loop Detected" },
-    { 510, "Not Extended" },
-    { 511, "Network Authentication Required" }
-};
-
 void protohttp_log_connect(pxy_conn_ctx_t *, protohttp_ctx_t *, unsigned int) NONNULL(1,2);
 
 int protohttpx_apply_filter(protohttpx_stream_ctx_t *);
@@ -207,8 +142,6 @@ protocol_t protohttps_setup(pxy_conn_ctx_t *) NONNULL(1);
 
 protocol_t protohttp_setup_child(pxy_conn_child_ctx_t *) NONNULL(1);
 protocol_t protohttps_setup_child(pxy_conn_child_ctx_t *) NONNULL(1);
-
-const char *http_get_reason_phrase(int status_code);
 
 #endif /* !PROTOHTTP_H */
 
