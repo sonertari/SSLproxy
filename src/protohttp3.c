@@ -435,8 +435,14 @@ protohttp3_trigger_write_loop(protohttp3_ctx_t *h3_ctx, int reqmod)
         /* 3. Transmit via UDP socket */
         struct iovec iov = { .iov_base = pktbuf, .iov_len = (size_t)pktlen };
         struct msghdr mhdr = {
-            .msg_name    = reqmod ? (struct sockaddr *)&h3_ctx->ctx->srcaddr : (struct sockaddr *)&ctx->dstaddr,
-            .msg_namelen = reqmod ? h3_ctx->ctx->srcaddrlen : ctx->dstaddrlen,
+            // ATTENTION: We do not set msg_name and msg_namelen for the dst side, because we are using a connected UDP socket for the dst side, and
+            // on OpenBSD and other BSDs, sendmsg() fails with EISCONN (Socket is already connected), if we set the msg_name and msg_namelen for the dst side.
+            // Also, sendmsg() fails with EDESTADDRREQ (Destination address required), if we do not set the msg_name and msg_namelen for the src side.
+            // Note: On Linux, sendmsg() works fine with msg_name and msg_namelen set for the dst side, but we should be portable across different OSes.
+            // .msg_name    = reqmod ? (struct sockaddr *)&h3_ctx->ctx->srcaddr : (struct sockaddr *)&ctx->dstaddr,
+            // .msg_namelen = reqmod ? h3_ctx->ctx->srcaddrlen : ctx->dstaddrlen,
+            .msg_name    = reqmod ? (struct sockaddr *)&h3_ctx->ctx->srcaddr : NULL,
+            .msg_namelen = reqmod ? h3_ctx->ctx->srcaddrlen : 0,
             .msg_iov     = &iov,
             .msg_iovlen  = 1,
         };

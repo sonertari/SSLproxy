@@ -454,7 +454,6 @@ icap_chain_str(conn_opts_t *conn_opts)
 	icap_service_t *svc = conn_opts->icap_chain;
 	char *s = NULL;
 	char *p = NULL;
-	int count = 0;
 	while (svc) {
 		char *icap_str = icap_service_str(svc);
 		if (!icap_str) {
@@ -472,7 +471,6 @@ icap_chain_str(conn_opts_t *conn_opts)
 		if (s)
 			free(s);
 		s = p;
-		count++;
 		svc = svc->next;
 	}
 	goto out;
