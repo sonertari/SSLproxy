@@ -482,11 +482,8 @@ PKG_LDFLAGS:=
 PKG_LIBS:=
 ifdef OPENSSL_FOUND
 $(eval $(call add_pkg_cppflags,$(OPENSSL_FOUND)/include))
-ifneq ($(findstring openssl-3.,$(OPENSSL_FOUND)),openssl-3.)
-$(eval $(call add_pkg_ldflags,$(OPENSSL_FOUND)/lib))
-else
-$(eval $(call add_pkg_ldflags,$(OPENSSL_FOUND)/lib64))
-endif
+OPENSSL_LIBDIR := $(if $(wildcard $(OPENSSL_FOUND)/lib64),lib64,lib)
+$(eval $(call add_pkg_ldflags,$(OPENSSL_FOUND)/$(OPENSSL_LIBDIR)))
 PKG_LIBS+=	-lssl -lcrypto -lz
 endif
 ifdef LIBEVENT_FOUND
