@@ -2135,12 +2135,6 @@ protohttps_bev_eventcb(struct bufferevent *bev, short events, void *arg)
 		protossl_bev_eventcb_dst(bev, events, ctx);
 	} else if (bev == ctx->srvdst.bev) {
 		protossl_bev_eventcb_srvdst(bev, events, ctx);
-
-		if (events & BEV_EVENT_CONNECTED) {
-			if (ctx->sslctx->h2) {
-				ctx->proto = protohttp2_setup(ctx);
-			}
-		}
 	} else {
 		log_finest("protohttps_bev_eventcb: UNKWN conn end\n");
 	}
