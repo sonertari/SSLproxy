@@ -42,7 +42,6 @@ void protossl_set_alpn_selected(SSL *, pxy_conn_ctx_t *) NONNULL(1,2);
 void protossl_srccert_write(pxy_conn_ctx_t *) NONNULL(1);
 SSL *protossl_srcssl_create(pxy_conn_ctx_t *, SSL *, SSL *) NONNULL(1);
 SSL *protossl_dstssl_create(pxy_conn_ctx_t *) NONNULL(1);
-// cert_t *protossl_srccert_create(pxy_conn_ctx_t *ctx) NONNULL(1);
 
 void protossl_free(pxy_conn_ctx_t *) NONNULL(1);
 void protossl_init_conn(evutil_socket_t, short, void *);

@@ -55,15 +55,13 @@ typedef struct protohttp2_ctx {
 #ifndef WITHOUT_ICAP
 // Forward declaration
 struct icap_service_ctx;
-
-void protohttp2_close_stream(protohttp2_stream_ctx_t *);
-
 void protohttp2_icap_send_data_to_src_cb(icap_ctx_t *) NONNULL(1);
 void protohttp2_icap_send_data_to_dst_cb(icap_ctx_t *) NONNULL(1);
 void protohttp2_icap_failopen_to_dest_cb(struct icap_service_ctx *) NONNULL(1);
+int protohttp2_icap_is_finished(pxy_conn_ctx_t *) NONNULL(1);
 #endif /* !WITHOUT_ICAP */
 
-int protohttp2_icap_is_finished(pxy_conn_ctx_t *) NONNULL(1);
+void protohttp2_close_stream(protohttp2_stream_ctx_t *);
 void protohttp2_free(pxy_conn_ctx_t *) NONNULL(1);
 protocol_t protohttp2_setup(pxy_conn_ctx_t *) NONNULL(1);
 void protohttp2_request_free_stream_ctx(protohttp2_stream_ctx_t *) NONNULL(1);

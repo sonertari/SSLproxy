@@ -249,18 +249,15 @@ struct protohttp3_conn_ctx {
 #ifndef WITHOUT_ICAP
 // Forward declaration
 struct icap_service_ctx;
-
 void protohttp3_icap_send_data_to_src_cb(icap_ctx_t *) NONNULL(1);
 void protohttp3_icap_send_data_to_dst_cb(icap_ctx_t *) NONNULL(1);
 void protohttp3_icap_failopen_to_dest_cb(struct icap_service_ctx *) NONNULL(1);
-
-void protohttp3_close_stream(protohttp3_stream_ctx_t *);
-
 #endif /* !WITHOUT_ICAP */
 
 protohttp3_ctx_t *protohttp3_new(pxy_conn_ctx_t *, ngtcp2_version_cid) WUNRES;
 protocol_t protohttp3_setup(pxy_conn_ctx_t *) NONNULL(1) WUNRES;
 
+void protohttp3_close_stream(protohttp3_stream_ctx_t *);
 void protohttp3_free(protohttp3_ctx_t *) NONNULL(1);
 void protohttp3_request_free_stream_ctx(protohttp3_stream_ctx_t *) NONNULL(1);
 
