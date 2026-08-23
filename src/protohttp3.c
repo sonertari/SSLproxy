@@ -1306,7 +1306,7 @@ quic_handshake_completed(ngtcp2_conn *conn, void *user_data)
         log_finest_va("Forge server cert and resume handshake with client, fd=%d", h3_ctx->dst_fd);
 
         if (ctx->sslctx->alpn_protos_len > 0) {
-            protossl_set_alpn_selected(h3_ctx->dst_ssl, ctx);
+            protossl_set_alpn_protos_negotiated(h3_ctx->dst_ssl, ctx);
         }
         else {
             log_finest("Will not set ALPN protocols enabled with server, client did not provide ALPN protocols to negotiate");

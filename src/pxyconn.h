@@ -175,10 +175,12 @@ struct ssl_ctx {
 	unsigned char *alpn_protos;
 	size_t alpn_protos_len;
 
-	/* proto negotiated with server via ALPN (using alpn_protos), in wire format */
+	/* proto(s) negotiated with server via ALPN (using alpn_protos), in wire format */
+	unsigned char *alpn_protos_negotiated;
+	size_t alpn_protos_negotiated_len;
+	/* proto selected via ALPN, not in wire format */
 	unsigned char *alpn_selected;
-	size_t alpn_selected_len;
-	unsigned int alpn_negotiating : 1;       /* 1 if alpn is negotiating */
+	unsigned char alpn_selected_len;
 
 	X509 *origcrt;
 

@@ -1904,8 +1904,14 @@ protohttp_bev_readcb_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		return;
 	}
 
-	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
 	struct evbuffer *inbuf = bufferevent_get_input(bev);
+
+	if (ctx->sslctx && ctx->sslctx->h2 && ctx->proto != PROTO_HTTP2) {
+		log_finest_va("H2 not setup yet, defer processing data, size=%zu", evbuffer_get_length(inbuf));
+		return;
+	}
+
+	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
 	struct evbuffer *outbuf = bufferevent_get_output(ctx->src.bev);
 
 	if (!http_ctx->seen_resp_header) {
