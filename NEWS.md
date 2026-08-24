@@ -1,5 +1,21 @@
 
 
+### SSLproxy 0.9.11 2026-08-24
+
+-   Fix autossl connection stall with passthrough mode, pr #93 by @Drewsif
+-   Add the StripClientHello option to prevent logging ClientHello during 
+    autossl upgrade, pr #92 by @Drewsif
+-   Add TLS 1.3 master key logging via OpenSSL keylog callback, pr #91 by 
+    @wmetcalf
+-   Update aho-corasick-1975
+-   Trap signals for clean up in e2e tests
+
+
+### SSLproxy 0.9.10 2025-11-14
+
+-   Fix build with WITHOUT_USERAUTH enabled, issue #89 reported by @5u623l20
+
+
 ### SSLproxy 0.9.9 2025-11-09
 
 -   Fix fd leak, do not setup dst again in autossl, issue #88 reported by 
