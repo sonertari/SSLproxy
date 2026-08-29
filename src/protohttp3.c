@@ -509,13 +509,15 @@ protohttp3_submit_data(protohttp3_ctx_t *h3_ctx, protohttp3_stream_ctx_t *s, int
         protohttpx_free_nv_headers((protohttpx_stream_ctx_t *)s);
 
 #ifndef WITHOUT_ICAP
-        s->icap_ctx->made_progress = 1;
+        if (s->icap_ctx) {
+            s->icap_ctx->made_progress = 1;
+        }
 #endif /* !WITHOUT_ICAP */
     }
 
 #ifndef WITHOUT_ICAP
     // TODO: What about fin packets without data? Should we set made_progress for those as well?
-    if (evbuffer_get_length(s->data_buf) > 0) {
+    if (s->icap_ctx && evbuffer_get_length(s->data_buf) > 0) {
         s->icap_ctx->made_progress = 1;
     }
 #endif /* !WITHOUT_ICAP */
@@ -536,7 +538,9 @@ protohttp3_submit_data(protohttp3_ctx_t *h3_ctx, protohttp3_stream_ctx_t *s, int
         }
 
 // #ifndef WITHOUT_ICAP
-//         s->icap_ctx->made_progress = 1;
+//         if (s->icap_ctx) {
+//             s->icap_ctx->made_progress = 1;
+//         }
 // #endif /* !WITHOUT_ICAP */
     // }
 

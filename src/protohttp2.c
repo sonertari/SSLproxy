@@ -420,7 +420,9 @@ protohttp2_submit_data(protohttp2_ctx_t *h2_ctx, protohttp2_stream_ctx_t *s, int
         protohttpx_free_nv_headers((protohttpx_stream_ctx_t *)s);
 
 #ifndef WITHOUT_ICAP
-        s->icap_ctx->made_progress = 1;
+        if (s->icap_ctx) {
+            s->icap_ctx->made_progress = 1;
+        }
 #endif /* !WITHOUT_ICAP */
     }
 
@@ -439,7 +441,9 @@ protohttp2_submit_data(protohttp2_ctx_t *h2_ctx, protohttp2_stream_ctx_t *s, int
         }
 
 #ifndef WITHOUT_ICAP
-        s->icap_ctx->made_progress = 1;
+        if (s->icap_ctx) {
+            s->icap_ctx->made_progress = 1;
+        }
 #endif /* !WITHOUT_ICAP */
     }
 
