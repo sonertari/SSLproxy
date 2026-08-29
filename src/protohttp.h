@@ -116,7 +116,6 @@ typedef int (*filter_header_t)(protohttpx_stream_ctx_t *);
 
 void protohttp_log_connect(pxy_conn_ctx_t *, protohttp_ctx_t *, unsigned int) NONNULL(1,2);
 
-int protohttpx_apply_filter(protohttpx_stream_ctx_t *);
 void protohttpx_free_nv_headers(protohttpx_stream_ctx_t *) NONNULL(1);
 int protohttpx_add_nv_header(protohttpx_stream_ctx_t *, const char *,  size_t, const char *, size_t) WUNRES NONNULL(1,2,4);
 

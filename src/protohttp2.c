@@ -647,8 +647,17 @@ protohttp2_on_frame_recv(UNUSED nghttp2_session *session, const nghttp2_frame *f
             }
 
             filter_header_t filter_header = reqmod ? protohttpx_filter_request_header : protohttpx_filter_response_header;
-            if (filter_header((protohttpx_stream_ctx_t *)s) == -1) {
+
+            int rv = filter_header((protohttpx_stream_ctx_t *)s);
+            if (rv < 0) {
+                log_finest_va("Return fatal error, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, reqmod);
                 return -1;
+            }
+            // ATTENTION: Do not return -1 if protohttpx_apply_filter() returns 1 with block action.
+            // see h3_on_end_headers().
+            else if (rv == 1) /* Block action */ {
+                log_finest_va("Return 0 with block action, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, reqmod);
+                return 0;
             }
 
             // TODO: Should we log when we get the response only?

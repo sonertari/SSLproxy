@@ -783,8 +783,20 @@ h3_on_end_headers(nghttp3_conn *conn, int64_t stream_id,
     // int seen_header_on_entry = reqmod ? s->http_ctx->seen_req_header : s->http_ctx->seen_resp_header;
 
     filter_header_t filter_header = reqmod ? protohttpx_filter_request_header : protohttpx_filter_response_header;
-    if (filter_header((protohttpx_stream_ctx_t *)s) == -1) {
+
+    int rv = filter_header((protohttpx_stream_ctx_t *)s);
+    if (rv < 0) {
+        log_finest_va("Return fatal error, stream_id=%" PRId64 ", reqmod=%d", stream_id, reqmod);
         return -1;
+    }
+    // ATTENTION: Do not return -1 if protohttpx_apply_filter() returns 1 with block action.
+    // Otherwise with h2, the caller nghttp2_session_mem_recv() in protohttp2_bev_readcb() fails.
+    // Otherwise with h3, the caller h3_on_end_headers() returns NGHTTP3_ERR_CALLBACK_FAILURE,
+    // which is a fatal error after ngtcp2_conn_read_pkt() in protohttp3_process_packet_cb(),
+    // a reason to close the connection altogether
+    else if (rv == 1) /* Block action */ {
+        log_finest_va("Return 0 with block action, stream_id=%" PRId64 ", reqmod=%d", stream_id, reqmod);
+        return 0;
     }
 
     // TODO: Should we log when we get the response only?

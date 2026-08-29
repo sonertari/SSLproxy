@@ -638,7 +638,7 @@ protohttp_apply_filter(pxy_conn_ctx_t *ctx)
 	return rv;
 }
 
-int
+static int
 protohttpx_apply_filter(protohttpx_stream_ctx_t *s)
 {
 	pxy_conn_ctx_t *ctx = s->ctx;
@@ -712,7 +712,7 @@ protohttpx_apply_filter(protohttpx_stream_ctx_t *s)
 				s->icap_ctx = icap_init(ctx, s, ctx->protoctx->arg, a->conn_opts->icap_chain);
 				if (!s->icap_ctx) {
 					ctx->enomem = 1;
-					return 1;
+					return -1;
 				}
 			}
 #endif /* !WITHOUT_ICAP */
@@ -1342,12 +1342,7 @@ protohttpx_filter_request_header(protohttpx_stream_ctx_t *s)
     }
 
 	if (http_ctx->seen_req_header) {
-        // ATTENTION: Do not return -1 if protohttpx_apply_filter() fails, ignore the retval.
-        // Otherwise with h2, the caller nghttp2_session_mem_recv() in protohttp2_bev_readcb() fails.
-        // Otherwise with h3, the caller h3_on_end_headers() returns NGHTTP3_ERR_CALLBACK_FAILURE,
-        // which is a fatal error after ngtcp2_conn_read_pkt() in protohttp3_process_packet_cb(),
-        // a reason to close the connection altogether
-        protohttpx_apply_filter(s);
+		return protohttpx_apply_filter(s);
 
         // TODO: Implement deny OCSP at TLS level in H2/H3?
         // if (ctx->conn_opts->deny_ocsp) {
