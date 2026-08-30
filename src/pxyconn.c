@@ -418,9 +418,12 @@ pxy_conn_free(pxy_conn_ctx_t *ctx, int by_requestor)
 		ctx->src.free(ctx->src.bev, ctx);
 		ctx->src.bev = NULL;
 	} else if (!ctx->src.closed) {
-		log_fine("evutil_closesocket on NULL src.bev");
+		log_fine_va("evutil_closesocket on NULL src.bev, fd=%d", ctx->fd);
 		// @attention early in the conn setup, src fd may be open, although src.bev is NULL
-		evutil_closesocket(ctx->fd);
+		if (ctx->fd >= 0) {
+			evutil_closesocket(ctx->fd);
+			ctx->fd = -1;
+		}
 	}
 
 	if (ctx->srvdst.bev) {

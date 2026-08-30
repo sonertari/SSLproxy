@@ -2251,6 +2251,7 @@ err_wev:
     ngtcp2_conn_del(h3_ctx->src_conn);
 err:
     protohttp3_free(h3_ctx);
+    ctx->protoctx->arg = NULL;
     return NULL;
 }
 
@@ -2555,6 +2556,7 @@ protohttp3_conn_free(pxy_conn_ctx_t *ctx)
     protohttp3_ctx_t *h3_ctx = ctx->protoctx->arg;
     if (h3_ctx) {
         protohttp3_free(h3_ctx);
+        ctx->protoctx->arg = NULL;
     }
 }
 
@@ -2595,27 +2597,62 @@ protohttp3_free(protohttp3_ctx_t *h3_ctx)
         ngtcp2_crypto_ossl_ctx_del(h3_ctx->src_ossl_ctx);
         h3_ctx->src_ossl_ctx = NULL;
     }
-    protohttp3_ssl_shutdown(ctx, h3_ctx->src_ssl);
+    if (h3_ctx->src_ssl) {
+        protohttp3_ssl_shutdown(ctx, h3_ctx->src_ssl);
+        h3_ctx->src_ssl = NULL;
+    }
 
     if (h3_ctx->dst_ossl_ctx) {
         ngtcp2_crypto_ossl_ctx_del(h3_ctx->dst_ossl_ctx);
         h3_ctx->dst_ossl_ctx = NULL;
     }
-    protohttp3_ssl_shutdown(ctx, h3_ctx->dst_ssl);
+    if (h3_ctx->dst_ssl) {
+        protohttp3_ssl_shutdown(ctx, h3_ctx->dst_ssl);
+        h3_ctx->dst_ssl = NULL;
+    }
 
     // Stop all Libevent events first so no more callbacks fire
-    if (h3_ctx->src_wev)  { event_del(h3_ctx->src_wev);  event_free(h3_ctx->src_wev);  }
-    if (h3_ctx->dst_rev)  { event_del(h3_ctx->dst_rev);  event_free(h3_ctx->dst_rev);  }
-    if (h3_ctx->dst_wev)  { event_del(h3_ctx->dst_wev);  event_free(h3_ctx->dst_wev);  }
-    if (h3_ctx->timer_ev) { event_del(h3_ctx->timer_ev); event_free(h3_ctx->timer_ev); }
-    if (h3_ctx->src_process_pkt_ev) { event_del(h3_ctx->src_process_pkt_ev); event_free(h3_ctx->src_process_pkt_ev); }
+    if (h3_ctx->src_wev) {
+        event_del(h3_ctx->src_wev);
+        event_free(h3_ctx->src_wev);
+        h3_ctx->src_wev = NULL;
+    }
+    if (h3_ctx->dst_rev) {
+        event_del(h3_ctx->dst_rev);
+        event_free(h3_ctx->dst_rev);
+        h3_ctx->dst_rev = NULL;
+    }
+    if (h3_ctx->dst_wev) {
+        event_del(h3_ctx->dst_wev);
+        event_free(h3_ctx->dst_wev);
+        h3_ctx->dst_wev = NULL;
+    }
+    if (h3_ctx->timer_ev) {
+        event_del(h3_ctx->timer_ev);
+        event_free(h3_ctx->timer_ev);
+        h3_ctx->timer_ev = NULL;
+    }
+    if (h3_ctx->src_process_pkt_ev) {
+        event_del(h3_ctx->src_process_pkt_ev);
+        event_free(h3_ctx->src_process_pkt_ev);
+        h3_ctx->src_process_pkt_ev = NULL;
+    }
 
     // Destroy nghttp3 sessions
-    if (h3_ctx->src_h3) { nghttp3_conn_del(h3_ctx->src_h3); h3_ctx->src_h3 = NULL; }
-    if (h3_ctx->dst_h3) { nghttp3_conn_del(h3_ctx->dst_h3); h3_ctx->dst_h3 = NULL; }
+    if (h3_ctx->src_h3) {
+        nghttp3_conn_del(h3_ctx->src_h3);
+        h3_ctx->src_h3 = NULL;
+    }
+    if (h3_ctx->dst_h3) {
+        nghttp3_conn_del(h3_ctx->dst_h3);
+        h3_ctx->dst_h3 = NULL;
+    }
 
-    /* Destroy ngtcp2 connections.                                         */
-    if (h3_ctx->src_conn) { ngtcp2_conn_del(h3_ctx->src_conn); h3_ctx->src_conn = NULL; }
+    // Destroy ngtcp2 connections
+    if (h3_ctx->src_conn) {
+        ngtcp2_conn_del(h3_ctx->src_conn);
+        h3_ctx->src_conn = NULL;
+    }
     if (h3_ctx->dst_conn) { ngtcp2_conn_del(h3_ctx->dst_conn); h3_ctx->dst_conn = NULL; }
 
     // Free all stream contexts
@@ -2629,7 +2666,10 @@ protohttp3_free(protohttp3_ctx_t *h3_ctx)
     }
 
     // Close raw UDP sockets
-    if (h3_ctx->dst_fd >= 0) { close(h3_ctx->dst_fd); h3_ctx->dst_fd = -1; }
+    if (h3_ctx->dst_fd >= 0) {
+        close(h3_ctx->dst_fd);
+        h3_ctx->dst_fd = -1;
+    }
 
     pthread_mutex_lock(&h3_ctx->pkt_queue_mutex);
     while (h3_ctx->pkt_queue) {
@@ -2646,7 +2686,6 @@ protohttp3_free(protohttp3_ctx_t *h3_ctx)
     pthread_mutex_destroy(&h3_ctx->pkt_queue_mutex);
 
     free(h3_ctx);
-    ctx->protoctx->arg = NULL;
 }
 
 #endif /* !WITHOUT_HTTP3 */
