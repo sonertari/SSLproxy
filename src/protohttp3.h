@@ -195,8 +195,6 @@ struct protohttp3_conn_ctx {
 
     int dst_fd;   /* connected UDP fd towards the upstream server */
 
-    proxy_listener_ctx_t *lctx;
-
     /* Libevent 'struct event' wrappers around the raw fds */
     struct event *src_rev;
     struct event *src_wev;   /* write-ready event on src_fd (armed on */

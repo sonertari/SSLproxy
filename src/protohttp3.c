@@ -1599,6 +1599,100 @@ protohttp3_debug_print_addr(const struct sockaddr_storage *peer_addr, char *labe
  * Libevent callbacks for the raw UDP fds
  * ====================================================================== */
 
+static void
+protohttp3_src_read_cb(evutil_socket_t fd, UNUSED short what, void *arg)
+{
+    protohttp3_ctx_t *h3_ctx = arg;
+    pxy_conn_ctx_t *ctx = h3_ctx->ctx;
+    log_finest_va("ENTER, fd=%d", fd);
+
+	uint8_t buf[H3_DGRAM_BUFSZ];
+	struct sockaddr_storage peer_addr;
+	socklen_t peer_addrlen = sizeof(peer_addr);
+	struct sockaddr_storage local_addr;
+	socklen_t local_addrlen = sizeof(local_addr);
+	int ecn = 0;
+
+	ssize_t n = protohttp3_recvmsg(fd, buf, sizeof(buf), &peer_addr, &peer_addrlen, &local_addr, &local_addrlen, &ecn);
+	if (n <= 0) {
+		if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
+			log_err_level_printf(LOG_CRIT,
+				"Error reading from UDP listener: %s\n",
+				strerror(errno));
+		}
+		else {
+			log_finest_main("No data read from UDP listener");
+		}
+		return;
+	}
+
+    log_finest_va("Read %zd bytes from client-side UDP socket", n);
+    ctx->thr->intif_in_bytes += n;
+
+	pkt_node_t *pkt_node = malloc(sizeof(pkt_node_t));
+	if (!pkt_node) {
+		log_err_level_printf(LOG_CRIT, "Failed to allocate h3_pkt_node_t\n");
+		goto err;
+	}
+	pkt_node->buf = malloc((size_t)n);
+	if (!pkt_node->buf) {
+		log_err_level_printf(LOG_CRIT, "Failed to allocate buffer for h3_pkt_node_t\n");
+		goto err;
+	}
+
+	memcpy(pkt_node->buf, buf, (size_t)n);
+	pkt_node->len = (size_t)n;
+	pkt_node->ecn = ecn;
+	pkt_node->next = NULL;
+
+    pthread_mutex_lock(&h3_ctx->pkt_queue_mutex);
+
+    log_finest_va("Append packet to queue, fd=%d", fd);
+    if (!h3_ctx->pkt_queue) {
+        h3_ctx->pkt_queue = pkt_node;
+    } else {
+        // Append to the end of the linked list
+        pkt_node_t *last = h3_ctx->pkt_queue;
+        while (last->next) {
+            last = last->next;
+        }
+        last->next = pkt_node;
+    }
+
+    if (!h3_ctx->src_process_pkt_ev && !h3_ctx->wait_server_connected) {
+        log_finest("Schedule new src_process_pkt_ev");
+
+        h3_ctx->src_process_pkt_ev = event_new(ctx->thr->evbase, ctx->fd, 0,
+                                    protohttp3_process_packet_cb, h3_ctx);
+        if (!h3_ctx->src_process_pkt_ev) {
+            pthread_mutex_unlock(&h3_ctx->pkt_queue_mutex);
+            goto err;
+        }
+
+        struct timeval tv = {0, 0};
+        if (event_add(h3_ctx->src_process_pkt_ev, &tv) == -1) {
+            log_finest("Error adding src_process_pkt_ev event, aborting connection");
+            event_free(h3_ctx->src_process_pkt_ev);
+            h3_ctx->src_process_pkt_ev = NULL;
+            pthread_mutex_unlock(&h3_ctx->pkt_queue_mutex);
+            goto err;
+        }
+    }
+    else {
+        log_finest_va("Will not schedule new src_process_pkt_ev, %s", h3_ctx->src_process_pkt_ev ? "already scheduled" : "waiting for server connection");
+    }
+
+    pthread_mutex_unlock(&h3_ctx->pkt_queue_mutex);
+    return;
+err:
+	if (pkt_node) {
+		if (pkt_node->buf) {
+			free(pkt_node->buf);
+		}
+		free(pkt_node);
+	}
+}
+
 /*
  * Fired when the UDP socket is writable again after a previous sendmsg()
  * returned EAGAIN.  We just re-enter the write flush loop.
@@ -1616,7 +1710,7 @@ static void
 protohttp3_dst_read_cb(evutil_socket_t fd, UNUSED short what, void *arg)
 {
     protohttp3_ctx_t *h3_ctx = arg;
-    UNUSED pxy_conn_ctx_t *ctx = h3_ctx->ctx;
+    pxy_conn_ctx_t *ctx = h3_ctx->ctx;
     log_finest_va("ENTER, fd=%d", h3_ctx->dst_fd);
 
 	uint8_t buf[H3_DGRAM_BUFSZ];
@@ -2478,8 +2572,8 @@ protohttp3_init_conn(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 
 	h3_ctx->src_rev = event_new(ctx->thr->evbase, ctx->fd,
 	                                EV_READ | EV_PERSIST,
-	                                proxy_listener_acceptcb_udp,
-	                                h3_ctx->lctx);
+	                                protohttp3_src_read_cb,
+	                                h3_ctx);
     if (!h3_ctx->src_rev) {
 		log_finest_main_va("Failed to create UDP accept event: %s", strerror(errno));
 		evutil_closesocket(ctx->fd);

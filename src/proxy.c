@@ -527,8 +527,6 @@ proxy_listener_acceptcb_udp(evutil_socket_t fd, UNUSED short what, void *arg)
 	// No need to lock the mutex here, because we are the only thread that has access to h3_ctx at this point
 	h3_ctx->pkt_queue = pkt_node;
 
-	h3_ctx->lctx = lctx;
-
 	h3_session_map_insert(lctx->h3_sessions, &key, h3_ctx);
 
 	// ATTENTION: We should initialize h3_ctx and pkt_node at a minimum before scheduling the init_conn callback,
