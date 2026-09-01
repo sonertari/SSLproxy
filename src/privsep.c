@@ -258,9 +258,6 @@ privsep_server_opensock(const proxyspec_t *spec)
 	int rv;
 
 #ifndef WITHOUT_HTTP3
-	/*
-	 * HTTP/3 uses UDP.  Create a UDP socket for http3 proxyspecs.
-	 */
 	if (spec->h3) {
 		fd = socket(spec->listen_addr.ss_family, SOCK_DGRAM, IPPROTO_UDP);
 	} else {
@@ -269,10 +266,10 @@ privsep_server_opensock(const proxyspec_t *spec)
 #ifndef WITHOUT_HTTP3
 	}
 #endif /* !WITHOUT_HTTP3 */
+
 	if (fd == -1) {
 		log_err_level_printf(LOG_CRIT, "Error from socket(): %s (%i)\n",
 		               strerror(errno), errno);
-		evutil_closesocket(fd);
 		return -1;
 	}
 
@@ -284,10 +281,7 @@ privsep_server_opensock(const proxyspec_t *spec)
 		return -1;
 	}
 
-	// if (spec->http3) {
-	// 	rv = setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE|SO_REUSEPORT, (void*)&on, sizeof(on));
-	// }
-	// else
+	/* Standard SOL_SOCKET options */
 	rv = setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, (void*)&on, sizeof(on));
 	if (rv == -1) {
 		log_err_level_printf(LOG_CRIT, "Error from setsockopt(SO_KEEPALIVE): %s (%i)\n",
@@ -295,6 +289,52 @@ privsep_server_opensock(const proxyspec_t *spec)
 		evutil_closesocket(fd);
 		return -1;
 	}
+
+#ifndef WITHOUT_HTTP3
+	if (spec->h3) {
+		/*
+		 * UDP/H3 Transparent Proxy options: Enable destination IP extraction & spoofed source binding
+		 */
+#if defined(__OpenBSD__) || defined(__FreeBSD__)
+		/* OpenBSD: Allow binding to non-local addresses if needed */
+		setsockopt(fd, SOL_SOCKET, SO_BINDANY, &on, sizeof(on));
+
+		/* OpenBSD: Receive the original destination IP and port in cmsg */
+		rv = setsockopt(fd, IPPROTO_IP, IP_RECVDSTADDR, &on, sizeof(on));
+		if (rv == -1) {
+			log_err_level_printf(LOG_CRIT, "Error setting IP_RECVDSTADDR: %s (%i)\n",
+								strerror(errno), errno);
+			evutil_closesocket(fd);
+			return -1;
+		}
+		rv = setsockopt(fd, IPPROTO_IP, IP_RECVDSTPORT, &on, sizeof(on));
+		if (rv == -1) {
+			log_err_level_printf(LOG_CRIT, "Error setting IP_RECVDSTPORT: %s (%i)\n",
+								strerror(errno), errno);
+			evutil_closesocket(fd);
+			return -1;
+		}
+#elif defined(__linux__)
+		/* Linux TPROXY: Enable IP_TRANSPARENT */
+		setsockopt(fd, SOL_IP, IP_TRANSPARENT, &on, sizeof(on));
+
+		/* Linux: Enable receiving original destination address or PKTINFO */
+#ifdef IP_RECVORIGDSTADDR
+		rv = setsockopt(fd, IPPROTO_IP, IP_RECVORIGDSTADDR, &on, sizeof(on));
+#else
+		rv = setsockopt(fd, IPPROTO_IP, IP_PKTINFO, &on, sizeof(on));
+#endif
+		if (rv == -1) {
+			log_err_level_printf(LOG_CRIT, "Error setting IP_RECVORIGDSTADDR/PKTINFO: %s (%i)\n",
+								strerror(errno), errno);
+			evutil_closesocket(fd);
+			return -1;
+		}
+#endif
+		setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
+		setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &on, sizeof(on));
+	}
+#endif /* !WITHOUT_HTTP3 */
 
 	rv = evutil_make_listen_socket_reuseable(fd);
 	if (rv == -1) {
@@ -310,8 +350,7 @@ privsep_server_opensock(const proxyspec_t *spec)
 		return -1;
 	}
 
-	rv = bind(fd, (struct sockaddr *)&spec->listen_addr,
-	          spec->listen_addrlen);
+	rv = bind(fd, (struct sockaddr *)&spec->listen_addr, spec->listen_addrlen);
 	if (rv == -1) {
 		log_err_level_printf(LOG_CRIT, "Error from bind(): %s\n", strerror(errno));
 		evutil_closesocket(fd);

@@ -301,6 +301,8 @@ struct pxy_conn_ctx {
 	socklen_t srcaddrlen;
 	struct sockaddr_storage dstaddr;
 	socklen_t dstaddrlen;
+	struct sockaddr_storage orig_dstaddr;
+	socklen_t orig_dstaddrlen;
 	int af;
 
 	// Thread that the conn is attached to

@@ -44,6 +44,7 @@
 #include "opts.h"
 #include "log.h"
 #include "attrib.h"
+#include "sys.h"
 
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -368,7 +369,7 @@ proxy_debug_base(const struct event_base *ev_base)
  * connection handling thread. All subsequent QUIC communication happens on 
  * the worker thread.
  */
-static void
+void
 proxy_listener_acceptcb_udp(evutil_socket_t fd, UNUSED short what, void *arg)
 {
 	proxy_listener_ctx_t *lctx = arg;
@@ -378,9 +379,11 @@ proxy_listener_acceptcb_udp(evutil_socket_t fd, UNUSED short what, void *arg)
 	uint8_t buf[H3_DGRAM_BUFSZ];
 	struct sockaddr_storage peer_addr;
 	socklen_t peer_addrlen = sizeof(peer_addr);
+	struct sockaddr_storage local_addr;
+	socklen_t local_addrlen = sizeof(local_addr);
 	int ecn = 0;
 
-	ssize_t n = protohttp3_recvmsg(fd, buf, sizeof(buf), &peer_addr, &peer_addrlen, &ecn);
+	ssize_t n = protohttp3_recvmsg(fd, buf, sizeof(buf), &peer_addr, &peer_addrlen, &local_addr, &local_addrlen, &ecn);
 	if (n <= 0) {
 		if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
 			log_err_level_printf(LOG_CRIT,
@@ -455,7 +458,7 @@ proxy_listener_acceptcb_udp(evutil_socket_t fd, UNUSED short what, void *arg)
 		if (!h3_ctx->src_process_pkt_ev && !h3_ctx->wait_server_connected) {
 			log_finest("Schedule new src_process_pkt_ev");
 
-			h3_ctx->src_process_pkt_ev = event_new(ctx->thr->evbase, h3_ctx->src_fd, 0,
+			h3_ctx->src_process_pkt_ev = event_new(ctx->thr->evbase, ctx->fd, 0,
 										protohttp3_process_packet_cb, h3_ctx);
 			if (!h3_ctx->src_process_pkt_ev) {
 				pthread_mutex_unlock(&h3_ctx->pkt_queue_mutex);
@@ -476,8 +479,6 @@ proxy_listener_acceptcb_udp(evutil_socket_t fd, UNUSED short what, void *arg)
 		}
 
 		pthread_mutex_unlock(&h3_ctx->pkt_queue_mutex);
-
-		log_finest_va("EXIT session found, src_fd=%d", h3_ctx->src_fd);
 		return;
 	}
 
@@ -503,6 +504,16 @@ proxy_listener_acceptcb_udp(evutil_socket_t fd, UNUSED short what, void *arg)
 	ctx->srcaddrlen = peer_addrlen;
 	memcpy(&ctx->srcaddr, &peer_addr, peer_addrlen);
 
+	ctx->orig_dstaddrlen = local_addrlen;
+	memcpy(&ctx->orig_dstaddr, &local_addr, local_addrlen);
+
+	char *dsthost_str;
+	char *dstport_str;
+	sys_sockaddr_str((struct sockaddr *)&ctx->orig_dstaddr, ctx->orig_dstaddrlen, &dsthost_str, &dstport_str);
+	log_finest_main_va("Set original dst: %s:%s", dsthost_str, dstport_str);
+	free(dsthost_str);
+	free(dstport_str);
+
 	// We cannot switch the event base before creating the h3_ctx,
 	// because the next packet for this connection may arrive before the init_conn callback finishes.
 	h3_ctx = protohttp3_new(ctx, vc);
@@ -516,8 +527,7 @@ proxy_listener_acceptcb_udp(evutil_socket_t fd, UNUSED short what, void *arg)
 	// No need to lock the mutex here, because we are the only thread that has access to h3_ctx at this point
 	h3_ctx->pkt_queue = pkt_node;
 
-	// We use the listener's UDP socket for sending datagrams, because we want to use the same source port for all connections
-	h3_ctx->src_fd = lctx->udp_fd;
+	h3_ctx->lctx = lctx;
 
 	h3_session_map_insert(lctx->h3_sessions, &key, h3_ctx);
 

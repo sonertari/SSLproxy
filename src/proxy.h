@@ -55,14 +55,17 @@ typedef struct proxy_listener_ctx {
 #endif /* !WITHOUT_USERAUTH */
 	struct evconnlistener *evcl;
 
+#ifndef WITHOUT_HTTP3
 	/* UDP listener fields for HTTP/3 support */
 	int udp_fd;
 	struct event *udp_accept_ev;
 	struct h3_session_map *h3_sessions;
+#endif /* !WITHOUT_HTTP3 */
 
 	struct proxy_listener_ctx *next;
 } proxy_listener_ctx_t;
 
+void proxy_listener_acceptcb_udp(evutil_socket_t, short, void *);
 proxy_ctx_t * proxy_new(global_t *, int) NONNULL(1) MALLOC;
 int proxy_run(proxy_ctx_t *) NONNULL(1);
 void proxy_loopbreak(proxy_ctx_t *, int) NONNULL(1);

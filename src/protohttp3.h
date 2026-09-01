@@ -193,15 +193,12 @@ struct protohttp3_conn_ctx {
     SSL *src_ssl;
     SSL *dst_ssl;
 
-    /*
-     * Raw UDP sockets.  We cannot use Libevent bufferevents here because
-     * ngtcp2 needs recvmsg() to extract per-datagram ancillary data (ECN
-     * bits, destination IP for path validation).
-     */
-    int src_fd;   /* listener fd for QUIC UDP server */
     int dst_fd;   /* connected UDP fd towards the upstream server */
 
+    proxy_listener_ctx_t *lctx;
+
     /* Libevent 'struct event' wrappers around the raw fds */
+    struct event *src_rev;
     struct event *src_wev;   /* write-ready event on src_fd (armed on */
                              /* demand when ngtcp2 has output queued) */
     struct event *dst_rev;
@@ -261,7 +258,7 @@ void protohttp3_close_stream(protohttp3_stream_ctx_t *);
 void protohttp3_free(protohttp3_ctx_t *) NONNULL(1);
 void protohttp3_request_free_stream_ctx(protohttp3_stream_ctx_t *) NONNULL(1);
 
-ssize_t protohttp3_recvmsg(int, uint8_t *, size_t, struct sockaddr_storage *, socklen_t *, int *);
+ssize_t protohttp3_recvmsg(int, uint8_t *, size_t, struct sockaddr_storage *, socklen_t *, struct sockaddr_storage *, socklen_t *, int *);
 void protohttp3_process_packet_cb(evutil_socket_t, short, void *) NONNULL(3);
 
 void protohttp3_cid_to_hex(char *, const uint8_t *, size_t) NONNULL(1,2);

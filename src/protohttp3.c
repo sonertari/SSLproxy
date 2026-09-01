@@ -61,6 +61,7 @@
 #include "protohttp3.h"
 #include "log.h"
 #include "util.h"
+#include "sys.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -309,8 +310,6 @@ protohttp3_request_free_stream_ctx(protohttp3_stream_ctx_t *s)
  * UDP read/write loops
  * ====================================================================== */
 
-static pthread_mutex_t sendmsg_mutex = PTHREAD_MUTEX_INITIALIZER;
-
 /*
  * Write all serialised QUIC packets that ngtcp2 has queued for the client
  * (src) side.  Called after every ngtcp2_conn_read_pkt() and from the
@@ -433,42 +432,15 @@ protohttp3_trigger_write_loop(protohttp3_ctx_t *h3_ctx, int reqmod)
         }
 
         /* 3. Transmit via UDP socket */
-        struct iovec iov = { .iov_base = pktbuf, .iov_len = (size_t)pktlen };
-        struct msghdr mhdr = {
-            // ATTENTION: We do not set msg_name and msg_namelen for the dst side, because we are using a connected UDP socket for the dst side, and
-            // on OpenBSD and other BSDs, sendmsg() fails with EISCONN (Socket is already connected), if we set the msg_name and msg_namelen for the dst side.
-            // Also, sendmsg() fails with EDESTADDRREQ (Destination address required), if we do not set the msg_name and msg_namelen for the src side.
-            // Note: On Linux, sendmsg() works fine with msg_name and msg_namelen set for the dst side, but we should be portable across different OSes.
-            // .msg_name    = reqmod ? (struct sockaddr *)&h3_ctx->ctx->srcaddr : (struct sockaddr *)&ctx->dstaddr,
-            // .msg_namelen = reqmod ? h3_ctx->ctx->srcaddrlen : ctx->dstaddrlen,
-            .msg_name    = reqmod ? (struct sockaddr *)&h3_ctx->ctx->srcaddr : NULL,
-            .msg_namelen = reqmod ? h3_ctx->ctx->srcaddrlen : 0,
-            .msg_iov     = &iov,
-            .msg_iovlen  = 1,
-        };
+        ssize_t sent = sys_sendmsgfd(reqmod ? ctx->fd : h3_ctx->dst_fd, pktbuf, pktlen, -1);
 
-        ssize_t sent = 0;
-
-        if (reqmod) {
-		    // QUIC server should send from the common UDP listener fd, not a connected socket.
-		    // hence the global mutex to serialize sendmsg() calls across multiple threads.
-		    pthread_mutex_lock(&sendmsg_mutex);
-		    sent = sendmsg(h3_ctx->src_fd, &mhdr, 0);
-		    pthread_mutex_unlock(&sendmsg_mutex);
-		}
-		else {
-	        sent = sendmsg(h3_ctx->dst_fd, &mhdr, 0);
-		}
-
-        log_finest_va("sendmsg fd=%d returned %zd (errno=%d: %s)",
-                    reqmod ? h3_ctx->src_fd : h3_ctx->dst_fd, sent, errno, strerror(errno));        
+        log_finest_va("sendmsg fd=%d returned errno=%d, %s, size=%zd", reqmod ? ctx->fd : h3_ctx->dst_fd, errno, strerror(errno), sent);
         if (sent < 0) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                if (reqmod ? h3_ctx->src_wev : h3_ctx->dst_wev)
+                if (reqmod ? h3_ctx->src_wev : h3_ctx->dst_wev) {
+                    log_finest_va("sendmsg would block, re-arming write event on fd %d", reqmod ? ctx->fd : h3_ctx->dst_fd);
 					event_add(reqmod ? h3_ctx->src_wev : h3_ctx->dst_wev, NULL);
-            } else {
-                log_finest_va("sendmsg error on fd %d: %s", 
-                               reqmod ? h3_ctx->src_fd : h3_ctx->dst_fd, strerror(errno));
+                }
             }
             break;
         }
@@ -1464,12 +1436,15 @@ ssize_t
 protohttp3_recvmsg(int fd,
                    uint8_t *buf, size_t bufsz,
                    struct sockaddr_storage *peer_addr, socklen_t *peer_addrlen,
+                   struct sockaddr_storage *local_addr, socklen_t *local_addrlen,
                    int *ecn)
 {
     struct iovec iov = { .iov_base = buf, .iov_len = bufsz };
 
-    // Ancillary data buffer large enough for IP_PKTINFO + ECN.           */
+    /* Ancillary buffer sized for IPv4/IPv6 destination address + destination port + ECN */
     uint8_t cmsgbuf[CMSG_SPACE(sizeof(struct in6_pktinfo)) +
+                    CMSG_SPACE(sizeof(struct sockaddr_in)) +
+                    CMSG_SPACE(sizeof(uint16_t)) +
                     CMSG_SPACE(sizeof(int))];
 
     struct msghdr msg = {
@@ -1481,7 +1456,11 @@ protohttp3_recvmsg(int fd,
         .msg_controllen = sizeof(cmsgbuf),
     };
 
-    ssize_t n = recvmsg(fd, &msg, 0);
+    ssize_t n;
+    do {
+        n = recvmsg(fd, &msg, 0);
+    } while (n == -1 && errno == EINTR);
+
     if (n < 0) {
         if (errno == EAGAIN || errno == EWOULDBLOCK)
             return 0;
@@ -1491,31 +1470,82 @@ protohttp3_recvmsg(int fd,
     *peer_addrlen = msg.msg_namelen;
     *ecn = 0;
 
+    if (local_addr && local_addrlen) {
+        memset(local_addr, 0, sizeof(*local_addr));
+        *local_addrlen = 0;
+    }
+
     // Walk ancillary control messages
     for (struct cmsghdr *cmsg = CMSG_FIRSTHDR(&msg);
          cmsg != NULL;
          cmsg = CMSG_NXTHDR(&msg, cmsg)) {
 
-        // IPv4 destination address + ECN.
+        // IPv4 Control Messages
         if (cmsg->cmsg_level == IPPROTO_IP) {
 #ifdef IP_TOS
             if (cmsg->cmsg_type == IP_TOS) {
                 *ecn = *(int *)CMSG_DATA(cmsg) & 0x03;
             }
-#endif
+#endif /* IP_TOS */
+
+            if (local_addr && local_addrlen) {
+#if defined(__linux__)
+                /* Linux TPROXY handling */
+                if (cmsg->cmsg_type == IP_PKTINFO) {
+                    struct in_pktinfo *pkt = (struct in_pktinfo *)CMSG_DATA(cmsg);
+                    struct sockaddr_in *sin = (struct sockaddr_in *)local_addr;
+                    sin->sin_family = AF_INET;
+                    sin->sin_addr = pkt->ipi_spec_dst.s_addr != 0 ? pkt->ipi_spec_dst : pkt->ipi_addr;
+                    *local_addrlen = sizeof(struct sockaddr_in);
+                }
+#ifdef IP_ORIGDSTADDR
+                else if (cmsg->cmsg_type == IP_ORIGDSTADDR) {
+                    struct sockaddr_in *sin = (struct sockaddr_in *)CMSG_DATA(cmsg);
+                    memcpy(local_addr, sin, sizeof(struct sockaddr_in));
+                    *local_addrlen = sizeof(struct sockaddr_in);
+                }
+#endif /* IP_ORIGDSTADDR */
+#else /* !__linux__ */
+                struct sockaddr_in *sin = (struct sockaddr_in *)local_addr;
+                sin->sin_family = AF_INET;
+                *local_addrlen = sizeof(struct sockaddr_in);
+
+                /* Extract original IP */
+                if (cmsg->cmsg_type == IP_RECVDSTADDR) {
+                    memcpy(&sin->sin_addr, CMSG_DATA(cmsg), sizeof(struct in_addr));
+                }
+                /* Extract original Port (preserved by pf divert-to) */
+                else if (cmsg->cmsg_type == IP_RECVDSTPORT) {
+                    /* IP_RECVDSTPORT supplies port in network byte order */
+                    memcpy(&sin->sin_port, CMSG_DATA(cmsg), sizeof(in_port_t));
+                }
+#endif /* !__linux__ */
+            }
         }
 
-        // IPv6 destination address + ECN.
+        // IPv6 Control Messages
         if (cmsg->cmsg_level == IPPROTO_IPV6) {
 #ifdef IPV6_TCLASS
             if (cmsg->cmsg_type == IPV6_TCLASS) {
                 *ecn = *(int *)CMSG_DATA(cmsg) & 0x03;
             }
 #endif
+
+            if (local_addr && local_addrlen) {
+#if defined(IPV6_RECVPKTINFO) || defined(IPV6_PKTINFO)
+                if (cmsg->cmsg_type == IPV6_PKTINFO || cmsg->cmsg_type == IPV6_RECVPKTINFO) {
+                    struct in6_pktinfo *pkt6 = (struct in6_pktinfo *)CMSG_DATA(cmsg);
+                    struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)local_addr;
+                    sin6->sin6_family = AF_INET6;
+                    memcpy(&sin6->sin6_addr, &pkt6->ipi6_addr, sizeof(struct in6_addr));
+                    *local_addrlen = sizeof(struct sockaddr_in6);
+                }
+#endif /* defined(IPV6_RECVPKTINFO) || defined(IPV6_PKTINFO) */
+            }
         }
     }
 
-	log_finest_main_va("EXIT, fd=%d, bytes received=%zd, ecn=%d", fd, n, *ecn);
+    log_finest_main_va("Received, fd=%d, bytes=%zd, ecn=%d", fd, n, *ecn);
     return n;
 }
 
@@ -1592,10 +1622,12 @@ protohttp3_dst_read_cb(evutil_socket_t fd, UNUSED short what, void *arg)
 	uint8_t buf[H3_DGRAM_BUFSZ];
 	struct sockaddr_storage peer_addr;
 	socklen_t peer_addrlen = sizeof(peer_addr);
+	struct sockaddr_storage local_addr;
+	socklen_t local_addrlen = sizeof(local_addr);
 	int ecn = 0;
 
     // TODO: The port in local_addr returned by protohttp3_recvmsg2() is always 0, why?
-    ssize_t n = protohttp3_recvmsg(fd, buf, sizeof(buf), &peer_addr, &peer_addrlen, &ecn);
+    ssize_t n = protohttp3_recvmsg(fd, buf, sizeof(buf), &peer_addr, &peer_addrlen, &local_addr, &local_addrlen, &ecn);
 	if (n <= 0) {
 		if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
 			log_err_level_printf(LOG_CRIT,
@@ -2332,13 +2364,155 @@ protohttp3_init_conn(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
         ctx->ev = NULL;
     }
 
+	/*
+	 * Create a new UDP socket for this connection.
+	 * We bind to port 0 (random port) and connect to the peer so that
+	 * the per-connection socket becomes a connected UDP socket that
+	 * can be used with sendmsg() without a destination address.
+	 */
+
+	ctx->fd = socket(ctx->srcaddr.ss_family, SOCK_DGRAM, IPPROTO_UDP);
+	if (ctx->fd == -1) {
+		log_finest_main_va("Failed to create per-conn UDP socket: %s", strerror(errno));
+        return;
+	}
+
+    log_finest_va("Created socket, ctx->fd=%d, fd=%d", ctx->fd, fd);
+
+	/* Make the per-connection socket non-blocking. */
+	if (evutil_make_socket_nonblocking(ctx->fd) == -1) {
+		log_finest_main_va("Error making socket nonblocking: %s (%i)", strerror(errno), errno);
+		evutil_closesocket(ctx->fd);
+        return;
+	}
+
+	if (evutil_make_listen_socket_reuseable(ctx->fd) == -1) {
+		log_finest_main_va("Error from setsockopt(SO_REUSABLE): %s", strerror(errno));
+		evutil_closesocket(ctx->fd);
+        return;
+	}
+
+	int on = 1;
+
+	/* Standard SOL_SOCKET options */
+	int rv = setsockopt(ctx->fd, SOL_SOCKET, SO_KEEPALIVE, (void*)&on, sizeof(on));
+	if (rv == -1) {
+		log_finest_main_va("Error from setsockopt(SO_KEEPALIVE): %s (%i)", strerror(errno), errno);
+		evutil_closesocket(ctx->fd);
+        return;
+	}
+
+	/*
+	 * UDP/H3 Transparent Proxy options: Enable destination IP extraction & spoofed source binding
+	 */
+#if defined(__linux__)
+	/* Linux TPROXY: Enable IP_TRANSPARENT */
+	setsockopt(ctx->fd, SOL_IP, IP_TRANSPARENT, &on, sizeof(on));
+
+	/* Linux: Enable receiving original destination address or PKTINFO */
+#ifdef IP_RECVORIGDSTADDR
+	rv = setsockopt(ctx->fd, IPPROTO_IP, IP_RECVORIGDSTADDR, &on, sizeof(on));
+#else /* !IP_RECVORIGDSTADDR */
+	rv = setsockopt(ctx->fd, IPPROTO_IP, IP_PKTINFO, &on, sizeof(on));
+#endif /* !IP_RECVORIGDSTADDR */
+	if (rv == -1) {
+		log_finest_main_va("Error setting IP_RECVORIGDSTADDR/PKTINFO: %s (%i)", strerror(errno), errno);
+		evutil_closesocket(ctx->fd);
+        return;
+	}
+#else /* !__linux__ */
+	/* OpenBSD: Allow binding to non-local addresses if needed */
+	setsockopt(ctx->fd, SOL_SOCKET, SO_BINDANY, &on, sizeof(on));
+
+	/* OpenBSD: Receive the original destination IP and port in cmsg */
+	rv = setsockopt(ctx->fd, IPPROTO_IP, IP_RECVDSTADDR, &on, sizeof(on));
+	if (rv == -1) {
+		log_finest_main_va("Error setting IP_RECVDSTADDR: %s (%i)", strerror(errno), errno);
+		evutil_closesocket(ctx->fd);
+        return;
+	}
+	rv = setsockopt(ctx->fd, IPPROTO_IP, IP_RECVDSTPORT, &on, sizeof(on));
+	if (rv == -1) {
+		log_finest_main_va("Error setting IP_RECVDSTPORT: %s (%i)", strerror(errno), errno);
+		evutil_closesocket(ctx->fd);
+        return;
+	}
+#endif /* !__linux__ */
+
+	setsockopt(ctx->fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
+	setsockopt(ctx->fd, SOL_SOCKET, SO_REUSEPORT, &on, sizeof(on));
+
+	/* Bind to a random port to get a unique local address. */
+	struct sockaddr_storage bind_addr;
+	socklen_t bind_addrlen = sizeof(bind_addr);
+	memset(&bind_addr, 0, sizeof(bind_addr));
+
+    if (ctx->srcaddr.ss_family == AF_INET) {
+		struct sockaddr_in *sin = (struct sockaddr_in *)&bind_addr;
+#if defined(__OpenBSD__) || defined(__FreeBSD__) || defined(__APPLE__)
+        sin->sin_len = sizeof(struct sockaddr_in);
+#endif
+        sin->sin_family = AF_INET;
+        sin->sin_addr = ((struct sockaddr_in *)&ctx->orig_dstaddr)->sin_addr; // e.g., 127.0.0.1
+        sin->sin_port = ((struct sockaddr_in *)&ctx->orig_dstaddr)->sin_port; // e.g., htons(443)
+		bind_addrlen = sizeof(struct sockaddr_in);
+	} else {
+		struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)&bind_addr;
+#if defined(__OpenBSD__) || defined(__FreeBSD__) || defined(__APPLE__)
+        sin6->sin6_len = sizeof(struct sockaddr_in6);
+#endif
+        sin6->sin6_family = AF_INET6;
+        sin6->sin6_addr = ((struct sockaddr_in6 *)&ctx->orig_dstaddr)->sin6_addr; // e.g., ::1
+        sin6->sin6_port = ((struct sockaddr_in6 *)&ctx->orig_dstaddr)->sin6_port; // e.g., htons(443)
+		bind_addrlen = sizeof(struct sockaddr_in6);
+	}
+
+	if (bind(ctx->fd, (struct sockaddr *)&bind_addr, bind_addrlen) == -1) {
+		log_finest_main_va("Failed to bind per-conn UDP socket: %s", strerror(errno));
+		evutil_closesocket(ctx->fd);
+        return;
+	}
+
+    // We create the h3 context in proxy_listener_acceptcb_udp()
+    protohttp3_ctx_t *h3_ctx = ctx->protoctx->arg;
+
+	h3_ctx->src_rev = event_new(ctx->thr->evbase, ctx->fd,
+	                                EV_READ | EV_PERSIST,
+	                                proxy_listener_acceptcb_udp,
+	                                h3_ctx->lctx);
+    if (!h3_ctx->src_rev) {
+		log_finest_main_va("Failed to create UDP accept event: %s", strerror(errno));
+		evutil_closesocket(ctx->fd);
+        return;
+    }
+
+    if (event_add(h3_ctx->src_rev, NULL) != 0) {
+		log_finest_main_va("Failed to add UDP accept event: %s", strerror(errno));
+        event_free(h3_ctx->src_rev);
+		evutil_closesocket(ctx->fd);
+        return;
+    }
+
+	/* Connect to the peer so we can use send/recv without addresses. */
+	if (connect(ctx->fd, (struct sockaddr *)&ctx->srcaddr, ctx->srcaddrlen) == -1) {
+		log_finest_main_va("Failed to connect per-conn UDP socket: %s", strerror(errno));
+        event_del(h3_ctx->src_rev);
+        event_free(h3_ctx->src_rev);
+		evutil_closesocket(ctx->fd);
+        return;
+	}
+
     /*
      * pxy_conn_init sets up the connection for use with the generic
      * SSLproxy framework.  For HTTP/3 we don't use bufferevents, so
      * we bypass the bufferevent parts.
      */
-    if (pxy_conn_init(ctx) == -1)
+    if (pxy_conn_init(ctx) == -1) {
+        event_del(h3_ctx->src_rev);
+        event_free(h3_ctx->src_rev);
+        evutil_closesocket(ctx->fd);
         return;
+    }
 
 // No need to check for OPENSSL_NO_TLSEXT here, since h3 requires ALPN and TLS 1.3,
 // which are not available if OPENSSL_NO_TLSEXT is defined.
@@ -2347,11 +2521,8 @@ protohttp3_init_conn(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 // 	return;
 // #endif /* !OPENSSL_NO_TLSEXT */
 
-    // We create the h3 context in proxy_listener_acceptcb_udp()
-    protohttp3_ctx_t *h3_ctx = ctx->protoctx->arg;
-
     // Directly call the packet processing callback to handle the first queued packet
-    protohttp3_process_packet_cb(h3_ctx->src_fd, 0, h3_ctx);
+    protohttp3_process_packet_cb(ctx->fd, 0, h3_ctx);
 }
 
 /*
@@ -2612,6 +2783,11 @@ protohttp3_free(protohttp3_ctx_t *h3_ctx)
     }
 
     // Stop all Libevent events first so no more callbacks fire
+    if (h3_ctx->src_rev) {
+        event_del(h3_ctx->src_rev);
+        event_free(h3_ctx->src_rev);
+        h3_ctx->src_rev = NULL;
+    }
     if (h3_ctx->src_wev) {
         event_del(h3_ctx->src_wev);
         event_free(h3_ctx->src_wev);
