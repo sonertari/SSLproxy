@@ -830,7 +830,7 @@ protohttpx_delete_nv_header(protohttpx_stream_ctx_t *s, size_t idx)
  * Returns 0 on success, -1 on OOM.
  */
 int
-protohttpx_add_nv_header(protohttpx_stream_ctx_t *s, const char *name,  size_t namelen, const char *value, size_t valuelen)
+protohttpx_add_nv_header(protohttpx_stream_ctx_t *s, const char *name, size_t namelen, const char *value, size_t valuelen)
 {
     pxy_conn_ctx_t *ctx = s->ctx;
     log_finest_va("%.*s: %.*s", (int)namelen, name, (int)valuelen, value);
@@ -1216,7 +1216,6 @@ protohttpx_filter_request_header(protohttpx_stream_ctx_t *s)
     pxy_conn_ctx_t *ctx = s->ctx;
     log_finest_va("ENTER, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64, s->src_stream_id, s->dst_stream_id);
 
-    size_t count = s->headers_count;
     protohttp_ctx_t *http_ctx = s->http_ctx;
     conn_opts_t *conn_opts = s->conn_opts ? s->conn_opts : ctx->conn_opts;
 
@@ -1235,7 +1234,8 @@ protohttpx_filter_request_header(protohttpx_stream_ctx_t *s)
 	}
 #endif /* !WITHOUT_HTTP3 */
 
-	for (size_t i = 0; i < count; i++) {
+	size_t i = 0;
+	while (i < s->headers_count) {
         log_finest_va("Processing header '%.*s=%.*s', idx=%zu, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64,
             (int)headers[i].namelen, headers[i].name, (int)headers[i].valuelen, headers[i].value, i, s->src_stream_id, s->dst_stream_id);
 
@@ -1320,12 +1320,15 @@ protohttpx_filter_request_header(protohttpx_stream_ctx_t *s)
                 http_ctx->http_content_type, i, s->src_stream_id, s->dst_stream_id);
         }
         else if (conn_opts->remove_http_accept_encoding && (headers[i].namelen == 15 && !memcmp(headers[i].name, "accept-encoding", 15))) {
-            protohttpx_delete_nv_header(s, i);
+			protohttpx_delete_nv_header(s, i);
 			http_ctx->seen_keyword_count++;
+			// ATTENTION: Do not increment i, as the next entry i+1 is in ith position now
+			continue;
         }
         else if (conn_opts->remove_http_referer && (headers[i].namelen == 7 && !memcmp(headers[i].name, "referer", 7))) {
-            protohttpx_delete_nv_header(s, i);
+			protohttpx_delete_nv_header(s, i);
 			http_ctx->seen_keyword_count++;
+			continue;
 		}
 		         // Not possible in HTTP/2
         else if ((headers[i].namelen == 4 && !memcmp(headers[i].name, "host", 4)) ||
@@ -1337,8 +1340,10 @@ protohttpx_filter_request_header(protohttpx_stream_ctx_t *s)
 		         (headers[i].namelen == 4 && !memcmp(headers[i].name, "via", 4)) ||
 				 // Also do not send the loopback address to the Internet
 		         (headers[i].namelen == 15 && !memcmp(headers[i].name, "x-forwarded-for", 15))) {
-            protohttpx_delete_nv_header(s, i);
+			protohttpx_delete_nv_header(s, i);
+			continue;
         }
+		i++;
     }
 
 	if (http_ctx->seen_req_header) {
@@ -1362,8 +1367,6 @@ protohttpx_filter_response_header(protohttpx_stream_ctx_t *s)
     pxy_conn_ctx_t *ctx = s->ctx;
     log_finest_va("ENTER, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64, s->src_stream_id, s->dst_stream_id);
 
-    // nghttp3_nv *headers = s->headers;
-    size_t count = s->headers_count;
     protohttp_ctx_t *http_ctx = s->http_ctx;
     conn_opts_t *conn_opts = s->conn_opts ? s->conn_opts : ctx->conn_opts;
 
@@ -1382,7 +1385,8 @@ protohttpx_filter_response_header(protohttpx_stream_ctx_t *s)
 	}
 #endif /* !WITHOUT_HTTP3 */
 
-    for (size_t i = 0; i < count; i++) {
+	size_t i = 0;
+    while (i < s->headers_count) {
         log_finest_va("Processing header '%.*s=%.*s', idx=%zu, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64,
             (int)headers[i].namelen, headers[i].name, (int)headers[i].valuelen, headers[i].value, i, s->src_stream_id, s->dst_stream_id);
 
@@ -1433,7 +1437,8 @@ protohttpx_filter_response_header(protohttpx_stream_ctx_t *s)
         }
         // Normally not possible in response
         else if (conn_opts->remove_http_referer && (headers[i].namelen == 7 && !memcmp(headers[i].name, "referer", 7))) {
-            protohttpx_delete_nv_header(s, i);
+			protohttpx_delete_nv_header(s, i);
+			continue;
 		}
         else if ((headers[i].namelen == 15 && !memcmp(headers[i].name, "public-key-pins", 15)) ||
                  (headers[i].namelen == 27 && !memcmp(headers[i].name, "public-key-pins-report-only", 27)) ||
@@ -1441,13 +1446,14 @@ protohttpx_filter_response_header(protohttpx_stream_ctx_t *s)
                  (headers[i].namelen == 9 && !memcmp(headers[i].name, "expect-ct", 9)) ||
                  (headers[i].namelen == 18 && !memcmp(headers[i].name, "alternate-protocol", 18)) ||
                  (headers[i].namelen == 7 && !memcmp(headers[i].name, "upgrade", 7))) {
-            protohttpx_delete_nv_header(s, i);
+			protohttpx_delete_nv_header(s, i);
+			continue;
         }
         // We should not receive alt-svc on an already h3 stream, but if we do, rewrite it to the configured port
         // And h3 proxyspecs should not be configured to rewrite alt-svc anyway
         else if (conn_opts->rewrite_alt_svc_port && !memcmp(headers[i].name, "alt-svc", 7)) {
             // TODO: Rewrite only the port number in the alt-svc header, keep the rest
-            protohttpx_delete_nv_header(s, i);
+			protohttpx_delete_nv_header(s, i);
 
             size_t len = strlen("h3=\"\":") + strlen(conn_opts->rewrite_alt_svc_port) + strlen("; ma=86400") + 1;
 			char *new_value = malloc(len);
@@ -1462,6 +1468,7 @@ protohttpx_filter_response_header(protohttpx_stream_ctx_t *s)
             }
             free(new_value);
         }
+		i++;
     }
 
     if (ctx->enomem) {
