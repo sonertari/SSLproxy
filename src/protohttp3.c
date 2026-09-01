@@ -2467,21 +2467,20 @@ protohttp3_init_conn(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 
 	ctx->fd = socket(ctx->srcaddr.ss_family, SOCK_DGRAM, IPPROTO_UDP);
 	if (ctx->fd == -1) {
-		log_finest_main_va("Failed to create per-conn UDP socket: %s", strerror(errno));
+		log_finest_va("Failed to create per-conn UDP socket: %s", strerror(errno));
         return;
 	}
 
     log_finest_va("Created socket, ctx->fd=%d, fd=%d", ctx->fd, fd);
 
-	/* Make the per-connection socket non-blocking. */
 	if (evutil_make_socket_nonblocking(ctx->fd) == -1) {
-		log_finest_main_va("Error making socket nonblocking: %s (%i)", strerror(errno), errno);
+		log_finest_va("Error making socket nonblocking: %s (%i)", strerror(errno), errno);
 		evutil_closesocket(ctx->fd);
         return;
 	}
 
 	if (evutil_make_listen_socket_reuseable(ctx->fd) == -1) {
-		log_finest_main_va("Error from setsockopt(SO_REUSABLE): %s", strerror(errno));
+		log_finest_va("Error from setsockopt(SO_REUSABLE): %s", strerror(errno));
 		evutil_closesocket(ctx->fd);
         return;
 	}
@@ -2491,7 +2490,7 @@ protohttp3_init_conn(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 	/* Standard SOL_SOCKET options */
 	int rv = setsockopt(ctx->fd, SOL_SOCKET, SO_KEEPALIVE, (void*)&on, sizeof(on));
 	if (rv == -1) {
-		log_finest_main_va("Error from setsockopt(SO_KEEPALIVE): %s (%i)", strerror(errno), errno);
+		log_finest_va("Error from setsockopt(SO_KEEPALIVE): %s (%i)", strerror(errno), errno);
 		evutil_closesocket(ctx->fd);
         return;
 	}
@@ -2501,7 +2500,12 @@ protohttp3_init_conn(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 	 */
 #if defined(__linux__)
 	/* Linux TPROXY: Enable IP_TRANSPARENT */
-	setsockopt(ctx->fd, SOL_IP, IP_TRANSPARENT, &on, sizeof(on));
+	rv = setsockopt(ctx->fd, SOL_IP, IP_TRANSPARENT, &on, sizeof(on));
+    if (rv == -1) {
+        log_finest_va("Error setting IP_TRANSPARENT: %s (%i)", strerror(errno), errno);
+        evutil_closesocket(ctx->fd);
+        return;
+    }
 
 	/* Linux: Enable receiving original destination address or PKTINFO */
 #ifdef IP_RECVORIGDSTADDR
@@ -2510,7 +2514,7 @@ protohttp3_init_conn(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 	rv = setsockopt(ctx->fd, IPPROTO_IP, IP_PKTINFO, &on, sizeof(on));
 #endif /* !IP_RECVORIGDSTADDR */
 	if (rv == -1) {
-		log_finest_main_va("Error setting IP_RECVORIGDSTADDR/PKTINFO: %s (%i)", strerror(errno), errno);
+		log_finest_va("Error setting IP_RECVORIGDSTADDR/PKTINFO: %s (%i)", strerror(errno), errno);
 		evutil_closesocket(ctx->fd);
         return;
 	}
@@ -2521,20 +2525,30 @@ protohttp3_init_conn(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 	/* OpenBSD: Receive the original destination IP and port in cmsg */
 	rv = setsockopt(ctx->fd, IPPROTO_IP, IP_RECVDSTADDR, &on, sizeof(on));
 	if (rv == -1) {
-		log_finest_main_va("Error setting IP_RECVDSTADDR: %s (%i)", strerror(errno), errno);
+		log_finest_va("Error setting IP_RECVDSTADDR: %s (%i)", strerror(errno), errno);
 		evutil_closesocket(ctx->fd);
         return;
 	}
 	rv = setsockopt(ctx->fd, IPPROTO_IP, IP_RECVDSTPORT, &on, sizeof(on));
 	if (rv == -1) {
-		log_finest_main_va("Error setting IP_RECVDSTPORT: %s (%i)", strerror(errno), errno);
+		log_finest_va("Error setting IP_RECVDSTPORT: %s (%i)", strerror(errno), errno);
 		evutil_closesocket(ctx->fd);
         return;
 	}
 #endif /* !__linux__ */
 
-	setsockopt(ctx->fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
-	setsockopt(ctx->fd, SOL_SOCKET, SO_REUSEPORT, &on, sizeof(on));
+	rv = setsockopt(ctx->fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
+    if (rv == -1) {
+        log_finest_va("Error from setsockopt(SO_REUSEADDR): %s (%i)", strerror(errno), errno);
+        evutil_closesocket(ctx->fd);
+        return;
+    }
+	rv = setsockopt(ctx->fd, SOL_SOCKET, SO_REUSEPORT, &on, sizeof(on));
+    if (rv == -1) {
+        log_finest_va("Error from setsockopt(SO_REUSEPORT): %s (%i)", strerror(errno), errno);
+        evutil_closesocket(ctx->fd);
+        return;
+    }
 
 	/* Bind to a random port to get a unique local address. */
 	struct sockaddr_storage bind_addr;
@@ -2543,18 +2557,18 @@ protohttp3_init_conn(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 
     if (ctx->srcaddr.ss_family == AF_INET) {
 		struct sockaddr_in *sin = (struct sockaddr_in *)&bind_addr;
-#if defined(__OpenBSD__) || defined(__FreeBSD__) || defined(__APPLE__)
+#if !defined(__linux__)
         sin->sin_len = sizeof(struct sockaddr_in);
-#endif
+#endif /* !__linux__ */
         sin->sin_family = AF_INET;
         sin->sin_addr = ((struct sockaddr_in *)&ctx->orig_dstaddr)->sin_addr; // e.g., 127.0.0.1
         sin->sin_port = ((struct sockaddr_in *)&ctx->orig_dstaddr)->sin_port; // e.g., htons(443)
 		bind_addrlen = sizeof(struct sockaddr_in);
 	} else {
 		struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)&bind_addr;
-#if defined(__OpenBSD__) || defined(__FreeBSD__) || defined(__APPLE__)
+#if !defined(__linux__)
         sin6->sin6_len = sizeof(struct sockaddr_in6);
-#endif
+#endif /* !__linux__ */
         sin6->sin6_family = AF_INET6;
         sin6->sin6_addr = ((struct sockaddr_in6 *)&ctx->orig_dstaddr)->sin6_addr; // e.g., ::1
         sin6->sin6_port = ((struct sockaddr_in6 *)&ctx->orig_dstaddr)->sin6_port; // e.g., htons(443)
@@ -2562,7 +2576,7 @@ protohttp3_init_conn(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 	}
 
 	if (bind(ctx->fd, (struct sockaddr *)&bind_addr, bind_addrlen) == -1) {
-		log_finest_main_va("Failed to bind per-conn UDP socket: %s", strerror(errno));
+		log_finest_va("Failed to bind per-conn UDP socket: %s", strerror(errno));
 		evutil_closesocket(ctx->fd);
         return;
 	}
@@ -2575,13 +2589,13 @@ protohttp3_init_conn(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 	                                protohttp3_src_read_cb,
 	                                h3_ctx);
     if (!h3_ctx->src_rev) {
-		log_finest_main_va("Failed to create UDP accept event: %s", strerror(errno));
+		log_finest_va("Failed to create UDP accept event: %s", strerror(errno));
 		evutil_closesocket(ctx->fd);
         return;
     }
 
     if (event_add(h3_ctx->src_rev, NULL) != 0) {
-		log_finest_main_va("Failed to add UDP accept event: %s", strerror(errno));
+		log_finest_va("Failed to add UDP accept event: %s", strerror(errno));
         event_free(h3_ctx->src_rev);
 		evutil_closesocket(ctx->fd);
         return;
@@ -2589,7 +2603,7 @@ protohttp3_init_conn(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 
 	/* Connect to the peer so we can use send/recv without addresses. */
 	if (connect(ctx->fd, (struct sockaddr *)&ctx->srcaddr, ctx->srcaddrlen) == -1) {
-		log_finest_main_va("Failed to connect per-conn UDP socket: %s", strerror(errno));
+		log_finest_va("Failed to connect per-conn UDP socket: %s", strerror(errno));
         event_del(h3_ctx->src_rev);
         event_free(h3_ctx->src_rev);
 		evutil_closesocket(ctx->fd);
@@ -2647,24 +2661,30 @@ protohttp3_conn_connect(pxy_conn_ctx_t *ctx)
         return -1;
     }
 
-    // TODO: Do we need to set IP_PKTINFO for the dst socket?
-    // int val = 1;
-    // if (setsockopt(dst_fd, IPPROTO_IP, IP_PKTINFO, &val, sizeof(val)) < 0) {
-    //     log_finest_va("Failed to set IP_PKTINFO: %s", strerror(errno));
-    // }
+    h3_ctx->dst_fd = dst_fd;
+
+	if (evutil_make_socket_nonblocking(h3_ctx->dst_fd) == -1) {
+		log_finest_va("Error making socket nonblocking: %s (%i)", strerror(errno), errno);
+        goto err;
+	}
+
+	if (evutil_make_listen_socket_reuseable(h3_ctx->dst_fd) == -1) {
+		log_finest_va("Error from setsockopt(SO_REUSABLE): %s", strerror(errno));
+        goto err;
+	}
+
+	int on = 1;
+	if (setsockopt(h3_ctx->dst_fd, SOL_SOCKET, SO_KEEPALIVE, (void*)&on, sizeof(on)) == -1) {
+		log_finest_va("Error from setsockopt(SO_KEEPALIVE): %s (%i)", strerror(errno), errno);
+		goto err;
+	}
 
     // TODO: Do we need to bind to the dst socket?
 
-    if (connect(dst_fd, (struct sockaddr *)&ctx->dstaddr, ctx->dstaddrlen) == -1) {
+    if (connect(h3_ctx->dst_fd, (struct sockaddr *)&ctx->dstaddr, ctx->dstaddrlen) == -1) {
         log_finest_va("Failed to connect dst UDP socket: %s", strerror(errno));
-        close(dst_fd);
-        return -1;
+        goto err;
     }
-
-    /* Make the socket non-blocking. */
-    evutil_make_socket_nonblocking(dst_fd);
-
-    h3_ctx->dst_fd = dst_fd;
 
     /*
      * Instantiate the upstream QUIC client session.
@@ -2766,7 +2786,7 @@ protohttp3_conn_connect(pxy_conn_ctx_t *ctx)
     h3_ctx->dst_ossl_ctx = NULL;
     if (ngtcp2_crypto_ossl_ctx_new(&h3_ctx->dst_ossl_ctx, h3_ctx->dst_ssl) != 0) {
         log_finest("failed to create ngtcp2_crypto_ossl_ctx");
-        return -1;
+        goto err;
     }
 
     ngtcp2_conn_set_tls_native_handle(h3_ctx->dst_conn, h3_ctx->dst_ossl_ctx);
@@ -2774,13 +2794,13 @@ protohttp3_conn_connect(pxy_conn_ctx_t *ctx)
     /*
      * Set up the libevent read/write events for the upstream UDP socket.
      */
-    h3_ctx->dst_rev = event_new(ctx->thr->evbase, dst_fd,
+    h3_ctx->dst_rev = event_new(ctx->thr->evbase, h3_ctx->dst_fd,
                                 EV_READ | EV_PERSIST,
                                 protohttp3_dst_read_cb, h3_ctx);
     if (!h3_ctx->dst_rev)
         goto err;
 
-    h3_ctx->dst_wev = event_new(ctx->thr->evbase, dst_fd,
+    h3_ctx->dst_wev = event_new(ctx->thr->evbase, h3_ctx->dst_fd,
                                 EV_WRITE,
                                 protohttp3_dst_write_cb, h3_ctx);
     if (!h3_ctx->dst_wev)
@@ -2792,7 +2812,7 @@ protohttp3_conn_connect(pxy_conn_ctx_t *ctx)
     if (event_add(h3_ctx->dst_wev, NULL) != 0)
         goto err;
 
-    log_finest_va("Upstream connection configured to dst_fd=%d", dst_fd);
+    log_finest_va("Upstream connection configured to dst_fd=%d", h3_ctx->dst_fd);
 
     if (pxy_prepare_logging(ctx) == -1) {
         goto err;
@@ -2803,9 +2823,13 @@ protohttp3_conn_connect(pxy_conn_ctx_t *ctx)
     return 0;
 
 err:
-    if (h3_ctx->dst_rev) { event_free(h3_ctx->dst_rev); h3_ctx->dst_rev = NULL; }
-    if (h3_ctx->dst_wev) { event_free(h3_ctx->dst_wev); h3_ctx->dst_wev = NULL; }
-    close(dst_fd);
+    if (h3_ctx->dst_rev) {
+        event_free(h3_ctx->dst_rev); h3_ctx->dst_rev = NULL;
+    }
+    if (h3_ctx->dst_wev) {
+        event_free(h3_ctx->dst_wev); h3_ctx->dst_wev = NULL;
+    }
+    evutil_closesocket(h3_ctx->dst_fd);
     h3_ctx->dst_fd = -1;
     return -1;
 }

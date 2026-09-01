@@ -295,7 +295,29 @@ privsep_server_opensock(const proxyspec_t *spec)
 		/*
 		 * UDP/H3 Transparent Proxy options: Enable destination IP extraction & spoofed source binding
 		 */
-#if defined(__OpenBSD__) || defined(__FreeBSD__)
+#if defined(__linux__)
+		/* Linux TPROXY: Enable IP_TRANSPARENT */
+		rv = setsockopt(fd, SOL_IP, IP_TRANSPARENT, &on, sizeof(on));
+		if (rv == -1) {
+			log_err_level_printf(LOG_CRIT, "Error setting IP_TRANSPARENT: %s (%i)\n",
+								strerror(errno), errno);
+			evutil_closesocket(fd);
+			return -1;
+		}
+
+		/* Linux: Enable receiving original destination address or PKTINFO */
+#ifdef IP_RECVORIGDSTADDR
+		rv = setsockopt(fd, IPPROTO_IP, IP_RECVORIGDSTADDR, &on, sizeof(on));
+#else /* !IP_RECVORIGDSTADDR */
+		rv = setsockopt(fd, IPPROTO_IP, IP_PKTINFO, &on, sizeof(on));
+#endif /* !IP_RECVORIGDSTADDR */
+		if (rv == -1) {
+			log_err_level_printf(LOG_CRIT, "Error setting IP_RECVORIGDSTADDR/PKTINFO: %s (%i)\n",
+								strerror(errno), errno);
+			evutil_closesocket(fd);
+			return -1;
+		}
+#else /* !__linux__ */
 		/* OpenBSD: Allow binding to non-local addresses if needed */
 		setsockopt(fd, SOL_SOCKET, SO_BINDANY, &on, sizeof(on));
 
@@ -314,25 +336,21 @@ privsep_server_opensock(const proxyspec_t *spec)
 			evutil_closesocket(fd);
 			return -1;
 		}
-#elif defined(__linux__)
-		/* Linux TPROXY: Enable IP_TRANSPARENT */
-		setsockopt(fd, SOL_IP, IP_TRANSPARENT, &on, sizeof(on));
-
-		/* Linux: Enable receiving original destination address or PKTINFO */
-#ifdef IP_RECVORIGDSTADDR
-		rv = setsockopt(fd, IPPROTO_IP, IP_RECVORIGDSTADDR, &on, sizeof(on));
-#else
-		rv = setsockopt(fd, IPPROTO_IP, IP_PKTINFO, &on, sizeof(on));
-#endif
+#endif /* !__linux__ */
+		rv = setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
 		if (rv == -1) {
-			log_err_level_printf(LOG_CRIT, "Error setting IP_RECVORIGDSTADDR/PKTINFO: %s (%i)\n",
+			log_err_level_printf(LOG_CRIT, "Error setting SO_REUSEADDR: %s (%i)\n",
 								strerror(errno), errno);
 			evutil_closesocket(fd);
 			return -1;
 		}
-#endif
-		setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
-		setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &on, sizeof(on));
+		rv = setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &on, sizeof(on));
+		if (rv == -1) {
+			log_err_level_printf(LOG_CRIT, "Error setting SO_REUSEPORT: %s (%i)\n",
+								strerror(errno), errno);
+			evutil_closesocket(fd);
+			return -1;
+		}
 	}
 #endif /* !WITHOUT_HTTP3 */
 
