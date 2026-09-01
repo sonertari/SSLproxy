@@ -62,6 +62,7 @@
 #include "log.h"
 #include "util.h"
 #include "sys.h"
+#include "privsep.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -2460,97 +2461,7 @@ protohttp3_init_conn(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 
 	/*
 	 * Create a new UDP socket for this connection.
-	 * We bind to port 0 (random port) and connect to the peer so that
-	 * the per-connection socket becomes a connected UDP socket that
-	 * can be used with sendmsg() without a destination address.
 	 */
-
-	ctx->fd = socket(ctx->srcaddr.ss_family, SOCK_DGRAM, IPPROTO_UDP);
-	if (ctx->fd == -1) {
-		log_finest_va("Failed to create per-conn UDP socket: %s", strerror(errno));
-        return;
-	}
-
-    log_finest_va("Created socket, ctx->fd=%d, fd=%d", ctx->fd, fd);
-
-	if (evutil_make_socket_nonblocking(ctx->fd) == -1) {
-		log_finest_va("Error making socket nonblocking: %s (%i)", strerror(errno), errno);
-		evutil_closesocket(ctx->fd);
-        return;
-	}
-
-	if (evutil_make_listen_socket_reuseable(ctx->fd) == -1) {
-		log_finest_va("Error from setsockopt(SO_REUSABLE): %s", strerror(errno));
-		evutil_closesocket(ctx->fd);
-        return;
-	}
-
-	int on = 1;
-
-	/* Standard SOL_SOCKET options */
-	int rv = setsockopt(ctx->fd, SOL_SOCKET, SO_KEEPALIVE, (void*)&on, sizeof(on));
-	if (rv == -1) {
-		log_finest_va("Error from setsockopt(SO_KEEPALIVE): %s (%i)", strerror(errno), errno);
-		evutil_closesocket(ctx->fd);
-        return;
-	}
-
-	/*
-	 * UDP/H3 Transparent Proxy options: Enable destination IP extraction & spoofed source binding
-	 */
-#if defined(__linux__)
-	/* Linux TPROXY: Enable IP_TRANSPARENT */
-	rv = setsockopt(ctx->fd, SOL_IP, IP_TRANSPARENT, &on, sizeof(on));
-    if (rv == -1) {
-        log_finest_va("Error setting IP_TRANSPARENT: %s (%i)", strerror(errno), errno);
-        evutil_closesocket(ctx->fd);
-        return;
-    }
-
-	/* Linux: Enable receiving original destination address or PKTINFO */
-#ifdef IP_RECVORIGDSTADDR
-	rv = setsockopt(ctx->fd, IPPROTO_IP, IP_RECVORIGDSTADDR, &on, sizeof(on));
-#else /* !IP_RECVORIGDSTADDR */
-	rv = setsockopt(ctx->fd, IPPROTO_IP, IP_PKTINFO, &on, sizeof(on));
-#endif /* !IP_RECVORIGDSTADDR */
-	if (rv == -1) {
-		log_finest_va("Error setting IP_RECVORIGDSTADDR/PKTINFO: %s (%i)", strerror(errno), errno);
-		evutil_closesocket(ctx->fd);
-        return;
-	}
-#else /* !__linux__ */
-	/* OpenBSD: Allow binding to non-local addresses if needed */
-	setsockopt(ctx->fd, SOL_SOCKET, SO_BINDANY, &on, sizeof(on));
-
-	/* OpenBSD: Receive the original destination IP and port in cmsg */
-	rv = setsockopt(ctx->fd, IPPROTO_IP, IP_RECVDSTADDR, &on, sizeof(on));
-	if (rv == -1) {
-		log_finest_va("Error setting IP_RECVDSTADDR: %s (%i)", strerror(errno), errno);
-		evutil_closesocket(ctx->fd);
-        return;
-	}
-	rv = setsockopt(ctx->fd, IPPROTO_IP, IP_RECVDSTPORT, &on, sizeof(on));
-	if (rv == -1) {
-		log_finest_va("Error setting IP_RECVDSTPORT: %s (%i)", strerror(errno), errno);
-		evutil_closesocket(ctx->fd);
-        return;
-	}
-#endif /* !__linux__ */
-
-	rv = setsockopt(ctx->fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
-    if (rv == -1) {
-        log_finest_va("Error from setsockopt(SO_REUSEADDR): %s (%i)", strerror(errno), errno);
-        evutil_closesocket(ctx->fd);
-        return;
-    }
-	rv = setsockopt(ctx->fd, SOL_SOCKET, SO_REUSEPORT, &on, sizeof(on));
-    if (rv == -1) {
-        log_finest_va("Error from setsockopt(SO_REUSEPORT): %s (%i)", strerror(errno), errno);
-        evutil_closesocket(ctx->fd);
-        return;
-    }
-
-	/* Bind to a random port to get a unique local address. */
 	struct sockaddr_storage bind_addr;
 	socklen_t bind_addrlen = sizeof(bind_addr);
 	memset(&bind_addr, 0, sizeof(bind_addr));
@@ -2575,14 +2486,14 @@ protohttp3_init_conn(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 		bind_addrlen = sizeof(struct sockaddr_in6);
 	}
 
-	if (bind(ctx->fd, (struct sockaddr *)&bind_addr, bind_addrlen) == -1) {
-		log_finest_va("Failed to bind per-conn UDP socket: %s", strerror(errno));
+    // We create the h3 context in proxy_listener_acceptcb_udp()
+    protohttp3_ctx_t *h3_ctx = ctx->protoctx->arg;
+
+	if ((ctx->fd = privsep_client_opensock_h3(h3_ctx->clisock, bind_addr, bind_addrlen)) == -1) {
+		log_finest_va("Error opening socket: %s (%i)", strerror(errno), errno);
 		evutil_closesocket(ctx->fd);
         return;
 	}
-
-    // We create the h3 context in proxy_listener_acceptcb_udp()
-    protohttp3_ctx_t *h3_ctx = ctx->protoctx->arg;
 
 	h3_ctx->src_rev = event_new(ctx->thr->evbase, ctx->fd,
 	                                EV_READ | EV_PERSIST,

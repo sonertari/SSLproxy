@@ -194,6 +194,7 @@ struct protohttp3_conn_ctx {
     SSL *dst_ssl;
 
     int dst_fd;   /* connected UDP fd towards the upstream server */
+    evutil_socket_t clisock; /* privsep socket to use with privsep_client_opensock_h3() */
 
     /* Libevent 'struct event' wrappers around the raw fds */
     struct event *src_rev;

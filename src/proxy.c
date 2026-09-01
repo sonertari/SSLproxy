@@ -98,6 +98,7 @@ proxy_listener_ctx_free(proxy_listener_ctx_t *ctx)
 	if (ctx->evcl) {
 		evconnlistener_free(ctx->evcl);
 	}
+#ifndef WITHOUT_HTTP3
 	if (ctx->udp_accept_ev) {
 		event_del(ctx->udp_accept_ev);
 		event_free(ctx->udp_accept_ev);
@@ -105,7 +106,6 @@ proxy_listener_ctx_free(proxy_listener_ctx_t *ctx)
 	if (ctx->udp_fd >= 0) {
 		evutil_closesocket(ctx->udp_fd);
 	}
-#ifndef WITHOUT_HTTP3
 	if (ctx->h3_sessions) {
 		h3_session_map_free(ctx->h3_sessions);
 		ctx->h3_sessions = NULL;
@@ -282,9 +282,9 @@ proxy_listener_acceptcb(UNUSED struct evconnlistener *listener,
 
 	/* create per connection state */
 	pxy_conn_ctx_t *ctx = proxy_conn_ctx_new(fd, lctx->thrmgr, lctx->spec, lctx->global
-#ifndef WITHOUT_USERAUTH
+#if !defined(WITHOUT_USERAUTH) || !defined(WITHOUT_HTTP3)
 			, lctx->clisock
-#endif /* !WITHOUT_USERAUTH */
+#endif /* !WITHOUT_USERAUTH || !WITHOUT_HTTP3 */
 			);
 	if (!ctx) {
 		log_err_level_printf(LOG_CRIT, "Error allocating ctx memory\n");
@@ -488,9 +488,9 @@ proxy_listener_acceptcb_udp(evutil_socket_t fd, UNUSED short what, void *arg)
 	ctx = proxy_conn_ctx_new(
 		-1,
 		lctx->thrmgr, lctx->spec, lctx->global
-#ifndef WITHOUT_USERAUTH
+#if !defined(WITHOUT_USERAUTH) || !defined(WITHOUT_HTTP3)
 		, lctx->clisock
-#endif /* !WITHOUT_USERAUTH */
+#endif /* !WITHOUT_USERAUTH || !WITHOUT_HTTP3 */
 		);
 	if (!ctx) {
 		log_finest_main("Error allocating ctx memory");
@@ -521,6 +521,8 @@ proxy_listener_acceptcb_udp(evutil_socket_t fd, UNUSED short what, void *arg)
 		log_finest("Failed to create protohttp3 session context");
 		goto err;
 	}
+
+	h3_ctx->clisock = lctx->clisock;
 
     pthread_mutex_init(&h3_ctx->pkt_queue_mutex, NULL);
 
@@ -590,9 +592,9 @@ proxy_listener_setup(struct event_base *evbase, pxy_thrmgr_ctx_t *thrmgr,
 		return NULL;
 	}
 
-#ifndef WITHOUT_USERAUTH
+#if !defined(WITHOUT_USERAUTH) || !defined(WITHOUT_HTTP3)
 	lctx->clisock = clisock;
-#endif /* !WITHOUT_USERAUTH */
+#endif /* !WITHOUT_USERAUTH || !WITHOUT_HTTP3 */
 
 #ifndef WITHOUT_HTTP3
 	if (spec->h3) {

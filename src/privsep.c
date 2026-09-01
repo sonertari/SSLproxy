@@ -60,15 +60,22 @@
 /* maximal message sizes */
 #define PRIVSEP_MAX_REQ_SIZE	512	/* arbitrary limit */
 #define PRIVSEP_MAX_ANS_SIZE	(1+sizeof(int))
+
 /* command byte */
-#define PRIVSEP_REQ_CLOSE	0	/* closing command socket */
-#define PRIVSEP_REQ_OPENFILE	1	/* open content log file */
-#define PRIVSEP_REQ_OPENFILE_P	2	/* open content log file w/mkpath */
-#define PRIVSEP_REQ_OPENSOCK	3	/* open socket and pass fd */
-#define PRIVSEP_REQ_CERTFILE	4	/* open cert file in certgendir */
+#define PRIVSEP_REQ_CLOSE        0	/* closing command socket */
+#define PRIVSEP_REQ_OPENFILE     1	/* open content log file */
+#define PRIVSEP_REQ_OPENFILE_P   2	/* open content log file w/mkpath */
+#define PRIVSEP_REQ_OPENSOCK     3	/* open socket and pass fd */
+#define PRIVSEP_REQ_CERTFILE     4	/* open cert file in certgendir */
+
 #ifndef WITHOUT_USERAUTH
-#define PRIVSEP_REQ_UPDATE_ATIME	5	/* update ip,user atime */
+#define PRIVSEP_REQ_UPDATE_ATIME 5	/* update ip,user atime */
 #endif /* !WITHOUT_USERAUTH */
+
+#ifndef WITHOUT_HTTP3
+#define PRIVSEP_REQ_OPENSOCK_H3  6	/* open HTTP/3 socket and pass fd */
+#endif /* !WITHOUT_HTTP3 */
+
 /* response byte */
 #define PRIVSEP_ANS_SUCCESS	0	/* success */
 #define PRIVSEP_ANS_UNK_CMD	1	/* unknown command */
@@ -378,6 +385,115 @@ privsep_server_opensock(const proxyspec_t *spec)
 	return fd;
 }
 
+#ifndef WITHOUT_HTTP3
+static int WUNRES
+privsep_server_opensock_h3(struct sockaddr_storage listen_addr, socklen_t listen_addrlen)
+{
+	evutil_socket_t fd;
+	int on = 1;
+	int rv;
+
+	fd = socket(listen_addr.ss_family, SOCK_DGRAM, IPPROTO_UDP);
+
+	if (fd == -1) {
+		log_err_level_printf(LOG_CRIT, "Error from socket(): %s (%i)\n",
+		               strerror(errno), errno);
+		return -1;
+	}
+
+	rv = evutil_make_socket_nonblocking(fd);
+	if (rv == -1) {
+		log_err_level_printf(LOG_CRIT, "Error making socket nonblocking: %s (%i)\n",
+		               strerror(errno), errno);
+		evutil_closesocket(fd);
+		return -1;
+	}
+
+	/* Standard SOL_SOCKET options */
+	rv = setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, (void*)&on, sizeof(on));
+	if (rv == -1) {
+		log_err_level_printf(LOG_CRIT, "Error from setsockopt(SO_KEEPALIVE): %s (%i)\n",
+		               strerror(errno), errno);
+		evutil_closesocket(fd);
+		return -1;
+	}
+
+#if defined(__linux__)
+	/* Linux TPROXY: Enable IP_TRANSPARENT */
+	rv = setsockopt(fd, SOL_IP, IP_TRANSPARENT, &on, sizeof(on));
+	if (rv == -1) {
+		log_err_level_printf(LOG_CRIT, "Error setting IP_TRANSPARENT: %s (%i)\n",
+							strerror(errno), errno);
+		evutil_closesocket(fd);
+		return -1;
+	}
+
+	/* Linux: Enable receiving original destination address or PKTINFO */
+#ifdef IP_RECVORIGDSTADDR
+	rv = setsockopt(fd, IPPROTO_IP, IP_RECVORIGDSTADDR, &on, sizeof(on));
+#else /* !IP_RECVORIGDSTADDR */
+	rv = setsockopt(fd, IPPROTO_IP, IP_PKTINFO, &on, sizeof(on));
+#endif /* !IP_RECVORIGDSTADDR */
+	if (rv == -1) {
+		log_err_level_printf(LOG_CRIT, "Error setting IP_RECVORIGDSTADDR/PKTINFO: %s (%i)\n",
+							strerror(errno), errno);
+		evutil_closesocket(fd);
+		return -1;
+	}
+#else /* !__linux__ */
+	/* OpenBSD: Allow binding to non-local addresses if needed */
+	setsockopt(fd, SOL_SOCKET, SO_BINDANY, &on, sizeof(on));
+
+	/* OpenBSD: Receive the original destination IP and port in cmsg */
+	rv = setsockopt(fd, IPPROTO_IP, IP_RECVDSTADDR, &on, sizeof(on));
+	if (rv == -1) {
+		log_err_level_printf(LOG_CRIT, "Error setting IP_RECVDSTADDR: %s (%i)\n",
+							strerror(errno), errno);
+		evutil_closesocket(fd);
+		return -1;
+	}
+	rv = setsockopt(fd, IPPROTO_IP, IP_RECVDSTPORT, &on, sizeof(on));
+	if (rv == -1) {
+		log_err_level_printf(LOG_CRIT, "Error setting IP_RECVDSTPORT: %s (%i)\n",
+							strerror(errno), errno);
+		evutil_closesocket(fd);
+		return -1;
+	}
+#endif /* !__linux__ */
+	rv = setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
+	if (rv == -1) {
+		log_err_level_printf(LOG_CRIT, "Error setting SO_REUSEADDR: %s (%i)\n",
+							strerror(errno), errno);
+		evutil_closesocket(fd);
+		return -1;
+	}
+	rv = setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &on, sizeof(on));
+	if (rv == -1) {
+		log_err_level_printf(LOG_CRIT, "Error setting SO_REUSEPORT: %s (%i)\n",
+							strerror(errno), errno);
+		evutil_closesocket(fd);
+		return -1;
+	}
+
+	rv = evutil_make_listen_socket_reuseable(fd);
+	if (rv == -1) {
+		log_err_level_printf(LOG_CRIT, "Error from setsockopt(SO_REUSABLE): %s\n",
+		               strerror(errno));
+		evutil_closesocket(fd);
+		return -1;
+	}
+
+	rv = bind(fd, (struct sockaddr *)&listen_addr, listen_addrlen);
+	if (rv == -1) {
+		log_err_level_printf(LOG_CRIT, "Error from bind(): %s\n", strerror(errno));
+		evutil_closesocket(fd);
+		return -1;
+	}
+
+	return fd;
+}
+#endif /* !WITHOUT_HTTP3 */
+
 static int WUNRES
 privsep_server_certfile_verify(global_t *global, const char *fn)
 {
@@ -572,6 +688,48 @@ privsep_server_handle_req(global_t *global, int srvsock)
 		/* not reached */
 		break;
 	}
+#ifndef WITHOUT_HTTP3
+	case PRIVSEP_REQ_OPENSOCK_H3: {
+		struct sockaddr_storage listen_addr;
+		socklen_t listen_addrlen;
+		int s;
+
+		if (n != sizeof(char) + sizeof(listen_addr) + sizeof(listen_addrlen)) {
+			ans[0] = PRIVSEP_ANS_INVALID;
+			if (sys_sendmsgfd(srvsock, ans, 1, -1) == -1) {
+				log_err_level_printf(LOG_CRIT, "Sending message failed: %s (%i"
+				               ")\n", strerror(errno), errno);
+				return -1;
+			}
+			return 0;
+		}
+		listen_addr = *(struct sockaddr_storage*)(&req[1]);
+		listen_addrlen = *(socklen_t*)(&req[1] + sizeof(listen_addr));
+		if ((s = privsep_server_opensock_h3(listen_addr, listen_addrlen)) == -1) {
+			ans[0] = PRIVSEP_ANS_SYS_ERR;
+			*((int*)&ans[1]) = errno;
+			if (sys_sendmsgfd(srvsock, ans, 1 + sizeof(int),
+			                  -1) == -1) {
+				log_err_level_printf(LOG_CRIT, "Sending message failed: %s (%i"
+				               ")\n", strerror(errno), errno);
+				return -1;
+			}
+			return 0;
+		} else {
+			ans[0] = PRIVSEP_ANS_SUCCESS;
+			if (sys_sendmsgfd(srvsock, ans, 1, s) == -1) {
+				evutil_closesocket(s);
+				log_err_level_printf(LOG_CRIT, "Sending message failed: %s (%i"
+				               ")\n", strerror(errno), errno);
+				return -1;
+			}
+			evutil_closesocket(s);
+			return 0;
+		}
+		/* not reached */
+		break;
+	}
+#endif /* !WITHOUT_HTTP3 */
 #ifndef WITHOUT_USERAUTH
 	case PRIVSEP_REQ_UPDATE_ATIME: {
 		userdbkeys_t arg;
@@ -938,6 +1096,59 @@ privsep_client_opensock(int clisock, const proxyspec_t *spec)
 
 	return fd;
 }
+
+#ifndef WITHOUT_HTTP3
+int
+privsep_client_opensock_h3(int clisock, struct sockaddr_storage listen_addr, socklen_t listen_addrlen)
+{
+	char ans[PRIVSEP_MAX_ANS_SIZE];
+	char req[1 + sizeof(listen_addr) + sizeof(listen_addrlen)];
+	int fd = -1;
+	ssize_t n;
+
+	if (privsep_fastpath)
+		return privsep_server_opensock_h3(listen_addr, listen_addrlen);
+
+	req[0] = PRIVSEP_REQ_OPENSOCK_H3;
+	memcpy(req + 1, &listen_addr, sizeof(listen_addr));
+	memcpy(req + 1 + sizeof(listen_addr), &listen_addrlen, sizeof(listen_addrlen));
+
+	if (sys_sendmsgfd(clisock, req, sizeof(req), -1) == -1) {
+		return -1;
+	}
+
+	if ((n = sys_recvmsgfd(clisock, ans, sizeof(ans), &fd)) == -1) {
+		return -1;
+	}
+
+	if (n < 1) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	switch (ans[0]) {
+	case PRIVSEP_ANS_SUCCESS:
+		break;
+	case PRIVSEP_ANS_DENIED:
+		errno = EACCES;
+		return -1;
+	case PRIVSEP_ANS_SYS_ERR:
+		if (n < (ssize_t)(1 + sizeof(int))) {
+			errno = EINVAL;
+			return -1;
+		}
+		errno = *((int*)&ans[1]);
+		return -1;
+	case PRIVSEP_ANS_UNK_CMD:
+	case PRIVSEP_ANS_INVALID:
+	default:
+		errno = EINVAL;
+		return -1;
+	}
+
+	return fd;
+}
+#endif /* !WITHOUT_HTTP3 */
 
 int
 privsep_client_certfile(int clisock, const char *fn)

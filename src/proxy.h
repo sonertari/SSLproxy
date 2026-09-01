@@ -50,9 +50,9 @@ typedef struct proxy_listener_ctx {
 	pxy_thrmgr_ctx_t *thrmgr;
 	proxyspec_t *spec;
 	global_t *global;
-#ifndef WITHOUT_USERAUTH
+#if !defined(WITHOUT_USERAUTH) || !defined(WITHOUT_HTTP3)
 	evutil_socket_t clisock;
-#endif /* !WITHOUT_USERAUTH */
+#endif /* !WITHOUT_USERAUTH || !WITHOUT_HTTP3 */
 	struct evconnlistener *evcl;
 
 #ifndef WITHOUT_HTTP3
