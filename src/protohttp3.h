@@ -149,9 +149,6 @@ typedef struct protohttp3_stream_ctx {
     // Persistent buffer for evbuffer_pullup() to survive until the data is sent or the stream is freed
     uint8_t     *body_buf;
     nghttp3_data_reader dr;
-
-    unsigned int src_end_stream   : 1; /* 1 after FIN/END_STREAM */
-    unsigned int dst_end_stream   : 1;
 } protohttp3_stream_ctx_t;
 
 typedef struct pkt_node {

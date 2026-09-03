@@ -1458,9 +1458,9 @@ icap_get_http_content_length(icap_ctx_t *icap_ctx)
 			http_ctx = ctx->protoctx->arg;
 		}
 
-		if (http_ctx && http_ctx->http_content_length) {
-			*http_content_length = (size_t)strtoull(http_ctx->http_content_length, NULL, 10);
-			log_finer_va("Set HTTP content length, http_content_length=%zu", *http_content_length);
+		if (http_ctx && (icap_ctx->reqmod ? http_ctx->src_http_content_length : http_ctx->dst_http_content_length)) {
+			*http_content_length = (size_t)strtoull(icap_ctx->reqmod ? http_ctx->src_http_content_length : http_ctx->dst_http_content_length, NULL, 10);
+			log_finer_va("Set HTTP content length, http_content_length=%zu, reqmod=%d", *http_content_length, icap_ctx->reqmod);
 
 			if (icap_ctx->reqmod) {
 				icap_ctx->src_http_content_length_set = 1;

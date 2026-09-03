@@ -78,7 +78,7 @@ protohttp_log_connect(pxy_conn_ctx_t *ctx, protohttp_ctx_t *http_ctx, unsigned i
 	 */
 
 	if (!ctx->spec->ssl) {
-		rv = asprintf(&msg, "%s: %s %s %s %s %s %s %s %s %s %s"
+		rv = asprintf(&msg, "%s: %s %s %s %s %s %s %s %s %s %s %s"
 #ifdef HAVE_LOCAL_PROCINFO
 		              " %s"
 #endif /* HAVE_LOCAL_PROCINFO */
@@ -102,7 +102,8 @@ protohttp_log_connect(pxy_conn_ctx_t *ctx, protohttp_ctx_t *http_ctx, unsigned i
 		              STRORDASH(http_ctx->http_method),
 		              STRORDASH(http_ctx->http_uri),
 		              STRORDASH(http_ctx->http_status_code),
-		              STRORDASH(http_ctx->http_content_length),
+		              STRORDASH(http_ctx->src_http_content_length),
+		              STRORDASH(http_ctx->dst_http_content_length),
 #ifdef HAVE_LOCAL_PROCINFO
 		              lpi,
 #endif /* HAVE_LOCAL_PROCINFO */
@@ -112,7 +113,7 @@ protohttp_log_connect(pxy_conn_ctx_t *ctx, protohttp_ctx_t *http_ctx, unsigned i
 #endif /* !WITHOUT_USERAUTH */
 		              );
 	} else {
-		rv = asprintf(&msg, "%s: %s %s %s %s %s %s %s %s %s %s "
+		rv = asprintf(&msg, "%s: %s %s %s %s %s %s %s %s %s %s %s "
 		              "sni:%s names:%s "
 		              "sproto:%s:%s dproto:%s:%s "
 		              "origcrt:%s usedcrt:%s"
@@ -139,7 +140,8 @@ protohttp_log_connect(pxy_conn_ctx_t *ctx, protohttp_ctx_t *http_ctx, unsigned i
 		              STRORDASH(http_ctx->http_method),
 		              STRORDASH(http_ctx->http_uri),
 		              STRORDASH(http_ctx->http_status_code),
-		              STRORDASH(http_ctx->http_content_length),
+		              STRORDASH(http_ctx->src_http_content_length),
+		              STRORDASH(http_ctx->dst_http_content_length),
 		              STRORDASH(ctx->sslctx->sni),
 		              STRORDASH(ctx->sslctx->ssl_names),
 		              ctx->src.ssl ? SSL_get_version(ctx->src.ssl) : "-",
@@ -334,12 +336,12 @@ protohttp_filter_request_header_line(const char *line, protohttp_ctx_t *http_ctx
 		char *newhdr;
 
 		if (!strncasecmp(line, "Content-Length:", 15)) {
-			if (http_ctx->http_content_length) {
-				free(http_ctx->http_content_length);
+			if (http_ctx->src_http_content_length) {
+				free(http_ctx->src_http_content_length);
 			}
-			http_ctx->http_content_length =
+			http_ctx->src_http_content_length =
 				strdup(util_skipws(line + 15));
-			if (!http_ctx->http_content_length) {
+			if (!http_ctx->src_http_content_length) {
 				ctx->enomem = 1;
 				return NULL;
 			}
@@ -1288,20 +1290,20 @@ protohttpx_filter_request_header(protohttpx_stream_ctx_t *s)
                 http_ctx->http_host, i, s->src_stream_id, s->dst_stream_id);
         }
         else if (headers[i].namelen == 14 && !memcmp(headers[i].name, "content-length", 14)) {
-			if (http_ctx->http_content_length) {
-				free(http_ctx->http_content_length);
+			if (http_ctx->src_http_content_length) {
+				free(http_ctx->src_http_content_length);
 			}
-			http_ctx->http_content_length = malloc(headers[i].valuelen + 1);
-			if (!http_ctx->http_content_length) {
+			http_ctx->src_http_content_length = malloc(headers[i].valuelen + 1);
+			if (!http_ctx->src_http_content_length) {
 				ctx->enomem = 1;
 				return -1;
 			}
-			memcpy(http_ctx->http_content_length, headers[i].value, headers[i].valuelen);
-			http_ctx->http_content_length[headers[i].valuelen] = '\0';
+			memcpy(http_ctx->src_http_content_length, headers[i].value, headers[i].valuelen);
+			http_ctx->src_http_content_length[headers[i].valuelen] = '\0';
 			http_ctx->seen_keyword_count++;
 
             log_finest_va("Http content-length '%s', idx=%zu, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64,
-                http_ctx->http_content_length, i, s->src_stream_id, s->dst_stream_id);
+                http_ctx->src_http_content_length, i, s->src_stream_id, s->dst_stream_id);
 		}
         else if (headers[i].namelen == 12 && !memcmp(headers[i].name, "content-type", 12)) {
 			if (http_ctx->http_content_type) {
@@ -1406,19 +1408,19 @@ protohttpx_filter_response_header(protohttpx_stream_ctx_t *s)
                 http_ctx->http_status_code, i, s->src_stream_id, s->dst_stream_id);
         }
         else if (headers[i].namelen == 14 && !memcmp(headers[i].name, "content-length", 14)) {
-			if (http_ctx->http_content_length) {
-				free(http_ctx->http_content_length);
+			if (http_ctx->dst_http_content_length) {
+				free(http_ctx->dst_http_content_length);
 			}
-			http_ctx->http_content_length = malloc(headers[i].valuelen + 1);
-			if (!http_ctx->http_content_length) {
+			http_ctx->dst_http_content_length = malloc(headers[i].valuelen + 1);
+			if (!http_ctx->dst_http_content_length) {
 				ctx->enomem = 1;
 				return -1;
 			}
-			memcpy(http_ctx->http_content_length, headers[i].value, headers[i].valuelen);
-			http_ctx->http_content_length[headers[i].valuelen] = '\0';
+			memcpy(http_ctx->dst_http_content_length, headers[i].value, headers[i].valuelen);
+			http_ctx->dst_http_content_length[headers[i].valuelen] = '\0';
 
             log_finest_va("Http content-length '%s', idx=%zu, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64,
-                http_ctx->http_content_length, i, s->src_stream_id, s->dst_stream_id);
+                http_ctx->dst_http_content_length, i, s->src_stream_id, s->dst_stream_id);
 		}
         else if (headers[i].namelen == 12 && !memcmp(headers[i].name, "content-type", 12)) {
 			if (http_ctx->http_content_type) {
@@ -1819,12 +1821,12 @@ protohttp_filter_response_header_line(const char *line, protohttp_ctx_t *http_ct
 	} else {
 		/* not first line */
 		if (!strncasecmp(line, "Content-Length:", 15)) {
-			if (http_ctx->http_content_length) {
-				free(http_ctx->http_content_length);
+			if (http_ctx->dst_http_content_length) {
+				free(http_ctx->dst_http_content_length);
 			}
-			http_ctx->http_content_length =
+			http_ctx->dst_http_content_length =
 				strdup(util_skipws(line + 15));
-			if (!http_ctx->http_content_length) {
+			if (!http_ctx->dst_http_content_length) {
 				ctx->enomem = 1;
 				return NULL;
 			}
@@ -2196,9 +2198,13 @@ protohttp_free_ctx(protohttp_ctx_t *http_ctx)
 		free(http_ctx->http_status_text);
 		http_ctx->http_status_text = NULL;
 	}
-	if (http_ctx->http_content_length) {
-		free(http_ctx->http_content_length);
-		http_ctx->http_content_length = NULL;
+	if (http_ctx->src_http_content_length) {
+		free(http_ctx->src_http_content_length);
+		http_ctx->src_http_content_length = NULL;
+	}
+	if (http_ctx->dst_http_content_length) {
+		free(http_ctx->dst_http_content_length);
+		http_ctx->dst_http_content_length = NULL;
 	}
 #ifndef WITHOUT_ICAP
 	if (http_ctx->in_hdr) {

@@ -50,7 +50,8 @@ typedef struct protohttp_ctx {
 	/* log strings from HTTP response */
 	char *http_status_code;
 	char *http_status_text;
-	char *http_content_length;
+	char *src_http_content_length;
+	char *dst_http_content_length;
 
 	unsigned int not_valid : 1;            /* 1 if cannot find HTTP on first line */
 	unsigned int seen_keyword_count;
@@ -84,8 +85,12 @@ typedef struct {
     size_t headers_count; \
     size_t headers_capacity; \
     struct evbuffer *data_buf; \
+    size_t src_sent_body_size; \
+    size_t dst_sent_body_size; \
     PROTOHTTPX_ICAP_FIELD \
     protohttp_ctx_t *http_ctx; \
+    unsigned int src_end_stream : 1; /* 1 after FIN/END_STREAM */ \
+    unsigned int dst_end_stream : 1; \
     unsigned int closed : 1;   /* 1 if stream is closing, set after the first on_stream_close event */ \
     unsigned int term : 1;     /* 1 if stream is ready to be terminated */ \
     int ref_count;             /* Active users on the C call stack */ \

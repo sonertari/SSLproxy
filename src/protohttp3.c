@@ -924,7 +924,9 @@ h3_stream_read_data(nghttp3_conn *conn, int64_t stream_id,
     UNUSED pxy_conn_ctx_t *ctx = h3_ctx->ctx;
 
     // ATTENTION: h3_stream_read_data is called by the trigger function called in protohttp3_submit_data(), for proxying in either direction
-    // So we use the h3_ctx->proxying flag to determine which side we are proxying, and the reqmod flag to determine if we are reading from the request or response side
+    // So we use:
+    // - the h3_ctx->proxying flag to determine which side to proxy to, and
+    // - the reqmod flag to determine if we are reading from the request or response side
     int reqmod = conn == h3_ctx->src_h3 ? 1 : 0;
 
     log_finest_va("ENTER, reqmod=%d, proxying=%d, fd=%d", reqmod, h3_ctx->proxying, h3_ctx->dst_fd);
@@ -936,7 +938,7 @@ h3_stream_read_data(nghttp3_conn *conn, int64_t stream_id,
     }
 
     // TODO: Casting the stream pointer in stream_user_data does not work here
-    // protohttp3_stream_ctx *s = stream_user_data;
+    // protohttp3_stream_ctx_t *s = stream_user_data;
     protohttp3_stream_ctx_t *s = protohttp3_get_stream_ctx(h3_ctx, stream_id, reqmod);
     if (!s) {
         log_fine_va("No stream context found for stream_id=%" PRId64 ", reqmod=%d, fd=%d", stream_id, reqmod, h3_ctx->dst_fd);
@@ -996,7 +998,7 @@ h3_stream_read_data(nghttp3_conn *conn, int64_t stream_id,
     // But this sets the NGHTTP3_DATA_FLAG_EOF flag asap, instead of waiting for the next call to h3_stream_read_data() to set it.
     // Flag the end of stream
     if ((h3_ctx->proxying ? !reqmod : reqmod) ? s->src_end_stream : s->dst_end_stream) {
-        log_finest_va("End of stream reached, set NGHTTP3_DATA_FLAG_EOF for src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d",
+        log_finest_va("End of stream reached for src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d",
             s->src_stream_id, s->dst_stream_id, reqmod);
 #ifndef WITHOUT_ICAP
         if (s->icap_ctx && icap_enabled(s->icap_ctx) && !icap_is_finished(s->icap_ctx)) {

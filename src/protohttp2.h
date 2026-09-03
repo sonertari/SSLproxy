@@ -46,6 +46,7 @@ typedef struct protohttp2_stream_ctx {
 typedef struct protohttp2_ctx {
     nghttp2_session *src_session;
     nghttp2_session *dst_session;
+    unsigned int proxying : 1;
 
     pxy_conn_ctx_t *ctx;
 
