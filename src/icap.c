@@ -1718,6 +1718,21 @@ icap_is_http_nullbody(icap_service_ctx_t *service_ctx)
 		return 0;
 	}
 
+	// Content-length is not mandatory in H2/H3, so do not check it below
+	if (ctx->proto == PROTO_HTTP2 || ctx->proto == PROTO_HTTP3) {
+		protohttpx_stream_ctx_t *s = icap_ctx->stream_ctx;
+
+		int end_stream = icap_ctx->reqmod ? s->src_end_stream : s->dst_end_stream;
+		int seen_header = icap_ctx->reqmod ? s->http_ctx->seen_req_header : s->http_ctx->seen_resp_header;
+
+		if (end_stream && seen_header && (in_body_len == 0)) {
+			log_finest_icap_va("Null body, end_stream=%d, seen_header=%d, in_body_len=%zu", end_stream, seen_header, in_body_len);
+			return 1;
+		}
+		log_finest_icap_va("Not null body, end_stream=%d, seen_header=%d, in_body_len=%zu", end_stream, seen_header, in_body_len);
+		return 0;
+	}
+
 	size_t http_content_length = icap_get_http_content_length(icap_ctx);
 	log_finest_icap_va("HTTP content length=%zu, null_body=%u", http_content_length,
 		ICAP_STATE(service_ctx, icap_ctx->reqmod)->null_body);
