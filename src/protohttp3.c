@@ -610,7 +610,7 @@ protohttp3_icap_failopen_to_dest_cb(icap_service_ctx_t *service_ctx)
 	struct evbuffer *sent_hdr = ICAP_STATE(service_ctx, icap_ctx->reqmod)->sent_hdr;
 	struct evbuffer *sent_body = ICAP_STATE(service_ctx, icap_ctx->reqmod)->sent_body;
 
-    // On failopen, s->headers may contain headers, as we may not have submitted them by protohttp2_submit_data()
+    // On failopen, s->headers may contain headers, as we may not have submitted them by protohttp3_submit_data()
     protohttpx_free_nv_headers((protohttpx_stream_ctx_t *)s);
 
     // TODO: Non-http protocols do not have hdr
@@ -883,7 +883,7 @@ h3_on_end_stream(nghttp3_conn *conn, int64_t stream_id,
 
         log_finest_va("Extend max bidi stream limit by 1, src_max_streams_bidi=%lu", (unsigned long)h3_ctx->src_max_streams_bidi);
 
-        // WAKE UP the server-facing stream in nghttp3 to signal that the stream is closed and no more data will be sent
+        // WAKE UP the server-facing stream to signal that the stream is closed and no more data will be sent
         log_finest_va("Request stream %" PRId64 " END_STREAM", stream_id);
         s->src_end_stream = 1;
 
@@ -892,11 +892,10 @@ h3_on_end_stream(nghttp3_conn *conn, int64_t stream_id,
         protohttp3_trigger_write_loop(h3_ctx, 0);
     }
     else {
-        // WAKE UP the client-facing stream in nghttp3 to signal that the stream is closed and no more data will be sent
+        // WAKE UP the client-facing stream to signal that the stream is closed and no more data will be sent
         log_finest_va("Response stream %" PRId64 " END_STREAM", stream_id);
         s->dst_end_stream = 1;
 
-        /* WAKE UP the client-facing stream in nghttp3! */
         nghttp3_conn_resume_stream(h3_ctx->src_h3, s->src_stream_id);
 
         protohttp3_trigger_write_loop(h3_ctx, 1);

@@ -135,6 +135,9 @@ typedef struct icap_service_state {
 	size_t sent_body_size;
 	unsigned int content_complete : 1;
 
+    // unsigned int end_stream : 1;      /* 1 after chunk terminator received */
+    unsigned int sent_terminator : 1; /* 1 after chunk terminator sent */
+
 	unsigned int wait_preview_continue : 1;
 	unsigned int detected_204 : 1;    /* Whether 204 detected in ICAP response */
 	unsigned int detected_206 : 1;    /* Whether 206 detected in ICAP response */
@@ -167,6 +170,8 @@ char *icap_chain_str(conn_opts_t *);
  */
 int icap_enabled(icap_ctx_t *);
 int icap_is_finished(icap_ctx_t *);
+int icap_is_content_complete(icap_ctx_t *, int) NONNULL(1);
+
 struct evbuffer *icap_get_first_service_in_hdr(icap_ctx_t *) NONNULL(1);
 struct evbuffer *icap_get_last_service_out_body(icap_ctx_t *) NONNULL(1);
 struct evbuffer *icap_get_last_service_out_hdr(icap_ctx_t *) NONNULL(1);
@@ -179,6 +184,7 @@ int load_icap_struct(conn_opts_t *, unsigned int *, FILE *);
 int icap_set_extended_headers(icap_ctx_t *, int) NONNULL(1);
 void icap_disconnect(icap_ctx_t *, int) NONNULL(1);
 
+void icap_process_chain(icap_ctx_t *, int) NONNULL(1);
 void icap_process_data(struct evbuffer *, icap_ctx_t *) NONNULL(1,2);
 
 #endif /* !WITHOUT_ICAP */

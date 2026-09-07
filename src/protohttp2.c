@@ -246,19 +246,6 @@ protohttp2_bev_writecb(UNUSED struct bufferevent *bev, UNUSED void *arg)
 {
     pxy_conn_ctx_t *ctx = arg;
     log_finest("ENTER");
-
-    protohttp2_ctx_t *h2_ctx = ctx->protoctx->arg;
-
-    // Always call nghttp2_session_send() to flush any remaining data in the session's output buffer
-    nghttp2_session_send(h2_ctx->src_session);
-
-    // ATTENTION: Triggering the write loop here is necessary to ensure that any pending data in the nghttp2 session is flushed out to the underlying bufferevent.
-    // This is especially important when dealing with HTTP/2 streams, as the protocol requires proper framing and flow control.
-    // By calling protohttp2_trigger_write_loop, we ensure that the nghttp2 session processes any queued frames and sends them out through the appropriate bufferevent (either src or dst).
-    protohttp2_trigger_write_loop(h2_ctx, 0);
-
-    nghttp2_session_send(h2_ctx->dst_session);
-    protohttp2_trigger_write_loop(h2_ctx, 1);
 }
 
 static ssize_t
@@ -335,12 +322,11 @@ protohttp2_trigger_write_loop(protohttp2_ctx_t *h2_ctx, int reqmod)
     pxy_conn_ctx_t *ctx = h2_ctx->ctx;
     log_finest_va("ENTER, reqmod=%d", reqmod);
 
-    // ATTENTION: The other side of the connection (client or server) is the session for sending data
-    nghttp2_session *session = reqmod ? h2_ctx->dst_session : h2_ctx->src_session;
-    struct bufferevent *bev = reqmod ? ctx->dst.bev : ctx->src.bev;
+    nghttp2_session *session = reqmod ? h2_ctx->src_session : h2_ctx->dst_session;
+    struct bufferevent *bev = reqmod ? ctx->src.bev : ctx->dst.bev;
 
     if (bev == NULL) {
-        log_finest_va("No %s.bev to send data", reqmod ? "dst" : "src");
+        log_finest_va("No %s.bev to send data", reqmod ? "src" : "dst");
         return;
     }
 
@@ -348,6 +334,8 @@ protohttp2_trigger_write_loop(protohttp2_ctx_t *h2_ctx, int reqmod)
     ssize_t payload_len = nghttp2_session_mem_send(session, &binary_payload);
 
     while (payload_len > 0) {
+        log_finest_va("Sending data to %s.bev, payload_len=%zd", reqmod ? "src" : "dst", payload_len);
+
         // Write the raw binary frames directly into the bufferevent
         bufferevent_write(bev, binary_payload, payload_len);
         // struct evbuffer *outbuf = bufferevent_get_output(bev);
@@ -369,7 +357,7 @@ protohttp2_provider_read_callback(UNUSED nghttp2_session *session, UNUSED int32_
     pxy_conn_ctx_t *ctx = s->ctx;
     protohttp2_ctx_t *h2_ctx = ctx->protoctx->arg;
 
-    int reqmod = (session == h2_ctx->dst_session) ? 1 : 0;
+    int reqmod = (session == h2_ctx->src_session) ? 1 : 0;
 
     log_finest_va("ENTER, reqmod=%d, proxying=%d, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64, reqmod, h2_ctx->proxying, s->src_stream_id, s->dst_stream_id);
 
@@ -377,6 +365,15 @@ protohttp2_provider_read_callback(UNUSED nghttp2_session *session, UNUSED int32_
         log_finest_va("evbuffer_get_length(s->data_buf) == 0, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, reqmod);
 
         if ((h2_ctx->proxying ? !reqmod : reqmod) ? s->src_end_stream : s->dst_end_stream) {
+            log_finest_va("End of stream reached, set NGHTTP2_DATA_FLAG_EOF for src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d",
+                s->src_stream_id, s->dst_stream_id, reqmod);
+#ifndef WITHOUT_ICAP
+            if (s->icap_ctx && icap_enabled(s->icap_ctx) && !icap_is_content_complete(s->icap_ctx, h2_ctx->proxying ? !reqmod : reqmod)) {
+                log_finest_va("Do not set NGHTTP2_DATA_FLAG_EOF for src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, s->icap_ctx->reqmod);
+                return NGHTTP2_ERR_DEFERRED;
+            }
+#endif /* !WITHOUT_ICAP */
+
             log_finest_va("Set NGHTTP2_DATA_FLAG_EOF for %s session, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", available=%zu, buf_len=%zu",
                 (h2_ctx->proxying ? !reqmod : reqmod) ? "dst" : "src",
                 s->src_stream_id, s->dst_stream_id, available, length);
@@ -402,7 +399,7 @@ protohttp2_provider_read_callback(UNUSED nghttp2_session *session, UNUSED int32_
             s->src_stream_id, s->dst_stream_id, reqmod);
         if (evbuffer_get_length(s->data_buf) > 0
 #ifndef WITHOUT_ICAP
-            || (s->icap_ctx && icap_enabled(s->icap_ctx) && icap_is_finished(s->icap_ctx))
+            || (s->icap_ctx && icap_enabled(s->icap_ctx) && !icap_is_content_complete(s->icap_ctx, h2_ctx->proxying ? !reqmod : reqmod))
 #endif /* !WITHOUT_ICAP */
             ) {
             log_finest_va("Do not set NGHTTP2_DATA_FLAG_EOF for src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d, data_buf=%zu",
@@ -457,6 +454,7 @@ protohttp2_submit_data(protohttp2_ctx_t *h2_ctx, protohttp2_stream_ctx_t *s, int
             }
 
             // Set the stream id assigned by nghttp2 for the destination session
+            log_finest_va("Set assigned dst_stream_id to %d, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", rv, s->src_stream_id, s->dst_stream_id, reqmod);
             s->dst_stream_id = rv;
         }
         else {
@@ -495,7 +493,9 @@ protohttp2_submit_data(protohttp2_ctx_t *h2_ctx, protohttp2_stream_ctx_t *s, int
         }
 
 #ifndef WITHOUT_ICAP
-        if (s->icap_ctx) {
+        // ATTENTION: Check the size of data_buf and if we are sending terminator, otherwise made_progress causes infinite loops
+        if (s->icap_ctx && (evbuffer_get_length(s->data_buf) > 0 || (reqmod ? s->src_send_terminator : s->dst_send_terminator))) {
+    		log_finest_va("H2/H3, reqmod=%d , src_send_terminator=%d, dst_send_terminator=%d", reqmod, s->src_send_terminator, s->dst_send_terminator);
             s->icap_ctx->made_progress = 1;
         }
 #endif /* !WITHOUT_ICAP */
@@ -634,24 +634,61 @@ protohttp2_on_frame_recv(UNUSED nghttp2_session *session, const nghttp2_frame *f
 
     // Check "frame->hd.flags & NGHTTP2_FLAG_END_STREAM" to determine if the stream has ended, and set an s->end_stream flag.
     // And use that flag in protohttp2_provider_read_callback() to set NGHTTP2_DATA_FLAG_EOF, if icap is not enabled for that stream.
+    // This is similar to h3_on_end_stream() in src/protohttp3.c, but we do not have a separate on_end_stream() callback in nghttp2.
     if ((frame->hd.type == NGHTTP2_HEADERS || frame->hd.type == NGHTTP2_DATA) && (frame->hd.flags & NGHTTP2_FLAG_END_STREAM)) {
         log_finest_va("NGHTTP2_FLAG_END_STREAM received with %s frame, stream_id=%d", frame->hd.type == NGHTTP2_HEADERS ? "HEADERS" : "DATA", frame->hd.stream_id);
         protohttp2_stream_ctx_t *s = protohttp2_get_stream_ctx(h2_ctx, frame->hd.stream_id, reqmod);
         if (s) {
-            log_finest_va("%s stream ended, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 "", reqmod ? "Request" : "Response", s->src_stream_id, s->dst_stream_id);
+            log_finest_va("%s stream ended, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", frame->hd.length=%zu", reqmod ? "Request" : "Response", s->src_stream_id, s->dst_stream_id, frame->hd.length);
+
+            // ATTENTION: We should resume the other side if icap is enabled or not
             if (reqmod) {
+                // WAKE UP the server-facing stream to signal that the stream is closed and no more data will be sent
+                log_finest_va("Request stream %" PRId64 " END_STREAM", s->src_stream_id);
                 s->src_end_stream = 1;
+
+                s->ref_count++;
+                nghttp2_session_resume_data(h2_ctx->dst_session, s->dst_stream_id);
+
+                h2_ctx->proxying = 1;
+                protohttp2_trigger_write_loop(h2_ctx, 0);
+                h2_ctx->proxying = 0;
+                s->ref_count--;
             }
             else {
+                // WAKE UP the client-facing stream to signal that the stream is closed and no more data will be sent
+                log_finest_va("Response stream %" PRId64 " END_STREAM", s->dst_stream_id);
                 s->dst_end_stream = 1;
-                if ((frame->hd.type == NGHTTP2_DATA) && frame->hd.length == 0) {
-                    log_finest_va("Received empty data frame with NGHTTP2_FLAG_END_STREAM, send NGHTTP2_RST_STREAM to client?, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 "",
-                        s->src_stream_id, s->dst_stream_id);
-                    nghttp2_session_resume_data(h2_ctx->src_session, s->src_stream_id);
-                    nghttp2_session_resume_data(h2_ctx->dst_session, s->dst_stream_id);
+
+                s->ref_count++;
+                nghttp2_session_resume_data(h2_ctx->src_session, s->src_stream_id);
+
+                h2_ctx->proxying = 1;
+                protohttp2_trigger_write_loop(h2_ctx, 1);
+                h2_ctx->proxying = 0;
+                s->ref_count--;
+            }
+#ifndef WITHOUT_ICAP
+            if (frame->hd.type == NGHTTP2_DATA && frame->hd.length == 0) {
+                if (icap_enabled(s->icap_ctx)) {
+                    log_finest_va("Set send_terminator, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, reqmod);
+
+                    // The send_terminator flag is for the first icap service only
+                    if (reqmod) {
+                        s->src_send_terminator = 1;
+                    }
+                    else {
+                        s->dst_send_terminator = 1;
+                    }
+
+                    s->icap_ctx->reqmod = reqmod;
+
+                    // Send a chunk terminator to the first service
+                    icap_process_chain(s->icap_ctx, 0);
                     return 0;
                 }
             }
+#endif /* !WITHOUT_ICAP */
         }
     }
 
