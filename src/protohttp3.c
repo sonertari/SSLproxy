@@ -337,6 +337,10 @@ protohttp3_trigger_write_loop(protohttp3_ctx_t *h3_ctx, int reqmod)
     // static uint8_t pktbuf[H3_DGRAM_BUFSZ];
     uint8_t pktbuf[H3_DGRAM_BUFSZ];
 
+    nghttp3_conn *h3_conn = reqmod ? h3_ctx->src_h3 : h3_ctx->dst_h3;
+    ngtcp2_conn  *quic_conn = reqmod ? h3_ctx->src_conn : h3_ctx->dst_conn;
+    ngtcp2_path *quic_path = reqmod ? &h3_ctx->src_path : &h3_ctx->dst_path;
+
     for (;;) {
         ngtcp2_ssize pktlen = -1;
         ngtcp2_pkt_info pi = {0};
@@ -347,10 +351,8 @@ protohttp3_trigger_write_loop(protohttp3_ctx_t *h3_ctx, int reqmod)
         nghttp3_ssize sveccnt = 0;
 
         /* 1. Pull H3 data if present */
-        if ((reqmod && h3_ctx->src_h3) || (!reqmod && h3_ctx->dst_h3)) {
-            sveccnt = nghttp3_conn_writev_stream(reqmod ? h3_ctx->src_h3 : h3_ctx->dst_h3,
-                                                 &stream_id, &fin,
-                                                 vecs, H3_MAX_IOVECS);
+        if (h3_conn) {
+            sveccnt = nghttp3_conn_writev_stream(h3_conn, &stream_id, &fin, vecs, H3_MAX_IOVECS);
             if (sveccnt < 0) {
                 log_finest_va("nghttp3_conn_writev_stream: %s", nghttp3_strerror((int)sveccnt));
                 break;
@@ -364,31 +366,21 @@ protohttp3_trigger_write_loop(protohttp3_ctx_t *h3_ctx, int reqmod)
         // Note that we do send fin packets without data to signal the end of a stream.
         if ((sveccnt > 0 || fin) && stream_id >= 0) {
             ngtcp2_ssize pdatalen = 0;
-            pktlen = ngtcp2_conn_writev_stream(
-                         reqmod ? h3_ctx->src_conn : h3_ctx->dst_conn,
-                         reqmod ? &h3_ctx->src_path : &h3_ctx->dst_path,
-                         &pi,
-                         pktbuf, sizeof(pktbuf),
-                         &pdatalen,
+            pktlen = ngtcp2_conn_writev_stream(quic_conn, quic_path, &pi, pktbuf, sizeof(pktbuf), &pdatalen,
                          // TODO: Is this enough? The ngtcp2_write_stream_flag enum has changed in recent versions.
                          // The NGTCP2_WRITE_STREAM_FLAG_MORE flag is now deprecated and replaced with NGTCP2_WRITE_STREAM_FLAG_FIN for the FIN flag.
                          // Or should we pass NGTCP2_WRITE_STREAM_FLAG_NONE, instead of NGTCP2_WRITE_STREAM_FLAG_MORE?
                          // We need to check the version of ngtcp2 we are using and adjust accordingly.
                          fin ? NGTCP2_WRITE_STREAM_FLAG_FIN : NGTCP2_WRITE_STREAM_FLAG_MORE,
-                         stream_id, (const ngtcp2_vec *)vecs,
-                         (size_t)sveccnt,
-                         h3_timestamp());
+                         stream_id, (const ngtcp2_vec *)vecs, (size_t)sveccnt, h3_timestamp());
 
             if (pdatalen > 0) {
-                nghttp3_conn_add_write_offset(reqmod ? h3_ctx->src_h3 : h3_ctx->dst_h3, stream_id, (size_t)pdatalen);
+                nghttp3_conn_add_write_offset(h3_conn, stream_id, (size_t)pdatalen);
             }
         } else {
             log_finest_va("Write pending  ACKs, Handshake CRYPTO, etc., fd=%d", h3_ctx->dst_fd);
             /* No stream data; write pending ACKs, Handshake CRYPTO, etc. */
-            pktlen = ngtcp2_conn_write_pkt(reqmod ? h3_ctx->src_conn : h3_ctx->dst_conn,
-                                           reqmod ? &h3_ctx->src_path : &h3_ctx->dst_path,
-                                           &pi, pktbuf, sizeof(pktbuf),
-                                           h3_timestamp());
+            pktlen = ngtcp2_conn_write_pkt(quic_conn, quic_path, &pi, pktbuf, sizeof(pktbuf), h3_timestamp());
         }
 
         /* Handle write status */
@@ -403,7 +395,7 @@ protohttp3_trigger_write_loop(protohttp3_ctx_t *h3_ctx, int reqmod)
 
                 if (pktlen == NGTCP2_ERR_STREAM_SHUT_WR || pktlen == NGTCP2_ERR_STREAM_NOT_FOUND) {
                     log_finest_va("ngtcp2 write error with ERR_STREAM_SHUT_WR, stream_id=%" PRId64 ", fd=%d", stream_id, h3_ctx->dst_fd);
-                    nghttp3_conn_close_stream(reqmod ? h3_ctx->src_h3 : h3_ctx->dst_h3, stream_id, NGHTTP3_H3_INTERNAL_ERROR);
+                    nghttp3_conn_close_stream(h3_conn, stream_id, NGHTTP3_H3_INTERNAL_ERROR);
                 }
 
                 // TODO: Check if this is enough on fatal errors
@@ -413,11 +405,9 @@ protohttp3_trigger_write_loop(protohttp3_ctx_t *h3_ctx, int reqmod)
                         .type = NGTCP2_CCERR_TYPE_TRANSPORT,
                         .error_code = (int)pktlen,
                     };
-                    ngtcp2_conn_write_connection_close(reqmod ? h3_ctx->src_conn : h3_ctx->dst_conn,
-                        reqmod ? &h3_ctx->src_path : &h3_ctx->dst_path, &pi, pktbuf, sizeof(pktbuf),
-                        &ccerr, h3_timestamp());
+                    ngtcp2_conn_write_connection_close(quic_conn, quic_path, &pi, pktbuf, sizeof(pktbuf), &ccerr, h3_timestamp());
                     // TODO: Should we call ngtcp2_conn_del() here to free the connection?
-                    // ngtcp2_conn_del(reqmod ? h3_ctx->src_conn : h3_ctx->dst_conn);
+                    // ngtcp2_conn_del(quic_conn);
                     return;
                 }
             }
@@ -433,14 +423,16 @@ protohttp3_trigger_write_loop(protohttp3_ctx_t *h3_ctx, int reqmod)
         }
 
         /* 3. Transmit via UDP socket */
-        ssize_t sent = sys_sendmsgfd(reqmod ? ctx->fd : h3_ctx->dst_fd, pktbuf, pktlen, -1);
+        evutil_socket_t fd = reqmod ? ctx->fd : h3_ctx->dst_fd;
+        ssize_t sent = sys_sendmsgfd(fd, pktbuf, pktlen, -1);
 
-        log_finest_va("sendmsg fd=%d returned errno=%d, %s, size=%zd", reqmod ? ctx->fd : h3_ctx->dst_fd, errno, strerror(errno), sent);
+        log_finest_va("sendmsg fd=%d returned errno=%d, %s, size=%zd", fd, errno, strerror(errno), sent);
         if (sent < 0) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                if (reqmod ? h3_ctx->src_wev : h3_ctx->dst_wev) {
-                    log_finest_va("sendmsg would block, re-arming write event on fd %d", reqmod ? ctx->fd : h3_ctx->dst_fd);
-					event_add(reqmod ? h3_ctx->src_wev : h3_ctx->dst_wev, NULL);
+                struct event *h3_wev = reqmod ? h3_ctx->src_wev : h3_ctx->dst_wev;
+                if (h3_wev) {
+                    log_finest_va("sendmsg would block, re-arming write event on fd %d", fd);
+					event_add(h3_wev, NULL);
                 }
             }
             break;
@@ -468,8 +460,7 @@ protohttp3_submit_data(protohttp3_ctx_t *h3_ctx, protohttp3_stream_ctx_t *s, int
                 return -1;
             }
 
-            // TODO: Set the stream id assigned by nghttp3 for the destination session, as in h2?
-            // But in h3 the dst_stream_id is assigned by ngtcp2_conn_open_bidi_stream() before calling this function.
+            // ATTENTION: In h3, the dst_stream_id is assigned by ngtcp2_conn_open_bidi_stream() before calling this function, unlike h2
             // s->dst_stream_id = rv;
         }
         else {
@@ -497,7 +488,8 @@ protohttp3_submit_data(protohttp3_ctx_t *h3_ctx, protohttp3_stream_ctx_t *s, int
 
     // ATTENTION: We should not check for data_buf length here, because we may have a zero-length data submission (e.g., end of stream).
     // if (evbuffer_get_length(s->data_buf) > 0) {
-        log_finest_va("Submit data, data_len=%zu, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", evbuffer_get_length(s->data_buf), s->src_stream_id, s->dst_stream_id, reqmod);
+        log_finest_va("Submit data, data_len=%zu, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d",
+            evbuffer_get_length(s->data_buf), s->src_stream_id, s->dst_stream_id, reqmod);
 
         rv = nghttp3_conn_resume_stream(reqmod ? h3_ctx->dst_h3 : h3_ctx->src_h3, reqmod ? s->dst_stream_id : s->src_stream_id);
 
@@ -510,11 +502,13 @@ protohttp3_submit_data(protohttp3_ctx_t *h3_ctx, protohttp3_stream_ctx_t *s, int
             return -1;
         }
 
-// #ifndef WITHOUT_ICAP
-//         if (s->icap_ctx) {
-//             s->icap_ctx->made_progress = 1;
-//         }
-// #endif /* !WITHOUT_ICAP */
+#ifndef WITHOUT_ICAP
+        // ATTENTION: Check the size of data_buf and if we are sending terminator, otherwise made_progress causes infinite loops
+        if (s->icap_ctx && (evbuffer_get_length(s->data_buf) > 0 || (reqmod ? s->src_send_terminator : s->dst_send_terminator))) {
+    		log_finest_va("H3 made_progress, reqmod=%d , src_send_terminator=%d, dst_send_terminator=%d", reqmod, s->src_send_terminator, s->dst_send_terminator);
+            s->icap_ctx->made_progress = 1;
+        }
+#endif /* !WITHOUT_ICAP */
     // }
 
     // Clean Data Wakeup Flush
@@ -887,19 +881,50 @@ h3_on_end_stream(nghttp3_conn *conn, int64_t stream_id,
         log_finest_va("Request stream %" PRId64 " END_STREAM", stream_id);
         s->src_end_stream = 1;
 
+        s->ref_count++;
         nghttp3_conn_resume_stream(h3_ctx->dst_h3, s->dst_stream_id);
 
+        h3_ctx->proxying = 1;
         protohttp3_trigger_write_loop(h3_ctx, 0);
+        h3_ctx->proxying = 0;
+        s->ref_count--;
     }
     else {
         // WAKE UP the client-facing stream to signal that the stream is closed and no more data will be sent
         log_finest_va("Response stream %" PRId64 " END_STREAM", stream_id);
         s->dst_end_stream = 1;
 
+        s->ref_count++;
         nghttp3_conn_resume_stream(h3_ctx->src_h3, s->src_stream_id);
 
+        h3_ctx->proxying = 1;
         protohttp3_trigger_write_loop(h3_ctx, 1);
+        h3_ctx->proxying = 0;
+        s->ref_count--;
     }
+
+#ifndef WITHOUT_ICAP
+    // TODO: Do we need to send terminator in h3 too? Is there any zero-length data frames with END_STREAM set?
+    // if (frame->hd.type == NGHTTP2_DATA && frame->hd.length == 0) {
+        if (icap_enabled(s->icap_ctx)) {
+            log_finest_va("Set send_terminator, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, reqmod);
+
+            // The send_terminator flag is for the first icap service only
+            if (reqmod) {
+                s->src_send_terminator = 1;
+            }
+            else {
+                s->dst_send_terminator = 1;
+            }
+
+            s->icap_ctx->reqmod = reqmod;
+
+            // Send a chunk terminator to the first service
+            icap_process_chain(s->icap_ctx, 0);
+            return 0;
+        }
+    // }
+#endif /* !WITHOUT_ICAP */
 
     // Do NOT free the stream here
     return 0;
@@ -944,22 +969,25 @@ h3_stream_read_data(nghttp3_conn *conn, int64_t stream_id,
         return NGHTTP3_ERR_CALLBACK_FAILURE;
     }
 
+    size_t available = evbuffer_get_length(s->data_buf);
+
     // TODO: Do we need to check the len of s->data_buf too? But we drain it below anyway, so it should be empty after this callback.
     // Flag the end of stream
-    if (evbuffer_get_length(s->data_buf) == 0) {
+    if (available == 0) {
         log_finest_va("evbuffer_get_length(s->data_buf) == 0, reqmod=%d, fd=%d", reqmod, h3_ctx->dst_fd);
 
         if ((h3_ctx->proxying ? !reqmod : reqmod) ? s->src_end_stream : s->dst_end_stream) {
             log_finest_va("End of stream reached, set NGHTTP3_DATA_FLAG_EOF for src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d",
                 s->src_stream_id, s->dst_stream_id, reqmod);
 #ifndef WITHOUT_ICAP
-            if (s->icap_ctx && icap_enabled(s->icap_ctx) && !icap_is_finished(s->icap_ctx)) {
+            if (s->icap_ctx && icap_enabled(s->icap_ctx) && !icap_is_content_complete(s->icap_ctx, h3_ctx->proxying ? !reqmod : reqmod)) {
                 log_finest_va("Do not set NGHTTP3_DATA_FLAG_EOF for src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, s->icap_ctx->reqmod);
                 return NGHTTP3_ERR_WOULDBLOCK;
             }
 #endif /* !WITHOUT_ICAP */
 
-            log_finest_va("Set NGHTTP3_DATA_FLAG_EOF for src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, reqmod);
+            log_finest_va("Set NGHTTP3_DATA_FLAG_EOF for %s session, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", available=%zu",
+                (h3_ctx->proxying ? !reqmod : reqmod) ? "dst" : "src", s->src_stream_id, s->dst_stream_id, available);
             *pflags |= NGHTTP3_DATA_FLAG_EOF;
             return 0;
         }
@@ -1000,8 +1028,8 @@ h3_stream_read_data(nghttp3_conn *conn, int64_t stream_id,
         log_finest_va("End of stream reached for src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d",
             s->src_stream_id, s->dst_stream_id, reqmod);
 #ifndef WITHOUT_ICAP
-        if (s->icap_ctx && icap_enabled(s->icap_ctx) && !icap_is_finished(s->icap_ctx)) {
-            log_finest_va("Do not set NGHTTP3_DATA_FLAG_EOF for src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, s->icap_ctx->reqmod);
+        if (s->icap_ctx && icap_enabled(s->icap_ctx) && !icap_is_content_complete(s->icap_ctx, h3_ctx->proxying ? !reqmod : reqmod)) {
+            log_finest_va("Do not set NGHTTP3_DATA_FLAG_EOF for src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, reqmod);
             goto out;
         }
 #endif /* !WITHOUT_ICAP */

@@ -375,8 +375,7 @@ protohttp2_provider_read_callback(UNUSED nghttp2_session *session, UNUSED int32_
 #endif /* !WITHOUT_ICAP */
 
             log_finest_va("Set NGHTTP2_DATA_FLAG_EOF for %s session, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", available=%zu, buf_len=%zu",
-                (h2_ctx->proxying ? !reqmod : reqmod) ? "dst" : "src",
-                s->src_stream_id, s->dst_stream_id, available, length);
+                (h2_ctx->proxying ? !reqmod : reqmod) ? "dst" : "src", s->src_stream_id, s->dst_stream_id, available, length);
             *data_flags |= NGHTTP2_DATA_FLAG_EOF;
             return 0;
         }
@@ -410,27 +409,6 @@ protohttp2_provider_read_callback(UNUSED nghttp2_session *session, UNUSED int32_
         *data_flags |= NGHTTP2_DATA_FLAG_EOF;
     }
 out:
-    // TODO: Do we need to use this code with icap?
-    // if (!(*data_flags & NGHTTP2_DATA_FLAG_EOF)) {
-    //     char *http_content_length = (h2_ctx->proxying ? !reqmod : reqmod) ? s->http_ctx->src_http_content_length : s->http_ctx->dst_http_content_length;
-    //     if (http_content_length) {
-    //         size_t content_length = (size_t)strtoull(http_content_length, NULL, 10);
-
-    //         if (*sent_body_size >= content_length) {
-    //             log_finest_va("Set NGHTTP2_DATA_FLAG_EOF for src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", sent_body_size=%zu, reqmod=%d",
-    //                 s->src_stream_id, s->dst_stream_id, *sent_body_size, reqmod);
-    //             *data_flags |= NGHTTP2_DATA_FLAG_EOF;
-    //         }
-    //         else {
-    //             log_finest_va("Not setting NGHTTP2_DATA_FLAG_EOF for src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", http_content_length=%zu, sent_body_size=%zu, reqmod=%d",
-    //                 s->src_stream_id, s->dst_stream_id, content_length, *sent_body_size, reqmod);
-    //         }
-    //     }
-    //     else {
-    //         log_finest_va("No HTTP content-length found for src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d",
-    //             s->src_stream_id, s->dst_stream_id, reqmod);
-    //     }
-    // }
     return to_read;
 }
 
@@ -444,9 +422,8 @@ protohttp2_submit_data(protohttp2_ctx_t *h2_ctx, protohttp2_stream_ctx_t *s, int
         log_finest_va("Submit headers, headers_count=%zu, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->headers_count, s->src_stream_id, s->dst_stream_id, reqmod);
 
         if (reqmod) {
-            // TODO: Should we pass NULL provider to set the NGHTTP2_DATA_FLAG_EOF flag?
-            // ATTENTION: But we resume this stream to submit end_stream with such zero-length data frames, see below.
-            // rv = nghttp2_submit_request(h2_ctx->dst_session, NULL, s->headers, s->headers_count, s->src_end_stream ? NULL : &s->provider, h2_ctx);
+            // ATTENTION: Passing a NULL provider sets the NGHTTP2_DATA_FLAG_EOF flag, but we don't pass NULL provider here,
+            // instead we resume this stream to submit end_stream with zero-length data frames, see below.
             rv = nghttp2_submit_request(h2_ctx->dst_session, NULL, s->headers, s->headers_count, &s->provider, h2_ctx);
             if (rv < 0) {
                 log_finest_va("Fatal: nghttp2_submit_request failed: %s", nghttp2_strerror(rv));
@@ -458,7 +435,6 @@ protohttp2_submit_data(protohttp2_ctx_t *h2_ctx, protohttp2_stream_ctx_t *s, int
             s->dst_stream_id = rv;
         }
         else {
-            // rv = nghttp2_submit_response(h2_ctx->src_session, s->src_stream_id, s->headers, s->headers_count, s->dst_end_stream ? NULL : &s->provider);
             rv = nghttp2_submit_response(h2_ctx->src_session, s->src_stream_id, s->headers, s->headers_count, &s->provider);
             if (rv < 0) {
                 log_finest_va("Fatal: nghttp2_submit_response failed: %s", nghttp2_strerror(rv));
@@ -485,7 +461,7 @@ protohttp2_submit_data(protohttp2_ctx_t *h2_ctx, protohttp2_stream_ctx_t *s, int
 
         if (rv == NGHTTP2_ERR_INVALID_ARGUMENT) {
             // Clean operational bypass: The engine is already active and polling
-            log_finest_va("Stream already active, continuing to explicit write execution, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 "", s->src_stream_id, s->dst_stream_id);
+            log_finest_va("Stream already active, continuing to explicit write execution, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, reqmod);
         }
         else if (rv < 0) {
             log_finest_va("Fatal: nghttp2_session_resume_data failed: %s", nghttp2_strerror(rv));
@@ -495,7 +471,7 @@ protohttp2_submit_data(protohttp2_ctx_t *h2_ctx, protohttp2_stream_ctx_t *s, int
 #ifndef WITHOUT_ICAP
         // ATTENTION: Check the size of data_buf and if we are sending terminator, otherwise made_progress causes infinite loops
         if (s->icap_ctx && (evbuffer_get_length(s->data_buf) > 0 || (reqmod ? s->src_send_terminator : s->dst_send_terminator))) {
-    		log_finest_va("H2/H3, reqmod=%d , src_send_terminator=%d, dst_send_terminator=%d", reqmod, s->src_send_terminator, s->dst_send_terminator);
+    		log_finest_va("H2 made_progress, reqmod=%d , src_send_terminator=%d, dst_send_terminator=%d", reqmod, s->src_send_terminator, s->dst_send_terminator);
             s->icap_ctx->made_progress = 1;
         }
 #endif /* !WITHOUT_ICAP */
@@ -503,6 +479,8 @@ protohttp2_submit_data(protohttp2_ctx_t *h2_ctx, protohttp2_stream_ctx_t *s, int
 
     // Clean Data Wakeup Flush
     log_finest_va("Executing scheduled session frame serialization loop for stream, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, reqmod);
+    // ATTENTION: We pass !reqmod here because the write loop is triggered on the opposite side of the connection from where the data is being submitted.
+    // The proxying flag is for the data provider callback to know which side of the connection is being written to.
     h2_ctx->proxying = 1;
     protohttp2_trigger_write_loop(h2_ctx, !reqmod);
     h2_ctx->proxying = 0;
@@ -632,7 +610,7 @@ protohttp2_on_frame_recv(UNUSED nghttp2_session *session, const nghttp2_frame *f
     pxy_conn_ctx_t *ctx = h2_ctx->ctx;
     log_finest_va("ENTER, frame_type=0x%02x, stream_id=%d, reqmod=%d", frame->hd.type, frame->hd.stream_id, reqmod);
 
-    // Check "frame->hd.flags & NGHTTP2_FLAG_END_STREAM" to determine if the stream has ended, and set an s->end_stream flag.
+    // Check "frame->hd.flags & NGHTTP2_FLAG_END_STREAM" to determine if the stream has ended, and set an s->src/dst_end_stream flag.
     // And use that flag in protohttp2_provider_read_callback() to set NGHTTP2_DATA_FLAG_EOF, if icap is not enabled for that stream.
     // This is similar to h3_on_end_stream() in src/protohttp3.c, but we do not have a separate on_end_stream() callback in nghttp2.
     if ((frame->hd.type == NGHTTP2_HEADERS || frame->hd.type == NGHTTP2_DATA) && (frame->hd.flags & NGHTTP2_FLAG_END_STREAM)) {
@@ -668,6 +646,7 @@ protohttp2_on_frame_recv(UNUSED nghttp2_session *session, const nghttp2_frame *f
                 h2_ctx->proxying = 0;
                 s->ref_count--;
             }
+
 #ifndef WITHOUT_ICAP
             if (frame->hd.type == NGHTTP2_DATA && frame->hd.length == 0) {
                 if (icap_enabled(s->icap_ctx)) {

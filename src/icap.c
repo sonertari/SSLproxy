@@ -1491,7 +1491,6 @@ icap_is_httpx_stream_end(icap_service_ctx_t *service_ctx)
 	}
 	// Subsequent services get stream end from previous icap service
 	else {
-		// stream_end = ICAP_STATE(icap_ctx->services[service_ctx->idx - 1], icap_ctx->reqmod)->end_stream || ICAP_STATE(icap_ctx->services[service_ctx->idx - 1], icap_ctx->reqmod)->null_body;
 		stream_end = ICAP_STATE(icap_ctx->services[service_ctx->idx - 1], icap_ctx->reqmod)->content_complete || ICAP_STATE(icap_ctx->services[service_ctx->idx - 1], icap_ctx->reqmod)->null_body;
 	}
 
@@ -1513,7 +1512,6 @@ icap_is_httpx_send_terminator(icap_service_ctx_t *service_ctx)
 	}
 	// Subsequent services get send_terminator from previous icap service, end_stream is set after receiving chunk terminator
 	else {
-		// send_terminator = ICAP_STATE(icap_ctx->services[service_ctx->idx - 1], icap_ctx->reqmod)->end_stream;
 		send_terminator = ICAP_STATE(icap_ctx->services[service_ctx->idx - 1], icap_ctx->reqmod)->content_complete;
 	}
 
@@ -1803,8 +1801,6 @@ icap_service_content_complete(icap_service_ctx_t *service_ctx)
 	UNUSED pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
 
 	ICAP_STATE(service_ctx, icap_ctx->reqmod)->content_complete = 1;
-	// TODO: Do we need the end_stream flag anymore?
-	// ICAP_STATE(service_ctx, icap_ctx->reqmod)->end_stream = 1;
 
 	if (icap_ctx->is_veto) {
 		icap_ctx->sent_veto_page = 1;
@@ -2312,7 +2308,7 @@ icap_parse_chunk_header(icap_service_ctx_t *service_ctx, struct evbuffer *input,
 				log_finest_icap("FOUND 0 chunk size with extensions in 206 response");
 				icap_get_use_original_body_ext(service_ctx, ext);
 				// TODO: Is this end_stream in 206?
-				// ICAP_STATE(service_ctx, icap_ctx->reqmod)->end_stream = 1;
+				// ICAP_STATE(service_ctx, icap_ctx->reqmod)->content_complete = 1;
 			}
 		}
 		else {
@@ -2327,7 +2323,6 @@ icap_parse_chunk_header(icap_service_ctx_t *service_ctx, struct evbuffer *input,
 		if (icap_try_discard_terminator(service_ctx, input) > 0) {
 			log_finest_icap("FOUND terminator after 0 chunk size, discard it and set content complete");
 			icap_service_content_complete(service_ctx);
-			// ICAP_STATE(service_ctx, icap_ctx->reqmod)->end_stream = 1;
 		}
 		else {
 			log_finer_icap_va("No terminator after 0 chunk size, wait for xfer terminator, detected_206=%u", ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_206);
@@ -2373,7 +2368,6 @@ icap_extract_body_chunk(icap_service_ctx_t *service_ctx, struct evbuffer *input)
 			ICAP_STATE(service_ctx, icap_ctx->reqmod)->wait_terminator = 0;
 
 			icap_service_content_complete(service_ctx);
-			// ICAP_STATE(service_ctx, icap_ctx->reqmod)->end_stream = 1;
 
 			if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_206) {
 				icap_try_service_bypass_206(service_ctx, 0);
@@ -3061,8 +3055,8 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 		if (!ICAP_STATE(service_ctx, icap_ctx->reqmod)->sent_terminator && (send_terminator || chunk_len > 0)) {
 			if (icap_preview_enabled(service_ctx->svc) && sent_hdr_size == 0 && sent_body_size == 0) {
 				log_finer_icap_va("Terminating preview, sent_hdr=%zu, sent_body=%zu, content_complete=%d", evbuffer_get_length(sent_hdr), evbuffer_get_length(sent_body), content_complete);
-				// 0; ieof\r\n\r\n is a mechanism to signal the early end of a message body: preview >= in_body_len
 
+				// 0; ieof\r\n\r\n is a mechanism to signal the early end of a message body: preview >= in_body_len
 				evbuffer_add_printf(chunk_buf, content_complete && preview_size >= in_body_len ? "0; ieof\r\n\r\n" : "0\r\n\r\n");
 
 				if (content_complete && preview_size >= in_body_len) {
@@ -3078,7 +3072,7 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 				ICAP_STATE(service_ctx, icap_ctx->reqmod)->sent_terminator = 1;
 			}
 
-			// TODO: Do we need to reset the send_terminator flag?
+			// No need to reset the send_terminator flag
 			// if ((ctx->proto == PROTO_HTTP2 || ctx->proto == PROTO_HTTP3) && content_complete) {
 			// 	// ATTENTION: The send_terminator flag is for the first icap service only
 			// 	// Subsequent services receive the terminator from previous service
