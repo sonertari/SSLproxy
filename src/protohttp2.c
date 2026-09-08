@@ -41,7 +41,7 @@
 static ssize_t
 protohttp2_provider_read_callback(nghttp2_session *session, int32_t stream_id, uint8_t *buf, size_t length,
     uint32_t *data_flags, nghttp2_data_source *source, void *user_data);
-static void protohttp2_trigger_write_loop(protohttp2_ctx_t *h2_ctx, int reqmod);
+static void protohttp2_trigger_write_loop(protohttp2_ctx_t *h2_ctx, protohttp2_stream_ctx_t *s, int reqmod);
 
 static protohttp2_stream_ctx_t *
 protohttp2_get_stream_ctx(protohttp2_ctx_t *h2_ctx, int32_t stream_id, int reqmod)
@@ -233,7 +233,7 @@ protohttp2_close_stream(protohttp2_stream_ctx_t *s)
     nghttp2_submit_rst_stream(h2_ctx->src_session, NGHTTP2_FLAG_NONE, s->src_stream_id, NGHTTP2_CANCEL);
 
     /* Flush outbound H2 buffer to send the RST_STREAM frame down the socket */
-    protohttp2_trigger_write_loop(h2_ctx, 1);
+    protohttp2_trigger_write_loop(h2_ctx, s, 1);
 
     // ATTENTION: Do not free the stream here, otherwise Brave hangs
     // s->ref_count++;
@@ -244,7 +244,7 @@ protohttp2_close_stream(protohttp2_stream_ctx_t *s)
 static void NONNULL(1, 2)
 protohttp2_bev_writecb(UNUSED struct bufferevent *bev, UNUSED void *arg)
 {
-    pxy_conn_ctx_t *ctx = arg;
+    UNUSED pxy_conn_ctx_t *ctx = arg;
     log_finest("ENTER");
 }
 
@@ -315,7 +315,7 @@ protohttp2_on_header_callback(nghttp2_session *session, const nghttp2_frame *fra
 }
 
 static void
-protohttp2_trigger_write_loop(protohttp2_ctx_t *h2_ctx, int reqmod)
+protohttp2_trigger_write_loop(protohttp2_ctx_t *h2_ctx, UNUSED protohttp2_stream_ctx_t *s, int reqmod)
 {
     const uint8_t *binary_payload;
 
@@ -337,9 +337,18 @@ protohttp2_trigger_write_loop(protohttp2_ctx_t *h2_ctx, int reqmod)
         log_finest_va("Sending data to %s.bev, payload_len=%zd", reqmod ? "src" : "dst", payload_len);
 
         // Write the raw binary frames directly into the bufferevent
-        bufferevent_write(bev, binary_payload, payload_len);
+        if (bufferevent_write(bev, binary_payload, payload_len) == -1) {
+            return;
+        }
         // struct evbuffer *outbuf = bufferevent_get_output(bev);
         // evbuffer_add(outbuf, binary_payload, payload_len);
+
+#ifndef WITHOUT_ICAP
+        if (s && s->icap_ctx) {
+    		log_finest_va("Set stream made_progress, reqmod=%d , src_send_terminator=%d, dst_send_terminator=%d", reqmod, s->src_send_terminator, s->dst_send_terminator);
+            s->icap_ctx->made_progress = 1;
+        }
+#endif /* !WITHOUT_ICAP */
 
         // Check if there is more data waiting in the memory queue loop
         payload_len = nghttp2_session_mem_send(session, &binary_payload);
@@ -452,7 +461,7 @@ protohttp2_submit_data(protohttp2_ctx_t *h2_ctx, protohttp2_stream_ctx_t *s, int
 
     // ATTENTION: We should not check for data_buf length here, because we may have a zero-length data submission (e.g., end of stream).
     // if (evbuffer_get_length(s->data_buf) > 0) {
-    	size_t *sent_body_size = reqmod ? &s->dst_sent_body_size : &s->src_sent_body_size;
+    	UNUSED size_t *sent_body_size = reqmod ? &s->dst_sent_body_size : &s->src_sent_body_size;
 
         log_finest_va("Submit data, data_len=%zu, sent_body_size=%zu, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d",
             evbuffer_get_length(s->data_buf), *sent_body_size, s->src_stream_id, s->dst_stream_id, reqmod);
@@ -468,13 +477,16 @@ protohttp2_submit_data(protohttp2_ctx_t *h2_ctx, protohttp2_stream_ctx_t *s, int
             return -1;
         }
 
-#ifndef WITHOUT_ICAP
-        // ATTENTION: Check the size of data_buf and if we are sending terminator, otherwise made_progress causes infinite loops
-        if (s->icap_ctx && (evbuffer_get_length(s->data_buf) > 0 || (reqmod ? s->src_send_terminator : s->dst_send_terminator))) {
-    		log_finest_va("H2 made_progress, reqmod=%d , src_send_terminator=%d, dst_send_terminator=%d", reqmod, s->src_send_terminator, s->dst_send_terminator);
-            s->icap_ctx->made_progress = 1;
-        }
-#endif /* !WITHOUT_ICAP */
+        // TODO: Setting made_progress here used to cause infinite loops
+        // because protohttp2_trigger_write_loop() without the s param could return without sending any data
+// #ifndef WITHOUT_ICAP
+//         // ATTENTION: Check the size of data_buf and if we are sending terminator, otherwise made_progress causes infinite loops
+//         // if (s->icap_ctx && (evbuffer_get_length(s->data_buf) > 0 || (reqmod ? s->src_send_terminator : s->dst_send_terminator))) {
+//         if (s->icap_ctx && (evbuffer_get_length(s->data_buf) > 0)) {
+//     		log_finest_va("H2 made_progress, reqmod=%d , src_send_terminator=%d, dst_send_terminator=%d", reqmod, s->src_send_terminator, s->dst_send_terminator);
+//             s->icap_ctx->made_progress = 1;
+//         }
+// #endif /* !WITHOUT_ICAP */
     // }
 
     // Clean Data Wakeup Flush
@@ -482,7 +494,7 @@ protohttp2_submit_data(protohttp2_ctx_t *h2_ctx, protohttp2_stream_ctx_t *s, int
     // ATTENTION: We pass !reqmod here because the write loop is triggered on the opposite side of the connection from where the data is being submitted.
     // The proxying flag is for the data provider callback to know which side of the connection is being written to.
     h2_ctx->proxying = 1;
-    protohttp2_trigger_write_loop(h2_ctx, !reqmod);
+    protohttp2_trigger_write_loop(h2_ctx, s, !reqmod);
     h2_ctx->proxying = 0;
 
     return 0;
@@ -629,7 +641,7 @@ protohttp2_on_frame_recv(UNUSED nghttp2_session *session, const nghttp2_frame *f
                 nghttp2_session_resume_data(h2_ctx->dst_session, s->dst_stream_id);
 
                 h2_ctx->proxying = 1;
-                protohttp2_trigger_write_loop(h2_ctx, 0);
+                protohttp2_trigger_write_loop(h2_ctx, s, 0);
                 h2_ctx->proxying = 0;
                 s->ref_count--;
             }
@@ -642,7 +654,7 @@ protohttp2_on_frame_recv(UNUSED nghttp2_session *session, const nghttp2_frame *f
                 nghttp2_session_resume_data(h2_ctx->src_session, s->src_stream_id);
 
                 h2_ctx->proxying = 1;
-                protohttp2_trigger_write_loop(h2_ctx, 1);
+                protohttp2_trigger_write_loop(h2_ctx, s, 1);
                 h2_ctx->proxying = 0;
                 s->ref_count--;
             }
@@ -989,12 +1001,12 @@ protohttp2_bev_readcb(struct bufferevent *bev, void *arg)
             // This is to ensure the HTTP/2 state machine is properly stepped
             // But never if nghttp2_session_mem_recv() returned an error
             nghttp2_session_send(reqmod ? h2_ctx->src_session : h2_ctx->dst_session);
-            protohttp2_trigger_write_loop(h2_ctx, reqmod);
+            protohttp2_trigger_write_loop(h2_ctx, NULL, reqmod);
         }
 
         // Call nghttp2_session_send() for the opposite session to ensure any pending frames are sent
         nghttp2_session_send(reqmod ? h2_ctx->dst_session : h2_ctx->src_session);
-        protohttp2_trigger_write_loop(h2_ctx, !reqmod);
+        protohttp2_trigger_write_loop(h2_ctx, NULL, !reqmod);
 
         free(data);
 	} else if (bev == ctx->srvdst.bev) {

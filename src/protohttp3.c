@@ -322,7 +322,7 @@ protohttp3_request_free_stream_ctx(protohttp3_stream_ctx_t *s)
  *   3. sendmsg() transmits each QUIC packet to the peer.
  */
 static void
-protohttp3_trigger_write_loop(protohttp3_ctx_t *h3_ctx, int reqmod)
+protohttp3_trigger_write_loop(protohttp3_ctx_t *h3_ctx, UNUSED protohttp3_stream_ctx_t *s, int reqmod)
 {
     UNUSED pxy_conn_ctx_t *ctx = h3_ctx->ctx;
     evutil_socket_t fd = reqmod ? ctx->fd : h3_ctx->dst_fd;
@@ -437,6 +437,13 @@ protohttp3_trigger_write_loop(protohttp3_ctx_t *h3_ctx, int reqmod)
             }
             break;
         }
+
+#ifndef WITHOUT_ICAP
+        if (s && s->icap_ctx) {
+    		log_finest_va("Set stream made_progress, reqmod=%d , src_send_terminator=%d, dst_send_terminator=%d", reqmod, s->src_send_terminator, s->dst_send_terminator);
+            s->icap_ctx->made_progress = 1;
+        }
+#endif /* !WITHOUT_ICAP */
     }
 
     protohttp3_arm_timer(h3_ctx);
@@ -479,13 +486,6 @@ protohttp3_submit_data(protohttp3_ctx_t *h3_ctx, protohttp3_stream_ctx_t *s, int
 #endif /* !WITHOUT_ICAP */
     }
 
-#ifndef WITHOUT_ICAP
-    // TODO: What about fin packets without data? Should we set made_progress for those as well?
-    if (s->icap_ctx && evbuffer_get_length(s->data_buf) > 0) {
-        s->icap_ctx->made_progress = 1;
-    }
-#endif /* !WITHOUT_ICAP */
-
     // ATTENTION: We should not check for data_buf length here, because we may have a zero-length data submission (e.g., end of stream).
     // if (evbuffer_get_length(s->data_buf) > 0) {
         log_finest_va("Submit data, data_len=%zu, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d",
@@ -502,13 +502,16 @@ protohttp3_submit_data(protohttp3_ctx_t *h3_ctx, protohttp3_stream_ctx_t *s, int
             return -1;
         }
 
-#ifndef WITHOUT_ICAP
-        // ATTENTION: Check the size of data_buf and if we are sending terminator, otherwise made_progress causes infinite loops
-        if (s->icap_ctx && (evbuffer_get_length(s->data_buf) > 0 || (reqmod ? s->src_send_terminator : s->dst_send_terminator))) {
-    		log_finest_va("H3 made_progress, reqmod=%d , src_send_terminator=%d, dst_send_terminator=%d", reqmod, s->src_send_terminator, s->dst_send_terminator);
-            s->icap_ctx->made_progress = 1;
-        }
-#endif /* !WITHOUT_ICAP */
+        // TODO: Setting made_progress here used to cause infinite loops
+        // because protohttp3_trigger_write_loop() without the s param could return without sending any data
+// #ifndef WITHOUT_ICAP
+//         // ATTENTION: Check the size of data_buf and if we are sending terminator, otherwise made_progress causes infinite loops
+//         // if (s->icap_ctx && (evbuffer_get_length(s->data_buf) > 0 || (reqmod ? s->src_send_terminator : s->dst_send_terminator))) {
+//         if (s->icap_ctx && (evbuffer_get_length(s->data_buf) > 0)) {
+//     		log_finest_va("H3 made_progress, reqmod=%d , src_send_terminator=%d, dst_send_terminator=%d", reqmod, s->src_send_terminator, s->dst_send_terminator);
+//             s->icap_ctx->made_progress = 1;
+//         }
+// #endif /* !WITHOUT_ICAP */
     // }
 
     // Clean Data Wakeup Flush
@@ -516,7 +519,7 @@ protohttp3_submit_data(protohttp3_ctx_t *h3_ctx, protohttp3_stream_ctx_t *s, int
     // ATTENTION: We pass !reqmod here because the write loop is triggered on the opposite side of the connection from where the data is being submitted.
     // The proxying flag is for the h3_stream_read_data callback to know which side of the connection is being written to.
     h3_ctx->proxying = 1;
-    protohttp3_trigger_write_loop(h3_ctx, !reqmod);
+    protohttp3_trigger_write_loop(h3_ctx, s, !reqmod);
     h3_ctx->proxying = 0;
 
     return 0;
@@ -908,7 +911,7 @@ h3_on_end_stream(nghttp3_conn *conn, int64_t stream_id,
         log_finest_va("Extend max bidi stream limit by 1, src_max_streams_bidi=%lu", (unsigned long)h3_ctx->src_max_streams_bidi);
         nghttp3_conn_set_max_client_streams_bidi(h3_ctx->src_h3, h3_ctx->src_max_streams_bidi);
 
-        protohttp3_trigger_write_loop(h3_ctx, 1);
+        protohttp3_trigger_write_loop(h3_ctx, s, 1);
 
         // WAKE UP the server-facing stream to signal that the stream is closed and no more data will be sent
         log_finest_va("Request stream %" PRId64 " END_STREAM", stream_id);
@@ -918,7 +921,7 @@ h3_on_end_stream(nghttp3_conn *conn, int64_t stream_id,
         nghttp3_conn_resume_stream(h3_ctx->dst_h3, s->dst_stream_id);
 
         h3_ctx->proxying = 1;
-        protohttp3_trigger_write_loop(h3_ctx, 0);
+        protohttp3_trigger_write_loop(h3_ctx, s, 0);
         h3_ctx->proxying = 0;
         s->ref_count--;
     }
@@ -931,7 +934,7 @@ h3_on_end_stream(nghttp3_conn *conn, int64_t stream_id,
         nghttp3_conn_resume_stream(h3_ctx->src_h3, s->src_stream_id);
 
         h3_ctx->proxying = 1;
-        protohttp3_trigger_write_loop(h3_ctx, 1);
+        protohttp3_trigger_write_loop(h3_ctx, s, 1);
         h3_ctx->proxying = 0;
         s->ref_count--;
     }
@@ -1340,7 +1343,7 @@ quic_handshake_completed(ngtcp2_conn *conn, void *user_data)
             return NGTCP2_ERR_CALLBACK_FAILURE;
         }
 
-        protohttp3_trigger_write_loop(h3_ctx, 0);
+        protohttp3_trigger_write_loop(h3_ctx, NULL, 0);
 
         log_finest_va("Forge server cert and resume handshake with client, fd=%d", h3_ctx->dst_fd);
 
@@ -1375,7 +1378,7 @@ quic_handshake_completed(ngtcp2_conn *conn, void *user_data)
         ngtcp2_conn_handle_expiry(h3_ctx->src_conn, h3_timestamp());
 
         // Flush the client socket to send the handshake payload to the client
-        protohttp3_trigger_write_loop(h3_ctx, 1);
+        protohttp3_trigger_write_loop(h3_ctx, NULL, 1);
     }
     else {
         int rv = nghttp3_conn_server_new(&h3_ctx->src_h3, &h3cb, &h3settings, NULL, h3_ctx);
@@ -1424,7 +1427,7 @@ quic_handshake_completed(ngtcp2_conn *conn, void *user_data)
             return NGTCP2_ERR_CALLBACK_FAILURE;
         }
 
-        protohttp3_trigger_write_loop(h3_ctx, 1);
+        protohttp3_trigger_write_loop(h3_ctx, NULL, 1);
 
         // The connected flag does not seem useful with h3, but we set for completeness
         ctx->connected = 1;
@@ -1617,7 +1620,7 @@ protohttp3_close_stream(protohttp3_stream_ctx_t *s)
     ngtcp2_conn_shutdown_stream_read(h3_ctx->src_conn, 0, s->src_stream_id, NGHTTP3_H3_REQUEST_CANCELLED);
 
     // TODO: Should we or can we flush the stream buffers after the shutdown calls above?
-    // protohttp3_trigger_write_loop(h3_ctx, 1);
+    // protohttp3_trigger_write_loop(h3_ctx, s, 1);
 
     // ATTENTION: Do not free the stream here, otherwise Brave hangs
     // s->ref_count++;
@@ -1754,7 +1757,7 @@ protohttp3_src_write_cb(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
     protohttp3_ctx_t *h3_ctx = arg;
     UNUSED pxy_conn_ctx_t *ctx = h3_ctx->ctx;
     log_finest("ENTER");
-    protohttp3_trigger_write_loop(h3_ctx, 1);
+    protohttp3_trigger_write_loop(h3_ctx, NULL, 1);
 }
 
 static void
@@ -1818,7 +1821,7 @@ protohttp3_dst_read_cb(evutil_socket_t fd, UNUSED short what, void *arg)
         return;
     }
 
-    protohttp3_trigger_write_loop(h3_ctx, 0);
+    protohttp3_trigger_write_loop(h3_ctx, NULL, 0);
 
     log_finest_va("Settings left, src_data=%" PRId64 ", dst_data=%" PRId64 ", src_bidi=%" PRId64 ", dst_bidi=%" PRId64 ", src_uni=%" PRId64 ", dst_uni=%" PRId64,
         ngtcp2_conn_get_max_data_left(h3_ctx->src_conn), ngtcp2_conn_get_max_data_left(h3_ctx->dst_conn),
@@ -1832,7 +1835,7 @@ protohttp3_dst_write_cb(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
     protohttp3_ctx_t *h3_ctx = arg;
     UNUSED pxy_conn_ctx_t *ctx = h3_ctx->ctx;
     log_finest_va("ENTER, fd=%d", h3_ctx->dst_fd);
-    protohttp3_trigger_write_loop(h3_ctx, 0);
+    protohttp3_trigger_write_loop(h3_ctx, NULL, 0);
 }
 
 /* =========================================================================
@@ -1892,7 +1895,7 @@ protohttp3_timer_cb(evutil_socket_t fd, short what, void *arg)
         return;
     }
 
-    protohttp3_trigger_write_loop(h3_ctx, 1);
+    protohttp3_trigger_write_loop(h3_ctx, NULL, 1);
 }
 
 /* =========================================================================
@@ -2085,7 +2088,7 @@ protohttp3_process_packet_cb(UNUSED evutil_socket_t fd, UNUSED short what, void 
     log_finest_va("Processed total of %d packets and %zu bytes", pkt_count, total_bytes_processed);
     ctx->thr->intif_in_bytes += total_bytes_processed;
 
-    protohttp3_trigger_write_loop(h3_ctx, 1);
+    protohttp3_trigger_write_loop(h3_ctx, NULL, 1);
 }
 
 static ngtcp2_conn *
@@ -2784,7 +2787,7 @@ protohttp3_conn_connect(pxy_conn_ctx_t *ctx)
         goto err;
     }
 
-    protohttp3_trigger_write_loop(h3_ctx, 0);
+    protohttp3_trigger_write_loop(h3_ctx, NULL, 0);
 
     return 0;
 

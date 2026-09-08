@@ -3072,19 +3072,19 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 				ICAP_STATE(service_ctx, icap_ctx->reqmod)->sent_terminator = 1;
 			}
 
-			// No need to reset the send_terminator flag
-			// if ((ctx->proto == PROTO_HTTP2 || ctx->proto == PROTO_HTTP3) && content_complete) {
-			// 	// ATTENTION: The send_terminator flag is for the first icap service only
-			// 	// Subsequent services receive the terminator from previous service
-			// 	if (service_ctx->idx == 0) {
-			// 		log_finest_icap_va("Reset send_terminator, reqmod=%d", icap_ctx->reqmod);
-			// 		if (icap_ctx->reqmod) {
-			// 			icap_ctx->stream_ctx->src_send_terminator = 0;
-			// 		} else {
-			// 			icap_ctx->stream_ctx->dst_send_terminator = 0;
-			// 		}
-			// 	}
-			// }
+			// ATTENTION: Reset the send_terminator flag, otherwise causes infinite loops due to made_progress
+			if ((ctx->proto == PROTO_HTTP2 || ctx->proto == PROTO_HTTP3) && ICAP_STATE(service_ctx, icap_ctx->reqmod)->sent_terminator) {
+				// ATTENTION: The send_terminator flag is for the first icap service only
+				// Subsequent services receive the terminator from previous service
+				if (service_ctx->idx == 0) {
+					log_finest_icap_va("Reset send_terminator, reqmod=%d", icap_ctx->reqmod);
+					if (icap_ctx->reqmod) {
+						icap_ctx->stream_ctx->src_send_terminator = 0;
+					} else {
+						icap_ctx->stream_ctx->dst_send_terminator = 0;
+					}
+				}
+			}
 		}
 
 		if (bufferevent_write_buffer(bev, chunk_buf) < 0) {
