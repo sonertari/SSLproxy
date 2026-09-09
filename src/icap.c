@@ -1668,11 +1668,21 @@ icap_handle_service_error(icap_service_ctx_t *service_ctx)
 
 	icap_service_disconnect(service_ctx);
 
-	// Connection fail mode
+	// Connection/stream fail mode
 	// conn_opts->icap_conn_fail_open is always copied to service_ctx->svc->conn_fail_open
 	if (service_ctx->svc->conn_fail_open == ICAP_FAIL_CLOSE) {
-		log_fine_icap("ICAP service in error state, terminate connection as fail-close");
-		icap_conn_term(ctx);
+		log_fine_icap_va("ICAP service in error state, terminate %s as fail-close", icap_ctx->stream_ctx ? "h2/h3 stream" : "connection");
+		if (ctx->proto == PROTO_HTTP2) {
+			protohttp2_close_stream((protohttp2_stream_ctx_t *)icap_ctx->stream_ctx);
+		}
+#ifndef WITHOUT_HTTP3
+		else if (ctx->proto == PROTO_HTTP3) {
+			protohttp3_close_stream((protohttp3_stream_ctx_t *)icap_ctx->stream_ctx);
+		}
+#endif /* !WITHOUT_HTTP3 */
+		else {
+			icap_conn_term(ctx);
+		}
 		return;
 	}
 	// ICAP service fail mode
