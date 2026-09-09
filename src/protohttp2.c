@@ -344,7 +344,7 @@ protohttp2_trigger_write_loop(protohttp2_ctx_t *h2_ctx, UNUSED protohttp2_stream
         // evbuffer_add(outbuf, binary_payload, payload_len);
 
 #ifndef WITHOUT_ICAP
-        if (s && s->icap_ctx) {
+        if (s && s->icap_ctx && !s->icap_ctx->made_progress) {
     		log_finest_va("Set stream made_progress, reqmod=%d , src_send_terminator=%d, dst_send_terminator=%d", reqmod, s->src_send_terminator, s->dst_send_terminator);
             s->icap_ctx->made_progress = 1;
         }
@@ -517,6 +517,10 @@ protohttp2_icap_send_data_to_src_cb(icap_ctx_t *icap_ctx)
     }
 
     evbuffer_add_buffer(s->data_buf, icap_ctx->veto_body);
+
+    log_finest_va("Set end_stream for both sides, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64, s->src_stream_id, s->dst_stream_id);
+    s->src_end_stream = 1;
+    s->dst_end_stream = 1;
 
     // Send block page to src (client), not dst (server)
     if (protohttp2_submit_data(h2_ctx, s, 0 /*respmod*/) < 0) {

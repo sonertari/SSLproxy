@@ -339,7 +339,7 @@ protohttp3_trigger_write_loop(protohttp3_ctx_t *h3_ctx, UNUSED protohttp3_stream
     uint8_t pktbuf[H3_DGRAM_BUFSZ];
 
     nghttp3_conn *h3_conn = reqmod ? h3_ctx->src_h3 : h3_ctx->dst_h3;
-    ngtcp2_conn  *quic_conn = reqmod ? h3_ctx->src_conn : h3_ctx->dst_conn;
+    ngtcp2_conn *quic_conn = reqmod ? h3_ctx->src_conn : h3_ctx->dst_conn;
     ngtcp2_path *quic_path = reqmod ? &h3_ctx->src_path : &h3_ctx->dst_path;
 
     for (;;) {
@@ -439,7 +439,7 @@ protohttp3_trigger_write_loop(protohttp3_ctx_t *h3_ctx, UNUSED protohttp3_stream
         }
 
 #ifndef WITHOUT_ICAP
-        if (s && s->icap_ctx) {
+        if (s && s->icap_ctx && !s->icap_ctx->made_progress) {
     		log_finest_va("Set stream made_progress, reqmod=%d , src_send_terminator=%d, dst_send_terminator=%d", reqmod, s->src_send_terminator, s->dst_send_terminator);
             s->icap_ctx->made_progress = 1;
         }
@@ -542,6 +542,10 @@ protohttp3_icap_send_data_to_src_cb(icap_ctx_t *icap_ctx)
     }
 
     evbuffer_add_buffer(s->data_buf, icap_ctx->veto_body);
+
+    log_finest_va("Set end_stream for both sides, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64, s->src_stream_id, s->dst_stream_id);
+    s->src_end_stream = 1;
+    s->dst_end_stream = 1;
 
     // ATTENTION: We pass 0 for reqmod because we are sending data to the src (client) side, not the dst (server) side.
     // So, protohttp3_submit_data() will use !reqmod, when triggering the write loop.
