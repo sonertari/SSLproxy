@@ -1295,76 +1295,76 @@ icap_service_disconnect(icap_service_ctx_t *service_ctx)
 	}
 }
 
-// static int NONNULL(1)
-// icap_have_data_to_process(icap_ctx_t *icap_ctx, int *service_idx)
-// {
-// 	UNUSED pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
+static int NONNULL(1)
+icap_have_data_to_process(icap_ctx_t *icap_ctx, int *service_idx)
+{
+	UNUSED pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
 
-// 	for (int i = 0; i < icap_ctx->service_count; i++) {
-// 		if (icap_ctx->services[i] && icap_ctx->services[i]->bev) {
-// 			// TODO: Do we need to check the bev input buffer for data to process, but if we do, then chain goes into an infinite loop
-// 			// struct evbuffer *input = bufferevent_get_input(icap_ctx->services[i]->bev);
-// 			// if (evbuffer_get_length(input) > 0) {
-// 			// 	log_finest_va("Service has data, input=%zu, service idx=%d", evbuffer_get_length(input), i);
-// 			// 	*service_idx = i;
-// 			// 	return 1;
-// 			// }
+	for (int i = 0; i < icap_ctx->service_count; i++) {
+		if (icap_ctx->services[i] && icap_ctx->services[i]->bev) {
+			// TODO: Do we need to check the bev input buffer for data to process, but if we do, then chain goes into an infinite loop
+			// struct evbuffer *input = bufferevent_get_input(icap_ctx->services[i]->bev);
+			// if (evbuffer_get_length(input) > 0) {
+			// 	log_finest_va("Service has data, input=%zu, service idx=%d", evbuffer_get_length(input), i);
+			// 	*service_idx = i;
+			// 	return 1;
+			// }
 
-// 			// TODO: Do we need to check in_hdr and out_hdr for data to process, but if we do, then chain goes into an infinite loop,
-// 			// because the ith service is waiting for in_body data to arrive, hence never processes in_hdr data, even if it is present
-// 			// if (evbuffer_get_length(icap_ctx->services[i]->src.in_hdr) > 0 || evbuffer_get_length(icap_ctx->services[i]->dst.in_hdr) > 0) {
-// 			// 	log_finest_va("Service has in_hdr data, src.in_hdr=%zu, dst.in_hdr=%zu, service idx=%d",
-// 			// 		evbuffer_get_length(icap_ctx->services[i]->src.in_hdr), evbuffer_get_length(icap_ctx->services[i]->dst.in_hdr), i);
+			// TODO: Do we need to check in_hdr and out_hdr for data to process, but if we do, then chain goes into an infinite loop,
+			// because the ith service is waiting for in_body data to arrive, hence never processes in_hdr data, even if it is present
+			// if (evbuffer_get_length(icap_ctx->services[i]->src.in_hdr) > 0 || evbuffer_get_length(icap_ctx->services[i]->dst.in_hdr) > 0) {
+			// 	log_finest_va("Service has in_hdr data, src.in_hdr=%zu, dst.in_hdr=%zu, service idx=%d",
+			// 		evbuffer_get_length(icap_ctx->services[i]->src.in_hdr), evbuffer_get_length(icap_ctx->services[i]->dst.in_hdr), i);
 
-// 			// 	unsigned int wait_preview_continue = icap_ctx->services[i]->src.wait_preview_continue | icap_ctx->services[i]->dst.wait_preview_continue;
-// 			// 	if (!wait_preview_continue) {
-// 			// 		*service_idx = i;
-// 			// 		return 1;
-// 			// 	}
-// 			// 	else {
-// 			// 		log_finest_va("Service is waiting for preview continue, do not process in_hdr data yet, service idx=%d", i);
-// 			// 	}
-// 			// }
+			// 	unsigned int wait_preview_continue = icap_ctx->services[i]->src.wait_preview_continue | icap_ctx->services[i]->dst.wait_preview_continue;
+			// 	if (!wait_preview_continue) {
+			// 		*service_idx = i;
+			// 		return 1;
+			// 	}
+			// 	else {
+			// 		log_finest_va("Service is waiting for preview continue, do not process in_hdr data yet, service idx=%d", i);
+			// 	}
+			// }
 
-// 			if (evbuffer_get_length(icap_ctx->services[i]->src.in_body) > 0 || evbuffer_get_length(icap_ctx->services[i]->dst.in_body) > 0) {
-// 				log_finest_va("Service has in_body data, src.in_body=%zu, dst.in_body=%zu, service idx=%d",
-// 					evbuffer_get_length(icap_ctx->services[i]->src.in_body), evbuffer_get_length(icap_ctx->services[i]->dst.in_body), i);
+			if (evbuffer_get_length(icap_ctx->services[i]->src.in_body) > 0 || evbuffer_get_length(icap_ctx->services[i]->dst.in_body) > 0) {
+				log_finest_va("Service has in_body data, src.in_body=%zu, dst.in_body=%zu, service idx=%d",
+					evbuffer_get_length(icap_ctx->services[i]->src.in_body), evbuffer_get_length(icap_ctx->services[i]->dst.in_body), i);
 
-// 				unsigned int wait_preview_continue = icap_ctx->services[i]->src.wait_preview_continue | icap_ctx->services[i]->dst.wait_preview_continue;
-// 				unsigned int detected_204 = icap_ctx->services[i]->src.detected_204 | icap_ctx->services[i]->dst.detected_204;
-// 				unsigned int detected_206 = icap_ctx->services[i]->src.detected_206 | icap_ctx->services[i]->dst.detected_206;
-// 				if (!wait_preview_continue || detected_204 || detected_206) {
-// 					*service_idx = i;
-// 					return 1;
-// 				}
-// 				else {
-// 					if (icap_ctx->services[i]->failopen) {
-// 						log_finer_va("Service is in failopen state, ignore wait_preview_continue and process in_body data, service idx=%d", i);
-// 						*service_idx = i;
-// 						return 1;
-// 					}
-// 					log_finer_va("Service is waiting for preview continue, do not process in_body data yet, service idx=%d", i);
-// 				}
-// 			}
+				unsigned int wait_preview_continue = icap_ctx->services[i]->src.wait_preview_continue | icap_ctx->services[i]->dst.wait_preview_continue;
+				unsigned int detected_204 = icap_ctx->services[i]->src.detected_204 | icap_ctx->services[i]->dst.detected_204;
+				unsigned int detected_206 = icap_ctx->services[i]->src.detected_206 | icap_ctx->services[i]->dst.detected_206;
+				if (!wait_preview_continue || detected_204 || detected_206) {
+					*service_idx = i;
+					return 1;
+				}
+				else {
+					if (icap_ctx->services[i]->failopen) {
+						log_finer_va("Service is in failopen state, ignore wait_preview_continue and process in_body data, service idx=%d", i);
+						*service_idx = i;
+						return 1;
+					}
+					log_finer_va("Service is waiting for preview continue, do not process in_body data yet, service idx=%d", i);
+				}
+			}
 
-// 			if (evbuffer_get_length(icap_ctx->services[i]->src.out_hdr) > 0 || evbuffer_get_length(icap_ctx->services[i]->dst.out_hdr) > 0) {
-// 				log_finest_va("Service has out_hdr data, src.out_hdr=%zu, dst.out_hdr=%zu, service idx=%d",
-// 					evbuffer_get_length(icap_ctx->services[i]->src.out_hdr), evbuffer_get_length(icap_ctx->services[i]->dst.out_hdr), i);
-// 				*service_idx = i;
-// 				return 1;
-// 			}
+			if (evbuffer_get_length(icap_ctx->services[i]->src.out_hdr) > 0 || evbuffer_get_length(icap_ctx->services[i]->dst.out_hdr) > 0) {
+				log_finest_va("Service has out_hdr data, src.out_hdr=%zu, dst.out_hdr=%zu, service idx=%d",
+					evbuffer_get_length(icap_ctx->services[i]->src.out_hdr), evbuffer_get_length(icap_ctx->services[i]->dst.out_hdr), i);
+				*service_idx = i;
+				return 1;
+			}
 
-// 			if (evbuffer_get_length(icap_ctx->services[i]->src.out_body) > 0 || evbuffer_get_length(icap_ctx->services[i]->dst.out_body) > 0) {
-// 				log_finest_va("Service has out_body data, src.out_body=%zu, dst.out_body=%zu, service idx=%d",
-// 					evbuffer_get_length(icap_ctx->services[i]->src.out_body), evbuffer_get_length(icap_ctx->services[i]->dst.out_body), i);
-// 				*service_idx = i;
-// 				return 1;
-// 			}
-// 		}
-// 	}
-// 	log_finest("No service has data to process");
-// 	return 0;
-// }
+			if (evbuffer_get_length(icap_ctx->services[i]->src.out_body) > 0 || evbuffer_get_length(icap_ctx->services[i]->dst.out_body) > 0) {
+				log_finest_va("Service has out_body data, src.out_body=%zu, dst.out_body=%zu, service idx=%d",
+					evbuffer_get_length(icap_ctx->services[i]->src.out_body), evbuffer_get_length(icap_ctx->services[i]->dst.out_body), i);
+				*service_idx = i;
+				return 1;
+			}
+		}
+	}
+	log_finest("No service has data to process");
+	return 0;
+}
 
 static void
 icap_send_data(icap_ctx_t *icap_ctx)
@@ -1404,9 +1404,9 @@ icap_send_data(icap_ctx_t *icap_ctx)
 		icap_ctx->made_progress = 0;
 
 		int service_idx = 0;
-		// TODO: Do we need icap_have_data_to_process()? But it causes infinite loops in edge cases
-		// if (!made_progress || icap_have_data_to_process(icap_ctx, &service_idx) == 0) {
-		if (!made_progress) {
+		// TODO: Do we need icap_have_data_to_process()? It used to cause infinite loops in edge cases, but is also necessary with max_body_size
+		if (!made_progress || icap_have_data_to_process(icap_ctx, &service_idx) == 0) {
+		// if (!made_progress) {
 			// TODO: Resume reading from stream, not the whole connection, in http2 mode
 			if (!h2 && !h3) {
 				log_finest("Enable reading from source, resume flow");
@@ -3039,25 +3039,28 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 		size_t http_content_length = icap_get_http_content_length(icap_ctx);
 		log_finest_icap_va("Checking if HTTP content complete, sent_body_size=%zu, http_content_length=%zu", *sent_body_size_new, http_content_length);
 
-		// Set the send_terminator flag for h1 and subsequent services in h2/h3
-		int send_terminator = 1;
+		int send_terminator = 0;
 
-		if (ctx->proto == PROTO_HTTP2 || ctx->proto == PROTO_HTTP3) {
-			log_finest_icap_va("HTTP content complete check for h2/h3, src_end_stream=%d, dst_end_stream=%d",
-				icap_ctx->stream_ctx->src_end_stream, icap_ctx->stream_ctx->dst_end_stream);
+		// in_body must be empty to send the terminator for content_complete, but not for preview
+		// This check is necessary to handle edge cases with max_body_size, which may truncate preview and body, leaving data in in_body
+		if (evbuffer_get_length(in_body) == 0) {
+			if (ctx->proto == PROTO_HTTP2 || ctx->proto == PROTO_HTTP3) {
+				log_finest_icap_va("HTTP content complete check for h2/h3, src_end_stream=%d, dst_end_stream=%d",
+					icap_ctx->stream_ctx->src_end_stream, icap_ctx->stream_ctx->dst_end_stream);
 
-			content_complete = icap_is_httpx_stream_end(service_ctx);
-			send_terminator = icap_is_httpx_send_terminator(service_ctx);
-		}
-		else {
-			log_finest_icap("HTTP content complete check for http1");
+				content_complete = icap_is_httpx_stream_end(service_ctx);
+				send_terminator = icap_is_httpx_send_terminator(service_ctx);
+			}
+			else {
+				log_finest_icap("HTTP content complete check for http1");
 
-			if (*sent_body_size_new >= http_content_length) {
-				content_complete = 1;
+				if (*sent_body_size_new >= http_content_length) {
+					content_complete = 1;
+				}
 			}
 		}
 
-		log_finest_icap_va("Send terminator, chunk_len=%zu, send_terminator=%d, src_send_terminator=%d, dst_send_terminator=%d, src_end_stream=%d, dst_end_stream=%d, reqmod=%d",
+		log_finest_icap_va("Try send terminator, chunk_len=%zu, send_terminator=%d, src_send_terminator=%d, dst_send_terminator=%d, src_end_stream=%d, dst_end_stream=%d, reqmod=%d",
 			chunk_len, send_terminator,
 			icap_ctx->stream_ctx ? icap_ctx->stream_ctx->src_send_terminator : -1, icap_ctx->stream_ctx ? icap_ctx->stream_ctx->dst_send_terminator : -1,
 			icap_ctx->stream_ctx ? icap_ctx->stream_ctx->src_end_stream : -1, icap_ctx->stream_ctx ? icap_ctx->stream_ctx->dst_end_stream : -1, icap_ctx->reqmod);
@@ -3097,16 +3100,17 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 			}
 		}
 
+		// ATTENTION: Always check the size of chunk_buf, otherwise made_progress causes infinite loops in edge cases
+		if (evbuffer_get_length(chunk_buf) > 0) {
+			icap_ctx->made_progress = 1;
+		}
+
 		if (bufferevent_write_buffer(bev, chunk_buf) < 0) {
 			log_fine_icap("Failed to send ICAP body chunk");
 			evbuffer_free(chunk_buf);
 			return -1;
 		}
 
-		// ATTENTION: Always check the size of chunk_buf, otherwise made_progress causes infinite loops in edge cases
-		if (evbuffer_get_length(chunk_buf) > 0) {
-			icap_ctx->made_progress = 1;
-		}
 		evbuffer_free(chunk_buf);
 	}
 
