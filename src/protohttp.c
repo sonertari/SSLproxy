@@ -1457,7 +1457,9 @@ protohttpx_filter_response_header(protohttpx_stream_ctx_t *s)
             // TODO: Rewrite only the port number in the alt-svc header, keep the rest
 			protohttpx_delete_nv_header(s, i);
 
-            size_t len = strlen("h3=\"\":") + strlen(conn_opts->rewrite_alt_svc_port) + strlen("; ma=86400") + 1;
+			// size_t len = strlen("h3=\":") + strlen(conn_opts->rewrite_alt_svc_port) + strlen("\"; ma=86400") + 1;
+			// 5 + rewrite_alt_svc_port + 11 + 1
+			size_t len = strlen(conn_opts->rewrite_alt_svc_port) + 17;
 			char *new_value = malloc(len);
 			if (!new_value) {
 				ctx->enomem = 1;
@@ -1465,7 +1467,8 @@ protohttpx_filter_response_header(protohttpx_stream_ctx_t *s)
 			}
 			snprintf(new_value, len, "h3=\":%s\"; ma=86400", conn_opts->rewrite_alt_svc_port);
 
-            if (protohttpx_add_nv_header((protohttpx_stream_ctx_t *)s, "alt-svc", strlen("alt-svc"), new_value, strlen(new_value)) < 0) {
+			// strlen("alt-svc") = 7
+            if (protohttpx_add_nv_header((protohttpx_stream_ctx_t *)s, "alt-svc", 7, new_value, strlen(new_value)) < 0) {
 				ctx->enomem = 1;
             }
             free(new_value);
@@ -1852,9 +1855,11 @@ protohttp_filter_response_header_line(const char *line, protohttp_ctx_t *http_ct
 		    !strncasecmp(line, "Upgrade:", 8)) {
 			return NULL;
 		} else if (ctx->conn_opts->rewrite_alt_svc_port && !strncasecmp(line, "Alt-Svc:", 8)) {
-			// TODO: Rewrite only the port number in the Alt-Svc header, keep the rest
+			// TODO: Rewrite only the port number in the Alt-Svc header, keep the rest?
 			// Alt-Svc: h3=":8443"; ma=86400
-			size_t len = strlen("Alt-Svc: h3=\"\":") + strlen(ctx->conn_opts->rewrite_alt_svc_port) + strlen("; ma=86400") + 1;
+			// size_t len = strlen("Alt-Svc: h3=\":") + strlen(ctx->conn_opts->rewrite_alt_svc_port) + strlen("\"; ma=86400") + 1;
+			// 14 + rewrite_alt_svc_port + 11 + 1
+			size_t len = strlen(ctx->conn_opts->rewrite_alt_svc_port) + 26;
 			char *new_line = malloc(len);
 			if (!new_line) {
 				ctx->enomem = 1;
