@@ -144,6 +144,7 @@ conn_opts_new(void)
 #endif /* !HAVE_TLSV13 */
 #endif /* OPENSSL_VERSION_NUMBER >= 0x10100000L */
 	conn_opts->remove_http_referer = 1;
+	conn_opts->enable_http2 = 1;
 	conn_opts->verify_peer = 1;
 #ifndef WITHOUT_USERAUTH
 	conn_opts->user_timeout = 300;
@@ -651,6 +652,7 @@ conn_opts_copy(conn_opts_t *conn_opts, const char *argv0, tmp_opts_t *tmp_opts)
 #endif /* OPENSSL_VERSION_NUMBER >= 0x10100000L */
 	cops->remove_http_accept_encoding = conn_opts->remove_http_accept_encoding;
 	cops->remove_http_referer = conn_opts->remove_http_referer;
+	cops->enable_http2 = conn_opts->enable_http2;
 	cops->verify_peer = conn_opts->verify_peer;
 	cops->allow_wrong_host = conn_opts->allow_wrong_host;
 #ifndef WITHOUT_USERAUTH
@@ -1198,7 +1200,7 @@ conn_opts_str(conn_opts_t *conn_opts)
 #ifndef WITHOUT_USERAUTH
 				 "%s|%s|%d"
 #endif /* !WITHOUT_USERAUTH */
-				 "%s%s%s|%s|%d",
+				 "%s%s%s|%s|%s|%d",
 #if (OPENSSL_VERSION_NUMBER < 0x10100000L) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER < 0x20702000L)
 #ifdef HAVE_SSLV2
 	               (conn_opts->sslmethod == SSLv2_method) ? "ssl2" :
@@ -1334,6 +1336,7 @@ conn_opts_str(conn_opts_t *conn_opts)
 	             (conn_opts->validate_proto ? "|validate_proto" : ""),
 	             (conn_opts->reconnect_ssl ? "|reconnect_ssl" : ""),
 	             (conn_opts->stripclienthello ? "|stripclienthello" : ""),
+	             (conn_opts->enable_http2 ? "enable_http2" : "disable_http2"),
 	             (conn_opts->rewrite_alt_svc_port ? conn_opts->rewrite_alt_svc_port : "no rewrite_alt_svc_port"),
 	             conn_opts->max_http_header_size
 	               ) < 0) {
@@ -2882,6 +2885,14 @@ set_conn_opts_option(conn_opts_t *conn_opts, const char *argv0,
 		yes ? opts_set_remove_http_referer(conn_opts) : opts_unset_remove_http_referer(conn_opts);
 #ifdef DEBUG_OPTS
 		log_dbg_printf("RemoveHTTPReferer: %u\n", conn_opts->remove_http_referer);
+#endif /* DEBUG_OPTS */
+	} else if (equal(name, "EnableHTTP2")) {
+		yes = check_value_yesno(value, "EnableHTTP2", *line_num);
+		if (yes == -1)
+			return -1;
+		conn_opts->enable_http2 = yes;
+#ifdef DEBUG_OPTS
+		log_dbg_printf("EnableHTTP2: %u\n", conn_opts->enable_http2);
 #endif /* DEBUG_OPTS */
 	} else if (equal(name, "StripClientHello")) {
 		yes = check_value_yesno(value, "StripClientHello", *line_num);

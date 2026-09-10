@@ -206,10 +206,11 @@ ProxySpec {
     CipherSuites TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256
     VerifyPeer (yes|no)
     AllowWrongHost (yes|no)
+    StripClientHello (yes|no)
 
     RemoveHTTPAcceptEncoding (yes|no)
     RemoveHTTPReferer (yes|no)
-    StripClientHello (yes|no)
+    EnableHTTP2 (yes|no)
     MaxHTTPHeaderSize 8192
     ValidateProto (yes|no)
 
@@ -402,10 +403,11 @@ FilterRule {
     CipherSuites TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256
     VerifyPeer (yes|no)
     AllowWrongHost (yes|no)
+    StripClientHello (yes|no)
 
     RemoveHTTPAcceptEncoding (yes|no)
     RemoveHTTPReferer (yes|no)
-    StripClientHello (yes|no)
+    EnableHTTP2 (yes|no)
     MaxHTTPHeaderSize 8192
     ValidateProto (yes|no)
 
@@ -491,12 +493,12 @@ options already applied to a connection cannot be overriden by the connection
 options specified in the matching structured filtering rule.
 .LP
 For example, SSL options of a connection cannot be changed after the SSL 
-connection is established. So, normally SSL type of rules cannot modify SSL 
+connection is established. So, normally CN filter rules cannot modify SSL 
 options of a connection, but you can use the ReconnectSSL option to reconnect 
-the server side of an SSL connection to enforce the SSL options in the SSL 
+the server side of an SSL connection to enforce the SSL options in the CN 
 type of filtering rules. In other words, the ReconnectSSL option allows for 
-using the SNI and CN fields in stuctured filtering rules to match SSL 
-connections and change their SSL configuration.
+using the CN fields in stuctured filtering rules to match SSL connections and 
+change their SSL configuration.
 .SH 	Macro support
 Macro expansion is supported:
 .LP

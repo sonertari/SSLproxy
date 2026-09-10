@@ -281,13 +281,10 @@ Remove HTTP header line for Referer.
 .br
 Default: yes
 .TP
-\fBStripClientHello BOOL\fR
-Strip ClientHello messages from content, PCAP, and mirror logs during autossl mode.
-When a connection is upgraded from plain TCP to SSL/TLS in autossl mode,
-the initial cleartext ClientHello message sent by the client is stripped
-from the logs to prevent polluting them with the SSL handshake.
+\fBEnableHTTP2 BOOL\fR
+Enable HTTP/2 during ALPN negotiation.
 .br
-Default: no
+Default: yes
 .TP
 \fBVerifyPeer BOOL\fR
 Verify peer using default certificates.
@@ -298,6 +295,14 @@ Default: yes
 When disabled, never add the SNI to forged certificates, even if the SNI 
 provided by the client does not match the server certificate's CN/SAN. Helps 
 pass the wrong.host test at https://badssl.com.
+.br
+Default: no
+.TP
+\fBStripClientHello BOOL\fR
+Strip ClientHello messages from content, PCAP, and mirror logs during autossl mode.
+When a connection is upgraded from plain TCP to SSL/TLS in autossl mode,
+the initial cleartext ClientHello message sent by the client is stripped
+from the logs to prevent polluting them with the SSL handshake.
 .br
 Default: no
 .TP
@@ -528,11 +533,13 @@ VerifyPeer
 .br
 AllowWrongHost
 .br
+StripClientHello
+.br
 RemoveHTTPAcceptEncoding
 .br
 RemoveHTTPReferer
 .br
-StripClientHello
+EnableHTTP2
 .br
 MaxHTTPHeaderSize
 .br
@@ -626,11 +633,13 @@ VerifyPeer
 .br
 AllowWrongHost
 .br
+StripClientHello
+.br
 RemoveHTTPAcceptEncoding
 .br
 RemoveHTTPReferer
 .br
-StripClientHello
+EnableHTTP2
 .br
 MaxHTTPHeaderSize
 .br

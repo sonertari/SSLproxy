@@ -2169,6 +2169,8 @@ quic_client_hello_cb(SSL *ssl, UNUSED int *al, void *arg)
                 memcpy(ctx->sslctx->alpn_protos, alpn_list + 2, list_len);
 
                 log_finest_va("ALPN protos in ClientHello: %s", ssl_wire_to_printable(ctx->sslctx->alpn_protos, ctx->sslctx->alpn_protos_len));
+
+                protossl_try_remove_h2_from_alpn_protos(ctx);
             }
         }
     }

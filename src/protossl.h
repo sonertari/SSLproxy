@@ -37,6 +37,7 @@ int protossl_log_masterkey(pxy_conn_ctx_t *, pxy_conn_desc_t *) NONNULL(1,2);
 void protossl_log_ssl_error(struct bufferevent *, pxy_conn_ctx_t *) NONNULL(1,2);
 
 void protossl_set_alpn_protos_negotiated(SSL *, pxy_conn_ctx_t *) NONNULL(1,2);
+void protossl_try_remove_h2_from_alpn_protos(pxy_conn_ctx_t *) NONNULL(1);
 
 // @todo Used externally by pxy_log_connect_src(), create tcp and ssl versions of that function instead?
 void protossl_srccert_write(pxy_conn_ctx_t *) NONNULL(1);

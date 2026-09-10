@@ -135,6 +135,7 @@ typedef struct conn_opts {
 	char *leafcrlurl;
 	unsigned int remove_http_accept_encoding: 1;
 	unsigned int remove_http_referer: 1;
+	unsigned int enable_http2 : 1;
 	unsigned int verify_peer: 1;
 	unsigned int allow_wrong_host: 1;
 	char *rewrite_alt_svc_port;

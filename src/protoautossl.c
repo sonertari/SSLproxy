@@ -279,6 +279,8 @@ protoautossl_peek_and_upgrade(pxy_conn_ctx_t *ctx)
 				log_dbg_printf("Peek found ClientHello\n");
 			}
 
+			protossl_try_remove_h2_from_alpn_protos(ctx);
+
 			if (ctx->divert) {
 				if (!ctx->children) {
 					// This means that there was no autossl handshake prior to ClientHello, e.g. no STARTTLS message

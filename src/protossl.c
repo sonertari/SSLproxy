@@ -872,10 +872,9 @@ protossl_filter_match_cn(pxy_conn_ctx_t *ctx, filter_list_t *list)
 }
 
 static filter_action_t * NONNULL(1,2)
-protossl_filter(pxy_conn_ctx_t *ctx, UNUSED protohttpx_stream_ctx_t *s, filter_list_t *list)
+protossl_sni_filter(pxy_conn_ctx_t *ctx, UNUSED protohttpx_stream_ctx_t *s, filter_list_t *list)
 {
 	filter_action_t *action_sni = NULL;
-	filter_action_t *action_cn = NULL;
 
 	if (ctx->sslctx->sni) {
 		if (!(action_sni = protossl_filter_match_sni(ctx, list))) {
@@ -891,6 +890,21 @@ protossl_filter(pxy_conn_ctx_t *ctx, UNUSED protohttpx_stream_ctx_t *s, filter_l
 		}
 	}
 
+	if (action_sni)
+		return pxy_conn_set_filter_action(action_sni, NULL
+#ifdef DEBUG_PROXY
+				, ctx, ctx->sslctx->sni, NULL
+#endif /* DEBUG_PROXY */
+				);
+
+	return NULL;
+}
+
+static filter_action_t * NONNULL(1,2)
+protossl_cn_filter(pxy_conn_ctx_t *ctx, UNUSED protohttpx_stream_ctx_t *s, filter_list_t *list)
+{
+	filter_action_t *action_cn = NULL;
+
 	if (ctx->sslctx->ssl_names) {
 		if (!(action_cn = protossl_filter_match_cn(ctx, list))) {
 #ifndef WITHOUT_USERAUTH
@@ -905,10 +919,10 @@ protossl_filter(pxy_conn_ctx_t *ctx, UNUSED protohttpx_stream_ctx_t *s, filter_l
 		}
 	}
 
-	if (action_sni ||  action_cn)
-		return pxy_conn_set_filter_action(action_sni, action_cn
+	if (action_cn)
+		return pxy_conn_set_filter_action(action_cn, NULL
 #ifdef DEBUG_PROXY
-				, ctx, ctx->sslctx->sni, ctx->sslctx->ssl_names
+				, ctx, ctx->sslctx->ssl_names, NULL
 #endif /* DEBUG_PROXY */
 				);
 
@@ -939,11 +953,11 @@ protossl_reconnect_srvdst(pxy_conn_ctx_t *ctx)
 }
 
 static int
-protossl_apply_filter(pxy_conn_ctx_t *ctx)
+protossl_apply_filter(pxy_conn_ctx_t *ctx, int sni)
 {
 	int rv = 0;
 	filter_action_t *a;
-	if ((a = pxy_conn_filter(ctx, NULL, protossl_filter))) {
+	if ((a = pxy_conn_filter(ctx, NULL, sni ? protossl_sni_filter : protossl_cn_filter))) {
 		unsigned int action = pxy_conn_translate_filter_action(ctx, a);
 
 		ctx->filter_precedence = action & FILTER_PRECEDENCE;
@@ -1010,7 +1024,11 @@ protossl_apply_filter(pxy_conn_ctx_t *ctx)
 			}
 #endif /* !WITHOUT_ICAP */
 
-			if (ctx->conn_opts->reconnect_ssl) {
+			// Filter may disable HTTP2 (EnableHTTP2 no)
+			protossl_try_remove_h2_from_alpn_protos(ctx);
+
+			// SNI rules do not need to trigger reconnect
+			if (!sni && ctx->conn_opts->reconnect_ssl) {
 				// Reconnect srvdst only once, if ReconnectSSL set in the rule
 				if (!ctx->sslctx->reconnected) {
 					protossl_reconnect_srvdst(ctx);
@@ -1080,7 +1098,7 @@ protossl_srcssl_create(pxy_conn_ctx_t *ctx, SSL *origssl, SSL *src_ssl)
 
 	// Defers any block action until HTTP filter application
 	// or until the first src readcb of non-http protos
-	if (protossl_apply_filter(ctx)) {
+	if (protossl_apply_filter(ctx, 0)) {
 		cert_free(cert);
 		return NULL;
 	}
@@ -1309,6 +1327,13 @@ protossl_dstssl_create(pxy_conn_ctx_t *ctx)
 	if (ctx->conn_opts->clientkey &&
 	    (SSL_CTX_use_PrivateKey(sslctx, ctx->conn_opts->clientkey) != 1)) {
 		log_dbg_printf("loading dst client key failed\n");
+		SSL_CTX_free(sslctx);
+		return NULL;
+	}
+
+	// ATTENTION: We call protossl_apply_filter() here for SNI filter rules, as SNI is available here from the client's ClientHello.
+	// And, we call protossl_apply_filter() for CN filter rules again in protossl_srcssl_create(), after fetching and forging the server cert.
+	if (protossl_apply_filter(ctx, 1)) {
 		SSL_CTX_free(sslctx);
 		return NULL;
 	}
@@ -1547,6 +1572,53 @@ protossl_sni_resolve_cb(int errcode, struct evutil_addrinfo *ai, void *arg)
 }
 #endif /* !OPENSSL_NO_TLSEXT */
 
+static void
+protossl_strip_h2_from_alpn_wireformat(unsigned char *in, size_t in_len, unsigned char *out, size_t *out_len)
+{
+    size_t i = 0, j = 0;
+
+    while (i < in_len) {
+        unsigned char len = in[i];
+        if (i + 1 + len > in_len) {
+            /* Malformed ALPN buffer */
+            break;
+        }
+
+        /* Check if current protocol is "h2" */
+        if (len == 2 && memcmp(&in[i + 1], "h2", 2) == 0) {
+            /* Skip "h2" */
+            i += 1 + len;
+            continue;
+        }
+
+        /* Copy non-h2 protocols */
+        out[j] = len;
+        memcpy(&out[j + 1], &in[i + 1], len);
+        j += 1 + len;
+        i += 1 + len;
+    }
+
+    *out_len = j;
+}
+
+void
+protossl_try_remove_h2_from_alpn_protos(pxy_conn_ctx_t *ctx)
+{
+	log_finest_va("ENTER, enable_http2=%d, %s", ctx->conn_opts->enable_http2,
+		ssl_wire_to_printable(ctx->sslctx->alpn_protos, ctx->sslctx->alpn_protos_len));
+
+	if (!ctx->conn_opts->enable_http2) {
+		unsigned char alpn_protos[ctx->sslctx->alpn_protos_len];
+		size_t alpn_protos_len = ctx->sslctx->alpn_protos_len;
+		memcpy(alpn_protos, ctx->sslctx->alpn_protos, ctx->sslctx->alpn_protos_len);
+
+		// The size of alpn_protos remains the same after removing h2, but that's fine
+		protossl_strip_h2_from_alpn_wireformat(alpn_protos, alpn_protos_len, ctx->sslctx->alpn_protos, &ctx->sslctx->alpn_protos_len);
+
+		log_finest_va("Removed h2 from ALPN protocols: %s", ssl_wire_to_printable(ctx->sslctx->alpn_protos, ctx->sslctx->alpn_protos_len));
+	}
+}
+
 /*
  * The src fd is readable.  This is used to sneak-preview the SNI on SSL
  * connections.  If ctx->ev is NULL, it was called manually for a non-SSL
@@ -1629,6 +1701,8 @@ protossl_fd_readcb(evutil_socket_t fd, UNUSED short what, void *arg)
 		evdns_getaddrinfo(ctx->thr->dnsbase, ctx->sslctx->sni, sniport, &hints, protossl_sni_resolve_cb, ctx);
 		return;
 	}
+
+	protossl_try_remove_h2_from_alpn_protos(ctx);
 
 	pxy_conn_connect(ctx);
 	return;

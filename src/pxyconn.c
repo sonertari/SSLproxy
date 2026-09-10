@@ -1371,6 +1371,7 @@ pxy_bev_readcb_preexec_logging_and_stats(struct bufferevent *bev, pxy_conn_ctx_t
 						if (rv == 0 || (rv == 1 && chello != NULL)) {
 							return 0;
 						}
+						protossl_try_remove_h2_from_alpn_protos(ctx);
 					}
 				}
 			}
