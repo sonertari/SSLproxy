@@ -41,17 +41,19 @@ typedef struct protohttp_ctx {
 	struct evbuffer *in_hdr;               /* tmp buffer for http headers */
 #endif /* !WITHOUT_ICAP */
 
-	/* log strings from HTTP request */
+	/* from HTTP request */
 	char *http_method;
 	char *http_uri;
 	char *http_host;
 	char *http_content_type;
 
-	/* log strings from HTTP response */
+	/* from HTTP response */
 	char *http_status_code;
 	char *http_status_text;
 	char *src_http_content_length;
 	char *dst_http_content_length;
+	unsigned int src_content_chunked : 1;
+	unsigned int dst_content_chunked : 1;
 
 	unsigned int not_valid : 1;            /* 1 if cannot find HTTP on first line */
 	unsigned int seen_keyword_count;

@@ -97,6 +97,9 @@ struct icap_ctx {
 	size_t dst_http_content_length;
 	unsigned int  dst_http_content_length_set : 1;
 
+	unsigned int src_end_stream : 1;
+	unsigned int dst_end_stream : 1;
+
 	unsigned int made_progress : 1;
 	unsigned int term : 1;            /* 1 if ICAP context is ready to be terminated */
 

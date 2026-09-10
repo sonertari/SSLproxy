@@ -345,6 +345,10 @@ protohttp_filter_request_header_line(const char *line, protohttp_ctx_t *http_ctx
 				ctx->enomem = 1;
 				return NULL;
 			}
+		} else if (!strncasecmp(line, "Transfer-Encoding:", 18)) {
+			if (strstr(util_skipws(line + 18), "chunked") != NULL) {
+				http_ctx->src_content_chunked = 1;
+			}
 		} else if (!http_ctx->http_host && !strncasecmp(line, "Host:", 5)) {
 			http_ctx->http_host = strdup(util_skipws(line + 5));
 			if (!http_ctx->http_host) {
@@ -1832,6 +1836,10 @@ protohttp_filter_response_header_line(const char *line, protohttp_ctx_t *http_ct
 			if (!http_ctx->dst_http_content_length) {
 				ctx->enomem = 1;
 				return NULL;
+			}
+		} else if (!strncasecmp(line, "Transfer-Encoding:", 18)) {
+			if (strstr(util_skipws(line + 18), "chunked") != NULL) {
+				http_ctx->dst_content_chunked = 1;
 			}
 		} else if (
 		    /* HPKP: Public Key Pinning Extension for HTTP
