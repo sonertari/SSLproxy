@@ -1424,6 +1424,8 @@ icap_send_data(icap_ctx_t *icap_ctx)
 
 		// The icap_ctx owner may be conn or stream
 		// TODO: Free h2 conn if all h2 streams are finished?
+		// TODO: Should we call icap_is_finished() instead? But it checks if icap conn is closed or not.
+		// if (made_progress && icap_is_finished(icap_ctx)) {
 		if (made_progress && icap_is_content_complete(icap_ctx, 1) && icap_is_content_complete(icap_ctx, 0)) {
 			// We can pass down term_owner for h2 streams too, because icap_ctx_free() does not free stream_ctx unless s->term is set
 			log_fine_va("Free icap_ctx and %s, all content complete", h2 ? "stream" : "conn");
@@ -1436,11 +1438,8 @@ icap_send_data(icap_ctx_t *icap_ctx)
 }
 
 static int
-icap_is_http_chunked_end_at_tail(struct evbuffer *buf)
+icap_is_http_chunked_end_at_tail(struct evbuffer *buf, size_t len, size_t search_len)
 {
-    size_t len = evbuffer_get_length(buf);
-    if (len < 5) return 0; /* "0\r\n\r\n" is at least 5 bytes */
-
     /* Inspect the last 64 bytes max (to account for CRLFs/trailers) */
     size_t peek_len = (len > 64) ? 64 : len;
     unsigned char tail[64];
@@ -1456,10 +1455,7 @@ icap_is_http_chunked_end_at_tail(struct evbuffer *buf)
     }
 
     /* Check if tail ends with "\r\n0\r\n\r\n" or "0\r\n\r\n" */
-    if (peek_len >= 5 && memcmp(tail + peek_len - 5, "0\r\n\r\n", 5) == 0) {
-        return 1;
-    }
-    if (peek_len >= 7 && memcmp(tail + peek_len - 7, "\r\n0\r\n\r\n", 7) == 0) {
+    if (peek_len >= 5 && memcmp(tail + peek_len - search_len, search_len == 5 ? "0\r\n\r\n" : "\r\n0\r\n\r\n", search_len) == 0) {
         return 1;
     }
 
@@ -1477,19 +1473,21 @@ icap_peek_http_chunked_end(struct evbuffer *buf)
     size_t len = evbuffer_get_length(buf);
     if (len < 5) return 0;
 
+	size_t search_len = len >= 7 ? 7 : 5;
+
     struct evbuffer_ptr pos;
-    evbuffer_ptr_set(buf, &pos, len - 5, EVBUFFER_PTR_SET);
+    evbuffer_ptr_set(buf, &pos, len - search_len, EVBUFFER_PTR_SET);
 
-    struct evbuffer_iovec vec[2]; /* At most 2 chains if 5 bytes span a chain boundary */
-    int nvec = evbuffer_peek(buf, 5, &pos, vec, 2);
+    struct evbuffer_iovec vec[2]; /* At most 2 chains if search_len bytes span a chain boundary */
+    int nvec = evbuffer_peek(buf, search_len, &pos, vec, 2);
 
-    /* If all 5 bytes are contiguous in the last chain */
-    if (nvec == 1 && vec[0].iov_len >= 5) {
-        return (memcmp(vec[0].iov_base, "0\r\n\r\n", 5) == 0);
+    /* If all search_len bytes are contiguous in the last chain */
+    if (nvec == 1 && vec[0].iov_len >= search_len) {
+        return (memcmp(vec[0].iov_base, search_len == 5 ? "0\r\n\r\n" : "\r\n0\r\n\r\n", search_len) == 0);
     }
 
-	/* If 5 bytes span across two chains, fall back to evbuffer_copyout_from */
-    return icap_is_http_chunked_end_at_tail(buf);
+	/* If search_len bytes span across two chains, fall back to evbuffer_copyout_from */
+    return icap_is_http_chunked_end_at_tail(buf, len, search_len);
 }
 
 static unsigned int NONNULL(1)
@@ -1925,8 +1923,6 @@ icap_service_content_complete(icap_service_ctx_t *service_ctx)
 	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
 	UNUSED pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
 
-	ICAP_STATE(service_ctx, icap_ctx->reqmod)->content_complete = 1;
-
 	if (icap_ctx->is_veto) {
 		icap_ctx->sent_veto_page = 1;
 	}
@@ -1941,6 +1937,24 @@ icap_service_content_complete(icap_service_ctx_t *service_ctx)
 		evbuffer_drain(sent_hdr, evbuffer_get_length(sent_hdr));
 		evbuffer_drain(sent_body, evbuffer_get_length(sent_body));
 	}
+
+	if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_204 || ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_206) {
+		int stream_end = 0;
+
+		if (ctx->proto == PROTO_HTTP2 || ctx->proto == PROTO_HTTP3) {
+			stream_end = icap_is_httpx_stream_end(service_ctx);
+		}
+		else {
+			stream_end = ICAP_STATE(service_ctx, icap_ctx->reqmod)->end_stream;
+		}
+
+		if (!stream_end) {
+			log_finest_va("Streaming in 204/206 mode, do NOT set content complete, reqmod=%d", icap_ctx->reqmod);
+			return;
+		}
+	}
+
+	ICAP_STATE(service_ctx, icap_ctx->reqmod)->content_complete = 1;
 }
 
 static void
@@ -1981,14 +1995,9 @@ icap_service_bypass(icap_service_ctx_t *service_ctx)
 	}
 
 	struct evbuffer *in_body = ICAP_STATE(service_ctx, icap_ctx->reqmod)->in_body;
+	size_t in_body_len = evbuffer_get_length(in_body);
 
-	if (evbuffer_get_length(in_body) > 0) {
-		*sent_body_size += evbuffer_get_length(in_body);
-
-		log_finer_icap_va("Move in_body to out_body, in_body=%zu, out_body=%zu", evbuffer_get_length(in_body), evbuffer_get_length(out_body));
-		evbuffer_add_buffer(out_body, in_body);
-		icap_ctx->made_progress = 1;
-	}
+	int content_complete = 0;
 
 	log_finest_icap_va("Checking if HTTP content complete, sent_body_size=%zu, http_content_length=%zu", *sent_body_size, icap_get_http_content_length(icap_ctx));
 
@@ -1998,16 +2007,24 @@ icap_service_bypass(icap_service_ctx_t *service_ctx)
 
 		// TODO: Can/shall we enable http_content_length check for h2/h3 conns with content-length header?
 		// ICAP_STATE(service_ctx, icap_ctx->reqmod)->content_complete = icap_is_httpx_stream_end(service_ctx) || (*sent_body_size >= http_content_length);
-		if (icap_is_httpx_stream_end(service_ctx)) {
-			icap_service_content_complete(service_ctx);
-		}
+		content_complete = icap_is_httpx_stream_end(service_ctx);
 	}
 	else {
 		log_finest_icap("HTTP content complete check for http1");
 
-		if (icap_is_http_stream_end(service_ctx, *sent_body_size, in_body)) {
-			icap_service_content_complete(service_ctx);
-		}
+		content_complete = icap_is_http_stream_end(service_ctx, *sent_body_size + in_body_len, in_body);
+	}
+
+	if (in_body_len > 0) {
+		*sent_body_size += in_body_len;
+
+		log_finer_icap_va("Move in_body to out_body, in_body=%zu, out_body=%zu", in_body_len, evbuffer_get_length(out_body));
+		evbuffer_add_buffer(out_body, in_body);
+		icap_ctx->made_progress = 1;
+	}
+
+	if (content_complete) {
+		icap_service_content_complete(service_ctx);
 	}
 }
 
@@ -2377,7 +2394,7 @@ icap_get_use_original_body_ext(icap_service_ctx_t *service_ctx, char *line)
 }
 
 static int
-icap_parse_chunk_header(icap_service_ctx_t *service_ctx, struct evbuffer *input, size_t *chunk_size)
+icap_parse_chunk_header(icap_service_ctx_t *service_ctx, struct evbuffer *input, size_t *chunk_size, char **ext)
 {
 	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
 	UNUSED pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
@@ -2407,8 +2424,6 @@ icap_parse_chunk_header(icap_service_ctx_t *service_ctx, struct evbuffer *input,
 		goto out;
 	}
 
-	char *ext = NULL;
-
 	// Assume chunk size is always < 0x1000000 (16 MB)
 	#define ICAP_CHUNK_SIZE_MAX_DIGITS 6
 	if (strlen(line) <= ICAP_CHUNK_SIZE_MAX_DIGITS && strspn(line, "0123456789abcdefABCDEF") == strlen(line)) {
@@ -2424,16 +2439,9 @@ icap_parse_chunk_header(icap_service_ctx_t *service_ctx, struct evbuffer *input,
 			semicolon > line && semicolon - line == (long int)(chunk_size_len - 1)) {
 			// No need to null-terminate the chunk size part, since strtoull() will stop parsing at the semicolon
 			*chunk_size = (size_t)strtoull(line, NULL, 16);
-			ext = semicolon + 1;
-			log_finer_icap_va("Parsed chunk size with extensions, chunk_size=%zu, extensions=%s", *chunk_size, ext);
-
-			// We only support parsing the "use-original-body" extension for 206 response, and ignore other extensions for now
-			if (*chunk_size == 0 && ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_206) {
-				log_finest_icap("FOUND 0 chunk size with extensions in 206 response");
-				icap_get_use_original_body_ext(service_ctx, ext);
-				// TODO: Is this end_stream in 206?
-				// ICAP_STATE(service_ctx, icap_ctx->reqmod)->content_complete = 1;
-			}
+			*ext = strdup(semicolon + 1);
+			log_finer_icap_va("Parsed chunk size with extensions, chunk_size=%zu, extensions=%s", *chunk_size, *ext);
+			goto out;
 		}
 		else {
 			log_fine_icap_va("Invalid chunk size line: '%s'", line);
@@ -2441,8 +2449,35 @@ icap_parse_chunk_header(icap_service_ctx_t *service_ctx, struct evbuffer *input,
 			goto out;
 		}
 	}
+out:
+	free(line);
+	return rv;
+}
 
-	if (*chunk_size == 0) {
+static int
+icap_get_chunk_header(icap_service_ctx_t *service_ctx, struct evbuffer *input, size_t *chunk_size)
+{
+	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
+	UNUSED pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
+
+	*chunk_size = 0;
+	char *ext = NULL;
+
+	int rv = icap_parse_chunk_header(service_ctx, input, chunk_size, &ext);
+
+	if (rv == 0 && *chunk_size == 0) {
+		// We only support parsing the "use-original-body" extension for 206 response, and ignore other extensions for now
+		if (ext && ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_206) {
+			log_finest_icap("FOUND 0 chunk size with extensions in 206 response");
+			icap_get_use_original_body_ext(service_ctx, ext);
+			// ATTENTION: This is NOT end_stream in 206
+			ICAP_STATE(service_ctx, icap_ctx->reqmod)->content_complete_206 = 1;
+		}
+
+		if (ext) {
+			free(ext);
+		}
+
 		// Mark content complete after receiving xfer terminator, not just after 0 chunk size terminator
 		if (icap_try_discard_terminator(service_ctx, input) > 0) {
 			log_finest_icap("FOUND terminator after 0 chunk size, discard it and set content complete");
@@ -2453,8 +2488,7 @@ icap_parse_chunk_header(icap_service_ctx_t *service_ctx, struct evbuffer *input,
 			ICAP_STATE(service_ctx, icap_ctx->reqmod)->wait_terminator = 1;
 		}
 	}
-out:
-	free(line);
+
 	return rv;
 }
 
@@ -2465,17 +2499,72 @@ icap_try_service_bypass_206(icap_service_ctx_t *service_ctx, size_t body_chunk_l
 	UNUSED pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
 
 	if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_206) {
+		ICAP_STATE(service_ctx, icap_ctx->reqmod)->body_chunk_len_206 += body_chunk_len;
+
 		if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->use_original_body > 0 || ICAP_STATE(service_ctx, icap_ctx->reqmod)->content_complete) {
 			size_t *sent_body_size = &ICAP_STATE(service_ctx, icap_ctx->reqmod)->sent_body_size;
 			log_finest_icap_va("Update sent_body_size=%zu, body_chunk=%zu", *sent_body_size, body_chunk_len);
 			*sent_body_size += body_chunk_len;
 
-			icap_service_bypass(service_ctx);
+			protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
+
+			if (icap_ctx->reqmod ? http_ctx->src_content_chunked : http_ctx->dst_content_chunked && ICAP_STATE(service_ctx, icap_ctx->reqmod)->use_original_body > 0) {
+				struct evbuffer *out_body = ICAP_STATE(service_ctx, icap_ctx->reqmod)->out_body;
+
+				size_t chunk_size = 0;
+				char *ext = NULL;
+
+				int rv = icap_parse_chunk_header(service_ctx, out_body, &chunk_size, &ext);
+
+				if (ext) {
+					log_finest_icap_va("Discarding H1 chunk header extension=%s", ext);
+					free(ext);
+				}
+
+				if (rv == 0) {
+					log_finest_icap_va("Update H1 chunk header in 206 mode, new chunk_size=%zu, body_chunk_len_206=%zu, use_original_body=%zu, orig chunk_size=%zu",
+						chunk_size + ICAP_STATE(service_ctx, icap_ctx->reqmod)->body_chunk_len_206 - ICAP_STATE(service_ctx, icap_ctx->reqmod)->use_original_body,
+						ICAP_STATE(service_ctx, icap_ctx->reqmod)->body_chunk_len_206, ICAP_STATE(service_ctx, icap_ctx->reqmod)->use_original_body, chunk_size);
+
+					chunk_size += ICAP_STATE(service_ctx, icap_ctx->reqmod)->body_chunk_len_206 - ICAP_STATE(service_ctx, icap_ctx->reqmod)->use_original_body;
+
+					// struct evbuffer *tmp = evbuffer_new();
+					// evbuffer_add_printf(tmp, "%zx\r\n", chunk_size);
+					// evbuffer_prepend_buffer(out_body, tmp);
+					// evbuffer_free(tmp);
+
+					char header[16];
+					int len = snprintf(header, sizeof(header), "%zx\r\n", chunk_size);
+					if (len > 0) {
+						evbuffer_prepend(out_body, header, len);
+					}
+					else {
+						log_finest_icap("Failed in snprintf call");
+						ctx->enomem = 1;
+						return;
+					}
+				}
+
+#ifdef DEBUG_ICAP
+				/* Log first 400 bytes for debugging */
+				size_t len = evbuffer_get_length(out_body);
+				size_t log_len = len < 400 ? len : 400;
+				char log_buf[401];  // Stack allocation
+				evbuffer_copyout(out_body, log_buf, log_len);
+				log_buf[log_len] = '\0';
+				log_finest_icap_va("out_body (first %zu bytes, orig %zu bytes): %s", log_len, len, log_buf);
+#endif /* DEBUG_ICAP */
+			}
+
+			// The 206 response may be fragmented into separate packets, so make sure we have the chunk terminator
+			// Otherwise, icap_service_bypass() submits the first fragment to the next service or its destination
+			if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->content_complete_206) {
+				icap_service_bypass(service_ctx);
+			}
 		}
 		else {
 			// Wait for 206 response to tell us whether we should use original body or not
 			log_finest_icap_va("Update body_chunk_len_206=%zu, body_chunk=%zu", ICAP_STATE(service_ctx, icap_ctx->reqmod)->body_chunk_len_206, body_chunk_len);
-			ICAP_STATE(service_ctx, icap_ctx->reqmod)->body_chunk_len_206 += body_chunk_len;
 		}
 	}
 }
@@ -2493,9 +2582,7 @@ icap_extract_body_chunk(icap_service_ctx_t *service_ctx, struct evbuffer *input)
 
 			icap_service_content_complete(service_ctx);
 
-			if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_206) {
-				icap_try_service_bypass_206(service_ctx, 0);
-			}
+			icap_try_service_bypass_206(service_ctx, 0);
 
 			icap_ctx->made_progress = 1;
 		}
@@ -2578,7 +2665,7 @@ icap_extract_body_chunk(icap_service_ctx_t *service_ctx, struct evbuffer *input)
 
 	while (evbuffer_get_length(input) > 0) {
 		size_t chunk_size = 0;
-		int chrv = icap_parse_chunk_header(service_ctx, input, &chunk_size);
+		int chrv = icap_get_chunk_header(service_ctx, input, &chunk_size);
 		if (chrv < 0) {
 			rv = -1;
 			goto err;
@@ -3328,10 +3415,18 @@ icap_process_chain_cb(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 		else {
 			log_finer_icap("Wait for ICAP 100 preview continue, proceed to next service");
 
-			if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_204 || ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_206) {
-				log_finer_icap_va("Preview mode with 204 or 206, streaming data, 204=%d, 206=%d",
-					ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_204, ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_206);
+			if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_204) {
+				log_finer_icap("Stream data in 204 mode");
 				icap_service_bypass(service_ctx);
+			}
+			if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_206) {
+				if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->content_complete_206) {
+					log_finer_icap("Stream data in 206 mode");
+					icap_service_bypass(service_ctx);
+				}
+				else {
+					log_finer_icap("Do NOT stream data, wait for content complete in 206 mode");
+				}
 			}
 		}
 	}
