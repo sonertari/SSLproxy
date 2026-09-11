@@ -97,9 +97,6 @@ struct icap_ctx {
 	size_t dst_http_content_length;
 	unsigned int  dst_http_content_length_set : 1;
 
-	unsigned int src_end_stream : 1;
-	unsigned int dst_end_stream : 1;
-
 	unsigned int made_progress : 1;
 	unsigned int term : 1;            /* 1 if ICAP context is ready to be terminated */
 
@@ -138,8 +135,10 @@ typedef struct icap_service_state {
 	size_t sent_body_size;
 	unsigned int content_complete : 1;
 
-    // unsigned int end_stream : 1;      /* 1 after chunk terminator received */
-    unsigned int sent_terminator : 1; /* 1 after chunk terminator sent */
+	// The end_stream flag is needed for chunked transfer encoding in HTTP/1.x
+	unsigned int end_stream : 1;      /* 1 after content complete in h1 */
+
+	unsigned int sent_terminator : 1; /* 1 after chunk terminator sent */
 
 	unsigned int wait_preview_continue : 1;
 	unsigned int detected_204 : 1;    /* Whether 204 detected in ICAP response */

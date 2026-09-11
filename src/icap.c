@@ -1436,7 +1436,7 @@ icap_send_data(icap_ctx_t *icap_ctx)
 }
 
 static int
-is_chunked_end_at_tail(struct evbuffer *buf)
+icap_is_http_chunked_end_at_tail(struct evbuffer *buf)
 {
     size_t len = evbuffer_get_length(buf);
     if (len < 5) return 0; /* "0\r\n\r\n" is at least 5 bytes */
@@ -1466,8 +1466,13 @@ is_chunked_end_at_tail(struct evbuffer *buf)
     return 0;
 }
 
+/*
+ * Peek at the end of an HTTP chunked body to see if it has the terminating chunk.
+ * Returns 1 if the end is detected, 0 otherwise.
+ * Tail inspection heuristics (guesses).
+ */
 static int
-is_chunked_end_peek(struct evbuffer *buf)
+icap_peek_http_chunked_end(struct evbuffer *buf)
 {
     size_t len = evbuffer_get_length(buf);
     if (len < 5) return 0;
@@ -1484,70 +1489,8 @@ is_chunked_end_peek(struct evbuffer *buf)
     }
 
 	/* If 5 bytes span across two chains, fall back to evbuffer_copyout_from */
-    return is_chunked_end_at_tail(buf);
+    return icap_is_http_chunked_end_at_tail(buf);
 }
-
-static unsigned int NONNULL(1)
-icap_is_end_stream(icap_ctx_t *icap_ctx)
-{
-	return icap_ctx->reqmod ? icap_ctx->src_end_stream : icap_ctx->dst_end_stream;
-}
-
-static void NONNULL(1)
-icap_get_content_state(icap_ctx_t *icap_ctx, size_t sent_body_size, struct evbuffer *buf)
-{
-	pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
-	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
-
-	if (icap_is_end_stream(icap_ctx)) {
-		return;
-	}
-
-	if (icap_ctx->reqmod) {
-		if (http_ctx->src_content_chunked) {
-			icap_ctx->src_end_stream = is_chunked_end_peek(buf);
-		} else if (icap_ctx->src_http_content_length_set) {
-			if ((icap_ctx->src_http_content_length == 0) || (sent_body_size >= icap_ctx->src_http_content_length)) {
-				icap_ctx->src_end_stream = 1;
-			} else {
-				icap_ctx->src_end_stream = 0;
-			}
-		} else {
-			/* GET, HEAD, or POST with no length = no body */
-			icap_ctx->src_end_stream = 1;
-		}
-	} else { /* Response */
-		int status_code = strtoul(http_ctx->http_status_code, NULL, 10);
-
-		if (status_code == 204 || status_code == 304 || (status_code >= 100 && status_code < 200) || strncasecmp(http_ctx->http_method, "HEAD", 4) == 0) {
-			icap_ctx->dst_end_stream = 1; /* These NEVER have a body */
-		} else if (http_ctx->dst_content_chunked) {
-			icap_ctx->dst_end_stream = is_chunked_end_peek(buf);
-		} else if (icap_ctx->dst_http_content_length_set) {
-			if ((icap_ctx->dst_http_content_length == 0) || (sent_body_size >= icap_ctx->dst_http_content_length)) {
-				icap_ctx->dst_end_stream = 1;
-			} else {
-				icap_ctx->dst_end_stream = 0;
-			}
-		} else {
-			/* No Content-Length, No Chunked -> Body ends on Server Connection Close (EOF) */
-			icap_ctx->dst_end_stream = 0; /* Must wait for EOF from server socket */
-		}
-	}
-
-	log_finest_va("EXIT, end_stream=%d, reqmod=%d", icap_is_end_stream(icap_ctx), icap_ctx->reqmod);
-}
-
-// static unsigned int NONNULL(1)
-// icap_is_http_content_chunked(icap_ctx_t *icap_ctx)
-// {
-// 	pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
-// 	if (ctx->proto != PROTO_HTTP2 && ctx->proto != PROTO_HTTP3) {
-// 		protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
-// 		return icap_ctx->reqmod ? http_ctx->src_content_chunked : http_ctx->dst_content_chunked;
-// 	}
-// 	return 0;
-// }
 
 static unsigned int NONNULL(1)
 icap_is_http_content_length_set(icap_ctx_t *icap_ctx)
@@ -1594,6 +1537,61 @@ icap_get_http_content_length(icap_ctx_t *icap_ctx)
 
 	log_finest_va("Get HTTP content length, http_content_length=%zu", *http_content_length);
 	return *http_content_length;
+}
+
+static int NONNULL(1) WUNRES
+icap_is_http_stream_end(icap_service_ctx_t *service_ctx, size_t sent_body_size, struct evbuffer *buf)
+{
+	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
+	pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
+	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
+
+	size_t http_content_length = icap_get_http_content_length(icap_ctx);
+
+	log_finest_va("ENTER, end_stream=%d, sent_body_size=%zu, http_content_length=%zu, http_content_length_set=%d, content_chunked=%d, http_method=%s, status_code=%s, reqmod=%d",
+		ICAP_STATE(service_ctx, icap_ctx->reqmod)->end_stream, sent_body_size,
+		http_content_length, icap_ctx->reqmod ? icap_ctx->src_http_content_length_set : icap_ctx->dst_http_content_length_set,
+		icap_ctx->reqmod ? http_ctx->src_content_chunked : http_ctx->dst_content_chunked,
+		STRORDASH(http_ctx->http_method), STRORDASH(http_ctx->http_status_code), icap_ctx->reqmod);
+
+	if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->end_stream) {
+		return 1;
+	}
+
+	if (icap_ctx->reqmod) {
+		if (http_ctx->src_content_chunked) {
+			service_ctx->src.end_stream = icap_peek_http_chunked_end(buf);
+		} else if (icap_ctx->src_http_content_length_set) {
+			if ((http_content_length == 0) || (sent_body_size >= http_content_length)) {
+				service_ctx->src.end_stream = 1;
+			} else {
+				service_ctx->src.end_stream = 0;
+			}
+		} else {
+			/* GET, HEAD, or POST with no length = no body */
+			service_ctx->src.end_stream = 1;
+		}
+	} else { /* Response */
+		int status_code = strtoul(http_ctx->http_status_code, NULL, 10);
+
+		if (status_code == 204 || status_code == 304 || (status_code >= 100 && status_code < 200) || strncasecmp(http_ctx->http_method, "HEAD", 4) == 0) {
+			service_ctx->dst.end_stream = 1; /* These NEVER have a body */
+		} else if (http_ctx->dst_content_chunked) {
+			service_ctx->dst.end_stream = icap_peek_http_chunked_end(buf);
+		} else if (icap_ctx->dst_http_content_length_set) {
+			if ((http_content_length == 0) || (sent_body_size >= http_content_length)) {
+				service_ctx->dst.end_stream = 1;
+			} else {
+				service_ctx->dst.end_stream = 0;
+			}
+		} else {
+			/* No Content-Length, No Chunked -> Body ends on Server Connection Close (EOF) */
+			service_ctx->dst.end_stream = 0; /* Must wait for EOF from server socket */
+		}
+	}
+
+	log_finest_va("EXIT, end_stream=%d, reqmod=%d", ICAP_STATE(service_ctx, icap_ctx->reqmod)->end_stream, icap_ctx->reqmod);
+	return ICAP_STATE(service_ctx, icap_ctx->reqmod)->end_stream;
 }
 
 static int
@@ -1666,12 +1664,7 @@ icap_failopen_to_next_service(icap_service_ctx_t *service_ctx)
 	// otherwise we may never mark content complete and cannot terminate the connection (until it expires)
 	*sent_body_size += (evbuffer_get_length(in_body) + evbuffer_get_length(sent_body));
 
-	log_finest_icap_va("Updated sent_body_size=%zu", *sent_body_size);
-
-	size_t http_content_length = icap_get_http_content_length(icap_ctx);
-
-	log_finest_icap_va("Checking if HTTP content complete, sent_body_size=%zu, http_content_length=%zu, http_content_length_set=%u",
-		*sent_body_size, http_content_length, icap_is_http_content_length_set(icap_ctx));
+	log_finest_icap_va("Updated sent_body_size, checking http content complete, sent_body_size=%zu, http_content_length=%zu", *sent_body_size, icap_get_http_content_length(icap_ctx));
 
 	if (ctx->proto == PROTO_HTTP2 || ctx->proto == PROTO_HTTP3) {
 		log_finest_icap_va("HTTP content complete check for h2/h3, src_end_stream=%d, dst_end_stream=%d",
@@ -1685,9 +1678,7 @@ icap_failopen_to_next_service(icap_service_ctx_t *service_ctx)
 	else {
 		log_finest_icap("HTTP content complete check for http1");
 
-		// if ((icap_is_http_content_length_set(icap_ctx) || !icap_is_http_content_chunked(icap_ctx)) && *sent_body_size >= http_content_length) {
-		icap_get_content_state(icap_ctx, *sent_body_size, in_body);
-		if (icap_is_end_stream(icap_ctx)) {
+		if (icap_is_http_stream_end(service_ctx, *sent_body_size, in_body)) {
 			ICAP_STATE(service_ctx, icap_ctx->reqmod)->content_complete = 1;
 		}
 	}
@@ -1925,10 +1916,7 @@ icap_is_http_nullbody(icap_service_ctx_t *service_ctx)
 	log_finest_icap_va("HTTP content length=%zu, http_content_length_set=%u, null_body=%u", http_content_length, icap_is_http_content_length_set(icap_ctx),
 		ICAP_STATE(service_ctx, icap_ctx->reqmod)->null_body);
 
-	icap_get_content_state(icap_ctx, sent_body_size, in_body);
-
-	// return (icap_is_http_content_length_set(icap_ctx) || !icap_is_http_content_chunked(icap_ctx)) && http_content_length == 0;
-	return icap_is_end_stream(icap_ctx) && http_content_length == 0;
+	return icap_is_http_stream_end(service_ctx, sent_body_size, in_body) && http_content_length == 0;
 }
 
 static void
@@ -2002,9 +1990,7 @@ icap_service_bypass(icap_service_ctx_t *service_ctx)
 		icap_ctx->made_progress = 1;
 	}
 
-	size_t http_content_length = icap_get_http_content_length(icap_ctx);
-	log_finest_icap_va("Checking if HTTP content complete, sent_body_size=%zu, http_content_length=%zu, http_content_length_set=%u",
-		*sent_body_size, http_content_length, icap_is_http_content_length_set(icap_ctx));
+	log_finest_icap_va("Checking if HTTP content complete, sent_body_size=%zu, http_content_length=%zu", *sent_body_size, icap_get_http_content_length(icap_ctx));
 
 	if (ctx->proto == PROTO_HTTP2 || ctx->proto == PROTO_HTTP3) {
 		log_finest_icap_va("HTTP content complete check for h2/h3, src_end_stream=%d, dst_end_stream=%d",
@@ -2019,9 +2005,7 @@ icap_service_bypass(icap_service_ctx_t *service_ctx)
 	else {
 		log_finest_icap("HTTP content complete check for http1");
 
-		// if ((icap_is_http_content_length_set(icap_ctx) || !icap_is_http_content_chunked(icap_ctx)) && (http_content_length == 0 || *sent_body_size >= http_content_length)) {
-		icap_get_content_state(icap_ctx, *sent_body_size, in_body);
-		if (icap_is_end_stream(icap_ctx))  {
+		if (icap_is_http_stream_end(service_ctx, *sent_body_size, in_body)) {
 			icap_service_content_complete(service_ctx);
 		}
 	}
@@ -2980,39 +2964,23 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 				preview_size = service_ctx->svc->max_body_size;
 			}
 
+			int stream_end = 0;
 			if (ctx->proto == PROTO_HTTP2 || ctx->proto == PROTO_HTTP3) {
-				int stream_end = icap_is_httpx_stream_end(service_ctx);
-				if (stream_end) {
-					if (preview_size >= in_body_len) {
-						content_complete = 1;
-					}
-				}
-				else if (in_body_len < preview_size) {
-					log_finer_icap_va("NOT enough body in h2/h3 preview mode, do not send icap headers, wait for body, stream_end=%d, in_body_len=%zu, preview_size=%zu",
-						stream_end, in_body_len, preview_size);
-					return 1;
-				}
+				stream_end = icap_is_httpx_stream_end(service_ctx);
 			}
 			else {
-				size_t content_length = icap_get_http_content_length(icap_ctx);
+				stream_end = icap_is_http_stream_end(service_ctx, in_body_len < preview_size ? in_body_len : preview_size, in_body);
+			}
 
-				// int chunked_end = 0;
-				// if (icap_is_http_content_chunked(icap_ctx) && is_chunked_end_peek(in_body)) {
-				// 	chunked_end = 1;
-				// 	log_finest_icap("Set chunked_end");
-				// }
-				// if ((icap_is_http_content_length_set(icap_ctx) && preview_size >= content_length) || (icap_is_http_content_chunked(icap_ctx) && is_chunked_end_peek(in_body))) {
-				// // if (preview_size >= content_length) {
-				// 	content_complete = 1;
-				// }
-				// else if (!icap_is_http_content_chunked(icap_ctx) && in_body_len < preview_size) {
-
-				icap_get_content_state(icap_ctx, in_body_len, in_body);
-				if (!icap_is_end_stream(icap_ctx) && in_body_len < preview_size) {
-					log_finer_icap_va("NOT enough body in h1 preview mode, do not send icap headers, wait for body, content_length=%zu, in_body_len=%zu, preview_size=%zu",
-						content_length, in_body_len, preview_size);
-					return 1;
+			if (stream_end) {
+				if (preview_size >= in_body_len) {
+					content_complete = 1;
 				}
+			}
+			else if (in_body_len < preview_size) {
+				log_finer_icap_va("NOT enough body in preview mode, do not send icap headers, wait for body, content_length=%zu, in_body_len=%zu, preview_size=%zu",
+					icap_get_http_content_length(icap_ctx), in_body_len, preview_size);
+				return 1;
 			}
 
 			snprintf(preview_hdr, sizeof(preview_hdr), "Preview: %zu\r\n", preview_size);
@@ -3142,7 +3110,6 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 			return -1;
 		}
 
-		int chunked_end = 0;
 		size_t chunk_len = in_body_len;
 
 		if (chunk_len > 0) {
@@ -3164,10 +3131,7 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 			evbuffer_add(chunk_buf, evbuffer_pullup(in_body, chunk_len), chunk_len);
 
 			if (ctx->proto != PROTO_HTTP2 && ctx->proto != PROTO_HTTP3) {
-				// if (icap_is_http_content_chunked(icap_ctx) && is_chunked_end_peek(chunk_buf)) {
-				icap_get_content_state(icap_ctx, sent_body_size + chunk_len, chunk_buf);
-				chunked_end = icap_is_end_stream(icap_ctx);
-				log_finest_icap_va("Get chunked_end=%d", chunked_end);
+				content_complete = icap_is_http_stream_end(service_ctx, sent_body_size + chunk_len, chunk_buf);
 			}
 
 			// TODO: Check if service config is fail-open before copying?
@@ -3181,11 +3145,8 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 		size_t *sent_body_size_new = &ICAP_STATE(service_ctx, icap_ctx->reqmod)->sent_body_size;
 		*sent_body_size_new += chunk_len;
 
-		log_finest_icap_va("Sending body chunk to ICAP server, sent_body_size=%zu, sent_body=%zu, chunk_len=%zu",
-			*sent_body_size_new, evbuffer_get_length(sent_body), chunk_len);
-
-		size_t http_content_length = icap_get_http_content_length(icap_ctx);
-		log_finest_icap_va("Checking if HTTP content complete, sent_body_size=%zu, http_content_length=%zu", *sent_body_size_new, http_content_length);
+		log_finest_icap_va("Sending body chunk to ICAP server, sent_body_size=%zu, sent_body=%zu, chunk_len=%zu, http_content_length=%zu",
+			*sent_body_size_new, evbuffer_get_length(sent_body), chunk_len, icap_get_http_content_length(icap_ctx));
 
 		int send_terminator = 0;
 
@@ -3202,11 +3163,7 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 			else {
 				log_finest_icap("HTTP content complete check for http1");
 
-				// if ((icap_is_http_content_length_set(icap_ctx) && *sent_body_size_new >= http_content_length) || chunked_end) {
-				icap_get_content_state(icap_ctx, *sent_body_size_new, chunk_buf);
-				if (icap_is_end_stream(icap_ctx) || chunked_end) {
-					content_complete = 1;
-				}
+				content_complete = icap_is_http_stream_end(service_ctx, *sent_body_size_new, chunk_buf);
 			}
 		}
 
@@ -3216,6 +3173,7 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 			icap_ctx->stream_ctx ? icap_ctx->stream_ctx->src_end_stream : -1, icap_ctx->stream_ctx ? icap_ctx->stream_ctx->dst_end_stream : -1, icap_ctx->reqmod);
 
 		if (!ICAP_STATE(service_ctx, icap_ctx->reqmod)->sent_terminator && (send_terminator || chunk_len > 0)) {
+			// ATTENTION: We use the initial values of sent_hdr_size and sent_body_size to detect if we are sending preview, so do not get their current values here
 			if (icap_preview_enabled(service_ctx->svc) && sent_hdr_size == 0 && sent_body_size == 0) {
 				log_finer_icap_va("Terminating preview, sent_hdr=%zu, sent_body=%zu, content_complete=%d", evbuffer_get_length(sent_hdr), evbuffer_get_length(sent_body), content_complete);
 
