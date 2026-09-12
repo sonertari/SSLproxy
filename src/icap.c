@@ -2094,8 +2094,7 @@ icap_extract_icap_headers(icap_service_ctx_t *service_ctx, struct evbuffer *inpu
 		}
 
 		if (line_eol == 0) {
-			log_finer_icap("No EOL in line, reinject line back to input buffer, stop parsing headers");
-			evbuffer_add(input, line, strlen(line));
+			log_finer_icap("No EOL in line, stop parsing headers");
 			free(line);
 			break;
 		}
@@ -2393,6 +2392,8 @@ icap_get_use_original_body_ext(icap_service_ctx_t *service_ctx, char *line)
 	}
 }
 
+#define ICAP_CHUNK_SIZE_MAX_DIGITS 6
+
 static int
 icap_parse_chunk_header(icap_service_ctx_t *service_ctx, struct evbuffer *input, size_t *chunk_size, char **ext)
 {
@@ -2414,6 +2415,7 @@ icap_parse_chunk_header(icap_service_ctx_t *service_ctx, struct evbuffer *input,
 	if (strlen(line) == 0) {
 		// This is most probably the CRLF after the chunk data
 		log_finer_icap("Empty chunk header line, wait for more data");
+		rv = 1;
 		goto out;
 	}
 
@@ -2425,7 +2427,6 @@ icap_parse_chunk_header(icap_service_ctx_t *service_ctx, struct evbuffer *input,
 	}
 
 	// Assume chunk size is always < 0x1000000 (16 MB)
-	#define ICAP_CHUNK_SIZE_MAX_DIGITS 6
 	if (strlen(line) <= ICAP_CHUNK_SIZE_MAX_DIGITS && strspn(line, "0123456789abcdefABCDEF") == strlen(line)) {
 		*chunk_size = (size_t)strtoull(line, NULL, 16);
 	}
@@ -2474,10 +2475,6 @@ icap_get_chunk_header(icap_service_ctx_t *service_ctx, struct evbuffer *input, s
 			ICAP_STATE(service_ctx, icap_ctx->reqmod)->content_complete_206 = 1;
 		}
 
-		if (ext) {
-			free(ext);
-		}
-
 		// Mark content complete after receiving xfer terminator, not just after 0 chunk size terminator
 		if (icap_try_discard_terminator(service_ctx, input) > 0) {
 			log_finest_icap("FOUND terminator after 0 chunk size, discard it and set content complete");
@@ -2489,6 +2486,9 @@ icap_get_chunk_header(icap_service_ctx_t *service_ctx, struct evbuffer *input, s
 		}
 	}
 
+	if (ext) {
+		free(ext);
+	}
 	return rv;
 }
 
@@ -2533,7 +2533,8 @@ icap_try_service_bypass_206(icap_service_ctx_t *service_ctx, size_t body_chunk_l
 					// evbuffer_prepend_buffer(out_body, tmp);
 					// evbuffer_free(tmp);
 
-					char header[16];
+					// ICAP_CHUNK_SIZE_MAX_DIGITS + \r\n\0
+					char header[ICAP_CHUNK_SIZE_MAX_DIGITS + 3];
 					int len = snprintf(header, sizeof(header), "%zx\r\n", chunk_size);
 					if (len > 0) {
 						evbuffer_prepend(out_body, header, len);
@@ -2826,7 +2827,7 @@ icap_bev_readcb(struct bufferevent *bev, void *arg)
 		struct evbuffer_ptr ptr = evbuffer_search(input, "\r\n\r\n", 4, NULL);
 		if (ptr.pos == -1) {
 			log_finer_icap("Waiting for complete ICAP headers");
-			return;
+			goto out;
 		}
 
 		/* Look for ICAP response status line; eol_size is 1 (LF) or 2 (CRLF) */
@@ -2834,6 +2835,18 @@ icap_bev_readcb(struct bufferevent *bev, void *arg)
 		if (!status_line) {
 			log_fine_icap("Failed reading status line");
 			goto err;
+		}
+
+		// Actually, this is an error condition
+		if (strlen(status_line) == 0) {
+			log_finer_icap("Empty status line, wait for more data");
+			goto out;
+		}
+
+		// Actually, this is not possible as we wait for "\r\n\r\n" above
+		if (eol_size == 0) {
+			log_finer_icap("Fragmented status line, wait for more data");
+			goto out;
 		}
 
 		ICAP_STATE(service_ctx, icap_ctx->reqmod)->received_icap_headers = 1;
@@ -2844,7 +2857,7 @@ icap_bev_readcb(struct bufferevent *bev, void *arg)
 
 		/* Check for response code - use strncmp for proper prefix matching */
 		if (strncmp(status_line, "ICAP/1.0 200", 12) == 0) {
-			log_finer_icap("ICAP 200 OK - body modified, extracting...");
+			log_finer_icap("ICAP 200 OK, body modified, extracting");
 
 			if (icap_extract_icap_headers(service_ctx, input) == -1) {
 				goto err;
@@ -2852,7 +2865,7 @@ icap_bev_readcb(struct bufferevent *bev, void *arg)
 			goto stream;
 		}
 		else if (strncmp(status_line, "ICAP/1.0 206", 12) == 0) {
-			log_finer_icap("ICAP 206 Partial Content - body modified, extracting...");
+			log_finer_icap("ICAP 206 Partial Content, body modified, extracting");
 			ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_206 = 1;
 
 			if (icap_extract_icap_headers(service_ctx, input) == -1) {
@@ -2861,7 +2874,7 @@ icap_bev_readcb(struct bufferevent *bev, void *arg)
 			goto stream;
 		}
 		else if (strncmp(status_line, "ICAP/1.0 204", 12) == 0) {
-			log_finer_icap("ICAP 204 No Content - no modification needed, bypassing");
+			log_finer_icap("ICAP 204 No Content, no modification needed, bypassing");
 			if (icap_extract_icap_headers(service_ctx, input) == -1) {
 				goto err;
 			}
@@ -2871,6 +2884,8 @@ icap_bev_readcb(struct bufferevent *bev, void *arg)
 		else if (strncmp(status_line, "ICAP/1.0 100", 12) == 0) {
 			/* Drain the entire 100 Continue response (including trailing CRLFs) */
 			log_finer_icap_va("ICAP 100 Continue, drain eol, input=%zu", evbuffer_get_length(input));
+
+			// ATTENTION: This is not the EOL when reading status_line above, 100 responses have an extra trailing CRLF
 			evbuffer_drain(input, eol_size);
 
 			if (icap_preview_enabled(service_ctx->svc)) {
