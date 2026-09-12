@@ -2414,8 +2414,8 @@ icap_parse_chunk_header(icap_service_ctx_t *service_ctx, struct evbuffer *input,
 
 	if (strlen(line) == 0) {
 		// This is most probably the CRLF after the chunk data
-		log_finer_icap("Empty chunk header line, wait for more data");
-		rv = 1;
+		log_finer_icap("Empty chunk header line, continue");
+		rv = 2;
 		goto out;
 	}
 
@@ -2472,7 +2472,7 @@ icap_get_chunk_header(icap_service_ctx_t *service_ctx, struct evbuffer *input, s
 			log_finest_icap("FOUND 0 chunk size with extensions in 206 response");
 			icap_get_use_original_body_ext(service_ctx, ext);
 			// ATTENTION: This is NOT end_stream in 206
-			ICAP_STATE(service_ctx, icap_ctx->reqmod)->content_complete_206 = 1;
+			ICAP_STATE(service_ctx, icap_ctx->reqmod)->content_complete_20x = 1;
 		}
 
 		// Mark content complete after receiving xfer terminator, not just after 0 chunk size terminator
@@ -2559,7 +2559,7 @@ icap_try_service_bypass_206(icap_service_ctx_t *service_ctx, size_t body_chunk_l
 
 			// The 206 response may be fragmented into separate packets, so make sure we have the chunk terminator
 			// Otherwise, icap_service_bypass() submits the first fragment to the next service or its destination
-			if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->content_complete_206) {
+			if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->content_complete_20x) {
 				icap_service_bypass(service_ctx);
 			}
 		}
@@ -2671,8 +2671,11 @@ icap_extract_body_chunk(icap_service_ctx_t *service_ctx, struct evbuffer *input)
 			rv = -1;
 			goto err;
 		}
-		else if (chrv > 0) {
+		else if (chrv == 1) {
 			break;
+		}
+		else if (chrv == 2) {
+			continue;
 		}
 
 		if (evbuffer_get_length(input) == 0) {
@@ -2785,19 +2788,15 @@ icap_handle_chain_continuation(icap_service_ctx_t *service_ctx, icap_ctx_t *icap
 			icap_send_data(icap_ctx);
 		}
 		else {
-			log_finer_icap("Wait for ICAP 100 preview continue, proceed to next service");
+			log_finer_icap("Wait for ICAP 100 preview continue");
 
-			if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_204) {
-				log_finer_icap("Submit data in 204 mode");
-				icap_send_data(icap_ctx);
-			}
-			else if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_206) {
-				if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->content_complete_206) {
-					log_finer_icap("Submit data in 206 mode");
+			if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_204 || ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_206) {
+				if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->content_complete_20x) {
+					log_finer_icap_va("Submit data in %s mode", ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_204 ? "204" : "206");
 					icap_send_data(icap_ctx);
 				}
 				else {
-					log_finer_icap("Do NOT submit data, wait for content complete in 206 mode");
+					log_finer_icap_va("Do NOT submit data, wait for content complete in %s mode", ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_204 ? "204" : "206");
 				}
 			}
 		}
@@ -2901,6 +2900,13 @@ icap_bev_readcb(struct bufferevent *bev, void *arg)
 				goto err;
 			}
 			evbuffer_drain(input, evbuffer_get_length(input));
+
+			if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_204) {
+				log_finest_icap("Set content complete for 204");
+				// ATTENTION: This is NOT end_stream in 204
+				ICAP_STATE(service_ctx, icap_ctx->reqmod)->content_complete_20x = 1;
+			}
+
 			icap_service_bypass(service_ctx);
 		}
 		else if (strncmp(status_line, "ICAP/1.0 100", 12) == 0) {
@@ -3452,17 +3458,13 @@ icap_process_chain_cb(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 		else {
 			log_finer_icap("Wait for ICAP 100 preview continue, proceed to next service");
 
-			if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_204) {
-				log_finer_icap("Stream data in 204 mode");
-				icap_service_bypass(service_ctx);
-			}
-			else if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_206) {
-				if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->content_complete_206) {
-					log_finer_icap("Stream data in 206 mode");
+			if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_204 || ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_206) {
+				if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->content_complete_20x) {
+					log_finer_icap_va("Stream data in %s mode", ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_204 ? "204" : "206");
 					icap_service_bypass(service_ctx);
 				}
 				else {
-					log_finer_icap("Do NOT stream data, wait for content complete in 206 mode");
+					log_finer_icap_va("Do NOT stream data, wait for content complete in %s mode", ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_204 ? "204" : "206");
 				}
 			}
 		}
