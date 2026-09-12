@@ -2778,7 +2778,29 @@ icap_handle_chain_continuation(icap_service_ctx_t *service_ctx, icap_ctx_t *icap
 
 	if (next_idx >= icap_ctx->service_count) {
 		log_finest_icap("ICAP service chain finished");
-		icap_send_data(icap_ctx);
+
+		unsigned int wait_preview_continue = ICAP_STATE(service_ctx, icap_ctx->reqmod)->wait_preview_continue;
+		if (!wait_preview_continue) {
+			log_finer_icap_va("Ready to submit data, server=%s", service_ctx->svc->server);
+			icap_send_data(icap_ctx);
+		}
+		else {
+			log_finer_icap("Wait for ICAP 100 preview continue, proceed to next service");
+
+			if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_204) {
+				log_finer_icap("Submit data in 204 mode");
+				icap_send_data(icap_ctx);
+			}
+			else if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_206) {
+				if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->content_complete_206) {
+					log_finer_icap("Submit data in 206 mode");
+					icap_send_data(icap_ctx);
+				}
+				else {
+					log_finer_icap("Do NOT submit data, wait for content complete in 206 mode");
+				}
+			}
+		}
 		return;
 	}
 
@@ -3434,7 +3456,7 @@ icap_process_chain_cb(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 				log_finer_icap("Stream data in 204 mode");
 				icap_service_bypass(service_ctx);
 			}
-			if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_206) {
+			else if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_206) {
 				if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->content_complete_206) {
 					log_finer_icap("Stream data in 206 mode");
 					icap_service_bypass(service_ctx);
