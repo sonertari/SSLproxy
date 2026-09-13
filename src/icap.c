@@ -1542,7 +1542,7 @@ icap_is_http_stream_end(icap_service_ctx_t *service_ctx, size_t sent_body_size, 
 {
 	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
 	pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
-	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
+	protohttp_ctx_t *http_ctx = ctx->protoctx->arg; /* h1 only */
 
 	size_t http_content_length = icap_get_http_content_length(icap_ctx);
 
@@ -2354,6 +2354,8 @@ icap_try_discard_terminator(icap_service_ctx_t *service_ctx, struct evbuffer *in
 			evbuffer_drain(input, 2);
 			return 1;
 		}
+		log_finest_icap("No CRLF terminator at buf start");
+		return 2;
 	}
 	return 0;
 }
@@ -2442,12 +2444,11 @@ icap_parse_chunk_header(icap_service_ctx_t *service_ctx, struct evbuffer *input,
 			*chunk_size = (size_t)strtoull(line, NULL, 16);
 			*ext = strdup(semicolon + 1);
 			log_finer_icap_va("Parsed chunk size with extensions, chunk_size=%zu, extensions=%s", *chunk_size, *ext);
-			goto out;
 		}
 		else {
+			// TODO: Should we reinject the line into input?
 			log_fine_icap_va("Invalid chunk size line: '%s'", line);
 			rv = -1;
-			goto out;
 		}
 	}
 out:
@@ -2475,14 +2476,17 @@ icap_get_chunk_header(icap_service_ctx_t *service_ctx, struct evbuffer *input, s
 			ICAP_STATE(service_ctx, icap_ctx->reqmod)->content_complete_20x = 1;
 		}
 
-		// Mark content complete after receiving xfer terminator, not just after 0 chunk size terminator
-		if (icap_try_discard_terminator(service_ctx, input) > 0) {
-			log_finest_icap("FOUND terminator after 0 chunk size, discard it and set content complete");
+		int chrv = icap_try_discard_terminator(service_ctx, input);
+		if (chrv == 1) {
+			log_finest_icap_va("FOUND chunk header terminator after 0 chunk size, discard it and set content complete, detected_206=%u", ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_206);
 			icap_service_content_complete(service_ctx);
 		}
-		else {
-			log_finer_icap_va("No terminator after 0 chunk size, wait for xfer terminator, detected_206=%u", ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_206);
-			ICAP_STATE(service_ctx, icap_ctx->reqmod)->wait_terminator = 1;
+		else if (chrv == 0) {
+			log_finer_icap_va("No chunk header terminator after 0 chunk size, wait for xfer terminator, detected_206=%u", ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_206);
+			ICAP_STATE(service_ctx, icap_ctx->reqmod)->wait_xfer_terminator = 1;
+		}
+		else /* if (chrv == 2) */ {
+			log_fine_icap_va("Malformed chunk header termination, detected_206=%u", ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_206);
 		}
 	}
 
@@ -2501,14 +2505,26 @@ icap_try_service_bypass_206(icap_service_ctx_t *service_ctx, size_t body_chunk_l
 	if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_206) {
 		ICAP_STATE(service_ctx, icap_ctx->reqmod)->body_chunk_len_206 += body_chunk_len;
 
-		if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->use_original_body > 0 || ICAP_STATE(service_ctx, icap_ctx->reqmod)->content_complete) {
+		if ((ICAP_STATE(service_ctx, icap_ctx->reqmod)->use_original_body > 0) || ICAP_STATE(service_ctx, icap_ctx->reqmod)->content_complete) {
+			protohttp_ctx_t *http_ctx = NULL;
+			if (ctx->proto == PROTO_HTTP2 || ctx->proto == PROTO_HTTP3) {
+				http_ctx = icap_ctx->stream_ctx->http_ctx;
+			}
+			else {
+				http_ctx = ctx->protoctx->arg;
+			}
+
 			size_t *sent_body_size = &ICAP_STATE(service_ctx, icap_ctx->reqmod)->sent_body_size;
-			log_finest_icap_va("Update sent_body_size=%zu, body_chunk=%zu", *sent_body_size, body_chunk_len);
+
+			log_finest_icap_va("Update in 206 mode, sent_body_size=%zu, body_chunk=%zu, content_complete=%d, content_chunked=%d, use_original_body=%zu, reqmod=%d",
+				*sent_body_size, body_chunk_len, ICAP_STATE(service_ctx, icap_ctx->reqmod)->content_complete,
+				icap_ctx->reqmod ? http_ctx->src_content_chunked : http_ctx->dst_content_chunked,
+				ICAP_STATE(service_ctx, icap_ctx->reqmod)->use_original_body, icap_ctx->reqmod);
+
 			*sent_body_size += body_chunk_len;
 
-			protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
 
-			if (icap_ctx->reqmod ? http_ctx->src_content_chunked : http_ctx->dst_content_chunked && ICAP_STATE(service_ctx, icap_ctx->reqmod)->use_original_body > 0) {
+			if ((icap_ctx->reqmod ? http_ctx->src_content_chunked : http_ctx->dst_content_chunked) && (ICAP_STATE(service_ctx, icap_ctx->reqmod)->use_original_body > 0)) {
 				struct evbuffer *out_body = ICAP_STATE(service_ctx, icap_ctx->reqmod)->out_body;
 
 				size_t chunk_size = 0;
@@ -2528,11 +2544,6 @@ icap_try_service_bypass_206(icap_service_ctx_t *service_ctx, size_t body_chunk_l
 
 					chunk_size += ICAP_STATE(service_ctx, icap_ctx->reqmod)->body_chunk_len_206 - ICAP_STATE(service_ctx, icap_ctx->reqmod)->use_original_body;
 
-					// struct evbuffer *tmp = evbuffer_new();
-					// evbuffer_add_printf(tmp, "%zx\r\n", chunk_size);
-					// evbuffer_prepend_buffer(out_body, tmp);
-					// evbuffer_free(tmp);
-
 					// ICAP_CHUNK_SIZE_MAX_DIGITS + \r\n\0
 					char header[ICAP_CHUNK_SIZE_MAX_DIGITS + 3];
 					int len = snprintf(header, sizeof(header), "%zx\r\n", chunk_size);
@@ -2540,11 +2551,19 @@ icap_try_service_bypass_206(icap_service_ctx_t *service_ctx, size_t body_chunk_l
 						evbuffer_prepend(out_body, header, len);
 					}
 					else {
-						log_finest_icap("Failed in snprintf call");
+						log_finest_icap("Failed in snprintf");
 						ctx->enomem = 1;
 						return;
 					}
 				}
+				else if (rv == -1) {
+					// This means no or malformed chunk header, we don't reach here unless the *_content_chunked flag is set.
+					log_finest_icap("No or malformed http chunk header");
+				}
+				// The other return values are about empty or fragmented chunk headers, which are not possible at this point,
+				// because we already have use_original_body > 0, which is after the http chunk header line.
+				// So, the only possibility left is invalid chunk header line, which means no/malformed http chunk header above.
+				// else if ((rv == 1) || (rv == 2)) {}
 
 #ifdef DEBUG_ICAP
 				/* Log first 400 bytes for debugging */
@@ -2576,21 +2595,29 @@ icap_extract_body_chunk(icap_service_ctx_t *service_ctx, struct evbuffer *input)
 	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
 	pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
 
-	if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->wait_terminator) {
-		if (icap_try_discard_terminator(service_ctx, input) > 0) {
+	if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->wait_terminator || ICAP_STATE(service_ctx, icap_ctx->reqmod)->wait_xfer_terminator) {
+		int chrv = icap_try_discard_terminator(service_ctx, input);
+		if (chrv == 0) {
+			log_finer_icap("Still waiting for terminator, keep waiting");
+			return 0;
+		}
+		else if (chrv == 2) {
+			log_fine_icap("Malformed chunk termination");
+			return -1;
+		}
+
+		if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->wait_terminator) {
 			log_finest_icap("FOUND terminator while waiting");
 			ICAP_STATE(service_ctx, icap_ctx->reqmod)->wait_terminator = 0;
+		}
 
+		if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->wait_xfer_terminator) {
+			log_finest_icap("FOUND xfer terminator while waiting, set content complete");
+			ICAP_STATE(service_ctx, icap_ctx->reqmod)->wait_xfer_terminator = 0;
 			icap_service_content_complete(service_ctx);
-
-			icap_try_service_bypass_206(service_ctx, 0);
-
-			icap_ctx->made_progress = 1;
 		}
-		else {
-			log_finer_icap("Still waiting for terminator, keep waiting");
-		}
-		return 0;
+
+		icap_ctx->made_progress = 1;
 	}
 
 	if (icap_is_icap_response_nullbody(service_ctx)) {
@@ -2621,11 +2648,6 @@ icap_extract_body_chunk(icap_service_ctx_t *service_ctx, struct evbuffer *input)
 		return 0;
 	}
 
-	if (evbuffer_get_length(input) == 0) {
-		log_finest_icap("No content left in ICAP response before body chunk");
-		return 0;
-	}
-
 	size_t *remaining_chunk_size = &ICAP_STATE(service_ctx, icap_ctx->reqmod)->remaining_chunk_size;
 	log_finest_icap_va("ENTER, *remaining_chunk_size=%zu", *remaining_chunk_size);
 
@@ -2653,12 +2675,21 @@ icap_extract_body_chunk(icap_service_ctx_t *service_ctx, struct evbuffer *input)
 
 		*remaining_chunk_size -= to_remove;
 
-		if (*remaining_chunk_size == 0) {
-			icap_try_discard_terminator(service_ctx, input);
-		}
-
 		log_finest_icap_va("MOVED Remaining chunk=%zu, input=%zu", *remaining_chunk_size, evbuffer_get_length(input));
 		icap_ctx->made_progress = 1;
+
+		if (*remaining_chunk_size == 0) {
+			int chrv = icap_try_discard_terminator(service_ctx, input);
+			if (chrv == 0) {
+				log_finer_icap("Wait for chunk terminator");
+				ICAP_STATE(service_ctx, icap_ctx->reqmod)->wait_terminator = 1;
+				goto out;
+			}
+			else if (chrv == 2) {
+				log_fine_icap("Malformed chunk termination");
+				return -1;
+			}
+		}
 	}
 	else {
 		log_finest_icap_va("NO Remaining chunk size=%zu, input=%zu", *remaining_chunk_size, evbuffer_get_length(input));
@@ -2721,13 +2752,24 @@ icap_extract_body_chunk(icap_service_ctx_t *service_ctx, struct evbuffer *input)
 			chunk_size -= to_read;
 
 			if (chunk_complete) {
-				icap_try_discard_terminator(service_ctx, input);
+				int chrv = icap_try_discard_terminator(service_ctx, input);
+				if (chrv == 0) {
+					log_finer_icap("Wait for chunk terminator");
+					ICAP_STATE(service_ctx, icap_ctx->reqmod)->wait_terminator = 1;
+					goto out;
+				}
+				else if (chrv == 2) {
+					log_fine_icap("Malformed chunk termination");
+					return -1;
+				}
 			}
 		}
 
 		log_finest_icap_va("AFTER chunk processing, input=%zu, remaining_chunk_size=%zu", evbuffer_get_length(input), *remaining_chunk_size);
 	}
 
+out:
+	; // Silence the warning: a label can only be part of a statement and a declaration is not a statement
 	size_t body_chunk_len = evbuffer_get_length(body_chunk);
 	log_finer_icap_va("Extracted %zu bytes of unchunked body, input=%zu", body_chunk_len, evbuffer_get_length(input));
 

@@ -148,6 +148,7 @@ typedef struct icap_service_state {
 	unsigned int content_complete_20x : 1;
 
 	unsigned int wait_terminator : 1;
+	unsigned int wait_xfer_terminator : 1;
 } icap_service_state_t;
 
 struct icap_service_ctx {

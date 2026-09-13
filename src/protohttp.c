@@ -346,7 +346,7 @@ protohttp_filter_request_header_line(const char *line, protohttp_ctx_t *http_ctx
 				return NULL;
 			}
 		} else if (!strncasecmp(line, "Transfer-Encoding:", 18)) {
-			if (strstr(util_skipws(line + 18), "chunked") != NULL) {
+			if (strstr(line + 18, "chunked") != NULL) {
 				http_ctx->src_content_chunked = 1;
 			}
 		} else if (!http_ctx->http_host && !strncasecmp(line, "Host:", 5)) {
@@ -1077,10 +1077,6 @@ protohttpx_get_h1_headers(protohttpx_stream_ctx_t *s)
         evbuffer_add_printf(buf, "%.*s: %.*s\r\n", (int)headers[i].namelen, headers[i].name, (int)headers[i].valuelen, headers[i].value);
     }
 
-    // Do not append Transfer-Encoding, otherwise we have to wait for body of GET requests too
-    // see protohttp2_bev_readcb_src()
-    // evbuffer_add_printf(buf, "Transfer-Encoding: chunked\r\n\r\n");
-
     // Add an extra CRLF to signal end of headers.
     evbuffer_add_printf(buf, "\r\n");
 
@@ -1690,7 +1686,7 @@ protohttp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		return;
 	}
 
-	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
+	protohttp_ctx_t *http_ctx = ctx->protoctx->arg; /* h1 only */
 	struct evbuffer *inbuf = bufferevent_get_input(bev);
 	struct evbuffer *outbuf = bufferevent_get_output(ctx->dst.bev);
 
@@ -1838,7 +1834,7 @@ protohttp_filter_response_header_line(const char *line, protohttp_ctx_t *http_ct
 				return NULL;
 			}
 		} else if (!strncasecmp(line, "Transfer-Encoding:", 18)) {
-			if (strstr(util_skipws(line + 18), "chunked") != NULL) {
+			if (strstr(line + 18, "chunked") != NULL) {
 				http_ctx->dst_content_chunked = 1;
 			}
 		} else if (
@@ -1928,7 +1924,7 @@ protohttp_bev_readcb_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		return;
 	}
 
-	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
+	protohttp_ctx_t *http_ctx = ctx->protoctx->arg; /* h1 only */
 	struct evbuffer *outbuf = bufferevent_get_output(ctx->src.bev);
 
 	if (!http_ctx->seen_resp_header) {
@@ -1987,7 +1983,7 @@ protohttp_bev_readcb_src_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ct
 		return;
 	}
 
-	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
+	protohttp_ctx_t *http_ctx = ctx->protoctx->arg; /* h1 only */
 	struct evbuffer *inbuf = bufferevent_get_input(bev);
 	struct evbuffer *outbuf = bufferevent_get_output(ctx->dst.bev);
 
@@ -2017,7 +2013,7 @@ protohttp_bev_readcb_dst_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ct
 		return;
 	}
 
-	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
+	protohttp_ctx_t *http_ctx = ctx->protoctx->arg; /* h1 only */
 	struct evbuffer *inbuf = bufferevent_get_input(bev);
 	struct evbuffer *outbuf = bufferevent_get_output(ctx->src.bev);
 
@@ -2042,7 +2038,7 @@ static void NONNULL(1)
 protohttp_bev_readcb(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
-	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
+	protohttp_ctx_t *http_ctx = ctx->protoctx->arg; /* h1 only */
 
 	int seen_resp_header_on_entry = http_ctx->seen_resp_header;
 
@@ -2098,7 +2094,7 @@ protohttp_bev_writecb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		return;
 	}
 
-	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
+	protohttp_ctx_t *http_ctx = ctx->protoctx->arg; /* h1 only */
 	if (ctx->dst.closed || http_ctx->ocsp_denied) {
 		if (pxy_try_close_conn_end(&ctx->src, ctx) == 1) {
 			log_finest("dst.closed or ocsp_denied, terminate conn");
