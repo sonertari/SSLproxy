@@ -65,7 +65,7 @@ static int icap_is_http_nullbody(icap_service_ctx_t *);
  * Returns buffer contents if no complete line is available in the buffer yet.
  */
 static char *
-icap_evbuffer_readline(struct evbuffer *input, size_t *eol_len)
+icap_evbuffer_readline(struct evbuffer *input, size_t *eol_len, int drain)
 {
 	size_t eol_sz = 0;
 	struct evbuffer_ptr ptr = evbuffer_search_eol(input, NULL, &eol_sz, EVBUFFER_EOL_CRLF);
@@ -87,7 +87,9 @@ icap_evbuffer_readline(struct evbuffer *input, size_t *eol_len)
 	evbuffer_copyout(input, line, line_len);
 	line[line_len] = '\0';
 	if (eol_sz > 0) {
-		evbuffer_drain(input, line_len + eol_sz);
+		if (drain) {
+			evbuffer_drain(input, line_len + eol_sz);
+		}
 	}
 	else {
 		log_err_level_printf(LOG_INFO, "EOL size is 0, do not drain, line=%s\n", line);
@@ -2080,7 +2082,7 @@ icap_extract_icap_headers(icap_service_ctx_t *service_ctx, struct evbuffer *inpu
 	/* Parse ICAP Headers to find Encapsulated offsets and Veto detection */
 	while (1) {
 		size_t line_eol = 0;
-		char *line = icap_evbuffer_readline(input, &line_eol);
+		char *line = icap_evbuffer_readline(input, &line_eol, 1);
 		if (!line) {
 			log_fine_icap("Failed reading ICAP header line, stop parsing headers");
 			rv = -1;
@@ -2225,6 +2227,116 @@ icap_update_http_content_length(icap_service_ctx_t *service_ctx, struct evbuffer
 	return 0;
 }
 
+/**
+ * Normalizes an ICAP REQMOD-modified HTTP request header in-place inside an evbuffer.
+ * Converts absolute URIs (e.g. "GET http://site.com/path HTTP/1.1")
+ * back to relative origin-form (e.g. "GET /path HTTP/1.1").
+ * Returns 1 if the request line was modified, 0 if not.
+ * Returns -1 on allocation error.
+ */
+static int NONNULL(2) WUNRES
+icap_sanitize_request_line(icap_service_ctx_t *service_ctx, struct evbuffer *buf)
+{
+    icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
+    UNUSED pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
+
+    int rv = 0;
+
+    if (evbuffer_get_length(buf) == 0) {
+        return 0;
+    }
+
+    /* Read the first line (Request Line) without draining the buffer yet */
+    size_t eol_size = 0;
+    char *line = icap_evbuffer_readline(buf, &eol_size, 0);
+    if (!line) {
+        /* Allocation error */
+        rv = -1;
+        goto out;
+    }
+
+    size_t line_len = strlen(line);
+
+    if (line_len == 0) {
+        /* Empty request line */
+        goto out;
+    }
+
+    if (eol_size == 0) {
+        /* No EOL in request line */
+        goto out;
+    }
+
+    /* Fast path: Check if the request line contains absolute scheme 'http://' or 'https://' */
+    char *scheme_start = strstr(line, "://");
+    if (!scheme_start) {
+        /* Already in origin-form (e.g. "GET /path HTTP/1.1"). Nothing to fix. */
+        goto out;
+    }
+
+    /* Locate Method (first space) */
+    char *first_space = strchr(line, ' ');
+    if (!first_space || first_space >= scheme_start) {
+        goto out;
+    }
+
+    /* Locate HTTP Version (last space) */
+    char *last_space = strrchr(line, ' ');
+    if (!last_space || last_space <= scheme_start) {
+        goto out;
+    }
+
+    /* Find the path start '/' after "://" */
+    char *path_start = strchr(scheme_start + 3, '/');
+    const char *new_path;
+
+    if (path_start && path_start < last_space) {
+        new_path = path_start;
+    } else {
+        new_path = "/";
+    }
+
+    /* Compute required space for new request line dynamically */
+    size_t method_len = first_space - line;
+    size_t path_len   = (path_start && path_start < last_space) ? (last_space - path_start) : 1;
+    size_t ver_len    = line_len - (last_space - line) - 1;
+
+    /* Allocate exact required memory: "METHOD PATH VERSION\0" */
+    size_t new_line_len = method_len + 1 + path_len + 1 + ver_len + 1;
+    char *new_line = malloc(new_line_len);
+    if (!new_line) {
+        rv = -1;
+        goto out;
+    }
+
+    /* Don't care about the orig eol_size when injecting new line */
+    if (snprintf(new_line, new_line_len, "%.*s %.*s %.*s",
+             (int)method_len, line,
+             (int)path_len, new_path,
+             (int)ver_len, last_space + 1) < 0) {
+        rv = -1;
+        goto out;
+    }
+
+    /* Drain the old, dirty request line (excluding its EOL) from evbuffer */
+    evbuffer_drain(buf, line_len);
+
+    /* Prepend the normalized origin-form request line back into buf */
+    if (evbuffer_prepend(buf, new_line, strlen(new_line)) != 0) {
+        free(new_line);
+        rv = -1;
+        goto out;
+    }
+
+    log_finest_icap_va("Sanitized request line, new='%s', orig='%s'", new_line, line);
+
+    free(new_line);
+    rv = 1;
+out:
+    free(line);
+    return rv;
+}
+
 // Returns 1 if HTTP headers are fully received and extracted, 0 if still waiting for more data
 static int NONNULL(2)
 icap_extract_http_headers(icap_service_ctx_t *service_ctx, struct evbuffer *input)
@@ -2293,6 +2405,11 @@ icap_extract_http_headers(icap_service_ctx_t *service_ctx, struct evbuffer *inpu
 
 	/* Update http_content_length from Content-Length in new HTTP headers */
 	if (icap_update_http_content_length(service_ctx, outbuf) < 0) {
+		return -1;
+	}
+
+	if (icap_ctx->reqmod && icap_sanitize_request_line(service_ctx, outbuf) < 0) {
+		ctx->enomem = 1;
 		return -1;
 	}
 
@@ -2406,7 +2523,7 @@ icap_parse_chunk_header(icap_service_ctx_t *service_ctx, struct evbuffer *input,
 	*chunk_size = 0;
 
 	size_t eol_size = 0;
-	char *line = icap_evbuffer_readline(input, &eol_size);
+	char *line = icap_evbuffer_readline(input, &eol_size, 1);
 	if (!line) {
 		log_finer_icap("Failed reading chunk size line");
 		return -1;
@@ -2894,7 +3011,7 @@ icap_bev_readcb(struct bufferevent *bev, void *arg)
 		}
 
 		/* Look for ICAP response status line; eol_size is 1 (LF) or 2 (CRLF) */
-		status_line = icap_evbuffer_readline(input, &eol_size);
+		status_line = icap_evbuffer_readline(input, &eol_size, 1);
 		if (!status_line) {
 			log_fine_icap("Failed reading status line");
 			goto err;
