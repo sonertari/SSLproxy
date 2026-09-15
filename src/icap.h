@@ -51,20 +51,21 @@ typedef enum icap_fail_mode {
 } icap_fail_mode_t;
 
 typedef struct icap_service {
-	char *server;                        /* ICAP server hostname/IP */
-	int port;                            /* ICAP server port */
-	char *reqmod;                        /* REQMOD path component of the ICAP URI (e.g. /reqmod) */
-	char *respmod;                       /* RESPMOD path component of the ICAP URI (e.g. /respmod) */
-	icap_fail_mode_t icap_fail_open : 1; /* 0: stop, 1: next service in chain on service error */
-	icap_fail_mode_t conn_fail_open : 1; /* 0: block, 1: pass through conn on service error */
-	unsigned int timeout;                /* Timeout in seconds */
-	size_t preview_size;                 /* Preview slice size in bytes; 0 = preview disabled */
-	size_t max_body_size;                /* Max body size; 0 = disabled */
-	unsigned int allow_204 : 1;          /* 0: Don't allow 204 responses from ICAP, treat as error; 1: Allow 204 responses */
-	unsigned int allow_206 : 1;          /* 0: Don't allow 206 responses from ICAP, treat as error; 1: Allow 206 responses */
-	char *echo_header;                   /* Header in reqmod to echo to respmod */
+	char *server;                           /* ICAP server hostname/IP */
+	int port;                               /* ICAP server port */
+	char *reqmod;                           /* REQMOD path component of the ICAP URI (e.g. /reqmod) */
+	char *respmod;                          /* RESPMOD path component of the ICAP URI (e.g. /respmod) */
+	icap_fail_mode_t icap_fail_open : 1;    /* 0: stop, 1: next service in chain on service error */
+	icap_fail_mode_t conn_fail_open : 1;    /* 0: block, 1: pass through conn on service error */
+	unsigned int timeout;                   /* Timeout in seconds */
+	size_t preview_size;                    /* Preview slice size in bytes; 0 = preview disabled */
+	size_t max_body_size;                   /* Max body size; 0 = disabled */
+	unsigned int allow_204 : 1;             /* 0: Don't allow 204 responses from ICAP, treat as error; 1: Allow 204 responses */
+	unsigned int allow_206 : 1;             /* 0: Don't allow 206 responses from ICAP, treat as error; 1: Allow 206 responses */
+	char *echo_header;                      /* Header in reqmod to echo to respmod */
+	unsigned int sanitize_request_line : 1; /* 0: Don't sanitize request line, 1: Sanitize request line */
 
-	struct icap_service *next;           /* Linked list for configuration */
+	struct icap_service *next;              /* Linked list for configuration */
 } icap_service_t;
 
 typedef struct icap_service_ctx icap_service_ctx_t;

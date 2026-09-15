@@ -159,6 +159,7 @@ conn_opts_new(void)
 	conn_opts->icap_conn_fail_open = ICAP_FAIL_CLOSE; /* Fail block by default */
 	conn_opts->icap_allow_204 = 1;                    /* Allow 204 responses from ICAP by default */
 	conn_opts->icap_allow_206 = 1;                    /* Allow 206 responses from ICAP by default */
+	conn_opts->icap_sanitize_request_line = 0;        /* Do not sanitize request line by default */
 #endif /* !WITHOUT_ICAP */
 	return conn_opts;
 }
@@ -2979,6 +2980,14 @@ set_conn_opts_option(conn_opts_t *conn_opts, const char *argv0,
 		conn_opts->icap_allow_206 = yes;
 #ifdef DEBUG_OPTS
 		log_dbg_printf("IcapAllow206: %u\n", conn_opts->icap_allow_206);
+#endif /* DEBUG_OPTS */
+	} else if (equal(name, "IcapSanitizeRequestLine")) {
+		yes = check_value_yesno(value, "IcapSanitizeRequestLine", *line_num);
+		if (yes == -1)
+			return -1;
+		conn_opts->icap_sanitize_request_line = yes;
+#ifdef DEBUG_OPTS
+		log_dbg_printf("IcapSanitizeRequestLine: %u\n", conn_opts->icap_sanitize_request_line);
 #endif /* DEBUG_OPTS */
 #endif /* !WITHOUT_ICAP */
 	}

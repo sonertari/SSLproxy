@@ -439,9 +439,9 @@ icap_service_str(icap_service_t *svc)
 {
 	char *s = NULL;
 	if (asprintf(&s, "icap svc: Server=%s, Port=%d, Reqmod=%s, Respmod=%s, IcapFailOpen=%u, ConnFailOpen=%u, "
-		"Timeout=%u, PreviewSize=%zu, MaxBodySize=%zu, Allow204=%u, Allow206=%u, EchoHeader=%s",
+		"Timeout=%u, PreviewSize=%zu, MaxBodySize=%zu, Allow204=%u, Allow206=%u, EchoHeader=%s, SanitizeRequestLine=%u",
 		svc->server, svc->port, svc->reqmod, svc->respmod, svc->icap_fail_open, svc->conn_fail_open,
-		svc->timeout, svc->preview_size, svc->max_body_size, svc->allow_204, svc->allow_206, STRORDASH(svc->echo_header)) < 0) {
+		svc->timeout, svc->preview_size, svc->max_body_size, svc->allow_204, svc->allow_206, STRORDASH(svc->echo_header), svc->sanitize_request_line) < 0) {
 		log_err_level_printf(LOG_CRIT, "ICAP service string allocation failed\n");
 		return NULL;
 	}
@@ -532,6 +532,7 @@ icap_service_copy(icap_service_t *chain)
 		svc->max_body_size = chain->max_body_size;
 		svc->allow_204 = chain->allow_204;
 		svc->allow_206 = chain->allow_206;
+		svc->sanitize_request_line = chain->sanitize_request_line;
 
 		if (chain->echo_header && !(svc->echo_header = strdup(chain->echo_header))) {
 			log_err_level_printf(LOG_CRIT, "ICAP echo_header allocation failed\n");
@@ -585,6 +586,7 @@ icap_service_new(conn_opts_t *conn_opts)
 	svc->max_body_size = conn_opts->icap_max_body_size;
 	svc->allow_204 = conn_opts->icap_allow_204;
 	svc->allow_206 = conn_opts->icap_allow_206;
+	svc->sanitize_request_line = conn_opts->icap_sanitize_request_line;
 	return svc;
 }
 
@@ -738,12 +740,27 @@ icap_set_allow_206(icap_service_t *svc, const char *value, unsigned int line_num
 	return 0;
 }
 
+static int NONNULL(1, 2)
+icap_set_sanitize_request_line(icap_service_t *svc, const char *value, unsigned int line_num)
+{
+	if (equal(value, "yes")) {
+		svc->sanitize_request_line = 1;
+	} else if (equal(value, "no")) {
+		svc->sanitize_request_line = 0;
+	} else {
+		log_err_level_printf(LOG_ERR, "ICAP Config Error: Unknown sanitize request line value '%s' on line %u\n", value, line_num);
+		return -1;
+	}
+	return 0;
+}
+
 /*
  * Parse an ICAP service specification string
- * Format: icap://host:port,reqmod,respmod,icap_fail_open,conn_fail_open,timeout,preview_size,max_body_size,allow_204,allow_206,echo_header
- * Example: icap://127.0.0.1:1344,echo,echo,yes,yes,3,1024,4096,yes,no
- * Example: icap://127.0.0.1:1345,reqmod,respmod,no,no,30,4096,8192,yes,no,X-ICAP-E2G
- * Example: icap://127.0.0.1:1344,suricata,suricata,yes,yes,10,1024,0,yes,no,X-Response-Vars
+ * Format: icap://host:port,reqmod,respmod,icap_fail_open,conn_fail_open,timeout,preview_size,max_body_size,allow_204,allow_206,echo_header,sanitize_request_line
+ * Example: icap://127.0.0.1:1344,echo,echo,yes,yes,3,1024,4096,yes,no,no
+ * ATTENTION: E2Guardian converts relative URIs to absolute ones, so the sanitize_request_line option is necessary for the E2Guardian icap service.
+ * Example: icap://127.0.0.1:1345,reqmod,respmod,no,no,30,4096,8192,yes,no,X-ICAP-E2G,yes
+ * Example: icap://127.0.0.1:1344,suricata,suricata,yes,yes,10,1024,0,yes,no,X-Response-Vars,no
  */
 int NONNULL(1, 2)
 load_icap_line(conn_opts_t *conn_opts, const char *spec, unsigned int line_num)
@@ -778,6 +795,7 @@ load_icap_line(conn_opts_t *conn_opts, const char *spec, unsigned int line_num)
 	char *allow_204 = strtok_r(NULL, ",", &saveptr);
 	char *allow_206 = strtok_r(NULL, ",", &saveptr);
 	char *echo_header = strtok_r(NULL, ",", &saveptr);
+	char *sanitize_request_line = strtok_r(NULL, ",", &saveptr);
 	char *trailing = strtok_r(NULL, ",", &saveptr);
 
 	if (!uri) {
@@ -882,6 +900,12 @@ load_icap_line(conn_opts_t *conn_opts, const char *spec, unsigned int line_num)
 		svc->echo_header = strdup(echo_header);
 		if (!svc->echo_header) {
 			log_err_level_printf(LOG_CRIT, "ICAP echo header allocation failed on line %u\n", line_num);
+			goto err;
+		}
+	}
+
+	if (sanitize_request_line) {
+		if (icap_set_sanitize_request_line(svc, sanitize_request_line, line_num) == -1) {
 			goto err;
 		}
 	}
@@ -995,6 +1019,10 @@ icap_set_option(icap_service_t *svc, const char *name, char *value, unsigned int
 			log_err_level_printf(LOG_CRIT, "ICAP echo header allocation failed on line %u\n", *line_num);
 			return -1;
 		}
+	}
+	else if (equal(name, "SanitizeRequestLine")) {
+		if (icap_set_sanitize_request_line(svc, value, *line_num) == -1)
+			return -1;
 	}
 	else if (equal(name, "}")) {
 #ifdef DEBUG_OPTS
@@ -2408,7 +2436,7 @@ icap_extract_http_headers(icap_service_ctx_t *service_ctx, struct evbuffer *inpu
 		return -1;
 	}
 
-	if (icap_ctx->reqmod && icap_sanitize_request_line(service_ctx, outbuf) < 0) {
+	if (icap_ctx->reqmod && service_ctx->svc->sanitize_request_line && icap_sanitize_request_line(service_ctx, outbuf) < 0) {
 		ctx->enomem = 1;
 		return -1;
 	}

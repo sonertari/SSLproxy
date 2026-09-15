@@ -142,7 +142,16 @@ connection options too:
 	    # Divert or split
 	    Divert (yes|no)
 
-		Icap icap://host:port,reqmod,respmod,icap_fail_open,conn_fail_open,timeout,preview_size,max_body_size,allow_204,allow_206,echo_header
+		IcapFailOpen (yes|no)
+		IcapConnFailOpen (yes|no)
+		IcapTimeout 30
+		IcapPreviewSize 4096
+		IcapMaxBodySize 1048576
+		IcapAllow204 (yes|no)
+		IcapAllow206 (yes|no)
+		IcapSanitizeRequestLine (yes|no)
+
+		Icap icap://host:port,reqmod,respmod,icap_fail_open,conn_fail_open,timeout,preview_size,max_body_size,allow_204,allow_206,echo_header,sanitize_request_line
         Icap {
             Proto icap
             Server host
@@ -157,6 +166,7 @@ connection options too:
             Allow204 (yes|no)
             Allow206 (yes|no)
             EchoHeader x-header-to-echo (e.g. X-Response-Vars)
+            SanitizeRequestLine (yes|no)
         }
 
 	    # Connection options
@@ -345,7 +355,16 @@ rules cannot specify connection options or ICAP services.
 	    DstIp (serverip[*]|$macro|*)
 	    DstPort (serverport[*]|$macro|*)
 
-		Icap icap://host:port,reqmod,respmod,icap_fail_open,conn_fail_open,timeout,preview_size,max_body_size,allow_204,allow_206,echo_header
+		IcapFailOpen (yes|no)
+		IcapConnFailOpen (yes|no)
+		IcapTimeout 30
+		IcapPreviewSize 4096
+		IcapMaxBodySize 1048576
+		IcapAllow204 (yes|no)
+		IcapAllow206 (yes|no)
+		IcapSanitizeRequestLine (yes|no)
+
+		Icap icap://host:port,reqmod,respmod,icap_fail_open,conn_fail_open,timeout,preview_size,max_body_size,allow_204,allow_206,echo_header,sanitize_request_line
         Icap {
             Proto icap
             Server host
@@ -360,6 +379,7 @@ rules cannot specify connection options or ICAP services.
             Allow204 (yes|no)
             Allow206 (yes|no)
             EchoHeader x-header-to-echo (e.g. X-Response-Vars)
+            SanitizeRequestLine (yes|no)
         }
 
 	    # Multiple Log lines allowed
@@ -603,9 +623,11 @@ structured format, as follows:
 			Allow204 yes
 			Allow206 no
 			EchoHeader X-Response-Vars
+			SanitizeRequestLine no
 		}
 
-		Icap icap://127.0.0.1:1345,reqmod,respmod,no,no,30,4096,8192,yes,no,X-ICAP-E2G
+		# E2Guardian icap service requires SanitizeRequestLine
+		Icap icap://127.0.0.1:1345,reqmod,respmod,no,no,30,4096,8192,yes,no,X-ICAP-E2G,yes
 	}
 
 This structured version of the first filtering rule above behaves the same as 

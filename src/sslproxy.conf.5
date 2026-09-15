@@ -373,12 +373,54 @@ Load configuration from an include file.
 
 Recursive include files are not allowed. The Include option cannot be used in 
 include files.
+
+.TP
+\fBIcapFailOpen BOOL\fR
+Set ICAP fail-open for services in ICAP chain, globally, per-proxyspec, or per-filter rule.
+.br
+Default: no
+.TP
+\fBIcapConnFailOpen BOOL\fR
+Set ICAP connection fail-open for services in ICAP chain, globally, per-proxyspec, or per-filter rule.
+.br
+Default: no
+.TP
+\fBIcapTimeout NUMBER\fR
+Set timeout in seconds for ICAP services, globally, per-proxyspec, or per-filter rule , use 0-60
+.br
+Default: 30
+.TP
+\fBIcapPreviewSize NUMBER\fR
+Set Preview size in bytes for ICAP services, globally, per-proxyspec, or per-filter rule , use 0-16777216
+.br
+Default: 4096
+.TP
+\fBIcapMaxBodySize NUMBER\fR
+Set max body size in bytes for ICAP services, globally, per-proxyspec, or per-filter rule , use 0-16777216
+.br
+Default: 1048576
+.TP
+\fBIcapAllow204 BOOL\fR
+Allow 204 responses for services in ICAP chain, globally, per-proxyspec, or per-filter rule.
+.br
+Default: yes
+.TP
+\fBIcapAllow206 BOOL\fR
+Allow 206 responses for services in ICAP chain, globally, per-proxyspec, or per-filter rule.
+.br
+Default: yes
+.TP
+\fBIcapSanitizeRequestLine BOOL\fR
+Sanitize request line for services in ICAP chain, globally, per-proxyspec, or per-filter rule.
+.br
+Default: no
+
 .TP
 \fBIcap STRING\fR
 
 The syntax of one line Icap specifications is as follows:
 .br
-Icap icap://host:port,reqmod,respmod,icap_fail_open,conn_fail_open,timeout,preview_size,max_body_size,allow_204,allow_206,echo_header
+Icap icap://host:port,reqmod,respmod,icap_fail_open,conn_fail_open,timeout,preview_size,max_body_size,allow_204,allow_206,echo_header,sanitize_request_line
 .TP
 \fBIcap {\fR
 .br
@@ -407,6 +449,8 @@ Allow204
 Allow206
 .br
 EchoHeader
+.br
+SanitizeRequestLine
 .br
 \fB}\fR
 .br
@@ -551,6 +595,22 @@ UserTimeout
 .br
 UserAuthURL
 .br
+IcapFailOpen
+.br
+IcapConnFailOpen
+.br
+IcapTimeout
+.br
+IcapPreviewSize
+.br
+IcapMaxBodySize
+.br
+IcapAllow204
+.br
+IcapAllow206
+.br
+IcapSanitizeRequestLine
+.br
 Icap one line Icap specifications
 .br
 Icap {...} structured Icap specifications
@@ -656,6 +716,22 @@ DivertUsers
 PassUsers
 .br
 PassSite
+.br
+IcapFailOpen
+.br
+IcapConnFailOpen
+.br
+IcapTimeout
+.br
+IcapPreviewSize
+.br
+IcapMaxBodySize
+.br
+IcapAllow204
+.br
+IcapAllow206
+.br
+IcapSanitizeRequestLine
 .br
 Icap one line Icap specifications
 .br

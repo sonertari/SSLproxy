@@ -153,13 +153,14 @@ typedef struct conn_opts {
 #ifndef WITHOUT_ICAP
 	/* ICAP configuration chain */
 	struct icap_service *icap_chain;
-	unsigned int icap_fail_open : 1;      /* 0: stop, 1: continue with next service on ICAP error */
-	unsigned int icap_conn_fail_open : 1; /* 0: block, 1: pass through on ICAP error */
-	unsigned int icap_timeout;            /* Timeout in seconds */
-	size_t icap_preview_size;             /* Preview slice size in bytes; 0 = preview disabled */
-	size_t icap_max_body_size;            /* Max body size to send to ICAP; 0 = disabled */
-	unsigned int icap_allow_204 : 1;      /* 0: Don't allow 204 responses from ICAP, treat as error; 1: Allow 204 responses */
-	unsigned int icap_allow_206 : 1;      /* 0: Don't allow 206 responses from ICAP, treat as error; 1: Allow 206 responses */
+	unsigned int icap_fail_open : 1;             /* 0: stop, 1: continue with next service on ICAP error */
+	unsigned int icap_conn_fail_open : 1;        /* 0: block, 1: pass through on ICAP error */
+	unsigned int icap_timeout;                   /* Timeout in seconds */
+	size_t icap_preview_size;                    /* Preview slice size in bytes; 0 = preview disabled */
+	size_t icap_max_body_size;                   /* Max body size to send to ICAP; 0 = disabled */
+	unsigned int icap_allow_204 : 1;             /* 0: Don't allow 204 responses from ICAP, treat as error; 1: Allow 204 responses */
+	unsigned int icap_allow_206 : 1;             /* 0: Don't allow 206 responses from ICAP, treat as error; 1: Allow 206 responses */
+	unsigned int icap_sanitize_request_line : 1; /* 0: Don't sanitize request line, 1: Sanitize request line */
 #endif /* !WITHOUT_ICAP */
 } conn_opts_t;
 
