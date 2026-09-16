@@ -373,18 +373,20 @@ protohttp2_provider_read_callback(UNUSED nghttp2_session *session, UNUSED int32_
     if (available == 0) {
         log_finest_va("evbuffer_get_length(s->data_buf) == 0, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, reqmod);
 
-        if ((h2_ctx->proxying ? !reqmod : reqmod) ? s->src_end_stream : s->dst_end_stream) {
-            log_finest_va("End of stream reached, set NGHTTP2_DATA_FLAG_EOF for src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d",
-                s->src_stream_id, s->dst_stream_id, reqmod);
+        // Try set NGHTTP2_DATA_FLAG_EOF for the other side, but if proxying only
+        if (h2_ctx->proxying && (reqmod ? s->dst_end_stream : s->src_end_stream)) {
+            log_finest_va("End of stream reached for %s-side as src session, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d",
+                reqmod ? "server" : "client", s->src_stream_id, s->dst_stream_id, reqmod);
 #ifndef WITHOUT_ICAP
-            if (s->icap_ctx && icap_enabled(s->icap_ctx) && !icap_is_content_complete(s->icap_ctx, h2_ctx->proxying ? !reqmod : reqmod)) {
-                log_finest_va("Do not set NGHTTP2_DATA_FLAG_EOF for src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, s->icap_ctx->reqmod);
+            if (s->icap_ctx && icap_enabled(s->icap_ctx) && !icap_is_content_complete(s->icap_ctx, !reqmod)) {
+                log_finest_va("Do NOT set NGHTTP2_DATA_FLAG_EOF for %s-side as dst session, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", available=%zu, reqmod=%d",
+                    reqmod ? "client" : "server", s->src_stream_id, s->dst_stream_id, available, reqmod);
                 return NGHTTP2_ERR_DEFERRED;
             }
 #endif /* !WITHOUT_ICAP */
 
-            log_finest_va("Set NGHTTP2_DATA_FLAG_EOF for %s session, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", available=%zu, buf_len=%zu",
-                (h2_ctx->proxying ? !reqmod : reqmod) ? "dst" : "src", s->src_stream_id, s->dst_stream_id, available, length);
+            log_finest_va("Set NGHTTP2_DATA_FLAG_EOF for %s-side as dst session, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", available=%zu, reqmod=%d",
+                reqmod ? "client" : "server", s->src_stream_id, s->dst_stream_id, available, reqmod);
             *data_flags |= NGHTTP2_DATA_FLAG_EOF;
             return 0;
         }
@@ -398,23 +400,26 @@ protohttp2_provider_read_callback(UNUSED nghttp2_session *session, UNUSED int32_
     size_t to_read = (available < length) ? available : length;
     evbuffer_remove(s->data_buf, buf, to_read);
 
-    size_t *sent_body_size = (h2_ctx->proxying ? !reqmod : reqmod) ? &s->dst_sent_body_size : &s->src_sent_body_size;
-    *sent_body_size += to_read;
+    if (h2_ctx->proxying) {
+        size_t *sent_body_size = !reqmod ? &s->dst_sent_body_size : &s->src_sent_body_size;
+        *sent_body_size += to_read;
+    }
 
-    // Flag the end of stream
-    if ((h2_ctx->proxying ? !reqmod : reqmod) ? s->src_end_stream : s->dst_end_stream) {
-        log_finest_va("End of stream reached for src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d",
-            s->src_stream_id, s->dst_stream_id, reqmod);
+    // Try set NGHTTP2_DATA_FLAG_EOF for the other side, but if proxying only
+    if (h2_ctx->proxying && (!reqmod ? s->src_end_stream : s->dst_end_stream)) {
+        log_finest_va("End of stream reached for %s-side as src session, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d",
+            reqmod ? "server" : "client", s->src_stream_id, s->dst_stream_id, reqmod);
         if (evbuffer_get_length(s->data_buf) > 0
 #ifndef WITHOUT_ICAP
-            || (s->icap_ctx && icap_enabled(s->icap_ctx) && !icap_is_content_complete(s->icap_ctx, h2_ctx->proxying ? !reqmod : reqmod))
+            || (s->icap_ctx && icap_enabled(s->icap_ctx) && !icap_is_content_complete(s->icap_ctx, !reqmod))
 #endif /* !WITHOUT_ICAP */
             ) {
-            log_finest_va("Do not set NGHTTP2_DATA_FLAG_EOF for src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d, data_buf=%zu",
-                s->src_stream_id, s->dst_stream_id, reqmod, evbuffer_get_length(s->data_buf));
+            log_finest_va("Do NOT set NGHTTP2_DATA_FLAG_EOF for %s-side as dst session, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", data_buf=%zu, reqmod=%d",
+                reqmod ? "client" : "server", s->src_stream_id, s->dst_stream_id, evbuffer_get_length(s->data_buf), reqmod);
             goto out;
         }
-        log_finest_va("Set NGHTTP2_DATA_FLAG_EOF for src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, reqmod);
+        log_finest_va("Set NGHTTP2_DATA_FLAG_EOF for %s-side as dst session, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d",
+            reqmod ? "client" : "server", s->src_stream_id, s->dst_stream_id, reqmod);
         *data_flags |= NGHTTP2_DATA_FLAG_EOF;
     }
 out:
@@ -633,39 +638,20 @@ protohttp2_on_frame_recv(UNUSED nghttp2_session *session, const nghttp2_frame *f
         log_finest_va("NGHTTP2_FLAG_END_STREAM received with %s frame, stream_id=%d", frame->hd.type == NGHTTP2_HEADERS ? "HEADERS" : "DATA", frame->hd.stream_id);
         protohttp2_stream_ctx_t *s = protohttp2_get_stream_ctx(h2_ctx, frame->hd.stream_id, reqmod);
         if (s) {
-            log_finest_va("%s stream ended, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", frame->hd.length=%zu", reqmod ? "Request" : "Response", s->src_stream_id, s->dst_stream_id, frame->hd.length);
+            log_finest_va("Set END_STREAM, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", frame->hd.length=%zu, reqmod=%d", s->src_stream_id, s->dst_stream_id, frame->hd.length, reqmod);
 
-            // ATTENTION: We should resume the other side if icap is enabled or not
+            // ATTENTION: Set end_stream here, but do not resume the other side if icap is enabled
+            // If icap is enabled, we should wait until all icap services are finished, before we send end_stream to the other side
             if (reqmod) {
-                // WAKE UP the server-facing stream to signal that the stream is closed and no more data will be sent
-                log_finest_va("Request stream %" PRId64 " END_STREAM", s->src_stream_id);
                 s->src_end_stream = 1;
-
-                s->ref_count++;
-                nghttp2_session_resume_data(h2_ctx->dst_session, s->dst_stream_id);
-
-                h2_ctx->proxying = 1;
-                protohttp2_trigger_write_loop(h2_ctx, s, 0);
-                h2_ctx->proxying = 0;
-                s->ref_count--;
             }
             else {
-                // WAKE UP the client-facing stream to signal that the stream is closed and no more data will be sent
-                log_finest_va("Response stream %" PRId64 " END_STREAM", s->dst_stream_id);
                 s->dst_end_stream = 1;
-
-                s->ref_count++;
-                nghttp2_session_resume_data(h2_ctx->src_session, s->src_stream_id);
-
-                h2_ctx->proxying = 1;
-                protohttp2_trigger_write_loop(h2_ctx, s, 1);
-                h2_ctx->proxying = 0;
-                s->ref_count--;
             }
 
 #ifndef WITHOUT_ICAP
-            if (frame->hd.type == NGHTTP2_DATA && frame->hd.length == 0) {
-                if (icap_enabled(s->icap_ctx)) {
+            if (icap_enabled(s->icap_ctx)) {
+                if (frame->hd.type == NGHTTP2_DATA && frame->hd.length == 0) {
                     log_finest_va("Set send_terminator, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, reqmod);
 
                     // The send_terminator flag is for the first icap service only
@@ -682,6 +668,33 @@ protohttp2_on_frame_recv(UNUSED nghttp2_session *session, const nghttp2_frame *f
                     icap_process_chain(s->icap_ctx, 0);
                     return 0;
                 }
+            }
+            else {
+#endif /* !WITHOUT_ICAP */
+
+                log_finest_va("Wake up %s-facing stream, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64, reqmod ? "server" : "client", s->src_stream_id, s->dst_stream_id);
+
+                if (reqmod) {
+                    // WAKE UP the server-facing stream to signal that the stream is closed and no more data will be sent
+                    s->ref_count++;
+                    nghttp2_session_resume_data(h2_ctx->dst_session, s->dst_stream_id);
+
+                    h2_ctx->proxying = 1;
+                    protohttp2_trigger_write_loop(h2_ctx, s, 0);
+                    h2_ctx->proxying = 0;
+                    s->ref_count--;
+                }
+                else {
+                    // WAKE UP the client-facing stream to signal that the stream is closed and no more data will be sent
+                    s->ref_count++;
+                    nghttp2_session_resume_data(h2_ctx->src_session, s->src_stream_id);
+
+                    h2_ctx->proxying = 1;
+                    protohttp2_trigger_write_loop(h2_ctx, s, 1);
+                    h2_ctx->proxying = 0;
+                    s->ref_count--;
+                }
+#ifndef WITHOUT_ICAP
             }
 #endif /* !WITHOUT_ICAP */
         }

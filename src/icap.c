@@ -50,7 +50,7 @@ static void icap_send_data_to_dst_cb(icap_ctx_t *);
 static void icap_failopen_to_dest_cb(icap_service_ctx_t *);
 static void icap_handle_service_error(icap_service_ctx_t *);
 static int icap_build_request(icap_service_ctx_t *);
-static int icap_is_http_nullbody(icap_service_ctx_t *);
+static int icap_is_encapsulated_nullbody(icap_service_ctx_t *service_ctx);
 
 /*
  * Read one line from an evbuffer, stripping the EOL terminator.
@@ -1393,6 +1393,14 @@ icap_have_data_to_process(icap_ctx_t *icap_ctx, int *service_idx)
 		}
 	}
 	log_finest("No service has data to process");
+
+	if (ctx->proto == PROTO_HTTP2 || ctx->proto == PROTO_HTTP3) {
+		protohttpx_stream_ctx_t *s = icap_ctx->stream_ctx;
+		if (evbuffer_get_length(s->data_buf) > 0) {
+			log_finest_va("H2/H3 stream has data to send, data_buf=%zu", evbuffer_get_length(s->data_buf));
+			return 1;
+		}
+	}
 	return 0;
 }
 
@@ -1586,6 +1594,8 @@ icap_is_http_stream_end(icap_service_ctx_t *service_ctx, size_t sent_body_size, 
 		return 1;
 	}
 
+	// TODO: Should subsequent services get stream end from previous icap service, as in h2/h3?
+	// But it fails in h1
 	if (icap_ctx->reqmod) {
 		if (http_ctx->src_content_chunked) {
 			service_ctx->src.end_stream = icap_peek_http_chunked_end(buf);
@@ -1630,17 +1640,141 @@ icap_is_httpx_stream_end(icap_service_ctx_t *service_ctx)
 
 	int stream_end = 0;
 
+	// TODO: Can/shall we enable http_content_length check for h2/h3 conns with content-length header?
+	// And we should differentiate the cases with or without content-length header in h2/h3
+
 	// First service gets stream end from h2/h3 streams
 	if (service_ctx->idx == 0) {
 		stream_end = icap_ctx->reqmod ? icap_ctx->stream_ctx->src_end_stream : icap_ctx->stream_ctx->dst_end_stream;
 	}
 	// Subsequent services get stream end from previous icap service
 	else {
-		stream_end = ICAP_STATE(icap_ctx->services[service_ctx->idx - 1], icap_ctx->reqmod)->content_complete || ICAP_STATE(icap_ctx->services[service_ctx->idx - 1], icap_ctx->reqmod)->null_body;
+		stream_end = ICAP_STATE(icap_ctx->services[service_ctx->idx - 1], icap_ctx->reqmod)->content_complete || icap_is_encapsulated_nullbody(icap_ctx->services[service_ctx->idx - 1]);
 	}
 
 	log_finest_icap_va("Check stream end, stream_end=%d, reqmod=%d", stream_end, icap_ctx->reqmod);
 	return stream_end;
+}
+
+static int
+icap_is_stream_end(icap_service_ctx_t *service_ctx, size_t sent_body_size, struct evbuffer *buf)
+{
+	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
+	pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
+
+	if (ctx->proto == PROTO_HTTP2 || ctx->proto == PROTO_HTTP3) {
+		return icap_is_httpx_stream_end(service_ctx);
+	}
+	else {
+		return icap_is_http_stream_end(service_ctx, sent_body_size, buf);
+	}
+}
+
+static int icap_is_nullbody(icap_service_ctx_t *service_ctx);
+
+// We need separate null_body functions for sending request to and processing response from service
+static int
+icap_is_encapsulated_nullbody(icap_service_ctx_t *service_ctx)
+{
+	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
+	UNUSED pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
+
+	if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->null_body) {
+		log_finest_icap("Encapsulated header indicates null_body");
+		return 1;
+	}
+
+	if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->has_body) {
+		log_finest_icap("Encapsulated header indicates has_body");
+		return 0;
+	}
+
+	if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_204) {
+		log_finest_icap("Get null body from previous service in 204 mode");
+		return icap_is_nullbody(service_ctx);
+	}
+	return 0;
+	// return 1;
+}
+
+static int
+icap_is_http_nullbody(icap_service_ctx_t *service_ctx)
+{
+	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
+	UNUSED pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
+
+	struct evbuffer *in_body = ICAP_STATE(service_ctx, icap_ctx->reqmod)->in_body;
+	size_t in_body_len = evbuffer_get_length(in_body);
+
+	if (icap_ctx->is_veto) {
+		log_finest_icap_va("Veto detected, assume not null body, in_body_len=%zu", in_body_len);
+		return 0;
+	}
+
+	if (!ctx->spec->http) {
+		log_finest_icap("Non-http connection, assume not null body");
+		return 0;
+	}
+
+	// TODO: Do we need has_body check, or is null_body check below enough?
+	// int has_body = ICAP_STATE(service_ctx, icap_ctx->reqmod)->has_body;
+	// if (has_body) {
+	// 	log_finest_icap("Service has body");
+	// 	return 0;
+	// }
+
+	// ATTENTION: The null_body flag may be misleading, due to 204 and 206 responses
+	// int null_body = ICAP_STATE(icap_ctx->services[0], icap_ctx->reqmod)->null_body;
+	// if (null_body) {
+	// 	log_finest_icap("First service input null body");
+	// 	return 1;
+	// }
+
+	// We could use service_ctx directly, instead of icap_ctx->services[0], as only the first service calls this function
+	size_t sent_body_size = ICAP_STATE(icap_ctx->services[0], icap_ctx->reqmod)->sent_body_size;
+	if (sent_body_size > 0) {
+		log_finest_icap_va("First service sent_body_size > 0, assume not null body, sent_body_size=%zu", sent_body_size);
+		return 0;
+	}
+
+	// ATTENTION: Move this check after null_body check, otherwise breaks 204 bypass with c-icap echo service
+	// TODO: Do we need to check detected_204? Because if we got 204, then in_body_len > 0
+	// if (in_body_len > 0 && !ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_204) {
+	if (in_body_len > 0) {
+		log_finest_icap_va("Not null body, in_body_len=%zu", in_body_len);
+		return 0;
+	}
+
+	// Content-length is not mandatory in H2/H3, so do not check it below
+	if (ctx->proto == PROTO_HTTP2 || ctx->proto == PROTO_HTTP3) {
+		protohttpx_stream_ctx_t *s = icap_ctx->stream_ctx;
+
+		int end_stream = icap_is_httpx_stream_end(service_ctx);
+		int seen_header = icap_ctx->reqmod ? s->http_ctx->seen_req_header : s->http_ctx->seen_resp_header;
+
+		if (end_stream && seen_header && (in_body_len == 0)) {
+			log_finest_icap_va("Null body, end_stream=%d, seen_header=%d, in_body_len=%zu", end_stream, seen_header, in_body_len);
+			return 1;
+		}
+		log_finest_icap_va("Not null body, end_stream=%d, seen_header=%d, in_body_len=%zu", end_stream, seen_header, in_body_len);
+		return 0;
+	}
+
+	log_finest_icap_va("HTTP content length=%zu, http_content_length_set=%u", icap_get_http_content_length(icap_ctx), icap_is_http_content_length_set(icap_ctx));
+
+	return icap_is_http_stream_end(service_ctx, sent_body_size, in_body);
+}
+
+static int
+icap_is_nullbody(icap_service_ctx_t *service_ctx)
+{
+	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
+
+	if (service_ctx->idx == 0) {
+		return icap_is_http_nullbody(service_ctx);
+	} else {
+		return icap_is_encapsulated_nullbody(icap_ctx->services[service_ctx->idx - 1]);
+	}
 }
 
 static int
@@ -1657,6 +1791,8 @@ icap_is_httpx_send_terminator(icap_service_ctx_t *service_ctx)
 	}
 	// Subsequent services get send_terminator from previous icap service, end_stream is set after receiving chunk terminator
 	else {
+		// ATTENTION: Do not send terminator for encapsulated null bodies,
+		// otherwise if we are waiting for icap service connected, we may send an empty frame with end_stream set
 		send_terminator = ICAP_STATE(icap_ctx->services[service_ctx->idx - 1], icap_ctx->reqmod)->content_complete;
 	}
 
@@ -1678,11 +1814,6 @@ icap_failopen_to_next_service(icap_service_ctx_t *service_ctx)
 	log_finest_icap_va("ENTER, sent_hdr=%zu, sent_body=%zu, in_hdr=%zu, in_body=%zu",
 		evbuffer_get_length(sent_hdr), evbuffer_get_length(sent_body), evbuffer_get_length(in_hdr), evbuffer_get_length(in_body));
 
-	if (icap_is_http_nullbody(service_ctx)) {
-		log_finest_icap("Content complete: null-body");
-		ICAP_STATE(service_ctx, icap_ctx->reqmod)->content_complete = 1;
-	}
-
 	int next_idx = service_ctx->idx + 1;
 
 	size_t *sent_body_size = &ICAP_STATE(service_ctx, icap_ctx->reqmod)->sent_body_size;
@@ -1694,22 +1825,7 @@ icap_failopen_to_next_service(icap_service_ctx_t *service_ctx)
 
 	log_finest_icap_va("Updated sent_body_size, checking http content complete, sent_body_size=%zu, http_content_length=%zu", *sent_body_size, icap_get_http_content_length(icap_ctx));
 
-	if (ctx->proto == PROTO_HTTP2 || ctx->proto == PROTO_HTTP3) {
-		log_finest_icap_va("HTTP content complete check for h2/h3, src_end_stream=%d, dst_end_stream=%d",
-			icap_ctx->stream_ctx->src_end_stream, icap_ctx->stream_ctx->dst_end_stream);
-
-		// TODO: Can/shall we enable http_content_length check for h2/h3 conns with content-length header?
-		// We should differentiate the cases with or without content-length header in h2/h3
-		// ICAP_STATE(service_ctx, icap_ctx->reqmod)->content_complete = icap_is_httpx_stream_end(service_ctx) || (*sent_body_size >= http_content_length);
-		ICAP_STATE(service_ctx, icap_ctx->reqmod)->content_complete = icap_is_httpx_stream_end(service_ctx);
-	}
-	else {
-		log_finest_icap("HTTP content complete check for http1");
-
-		if (icap_is_http_stream_end(service_ctx, *sent_body_size, in_body)) {
-			ICAP_STATE(service_ctx, icap_ctx->reqmod)->content_complete = 1;
-		}
-	}
+	ICAP_STATE(service_ctx, icap_ctx->reqmod)->content_complete = icap_is_nullbody(service_ctx) || icap_is_stream_end(service_ctx, *sent_body_size, in_body);
 
 	if (next_idx < icap_ctx->service_count) {
 		log_finer_icap_va("Failopen to next service, next_idx=%d", next_idx);
@@ -1808,6 +1924,8 @@ icap_handle_service_error(icap_service_ctx_t *service_ctx)
 		service_ctx->svc->conn_fail_open == ICAP_FAIL_CLOSE ? "fail-close" : "fail-open",
 		service_ctx->svc->icap_fail_open == ICAP_FAIL_CLOSE ? "fail-close" : "fail-open");
 
+	service_ctx->error = 1;
+
 	icap_service_disconnect(service_ctx);
 
 	// Connection/stream fail mode
@@ -1856,97 +1974,6 @@ icap_preview_enabled(icap_service_t *svc)
 	return svc->preview_size > 0;
 }
 
-// We need separate null_body functions for sending request to and processing response from service
-static int
-icap_is_icap_response_nullbody(icap_service_ctx_t *service_ctx)
-{
-	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
-	UNUSED pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
-
-	int null_body = ICAP_STATE(service_ctx, icap_ctx->reqmod)->null_body;
-	if (null_body) {
-		log_finest_icap("Service response null body");
-		return 1;
-	}
-
-	int has_body = ICAP_STATE(service_ctx, icap_ctx->reqmod)->has_body;
-	if (has_body) {
-		log_finest_icap("Encapsulated header indicates has_body");
-		return 0;
-	}
-
-	return 0;
-}
-
-static int
-icap_is_http_nullbody(icap_service_ctx_t *service_ctx)
-{
-	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
-	UNUSED pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
-
-	struct evbuffer *in_body = ICAP_STATE(service_ctx, icap_ctx->reqmod)->in_body;
-	size_t in_body_len = evbuffer_get_length(in_body);
-
-	if (icap_ctx->is_veto) {
-		log_finest_icap_va("Veto detected, assume not null body, in_body_len=%zu", in_body_len);
-		return 0;
-	}
-
-	if (!ctx->spec->http) {
-		log_finest_icap("Non-http connection, assume not null body");
-		return 0;
-	}
-
-	// TODO: Do we need has_body check, or is null_body check below enough?
-	// int has_body = ICAP_STATE(service_ctx, icap_ctx->reqmod)->has_body;
-	// if (has_body) {
-	// 	log_finest_icap("Service has body");
-	// 	return 0;
-	// }
-
-	// ATTENTION: The null_body flag may be misleading, due to 204 and 206 responses
-	// int null_body = ICAP_STATE(icap_ctx->services[0], icap_ctx->reqmod)->null_body;
-	// if (null_body) {
-	// 	log_finest_icap("First service input null body");
-	// 	return 1;
-	// }
-
-	size_t sent_body_size = ICAP_STATE(icap_ctx->services[0], icap_ctx->reqmod)->sent_body_size;
-	if (sent_body_size > 0) {
-		log_finest_icap_va("First service sent_body_size > 0, assume not null body, sent_body_size=%zu", sent_body_size);
-		return 0;
-	}
-
-	// ATTENTION: Move this check after null_body check, otherwise breaks 204 bypass with c-icap echo service
-	// TODO: Do we need to check detected_204? Because if we got 204, then in_body_len > 0
-	// if (in_body_len > 0 && !ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_204) {
-	if (in_body_len > 0) {
-		log_finest_icap_va("Not null body, in_body_len=%zu", in_body_len);
-		return 0;
-	}
-
-	// Content-length is not mandatory in H2/H3, so do not check it below
-	if (ctx->proto == PROTO_HTTP2 || ctx->proto == PROTO_HTTP3) {
-		protohttpx_stream_ctx_t *s = icap_ctx->stream_ctx;
-
-		int end_stream = icap_is_httpx_stream_end(service_ctx);
-		int seen_header = icap_ctx->reqmod ? s->http_ctx->seen_req_header : s->http_ctx->seen_resp_header;
-
-		if (end_stream && seen_header && (in_body_len == 0)) {
-			log_finest_icap_va("Null body, end_stream=%d, seen_header=%d, in_body_len=%zu", end_stream, seen_header, in_body_len);
-			return 1;
-		}
-		log_finest_icap_va("Not null body, end_stream=%d, seen_header=%d, in_body_len=%zu", end_stream, seen_header, in_body_len);
-		return 0;
-	}
-
-	size_t http_content_length = icap_get_http_content_length(icap_ctx);
-	log_finest_icap_va("HTTP content length=%zu, http_content_length_set=%u, null_body=%u", http_content_length, icap_is_http_content_length_set(icap_ctx),
-		ICAP_STATE(service_ctx, icap_ctx->reqmod)->null_body);
-
-	return icap_is_http_stream_end(service_ctx, sent_body_size, in_body) && http_content_length == 0;
-}
-
 static void
 icap_service_content_complete(icap_service_ctx_t *service_ctx)
 {
@@ -1969,16 +1996,7 @@ icap_service_content_complete(icap_service_ctx_t *service_ctx)
 	}
 
 	if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_204 || ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_206) {
-		int stream_end = 0;
-
-		if (ctx->proto == PROTO_HTTP2 || ctx->proto == PROTO_HTTP3) {
-			stream_end = icap_is_httpx_stream_end(service_ctx);
-		}
-		else {
-			stream_end = ICAP_STATE(service_ctx, icap_ctx->reqmod)->end_stream;
-		}
-
-		if (!stream_end) {
+		if (!icap_is_stream_end(service_ctx, ICAP_STATE(service_ctx, icap_ctx->reqmod)->sent_body_size, ICAP_STATE(service_ctx, icap_ctx->reqmod)->in_body)) {
 			log_finest_va("Streaming in 204/206 mode, do NOT set content complete, reqmod=%d", icap_ctx->reqmod);
 			return;
 		}
@@ -2013,8 +2031,6 @@ icap_service_bypass(icap_service_ctx_t *service_ctx)
 	struct evbuffer *sent_body = ICAP_STATE(service_ctx, icap_ctx->reqmod)->sent_body;
 	struct evbuffer *out_body = ICAP_STATE(service_ctx, icap_ctx->reqmod)->out_body;
 
-	size_t *sent_body_size = &ICAP_STATE(service_ctx, icap_ctx->reqmod)->sent_body_size;
-
 	if (evbuffer_get_length(sent_body) > 0) {
 		// ATTENTION: We have already added existing sent_body in sent_body_size, so do not count it again here
 		// *sent_body_size += evbuffer_get_length(sent_body);
@@ -2027,23 +2043,7 @@ icap_service_bypass(icap_service_ctx_t *service_ctx)
 	struct evbuffer *in_body = ICAP_STATE(service_ctx, icap_ctx->reqmod)->in_body;
 	size_t in_body_len = evbuffer_get_length(in_body);
 
-	int content_complete = 0;
-
-	log_finest_icap_va("Checking if HTTP content complete, sent_body_size=%zu, http_content_length=%zu", *sent_body_size, icap_get_http_content_length(icap_ctx));
-
-	if (ctx->proto == PROTO_HTTP2 || ctx->proto == PROTO_HTTP3) {
-		log_finest_icap_va("HTTP content complete check for h2/h3, src_end_stream=%d, dst_end_stream=%d",
-			icap_ctx->stream_ctx->src_end_stream, icap_ctx->stream_ctx->dst_end_stream);
-
-		// TODO: Can/shall we enable http_content_length check for h2/h3 conns with content-length header?
-		// ICAP_STATE(service_ctx, icap_ctx->reqmod)->content_complete = icap_is_httpx_stream_end(service_ctx) || (*sent_body_size >= http_content_length);
-		content_complete = icap_is_httpx_stream_end(service_ctx);
-	}
-	else {
-		log_finest_icap("HTTP content complete check for http1");
-
-		content_complete = icap_is_http_stream_end(service_ctx, *sent_body_size + in_body_len, in_body);
-	}
+	size_t *sent_body_size = &ICAP_STATE(service_ctx, icap_ctx->reqmod)->sent_body_size;
 
 	if (in_body_len > 0) {
 		*sent_body_size += in_body_len;
@@ -2053,9 +2053,14 @@ icap_service_bypass(icap_service_ctx_t *service_ctx)
 		icap_ctx->made_progress = 1;
 	}
 
-	if (content_complete) {
-		icap_service_content_complete(service_ctx);
+	log_finest_icap_va("Checking if HTTP content complete, sent_body_size=%zu, in_body_len=%zu, http_content_length=%zu", *sent_body_size, in_body_len, icap_get_http_content_length(icap_ctx));
+
+	if (!icap_is_stream_end(service_ctx, *sent_body_size, in_body)) {
+		log_finest_icap_va("Not stream end, do not set content_complete, sent_body_size=%zu, in_body_len=%zu, http_content_length=%zu", *sent_body_size, in_body_len, icap_get_http_content_length(icap_ctx));
+		return;
 	}
+
+	icap_service_content_complete(service_ctx);
 }
 
 static int
@@ -2386,7 +2391,7 @@ icap_extract_http_headers(icap_service_ctx_t *service_ctx, struct evbuffer *inpu
 	if (hdrlen == 0) {
 		log_finest_icap("No HTTP headers indicated in ICAP encapsulated header");
 
-		if (icap_is_icap_response_nullbody(service_ctx)) {
+		if (icap_is_encapsulated_nullbody(service_ctx)) {
 			log_finer_icap("Null body with no http headers, assume 204 response, stream data from sent_hdr to out_hdr");
 			ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_204 = 1;
 			icap_service_bypass(service_ctx);
@@ -2765,7 +2770,7 @@ icap_extract_body_chunk(icap_service_ctx_t *service_ctx, struct evbuffer *input)
 		icap_ctx->made_progress = 1;
 	}
 
-	if (icap_is_icap_response_nullbody(service_ctx)) {
+	if (icap_is_encapsulated_nullbody(service_ctx)) {
 		if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_204 || ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_206) {
 			log_finest_icap_va("No modified body with 204 or 206 response, stream data from sent_body to out_body, 204=%u, 206=%u", 
 				ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_204, ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_206);
@@ -3083,16 +3088,19 @@ icap_bev_readcb(struct bufferevent *bev, void *arg)
 		}
 		else if (strncmp(status_line, "ICAP/1.0 204", 12) == 0) {
 			log_finer_icap("ICAP 204 No Content, no modification needed, bypassing");
-			if (icap_extract_icap_headers(service_ctx, input) == -1) {
-				goto err;
-			}
+
+			// TODO: Do we ever receive icap headers with 204 responses?
+			// if (icap_extract_icap_headers(service_ctx, input) == -1) {
+			// 	goto err;
+			// }
+
 			evbuffer_drain(input, evbuffer_get_length(input));
 
-			if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_204) {
-				log_finest_icap("Set content complete for 204");
-				// ATTENTION: This is NOT end_stream in 204
-				ICAP_STATE(service_ctx, icap_ctx->reqmod)->content_complete_20x = 1;
-			}
+			ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_204 = 1;
+
+			log_finest_icap("Set content complete for 204");
+			// ATTENTION: This is NOT end_stream in 204
+			ICAP_STATE(service_ctx, icap_ctx->reqmod)->content_complete_20x = 1;
 
 			icap_service_bypass(service_ctx);
 		}
@@ -3244,10 +3252,12 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 	int content_complete = 0;
 	size_t preview_size = 0;
 
-	int null_body = icap_is_http_nullbody(service_ctx);
+	int null_body = icap_is_nullbody(service_ctx);
 
 	/* 1. Send ICAP Header */
-	if (sent_hdr_size == 0 && sent_body_size == 0) {
+	// We send icap headers with http headers only, hence check if in_hdr_len > 0,
+	// otherwise we may send duplicate icap headers
+	if (sent_hdr_size == 0 && sent_body_size == 0 && in_hdr_len > 0) {
 		/* Calculate Encapsulated lengths */
 		char *req_or_res = reqmod ? "req" : "res";
 		#define ICAP_MAX_ENCAPSULATED_HEADER_SIZE 128
@@ -3281,15 +3291,7 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 				preview_size = service_ctx->svc->max_body_size;
 			}
 
-			int stream_end = 0;
-			if (ctx->proto == PROTO_HTTP2 || ctx->proto == PROTO_HTTP3) {
-				stream_end = icap_is_httpx_stream_end(service_ctx);
-			}
-			else {
-				stream_end = icap_is_http_stream_end(service_ctx, in_body_len < preview_size ? in_body_len : preview_size, in_body);
-			}
-
-			if (stream_end) {
+			if (icap_is_stream_end(service_ctx, in_body_len < preview_size ? in_body_len : preview_size, in_body)) {
 				if (preview_size >= in_body_len) {
 					content_complete = 1;
 				}
@@ -3471,17 +3473,9 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 		// This check is necessary to handle edge cases with max_body_size, which may truncate preview and body, leaving data in in_body
 		if (evbuffer_get_length(in_body) == 0) {
 			if (ctx->proto == PROTO_HTTP2 || ctx->proto == PROTO_HTTP3) {
-				log_finest_icap_va("HTTP content complete check for h2/h3, src_end_stream=%d, dst_end_stream=%d",
-					icap_ctx->stream_ctx->src_end_stream, icap_ctx->stream_ctx->dst_end_stream);
-
-				content_complete = icap_is_httpx_stream_end(service_ctx);
 				send_terminator = icap_is_httpx_send_terminator(service_ctx);
 			}
-			else {
-				log_finest_icap("HTTP content complete check for http1");
-
-				content_complete = icap_is_http_stream_end(service_ctx, *sent_body_size_new, chunk_buf);
-			}
+			content_complete = icap_is_stream_end(service_ctx, *sent_body_size_new, chunk_buf);
 		}
 
 		log_finest_icap_va("Try send terminator, chunk_len=%zu, send_terminator=%d, src_send_terminator=%d, dst_send_terminator=%d, src_end_stream=%d, dst_end_stream=%d, reqmod=%d",
@@ -3563,6 +3557,7 @@ icap_bev_eventcb(UNUSED struct bufferevent *bev, short events, void *arg)
 
 	if (events & BEV_EVENT_CONNECTED) {
 		log_finest_icap_va("ICAP connected to %s, sending request", service_ctx->svc->server);
+		service_ctx->error = 0;
 
 		int rv = icap_build_request(service_ctx);
 		if (rv < 0) {
@@ -3756,12 +3751,13 @@ icap_is_content_complete(icap_ctx_t *icap_ctx, int reqmod)
 		if (icap_ctx->services[i]) {
 			unsigned int content_complete = reqmod ? icap_ctx->services[i]->src.content_complete : icap_ctx->services[i]->dst.content_complete;
 			UNUSED unsigned int failopen = icap_ctx->services[i]->failopen;
+			UNUSED unsigned int error = icap_ctx->services[i]->error;
 			if (content_complete == 0) {
-				log_finest_va("%s content NOT complete, service idx=%d, failopen=%u", reqmod ? "REQMOD" : "RESPMOD", i, failopen);
+				log_finest_va("%s content NOT complete, service idx=%d, failopen=%u, error=%u", reqmod ? "REQMOD" : "RESPMOD", i, failopen, error);
 				return 0;
 			}
 			else {
-				log_finest_va("%s content complete for service idx=%d, failopen=%u", reqmod ? "REQMOD" : "RESPMOD", i, failopen);
+				log_finest_va("%s content complete for service idx=%d, failopen=%u, error=%u", reqmod ? "REQMOD" : "RESPMOD", i, failopen, error);
 			}
 		}
 	}

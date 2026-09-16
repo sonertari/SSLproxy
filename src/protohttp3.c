@@ -916,31 +916,17 @@ h3_on_end_stream(nghttp3_conn *conn, int64_t stream_id,
         nghttp3_conn_set_max_client_streams_bidi(h3_ctx->src_h3, h3_ctx->src_max_streams_bidi);
 
         protohttp3_trigger_write_loop(h3_ctx, s, 1);
+    }
 
-        // WAKE UP the server-facing stream to signal that the stream is closed and no more data will be sent
-        log_finest_va("Request stream %" PRId64 " END_STREAM", stream_id);
+    log_finest_va("Set END_STREAM, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, reqmod);
+
+    // ATTENTION: Set end_stream here, but do not resume the other side if icap is enabled
+    // If icap is enabled, we should wait until all icap services are finished, before we send end_stream to the other side
+    if (reqmod) {
         s->src_end_stream = 1;
-
-        s->ref_count++;
-        nghttp3_conn_resume_stream(h3_ctx->dst_h3, s->dst_stream_id);
-
-        h3_ctx->proxying = 1;
-        protohttp3_trigger_write_loop(h3_ctx, s, 0);
-        h3_ctx->proxying = 0;
-        s->ref_count--;
     }
     else {
-        // WAKE UP the client-facing stream to signal that the stream is closed and no more data will be sent
-        log_finest_va("Response stream %" PRId64 " END_STREAM", stream_id);
         s->dst_end_stream = 1;
-
-        s->ref_count++;
-        nghttp3_conn_resume_stream(h3_ctx->src_h3, s->src_stream_id);
-
-        h3_ctx->proxying = 1;
-        protohttp3_trigger_write_loop(h3_ctx, s, 1);
-        h3_ctx->proxying = 0;
-        s->ref_count--;
     }
 
 #ifndef WITHOUT_ICAP
@@ -965,6 +951,29 @@ h3_on_end_stream(nghttp3_conn *conn, int64_t stream_id,
         }
     // }
 #endif /* !WITHOUT_ICAP */
+
+    log_finest_va("Wake up %s-facing stream, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64, reqmod ? "server" : "client", s->src_stream_id, s->dst_stream_id);
+
+    if (reqmod) {
+        // WAKE UP the server-facing stream to signal that the stream is closed and no more data will be sent
+        s->ref_count++;
+        nghttp3_conn_resume_stream(h3_ctx->dst_h3, s->dst_stream_id);
+
+        h3_ctx->proxying = 1;
+        protohttp3_trigger_write_loop(h3_ctx, s, 0);
+        h3_ctx->proxying = 0;
+        s->ref_count--;
+    }
+    else {
+        // WAKE UP the client-facing stream to signal that the stream is closed and no more data will be sent
+        s->ref_count++;
+        nghttp3_conn_resume_stream(h3_ctx->src_h3, s->src_stream_id);
+
+        h3_ctx->proxying = 1;
+        protohttp3_trigger_write_loop(h3_ctx, s, 1);
+        h3_ctx->proxying = 0;
+        s->ref_count--;
+    }
 
     // Do NOT free the stream here
     return 0;
@@ -1008,20 +1017,22 @@ h3_stream_read_data(nghttp3_conn *conn, int64_t stream_id,
     // TODO: Do we need to check the len of s->data_buf too? But we drain it below anyway, so it should be empty after this callback.
     // Flag the end of stream
     if (available == 0) {
-        log_finest_va("evbuffer_get_length(s->data_buf) == 0, reqmod=%d, fd=%d", reqmod, h3_ctx->dst_fd);
+        log_finest_va("evbuffer_get_length(s->data_buf) == 0, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, reqmod);
 
-        if ((h3_ctx->proxying ? !reqmod : reqmod) ? s->src_end_stream : s->dst_end_stream) {
-            log_finest_va("End of stream reached, set NGHTTP3_DATA_FLAG_EOF for src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d",
-                s->src_stream_id, s->dst_stream_id, reqmod);
+        // Try set NGHTTP3_DATA_FLAG_EOF for the other side, but if proxying only
+        if (h3_ctx->proxying && (reqmod ? s->dst_end_stream : s->src_end_stream)) {
+            log_finest_va("End of stream reached for %s-side as src session, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d",
+                reqmod ? "server" : "client", s->src_stream_id, s->dst_stream_id, reqmod);
 #ifndef WITHOUT_ICAP
-            if (s->icap_ctx && icap_enabled(s->icap_ctx) && !icap_is_content_complete(s->icap_ctx, h3_ctx->proxying ? !reqmod : reqmod)) {
-                log_finest_va("Do not set NGHTTP3_DATA_FLAG_EOF for src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, s->icap_ctx->reqmod);
+            if (s->icap_ctx && icap_enabled(s->icap_ctx) && !icap_is_content_complete(s->icap_ctx, !reqmod)) {
+                log_finest_va("Do NOT set NGHTTP3_DATA_FLAG_EOF for %s-side as dst session, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", available=%zu, reqmod=%d",
+                    reqmod ? "client" : "server", s->src_stream_id, s->dst_stream_id, available, reqmod);
                 return NGHTTP3_ERR_WOULDBLOCK;
             }
 #endif /* !WITHOUT_ICAP */
 
-            log_finest_va("Set NGHTTP3_DATA_FLAG_EOF for %s session, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", available=%zu",
-                (h3_ctx->proxying ? !reqmod : reqmod) ? "dst" : "src", s->src_stream_id, s->dst_stream_id, available);
+            log_finest_va("Set NGHTTP3_DATA_FLAG_EOF for %s-side as dst session, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", available=%zu, reqmod=%d",
+                reqmod ? "client" : "server", s->src_stream_id, s->dst_stream_id, available, reqmod);
             *pflags |= NGHTTP3_DATA_FLAG_EOF;
             return 0;
         }
@@ -1055,20 +1066,28 @@ h3_stream_read_data(nghttp3_conn *conn, int64_t stream_id,
     vec[0].base = s->body_buf;
     vec[0].len  = data_len;
 
+    if (h3_ctx->proxying) {
+        size_t *sent_body_size = !reqmod ? &s->dst_sent_body_size : &s->src_sent_body_size;
+        *sent_body_size += data_len;
+    }
+
     // TODO: Do we need to double check the *_end_stream flags here, as we already check them above?
     // But this sets the NGHTTP3_DATA_FLAG_EOF flag asap, instead of waiting for the next call to h3_stream_read_data() to set it.
-    // Flag the end of stream
-    if ((h3_ctx->proxying ? !reqmod : reqmod) ? s->src_end_stream : s->dst_end_stream) {
-        log_finest_va("End of stream reached for src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d",
-            s->src_stream_id, s->dst_stream_id, reqmod);
+
+    // Try set NGHTTP3_DATA_FLAG_EOF for the other side, but if proxying only
+    if (h3_ctx->proxying && (!reqmod ? s->src_end_stream : s->dst_end_stream)) {
+        log_finest_va("End of stream reached for %s-side as src session, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d",
+            reqmod ? "server" : "client", s->src_stream_id, s->dst_stream_id, reqmod);
 #ifndef WITHOUT_ICAP
-        if (s->icap_ctx && icap_enabled(s->icap_ctx) && !icap_is_content_complete(s->icap_ctx, h3_ctx->proxying ? !reqmod : reqmod)) {
-            log_finest_va("Do not set NGHTTP3_DATA_FLAG_EOF for src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, reqmod);
+        if (s->icap_ctx && icap_enabled(s->icap_ctx) && !icap_is_content_complete(s->icap_ctx, !reqmod)) {
+            log_finest_va("Do NOT set NGHTTP3_DATA_FLAG_EOF for %s-side as dst session, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d",
+                reqmod ? "client" : "server", s->src_stream_id, s->dst_stream_id, reqmod);
             goto out;
         }
 #endif /* !WITHOUT_ICAP */
 
-        log_finest_va("Set NGHTTP3_DATA_FLAG_EOF for src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, reqmod);
+        log_finest_va("Set NGHTTP3_DATA_FLAG_EOF for %s-side as dst session, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d",
+            reqmod ? "client" : "server", s->src_stream_id, s->dst_stream_id, reqmod);
         *pflags |= NGHTTP3_DATA_FLAG_EOF;
     }
 #ifndef WITHOUT_ICAP
@@ -1176,6 +1195,7 @@ quic_recv_stream_data(ngtcp2_conn *conn, uint32_t flags,
     ngtcp2_conn_extend_max_stream_offset(conn, stream_id, datalen);
     ngtcp2_conn_extend_max_offset(conn, datalen);
 
+    protohttp3_arm_timer(h3_ctx);
     return 0;
 }
 
@@ -1761,7 +1781,6 @@ protohttp3_src_write_cb(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
     protohttp3_ctx_t *h3_ctx = arg;
     UNUSED pxy_conn_ctx_t *ctx = h3_ctx->ctx;
     log_finest("ENTER");
-    protohttp3_trigger_write_loop(h3_ctx, NULL, 1);
 }
 
 static void
@@ -1839,7 +1858,6 @@ protohttp3_dst_write_cb(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
     protohttp3_ctx_t *h3_ctx = arg;
     UNUSED pxy_conn_ctx_t *ctx = h3_ctx->ctx;
     log_finest_va("ENTER, fd=%d", h3_ctx->dst_fd);
-    protohttp3_trigger_write_loop(h3_ctx, NULL, 0);
 }
 
 /* =========================================================================
