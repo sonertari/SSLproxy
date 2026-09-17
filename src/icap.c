@@ -1650,9 +1650,9 @@ icap_is_httpx_stream_end(icap_service_ctx_t *service_ctx)
 	if (service_ctx->idx == 0) {
 		stream_end = icap_ctx->reqmod ? icap_ctx->stream_ctx->src_end_stream : icap_ctx->stream_ctx->dst_end_stream;
 	}
-	// Subsequent services get stream end from previous icap service
+	// Subsequent and fail-open services get stream end from the previous service
 	else {
-		stream_end = ICAP_STATE(icap_ctx->services[service_ctx->idx - 1], icap_ctx->reqmod)->content_complete || icap_is_encapsulated_nullbody(icap_ctx->services[service_ctx->idx - 1]);
+		stream_end = ICAP_STATE(icap_ctx->services[service_ctx->idx - 1], icap_ctx->reqmod)->content_complete || icap_is_encapsulated_nullbody(service_ctx);
 	}
 
 	log_finest_icap_va("Check stream end, stream_end=%d, reqmod=%d", stream_end, icap_ctx->reqmod);
@@ -1682,6 +1682,17 @@ icap_is_encapsulated_nullbody(icap_service_ctx_t *service_ctx)
 	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
 	UNUSED pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
 
+	// Fail-open and 204 services do not have encapsulated headers
+	if (service_ctx->failopen) {
+		log_finest_icap("Get null_body from previous service for fail-open service");
+		return icap_is_nullbody(service_ctx);
+	}
+
+	if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_204) {
+		log_finest_icap("Get null body from previous service in 204 mode");
+		return icap_is_nullbody(service_ctx);
+	}
+
 	if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->null_body) {
 		log_finest_icap("Encapsulated header indicates null_body");
 		return 1;
@@ -1691,13 +1702,7 @@ icap_is_encapsulated_nullbody(icap_service_ctx_t *service_ctx)
 		log_finest_icap("Encapsulated header indicates has_body");
 		return 0;
 	}
-
-	if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_204) {
-		log_finest_icap("Get null body from previous service in 204 mode");
-		return icap_is_nullbody(service_ctx);
-	}
 	return 0;
-	// return 1;
 }
 
 static int
@@ -1775,7 +1780,9 @@ icap_is_nullbody(icap_service_ctx_t *service_ctx)
 
 	if (service_ctx->idx == 0) {
 		return icap_is_http_nullbody(service_ctx);
-	} else {
+	}
+	// Subsequent, fail-open, and 204 services get null_body from the encapsulated header of previous service
+	else {
 		return icap_is_encapsulated_nullbody(icap_ctx->services[service_ctx->idx - 1]);
 	}
 }
@@ -1792,7 +1799,11 @@ icap_is_httpx_send_terminator(icap_service_ctx_t *service_ctx)
 	if (service_ctx->idx == 0) {
 		send_terminator = icap_ctx->reqmod ? icap_ctx->stream_ctx->src_send_terminator : icap_ctx->stream_ctx->dst_send_terminator;
 	}
-	// Subsequent services get send_terminator from previous icap service, end_stream is set after receiving chunk terminator
+	// Fail-open services get send_terminator from the previous service
+	else if (service_ctx->failopen) {
+		send_terminator = icap_is_httpx_send_terminator(icap_ctx->services[service_ctx->idx - 1]);
+	}
+	// Subsequent services get send_terminator from the previous service, end_stream is set after receiving chunk terminator
 	else {
 		// ATTENTION: Do not send terminator for encapsulated null bodies,
 		// otherwise if we are waiting for icap service connected, we may send an empty frame with end_stream set
