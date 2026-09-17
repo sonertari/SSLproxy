@@ -50,7 +50,7 @@ protohttp2_get_stream_ctx(protohttp2_ctx_t *h2_ctx, int32_t stream_id, int reqmo
 
     protohttp2_stream_ctx_t *s = h2_ctx->streams;
     while (s) {
-        if (reqmod ? s->src_stream_id == stream_id : s->dst_stream_id == stream_id)
+        if ((reqmod ? s->src_stream_id : s->dst_stream_id) == stream_id)
             return s;
         s = s->next;
     }
@@ -315,7 +315,7 @@ protohttp2_on_header_callback(nghttp2_session *session, const nghttp2_frame *fra
 }
 
 static void
-protohttp2_trigger_write_loop(protohttp2_ctx_t *h2_ctx, UNUSED protohttp2_stream_ctx_t *s, int reqmod)
+protohttp2_trigger_write_loop(protohttp2_ctx_t *h2_ctx, protohttp2_stream_ctx_t *s, int reqmod)
 {
     const uint8_t *binary_payload;
 
@@ -330,6 +330,10 @@ protohttp2_trigger_write_loop(protohttp2_ctx_t *h2_ctx, UNUSED protohttp2_stream
         return;
     }
 
+    if (s) {
+        s->ref_count++;
+    }
+
     // Ask nghttp2 to serialize the pending header queue into a raw byte stream
     ssize_t payload_len = nghttp2_session_mem_send(session, &binary_payload);
 
@@ -338,7 +342,7 @@ protohttp2_trigger_write_loop(protohttp2_ctx_t *h2_ctx, UNUSED protohttp2_stream
 
         // Write the raw binary frames directly into the bufferevent
         if (bufferevent_write(bev, binary_payload, payload_len) == -1) {
-            return;
+            goto out;
         }
         // struct evbuffer *outbuf = bufferevent_get_output(bev);
         // evbuffer_add(outbuf, binary_payload, payload_len);
@@ -352,6 +356,10 @@ protohttp2_trigger_write_loop(protohttp2_ctx_t *h2_ctx, UNUSED protohttp2_stream
 
         // Check if there is more data waiting in the memory queue loop
         payload_len = nghttp2_session_mem_send(session, &binary_payload);
+    }
+out:
+    if (s) {
+        s->ref_count--;
     }
 }
 
@@ -676,23 +684,19 @@ protohttp2_on_frame_recv(UNUSED nghttp2_session *session, const nghttp2_frame *f
 
                 if (reqmod) {
                     // WAKE UP the server-facing stream to signal that the stream is closed and no more data will be sent
-                    s->ref_count++;
                     nghttp2_session_resume_data(h2_ctx->dst_session, s->dst_stream_id);
 
                     h2_ctx->proxying = 1;
                     protohttp2_trigger_write_loop(h2_ctx, s, 0);
                     h2_ctx->proxying = 0;
-                    s->ref_count--;
                 }
                 else {
                     // WAKE UP the client-facing stream to signal that the stream is closed and no more data will be sent
-                    s->ref_count++;
                     nghttp2_session_resume_data(h2_ctx->src_session, s->src_stream_id);
 
                     h2_ctx->proxying = 1;
                     protohttp2_trigger_write_loop(h2_ctx, s, 1);
                     h2_ctx->proxying = 0;
-                    s->ref_count--;
                 }
 #ifndef WITHOUT_ICAP
             }

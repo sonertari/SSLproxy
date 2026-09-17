@@ -1243,12 +1243,15 @@ icap_service_connect(icap_service_ctx_t *service_ctx)
 	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
 	pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
 
+	// ATTENTION: We should continue and retry connecting to the failed service, so that icap_bev_eventcb() fires
+	// This ensures that we get a chance to call icap_have_data_to_process() to process any pending data.
+	// This is for the edge case where we still have pending data in service buffers due to max_body_size.
 	// TODO: Do we need to check failopen state if no progress, otherwise do we go into an infinite loop?
 	// if (service_ctx->failopen && icap_ctx->made_progress) {
-	if (service_ctx->failopen) {
-		log_fine_icap("ICAP service in failopen state");
-		return -1;
-	}
+	// if (service_ctx->failopen) {
+	// 	log_fine_icap("ICAP service in failopen state");
+	// 	return -1;
+	// }
 
 	if (!service_ctx->bev) {
 		log_finest_icap_va("ICAP not connected, connecting to %s:%d", service_ctx->svc->server, service_ctx->svc->port);

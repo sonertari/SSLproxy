@@ -322,7 +322,7 @@ protohttp3_request_free_stream_ctx(protohttp3_stream_ctx_t *s)
  *   3. sendmsg() transmits each QUIC packet to the peer.
  */
 static void
-protohttp3_trigger_write_loop(protohttp3_ctx_t *h3_ctx, UNUSED protohttp3_stream_ctx_t *s, int reqmod)
+protohttp3_trigger_write_loop(protohttp3_ctx_t *h3_ctx, protohttp3_stream_ctx_t *s, int reqmod)
 {
     UNUSED pxy_conn_ctx_t *ctx = h3_ctx->ctx;
     evutil_socket_t fd = reqmod ? ctx->fd : h3_ctx->dst_fd;
@@ -331,6 +331,10 @@ protohttp3_trigger_write_loop(protohttp3_ctx_t *h3_ctx, UNUSED protohttp3_stream
     if (reqmod && h3_ctx->wait_server_connected) {
         log_finest_va("Wait for server connection, skipping write loop, fd=%d", fd);
         return;
+    }
+
+    if (s) {
+        s->ref_count++;
     }
 
     // TODO: Consider using a static buffer to avoid stack allocation on each call.
@@ -409,7 +413,7 @@ protohttp3_trigger_write_loop(protohttp3_ctx_t *h3_ctx, UNUSED protohttp3_stream
                     ngtcp2_conn_write_connection_close(quic_conn, quic_path, &pi, pktbuf, sizeof(pktbuf), &ccerr, h3_timestamp());
                     // TODO: Should we call ngtcp2_conn_del() here to free the connection?
                     // ngtcp2_conn_del(quic_conn);
-                    return;
+                    goto out;
                 }
             }
             log_finest_va("Drained all pending packets, pktlen=%zd, fd=%d", pktlen, fd);
@@ -447,6 +451,10 @@ protohttp3_trigger_write_loop(protohttp3_ctx_t *h3_ctx, UNUSED protohttp3_stream
     }
 
     protohttp3_arm_timer(h3_ctx);
+out:
+    if (s) {
+        s->ref_count--;
+    }
 }
 
 static int
@@ -956,23 +964,19 @@ h3_on_end_stream(nghttp3_conn *conn, int64_t stream_id,
 
     if (reqmod) {
         // WAKE UP the server-facing stream to signal that the stream is closed and no more data will be sent
-        s->ref_count++;
         nghttp3_conn_resume_stream(h3_ctx->dst_h3, s->dst_stream_id);
 
         h3_ctx->proxying = 1;
         protohttp3_trigger_write_loop(h3_ctx, s, 0);
         h3_ctx->proxying = 0;
-        s->ref_count--;
     }
     else {
         // WAKE UP the client-facing stream to signal that the stream is closed and no more data will be sent
-        s->ref_count++;
         nghttp3_conn_resume_stream(h3_ctx->src_h3, s->src_stream_id);
 
         h3_ctx->proxying = 1;
         protohttp3_trigger_write_loop(h3_ctx, s, 1);
         h3_ctx->proxying = 0;
-        s->ref_count--;
     }
 
     // Do NOT free the stream here
