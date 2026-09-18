@@ -171,9 +171,9 @@ pxy_conn_ctx_t *
 proxy_conn_ctx_new(evutil_socket_t fd,
                  pxy_thrmgr_ctx_t *thrmgr,
                  proxyspec_t *spec, global_t *global
-#ifndef WITHOUT_USERAUTH
+#if !defined(WITHOUT_USERAUTH) || !defined(WITHOUT_HTTP3)
                  , evutil_socket_t clisock
-#endif /* !WITHOUT_USERAUTH */
+#endif /* !WITHOUT_USERAUTH || !WITHOUT_HTTP3 */
                  )
 {
 	log_finest_main_va("ENTER, fd=%d", fd);
@@ -214,9 +214,9 @@ proxy_conn_ctx_new(evutil_socket_t fd,
 	}
 
 	ctx->global = global;
-#ifndef WITHOUT_USERAUTH
+#if !defined(WITHOUT_USERAUTH) || !defined(WITHOUT_HTTP3)
 	ctx->clisock = clisock;
-#endif /* !WITHOUT_USERAUTH */
+#endif /* !WITHOUT_USERAUTH || !WITHOUT_HTTP3 */
 
 #ifndef WITHOUT_ICAP
 	// ATTENTION: We initialize ICAP context for all connections, even if ICAP is not enabled for the proxyspec,

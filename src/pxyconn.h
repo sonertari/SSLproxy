@@ -318,10 +318,10 @@ struct pxy_conn_ctx {
 	evutil_socket_t dst_fd;
 	evutil_socket_t srvdst_fd;
 
-#ifndef WITHOUT_USERAUTH
-	// Privsep socket to update user atime
+#if !defined(WITHOUT_USERAUTH) || !defined(WITHOUT_HTTP3)
+	// Privsep socket to update user atime and setup h3 sockets
 	evutil_socket_t clisock;
-#endif /* !WITHOUT_USERAUTH */
+#endif /* !WITHOUT_USERAUTH || !WITHOUT_HTTP3 */
 
 	// fd of event listener for children, explicitly closed on error (not for stats only)
 	evutil_socket_t child_fd;

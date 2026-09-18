@@ -69,7 +69,8 @@ typedef struct icap_service {
 } icap_service_t;
 
 typedef struct icap_service_ctx icap_service_ctx_t;
-typedef void (*proto_data_submit_cb)(icap_ctx_t *) NONNULL(1);
+typedef void (*proto_data_submit_to_src_cb)(pxy_conn_ctx_t *, protohttpx_stream_ctx_t *, struct evbuffer *, struct evbuffer *) NONNULL(1);
+typedef void (*proto_data_submit_to_dst_cb)(icap_ctx_t *) NONNULL(1);
 typedef void (*proto_failopen_to_dest_cb)(icap_service_ctx_t *) NONNULL(1);
 
 /*
@@ -104,8 +105,8 @@ struct icap_ctx {
 	struct event *chain_ev;
 	int chain_ev_service_idx;
 
-	proto_data_submit_cb send_data_to_src_cb;
-	proto_data_submit_cb send_data_to_dst_cb;
+	proto_data_submit_to_src_cb send_data_to_src_cb;
+	proto_data_submit_to_dst_cb send_data_to_dst_cb;
 	proto_failopen_to_dest_cb failopen_to_dest_cb;
 };
 

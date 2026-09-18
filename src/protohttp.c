@@ -1212,6 +1212,17 @@ protohttpx_get_hx_headers(protohttpx_stream_ctx_t *s, struct evbuffer *h1_buf, i
 }
 #endif /* !WITHOUT_ICAP */
 
+#ifndef WITHOUT_USERAUTH
+static const char redirect[] =
+	"HTTP/1.1 302 Found\r\n"
+	"Location: %s\r\n"
+	"\r\n";
+static const char redirect_url[] =
+	"HTTP/1.1 302 Found\r\n"
+	"Location: %s?SSLproxy=%s\r\n"
+	"\r\n";
+#endif /* !WITHOUT_USERAUTH */
+
 int WUNRES NONNULL(1)
 protohttpx_filter_request_header(protohttpx_stream_ctx_t *s)
 {
@@ -1349,6 +1360,50 @@ protohttpx_filter_request_header(protohttpx_stream_ctx_t *s)
     }
 
 	if (http_ctx->seen_req_header) {
+#ifndef WITHOUT_USERAUTH
+		if (ctx->conn_opts->user_auth && !ctx->user) {
+			log_finest("Redirecting stream");
+
+			char *url = NULL;
+			if (http_ctx->http_host && http_ctx->http_uri) {
+				int url_len = strlen("https://") + strlen(http_ctx->http_host) + strlen(http_ctx->http_uri) + 1;
+				url = malloc(url_len);
+				snprintf(url, url_len, "https://%s%s", http_ctx->http_host, http_ctx->http_uri);
+			}
+
+			struct evbuffer *h1_hdr = evbuffer_new();
+
+			if (url) {
+				evbuffer_add_printf(h1_hdr, redirect_url, ctx->conn_opts->user_auth_url, url);
+				free(url);
+			} else {
+				evbuffer_add_printf(h1_hdr, redirect, ctx->conn_opts->user_auth_url);
+			}
+
+#ifndef WITHOUT_ICAP
+			// Set the veto flags to send end_stream to the client,
+			// because h2/h3 data providers call icap_is_content_complete() to set the EOF flag for end_stream,
+			// otherwise none of the icap services' content is complete at this point
+			if (icap_enabled(s->icap_ctx)) {
+				s->icap_ctx->is_veto = 1;
+				s->icap_ctx->sent_veto_page = 1;
+			}
+#endif /* !WITHOUT_ICAP */
+
+			if (ctx->proto == PROTO_HTTP2) {
+				protohttp2_send_data_to_src_cb(ctx, s, h1_hdr, NULL);
+			}
+#ifndef WITHOUT_HTTP3
+			else if (ctx->proto == PROTO_HTTP3) {
+				protohttp3_send_data_to_src_cb(ctx, s, h1_hdr, NULL);
+			}
+#endif /* !WITHOUT_HTTP3 */
+
+			ctx->sent_userauth_msg = 1;
+			return 0;
+		}
+#endif /* !WITHOUT_USERAUTH */
+
 		return protohttpx_apply_filter(s);
 
         // TODO: Implement deny OCSP at TLS level in H2/H3?
@@ -1662,16 +1717,6 @@ protohttp_validate(pxy_conn_ctx_t *ctx)
 static void NONNULL(1,2)
 protohttp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
-#ifndef WITHOUT_USERAUTH
-	static const char redirect[] =
-		"HTTP/1.1 302 Found\r\n"
-		"Location: %s\r\n"
-		"\r\n";
-	static const char redirect_url[] =
-		"HTTP/1.1 302 Found\r\n"
-		"Location: %s?SSLproxy=%s\r\n"
-		"\r\n";
-#endif /* !WITHOUT_USERAUTH */
 	static const char proto_error[] =
 		"HTTP/1.1 400 Bad request\r\n"
 		"Cache-Control: no-cache\r\n"

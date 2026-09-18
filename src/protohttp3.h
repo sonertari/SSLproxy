@@ -239,10 +239,11 @@ struct protohttp3_conn_ctx {
  * Public interface
  * ---------------------------------------------------------------------- */
 
+void protohttp3_send_data_to_src_cb(pxy_conn_ctx_t *, protohttpx_stream_ctx_t *, struct evbuffer *, struct evbuffer *) NONNULL(1);
+
 #ifndef WITHOUT_ICAP
 // Forward declaration
 struct icap_service_ctx;
-void protohttp3_icap_send_data_to_src_cb(icap_ctx_t *) NONNULL(1);
 void protohttp3_icap_send_data_to_dst_cb(icap_ctx_t *) NONNULL(1);
 void protohttp3_icap_failopen_to_dest_cb(struct icap_service_ctx *) NONNULL(1);
 #endif /* !WITHOUT_ICAP */

@@ -73,9 +73,9 @@ void proxy_free(proxy_ctx_t *) NONNULL(1);
 void proxy_listener_errorcb(struct evconnlistener *, UNUSED void *);
 
 pxy_conn_ctx_t *proxy_conn_ctx_new(evutil_socket_t, pxy_thrmgr_ctx_t *, proxyspec_t *, global_t *
-#ifndef WITHOUT_USERAUTH
+#if !defined(WITHOUT_USERAUTH) || !defined(WITHOUT_HTTP3)
 	, evutil_socket_t
-#endif /* !WITHOUT_USERAUTH */
+#endif /* !WITHOUT_USERAUTH || !WITHOUT_HTTP3 */
 	) MALLOC NONNULL(2,3,4);
 #endif /* !PROXY_H */
 

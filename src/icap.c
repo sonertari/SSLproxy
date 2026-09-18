@@ -45,7 +45,7 @@ static void icap_bev_readcb(struct bufferevent *, void *);
 static void icap_bev_writecb(UNUSED struct bufferevent *, UNUSED void *);
 static void icap_bev_eventcb(UNUSED struct bufferevent *, short, void *);
 static void icap_data_submit(icap_ctx_t *);
-static void icap_send_data_to_src_cb(icap_ctx_t *);
+static void icap_send_data_to_src_cb(pxy_conn_ctx_t *, protohttpx_stream_ctx_t *, struct evbuffer *, struct evbuffer *);
 static void icap_send_data_to_dst_cb(icap_ctx_t *);
 static void icap_failopen_to_dest_cb(icap_service_ctx_t *);
 static void icap_handle_service_error(icap_service_ctx_t *);
@@ -395,14 +395,14 @@ icap_init(pxy_conn_ctx_t *ctx, protohttpx_stream_ctx_t *s, void *hx_ctx, struct 
 	if (s) {
 		if (ctx->proto == PROTO_HTTP2) {
 			icap_ctx = s->icap_ctx;
-			icap_ctx->send_data_to_src_cb = protohttp2_icap_send_data_to_src_cb;
+			icap_ctx->send_data_to_src_cb = protohttp2_send_data_to_src_cb;
 			icap_ctx->send_data_to_dst_cb = protohttp2_icap_send_data_to_dst_cb;
 			icap_ctx->failopen_to_dest_cb = protohttp2_icap_failopen_to_dest_cb;
 		}
 #ifndef WITHOUT_HTTP3
 		else /* if (ctx->proto == PROTO_HTTP3) */ {
 			icap_ctx = s->icap_ctx;
-			icap_ctx->send_data_to_src_cb = protohttp3_icap_send_data_to_src_cb;
+			icap_ctx->send_data_to_src_cb = protohttp3_send_data_to_src_cb;
 			icap_ctx->send_data_to_dst_cb = protohttp3_icap_send_data_to_dst_cb;
 			icap_ctx->failopen_to_dest_cb = protohttp3_icap_failopen_to_dest_cb;
 		}
@@ -3792,17 +3792,19 @@ icap_get_last_service_out_body(icap_ctx_t *icap_ctx)
 }
 
 static void NONNULL(1)
-icap_send_data_to_src_cb(icap_ctx_t *icap_ctx)
+icap_send_data_to_src_cb(pxy_conn_ctx_t *ctx, UNUSED protohttpx_stream_ctx_t *s, struct evbuffer *hdr, struct evbuffer *body)
 {
-	pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
-
-	log_finest_va("ENTER, veto_hdr=%zu, veto_body=%zu", evbuffer_get_length(icap_ctx->veto_hdr), evbuffer_get_length(icap_ctx->veto_body));
+	log_finest_va("ENTER, hdr=%zu, body=%zu", hdr ? evbuffer_get_length(hdr) : 0, body ? evbuffer_get_length(body) : 0);
 
 	// Send veto page to src (client), not dst (server)
 	if (ctx->src.bev) {
-		evbuffer_add_buffer(bufferevent_get_output(ctx->src.bev), icap_ctx->veto_hdr);
-		evbuffer_add_buffer(bufferevent_get_output(ctx->src.bev), icap_ctx->veto_body);
-		icap_ctx->made_progress = 1;
+		if (hdr) {
+			evbuffer_add_buffer(bufferevent_get_output(ctx->src.bev), hdr);
+		}
+		if (body) {
+			evbuffer_add_buffer(bufferevent_get_output(ctx->src.bev), body);
+		}
+		ctx->icap_ctx->made_progress = 1;
 	}
 	else {
 		log_fine("Src connection already closed, cannot send veto page");
@@ -3931,7 +3933,7 @@ icap_data_submit(icap_ctx_t *icap_ctx)
 #endif /* DEBUG_ICAP */
 
 			// Send veto page to src (client), not dst (server)
-			icap_ctx->send_data_to_src_cb(icap_ctx);
+			icap_ctx->send_data_to_src_cb(ctx, icap_ctx->stream_ctx, icap_ctx->veto_hdr, icap_ctx->veto_body);
 		}
 
 		// TODO: Handle h3 case as well, but we don't have a bufferevent for h3
