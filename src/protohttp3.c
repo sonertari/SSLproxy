@@ -2495,6 +2495,11 @@ protohttp3_setup(pxy_conn_ctx_t *ctx)
 {
     log_finest_va("ENTER, ctx->fd=%d", ctx->fd);
 
+    if (ctx->divert) {
+        log_finest("Disable divert mode");
+        ctx->divert = 0;
+    }
+
     ctx->protoctx->connectcb = protohttp3_conn_connect;
     ctx->protoctx->init_conn = protohttp3_init_conn;
     ctx->protoctx->proto_free = protohttp3_conn_free;

@@ -882,6 +882,19 @@ main(int argc, char *argv[])
 	}
 
 	for (proxyspec_t *spec = global->spec; spec; spec = spec->next) {
+		if (spec->opts && spec->opts->divert) {
+			if (spec->h3) {
+				fprintf(stderr, "Divert mode is not supported in HTTP/3 proxyspecs\n");
+				exit(EXIT_FAILURE);
+			}
+			if (spec->http && spec->ssl && spec->conn_opts && spec->conn_opts->enable_http2) {
+				fprintf(stderr, "WARNING: HTTP/2 and Divert mode are both enabled in HTTPS proxyspec. "
+				                "Split mode will be silently enabled, if ALPN upgrades connections to HTTP/2\n");
+			}
+		}
+	}
+
+	for (proxyspec_t *spec = global->spec; spec; spec = spec->next) {
 		if (spec->opts->filter_rules) {
 			spec->opts->filter = filter_set(spec->opts->filter_rules, argv0, global_tmp_opts);
 			if (!spec->opts->filter)

@@ -1046,6 +1046,44 @@ protocol_t protohttp2_setup(pxy_conn_ctx_t *ctx)
 {
 	log_finest("ENTER");
 
+    if (ctx->divert) {
+        log_finest("Disable Divert mode");
+        ctx->divert = 0;
+
+        // Free child conns created during divert mode setup
+        pxy_conn_free_children(ctx);
+
+        // Close the plain tcp conn to the listening program
+        if (ctx->dst.bev) {
+            ctx->dst.free(ctx->dst.bev, ctx);
+            ctx->dst.bev = NULL;
+            ctx->dst_fd = 0;
+            ctx->dst.closed = 1;
+        }
+
+        if (ctx->sslproxy_header) {
+            free(ctx->sslproxy_header);
+            ctx->sslproxy_header = NULL;
+        }
+        ctx->sslproxy_header_len = 0;
+
+        log_finest("Enable Split mode");
+
+        // ATTENTION: Do not call prototcp_setup_dst() here, because it sets up the src ssl bev again
+        // by calling protossl_bufferevent_setup(), which causes "unexpected message" SSLERR in the client session
+        // if (prototcp_setup_dst(ctx) == -1) {
+        // 	return PROTO_ERROR;
+        // }
+
+        // Enable split mode by reusing the srvdst as the new dst
+        ctx->dst = ctx->srvdst;
+
+        prototcp_disable_srvdst(ctx);
+
+        bufferevent_setcb(ctx->dst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
+        bufferevent_enable(ctx->dst.bev, EV_READ|EV_WRITE);
+    }
+
     // TODO: Send GOAWAY frame to gracefully close the session and wait for it sent, but not here
     // nghttp2_submit_goaway(h2_ctx->session, NGHTTP2_FLAG_NONE, 1, NGHTTP2_NO_ERROR, NULL, 0);
     // nghttp2_session_send(h2_ctx->session);
