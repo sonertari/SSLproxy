@@ -3761,6 +3761,7 @@ icap_is_content_complete(icap_ctx_t *icap_ctx, int reqmod)
 		return 1;
 	}
 
+	int rv = 1;
 	for (int i = 0; i < icap_ctx->service_count; i++) {
 		if (icap_ctx->services[i]) {
 			unsigned int content_complete = reqmod ? icap_ctx->services[i]->src.content_complete : icap_ctx->services[i]->dst.content_complete;
@@ -3768,15 +3769,21 @@ icap_is_content_complete(icap_ctx_t *icap_ctx, int reqmod)
 			UNUSED unsigned int error = icap_ctx->services[i]->error;
 			if (content_complete == 0) {
 				log_finest_va("%s content NOT complete, service idx=%d, failopen=%u, error=%u", reqmod ? "REQMOD" : "RESPMOD", i, failopen, error);
-				return 0;
+				rv = 0;
 			}
 			else {
 				log_finest_va("%s content complete for service idx=%d, failopen=%u, error=%u", reqmod ? "REQMOD" : "RESPMOD", i, failopen, error);
 			}
 		}
 	}
-	log_finer_va("All %s content COMPLETE", reqmod ? "REQMOD" : "RESPMOD");
-	return 1;
+
+	if (rv) {
+		log_finer_va("All %s content COMPLETE", reqmod ? "REQMOD" : "RESPMOD");
+	}
+	else {
+		log_finer_va("Some %s content NOT complete", reqmod ? "REQMOD" : "RESPMOD");
+	}
+	return rv;
 }
 
 struct evbuffer * NONNULL(1)
