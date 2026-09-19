@@ -1,5 +1,66 @@
 
 
+### SSLproxy 0.10 2026-09-19
+
+-   Add ICAP mode: ICAP architecture
+
+    ```
+    # All ICAP specs and options can be global, per proxyspec, or per filter rule
+
+    # One line ICAP specification
+    Icap icap://host:port,reqmod,respmod,icap_fail_open,conn_fail_open,timeout,preview_size,max_body_size,allow_204,allow_206,echo_header,sanitize_request_line
+
+    # Structured ICAP specification
+    Icap {
+        Proto icap
+        Server host
+        Port port
+        Reqmod reqmod
+        Respmod respmod
+        FailOpen (yes|no)
+        ConnFailOpen (yes|no)
+        Timeout 30
+        PreviewSize 4096
+        MaxBodySize 1048576
+        Allow204 (yes|no)
+        Allow206 (yes|no)
+        EchoHeader x-header-to-echo (e.g. X-Response-Vars)
+        SanitizeRequestLine (yes|no)
+    }
+
+    # ICAP options
+    IcapFailOpen (yes|no)
+    IcapConnFailOpen (yes|no)
+    IcapTimeout 30
+    IcapPreviewSize 4096
+    IcapMaxBodySize 1048576
+    IcapAllow204 (yes|no)
+    IcapAllow206 (yes|no)
+    IcapSanitizeRequestLine (yes|no)
+    ```
+
+-   Add ALPN support
+-   Add HTTP/2 support, in Split mode only
+    - EnableHTTP2 option is enabled by default
+
+    ```
+    # Same proxyspec handles both HTTPS and HTTP/2
+    ProxySpec {
+        Proto https
+        Addr 127.0.0.1
+        Port 8443 # TCP
+        DivertPort 8080 # Divert mode for HTTPS
+        #EnableHTTP2 yes
+    }
+    ```
+
+-   Add HTTP/3 support, in Split mode only
+
+    ```
+    ProxySpec http3 127.0.0.1 8443 # UDP
+    ```
+
+
 ### SSLproxy 0.9.11 2026-08-24
 
 -   Fix autossl connection stall with passthrough mode, pr #93 by @Drewsif

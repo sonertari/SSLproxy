@@ -1366,9 +1366,18 @@ protohttpx_filter_request_header(protohttpx_stream_ctx_t *s)
 
 			char *url = NULL;
 			if (http_ctx->http_host && http_ctx->http_uri) {
-				int url_len = strlen("https://") + strlen(http_ctx->http_host) + strlen(http_ctx->http_uri) + 1;
+				// strlen("https://") == 8
+				int url_len = 8 + strlen(http_ctx->http_host) + strlen(http_ctx->http_uri) + 1;
 				url = malloc(url_len);
-				snprintf(url, url_len, "https://%s%s", http_ctx->http_host, http_ctx->http_uri);
+				if (!url) {
+					ctx->enomem = 1;
+					return -1;
+				}
+				if (snprintf(url, url_len, "https://%s%s", http_ctx->http_host, http_ctx->http_uri) < 0) {
+					free(url);
+					ctx->enomem = 1;
+					return -1;
+				}
 			}
 
 			struct evbuffer *h1_hdr = evbuffer_new();

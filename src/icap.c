@@ -1683,13 +1683,8 @@ icap_is_encapsulated_nullbody(icap_service_ctx_t *service_ctx)
 	UNUSED pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
 
 	// Fail-open and 204 services do not have encapsulated headers
-	if (service_ctx->failopen) {
-		log_finest_icap("Get null_body from previous service for fail-open service");
-		return icap_is_nullbody(service_ctx);
-	}
-
-	if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_204) {
-		log_finest_icap("Get null body from previous service in 204 mode");
+	if (service_ctx->failopen || ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_204) {
+		log_finest_icap_va("Get null_body from previous service for %s", service_ctx->failopen ? "fail-open service" : " in 204 mode");
 		return icap_is_nullbody(service_ctx);
 	}
 
