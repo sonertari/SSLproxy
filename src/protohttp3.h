@@ -239,7 +239,7 @@ struct protohttp3_conn_ctx {
  * Public interface
  * ---------------------------------------------------------------------- */
 
-void protohttp3_send_data_to_src_cb(pxy_conn_ctx_t *, protohttpx_stream_ctx_t *, struct evbuffer *, struct evbuffer *) NONNULL(1);
+int protohttp3_submit_data(protohttp3_ctx_t *, protohttp3_stream_ctx_t *, int);
 
 #ifndef WITHOUT_ICAP
 // Forward declaration

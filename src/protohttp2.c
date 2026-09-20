@@ -434,7 +434,7 @@ out:
     return to_read;
 }
 
-static int
+int
 protohttp2_submit_data(protohttp2_ctx_t *h2_ctx, protohttp2_stream_ctx_t *s, int reqmod)
 {
     UNUSED pxy_conn_ctx_t *ctx = h2_ctx->ctx;
@@ -511,34 +511,6 @@ protohttp2_submit_data(protohttp2_ctx_t *h2_ctx, protohttp2_stream_ctx_t *s, int
     h2_ctx->proxying = 0;
 
     return 0;
-}
-
-void NONNULL(1)
-protohttp2_send_data_to_src_cb(pxy_conn_ctx_t *ctx, protohttpx_stream_ctx_t *s, struct evbuffer *hdr, struct evbuffer *body)
-{
-    protohttp2_ctx_t *h2_ctx = ctx->protoctx->arg;
-
-    log_finest_va("ENTER, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", hdr=%zu, body=%zu, data_buf=%zu", s->src_stream_id, s->dst_stream_id,
-        hdr ? evbuffer_get_length(hdr) : 0, body ? evbuffer_get_length(body) : 0, evbuffer_get_length(s->data_buf));
-
-    if (hdr && protohttpx_get_hx_headers(s, hdr, 1) < 0) {
-        log_finest_va("Failed to add headers for src_stream_id=%" PRId64 "", s->src_stream_id);
-        return;
-    }
-
-    if (body) {
-        evbuffer_add_buffer(s->data_buf, body);
-    }
-
-    log_finest_va("Set end_stream for both sides, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64, s->src_stream_id, s->dst_stream_id);
-    s->src_end_stream = 1;
-    s->dst_end_stream = 1;
-
-    // Send block page to src (client), not dst (server)
-    if (protohttp2_submit_data(h2_ctx, (protohttp2_stream_ctx_t *)s, 0 /*respmod*/) < 0) {
-        log_finest_va("Failed to submit data for src_stream_id=%" PRId64 "", s->src_stream_id);
-        return;
-    }
 }
 
 #ifndef WITHOUT_ICAP

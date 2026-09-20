@@ -1212,6 +1212,49 @@ protohttpx_get_hx_headers(protohttpx_stream_ctx_t *s, struct evbuffer *h1_buf, i
 }
 #endif /* !WITHOUT_ICAP */
 
+void NONNULL(1)
+protohttpx_send_data_to_src_cb(pxy_conn_ctx_t *ctx, protohttpx_stream_ctx_t *s, struct evbuffer *hdr, struct evbuffer *body)
+{
+    log_finest_va("ENTER, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", hdr=%zu, body=%zu, data_buf=%zu", s->src_stream_id, s->dst_stream_id,
+        hdr ? evbuffer_get_length(hdr) : 0, body ? evbuffer_get_length(body) : 0, evbuffer_get_length(s->data_buf));
+
+    if (hdr && protohttpx_get_hx_headers(s, hdr, 1) < 0) {
+        log_finest_va("Failed to add headers for src_stream_id=%" PRId64, s->src_stream_id);
+        return;
+    }
+
+    if (body) {
+        evbuffer_add_buffer(s->data_buf, body);
+    }
+
+    log_finest_va("Set end_stream for both sides, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64, s->src_stream_id, s->dst_stream_id);
+    s->src_end_stream = 1;
+    s->dst_end_stream = 1;
+
+    // ATTENTION: We pass 0 for reqmod because we are sending data to the src (client) side, not the dst (server) side.
+    // So, protohttp3_submit_data() will use !reqmod, when triggering the write loop.
+    // Send block page to src (client), not dst (server)
+
+	void *hx_ctx = ctx->protoctx->arg;
+
+#ifndef WITHOUT_HTTP3
+	if (ctx->proto == PROTO_HTTP2) {
+#endif /* !WITHOUT_HTTP3 */
+		if (protohttp2_submit_data(hx_ctx, (protohttp2_stream_ctx_t *)s, 0 /*respmod*/) < 0) {
+			log_finest_va("Failed to submit data for src_stream_id=%" PRId64, s->src_stream_id);
+			return;
+		}
+#ifndef WITHOUT_HTTP3
+	}
+	else /* if (ctx->proto == PROTO_HTTP3) */ {
+		if (protohttp3_submit_data(hx_ctx, (protohttp3_stream_ctx_t *)s, 0 /*respmod*/) < 0) {
+			log_finest_va("Failed to submit data for src_stream_id=%" PRId64, s->src_stream_id);
+			return;
+		}
+	}
+#endif /* !WITHOUT_HTTP3 */
+}
+
 #ifndef WITHOUT_USERAUTH
 static const char redirect[] =
 	"HTTP/1.1 302 Found\r\n"
@@ -1399,14 +1442,9 @@ protohttpx_filter_request_header(protohttpx_stream_ctx_t *s)
 			}
 #endif /* !WITHOUT_ICAP */
 
-			if (ctx->proto == PROTO_HTTP2) {
-				protohttp2_send_data_to_src_cb(ctx, s, h1_hdr, NULL);
-			}
-#ifndef WITHOUT_HTTP3
-			else if (ctx->proto == PROTO_HTTP3) {
-				protohttp3_send_data_to_src_cb(ctx, s, h1_hdr, NULL);
-			}
-#endif /* !WITHOUT_HTTP3 */
+			protohttpx_send_data_to_src_cb(ctx, s, h1_hdr, NULL);
+
+			evbuffer_free(h1_hdr);
 
 			ctx->sent_userauth_msg = 1;
 			return 0;

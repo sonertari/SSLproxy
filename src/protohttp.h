@@ -133,6 +133,8 @@ struct evbuffer *protohttpx_get_h1_headers(protohttpx_stream_ctx_t *) WUNRES NON
 int protohttpx_get_hx_headers(protohttpx_stream_ctx_t *, struct evbuffer *, int) WUNRES NONNULL(1,2);
 #endif /* !WITHOUT_ICAP */
 
+void protohttpx_send_data_to_src_cb(pxy_conn_ctx_t *, protohttpx_stream_ctx_t *, struct evbuffer *, struct evbuffer *) NONNULL(1);
+
 int protohttpx_filter_request_header(protohttpx_stream_ctx_t *s) WUNRES NONNULL(1);
 int protohttpx_filter_response_header(protohttpx_stream_ctx_t *s) WUNRES NONNULL(1);
 

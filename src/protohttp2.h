@@ -53,7 +53,7 @@ typedef struct protohttp2_ctx {
     protohttp2_stream_ctx_t *streams;
 } protohttp2_ctx_t;
 
-void protohttp2_send_data_to_src_cb(pxy_conn_ctx_t *, protohttpx_stream_ctx_t *, struct evbuffer *, struct evbuffer *) NONNULL(1);
+int protohttp2_submit_data(protohttp2_ctx_t *, protohttp2_stream_ctx_t *, int);
 
 #ifndef WITHOUT_ICAP
 // Forward declaration
