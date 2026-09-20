@@ -667,10 +667,12 @@ protohttpx_apply_filter(protohttpx_stream_ctx_t *s)
 			log_fine("H2/H3 filter cannot take pass action");
 		}
 		else if (action & FILTER_ACTION_BLOCK) {
-			if (ctx->proto == PROTO_HTTP2) {
-				protohttp2_close_stream((protohttp2_stream_ctx_t *)s);
-			}
 #ifndef WITHOUT_HTTP3
+			if (ctx->proto == PROTO_HTTP2) {
+#endif /* !WITHOUT_HTTP3 */
+				protohttp2_close_stream((protohttp2_stream_ctx_t *)s);
+#ifndef WITHOUT_HTTP3
+			}
 			else /* if (proto == PROTO_HTTP3) */ {
 				protohttp3_close_stream((protohttp3_stream_ctx_t *)s);
 			}
@@ -729,10 +731,12 @@ protohttpx_apply_filter(protohttpx_stream_ctx_t *s)
 	// Cannot defer block action any longer
 	if (ctx->deferred_action & FILTER_ACTION_BLOCK) {
 		log_fine("Applying deferred block action");
-		if (ctx->proto == PROTO_HTTP2) {
-			protohttp2_close_stream((protohttp2_stream_ctx_t *)s);
-		}
 #ifndef WITHOUT_HTTP3
+		if (ctx->proto == PROTO_HTTP2) {
+#endif /* !WITHOUT_HTTP3 */
+			protohttp2_close_stream((protohttp2_stream_ctx_t *)s);
+#ifndef WITHOUT_HTTP3
+		}
 		else /* if (proto == PROTO_HTTP3) */ {
 			protohttp3_close_stream((protohttp3_stream_ctx_t *)s);
 		}
@@ -754,17 +758,14 @@ protohttpx_free_nv_headers(protohttpx_stream_ctx_t *s)
 #endif /* !WITHOUT_ICAP */
 
     protohttpx_nv_t **headers = NULL;
-	if (ctx->proto == PROTO_HTTP2) {
-        headers = (protohttpx_nv_t **)&((protohttp2_stream_ctx_t *)s)->headers;
-	}
 #ifndef WITHOUT_HTTP3
+	if (ctx->proto == PROTO_HTTP2) {
+#endif /* !WITHOUT_HTTP3 */
+        headers = (protohttpx_nv_t **)&((protohttp2_stream_ctx_t *)s)->headers;
+#ifndef WITHOUT_HTTP3
+	}
 	else /* if (ctx->proto == PROTO_HTTP3) */ {
         headers = (protohttpx_nv_t **)&((protohttp3_stream_ctx_t *)s)->headers;
-	}
-#else /* !WITHOUT_HTTP3 */
-	else {
-		log_finest("No headers to free for non-H2 protocol");
-		return;
 	}
 #endif /* !WITHOUT_HTTP3 */
 
@@ -793,26 +794,24 @@ protohttpx_free_nv_headers(protohttpx_stream_ctx_t *s)
 static void
 protohttpx_delete_nv_header(protohttpx_stream_ctx_t *s, size_t idx)
 {
-    pxy_conn_ctx_t *ctx = s->ctx;
+    UNUSED pxy_conn_ctx_t *ctx = s->ctx;
     log_finest_va("ENTER, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", remove idx=%zu", s->src_stream_id, s->dst_stream_id, idx);
 
     if (s->headers_count == 0 || idx >= s->headers_count) {
-		log_finest("Invalid index or empty headers");
+		log_finest_va("Invalid index or empty headers, headers_count=%zu, remove idx=%zu, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64,
+			s->headers_count, idx, s->src_stream_id, s->dst_stream_id);
         return;
     }
 
     protohttpx_nv_t *headers = NULL;
-	if (ctx->proto == PROTO_HTTP2) {
-		headers = (protohttpx_nv_t *)((protohttp2_stream_ctx_t *)s)->headers;
-	}
 #ifndef WITHOUT_HTTP3
+	if (ctx->proto == PROTO_HTTP2) {
+#endif /* !WITHOUT_HTTP3 */
+		headers = (protohttpx_nv_t *)((protohttp2_stream_ctx_t *)s)->headers;
+#ifndef WITHOUT_HTTP3
+	}
 	else /*	if (ctx->proto == PROTO_HTTP3) */ {
 		headers = (protohttpx_nv_t *)((protohttp3_stream_ctx_t *)s)->headers;
-	}
-#else /* !WITHOUT_HTTP3 */
-	else {
-		log_finest("No headers to delete for non-H2 protocol");
-		return;
 	}
 #endif /* !WITHOUT_HTTP3 */
 
@@ -842,17 +841,14 @@ protohttpx_add_nv_header(protohttpx_stream_ctx_t *s, const char *name, size_t na
     log_finest_va("%.*s: %.*s", (int)namelen, name, (int)valuelen, value);
 
     protohttpx_nv_t **headers = NULL;
-	if (ctx->proto == PROTO_HTTP2) {
-        headers = (protohttpx_nv_t **)&((protohttp2_stream_ctx_t *)s)->headers;
-	}
 #ifndef WITHOUT_HTTP3
+	if (ctx->proto == PROTO_HTTP2) {
+#endif /* !WITHOUT_HTTP3 */
+        headers = (protohttpx_nv_t **)&((protohttp2_stream_ctx_t *)s)->headers;
+#ifndef WITHOUT_HTTP3
+	}
 	else /* if (ctx->proto == PROTO_HTTP3) */ {
         headers = (protohttpx_nv_t **)&((protohttp3_stream_ctx_t *)s)->headers;
-	}
-#else /* !WITHOUT_HTTP3 */
-	else {
-		log_finest("No headers to add for non-H2 protocol");
-		return -1;
 	}
 #endif /* !WITHOUT_HTTP3 */
 
@@ -1010,23 +1006,23 @@ protohttpx_get_h1_headers(protohttpx_stream_ctx_t *s)
     log_finest_va("ENTER, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, s->icap_ctx->reqmod);
 
     struct evbuffer *buf = evbuffer_new();
-    if (!buf)
+    if (!buf) {
+        log_finest("Failed to allocate evbuffer");
+		ctx->enomem = 1;
         return NULL;
+	}
 
     int method_idx = -1, path_idx = -1, status_idx = -1, authority_idx = -1;
 
 	protohttpx_nv_t *headers = NULL;
-	if (ctx->proto == PROTO_HTTP2) {
-		headers = (protohttpx_nv_t *)((protohttp2_stream_ctx_t *)s)->headers;
-	}
 #ifndef WITHOUT_HTTP3
+	if (ctx->proto == PROTO_HTTP2) {
+#endif /* !WITHOUT_HTTP3 */
+		headers = (protohttpx_nv_t *)((protohttp2_stream_ctx_t *)s)->headers;
+#ifndef WITHOUT_HTTP3
+	}
 	else /*	if (ctx->proto == PROTO_HTTP3) */ {
 		headers = (protohttpx_nv_t *)((protohttp3_stream_ctx_t *)s)->headers;
-	}
-#else /* !WITHOUT_HTTP3 */
-	else {
-		log_finest("No headers to get h1 headers for non-H2 protocol");
-		return buf;
 	}
 #endif /* !WITHOUT_HTTP3 */
 
@@ -1082,12 +1078,17 @@ protohttpx_get_h1_headers(protohttpx_stream_ctx_t *s)
 
     return buf;
 }
+#endif /* !WITHOUT_ICAP */
 
 int
 protohttpx_get_hx_headers(protohttpx_stream_ctx_t *s, struct evbuffer *h1_buf, int init)
 {
     UNUSED pxy_conn_ctx_t *ctx = s->ctx;
+#ifndef WITHOUT_ICAP
     log_finest_va("ENTER, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, s->icap_ctx->reqmod);
+#else /* !WITHOUT_ICAP */
+    log_finest_va("ENTER, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64, s->src_stream_id, s->dst_stream_id);
+#endif /* !WITHOUT_ICAP */
 
     // Clean slate for this stream context's header holder
     if (init == 1) {
@@ -1210,7 +1211,6 @@ protohttpx_get_hx_headers(protohttpx_stream_ctx_t *s, struct evbuffer *h1_buf, i
 
     return 0;
 }
-#endif /* !WITHOUT_ICAP */
 
 void NONNULL(1)
 protohttpx_send_data_to_src_cb(pxy_conn_ctx_t *ctx, protohttpx_stream_ctx_t *s, struct evbuffer *hdr, struct evbuffer *body)
@@ -1264,6 +1264,43 @@ static const char redirect_url[] =
 	"HTTP/1.1 302 Found\r\n"
 	"Location: %s?SSLproxy=%s\r\n"
 	"\r\n";
+
+static int WUNRES NONNULL(1,2)
+protohttp_inject_redirect_url(protohttp_ctx_t *http_ctx, struct evbuffer *outbuf)
+{
+    pxy_conn_ctx_t *ctx = http_ctx->ctx;
+
+	char *url = NULL;
+	if (http_ctx->http_host && http_ctx->http_uri) {
+		// strlen("https://") == 8, don't care about whether it's http or https for the length calculation
+		int url_len = 8 + strlen(http_ctx->http_host) + strlen(http_ctx->http_uri) + 1;
+
+		url = malloc(url_len);
+		if (!url) {
+			ctx->enomem = 1;
+			return -1;
+		}
+
+		// https, h2, and h3 all use SSL, so they have spec->ssl set
+		if (snprintf(url, url_len, "http%s://%s%s", ctx->spec->ssl ? "s": "", http_ctx->http_host, http_ctx->http_uri) < 0) {
+			free(url);
+			ctx->enomem = 1;
+			return -1;
+		}
+	}
+
+	log_finest_va("Add auth location=%s, redirect url=%s", STRORDASH(ctx->conn_opts->user_auth_url), STRORDASH(url));
+
+	if (url) {
+		evbuffer_add_printf(outbuf, redirect_url, ctx->conn_opts->user_auth_url, url);
+		free(url);
+	} else {
+		evbuffer_add_printf(outbuf, redirect, ctx->conn_opts->user_auth_url);
+	}
+
+	ctx->sent_userauth_msg = 1;
+	return 0;
+}
 #endif /* !WITHOUT_USERAUTH */
 
 int WUNRES NONNULL(1)
@@ -1276,17 +1313,14 @@ protohttpx_filter_request_header(protohttpx_stream_ctx_t *s)
     conn_opts_t *conn_opts = s->conn_opts ? s->conn_opts : ctx->conn_opts;
 
 	protohttpx_nv_t *headers = NULL;
-	if (ctx->proto == PROTO_HTTP2) {
-		headers = (protohttpx_nv_t *)((protohttp2_stream_ctx_t *)s)->headers;
-	}
 #ifndef WITHOUT_HTTP3
+	if (ctx->proto == PROTO_HTTP2) {
+#endif /* !WITHOUT_HTTP3 */
+		headers = (protohttpx_nv_t *)((protohttp2_stream_ctx_t *)s)->headers;
+#ifndef WITHOUT_HTTP3
+	}
 	else /*	if (ctx->proto == PROTO_HTTP3) */ {
 		headers = (protohttpx_nv_t *)((protohttp3_stream_ctx_t *)s)->headers;
-	}
-#else /* !WITHOUT_HTTP3 */
-	else {
-		log_finest("No headers to filter for non-H2 protocol");
-		return -1;
 	}
 #endif /* !WITHOUT_HTTP3 */
 
@@ -1406,30 +1440,16 @@ protohttpx_filter_request_header(protohttpx_stream_ctx_t *s)
 #ifndef WITHOUT_USERAUTH
 		if (ctx->conn_opts->user_auth && !ctx->user) {
 			log_finest("Redirecting stream");
-
-			char *url = NULL;
-			if (http_ctx->http_host && http_ctx->http_uri) {
-				// strlen("https://") == 8
-				int url_len = 8 + strlen(http_ctx->http_host) + strlen(http_ctx->http_uri) + 1;
-				url = malloc(url_len);
-				if (!url) {
-					ctx->enomem = 1;
-					return -1;
-				}
-				if (snprintf(url, url_len, "https://%s%s", http_ctx->http_host, http_ctx->http_uri) < 0) {
-					free(url);
-					ctx->enomem = 1;
-					return -1;
-				}
+			struct evbuffer *h1_hdr = evbuffer_new();
+			if (!h1_hdr) {
+				log_finest("Failed to allocate evbuffer for redirect header");
+				ctx->enomem = 1;
+				return -1;
 			}
 
-			struct evbuffer *h1_hdr = evbuffer_new();
-
-			if (url) {
-				evbuffer_add_printf(h1_hdr, redirect_url, ctx->conn_opts->user_auth_url, url);
-				free(url);
-			} else {
-				evbuffer_add_printf(h1_hdr, redirect, ctx->conn_opts->user_auth_url);
+			if (protohttp_inject_redirect_url(http_ctx, h1_hdr) < 0) {
+				evbuffer_free(h1_hdr);
+				return -1;
 			}
 
 #ifndef WITHOUT_ICAP
@@ -1445,8 +1465,6 @@ protohttpx_filter_request_header(protohttpx_stream_ctx_t *s)
 			protohttpx_send_data_to_src_cb(ctx, s, h1_hdr, NULL);
 
 			evbuffer_free(h1_hdr);
-
-			ctx->sent_userauth_msg = 1;
 			return 0;
 		}
 #endif /* !WITHOUT_USERAUTH */
@@ -1475,17 +1493,14 @@ protohttpx_filter_response_header(protohttpx_stream_ctx_t *s)
     conn_opts_t *conn_opts = s->conn_opts ? s->conn_opts : ctx->conn_opts;
 
 	protohttpx_nv_t *headers = NULL;
-	if (ctx->proto == PROTO_HTTP2) {
-		headers = (protohttpx_nv_t *)((protohttp2_stream_ctx_t *)s)->headers;
-	}
 #ifndef WITHOUT_HTTP3
+	if (ctx->proto == PROTO_HTTP2) {
+#endif /* !WITHOUT_HTTP3 */
+		headers = (protohttpx_nv_t *)((protohttp2_stream_ctx_t *)s)->headers;
+#ifndef WITHOUT_HTTP3
+	}
 	else /*	if (ctx->proto == PROTO_HTTP3) */ {
 		headers = (protohttpx_nv_t *)((protohttp3_stream_ctx_t *)s)->headers;
-	}
-#else /* !WITHOUT_HTTP3 */
-	else {
-		log_finest("No headers to filter for non-H2 protocol");
-		return -1;
 	}
 #endif /* !WITHOUT_HTTP3 */
 
@@ -1636,70 +1651,6 @@ protohttp_filter_request_header(struct evbuffer *inbuf, struct evbuffer *outbuf,
 	return 0;
 }
 
-#ifndef WITHOUT_USERAUTH
-static char * NONNULL(1,2)
-protohttp_get_url(struct evbuffer *inbuf, pxy_conn_ctx_t *ctx)
-{
-	char *line;
-	char *path = NULL;
-	char *host = NULL;
-	char *url = NULL;
-
-	while ((!host || !path) && (line = evbuffer_readln(inbuf, NULL, EVBUFFER_EOL_CRLF))) {
-		log_finest_va("%s", line);
-
-		//GET / HTTP/1.1
-		if (!path && !strncasecmp(line, "GET ", 4)) {
-			path = strdup(util_skipws(line + 4));
-			if (!path) {
-				ctx->enomem = 1;
-				free(line);
-				goto memout;
-			}
-			path = strsep(&path, " \t");
-			log_finest_va("path=%s", path);
-		//Host: example.com
-		} else if (!host && !strncasecmp(line, "Host:", 5)) {
-			host = strdup(util_skipws(line + 5));
-			if (!host) {
-				ctx->enomem = 1;
-				free(line);
-				goto memout;
-			}
-			log_finest_va("host=%s", host);
-		}
-		free(line);
-	}
-
-	if (host && path) {
-		// Assume that path will always have a leading /, so do not insert an extra / in between host and path
-		// Don't care about computing the exact url size for plain or secure http (http or https)
-		// http  s   ://  example.com  + /            + NULL
-		// 4  +  1 + 3  + strlen(host) + strlen(path) + 1
-		size_t url_size = strlen(host) + strlen(path) + 9;
-		url = malloc(url_size);
-		if (!url) {
-			ctx->enomem = 1;
-			goto memout;
-		}
-		
-		if (snprintf(url, url_size, "http%s://%s%s", ctx->spec->ssl ? "s": "", host, path) < 0) {
-			ctx->enomem = 1;
-			free(url);
-			url = NULL;
-			goto memout;
-		}
-		log_finest_va("url=%s", url);
-	}
-memout:
-	if (host)
-		free(host);
-	if (path)
-		free(path);
-	return url;
-}
-#endif /* !WITHOUT_USERAUTH */
-
 // Size = 39
 static char *http_methods[] = { "GET", "PUT", "ICY", "COPY", "HEAD", "LOCK", "MOVE", "POLL", "POST", "BCOPY", "BMOVE", "MKCOL", "TRACE", "LABEL", "MERGE", "DELETE",
 	"SEARCH", "UNLOCK", "REPORT", "UPDATE", "NOTIFY", "BDELETE", "CONNECT", "OPTIONS", "CHECKIN", "PROPFIND", "CHECKOUT", "CCM_POST", "SUBSCRIBE",
@@ -1782,22 +1733,6 @@ protohttp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	struct evbuffer *inbuf = bufferevent_get_input(bev);
 	struct evbuffer *outbuf = bufferevent_get_output(ctx->dst.bev);
 
-#ifndef WITHOUT_USERAUTH
-	if (ctx->conn_opts->user_auth && !ctx->user) {
-		log_finest("Redirecting conn");
-		char *url = protohttp_get_url(inbuf, ctx);
-		ctx->protoctx->discard_inbufcb(bev);
-		if (url) {
-			evbuffer_add_printf(bufferevent_get_output(bev), redirect_url, ctx->conn_opts->user_auth_url, url);
-			free(url);
-		} else {
-			evbuffer_add_printf(bufferevent_get_output(bev), redirect, ctx->conn_opts->user_auth_url);
-		}
-		ctx->sent_userauth_msg = 1;
-		return;
-	}
-#endif /* !WITHOUT_USERAUTH */
-
 	if (ctx->conn_opts->validate_proto && !ctx->protoctx->is_valid) {
 		http_ctx->seen_bytes += evbuffer_get_length(inbuf);
 	}
@@ -1828,13 +1763,24 @@ protohttp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 			return;
 		}
 
-#ifndef WITHOUT_ICAP
 		if (http_ctx->seen_req_header) {
+#ifndef WITHOUT_USERAUTH
+			if (ctx->conn_opts->user_auth && !ctx->user) {
+				log_finest("Redirecting conn");
+				if (protohttp_inject_redirect_url(http_ctx, bufferevent_get_output(bev)) < 0) {
+					return;
+				}
+				ctx->protoctx->discard_inbufcb(bev);
+				return;
+			}
+#endif /* !WITHOUT_USERAUTH */
+
+#ifndef WITHOUT_ICAP
 			ctx->icap_ctx->reqmod = 1;
 			outbuf_ptr = icap_enabled(ctx->icap_ctx) ? icap_get_first_service_in_hdr(ctx->icap_ctx) : outbuf;
 			evbuffer_add_buffer(outbuf_ptr, http_ctx->in_hdr);
-		}
 #endif /* !WITHOUT_ICAP */
+		}
 	}
 
 	// There may or may not be data left after parsing headers, but we should send ICAP requests for HTTP headers accumulated too
