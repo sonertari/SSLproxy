@@ -70,16 +70,21 @@ pxy_thr_detach(pxy_conn_ctx_t *ctx)
 
 	log_finest("Removing conn");
 
-	// We increment thr load in pxy_conn_init() only (for parent conns)
-	ctx->thr->load--;
-
+	// assert(ctx->prev != NULL || ctx->thr->conns == ctx);
 	if (ctx->prev) {
 		ctx->prev->next = ctx->next;
-	} else {
+	} else if (ctx->thr->conns == ctx) {
 		ctx->thr->conns = ctx->next;
+	} else {
+		// This may happen on error early in connection establishment
+		log_finest("Detach attempted on unattached conn");
+		return;
 	}
 	if (ctx->next)
 		ctx->next->prev = ctx->prev;
+
+	// We increment thr load in pxy_conn_init() only (for parent conns)
+	ctx->thr->load--;
 
 #ifdef DEBUG_PROXY
 	// We may get multiple conns with the same fd combinations, so fds cannot uniquely identify a conn; hence the need for unique ids.

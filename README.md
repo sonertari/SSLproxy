@@ -583,12 +583,12 @@ proxyspec using the `Suricata IDS/IPS` system, you can utilize [`icapsuricata`](
 in Icap mode. After configuring the `icapsuricata` module in c-icap, you can 
 add an Icap specification to the same proxyspec:
 
-	Icap icap://127.0.0.1:1344,suricata,suricata,yes,yes,10,1024,0,yes,no,X-Response-Vars
+	Icap icap://127.0.0.1:1344,suricata,suricata,yes,yes,10,1024,0,16384,yes,no,X-Response-Vars
 
 If you want to inspect the same contents using the `E2Guardian` web filter as 
 well, you can add another Icap specification after the one for `icapsuricata`:
 
-	Icap icap://127.0.0.1:1345,reqmod,respmod,no,no,30,4096,8192,yes,no,X-ICAP-E2G
+	Icap icap://127.0.0.1:1345,reqmod,respmod,no,no,30,4096,8192,16384,yes,no,X-ICAP-E2G,yes
 
 Due to the ordering of these Icap specifications, connection contents are 
 first sent to `icapsuricata` and then to `E2Guardian`.
@@ -624,6 +624,7 @@ structured format, as follows:
 			Timeout 10
 			PreviewSize 1024
 			MaxBodySize 0
+            MaxInspectionSize 16384
 			Allow204 yes
 			Allow206 no
 			EchoHeader X-Response-Vars
@@ -631,7 +632,7 @@ structured format, as follows:
 		}
 
 		# E2Guardian icap service requires SanitizeRequestLine
-		Icap icap://127.0.0.1:1345,reqmod,respmod,no,no,30,4096,8192,yes,no,X-ICAP-E2G,yes
+		Icap icap://127.0.0.1:1345,reqmod,respmod,no,no,30,4096,8192,16384,yes,no,X-ICAP-E2G,yes
 	}
 
 This structured version of the first filtering rule above behaves the same as 
