@@ -542,10 +542,15 @@ protohttp2_icap_send_data_to_dst_cb(icap_ctx_t *icap_ctx)
         return;
     }
 
-    if (icap_enabled(s->icap_ctx) && icap_is_finished(s->icap_ctx) && s->closed) {
-        log_finest_va("ICAP finished and stream closed, send RST_STREAM, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, icap_ctx->reqmod);
-        nghttp2_submit_rst_stream(icap_ctx->reqmod ? h2_ctx->dst_session : h2_ctx->src_session, NGHTTP2_FLAG_NONE, icap_ctx->reqmod ? s->dst_stream_id : s->src_stream_id, NGHTTP2_NO_ERROR);
-        nghttp2_session_send(icap_ctx->reqmod ? h2_ctx->dst_session : h2_ctx->src_session);
+    if (icap_enabled(s->icap_ctx) && icap_is_finished(s->icap_ctx)) {
+        if (!s->closed) {
+            // Do not close the stream here, just set the flag (first close)
+            log_finest_va("ICAP finished, set stream closed, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, icap_ctx->reqmod);
+            s->closed = 1;
+        }
+        else {
+            log_finest_va("Stream already closed, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64, s->src_stream_id, s->dst_stream_id);
+        }
     }
 }
 

@@ -386,19 +386,27 @@ Set ICAP connection fail-open for services in ICAP chain, globally, per-proxyspe
 Default: no
 .TP
 \fBIcapTimeout NUMBER\fR
-Set timeout in seconds for ICAP services, globally, per-proxyspec, or per-filter rule , use 0-60
+Set timeout in seconds for ICAP services, globally, per-proxyspec, or per-filter rule, use 0-60.
 .br
 Default: 30
 .TP
 \fBIcapPreviewSize NUMBER\fR
-Set Preview size in bytes for ICAP services, globally, per-proxyspec, or per-filter rule , use 0-16777216
+Set Preview size in bytes for ICAP services, globally, per-proxyspec, or per-filter rule, use 0-16777216.
+Set to 0 to disable.
+.br
+Default: 1024
+.TP
+\fBIcapMaxBodySize NUMBER\fR
+Set max body size in bytes for ICAP services, globally, per-proxyspec, or per-filter rule, use 0-16777216.
+Set to 0 to disable.
 .br
 Default: 4096
 .TP
-\fBIcapMaxBodySize NUMBER\fR
-Set max body size in bytes for ICAP services, globally, per-proxyspec, or per-filter rule , use 0-16777216
+\fBIcapMaxInspectionSize NUMBER\fR
+Set max inspection size in bytes for ICAP services, globally, per-proxyspec, or per-filter rule, use 0-16777216.
+Set to 0 to disable.
 .br
-Default: 1048576
+Default: 4096
 .TP
 \fBIcapAllow204 BOOL\fR
 Allow 204 responses for services in ICAP chain, globally, per-proxyspec, or per-filter rule.
@@ -420,7 +428,7 @@ Default: no
 
 The syntax of one line Icap specifications is as follows:
 .br
-Icap icap://host:port,reqmod,respmod,icap_fail_open,conn_fail_open,timeout,preview_size,max_body_size,allow_204,allow_206,echo_header,sanitize_request_line
+Icap icap://host:port,reqmod,respmod,icap_fail_open,conn_fail_open,timeout,preview_size,max_body_size,max_inspection_size,allow_204,allow_206,echo_header,sanitize_request_line
 .TP
 \fBIcap {\fR
 .br
@@ -443,6 +451,8 @@ Timeout
 PreviewSize
 .br
 MaxBodySize
+.br
+MaxInspectionSize
 .br
 Allow204
 .br
@@ -605,6 +615,8 @@ IcapPreviewSize
 .br
 IcapMaxBodySize
 .br
+IcapMaxInspectionSize
+.br
 IcapAllow204
 .br
 IcapAllow206
@@ -726,6 +738,8 @@ IcapTimeout
 IcapPreviewSize
 .br
 IcapMaxBodySize
+.br
+IcapMaxInspectionSize
 .br
 IcapAllow204
 .br

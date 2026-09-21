@@ -8,7 +8,7 @@
     # All ICAP specs and options can be global, per proxyspec, or per filter rule
 
     # One line ICAP specification
-    Icap icap://host:port,reqmod,respmod,icap_fail_open,conn_fail_open,timeout,preview_size,max_body_size,allow_204,allow_206,echo_header,sanitize_request_line
+    Icap icap://host:port,reqmod,respmod,icap_fail_open,conn_fail_open,timeout,preview_size,max_body_size,max_inspection_size,allow_204,allow_206,echo_header,sanitize_request_line
 
     # Structured ICAP specification
     Icap {
@@ -20,8 +20,9 @@
         FailOpen (yes|no)
         ConnFailOpen (yes|no)
         Timeout 30
-        PreviewSize 4096
-        MaxBodySize 1048576
+        PreviewSize 1024
+        MaxBodySize 4096
+        MaxInspectionSize 16384
         Allow204 (yes|no)
         Allow206 (yes|no)
         EchoHeader x-header-to-echo (e.g. X-Response-Vars)
@@ -32,8 +33,9 @@
     IcapFailOpen (yes|no)
     IcapConnFailOpen (yes|no)
     IcapTimeout 30
-    IcapPreviewSize 4096
-    IcapMaxBodySize 1048576
+    IcapPreviewSize 1024
+    IcapMaxBodySize 4096
+    IcapMaxInspectionSize 16384
     IcapAllow204 (yes|no)
     IcapAllow206 (yes|no)
     IcapSanitizeRequestLine (yes|no)

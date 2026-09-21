@@ -170,13 +170,14 @@ ProxySpec {
     IcapFailOpen (yes|no)
     IcapConnFailOpen (yes|no)
     IcapTimeout 30
-    IcapPreviewSize 4096
-    IcapMaxBodySize 1048576
+    IcapPreviewSize 1024
+    IcapMaxBodySize 4096
+    IcapMaxInspectionSize 16384
     IcapAllow204 (yes|no)
     IcapAllow206 (yes|no)
     IcapSanitizeRequestLine (yes|no)
 
-    Icap icap://host:port,reqmod,respmod,icap_fail_open,conn_fail_open,timeout,preview_size,max_body_size,allow_204,allow_206,echo_header,sanitize_request_line
+    Icap icap://host:port,reqmod,respmod,icap_fail_open,conn_fail_open,timeout,preview_size,max_body_size,max_inspection_size,allow_204,allow_206,echo_header,sanitize_request_line
     Icap {
         Proto icap
         Server host
@@ -186,8 +187,9 @@ ProxySpec {
         FailOpen (yes|no)
         ConnFailOpen (yes|no)
         Timeout 30
-        PreviewSize 4096
-        MaxBodySize 1048576
+        PreviewSize 1024
+        MaxBodySize 4096
+        MaxInspectionSize 16384
         Allow204 (yes|no)
         Allow206 (yes|no)
         EchoHeader x-header-to-echo (e.g. X-Response-Vars)
@@ -371,13 +373,14 @@ FilterRule {
     IcapFailOpen (yes|no)
     IcapConnFailOpen (yes|no)
     IcapTimeout 30
-    IcapPreviewSize 4096
-    IcapMaxBodySize 1048576
+    IcapPreviewSize 1024
+    IcapMaxBodySize 4096
+    IcapMaxInspectionSize 16384
     IcapAllow204 (yes|no)
     IcapAllow206 (yes|no)
     IcapSanitizeRequestLine (yes|no)
 
-    Icap icap://host:port,reqmod,respmod,icap_fail_open,conn_fail_open,timeout,preview_size,max_body_size,allow_204,allow_206,echo_header,sanitize_request_line
+    Icap icap://host:port,reqmod,respmod,icap_fail_open,conn_fail_open,timeout,preview_size,max_body_size,max_inspection_size,allow_204,allow_206,echo_header,sanitize_request_line
     Icap {
         Proto icap
         Server host
@@ -387,8 +390,9 @@ FilterRule {
         FailOpen (yes|no)
         ConnFailOpen (yes|no)
         Timeout 30
-        PreviewSize 4096
-        MaxBodySize 1048576
+        PreviewSize 1024
+        MaxBodySize 4096
+        MaxInspectionSize 16384
         Allow204 (yes|no)
         Allow206 (yes|no)
         EchoHeader x-header-to-echo (e.g. X-Response-Vars)
@@ -575,12 +579,12 @@ proxyspec using the Suricata IDS/IPS system, you can utilize icapsuricata
 in Icap mode. After configuring the icapsuricata module in c-icap, you can 
 add an Icap specification to the same proxyspec:
 .LP
- Icap icap://127.0.0.1:1344,suricata,suricata,yes,yes,10,1024,0,yes,no,X-Response-Vars
+ Icap icap://127.0.0.1:1344,suricata,suricata,yes,yes,10,1024,0,16384,yes,no,X-Response-Vars
 .LP
 If you want to inspect the same contents using the E2Guardian web filter as 
 well, you can add another Icap specification after the one for icapsuricata:
 .LP
- Icap icap://127.0.0.1:1345,reqmod,respmod,no,no,30,4096,8192,yes,no,X-ICAP-E2G
+ Icap icap://127.0.0.1:1345,reqmod,respmod,no,no,30,1024,4096,16384,yes,no,X-ICAP-E2G
 .LP
 Due to the ordering of these Icap specifications, connection contents are 
 first sent to icapsuricata and then to E2Guardian.
@@ -616,6 +620,7 @@ FilterRule {
         Timeout 10
         PreviewSize 1024
         MaxBodySize 0
+        MaxInspectionSize 16384
         Allow204 yes
         Allow206 no
         EchoHeader X-Response-Vars
@@ -623,7 +628,7 @@ FilterRule {
     }
 
     # E2Guardian icap service requires SanitizeRequestLine
-    Icap icap://127.0.0.1:1345,reqmod,respmod,no,no,30,4096,8192,yes,no,X-ICAP-E2G,yes
+    Icap icap://127.0.0.1:1345,reqmod,respmod,no,no,30,1024,4096,16384,yes,no,X-ICAP-E2G,yes
 .br
 }
 .LP

@@ -60,6 +60,7 @@ typedef struct icap_service {
 	unsigned int timeout;                   /* Timeout in seconds */
 	size_t preview_size;                    /* Preview slice size in bytes; 0 = preview disabled */
 	size_t max_body_size;                   /* Max body size; 0 = disabled */
+	size_t max_inspection_size;             /* Max inspection size; 0 = disabled */
 	unsigned int allow_204 : 1;             /* 0: Don't allow 204 responses from ICAP, treat as error; 1: Allow 204 responses */
 	unsigned int allow_206 : 1;             /* 0: Don't allow 206 responses from ICAP, treat as error; 1: Allow 206 responses */
 	char *echo_header;                      /* Header in reqmod to echo to respmod */
@@ -135,10 +136,10 @@ typedef struct icap_service_state {
 
 	size_t remaining_chunk_size;
 	size_t sent_body_size;
-	unsigned int content_complete : 1;
+	unsigned int end_stream : 1;
 
 	// The end_stream flag is needed for chunked transfer encoding in HTTP/1.x
-	unsigned int end_stream : 1;      /* 1 after content complete in h1 */
+	unsigned int http_end_stream : 1; /* 1 after content complete in h1 */
 
 	unsigned int sent_terminator : 1; /* 1 after chunk terminator sent */
 
@@ -147,7 +148,7 @@ typedef struct icap_service_state {
 	unsigned int detected_206 : 1;    /* Whether 206 detected in ICAP response */
 	size_t use_original_body;         /* Offset of unmodified body indicated by use-original-body extension with 206 */
 	size_t body_chunk_len_206;        /* Body chunk length in use-original-body extension with 206 */
-	unsigned int content_complete_20x : 1;
+	unsigned int content_complete : 1;
 
 	unsigned int wait_terminator : 1;
 	unsigned int wait_xfer_terminator : 1;

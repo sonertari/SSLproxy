@@ -2313,7 +2313,7 @@ protohttp3_new(pxy_conn_ctx_t *ctx, ngtcp2_version_cid vc)
     params.initial_max_stream_data_bidi_remote = 256 * 1024;
     params.initial_max_stream_data_uni = 256 * 1024;
     params.active_connection_id_limit = 2; // Must be >= 2
-    params.max_udp_payload_size                = 1472;
+    params.max_udp_payload_size = 1472;
     params.max_idle_timeout = 30 * NGTCP2_SECONDS;
 
     /*
@@ -2711,7 +2711,7 @@ protohttp3_conn_connect(pxy_conn_ctx_t *ctx)
     params.initial_max_stream_data_bidi_remote = 256 * 1024;
     params.initial_max_stream_data_uni = 256 * 1024;
     params.active_connection_id_limit = 2; // Must be >= 2
-    params.max_udp_payload_size                = 1472;
+    params.max_udp_payload_size = 1472;
     params.max_idle_timeout = 30 * NGTCP2_SECONDS;
 
     ngtcp2_cid scid, dcid;

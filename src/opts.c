@@ -152,8 +152,9 @@ conn_opts_new(void)
 	conn_opts->max_http_header_size = 8192;
 #ifndef WITHOUT_ICAP
 	conn_opts->icap_chain = NULL;                     /* Disabled by default */
-	conn_opts->icap_preview_size = 4096;              /* 4KiB default preview */
-	conn_opts->icap_max_body_size = 1048576;          /* Max body to send to ICAP service at once, 1MiB default */
+	conn_opts->icap_preview_size = 1024;              /* 1KiB default preview */
+	conn_opts->icap_max_body_size = 4096;             /* Max body to send to ICAP service at once, 4KiB default */
+	conn_opts->icap_max_inspection_size = 16384;      /* Max inspection size for ICAP service, 16KiB default */
 	conn_opts->icap_timeout = 30;                     /* 30 seconds by default */
 	conn_opts->icap_fail_open = ICAP_FAIL_CLOSE;      /* Fail stop by default */
 	conn_opts->icap_conn_fail_open = ICAP_FAIL_CLOSE; /* Fail block by default */
@@ -2926,6 +2927,17 @@ set_conn_opts_option(conn_opts_t *conn_opts, const char *argv0,
 		}
 #ifdef DEBUG_OPTS
 		log_dbg_printf("IcapMaxBodySize: %zu\n", conn_opts->icap_max_body_size);
+#endif /* DEBUG_OPTS */
+	} else if (equal(name, "IcapMaxInspectionSize")) {
+		size_t i = atoi(value);
+		if (i <= 16777216) {  /* 0-16MB */
+			conn_opts->icap_max_inspection_size = i;
+		} else {
+			fprintf(stderr, "Invalid IcapMaxInspectionSize %s on line %d, use 0-16777216\n", value, *line_num);
+			return -1;
+		}
+#ifdef DEBUG_OPTS
+		log_dbg_printf("IcapMaxInspectionSize: %zu\n", conn_opts->icap_max_inspection_size);
 #endif /* DEBUG_OPTS */
 	} else if (equal(name, "IcapTimeout")) {
 		unsigned int i = atoi(value);
