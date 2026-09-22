@@ -1,6 +1,6 @@
 
 
-### SSLproxy 0.10 2026-09-19
+### SSLproxy 0.10.0 2026-09-23
 
 -   Add ICAP mode: ICAP architecture
 

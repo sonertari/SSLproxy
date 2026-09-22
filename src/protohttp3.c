@@ -693,7 +693,7 @@ h3_on_recv_header(nghttp3_conn *conn, int64_t stream_id,
 {
     protohttp3_ctx_t *h3_ctx = user_data;
     UNUSED pxy_conn_ctx_t *ctx = h3_ctx->ctx;
-    int reqmod = conn == h3_ctx->src_h3 ? 1 : 0; /* 1=client-side, 0=server-side */
+    UNUSED int reqmod = conn == h3_ctx->src_h3 ? 1 : 0; /* 1=client-side, 0=server-side */
 
     // TODO: Uni streams are control streams and do not carry HTTP headers, do we ever get here for uni streams?
     if (!ngtcp2_is_bidi_stream(stream_id)) {
@@ -2046,7 +2046,7 @@ protohttp3_process_packet_cb(UNUSED evutil_socket_t fd, UNUSED short what, void 
 #endif /* DEBUG_PROXY */
 
     size_t total_bytes_processed = 0;
-    int pkt_count = 0;
+    UNUSED int pkt_count = 0;
 
     for (;;) {
         pthread_mutex_lock(&h3_ctx->pkt_queue_mutex);
