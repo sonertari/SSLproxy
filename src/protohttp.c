@@ -1142,9 +1142,9 @@ protohttpx_get_hx_headers(protohttpx_stream_ctx_t *s, struct evbuffer *h1_buf, i
                     size_t p_len = strlen(path);
 
                     log_finest_va("Translate Request Line: :method=%.*s, :path=%.*s, and add :scheme=https", (int)m_len, method, (int)p_len, path);
-                    if (protohttpx_add_nv_header((protohttpx_stream_ctx_t *)s, ":method", 7, method, m_len) < 0 ||
-                        protohttpx_add_nv_header((protohttpx_stream_ctx_t *)s, ":path", 5, path, p_len) < 0 ||
-                        protohttpx_add_nv_header((protohttpx_stream_ctx_t *)s, ":scheme", 7, "https", 5) < 0) {
+                    if (protohttpx_add_nv_header(s, ":method", 7, method, m_len) < 0 ||
+                        protohttpx_add_nv_header(s, ":path", 5, path, p_len) < 0 ||
+                        protohttpx_add_nv_header(s, ":scheme", 7, "https", 5) < 0) {
                         free(line);
                         return -1;
                     }
@@ -1162,7 +1162,7 @@ protohttpx_get_hx_headers(protohttpx_stream_ctx_t *s, struct evbuffer *h1_buf, i
                     }
                     size_t s_len = strlen(status);
                     log_finest_va("Translate Status Line: :status=%.*s", (int)s_len, status);
-                    if (protohttpx_add_nv_header((protohttpx_stream_ctx_t *)s, ":status", 7, status, s_len) < 0) {
+                    if (protohttpx_add_nv_header(s, ":status", 7, status, s_len) < 0) {
                         free(line);
                         return -1;
                     }
@@ -1186,7 +1186,7 @@ protohttpx_get_hx_headers(protohttpx_stream_ctx_t *s, struct evbuffer *h1_buf, i
 
             if (n_len == 4 && !strncasecmp(h_name, "Host", 4)) {
                 log_finest_va("Translate Host to :authority: %.*s", (int)v_len, h_value);
-                if (protohttpx_add_nv_header((protohttpx_stream_ctx_t *)s, ":authority", 10, h_value, v_len) < 0) {
+                if (protohttpx_add_nv_header(s, ":authority", 10, h_value, v_len) < 0) {
                     free(line);
                     return -1;
                 }
@@ -1200,7 +1200,7 @@ protohttpx_get_hx_headers(protohttpx_stream_ctx_t *s, struct evbuffer *h1_buf, i
             }
             // Regular Header Pass-through
             else {
-                if (protohttpx_add_nv_header((protohttpx_stream_ctx_t *)s, h_name, n_len, h_value, v_len) < 0) {
+                if (protohttpx_add_nv_header(s, h_name, n_len, h_value, v_len) < 0) {
                     free(line);
                     return -1;
                 }
@@ -1585,7 +1585,7 @@ protohttpx_filter_response_header(protohttpx_stream_ctx_t *s)
 			snprintf(new_value, len, "h3=\":%s\"; ma=86400", conn_opts->rewrite_alt_svc_port);
 
 			// strlen("alt-svc") = 7
-            if (protohttpx_add_nv_header((protohttpx_stream_ctx_t *)s, "alt-svc", 7, new_value, strlen(new_value)) < 0) {
+            if (protohttpx_add_nv_header(s, "alt-svc", 7, new_value, strlen(new_value)) < 0) {
 				ctx->enomem = 1;
             }
             free(new_value);

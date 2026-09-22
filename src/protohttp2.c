@@ -517,7 +517,7 @@ protohttp2_submit_data(protohttp2_ctx_t *h2_ctx, protohttp2_stream_ctx_t *s, int
 void NONNULL(1)
 protohttp2_icap_send_data_to_dst_cb(icap_ctx_t *icap_ctx)
 {
-    protohttp2_stream_ctx_t *s = (protohttp2_stream_ctx_t *)icap_ctx->stream_ctx;
+    protohttpx_stream_ctx_t *s = icap_ctx->stream_ctx;
     if (!s) {
 		// log_dbg_printf("protohttp2_icap_send_data_to_dst_cb: No stream context\n");
         return;
@@ -527,7 +527,7 @@ protohttp2_icap_send_data_to_dst_cb(icap_ctx_t *icap_ctx)
     UNUSED pxy_conn_ctx_t *ctx = h2_ctx->ctx;
 
     struct evbuffer *out_hdr = icap_get_last_service_out_hdr(icap_ctx);
-    if (protohttpx_get_hx_headers((protohttpx_stream_ctx_t *)s, out_hdr, 1) < 0) {
+    if (protohttpx_get_hx_headers(s, out_hdr, 1) < 0) {
         log_finest_va("Failed to add out headers for src_stream_id=%" PRId64 "", s->src_stream_id);
         return;
     }
@@ -537,7 +537,7 @@ protohttp2_icap_send_data_to_dst_cb(icap_ctx_t *icap_ctx)
 
     log_finest_va("ENTER, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", data_buf=%zu", s->src_stream_id, s->dst_stream_id, evbuffer_get_length(s->data_buf));
 
-    if (protohttp2_submit_data(h2_ctx, s, icap_ctx->reqmod) < 0) {
+    if (protohttp2_submit_data(h2_ctx, (protohttp2_stream_ctx_t *)s, icap_ctx->reqmod) < 0) {
         log_finest_va("Failed to submit data, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, icap_ctx->reqmod);
         return;
     }
@@ -559,7 +559,7 @@ protohttp2_icap_failopen_to_dest_cb(icap_service_ctx_t *service_ctx)
 {
 	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
 	UNUSED pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
-    protohttp2_stream_ctx_t *s = (protohttp2_stream_ctx_t *)icap_ctx->stream_ctx;
+    protohttpx_stream_ctx_t *s = icap_ctx->stream_ctx;
 
     log_finest_va("ENTER, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d, headers_count=%zu, data_buf=%zu", s->src_stream_id, s->dst_stream_id,
         icap_ctx->reqmod, s->headers_count, evbuffer_get_length(s->data_buf));
@@ -570,11 +570,11 @@ protohttp2_icap_failopen_to_dest_cb(icap_service_ctx_t *service_ctx)
 	struct evbuffer *sent_body = ICAP_STATE(service_ctx, icap_ctx->reqmod)->sent_body;
 
     // On failopen, s->headers may contain headers, as we may not have submitted them by protohttp2_submit_data()
-    protohttpx_free_nv_headers((protohttpx_stream_ctx_t *)s);
+    protohttpx_free_nv_headers(s);
 
     // TODO: Non-http protocols do not have hdr
 	if (evbuffer_get_length(sent_hdr) > 0) {
-        if (protohttpx_get_hx_headers((protohttpx_stream_ctx_t *)s, sent_hdr, 1) < 0) {
+        if (protohttpx_get_hx_headers(s, sent_hdr, 1) < 0) {
             log_finest_va("Failed to add sent headers for src_stream_id=%" PRId64 "", s->src_stream_id);
             return;
         }
@@ -586,7 +586,7 @@ protohttp2_icap_failopen_to_dest_cb(icap_service_ctx_t *service_ctx)
 	}
 	if (evbuffer_get_length(in_hdr) > 0) {
         // Do not init h2 headers, just append to existing headers from sent_hdr, if any
-        if (protohttpx_get_hx_headers((protohttpx_stream_ctx_t *)s, in_hdr, 0) < 0) {
+        if (protohttpx_get_hx_headers(s, in_hdr, 0) < 0) {
             log_finest_va("Failed to add in headers for src_stream_id=%" PRId64 "", s->src_stream_id);
             return;
         }
@@ -601,7 +601,7 @@ protohttp2_icap_failopen_to_dest_cb(icap_service_ctx_t *service_ctx)
         icap_ctx->reqmod, s->headers_count, evbuffer_get_length(s->data_buf));
 
     protohttp2_ctx_t *h2_ctx = icap_ctx->hx_ctx;
-    if (protohttp2_submit_data(h2_ctx, s, icap_ctx->reqmod) < 0) {
+    if (protohttp2_submit_data(h2_ctx, (protohttp2_stream_ctx_t *)s, icap_ctx->reqmod) < 0) {
         log_finest_va("Failed to submit data for src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, icap_ctx->reqmod);
         return;
     }

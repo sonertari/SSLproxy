@@ -537,7 +537,7 @@ protohttp3_submit_data(protohttp3_ctx_t *h3_ctx, protohttp3_stream_ctx_t *s, int
 void NONNULL(1)
 protohttp3_icap_send_data_to_dst_cb(icap_ctx_t *icap_ctx)
 {
-    protohttp3_stream_ctx_t *s = (protohttp3_stream_ctx_t *)icap_ctx->stream_ctx;
+    protohttpx_stream_ctx_t *s = icap_ctx->stream_ctx;
     if (!s) {
 		// log_dbg_printf("protohttp3_icap_send_data_to_dst_cb: No stream context\n");
         return;
@@ -547,7 +547,7 @@ protohttp3_icap_send_data_to_dst_cb(icap_ctx_t *icap_ctx)
     UNUSED pxy_conn_ctx_t *ctx = h3_ctx->ctx;
 
     struct evbuffer *out_hdr = icap_get_last_service_out_hdr(icap_ctx);
-    if (protohttpx_get_hx_headers((protohttpx_stream_ctx_t *)s, out_hdr, 1) < 0) {
+    if (protohttpx_get_hx_headers(s, out_hdr, 1) < 0) {
         log_finest_va("Failed to add out headers for dst_stream_id=%" PRId64, s->dst_stream_id);
         return;
     }
@@ -557,7 +557,7 @@ protohttp3_icap_send_data_to_dst_cb(icap_ctx_t *icap_ctx)
 
     log_finest_va("ENTER, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", data_buf=%zu", s->src_stream_id, s->dst_stream_id, evbuffer_get_length(s->data_buf));
 
-    if (protohttp3_submit_data(h3_ctx, s, icap_ctx->reqmod) < 0) {
+    if (protohttp3_submit_data(h3_ctx, (protohttp3_stream_ctx_t *)s, icap_ctx->reqmod) < 0) {
         log_finest_va("Failed to submit data, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, icap_ctx->reqmod);
         return;
     }
@@ -579,7 +579,7 @@ protohttp3_icap_failopen_to_dest_cb(icap_service_ctx_t *service_ctx)
 {
 	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
 	UNUSED pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
-    protohttp3_stream_ctx_t *s = (protohttp3_stream_ctx_t *)icap_ctx->stream_ctx;
+    protohttpx_stream_ctx_t *s = icap_ctx->stream_ctx;
 
     log_finest_va("ENTER, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d, headers_count=%zu, data_buf=%zu", s->src_stream_id, s->dst_stream_id,
         icap_ctx->reqmod, s->headers_count, evbuffer_get_length(s->data_buf));
@@ -590,11 +590,11 @@ protohttp3_icap_failopen_to_dest_cb(icap_service_ctx_t *service_ctx)
 	struct evbuffer *sent_body = ICAP_STATE(service_ctx, icap_ctx->reqmod)->sent_body;
 
     // On failopen, s->headers may contain headers, as we may not have submitted them by protohttp3_submit_data()
-    protohttpx_free_nv_headers((protohttpx_stream_ctx_t *)s);
+    protohttpx_free_nv_headers(s);
 
     // TODO: Non-http protocols do not have hdr
 	if (evbuffer_get_length(sent_hdr) > 0) {
-        if (protohttpx_get_hx_headers((protohttpx_stream_ctx_t *)s, sent_hdr, 1) < 0) {
+        if (protohttpx_get_hx_headers(s, sent_hdr, 1) < 0) {
             log_finest_va("Failed to add sent headers for src_stream_id=%" PRId64, s->src_stream_id);
             return;
         }
@@ -606,7 +606,7 @@ protohttp3_icap_failopen_to_dest_cb(icap_service_ctx_t *service_ctx)
 	}
 	if (evbuffer_get_length(in_hdr) > 0) {
         // Do not init h3 headers, just append to existing headers from sent_hdr, if any
-        if (protohttpx_get_hx_headers((protohttpx_stream_ctx_t *)s, in_hdr, 0) < 0) {
+        if (protohttpx_get_hx_headers(s, in_hdr, 0) < 0) {
             log_finest_va("Failed to add in headers for src_stream_id=%" PRId64, s->src_stream_id);
             return;
         }
@@ -621,7 +621,7 @@ protohttp3_icap_failopen_to_dest_cb(icap_service_ctx_t *service_ctx)
         icap_ctx->reqmod, s->headers_count, evbuffer_get_length(s->data_buf));
 
     protohttp3_ctx_t *h3_ctx = icap_ctx->hx_ctx;
-    if (protohttp3_submit_data(h3_ctx, s, icap_ctx->reqmod) < 0) {
+    if (protohttp3_submit_data(h3_ctx, (protohttp3_stream_ctx_t *)s, icap_ctx->reqmod) < 0) {
         log_finest_va("Failed to submit data for src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, icap_ctx->reqmod);
         return;
     }
@@ -701,14 +701,14 @@ h3_on_recv_header(nghttp3_conn *conn, int64_t stream_id,
         return 0;
     }
 
-    protohttp3_stream_ctx_t *s = stream_user_data;
+    protohttpx_stream_ctx_t *s = stream_user_data;
 
     log_finest_va("ENTER, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, reqmod);
 
     nghttp3_vec name_vec  = nghttp3_rcbuf_get_buf(name);
     nghttp3_vec value_vec = nghttp3_rcbuf_get_buf(value);
 
-    if (protohttpx_add_nv_header((protohttpx_stream_ctx_t *)s, (char *)name_vec.base,  name_vec.len, (char *)value_vec.base, value_vec.len) != 0) {
+    if (protohttpx_add_nv_header(s, (char *)name_vec.base,  name_vec.len, (char *)value_vec.base, value_vec.len) != 0) {
         log_fine_va("Failed to add header for stream_id=%" PRId64, stream_id);
         return NGHTTP3_ERR_CALLBACK_FAILURE;
     }
@@ -735,7 +735,7 @@ h3_on_end_headers(nghttp3_conn *conn, int64_t stream_id,
         return 0;
     }
 
-    protohttp3_stream_ctx_t *s = stream_user_data;
+    protohttpx_stream_ctx_t *s = stream_user_data;
 
     log_finest_va("ENTER, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", headers=%zu, fin=%d, reqmod=%d", s->src_stream_id, s->dst_stream_id, s->headers_count, fin, reqmod);
 
@@ -779,7 +779,7 @@ h3_on_end_headers(nghttp3_conn *conn, int64_t stream_id,
 
     filter_header_t filter_header = reqmod ? protohttpx_filter_request_header : protohttpx_filter_response_header;
 
-    int rv = filter_header((protohttpx_stream_ctx_t *)s);
+    int rv = filter_header(s);
     if (rv < 0) {
         log_finest_va("Return fatal error, stream_id=%" PRId64 ", reqmod=%d", stream_id, reqmod);
         return -1;
@@ -809,7 +809,7 @@ h3_on_end_headers(nghttp3_conn *conn, int64_t stream_id,
         s->icap_ctx->reqmod = reqmod;
 
         struct evbuffer *outbuf_ptr = icap_get_first_service_in_hdr(s->icap_ctx);
-        struct evbuffer *header_buf = protohttpx_get_h1_headers((protohttpx_stream_ctx_t *)s);
+        struct evbuffer *header_buf = protohttpx_get_h1_headers(s);
 
         evbuffer_add_buffer(outbuf_ptr, header_buf);
         evbuffer_free(header_buf);
@@ -819,7 +819,7 @@ h3_on_end_headers(nghttp3_conn *conn, int64_t stream_id,
     }
 #endif /* !WITHOUT_ICAP */
 
-    return protohttp3_submit_data(h3_ctx, s, reqmod);
+    return protohttp3_submit_data(h3_ctx, (protohttp3_stream_ctx_t *)s, reqmod);
 }
 
 /*
