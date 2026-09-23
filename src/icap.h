@@ -161,6 +161,7 @@ struct icap_service_ctx {
 	int idx;
 	struct bufferevent *bev;          /* bufferevent for this service */
 	unsigned int failopen : 1;
+	unsigned int bypass : 1;
 	unsigned int error : 1;           /* 1 on service error, for debug logging only */
 
 	char *echo_header;                /* Header in reqmod to echo to respmod */

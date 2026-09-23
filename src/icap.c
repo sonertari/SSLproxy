@@ -1720,7 +1720,11 @@ icap_is_httpx_stream_end(icap_service_ctx_t *service_ctx)
 	if (service_ctx->idx == 0) {
 		stream_end = icap_ctx->reqmod ? icap_ctx->stream_ctx->src_end_stream : icap_ctx->stream_ctx->dst_end_stream;
 	}
-	// Subsequent and fail-open services get stream end from the previous service
+	// If the previous service is bypass, get stream end from the one before that, unless nullbody
+	else if (icap_ctx->services[service_ctx->idx - 1]->bypass) {
+		stream_end = icap_is_httpx_stream_end(icap_ctx->services[service_ctx->idx - 1]) || icap_is_encapsulated_nullbody(service_ctx);
+	}
+	// Subsequent and fail-open services get stream end from the previous service, unless nullbody
 	else {
 		stream_end = ICAP_STATE(icap_ctx->services[service_ctx->idx - 1], icap_ctx->reqmod)->end_stream || icap_is_encapsulated_nullbody(service_ctx);
 	}
@@ -1846,7 +1850,7 @@ icap_is_nullbody(icap_service_ctx_t *service_ctx)
 	if (service_ctx->idx == 0) {
 		return icap_is_http_nullbody(service_ctx);
 	}
-	// Subsequent, fail-open, and 204 services get null_body from the encapsulated header of previous service
+	// Subsequent, fail-open, bypass, and 204 services get null_body from the encapsulated header of previous service
 	else {
 		return icap_is_encapsulated_nullbody(icap_ctx->services[service_ctx->idx - 1]);
 	}
@@ -1864,8 +1868,8 @@ icap_is_httpx_send_terminator(icap_service_ctx_t *service_ctx)
 	if (service_ctx->idx == 0) {
 		send_terminator = icap_ctx->reqmod ? icap_ctx->stream_ctx->src_send_terminator : icap_ctx->stream_ctx->dst_send_terminator;
 	}
-	// Fail-open services get send_terminator from the previous service
-	else if (service_ctx->failopen) {
+	// Fail-open and bypass services get send_terminator from the previous service
+	else if (service_ctx->failopen || service_ctx->bypass) {
 		send_terminator = icap_is_httpx_send_terminator(icap_ctx->services[service_ctx->idx - 1]);
 	}
 	// Subsequent services get send_terminator from the previous service, end_stream is set after receiving chunk terminator
@@ -3358,7 +3362,9 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 				log_finer_icap("Do NOT stream data, wait for content complete in 20x mode");
 				return 1;
 			}
-			log_finer_icap("Stream data, content already complete in 20x mode");
+
+			log_finer_icap("Set bypass and stream data, content already complete in 20x mode");
+			service_ctx->bypass = 1;
 			icap_service_bypass(service_ctx);
 			return 0;
 		}
