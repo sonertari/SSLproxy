@@ -1440,7 +1440,7 @@ icap_have_data_to_process(icap_ctx_t *icap_ctx, int *service_idx)
 					return 1;
 				}
 				else {
-					if (icap_ctx->services[i]->failopen) {
+					if (ICAP_STATE(icap_ctx->services[i], icap_ctx->reqmod)->failopen) {
 						log_finer_va("Service is in failopen state, ignore wait_preview_continue and process in_body data, service idx=%d", i);
 						*service_idx = i;
 						return 1;
@@ -1536,7 +1536,7 @@ icap_send_data(icap_ctx_t *icap_ctx)
 		// TODO: Free h2 conn if all h2 streams are finished?
 		// TODO: Should we call icap_is_finished() instead? But it checks if icap conn is closed or not.
 		// if (made_progress && icap_is_finished(icap_ctx)) {
-		if (made_progress && icap_is_content_complete(icap_ctx, 1) && icap_is_content_complete(icap_ctx, 0)) {
+		if (made_progress && icap_is_all_stream_end(icap_ctx, 1) && icap_is_all_stream_end(icap_ctx, 0)) {
 			// We can pass down term_owner for h2 streams too, because icap_ctx_free() does not free stream_ctx unless s->term is set
 			log_fine_va("Free icap_ctx and %s, all content complete", h2 ? "stream" : "conn");
 			icap_ctx_free(icap_ctx, 1);
@@ -1721,7 +1721,7 @@ icap_is_httpx_stream_end(icap_service_ctx_t *service_ctx)
 		stream_end = icap_ctx->reqmod ? icap_ctx->stream_ctx->src_end_stream : icap_ctx->stream_ctx->dst_end_stream;
 	}
 	// If the previous service is bypass, get stream end from the one before that, unless nullbody
-	else if (icap_ctx->services[service_ctx->idx - 1]->bypass) {
+	else if (ICAP_STATE(icap_ctx->services[service_ctx->idx - 1], icap_ctx->reqmod)->bypass) {
 		stream_end = icap_is_httpx_stream_end(icap_ctx->services[service_ctx->idx - 1]) || icap_is_encapsulated_nullbody(service_ctx);
 	}
 	// Subsequent and fail-open services get stream end from the previous service, unless nullbody
@@ -1757,8 +1757,8 @@ icap_is_encapsulated_nullbody(icap_service_ctx_t *service_ctx)
 	UNUSED pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
 
 	// Fail-open and 204 services do not have encapsulated headers
-	if (service_ctx->failopen || ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_204) {
-		log_finest_icap_va("Get null_body from previous service for %s", service_ctx->failopen ? "fail-open service" : " in 204 mode");
+	if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->failopen || ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_204) {
+		log_finest_icap_va("Get null_body from previous service for %s", ICAP_STATE(service_ctx, icap_ctx->reqmod)->failopen ? "fail-open service" : " in 204 mode");
 		return icap_is_nullbody(service_ctx);
 	}
 
@@ -1869,7 +1869,7 @@ icap_is_httpx_send_terminator(icap_service_ctx_t *service_ctx)
 		send_terminator = icap_ctx->reqmod ? icap_ctx->stream_ctx->src_send_terminator : icap_ctx->stream_ctx->dst_send_terminator;
 	}
 	// Fail-open and bypass services get send_terminator from the previous service
-	else if (service_ctx->failopen || service_ctx->bypass) {
+	else if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->failopen || ICAP_STATE(service_ctx, icap_ctx->reqmod)->bypass) {
 		send_terminator = icap_is_httpx_send_terminator(icap_ctx->services[service_ctx->idx - 1]);
 	}
 	// Subsequent services get send_terminator from the previous service, end_stream is set after receiving chunk terminator
@@ -2007,7 +2007,7 @@ icap_handle_service_error(icap_service_ctx_t *service_ctx)
 		service_ctx->svc->conn_fail_open == ICAP_FAIL_CLOSE ? "fail-close" : "fail-open",
 		service_ctx->svc->icap_fail_open == ICAP_FAIL_CLOSE ? "fail-close" : "fail-open");
 
-	service_ctx->error = 1;
+	ICAP_STATE(service_ctx, icap_ctx->reqmod)->error = 1;
 
 	icap_service_disconnect(service_ctx);
 
@@ -2031,7 +2031,7 @@ icap_handle_service_error(icap_service_ctx_t *service_ctx)
 	// ICAP service fail mode
 	// conn_opts->icap_fail_open is always copied to service_ctx->svc->icap_fail_open
 	else if (service_ctx->svc->icap_fail_open == ICAP_FAIL_OPEN) {
-		service_ctx->failopen = 1;
+		ICAP_STATE(service_ctx, icap_ctx->reqmod)->failopen = 1;
 
 		// ATTENTION: service_ctx may be freed in icap_failopen_to_next_service, so we need to get next_idx before calling it
 		int next_idx = service_ctx->idx + 1;
@@ -3326,7 +3326,7 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 
 	log_finest_icap_va("ENTER, in_hdr_len=%zu, in_body_len=%zu", in_hdr_len, in_body_len);
 
-	if (service_ctx->failopen) {
+	if (ICAP_STATE(service_ctx, reqmod)->failopen) {
 		log_fine_icap("ICAP service in failopen state");
 		return -1;
 	}
@@ -3364,7 +3364,7 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 			}
 
 			log_finer_icap("Set bypass and stream data, content already complete in 20x mode");
-			service_ctx->bypass = 1;
+			ICAP_STATE(service_ctx, reqmod)->bypass = 1;
 			icap_service_bypass(service_ctx);
 			return 0;
 		}
@@ -3681,7 +3681,7 @@ icap_bev_eventcb(UNUSED struct bufferevent *bev, short events, void *arg)
 
 	if (events & BEV_EVENT_CONNECTED) {
 		log_finest_icap_va("ICAP connected to %s, sending request", service_ctx->svc->server);
-		service_ctx->error = 0;
+		ICAP_STATE(service_ctx, icap_ctx->reqmod)->error = 0;
 
 		int rv = icap_build_request(service_ctx);
 		if (rv < 0) {
@@ -3757,7 +3757,7 @@ icap_process_chain_cb(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
 		}
 	}
 	else {
-		if (service_ctx->failopen) {
+		if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->failopen) {
 			log_finer_icap("Preview enabled but service in fail-open, failopen to next service");
 			icap_failopen_to_next_service(service_ctx);
 		}
@@ -3847,11 +3847,11 @@ icap_is_finished(icap_ctx_t *icap_ctx)
 
 	UNUSED pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
 
-	if (!icap_is_content_complete(icap_ctx, 1) || !icap_is_content_complete(icap_ctx, 0)) {
+	if (!icap_is_all_stream_end(icap_ctx, 1) || !icap_is_all_stream_end(icap_ctx, 0)) {
 		for (int i = 0; i < icap_ctx->service_count; i++) {
 			icap_service_ctx_t *service_ctx = icap_ctx->services[i];
-			if (service_ctx && (service_ctx->bev || service_ctx->failopen)) {
-				log_finest_va("Service still connected, service idx=%d", i);
+			if (service_ctx && (service_ctx->bev || ICAP_STATE(service_ctx, icap_ctx->reqmod)->failopen)) {
+				log_finest_va("Service NOT finished yet, still connected or fail-open, service idx=%d, fail-open=%u", i, ICAP_STATE(service_ctx, icap_ctx->reqmod)->failopen);
 				return 0;
 			}
 		}
@@ -3862,36 +3862,36 @@ icap_is_finished(icap_ctx_t *icap_ctx)
 }
 
 int NONNULL(1)
-icap_is_content_complete(icap_ctx_t *icap_ctx, int reqmod)
+icap_is_all_stream_end(icap_ctx_t *icap_ctx, int reqmod)
 {
 	UNUSED pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
 
 	if (icap_ctx->is_veto && icap_ctx->sent_veto_page) {
-		log_finer("Veto page sent, assume all content COMPLETE");
+		log_finer("Veto page sent, assume stream end for all services");
 		return 1;
 	}
 
 	int rv = 1;
 	for (int i = 0; i < icap_ctx->service_count; i++) {
 		if (icap_ctx->services[i]) {
-			unsigned int content_complete = reqmod ? icap_ctx->services[i]->src.end_stream : icap_ctx->services[i]->dst.end_stream;
-			UNUSED unsigned int failopen = icap_ctx->services[i]->failopen;
-			UNUSED unsigned int error = icap_ctx->services[i]->error;
-			if (content_complete == 0) {
-				log_finest_va("%s content NOT complete, service idx=%d, failopen=%u, error=%u", reqmod ? "REQMOD" : "RESPMOD", i, failopen, error);
+			unsigned int end_stream = reqmod ? icap_ctx->services[i]->src.end_stream : icap_ctx->services[i]->dst.end_stream;
+			UNUSED unsigned int failopen = ICAP_STATE(icap_ctx->services[i], icap_ctx->reqmod)->failopen;
+			UNUSED unsigned int error = ICAP_STATE(icap_ctx->services[i], icap_ctx->reqmod)->error;
+			if (end_stream == 0) {
+				log_finest_va("%s NOT stream end, service idx=%d, failopen=%u, error=%u", reqmod ? "REQMOD" : "RESPMOD", i, failopen, error);
 				rv = 0;
 			}
 			else {
-				log_finest_va("%s content complete for service idx=%d, failopen=%u, error=%u", reqmod ? "REQMOD" : "RESPMOD", i, failopen, error);
+				log_finest_va("%s stream end for service idx=%d, failopen=%u, error=%u", reqmod ? "REQMOD" : "RESPMOD", i, failopen, error);
 			}
 		}
 	}
 
 	if (rv) {
-		log_finer_va("All %s content COMPLETE", reqmod ? "REQMOD" : "RESPMOD");
+		log_finer_va("All %s stream end", reqmod ? "REQMOD" : "RESPMOD");
 	}
 	else {
-		log_finer_va("Some %s content NOT complete", reqmod ? "REQMOD" : "RESPMOD");
+		log_finer_va("Some %s NOT stream end", reqmod ? "REQMOD" : "RESPMOD");
 	}
 	return rv;
 }

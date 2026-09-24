@@ -1454,7 +1454,7 @@ protohttpx_filter_request_header(protohttpx_stream_ctx_t *s)
 
 #ifndef WITHOUT_ICAP
 			// Set the veto flags to send end_stream to the client,
-			// because h2/h3 data providers call icap_is_content_complete() to set the EOF flag for end_stream,
+			// because h2/h3 data providers call icap_is_all_stream_end() to set the EOF flag for end_stream,
 			// otherwise none of the icap services' content is complete at this point
 			if (icap_enabled(s->icap_ctx)) {
 				s->icap_ctx->is_veto = 1;

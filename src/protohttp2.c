@@ -386,7 +386,7 @@ protohttp2_provider_read_callback(UNUSED nghttp2_session *session, UNUSED int32_
             log_finest_va("End of stream reached for %s-side as src session, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d",
                 reqmod ? "server" : "client", s->src_stream_id, s->dst_stream_id, reqmod);
 #ifndef WITHOUT_ICAP
-            if (s->icap_ctx && icap_enabled(s->icap_ctx) && !icap_is_content_complete(s->icap_ctx, !reqmod)) {
+            if (s->icap_ctx && icap_enabled(s->icap_ctx) && !icap_is_all_stream_end(s->icap_ctx, !reqmod)) {
                 log_finest_va("Do NOT set NGHTTP2_DATA_FLAG_EOF for %s-side as dst session, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", available=%zu, reqmod=%d",
                     reqmod ? "client" : "server", s->src_stream_id, s->dst_stream_id, available, reqmod);
                 return NGHTTP2_ERR_DEFERRED;
@@ -419,7 +419,7 @@ protohttp2_provider_read_callback(UNUSED nghttp2_session *session, UNUSED int32_
             reqmod ? "server" : "client", s->src_stream_id, s->dst_stream_id, reqmod);
         if (evbuffer_get_length(s->data_buf) > 0
 #ifndef WITHOUT_ICAP
-            || (s->icap_ctx && icap_enabled(s->icap_ctx) && !icap_is_content_complete(s->icap_ctx, !reqmod))
+            || (s->icap_ctx && icap_enabled(s->icap_ctx) && !icap_is_all_stream_end(s->icap_ctx, !reqmod))
 #endif /* !WITHOUT_ICAP */
             ) {
             log_finest_va("Do NOT set NGHTTP2_DATA_FLAG_EOF for %s-side as dst session, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", data_buf=%zu, reqmod=%d",

@@ -152,6 +152,10 @@ typedef struct icap_service_state {
 
 	unsigned int wait_terminator : 1;
 	unsigned int wait_xfer_terminator : 1;
+
+	unsigned int failopen : 1;
+	unsigned int bypass : 1;
+	unsigned int error : 1;           /* 1 on service error, for debug logging only */
 } icap_service_state_t;
 
 struct icap_service_ctx {
@@ -160,9 +164,6 @@ struct icap_service_ctx {
 
 	int idx;
 	struct bufferevent *bev;          /* bufferevent for this service */
-	unsigned int failopen : 1;
-	unsigned int bypass : 1;
-	unsigned int error : 1;           /* 1 on service error, for debug logging only */
 
 	char *echo_header;                /* Header in reqmod to echo to respmod */
 
@@ -179,7 +180,7 @@ char *icap_chain_str(conn_opts_t *);
  */
 int icap_enabled(icap_ctx_t *);
 int icap_is_finished(icap_ctx_t *);
-int icap_is_content_complete(icap_ctx_t *, int) NONNULL(1);
+int icap_is_all_stream_end(icap_ctx_t *, int) NONNULL(1);
 
 struct evbuffer *icap_get_first_service_in_hdr(icap_ctx_t *) NONNULL(1);
 struct evbuffer *icap_get_last_service_out_body(icap_ctx_t *) NONNULL(1);

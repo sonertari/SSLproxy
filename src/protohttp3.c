@@ -998,7 +998,7 @@ h3_stream_read_data(nghttp3_conn *conn, int64_t stream_id,
             log_finest_va("End of stream reached for %s-side as src session, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d",
                 reqmod ? "server" : "client", s->src_stream_id, s->dst_stream_id, reqmod);
 #ifndef WITHOUT_ICAP
-            if (s->icap_ctx && icap_enabled(s->icap_ctx) && !icap_is_content_complete(s->icap_ctx, !reqmod)) {
+            if (s->icap_ctx && icap_enabled(s->icap_ctx) && !icap_is_all_stream_end(s->icap_ctx, !reqmod)) {
                 log_finest_va("Do NOT set NGHTTP3_DATA_FLAG_EOF for %s-side as dst session, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", available=%zu, reqmod=%d",
                     reqmod ? "client" : "server", s->src_stream_id, s->dst_stream_id, available, reqmod);
                 return NGHTTP3_ERR_WOULDBLOCK;
@@ -1053,7 +1053,7 @@ h3_stream_read_data(nghttp3_conn *conn, int64_t stream_id,
         log_finest_va("End of stream reached for %s-side as src session, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d",
             reqmod ? "server" : "client", s->src_stream_id, s->dst_stream_id, reqmod);
 #ifndef WITHOUT_ICAP
-        if (s->icap_ctx && icap_enabled(s->icap_ctx) && !icap_is_content_complete(s->icap_ctx, !reqmod)) {
+        if (s->icap_ctx && icap_enabled(s->icap_ctx) && !icap_is_all_stream_end(s->icap_ctx, !reqmod)) {
             log_finest_va("Do NOT set NGHTTP3_DATA_FLAG_EOF for %s-side as dst session, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d",
                 reqmod ? "client" : "server", s->src_stream_id, s->dst_stream_id, reqmod);
             goto out;
