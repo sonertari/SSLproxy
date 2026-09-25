@@ -125,10 +125,12 @@ main_version(void)
 	fprintf(stderr, "rtlinked against libevent %s\n", event_get_version());
 	fprintf(stderr, "compiled against nghttp2 %s\n", NGHTTP2_VERSION);
 	fprintf(stderr, "rtlinked against nghttp2 %s\n", nghttp2_version(0)->version_str);
+#ifndef WITHOUT_HTTP3
 	fprintf(stderr, "compiled against nghttp3 %s\n", NGHTTP3_VERSION);
 	fprintf(stderr, "rtlinked against nghttp3 %s\n", nghttp3_version(0)->version_str);
 	fprintf(stderr, "compiled against ngtcp2 %s\n", NGTCP2_VERSION);
 	fprintf(stderr, "rtlinked against ngtcp2 %s\n", ngtcp2_version(0)->version_str);
+#endif /* !WITHOUT_HTTP3 */
 #ifndef WITHOUT_MIRROR
 	fprintf(stderr, "compiled against libnet %s\n", LIBNET_VERSION);
 #ifndef __OpenBSD__

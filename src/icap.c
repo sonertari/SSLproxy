@@ -2090,7 +2090,8 @@ icap_service_content_complete(icap_service_ctx_t *service_ctx)
 	ICAP_STATE(service_ctx, icap_ctx->reqmod)->content_complete = 1;
 
 	// Service may have more data to stream, even if the content is marked complete
-	if (!icap_service_have_data_to_process(service_ctx, icap_ctx->reqmod)) {
+	if (!icap_service_have_data_to_process(service_ctx, icap_ctx->reqmod) &&
+		icap_is_stream_end(service_ctx, ICAP_STATE(service_ctx, icap_ctx->reqmod)->sent_body_size, ICAP_STATE(service_ctx, icap_ctx->reqmod)->in_body)) {
 		log_finer_icap_va("Set service end_stream, reqmod=%d", icap_ctx->reqmod);
 		ICAP_STATE(service_ctx, icap_ctx->reqmod)->end_stream = 1;
 	}
