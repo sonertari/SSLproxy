@@ -1423,11 +1423,11 @@ protohttpx_filter_request_header(protohttpx_stream_ctx_t *s)
 		         // Not possible in HTTP/2
         else if ((headers[i].namelen == 4 && !memcmp(headers[i].name, "host", 4)) ||
                  (headers[i].namelen == 10 && !memcmp(headers[i].name, "connection", 10)) ||
-                 (headers[i].namelen == 8 && !memcmp(headers[i].name, "keep-alive", 8)) ||
+                 (headers[i].namelen == 10 && !memcmp(headers[i].name, "keep-alive", 10)) ||
                  (headers[i].namelen == 7 && !memcmp(headers[i].name, "upgrade", 7)) ||
 		         // ATTENTION: flickr keeps redirecting to https with 301 unless we remove the Via line of squid
                  // Apparently flickr assumes the existence of Via header field or squid keyword a sign of plain http, even if we are using https
-		         (headers[i].namelen == 4 && !memcmp(headers[i].name, "via", 4)) ||
+		         (headers[i].namelen == 3 && !memcmp(headers[i].name, "via", 3)) ||
 				 // Also do not send the loopback address to the Internet
 		         (headers[i].namelen == 15 && !memcmp(headers[i].name, "x-forwarded-for", 15))) {
 			protohttpx_delete_nv_header(s, i);
@@ -1561,7 +1561,7 @@ protohttpx_filter_response_header(protohttpx_stream_ctx_t *s)
 		}
         else if ((headers[i].namelen == 15 && !memcmp(headers[i].name, "public-key-pins", 15)) ||
                  (headers[i].namelen == 27 && !memcmp(headers[i].name, "public-key-pins-report-only", 27)) ||
-                 (headers[i].namelen == 26 && !memcmp(headers[i].name, "strict-transport-security", 26)) ||
+                 (headers[i].namelen == 25 && !memcmp(headers[i].name, "strict-transport-security", 25)) ||
                  (headers[i].namelen == 9 && !memcmp(headers[i].name, "expect-ct", 9)) ||
                  (headers[i].namelen == 18 && !memcmp(headers[i].name, "alternate-protocol", 18)) ||
                  (headers[i].namelen == 7 && !memcmp(headers[i].name, "upgrade", 7))) {

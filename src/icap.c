@@ -1758,7 +1758,7 @@ icap_is_encapsulated_nullbody(icap_service_ctx_t *service_ctx)
 
 	// Fail-open and 204 services do not have encapsulated headers
 	if (ICAP_STATE(service_ctx, icap_ctx->reqmod)->failopen || ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_204) {
-		log_finest_icap_va("Get null_body from previous service for %s", ICAP_STATE(service_ctx, icap_ctx->reqmod)->failopen ? "fail-open service" : " in 204 mode");
+		log_finest_icap_va("Get null_body from previous service %s", ICAP_STATE(service_ctx, icap_ctx->reqmod)->failopen ? "for fail-open service" : " in 204 mode");
 		return icap_is_nullbody(service_ctx);
 	}
 
@@ -2235,7 +2235,17 @@ icap_extract_icap_headers(icap_service_ctx_t *service_ctx, struct evbuffer *inpu
 				icap_ctx->is_veto = 1;
 			}
 		}
-		
+
+		// ATTENTION: The icap service may send "Connection: close" and then close the connection with EOF
+		// This may happen if the icap server reaches its max conn limits and tries to reduce the number of keep-alive connections
+		/* Check for: Connection: close */
+		if (strncasecmp(line, "Connection:", 11) == 0) {
+			if (strcasestr(line, "close")) {
+				log_finer_icap("ICAP Connection close detected");
+				icap_ctx->conn_close = 1;
+			}
+		}
+
 		if (strncasecmp(line, "Encapsulated:", 13) == 0) {
 			if (icap_parse_encapsulated_field(service_ctx, line, "req-body", body_offset) == 1 ||
 				icap_parse_encapsulated_field(service_ctx, line, "res-body", body_offset) == 1) {
@@ -3183,10 +3193,9 @@ icap_bev_readcb(struct bufferevent *bev, void *arg)
 		else if (strncmp(status_line, "ICAP/1.0 204", 12) == 0) {
 			log_finer_icap("ICAP 204 No Content, no modification needed, bypassing");
 
-			// TODO: Do we ever receive icap headers with 204 responses?
-			// if (icap_extract_icap_headers(service_ctx, input) == -1) {
-			// 	goto err;
-			// }
+			if (icap_extract_icap_headers(service_ctx, input) == -1) {
+				goto err;
+			}
 
 			evbuffer_drain(input, evbuffer_get_length(input));
 
@@ -3602,8 +3611,8 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 			content_complete = icap_is_stream_end(service_ctx, *sent_body_size_new, chunk_buf);
 		}
 
-		log_finest_icap_va("Try send terminator, chunk_len=%zu, send_terminator=%d, src_send_terminator=%d, dst_send_terminator=%d, src_end_stream=%d, dst_end_stream=%d, reqmod=%d",
-			chunk_len, send_terminator,
+		log_finest_icap_va("Try send terminator, chunk_len=%zu, send_terminator=%d, in_body=%zu, src_send_terminator=%d, dst_send_terminator=%d, src_end_stream=%d, dst_end_stream=%d, reqmod=%d",
+			chunk_len, send_terminator, evbuffer_get_length(in_body),
 			icap_ctx->stream_ctx ? icap_ctx->stream_ctx->src_send_terminator : -1, icap_ctx->stream_ctx ? icap_ctx->stream_ctx->dst_send_terminator : -1,
 			icap_ctx->stream_ctx ? icap_ctx->stream_ctx->src_end_stream : -1, icap_ctx->stream_ctx ? icap_ctx->stream_ctx->dst_end_stream : -1, icap_ctx->reqmod);
 
@@ -3679,6 +3688,26 @@ icap_bev_eventcb(UNUSED struct bufferevent *bev, short events, void *arg)
 		return;
 	}
 
+	// events can have multiple flags set, so check each flag separately
+	if (events & BEV_EVENT_ERROR) {
+		log_finest_icap("ICAP connection error");
+	}
+
+	if (events & BEV_EVENT_TIMEOUT) {
+		log_finest_icap("ICAP connection timeout");
+	}
+
+	if (events & BEV_EVENT_EOF) {
+		log_finest_icap("ICAP connection closed (eof)");
+		// This is not an error condition, if the icap service has sent connection close previously
+		// We just need to close the current icap connection and reconnect when needed
+		if (icap_ctx->conn_close) {
+			icap_service_disconnect(service_ctx);
+			icap_ctx->conn_close = 0;
+			return;
+		}
+	}
+
 	if (events & BEV_EVENT_CONNECTED) {
 		log_finest_icap_va("ICAP connected to %s, sending request", service_ctx->svc->server);
 		ICAP_STATE(service_ctx, icap_ctx->reqmod)->error = 0;
@@ -3692,19 +3721,6 @@ icap_bev_eventcb(UNUSED struct bufferevent *bev, short events, void *arg)
 			log_finest_icap_va("ICAP request sent to %s", service_ctx->svc->server);
 		}
 		return;
-	}
-
-	// events can have multiple flags set, so check each flag separately
-	if (events & BEV_EVENT_ERROR) {
-		log_finest_icap("ICAP connection error");
-	}
-
-	if (events & BEV_EVENT_EOF) {
-		log_finest_icap("ICAP connection closed (eof)");
-	}
-
-	if (events & BEV_EVENT_TIMEOUT) {
-		log_finest_icap("ICAP connection timeout");
 	}
 err:
 	icap_handle_service_error(service_ctx);
@@ -3875,14 +3891,15 @@ icap_is_all_stream_end(icap_ctx_t *icap_ctx, int reqmod)
 	for (int i = 0; i < icap_ctx->service_count; i++) {
 		if (icap_ctx->services[i]) {
 			unsigned int end_stream = reqmod ? icap_ctx->services[i]->src.end_stream : icap_ctx->services[i]->dst.end_stream;
-			UNUSED unsigned int failopen = ICAP_STATE(icap_ctx->services[i], icap_ctx->reqmod)->failopen;
-			UNUSED unsigned int error = ICAP_STATE(icap_ctx->services[i], icap_ctx->reqmod)->error;
+			UNUSED unsigned int failopen = ICAP_STATE(icap_ctx->services[i], reqmod)->failopen;
+			UNUSED unsigned int error = ICAP_STATE(icap_ctx->services[i], reqmod)->error;
+			UNUSED unsigned int bypass = ICAP_STATE(icap_ctx->services[i], reqmod)->bypass;
 			if (end_stream == 0) {
-				log_finest_va("%s NOT stream end, service idx=%d, failopen=%u, error=%u", reqmod ? "REQMOD" : "RESPMOD", i, failopen, error);
+				log_finest_va("%s NOT stream end, service idx=%d, failopen=%u, error=%u, bypass=%u", reqmod ? "REQMOD" : "RESPMOD", i, failopen, error, bypass);
 				rv = 0;
 			}
 			else {
-				log_finest_va("%s stream end for service idx=%d, failopen=%u, error=%u", reqmod ? "REQMOD" : "RESPMOD", i, failopen, error);
+				log_finest_va("%s stream end for service idx=%d, failopen=%u, error=%u, bypass=%u", reqmod ? "REQMOD" : "RESPMOD", i, failopen, error, bypass);
 			}
 		}
 	}

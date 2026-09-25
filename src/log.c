@@ -235,7 +235,8 @@ log_dbg_level_printf(int level, const char *function, int thrid, long long unsig
 }
 
 int
-log_dbg_level_icap_printf(int level, const char *function, int thrid, long long unsigned int id, evutil_socket_t fd, evutil_socket_t child_fd, int sid, int rqm, const char *fmt, ...)
+log_dbg_level_icap_printf(int level, const char *function, int thrid, long long unsigned int id, evutil_socket_t fd, evutil_socket_t child_fd,
+	int sid, int rqm, int64_t src_stream_id, int64_t dst_stream_id, const char *fmt, ...)
 {
 	va_list ap;
 	char *buf;
@@ -251,7 +252,8 @@ log_dbg_level_icap_printf(int level, const char *function, int thrid, long long 
 		return -1;
 
 	char *logbuf;
-	rv = asprintf(&logbuf, "[%s] [%d.%llu fd=%d cfd=%d sid=%d rqm=%d] %s: %s\n", log_dbg_mode_names[level], thrid, id, fd, child_fd, sid, rqm, function, buf);
+	rv = asprintf(&logbuf, "[%s] [%d.%llu fd=%d cfd=%d sid=%d rqm=%d, ssi=%" PRId64 ", dsi=%" PRId64 "] %s: %s\n",
+		log_dbg_mode_names[level], thrid, id, fd, child_fd, sid, rqm, src_stream_id, dst_stream_id, function, buf);
 	free(buf);
 	if (rv < 0)
 		return -1;

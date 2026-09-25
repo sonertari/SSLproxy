@@ -102,6 +102,7 @@ struct icap_ctx {
 
 	unsigned int made_progress : 1;
 	unsigned int term : 1;            /* 1 if ICAP context is ready to be terminated */
+	unsigned int conn_close : 1;      /* 1 if ICAP server sent "Connection: close" header */
 
 	struct event *chain_ev;
 	int chain_ev_service_idx;
