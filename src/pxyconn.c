@@ -1796,7 +1796,8 @@ pxy_conn_connect(pxy_conn_ctx_t *ctx)
 		return;
 	}
 
-	if (ctx->proto != PROTO_HTTP3) {
+	// passthrough mode connects srvdst itself, so do not try to reconnect it
+	if (ctx->proto != PROTO_PASSTHROUGH && ctx->proto != PROTO_HTTP3) {
 		if (bufferevent_socket_connect(ctx->srvdst.bev, (struct sockaddr *)&ctx->dstaddr, ctx->dstaddrlen) == -1) {
 			log_err_level(LOG_CRIT, "bufferevent_socket_connect for srvdst failed");
 			pxy_conn_free(ctx, ctx->term ? ctx->term_requestor : 1);

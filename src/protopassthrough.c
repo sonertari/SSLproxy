@@ -121,6 +121,13 @@ protopassthrough_conn_connect(pxy_conn_ctx_t *ctx)
 	}
 
 	bufferevent_setcb(ctx->srvdst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
+
+	// passthrough connects srvdst itself, contrary to other protos
+	if (bufferevent_socket_connect(ctx->srvdst.bev, (struct sockaddr *)&ctx->dstaddr, ctx->dstaddrlen) == -1) {
+		log_err_level(LOG_CRIT, "bufferevent_socket_connect for srvdst failed");
+		pxy_conn_free(ctx, ctx->term ? ctx->term_requestor : 1);
+		return -1;
+	}
 	return 0;
 }
 

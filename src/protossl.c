@@ -1749,31 +1749,64 @@ int
 protossl_setup_dst_ssl(pxy_conn_ctx_t *ctx)
 {
 	ctx->dst.ssl = protossl_dstssl_create(ctx);
-	if (!ctx->dst.ssl) {
-		log_err_level_printf(LOG_CRIT, "Error creating SSL for dst\n");
-		pxy_conn_term(ctx, 1);
+	if (ctx->dst.ssl) {
+		log_finest("Created new dst.ssl");
+		return 0;
+	}
+
+	if (ctx->term) {
 		return -1;
 	}
-	return 0;
+
+	if (!ctx->enomem && (ctx->pass || ctx->conn_opts->passthrough)) {
+		log_err_level_printf(LOG_WARNING, "Falling back to passthrough\n");
+		protopassthrough_engage(ctx);
+		// report protocol change by returning 1
+		return 1;
+	}
+
+	if (ctx->sslctx->reconnected) {
+		return -1;
+	}
+
+	pxy_conn_term(ctx, 1);
+	return -1;
 }
 
 int
 protossl_setup_srvdst_ssl(pxy_conn_ctx_t *ctx)
 {
 	ctx->srvdst.ssl = protossl_dstssl_create(ctx);
-	if (!ctx->srvdst.ssl) {
-		log_err_level_printf(LOG_CRIT, "Error creating SSL for srvdst\n");
-		pxy_conn_term(ctx, 1);
+	if (ctx->srvdst.ssl) {
+		log_finest("Created new srvdst.ssl");
+		return 0;
+	}
+
+	if (ctx->term) {
 		return -1;
 	}
-	return 0;
+
+	if (!ctx->enomem && (ctx->pass || ctx->conn_opts->passthrough)) {
+		log_err_level_printf(LOG_WARNING, "Falling back to passthrough\n");
+		protopassthrough_engage(ctx);
+		// report protocol change by returning 1
+		return 1;
+	}
+
+	if (ctx->sslctx->reconnected) {
+		return -1;
+	}
+
+	pxy_conn_term(ctx, 1);
+	return -1;
 }
 
 int
 protossl_setup_srvdst(pxy_conn_ctx_t *ctx)
 {
-	if (protossl_setup_srvdst_ssl(ctx) == -1) {
-		return -1;
+	int rv;
+	if ((rv = protossl_setup_srvdst_ssl(ctx)) != 0) {
+		return rv;
 	}
 
 	ctx->srvdst.bev = protossl_bufferevent_setup(ctx, -1, ctx->srvdst.ssl);
@@ -1798,8 +1831,12 @@ protossl_conn_connect(pxy_conn_ctx_t *ctx)
 		return -1;
 	}
 
-	// Disable and NULL r/w cbs, we do nothing for srvdst in r/w cbs
-	bufferevent_setcb(ctx->srvdst.bev, NULL, NULL, pxy_bev_eventcb, ctx);
+	// protossl_setup_srvdst() calls protossl_dstssl_create(), which may engage passthrough mode
+	// due to a filter rule; passthrough uses srvdst, so do not disable r/w cbs in that case
+	if (ctx->proto != PROTO_PASSTHROUGH) {
+		// Disable and NULL r/w cbs, we do nothing for srvdst in r/w cbs
+		bufferevent_setcb(ctx->srvdst.bev, NULL, NULL, pxy_bev_eventcb, ctx);
+	}
 	return 0;
 }
 
