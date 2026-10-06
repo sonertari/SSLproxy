@@ -154,22 +154,22 @@ protossl_keylog_callback(const SSL *ssl, const char *line)
 #endif /* OPENSSL_VERSION_NUMBER >= 0x10101000L */
 
 int
-protossl_log_masterkey(pxy_conn_ctx_t *ctx, pxy_conn_desc_t *this)
+protossl_log_masterkey(pxy_conn_ctx_t *ctx, SSL *ssl)
 {
 #if OPENSSL_VERSION_NUMBER >= 0x10101000L && !defined(LIBRESSL_VERSION_NUMBER)
 	/* When the keylog callback is available, it handles all TLS versions
 	 * including TLS 1.2 CLIENT_RANDOM. Skip the legacy path to avoid
 	 * duplicate entries in the master key log. */
 	(void)ctx;
-	(void)this;
+	(void)ssl;
 	return 0;
 #else
 	// XXX: Remove ssl check? But the caller function is called by non-ssl protos.
-	if (this->ssl) {
+	if (ssl) {
 		/* log master key */
 		if (ctx->log_master && ctx->global->masterkeylog) {
 			char *keystr;
-			keystr = ssl_ssl_masterkey_to_str(this->ssl);
+			keystr = ssl_ssl_masterkey_to_str(ssl);
 			if ((keystr == NULL) ||
 				(log_masterkey_print_free(keystr) == -1)) {
 				if (errno == ENOMEM)
@@ -528,11 +528,11 @@ protossl_srcsslctx_create(pxy_conn_ctx_t *ctx, X509 *crt, STACK_OF(X509) *chain,
 	SSL_CTX_set_tlsext_servername_arg(sslctx, ctx);
 
 	if (ctx->sslctx->alpn_protos_len > 0) {
-		log_dbg_printf("Will negotiate ALPN protos with client\n");
+		log_finest("Will negotiate ALPN protos with client");
 		SSL_CTX_set_alpn_select_cb(sslctx, protossl_alpn_select_cb, ctx);
 	}
 	else {
-		log_dbg_printf("Will not negotiate ALPN protos with client, since no client ALPN protocols were found in ClientHello\n");
+		log_finest("Will not negotiate ALPN protos with client, since no client ALPN protocols were found in ClientHello");
 	}
 #endif /* !OPENSSL_NO_TLSEXT */
 #ifndef OPENSSL_NO_DH
@@ -639,11 +639,11 @@ protossl_srccert_write_to_gendir(pxy_conn_ctx_t *ctx, X509 *crt, int is_orig)
 }
 
 void
-protossl_srccert_write(pxy_conn_ctx_t *ctx)
+protossl_srccert_write(pxy_conn_ctx_t *ctx, SSL *ssl)
 {
 	if (ctx->global->certgen_writeall || ctx->sslctx->generated_cert) {
 		if (protossl_srccert_write_to_gendir(ctx,
-		                SSL_get_certificate(ctx->src.ssl), 0) == -1) {
+		                SSL_get_certificate(ssl), 0) == -1) {
 			log_err_level_printf(LOG_CRIT, "Failed to write used certificate\n");
 		}
 	}
@@ -1340,19 +1340,19 @@ protossl_dstssl_create(pxy_conn_ctx_t *ctx)
 
 	if (ctx->sslctx->alpn_protos_len > 0) {
 #ifdef DEBUG_PROXY
-		log_dbg_printf("Will negotiate ALPN protos with server, using client protos: %s\n",
+		log_finest_va("Will negotiate ALPN protos with server, using client protos: %s",
 			ssl_wire_to_printable(ctx->sslctx->alpn_protos, ctx->sslctx->alpn_protos_len));
 #endif /* DEBUG_PROXY */
 
 		// TODO: Should we call SSL_set_alpn_protos() instead?
 		if (SSL_CTX_set_alpn_protos(sslctx, (const unsigned char *)ctx->sslctx->alpn_protos, ctx->sslctx->alpn_protos_len) != 0) {
-			log_dbg_printf("failed to set ALPN protos to negotiate with server\n");
+			log_dbg_printf("Failed to set ALPN protos to negotiate with server\n");
 			SSL_CTX_free(sslctx);
 			return NULL;
 		}
 	}
 	else {
-		log_dbg_printf("Will not negotiate ALPN protos with server, since no client ALPN protocols were found in ClientHello\n");
+		log_finest("Will not negotiate ALPN protos with server, since no client ALPN protocols were found in ClientHello");
 	}
 
 	ssl = SSL_new(sslctx);
@@ -2048,7 +2048,7 @@ protossl_bev_eventcb_connected_srvdst(UNUSED struct bufferevent *bev, pxy_conn_c
 		protossl_set_alpn_protos_negotiated(bufferevent_openssl_get_ssl(bev), ctx);
 	}
 	else {
-		log_dbg_printf("Will not set ALPN protocols enabled with server, client did not provide ALPN protocols to negotiate\n");
+		log_finest("Will not set ALPN protocols enabled with server, client did not provide ALPN protocols to negotiate");
 	}
 #endif /* !OPENSSL_NO_TLSEXT */
 

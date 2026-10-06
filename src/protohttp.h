@@ -123,7 +123,7 @@ typedef struct {
 
 typedef int (*filter_header_t)(protohttpx_stream_ctx_t *);
 
-void protohttp_log_connect(pxy_conn_ctx_t *, protohttp_ctx_t *, unsigned int) NONNULL(1,2);
+void protohttp_log_connect(pxy_conn_ctx_t *, protohttpx_stream_ctx_t *s) NONNULL(1);
 
 void protohttpx_free_nv_headers(protohttpx_stream_ctx_t *) NONNULL(1);
 int protohttpx_add_nv_header(protohttpx_stream_ctx_t *, const char *,  size_t, const char *, size_t) WUNRES NONNULL(1,2,4);

@@ -90,8 +90,18 @@ protohttp2_new_stream_ctx(protohttp2_ctx_t *h2_ctx, int32_t stream_id)
 
 	s->http_ctx->ctx = ctx;
 
+	s->conn_opts = ctx->conn_opts;
+
+	// Copy all logging for conn into stream
+	s->log_connect = ctx->log_connect;
+	s->log_content = ctx->log_content;
+	s->log_pcap = ctx->log_pcap;
+#ifndef WITHOUT_MIRROR
+	s->log_mirror = ctx->log_mirror;
+#endif /* !WITHOUT_MIRROR */
+
 #ifndef WITHOUT_ICAP
-    s->icap_ctx = icap_init(ctx, (protohttpx_stream_ctx_t *)s, h2_ctx, ctx->conn_opts->icap_chain);
+	s->icap_ctx = icap_init(ctx, (protohttpx_stream_ctx_t *)s, h2_ctx, s->conn_opts->icap_chain);
 	if (!s->icap_ctx) {
         evbuffer_free(s->data_buf);
         free(s->http_ctx);
@@ -769,7 +779,7 @@ protohttp2_on_frame_recv(UNUSED nghttp2_session *session, const nghttp2_frame *f
                 /* header complete: log connection */
                 if (WANT_CONNECT_LOG(ctx->conn)) {
                     // TODO: Implement h2 specific logging with stream info
-                    protohttp_log_connect(ctx, s->http_ctx, s->log_connect);
+                    protohttp_log_connect(ctx, (protohttpx_stream_ctx_t *)s);
                 }
             }
 

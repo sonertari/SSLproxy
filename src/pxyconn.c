@@ -356,18 +356,6 @@ pxy_conn_ctx_free(pxy_conn_ctx_t *ctx, int by_requestor)
 	}
 #endif /* !WITHOUT_ICAP */
 
-	if (ctx->srchost_str) {
-		free(ctx->srchost_str);
-	}
-	if (ctx->srcport_str) {
-		free(ctx->srcport_str);
-	}
-	if (ctx->dsthost_str) {
-		free(ctx->dsthost_str);
-	}
-	if (ctx->dstport_str) {
-		free(ctx->dstport_str);
-	}
 #ifdef HAVE_LOCAL_PROCINFO
 	if (ctx->lproc.exec_path) {
 		free(ctx->lproc.exec_path);
@@ -390,6 +378,21 @@ pxy_conn_ctx_free(pxy_conn_ctx_t *ctx, int by_requestor)
 		ctx->protoctx->proto_free(ctx);
 	}
 	free(ctx->protoctx);
+
+	// ATTENTION: Free connection-related strings after proto_free() above
+	// proto_free() may write final debug logs using connection-related strings
+	if (ctx->srchost_str) {
+		free(ctx->srchost_str);
+	}
+	if (ctx->srcport_str) {
+		free(ctx->srcport_str);
+	}
+	if (ctx->dsthost_str) {
+		free(ctx->dsthost_str);
+	}
+	if (ctx->dstport_str) {
+		free(ctx->dstport_str);
+	}
 
 #ifndef WITHOUT_USERAUTH
 	if (ctx->user) {
@@ -422,7 +425,8 @@ pxy_conn_free(pxy_conn_ctx_t *ctx, int by_requestor)
 		// @attention early in the conn setup, src fd may be open, although src.bev is NULL
 		if (ctx->fd >= 0) {
 			evutil_closesocket(ctx->fd);
-			ctx->fd = -1;
+			// Don't set fd to -1, protohttp3_conn_free() uses it in debug logging on close
+			// ctx->fd = -1;
 		}
 	}
 
@@ -700,18 +704,18 @@ pxy_prepare_logging(pxy_conn_ctx_t *ctx)
 	return 0;
 }
 
-static void NONNULL(1,2)
-pxy_log_dbg_connect_type(pxy_conn_ctx_t *ctx, pxy_conn_desc_t *this)
+static void NONNULL(1)
+pxy_log_dbg_connect_type(pxy_conn_ctx_t *ctx, SSL *ssl)
 {
 	if (OPTS_DEBUG(ctx->global)) {
-		if (this->ssl) {
+		if (ssl) {
 			char *keystr;
 			/* for SSL, we get two connect events */
 			log_dbg_printf("%s connected to [%s]:%s %s %s\n",
 						   protocol_str(ctx->proto),
 						   STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
-						   SSL_get_version(this->ssl), SSL_get_cipher(this->ssl));
-			keystr = ssl_ssl_masterkey_to_str(this->ssl);
+						   SSL_get_version(ssl), SSL_get_cipher(ssl));
+			keystr = ssl_ssl_masterkey_to_str(ssl);
 			if (keystr) {
 				log_dbg_print_free(keystr);
 			}
@@ -732,44 +736,26 @@ pxy_log_dbg_connect_type(pxy_conn_ctx_t *ctx, pxy_conn_desc_t *this)
 }
 
 void
-pxy_log_connect_src(pxy_conn_ctx_t *ctx)
+pxy_log_connect(pxy_conn_ctx_t *ctx, SSL *ssl)
 {
 	/* log connection if we don't analyze any headers */
 	if (!ctx->spec->http && WANT_CONNECT_LOG(ctx)) {
 		pxy_log_connect_nonhttp(ctx);
 	}
 
-	if (ctx->src.ssl && ctx->log_cert && ctx->global->certgendir) {
+	if (ssl && ctx->log_cert && ctx->global->certgendir) {
 		/* write SSL certificates to gendir */
-		protossl_srccert_write(ctx);
+		protossl_srccert_write(ctx, ssl);
 	}
 
-	if (protossl_log_masterkey(ctx, &ctx->src) == -1) {
+	if (protossl_log_masterkey(ctx, ssl) == -1) {
 		return;
 	}
 
-	pxy_log_dbg_connect_type(ctx, &ctx->src);
+	pxy_log_dbg_connect_type(ctx, ssl);
 }
 
 void
-pxy_log_connect_srvdst(pxy_conn_ctx_t *ctx)
-{
-	// @attention srvdst.bev may be NULL, if its writecb fires first
-	if (ctx->srvdst.bev) {
-		/* log connection if we don't analyze any headers */
-		if (!ctx->srvdst.ssl && !ctx->spec->http && WANT_CONNECT_LOG(ctx)) {
-			pxy_log_connect_nonhttp(ctx);
-		}
-
-		if (protossl_log_masterkey(ctx, &ctx->srvdst) == -1) {
-			return;
-		}
-
-		pxy_log_dbg_connect_type(ctx, &ctx->srvdst);
-	}
-}
-
-static void
 pxy_log_dbg_disconnect(pxy_conn_ctx_t *ctx)
 {
 	/* we only get a single disconnect event here for both connections */
@@ -1513,13 +1499,16 @@ pxy_bev_eventcb_postexec_logging_and_stats(struct bufferevent *bev, short events
 		if (ctx->proto != PROTO_PASSTHROUGH) {
 			if (bev == ctx->src.bev) {
 				// @todo When do we reach here? If proto is autossl? Otherwise, src is connected in acceptcb.
-				pxy_log_connect_src(ctx);
+				pxy_log_connect(ctx, ctx->src.ssl);
 			} else if (ctx->connected) {
 				if (pxy_prepare_logging(ctx) == -1) {
 					return;
 				}
 				// Doesn't log connect if proto is http, http proto does its own connect logging
-				pxy_log_connect_srvdst(ctx);
+				// @attention srvdst.bev may be NULL, if its writecb fires first
+				if (ctx->srvdst.bev) {
+					pxy_log_connect(ctx, ctx->srvdst.ssl);
+				}
 			}
 		}
 

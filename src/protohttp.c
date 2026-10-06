@@ -46,10 +46,25 @@
 #include <event2/bufferevent.h>
 
 void NONNULL(1)
-protohttp_log_connect(pxy_conn_ctx_t *ctx, protohttp_ctx_t *http_ctx, unsigned int log_connect)
+protohttp_log_connect(pxy_conn_ctx_t *ctx, protohttpx_stream_ctx_t *s)
 {
-	if (!log_connect)
+	if (!OPTS_DEBUG(ctx->global)) {
 		return;
+	}
+
+	protohttp_ctx_t *http_ctx = NULL;
+	if (s) {
+		if (!s->log_connect) {
+			return;
+		}
+		http_ctx = s->http_ctx;
+	}
+	else {
+		if (!ctx->log_connect) {
+			return;
+		}
+		http_ctx = ctx->protoctx->arg;
+	}
 
 	char *msg;
 #ifdef HAVE_LOCAL_PROCINFO
@@ -78,7 +93,7 @@ protohttp_log_connect(pxy_conn_ctx_t *ctx, protohttp_ctx_t *http_ctx, unsigned i
 	 */
 
 	if (!ctx->spec->ssl) {
-		rv = asprintf(&msg, "%s: %s %s %s %s %s %s %s %s %s %s %s"
+		rv = asprintf(&msg, "CONN: http %s %s %s %s %s %s %s %s %s %s"
 #ifdef HAVE_LOCAL_PROCINFO
 		              " %s"
 #endif /* HAVE_LOCAL_PROCINFO */
@@ -87,13 +102,6 @@ protohttp_log_connect(pxy_conn_ctx_t *ctx, protohttp_ctx_t *http_ctx, unsigned i
 		              " user:%s"
 #endif /* !WITHOUT_USERAUTH */
 		              "\n",
-#ifndef WITHOUT_HTTP3
-		              ctx->spec->h3 ? "STREAM" : "CONN",
-		              ctx->spec->h3 ? "h3" : "http",
-#else /* WITHOUT_HTTP3 */
-		              "CONN",
-		              "http",
-#endif /* !WITHOUT_HTTP3 */
 		              STRORDASH(ctx->srchost_str),
 		              STRORDASH(ctx->srcport_str),
 		              STRORDASH(ctx->dsthost_str),
@@ -113,7 +121,7 @@ protohttp_log_connect(pxy_conn_ctx_t *ctx, protohttp_ctx_t *http_ctx, unsigned i
 #endif /* !WITHOUT_USERAUTH */
 		              );
 	} else {
-		rv = asprintf(&msg, "%s: %s %s %s %s %s %s %s %s %s %s %s "
+		rv = asprintf(&msg, "%s: %s [%" PRId64 ",%" PRId64 "] %s %s %s %s %s %s %s %s %s %s "
 		              "sni:%s names:%s "
 		              "sproto:%s:%s dproto:%s:%s "
 		              "origcrt:%s usedcrt:%s"
@@ -132,6 +140,8 @@ protohttp_log_connect(pxy_conn_ctx_t *ctx, protohttp_ctx_t *http_ctx, unsigned i
 		              ctx->sslctx->h2 ? "STREAM" : "CONN",
 		              ctx->sslctx->h2 ? "h2" : "https",
 #endif /* !WITHOUT_HTTP3 */
+		              s ? s->src_stream_id : 0,
+		              s ? s->dst_stream_id : 0,
 		              STRORDASH(ctx->srchost_str),
 		              STRORDASH(ctx->srcport_str),
 		              STRORDASH(ctx->dsthost_str),
@@ -144,10 +154,17 @@ protohttp_log_connect(pxy_conn_ctx_t *ctx, protohttp_ctx_t *http_ctx, unsigned i
 		              STRORDASH(http_ctx->dst_http_content_length),
 		              STRORDASH(ctx->sslctx->sni),
 		              STRORDASH(ctx->sslctx->ssl_names),
+#ifndef WITHOUT_HTTP3
+		              (ctx->spec->h3 ? ((protohttp3_ctx_t *)ctx->protoctx->arg)->src_ssl : ctx->src.ssl) ? SSL_get_version((ctx->spec->h3 ? ((protohttp3_ctx_t *)ctx->protoctx->arg)->src_ssl : ctx->src.ssl)) : "-",
+		              (ctx->spec->h3 ? ((protohttp3_ctx_t *)ctx->protoctx->arg)->src_ssl : ctx->src.ssl) ? SSL_get_cipher((ctx->spec->h3 ? ((protohttp3_ctx_t *)ctx->protoctx->arg)->src_ssl : ctx->src.ssl)) : "-",
+		              ctx->spec->h3 ? (((protohttp3_ctx_t *)ctx->protoctx->arg)->dst_ssl ? SSL_get_version(((protohttp3_ctx_t *)ctx->protoctx->arg)->dst_ssl) : "-") : STRORDASH(ctx->sslctx->srvdst_ssl_version),
+		              ctx->spec->h3 ? (((protohttp3_ctx_t *)ctx->protoctx->arg)->dst_ssl ? SSL_get_cipher(((protohttp3_ctx_t *)ctx->protoctx->arg)->dst_ssl) : "-") : STRORDASH(ctx->sslctx->srvdst_ssl_cipher),
+#else /* WITHOUT_HTTP3 */
 		              ctx->src.ssl ? SSL_get_version(ctx->src.ssl) : "-",
 		              ctx->src.ssl ? SSL_get_cipher(ctx->src.ssl) : "-",
 		              STRORDASH(ctx->sslctx->srvdst_ssl_version),
 		              STRORDASH(ctx->sslctx->srvdst_ssl_cipher),
+#endif /* !WITHOUT_HTTP3 */
 		              STRORDASH(ctx->sslctx->origcrtfpr),
 		              STRORDASH(ctx->sslctx->usedcrtfpr),
 #ifdef HAVE_LOCAL_PROCINFO
@@ -2098,7 +2115,7 @@ protohttp_bev_readcb(struct bufferevent *bev, void *arg)
 	if (!seen_resp_header_on_entry && http_ctx->seen_resp_header) {
 		/* response header complete: log connection */
 		if (WANT_CONNECT_LOG(ctx->conn)) {
-			protohttp_log_connect(ctx, http_ctx, ctx->log_connect);
+			protohttp_log_connect(ctx, NULL);
 		}
 	}
 }

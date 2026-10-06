@@ -169,8 +169,18 @@ protohttp3_new_stream_ctx(protohttp3_ctx_t *h3_ctx, int64_t stream_id)
 
 	s->http_ctx->ctx = ctx;
 
+	s->conn_opts = ctx->conn_opts;
+
+	// Copy all logging for conn into stream
+	s->log_connect = ctx->log_connect;
+	s->log_content = ctx->log_content;
+	s->log_pcap = ctx->log_pcap;
+#ifndef WITHOUT_MIRROR
+	s->log_mirror = ctx->log_mirror;
+#endif /* !WITHOUT_MIRROR */
+
 #ifndef WITHOUT_ICAP
-    s->icap_ctx = icap_init(ctx, (protohttpx_stream_ctx_t *)s, h3_ctx, ctx->conn_opts->icap_chain);
+	s->icap_ctx = icap_init(ctx, (protohttpx_stream_ctx_t *)s, h3_ctx, s->conn_opts->icap_chain);
 	if (!s->icap_ctx) {
         free(s->http_ctx);
         free(s);
@@ -800,7 +810,7 @@ h3_on_end_headers(nghttp3_conn *conn, int64_t stream_id,
         /* header complete: log connection */
         if (WANT_CONNECT_LOG(ctx->conn)) {
             // TODO: Implement h3 specific logging with stream info
-            protohttp_log_connect(ctx, s->http_ctx, s->log_connect);
+            protohttp_log_connect(ctx, s);
         }
     }
 
@@ -1429,6 +1439,7 @@ quic_handshake_completed(ngtcp2_conn *conn, void *user_data)
 
         // The connected flag does not seem useful with h3, but we set for completeness
         ctx->connected = 1;
+        pxy_log_connect(ctx, h3_ctx->src_ssl);
     }
 
     /* Arm the write event so SETTINGS / QPACK streams are flushed.       */
@@ -2829,6 +2840,7 @@ protohttp3_conn_free(pxy_conn_ctx_t *ctx)
     log_finest("ENTER");
     protohttp3_ctx_t *h3_ctx = ctx->protoctx->arg;
     if (h3_ctx) {
+        pxy_log_dbg_disconnect(ctx);
         protohttp3_free(h3_ctx);
         ctx->protoctx->arg = NULL;
     }

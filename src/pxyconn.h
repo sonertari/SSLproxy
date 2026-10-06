@@ -451,8 +451,8 @@ int pxy_prepare_logging_local_procinfo(pxy_conn_ctx_t *) NONNULL(1);
 
 int pxy_prepare_logging(pxy_conn_ctx_t *) NONNULL(1);
 
-void pxy_log_connect_src(pxy_conn_ctx_t *) NONNULL(1);
-void pxy_log_connect_srvdst(pxy_conn_ctx_t *) NONNULL(1);
+void pxy_log_connect(pxy_conn_ctx_t *, SSL *) NONNULL(1);
+void pxy_log_dbg_disconnect(pxy_conn_ctx_t *) NONNULL(1);
 void pxy_log_connect_nonhttp(pxy_conn_ctx_t *) NONNULL(1);
 
 unsigned char *pxy_malloc_packet(size_t, pxy_conn_ctx_t *) MALLOC NONNULL(2) WUNRES;
