@@ -3712,18 +3712,10 @@ icap_bev_eventcb(UNUSED struct bufferevent *bev, short events, void *arg)
 	if (events & BEV_EVENT_CONNECTED) {
 		log_finest_icap_va("ICAP connected to %s, sending request", service_ctx->svc->server);
 		ICAP_STATE(service_ctx, icap_ctx->reqmod)->error = 0;
-
-		int rv = icap_build_request(service_ctx);
-		if (rv < 0) {
-			log_fine_icap_va("ICAP failed to build and send request to %s", service_ctx->svc->server);
-			goto err;
-		}
-		else if (rv == 0) {
-			log_finest_icap_va("ICAP request sent to %s", service_ctx->svc->server);
-		}
+		icap_process_chain(icap_ctx, service_ctx->idx);
 		return;
 	}
-err:
+
 	icap_handle_service_error(service_ctx);
 }
 
