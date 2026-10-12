@@ -98,9 +98,6 @@ h3_timestamp(void)
  * Internal forward declarations
  * ====================================================================== */
 
-static void protohttp3_src_write_cb(evutil_socket_t fd, short what, void *arg);
-static void protohttp3_timer_cb(evutil_socket_t fd, short what, void *arg);
-
 static int  protohttp3_arm_timer(protohttp3_ctx_t *h3_ctx);
 
 static nghttp3_ssize
@@ -108,9 +105,6 @@ h3_stream_read_data(nghttp3_conn *conn, int64_t stream_id,
                     nghttp3_vec *vec, size_t veccnt,
                     uint32_t *pflags,
                     void *user_data, void *stream_user_data);
-
-static int
-protohttp3_conn_connect(pxy_conn_ctx_t *ctx);
 
 /* Maximum iovecs we ask nghttp3 to fill in one writev call.              */
 #define H3_MAX_IOVECS   16
@@ -406,27 +400,53 @@ protohttp3_trigger_write_loop(protohttp3_ctx_t *h3_ctx, protohttp3_stream_ctx_t 
 
         if (pktlen <= 0) {
             if (pktlen < 0 && pktlen != NGTCP2_ERR_WRITE_MORE) {
-                log_finest_va("ngtcp2 write error: %s", ngtcp2_strerror((int)pktlen));
+                log_finest_va("ngtcp2 write error: %s (%zd), stream id=%" PRId64 ", fd=%d", ngtcp2_strerror((int)pktlen), pktlen, stream_id, fd);
 
+                /* Handle non-fatal stream state errors gracefully */
                 if (pktlen == NGTCP2_ERR_STREAM_SHUT_WR || pktlen == NGTCP2_ERR_STREAM_NOT_FOUND) {
-                    log_finest_va("ngtcp2 write error with ERR_STREAM_SHUT_WR, stream_id=%" PRId64 ", fd=%d", stream_id, fd);
-                    nghttp3_conn_close_stream(h3_conn, stream_id, NGHTTP3_H3_INTERNAL_ERROR);
-                }
+                    // We manage bidi streams only, not uni streams
+                    if (ngtcp2_is_bidi_stream(stream_id)) {
+                        log_finest_va("Notify nghttp3/ngtcp2 on STREAM_%s, stream id=%" PRId64 ", fd=%d", pktlen == NGTCP2_ERR_STREAM_SHUT_WR ? "SHUT_WR" : "NOT_FOUND", stream_id, fd);
 
-                // TODO: Check if this is enough on fatal errors
-                if (ngtcp2_err_is_fatal((int)pktlen)) {
+                        // Avoid stream search if possible
+                        protohttp3_stream_ctx_t *stream_ctx = NULL;
+                        if ((reqmod && stream_id == s->src_stream_id) || (!reqmod && stream_id == s->dst_stream_id)) {
+                            stream_ctx = s;
+                        }
+                        else {
+                            stream_ctx = protohttp3_get_stream_ctx(h3_ctx, stream_id, reqmod);
+                        }
+
+                        if (stream_ctx) {
+                            if (stream_ctx->closed) {
+                                log_fine_va("Closed set, h3 close for stream_id=%" PRId64 ", reqmod=%d", stream_id, reqmod);
+                                nghttp3_conn_close_stream(h3_conn, stream_id, NGHTTP3_H3_NO_ERROR);
+                            }
+                            // If the term flag is set, the closed flag must have been set already
+                            // This should never happen, because if the term flag is set, the stream should have been closed already, but just in case
+                            if (stream_ctx->term) {
+                                log_fine_va("Term set, quic shutdown for stream_id=%" PRId64 ", reqmod=%d", stream_id, reqmod);
+                                ngtcp2_conn_shutdown_stream_write(quic_conn, 0, stream_id, NGHTTP3_H3_NO_ERROR);
+                                ngtcp2_conn_shutdown_stream_read(quic_conn, 0, stream_id, NGHTTP3_H3_NO_ERROR);
+                            }
+                        }
+                        else {
+                            log_fine_va("No stream context for stream_id=%" PRId64, stream_id);
+                        }
+                    }
+                }
+                /* Handle connection-fatal errors */
+                else if (ngtcp2_err_is_fatal((int)pktlen)) {
                     log_finest_va("Fatal ngtcp2 write error, terminating connection, fd=%d", fd);
                     const ngtcp2_ccerr ccerr = {
                         .type = NGTCP2_CCERR_TYPE_TRANSPORT,
                         .error_code = (int)pktlen,
                     };
                     ngtcp2_conn_write_connection_close(quic_conn, quic_path, &pi, pktbuf, sizeof(pktbuf), &ccerr, h3_timestamp());
-                    // TODO: Should we call ngtcp2_conn_del() here to free the connection?
-                    // ngtcp2_conn_del(quic_conn);
                     goto out;
                 }
             }
-            log_finest_va("Drained all pending packets, pktlen=%zd, fd=%d", pktlen, fd);
+            log_finest_va("Drained all pending packets, pktlen=%zd, stream id=%" PRId64 ", fd=%d", pktlen, stream_id, fd);
             break; /* Drained all pending packets */
         }
 
@@ -570,17 +590,6 @@ protohttp3_icap_send_data_to_dst_cb(icap_ctx_t *icap_ctx)
     if (protohttp3_submit_data(h3_ctx, (protohttp3_stream_ctx_t *)s, icap_ctx->reqmod) < 0) {
         log_finest_va("Failed to submit data, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, icap_ctx->reqmod);
         return;
-    }
-
-    if (icap_enabled(s->icap_ctx) && icap_is_finished(s->icap_ctx) && s->closed) {
-        if (!s->closed) {
-            // Do not close the stream here, just set the flag (first close)
-            log_finest_va("ICAP finished, set stream closed, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, icap_ctx->reqmod);
-            s->closed = 1;
-        }
-        else {
-            log_finest_va("Stream already closed, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", fd=%d", s->src_stream_id, s->dst_stream_id, h3_ctx->dst_fd);
-        }
     }
 }
 
@@ -993,6 +1002,16 @@ h3_stream_read_data(nghttp3_conn *conn, int64_t stream_id,
     }
 
     protohttp3_stream_ctx_t *s = stream_user_data;
+    if (!s) {
+        log_finest_va("Stream user data is NULL, stream_id=%" PRId64 ", reqmod=%d", stream_id, reqmod);
+        return NGHTTP3_ERR_WOULDBLOCK;
+    }
+
+    if ((reqmod && stream_id != s->src_stream_id) || (!reqmod && stream_id != s->dst_stream_id)) {
+        log_finest_va("Stream ID mismatch, stream_id=%" PRId64 ", src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d",
+            stream_id, s->src_stream_id, s->dst_stream_id, reqmod);
+        return NGHTTP3_ERR_WOULDBLOCK;
+    }
 
     log_finest_va("ENTER, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", proxying=%d, reqmod=%d", s->src_stream_id, s->dst_stream_id, h3_ctx->proxying, reqmod);
 
@@ -1260,7 +1279,7 @@ quic_stream_close(ngtcp2_conn *conn, UNUSED uint32_t flags,
             log_finest_va("Set stream closed, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, reqmod);
             s->closed = 1;
         } else {
-            /* Second close event: ready to tear down.                     */
+            /* Second close event: ready to tear down */
             log_finest_va("Stream closed before, free completely and remove, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, reqmod);
             s->term = 1;
             protohttp3_request_free_stream_ctx(s);
@@ -1671,13 +1690,6 @@ protohttp3_src_read_cb(evutil_socket_t fd, UNUSED short what, void *arg)
 
 	ctx->atime = time(NULL);
 
-#ifndef WITHOUT_USERAUTH
-    pxy_userauth(ctx);
-    if (ctx->term || ctx->enomem) {
-        return;
-    }
-#endif /* !WITHOUT_USERAUTH */
-
 	uint8_t buf[H3_DGRAM_BUFSZ];
 	struct sockaddr_storage peer_addr;
 	socklen_t peer_addrlen = sizeof(peer_addr);
@@ -1700,6 +1712,16 @@ protohttp3_src_read_cb(evutil_socket_t fd, UNUSED short what, void *arg)
 
     log_finest_va("Read %zd bytes from client-side UDP socket", n);
     ctx->thr->intif_in_bytes += n;
+
+#ifndef WITHOUT_USERAUTH
+    pxy_userauth(ctx);
+#endif /* !WITHOUT_USERAUTH */
+
+    if (ctx->term || ctx->enomem) {
+        log_finest("Connection terminated or out of memory");
+        pxy_conn_free(ctx, 1);
+        return;
+    }
 
 	pkt_node_t *pkt_node = malloc(sizeof(pkt_node_t));
 	if (!pkt_node) {
@@ -1776,6 +1798,10 @@ protohttp3_src_write_cb(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
     UNUSED pxy_conn_ctx_t *ctx = h3_ctx->ctx;
     log_finest("ENTER");
 	ctx->atime = time(NULL);
+
+    if (ctx->term || ctx->enomem) {
+        pxy_conn_free(ctx, 0);
+    }
 }
 
 static void
@@ -1811,6 +1837,12 @@ protohttp3_dst_read_cb(evutil_socket_t fd, UNUSED short what, void *arg)
     log_finest_va("Read %zd bytes from server-side UDP socket", n);
     ctx->thr->extif_in_bytes += n;
 
+    if (ctx->term || ctx->enomem) {
+        log_finest("Connection terminated or out of memory");
+        pxy_conn_free(ctx, 1);
+        return;
+    }
+
 #ifdef DEBUG_PROXY
     protohttp3_debug_print_addr(&peer_addr, "pkt dst_peer_addr");
 #endif /* DEBUG_PROXY */
@@ -1835,8 +1867,7 @@ protohttp3_dst_read_cb(evutil_socket_t fd, UNUSED short what, void *arg)
             }
         }
         if (rv != NGTCP2_ERR_DRAINING && rv != NGTCP2_ERR_DROP_CONN) {
-            // TODO: pxy_conn_term() set the term flag only, do as TCP proxyspecs do
-            pxy_conn_term(h3_ctx->ctx, 1);
+            pxy_conn_free(ctx, 1);
         }
         return;
     }
@@ -1856,6 +1887,10 @@ protohttp3_dst_write_cb(UNUSED evutil_socket_t fd, UNUSED short what, void *arg)
     UNUSED pxy_conn_ctx_t *ctx = h3_ctx->ctx;
     log_finest_va("ENTER, fd=%d", h3_ctx->dst_fd);
 	ctx->atime = time(NULL);
+
+    if (ctx->term || ctx->enomem) {
+        pxy_conn_free(ctx, 1);
+    }
 }
 
 /* =========================================================================
@@ -1910,7 +1945,7 @@ protohttp3_timer_cb(evutil_socket_t fd, short what, void *arg)
     if (rv != 0) {
         log_finest_va("ngtcp2_conn_handle_expiry: %s", ngtcp2_strerror(rv));
         if (rv != NGTCP2_ERR_DRAINING && rv != NGTCP2_ERR_DROP_CONN) {
-            pxy_conn_term(ctx, 1);
+            pxy_conn_free(ctx, 1);
         }
         return;
     }
@@ -2099,7 +2134,7 @@ protohttp3_process_packet_cb(UNUSED evutil_socket_t fd, UNUSED short what, void 
                 log_finest("Connection is draining, no more packets will be processed");
             }
             if (rv != NGTCP2_ERR_DRAINING && rv != NGTCP2_ERR_DROP_CONN) {
-                pxy_conn_term(h3_ctx->ctx, 1);
+                pxy_conn_free(h3_ctx->ctx, 1);
             }
             return;
         }
