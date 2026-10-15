@@ -1293,6 +1293,38 @@ quic_stream_close(ngtcp2_conn *conn, UNUSED uint32_t flags,
     return 0;
 }
 
+static int
+quic_recv_stop_sending(ngtcp2_conn *conn, int64_t stream_id, UNUSED uint64_t app_error_code,
+                  void *user_data, UNUSED void *stream_user_data)
+{
+    protohttp3_ctx_t *h3_ctx = user_data;
+    UNUSED pxy_conn_ctx_t *ctx = h3_ctx->ctx;
+    int reqmod = conn == h3_ctx->src_conn ? 1 : 0;
+
+    log_finest_va("ENTER, stream_id=%" PRId64 ", reqmod=%d, fd=%d", stream_id, reqmod, h3_ctx->dst_fd);
+
+    if (!ngtcp2_is_bidi_stream(stream_id)) {
+        log_finest_va("Ignoring uni stream stop sending, stream_id=%" PRId64, stream_id);
+        return 0;
+    }
+
+    protohttp3_stream_ctx_t *s = protohttp3_get_stream_ctx(h3_ctx, stream_id, reqmod);
+    if (s) {
+        if (!s->closed) {
+            log_finest_va("Set stream closed, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, reqmod);
+            s->closed = 1;
+        } else {
+            log_finest_va("Stream closed before, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, reqmod);
+        }
+    }
+    else {
+        log_finest_va("No stream context found for stream_id=%" PRId64 ", reqmod=%d, fd=%d", stream_id, reqmod, h3_ctx->dst_fd);
+        return NGTCP2_ERR_CALLBACK_FAILURE;
+    }
+
+    return 0;
+}
+
 /*
  * ngtcp2 delivers unidirectional stream data (H3 control/QPACK streams).
  * Route it through nghttp3 so it can process SETTINGS, QPACK instructions
@@ -2111,6 +2143,11 @@ protohttp3_process_packet_cb(UNUSED evutil_socket_t fd, UNUSED short what, void 
         total_bytes_processed += pkt->len;
         pkt_count++;
 
+        protohttp3_trigger_write_loop(h3_ctx, NULL, 1);
+        if (h3_ctx->dst_conn) {
+            protohttp3_trigger_write_loop(h3_ctx, NULL, 0);
+        }
+
         int rv = ngtcp2_conn_read_pkt(h3_ctx->src_conn,
                                     &h3_ctx->src_path, &pi,
                                     pkt->buf, pkt->len,
@@ -2144,6 +2181,9 @@ protohttp3_process_packet_cb(UNUSED evutil_socket_t fd, UNUSED short what, void 
     ctx->thr->intif_in_bytes += total_bytes_processed;
 
     protohttp3_trigger_write_loop(h3_ctx, NULL, 1);
+    if (h3_ctx->dst_conn) {
+        protohttp3_trigger_write_loop(h3_ctx, NULL, 0);
+    }
 }
 
 static ngtcp2_conn *
@@ -2332,6 +2372,7 @@ protohttp3_new(pxy_conn_ctx_t *ctx, ngtcp2_version_cid vc)
     /* recv_stream_data callback handles both bidi and uni streams.        */
     cb.stream_open              = quic_stream_open;
     cb.stream_close             = quic_stream_close;
+    cb.recv_stop_sending        = quic_recv_stop_sending;
     cb.rand                     = quic_rand;
     cb.get_new_connection_id    = quic_get_new_connection_id;
 
