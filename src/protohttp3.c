@@ -1282,6 +1282,8 @@ quic_stream_close(ngtcp2_conn *conn, UNUSED uint32_t flags,
             /* Second close event: ready to tear down */
             log_finest_va("Stream closed before, free completely and remove, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, reqmod);
             s->term = 1;
+            nghttp3_conn_set_stream_user_data(h3_ctx->src_h3, s->src_stream_id, NULL);
+            nghttp3_conn_set_stream_user_data(h3_ctx->dst_h3, s->dst_stream_id, NULL);
             protohttp3_request_free_stream_ctx(s);
         }
     }
