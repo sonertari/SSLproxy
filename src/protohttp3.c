@@ -2170,7 +2170,7 @@ protohttp3_process_packet_cb(UNUSED evutil_socket_t fd, UNUSED short what, void 
             else if (rv == NGTCP2_ERR_DRAINING) {
                 log_finest("Connection is draining, no more packets will be processed");
             }
-            if (rv != NGTCP2_ERR_DRAINING && rv != NGTCP2_ERR_DROP_CONN) {
+            else if (rv == NGTCP2_ERR_DROP_CONN) {
                 pxy_conn_free(h3_ctx->ctx, 1);
             }
             return;
