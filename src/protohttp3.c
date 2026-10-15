@@ -371,7 +371,7 @@ protohttp3_trigger_write_loop(protohttp3_ctx_t *h3_ctx, protohttp3_stream_ctx_t 
 
         /* 2. Write either Stream packet or standard QUIC packet (Crypto/ACK) */
         // Note that we do send fin packets without data to signal the end of a stream.
-        if ((sveccnt > 0 || fin) && stream_id >= 0) {
+        if (h3_conn && (sveccnt > 0 || fin) && stream_id >= 0) {
             ngtcp2_ssize pdatalen = 0;
             pktlen = ngtcp2_conn_writev_stream(quic_conn, quic_path, &pi, h3_ctx->pktbuf, sizeof(h3_ctx->pktbuf), &pdatalen,
                          // TODO: Is this enough? The ngtcp2_write_stream_flag enum has changed in recent versions.
@@ -416,7 +416,7 @@ protohttp3_trigger_write_loop(protohttp3_ctx_t *h3_ctx, protohttp3_stream_ctx_t 
                         }
 
                         if (stream_ctx) {
-                            if (stream_ctx->closed) {
+                            if (h3_conn && stream_ctx->closed) {
                                 log_fine_va("Closed set, h3 close for stream_id=%" PRId64 ", reqmod=%d", stream_id, reqmod);
                                 nghttp3_conn_close_stream(h3_conn, stream_id, NGHTTP3_H3_NO_ERROR);
                             }
