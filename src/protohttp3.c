@@ -410,11 +410,11 @@ protohttp3_trigger_write_loop(protohttp3_ctx_t *h3_ctx, protohttp3_stream_ctx_t 
 
                         // Avoid stream search if possible
                         protohttp3_stream_ctx_t *stream_ctx = NULL;
-                        if ((reqmod && stream_id == s->src_stream_id) || (!reqmod && stream_id == s->dst_stream_id)) {
-                            stream_ctx = s;
+                        if (!s || (reqmod && stream_id != s->src_stream_id) || (!reqmod && stream_id != s->dst_stream_id)) {
+                            stream_ctx = protohttp3_get_stream_ctx(h3_ctx, stream_id, reqmod);
                         }
                         else {
-                            stream_ctx = protohttp3_get_stream_ctx(h3_ctx, stream_id, reqmod);
+                            stream_ctx = s;
                         }
 
                         if (stream_ctx) {
