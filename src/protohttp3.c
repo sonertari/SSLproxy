@@ -341,10 +341,8 @@ protohttp3_trigger_write_loop(protohttp3_ctx_t *h3_ctx, protohttp3_stream_ctx_t 
         s->ref_count++;
     }
 
-    // TODO: Consider using a static buffer to avoid stack allocation on each call.
-    // But static buffer may not be thread-safe if multiple threads call this function simultaneously.
-    // static uint8_t pktbuf[H3_DGRAM_BUFSZ];
-    uint8_t pktbuf[H3_DGRAM_BUFSZ];
+    // ATTENTION: Do not use large stack allocated buffers, otherwise causes "stack smashing detected" crashes on Linux.
+    // uint8_t pktbuf[H3_DGRAM_BUFSZ];
 
     nghttp3_conn *h3_conn = reqmod ? h3_ctx->src_h3 : h3_ctx->dst_h3;
     ngtcp2_conn *quic_conn = reqmod ? h3_ctx->src_conn : h3_ctx->dst_conn;
@@ -375,7 +373,7 @@ protohttp3_trigger_write_loop(protohttp3_ctx_t *h3_ctx, protohttp3_stream_ctx_t 
         // Note that we do send fin packets without data to signal the end of a stream.
         if ((sveccnt > 0 || fin) && stream_id >= 0) {
             ngtcp2_ssize pdatalen = 0;
-            pktlen = ngtcp2_conn_writev_stream(quic_conn, quic_path, &pi, pktbuf, sizeof(pktbuf), &pdatalen,
+            pktlen = ngtcp2_conn_writev_stream(quic_conn, quic_path, &pi, h3_ctx->pktbuf, sizeof(h3_ctx->pktbuf), &pdatalen,
                          // TODO: Is this enough? The ngtcp2_write_stream_flag enum has changed in recent versions.
                          // The NGTCP2_WRITE_STREAM_FLAG_MORE flag is now deprecated and replaced with NGTCP2_WRITE_STREAM_FLAG_FIN for the FIN flag.
                          // Or should we pass NGTCP2_WRITE_STREAM_FLAG_NONE, instead of NGTCP2_WRITE_STREAM_FLAG_MORE?
@@ -389,7 +387,7 @@ protohttp3_trigger_write_loop(protohttp3_ctx_t *h3_ctx, protohttp3_stream_ctx_t 
         } else {
             log_finest_va("Write pending  ACKs, Handshake CRYPTO, etc., fd=%d", fd);
             /* No stream data; write pending ACKs, Handshake CRYPTO, etc. */
-            pktlen = ngtcp2_conn_write_pkt(quic_conn, quic_path, &pi, pktbuf, sizeof(pktbuf), h3_timestamp());
+            pktlen = ngtcp2_conn_write_pkt(quic_conn, quic_path, &pi, h3_ctx->pktbuf, sizeof(h3_ctx->pktbuf), h3_timestamp());
         }
 
         /* Handle write status */
@@ -442,7 +440,7 @@ protohttp3_trigger_write_loop(protohttp3_ctx_t *h3_ctx, protohttp3_stream_ctx_t 
                         .type = NGTCP2_CCERR_TYPE_TRANSPORT,
                         .error_code = (int)pktlen,
                     };
-                    ngtcp2_conn_write_connection_close(quic_conn, quic_path, &pi, pktbuf, sizeof(pktbuf), &ccerr, h3_timestamp());
+                    ngtcp2_conn_write_connection_close(quic_conn, quic_path, &pi, h3_ctx->pktbuf, sizeof(h3_ctx->pktbuf), &ccerr, h3_timestamp());
                     goto out;
                 }
             }
@@ -458,7 +456,7 @@ protohttp3_trigger_write_loop(protohttp3_ctx_t *h3_ctx, protohttp3_stream_ctx_t 
         }
 
         /* 3. Transmit via UDP socket */
-        ssize_t sent = sys_sendmsgfd(fd, pktbuf, pktlen, -1);
+        ssize_t sent = sys_sendmsgfd(fd, h3_ctx->pktbuf, pktlen, -1);
 
         log_finest_va("sendmsg fd=%d returned errno=%d, %s, size=%zd", fd, errno, strerror(errno), sent);
         if (sent < 0) {

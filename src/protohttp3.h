@@ -177,6 +177,8 @@ struct protohttp3_conn_ctx {
     nghttp3_conn *src_h3;
     nghttp3_conn *dst_h3;
 
+    uint8_t pktbuf[4096];
+
     /* max cummulative bidi streams on src side,
      * incremented each time a bidi stream is closed,
      * to allow new streams to be opened. */
