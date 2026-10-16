@@ -1208,18 +1208,25 @@ icap_set_extended_headers(icap_ctx_t *icap_ctx, UNUSED int upgraded)
 	}
 #endif /* !WITHOUT_USERAUTH */
 
+	int64_t stream_id = 0;
+	if (icap_ctx->stream_ctx) {
+		stream_id = icap_ctx->stream_ctx->src_stream_id;
+	}
+
 	// Estimate string length
 	size_t len = snprintf(NULL, 0,
 		"X-Client-IP: %s\r\n"
 		"X-Client-Port: %s\r\n"
 		"X-Server-IP: %s\r\n"
 		"X-Server-Port: %s\r\n"
+		"X-Stream-ID: %" PRId64 "\r\n"
 		"X-Proto: %s\r\n"
 #ifndef WITHOUT_USERAUTH
 		"%s"
 #endif /* !WITHOUT_USERAUTH */
 		, STRORNONE(ctx->srchost_str), STRORNONE(ctx->srcport_str),
 		STRORNONE(ctx->dsthost_str), STRORNONE(ctx->dstport_str),
+		stream_id,
 		proto
 #ifndef WITHOUT_USERAUTH
 		, user_hdr
@@ -1245,12 +1252,14 @@ icap_set_extended_headers(icap_ctx_t *icap_ctx, UNUSED int upgraded)
 		"X-Client-Port: %s\r\n"
 		"X-Server-IP: %s\r\n"
 		"X-Server-Port: %s\r\n"
+		"X-Stream-ID: %" PRId64 "\r\n"
 		"X-Proto: %s\r\n"
 #ifndef WITHOUT_USERAUTH
 		"%s"
 #endif /* !WITHOUT_USERAUTH */
 		, STRORNONE(ctx->srchost_str), STRORNONE(ctx->srcport_str),
 		STRORNONE(ctx->dsthost_str), STRORNONE(ctx->dstport_str),
+		stream_id,
 		proto
 #ifndef WITHOUT_USERAUTH
 		, user_hdr
