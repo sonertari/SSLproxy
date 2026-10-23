@@ -769,7 +769,7 @@ protohttpx_free_nv_headers(protohttpx_stream_ctx_t *s)
 {
     UNUSED pxy_conn_ctx_t *ctx = s->ctx;
 #ifndef WITHOUT_ICAP
-    log_finest_va("ENTER, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", headers count=%zu, reqmod=%d", s->src_stream_id, s->dst_stream_id, s->headers_count, s->icap_ctx->reqmod);
+    log_finest_va("ENTER, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", headers count=%zu, reqmod=%d", s->src_stream_id, s->dst_stream_id, s->headers_count, s->icap_ctx ? s->icap_ctx->reqmod : -1);
 #else /* !WITHOUT_ICAP */
     log_finest_va("ENTER, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", headers count=%zu", s->src_stream_id, s->dst_stream_id, s->headers_count);
 #endif /* !WITHOUT_ICAP */
@@ -1020,7 +1020,7 @@ struct evbuffer *
 protohttpx_get_h1_headers(protohttpx_stream_ctx_t *s)
 {
     pxy_conn_ctx_t *ctx = s->ctx;
-    log_finest_va("ENTER, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, s->icap_ctx->reqmod);
+    log_finest_va("ENTER, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, s->icap_ctx ? s->icap_ctx->reqmod : -1);
 
     struct evbuffer *buf = evbuffer_new();
     if (!buf) {
@@ -1102,7 +1102,7 @@ protohttpx_get_hx_headers(protohttpx_stream_ctx_t *s, struct evbuffer *h1_buf, i
 {
     UNUSED pxy_conn_ctx_t *ctx = s->ctx;
 #ifndef WITHOUT_ICAP
-    log_finest_va("ENTER, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, s->icap_ctx->reqmod);
+    log_finest_va("ENTER, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, s->icap_ctx ? s->icap_ctx->reqmod : -1);
 #else /* !WITHOUT_ICAP */
     log_finest_va("ENTER, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64, s->src_stream_id, s->dst_stream_id);
 #endif /* !WITHOUT_ICAP */
@@ -1473,7 +1473,7 @@ protohttpx_filter_request_header(protohttpx_stream_ctx_t *s)
 			// Set the veto flags to send end_stream to the client,
 			// because h2/h3 data providers call icap_is_all_stream_end() to set the EOF flag for end_stream,
 			// otherwise none of the icap services' content is complete at this point
-			if (icap_enabled(s->icap_ctx)) {
+			if (s->icap_ctx && icap_enabled(s->icap_ctx)) {
 				s->icap_ctx->is_veto = 1;
 				s->icap_ctx->sent_veto_page = 1;
 			}
