@@ -1693,7 +1693,10 @@ icap_is_http_stream_end(icap_service_ctx_t *service_ctx, size_t sent_body_size, 
 	} else { /* Response */
 		int status_code = strtoul(http_ctx->http_status_code, NULL, 10);
 
-		if (status_code == 204 || status_code == 304 || (status_code >= 100 && status_code < 200) || strncasecmp(http_ctx->http_method, "HEAD", 4) == 0) {
+		/* http_method may be NULL */
+    	int is_head = (http_ctx->http_method && strncasecmp(http_ctx->http_method, "HEAD", 4) == 0);
+
+		if (status_code == 204 || status_code == 304 || (status_code >= 100 && status_code < 200) || is_head) {
 			service_ctx->dst.http_end_stream = 1; /* These NEVER have a body */
 		} else if (http_ctx->dst_content_chunked) {
 			service_ctx->dst.http_end_stream = icap_peek_http_chunked_end(buf);
