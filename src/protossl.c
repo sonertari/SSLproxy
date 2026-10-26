@@ -1263,6 +1263,58 @@ protossl_ossl_servername_cb(SSL *ssl, UNUSED int *al, void *arg)
 }
 #endif /* !OPENSSL_NO_TLSEXT */
 
+static const char *ca_bundle_paths[] = {
+	/* OpenBSD, macOS (Homebrew / Apple Default) */
+	"/etc/ssl/cert.pem",
+	/* FreeBSD */
+	"/usr/local/share/certs/ca-root-nss.crt",
+	"/etc/ssl/certs/ca-root-nss.crt",
+	/* Debian / Ubuntu / Alpine / Gentoo Linux */
+	"/etc/ssl/certs/ca-certificates.crt",
+	/* RHEL / CentOS / Fedora / Rocky Linux */
+	"/etc/pki/tls/certs/ca-bundle.crt",
+	/* SUSE / openSUSE */
+	"/etc/ssl/ca-bundle.pem",
+	/* Fallback Directory Lists */
+	"/etc/ssl/certs",
+	"/etc/pki/tls/certs",
+	"/usr/local/etc/ssl/certs",
+	NULL
+};
+
+static int
+protossl_set_verify_paths(UNUSED pxy_conn_ctx_t *ctx, SSL_CTX *sslctx)
+{
+	/* 1. Check if OpenSSL's default built-in cert file actually exists on disk
+	   Note: OpenSSL returns 1 even if the directory/file is missing,
+	   so we verify if a well-known path exists. */
+	const char *def_file = X509_get_default_cert_file();
+	if (def_file && access(def_file, R_OK) == 0) {
+		if (SSL_CTX_set_default_verify_paths(sslctx) == 1) {
+			log_finest("Set default verify paths");
+			return 1;
+		}
+	}
+	else {
+		log_fine_va("Cannot find default cert file %s", def_file);
+	}
+
+	/* 2. Check well-known OS system CA bundle paths */
+	for (int i = 0; ca_bundle_paths[i] != NULL; i++) {
+		if (access(ca_bundle_paths[i], R_OK) == 0) {
+			/* Check if it's a file or directory */
+			if (SSL_CTX_load_verify_locations(sslctx, ca_bundle_paths[i], NULL) == 1 ||
+				SSL_CTX_load_verify_locations(sslctx, NULL, ca_bundle_paths[i]) == 1) {
+				log_finest_va("Loaded system CA bundle from: %s", ca_bundle_paths[i]);
+				return 1;
+			}
+		}
+	}
+
+	log_fine("Failed to load any system CA bundle");
+	return 0;
+}
+
 /*
  * Create new SSL context for outgoing connections to the original destination.
  * If hostname sni is provided, use it for Server Name Indication.
@@ -1313,8 +1365,13 @@ protossl_dstssl_create(pxy_conn_ctx_t *ctx)
 
 	if (ctx->conn_opts->verify_peer) {
 		SSL_CTX_set_verify(sslctx, SSL_VERIFY_PEER, NULL);
-		SSL_CTX_set_default_verify_paths(sslctx);
-	} else {
+		if (!protossl_set_verify_paths(ctx, sslctx)) {
+			log_dbg_printf("failed to set verify paths\n");
+			SSL_CTX_free(sslctx);
+			return NULL;
+		}
+	}
+	else {
 		SSL_CTX_set_verify(sslctx, SSL_VERIFY_NONE, NULL);
 	}
 
