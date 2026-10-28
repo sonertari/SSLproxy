@@ -457,9 +457,6 @@ pxy_conn_term(pxy_conn_ctx_t *ctx, int by_requestor)
 void
 pxy_log_connect_nonhttp(pxy_conn_ctx_t *ctx)
 {
-	if (!ctx->log_connect)
-		return;
-
 	char *msg;
 #ifdef HAVE_LOCAL_PROCINFO
 	char *lpi = NULL;
@@ -553,7 +550,7 @@ pxy_log_connect_nonhttp(pxy_conn_ctx_t *ctx)
 			log_err_level_printf(LOG_WARNING, "Conn logging failed\n");
 		}
 	}
-	if (ctx->global->connectlog) {
+	if (ctx->global->connectlog && ctx->log_connect) {
 		if (log_connect_print_free(msg) == -1) {
 			log_err_level_printf(LOG_WARNING, "Connection logging failed\n");
 		}

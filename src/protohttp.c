@@ -48,21 +48,14 @@
 void NONNULL(1)
 protohttp_log_connect(pxy_conn_ctx_t *ctx, protohttpx_stream_ctx_t *s)
 {
-	if (!OPTS_DEBUG(ctx->global)) {
-		return;
-	}
-
 	protohttp_ctx_t *http_ctx = NULL;
+	int log_connect = 0;
 	if (s) {
-		if (!s->log_connect) {
-			return;
-		}
+		log_connect = s->log_connect;
 		http_ctx = s->http_ctx;
 	}
 	else {
-		if (!ctx->log_connect) {
-			return;
-		}
+		log_connect = ctx->log_connect;
 		http_ctx = ctx->protoctx->arg;
 	}
 
@@ -187,7 +180,7 @@ protohttp_log_connect(pxy_conn_ctx_t *ctx, protohttpx_stream_ctx_t *s)
 			log_err_level_printf(LOG_WARNING, "Conn logging failed\n");
 		}
 	}
-	if (ctx->global->connectlog) {
+	if (ctx->global->connectlog && log_connect) {
 		if (log_connect_print_free(msg) == -1) {
 			log_err_level_printf(LOG_WARNING, "Connection logging failed\n");
 		}
