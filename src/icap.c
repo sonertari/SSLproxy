@@ -4056,22 +4056,32 @@ icap_data_submit(icap_ctx_t *icap_ctx)
 	if (icap_ctx->is_veto) {
 		log_finest_icap("Content vetoed by ICAP service");
 
-		// TODO: Do we always have both veto_hdr and veto_body?
-		if (icap_ctx->veto_hdr && icap_ctx->veto_body) {
-			log_finer_icap_va("Sending veto page to client, veto_hdr=%zu, veto_body=%zu", evbuffer_get_length(icap_ctx->veto_hdr), evbuffer_get_length(icap_ctx->veto_body));
+		// We don't always have both veto_hdr and veto_body.
+		// E2Guardian responds with 302 redirect without body after user bypasses a denied page,
+		// everything else with the 302 response is similar to a veto page.
+		if (icap_ctx->veto_hdr || icap_ctx->veto_body) {
+			log_finer_icap_va("Sending veto response to client, veto_hdr=%zu, veto_body=%zu",
+				icap_ctx->veto_hdr ? evbuffer_get_length(icap_ctx->veto_hdr) : 0,
+				icap_ctx->veto_body ? evbuffer_get_length(icap_ctx->veto_body) : 0);
 
 #ifdef DEBUG_ICAP
-			/* Log veto page for debugging */
-			size_t len = evbuffer_get_length(icap_ctx->veto_hdr) + evbuffer_get_length(icap_ctx->veto_body);
+			/* Log veto response for debugging */
+			size_t len = (icap_ctx->veto_hdr ? evbuffer_get_length(icap_ctx->veto_hdr) : 0) +
+			             (icap_ctx->veto_body ? evbuffer_get_length(icap_ctx->veto_body) : 0);
 			size_t log_len = len < 400 ? len : 400;
 			char log_buf[401];  // Stack allocation
-			evbuffer_copyout(icap_ctx->veto_hdr, log_buf, log_len);
-			evbuffer_copyout(icap_ctx->veto_body, log_buf + evbuffer_get_length(icap_ctx->veto_hdr), log_len - evbuffer_get_length(icap_ctx->veto_hdr));
+			if (icap_ctx->veto_hdr) {
+				evbuffer_copyout(icap_ctx->veto_hdr, log_buf, log_len);
+			}
+			if (icap_ctx->veto_body) {
+				evbuffer_copyout(icap_ctx->veto_body, log_buf + (icap_ctx->veto_hdr ? evbuffer_get_length(icap_ctx->veto_hdr) : 0),
+				                 log_len - (icap_ctx->veto_hdr ? evbuffer_get_length(icap_ctx->veto_hdr) : 0));
+			}
 			log_buf[log_len] = '\0';
-			log_finest_icap_va("Veto page (first %zu bytes, orig %zu bytes): %s", log_len, len, log_buf);
+			log_finest_icap_va("Veto response (first %zu bytes, orig %zu bytes): %s", log_len, len, log_buf);
 #endif /* DEBUG_ICAP */
 
-			// Send veto page to src (client), not dst (server)
+			// Send veto response to src (client), not dst (server)
 			icap_ctx->send_data_to_src_cb(ctx, icap_ctx->stream_ctx, icap_ctx->veto_hdr, icap_ctx->veto_body);
 		}
 
