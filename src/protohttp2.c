@@ -987,6 +987,10 @@ protohttp2_bev_readcb(struct bufferevent *bev, void *arg)
             return;
         }
 
+#ifndef WITHOUT_USERAUTH
+        pxy_userauth(ctx);
+#endif /* !WITHOUT_USERAUTH */
+
         struct evbuffer *inbuf = bufferevent_get_input(bev);
         size_t len = evbuffer_get_length(inbuf);
         if (!len) {
