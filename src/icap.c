@@ -1661,6 +1661,11 @@ icap_is_http_stream_end(icap_service_ctx_t *service_ctx, size_t sent_body_size, 
 {
 	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
 	pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
+
+	if (!ctx->spec->http) {
+		return 1;
+	}
+
 	protohttp_ctx_t *http_ctx = ctx->protoctx->arg; /* h1 only */
 
 	size_t http_content_length = icap_get_http_content_length(icap_ctx);
@@ -2077,6 +2082,10 @@ icap_service_content_complete(icap_service_ctx_t *service_ctx)
 
 	if (icap_ctx->is_veto) {
 		icap_ctx->sent_veto_page = 1;
+	}
+
+	if (!ctx->spec->http) {
+		ICAP_STATE(service_ctx, icap_ctx->reqmod)->received_icap_headers = 0;
 	}
 
 	if (!ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_206) {
@@ -3371,6 +3380,11 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 	size_t sent_body_size = ICAP_STATE(service_ctx, icap_ctx->reqmod)->sent_body_size;
 	size_t sent_hdr_size = ICAP_STATE(service_ctx, icap_ctx->reqmod)->sent_hdr_size;
 
+	if (!ctx->spec->http) {
+		sent_hdr_size = 0;
+		sent_body_size = 0;
+	}
+
 	log_finer_icap_va("Current sent_body_size=%zu, max_inspection_size=%zu, sent_terminator=%d",
 		sent_body_size, service_ctx->svc->max_inspection_size, ICAP_STATE(service_ctx, icap_ctx->reqmod)->sent_terminator);
 
@@ -3403,7 +3417,7 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 	/* 1. Send ICAP Header */
 	// We send icap headers with http headers only, hence check if in_hdr_len > 0,
 	// otherwise we may send duplicate icap headers
-	if (sent_hdr_size == 0 && sent_body_size == 0 && in_hdr_len > 0) {
+	if ((sent_hdr_size == 0 && sent_body_size == 0 && in_hdr_len > 0) || !ctx->spec->http) {
 		/* Calculate Encapsulated lengths */
 		char *req_or_res = reqmod ? "req" : "res";
 		#define ICAP_MAX_ENCAPSULATED_HEADER_SIZE 128
@@ -3438,7 +3452,7 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 			}
 
 			if (icap_is_stream_end(service_ctx, in_body_len < preview_size ? in_body_len : preview_size, in_body)) {
-				if (preview_size >= in_body_len) {
+				if (preview_size >= in_body_len || !ctx->spec->http) {
 					content_complete = 1;
 				}
 			}
@@ -3446,6 +3460,9 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 				log_finer_icap_va("NOT enough body in preview mode, do not send icap headers, wait for body, content_length=%zu, in_body_len=%zu, preview_size=%zu",
 					icap_get_http_content_length(icap_ctx), in_body_len, preview_size);
 				return 1;
+			}
+			else if (!ctx->spec->http) {
+				content_complete = 1;
 			}
 
 			snprintf(preview_hdr, sizeof(preview_hdr), "Preview: %zu\r\n", preview_size);
@@ -3635,9 +3652,9 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 				log_finer_icap_va("Terminating preview, sent_hdr=%zu, sent_body=%zu, content_complete=%d", evbuffer_get_length(sent_hdr), evbuffer_get_length(sent_body), content_complete);
 
 				// 0; ieof\r\n\r\n is a mechanism to signal the early end of a message body: preview >= in_body_len
-				evbuffer_add_printf(chunk_buf, content_complete && preview_size >= in_body_len ? "0; ieof\r\n\r\n" : "0\r\n\r\n");
+				evbuffer_add_printf(chunk_buf, content_complete && (preview_size >= in_body_len || !ctx->spec->http) ? "0; ieof\r\n\r\n" : "0\r\n\r\n");
 
-				if (content_complete && preview_size >= in_body_len) {
+				if (ctx->spec->http && content_complete && preview_size >= in_body_len) {
 					ICAP_STATE(service_ctx, icap_ctx->reqmod)->sent_terminator = 1;
 				}
 			}
@@ -3647,7 +3664,9 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 
 				evbuffer_add_printf(chunk_buf, "0\r\n\r\n");
 
-				ICAP_STATE(service_ctx, icap_ctx->reqmod)->sent_terminator = 1;
+				if (ctx->spec->http) {
+					ICAP_STATE(service_ctx, icap_ctx->reqmod)->sent_terminator = 1;
+				}
 			}
 
 			// ATTENTION: Reset the send_terminator flag, otherwise causes infinite loops due to made_progress
@@ -3886,6 +3905,10 @@ int NONNULL(1)
 icap_is_all_stream_end(icap_ctx_t *icap_ctx, int reqmod)
 {
 	UNUSED pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
+
+	if (!ctx->spec->http) {
+		return 0;
+	}
 
 	if (icap_ctx->is_veto && icap_ctx->sent_veto_page) {
 		log_finer("Veto page sent, assume stream end for all services");

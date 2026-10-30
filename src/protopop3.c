@@ -114,38 +114,26 @@ protopop3_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		return;
 	}
 
-	if (pxy_try_prepend_sslproxy_header(ctx, inbuf, outbuf) != 0) {
+	struct evbuffer *tmpbuf =  evbuffer_new();
+
+	if (pxy_try_prepend_sslproxy_header(ctx, inbuf, tmpbuf) != 0) {
+		evbuffer_free(tmpbuf);
 		return;
 	}
 
 #ifndef WITHOUT_ICAP
-	protopop3_ctx_t *pop3_ctx = ctx->protoctx->arg;
-
-	// Client -> Server: wait for RETR command to start sending ICAP requests
-	if (icap_enabled(ctx->icap_ctx) && !pop3_ctx->in_retr) {
-		size_t len = evbuffer_get_length(inbuf);
-		char *data = malloc(len + 1);
-		if (data) {
-			evbuffer_copyout(inbuf, data, len);
-			data[len] = '\0';
-			if (strcasestr(data, "RETR ")) {
-				pop3_ctx->in_retr = 1;
-				log_finest("POP3 RETR command detected");
-			}
-			free(data);
-		}
-	}
-
-	if (!icap_enabled(ctx->icap_ctx) || !pop3_ctx->in_retr) {
+	if (!icap_enabled(ctx->icap_ctx)) {
 #endif /* !WITHOUT_ICAP */
-		evbuffer_add_buffer(outbuf, inbuf);
+		evbuffer_add_buffer(outbuf, tmpbuf);
 #ifndef WITHOUT_ICAP
 	}
 	else {
 		ctx->icap_ctx->reqmod = 1;
-		icap_process_data(inbuf, ctx->icap_ctx);
+		icap_process_data(tmpbuf, ctx->icap_ctx);
 	}
 #endif /* !WITHOUT_ICAP */
+
+	evbuffer_free(tmpbuf);
 
 	ctx->protoctx->set_watermarkcb(bev, ctx, ctx->dst.bev);
 }
@@ -164,18 +152,7 @@ protopop3_bev_readcb_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	struct evbuffer *outbuf = bufferevent_get_output(ctx->src.bev);
 
 #ifndef WITHOUT_ICAP
-	protopop3_ctx_t *pop3_ctx = ctx->protoctx->arg;
-
-	// Server -> Client: wait for the end of message in RETR response to stop sending ICAP requests
-	if (icap_enabled(ctx->icap_ctx) && pop3_ctx->in_retr) {
-		struct evbuffer_ptr ptr = evbuffer_search(inbuf, "\r\n.\r\n", 5, NULL);
-		if (ptr.pos != -1) {
-			log_finest("POP3 RETR response ended");
-			pop3_ctx->in_retr = 0;
-		}
-	}
-
-	if (!icap_enabled(ctx->icap_ctx) || !pop3_ctx->in_retr) {
+	if (!icap_enabled(ctx->icap_ctx)) {
 #endif /* !WITHOUT_ICAP */
 		evbuffer_add_buffer(outbuf, inbuf);
 #ifndef WITHOUT_ICAP
