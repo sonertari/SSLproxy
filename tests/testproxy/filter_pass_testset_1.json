@@ -1,5 +1,5 @@
 {
-  "comment": "Tests for Pass filtering rules, HTTP request headers: SSLproxy, Connection, Upgrade, Keep-Alive, Accept-Encoding, Via, X-Forwarded-For, and Referer",
+  "comment": "Tests for Pass filtering rules for TCP, HTTP request headers: SSLproxy, Connection, Upgrade, Keep-Alive, Accept-Encoding, Via, X-Forwarded-For, and Referer",
   "configs": {
    "1": {
       "proto": {
@@ -12,22 +12,6 @@
       "server": {
         "ip": "127.0.0.1",
         "port": "9195"
-      }
-    },
-    "2": {
-      "proto": {
-        "proto": "ssl",
-        "verify_peer": "no"
-      },
-      "client": {
-        "ip": "127.0.0.1",
-        "port": "8196"
-      },
-      "server": {
-        "ip": "127.0.0.1",
-        "port": "9196",
-        "crt": "server.crt",
-        "key": "server.key"
       }
     }
   },
