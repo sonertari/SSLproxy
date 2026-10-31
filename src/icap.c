@@ -32,6 +32,7 @@
 #include "opts.h"
 #include "pxyconn.h"
 #include "protohttp.h"
+#include "protopop3.h"
 #include "util.h"
 
 #include <event2/buffer.h>
@@ -1662,10 +1663,6 @@ icap_is_http_stream_end(icap_service_ctx_t *service_ctx, size_t sent_body_size, 
 	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
 	pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
 
-	if (!ctx->spec->http) {
-		return 1;
-	}
-
 	protohttp_ctx_t *http_ctx = ctx->protoctx->arg; /* h1 only */
 
 	size_t http_content_length = icap_get_http_content_length(icap_ctx);
@@ -1759,8 +1756,15 @@ icap_is_stream_end(icap_service_ctx_t *service_ctx, size_t sent_body_size, struc
 	if (ctx->proto == PROTO_HTTP2 || ctx->proto == PROTO_HTTP3) {
 		return icap_is_httpx_stream_end(service_ctx);
 	}
-	else {
+	else if (ctx->spec->http) {
 		return icap_is_http_stream_end(service_ctx, sent_body_size, buf);
+	}
+	else if (ctx->proto == PROTO_POP3 || ctx->proto == PROTO_POP3S) {
+		protopop3_ctx_t *pop3_ctx = ctx->protoctx->arg;
+		return icap_ctx->reqmod ? pop3_ctx->src_end_stream : pop3_ctx->dst_end_stream;
+	}
+	else {
+		return 1;
 	}
 }
 
@@ -1863,9 +1867,15 @@ static int
 icap_is_nullbody(icap_service_ctx_t *service_ctx)
 {
 	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
+	pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
 
 	if (service_ctx->idx == 0) {
-		return icap_is_http_nullbody(service_ctx);
+		if (ctx->spec->http) {
+			return icap_is_http_nullbody(service_ctx);
+		}
+		else {
+			return 0;
+		}
 	}
 	// Subsequent, fail-open, bypass, and 204 services get null_body from the encapsulated header of previous service
 	else {
@@ -2082,10 +2092,6 @@ icap_service_content_complete(icap_service_ctx_t *service_ctx)
 
 	if (icap_ctx->is_veto) {
 		icap_ctx->sent_veto_page = 1;
-	}
-
-	if (!ctx->spec->http) {
-		ICAP_STATE(service_ctx, icap_ctx->reqmod)->received_icap_headers = 0;
 	}
 
 	if (!ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_206) {
@@ -2732,6 +2738,30 @@ out:
 	return rv;
 }
 
+static void
+icap_service_reset_state_nonhttp(icap_service_ctx_t *service_ctx)
+{
+	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
+	pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
+
+	if (!ctx->spec->http) {
+		if (ctx->proto == PROTO_POP3 || ctx->proto == PROTO_POP3S) {
+			protopop3_ctx_t *pop3_ctx = ctx->protoctx->arg;
+			if (icap_ctx->reqmod) {
+				pop3_ctx->src_end_stream = 0;
+			}
+			else {
+				pop3_ctx->dst_end_stream = 0;
+			}
+		}
+
+		ICAP_STATE(service_ctx, icap_ctx->reqmod)->received_icap_headers = 0;
+		ICAP_STATE(service_ctx, icap_ctx->reqmod)->sent_body_size = 0;
+		ICAP_STATE(service_ctx, icap_ctx->reqmod)->sent_hdr_size = 0;
+		ICAP_STATE(service_ctx, icap_ctx->reqmod)->sent_terminator = 0;
+	}
+}
+
 static int
 icap_get_chunk_header(icap_service_ctx_t *service_ctx, struct evbuffer *input, size_t *chunk_size)
 {
@@ -2756,6 +2786,7 @@ icap_get_chunk_header(icap_service_ctx_t *service_ctx, struct evbuffer *input, s
 		if (chrv == 1) {
 			log_finest_icap_va("FOUND chunk header terminator after 0 chunk size, discard it and set content complete, detected_206=%u", ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_206);
 			icap_service_content_complete(service_ctx);
+			icap_service_reset_state_nonhttp(service_ctx);
 		}
 		else if (chrv == 0) {
 			log_finer_icap_va("No chunk header terminator after 0 chunk size, wait for xfer terminator, detected_206=%u", ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_206);
@@ -2891,6 +2922,7 @@ icap_extract_body_chunk(icap_service_ctx_t *service_ctx, struct evbuffer *input)
 			log_finest_icap("FOUND xfer terminator while waiting, set content complete");
 			ICAP_STATE(service_ctx, icap_ctx->reqmod)->wait_xfer_terminator = 0;
 			icap_service_content_complete(service_ctx);
+			icap_service_reset_state_nonhttp(service_ctx);
 		}
 
 		icap_ctx->made_progress = 1;
@@ -3198,6 +3230,11 @@ icap_bev_readcb(struct bufferevent *bev, void *arg)
 		if (strncmp(status_line, "ICAP/1.0 200", 12) == 0) {
 			log_finer_icap("ICAP 200 OK, body modified, extracting");
 
+			if (!ctx->spec->http) {
+				log_finest_icap("Reset wait for ICAP 100 preview continue");
+				ICAP_STATE(service_ctx, icap_ctx->reqmod)->wait_preview_continue = 0;
+			}
+
 			if (icap_extract_icap_headers(service_ctx, input) == -1) {
 				goto err;
 			}
@@ -3380,11 +3417,6 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 	size_t sent_body_size = ICAP_STATE(service_ctx, icap_ctx->reqmod)->sent_body_size;
 	size_t sent_hdr_size = ICAP_STATE(service_ctx, icap_ctx->reqmod)->sent_hdr_size;
 
-	if (!ctx->spec->http) {
-		sent_hdr_size = 0;
-		sent_body_size = 0;
-	}
-
 	log_finer_icap_va("Current sent_body_size=%zu, max_inspection_size=%zu, sent_terminator=%d",
 		sent_body_size, service_ctx->svc->max_inspection_size, ICAP_STATE(service_ctx, icap_ctx->reqmod)->sent_terminator);
 
@@ -3417,7 +3449,7 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 	/* 1. Send ICAP Header */
 	// We send icap headers with http headers only, hence check if in_hdr_len > 0,
 	// otherwise we may send duplicate icap headers
-	if ((sent_hdr_size == 0 && sent_body_size == 0 && in_hdr_len > 0) || !ctx->spec->http) {
+	if (sent_hdr_size == 0 && sent_body_size == 0 && (in_hdr_len > 0 || !ctx->spec->http)) {
 		/* Calculate Encapsulated lengths */
 		char *req_or_res = reqmod ? "req" : "res";
 		#define ICAP_MAX_ENCAPSULATED_HEADER_SIZE 128
@@ -3452,7 +3484,7 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 			}
 
 			if (icap_is_stream_end(service_ctx, in_body_len < preview_size ? in_body_len : preview_size, in_body)) {
-				if (preview_size >= in_body_len || !ctx->spec->http) {
+				if (preview_size >= in_body_len) {
 					content_complete = 1;
 				}
 			}
@@ -3460,9 +3492,6 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 				log_finer_icap_va("NOT enough body in preview mode, do not send icap headers, wait for body, content_length=%zu, in_body_len=%zu, preview_size=%zu",
 					icap_get_http_content_length(icap_ctx), in_body_len, preview_size);
 				return 1;
-			}
-			else if (!ctx->spec->http) {
-				content_complete = 1;
 			}
 
 			snprintf(preview_hdr, sizeof(preview_hdr), "Preview: %zu\r\n", preview_size);
@@ -3553,7 +3582,7 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 		}
 		evbuffer_free(icap_buf);
 
-		if (icap_preview_enabled(service_ctx->svc) && in_body_len > 0 && !content_complete) {
+		if (icap_preview_enabled(service_ctx->svc) && in_body_len > 0 && (!content_complete || !ctx->spec->http)) {
 			log_finer_icap("Set wait for ICAP 100 preview continue");
 			ICAP_STATE(service_ctx, icap_ctx->reqmod)->wait_preview_continue = 1;
 		}
@@ -3612,7 +3641,7 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 			// We use evbuffer_pullup() here for stability, even though it is not efficient
 			evbuffer_add(chunk_buf, evbuffer_pullup(in_body, chunk_len), chunk_len);
 
-			if (ctx->proto != PROTO_HTTP2 && ctx->proto != PROTO_HTTP3) {
+			if (ctx->spec->http && ctx->proto != PROTO_HTTP2 && ctx->proto != PROTO_HTTP3) {
 				content_complete = icap_is_http_stream_end(service_ctx, sent_body_size + chunk_len, chunk_buf);
 			}
 
@@ -3652,9 +3681,9 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 				log_finer_icap_va("Terminating preview, sent_hdr=%zu, sent_body=%zu, content_complete=%d", evbuffer_get_length(sent_hdr), evbuffer_get_length(sent_body), content_complete);
 
 				// 0; ieof\r\n\r\n is a mechanism to signal the early end of a message body: preview >= in_body_len
-				evbuffer_add_printf(chunk_buf, content_complete && (preview_size >= in_body_len || !ctx->spec->http) ? "0; ieof\r\n\r\n" : "0\r\n\r\n");
+				evbuffer_add_printf(chunk_buf, content_complete && preview_size >= in_body_len ? "0; ieof\r\n\r\n" : "0\r\n\r\n");
 
-				if (ctx->spec->http && content_complete && preview_size >= in_body_len) {
+				if (content_complete && preview_size >= in_body_len) {
 					ICAP_STATE(service_ctx, icap_ctx->reqmod)->sent_terminator = 1;
 				}
 			}
@@ -3664,9 +3693,7 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 
 				evbuffer_add_printf(chunk_buf, "0\r\n\r\n");
 
-				if (ctx->spec->http) {
-					ICAP_STATE(service_ctx, icap_ctx->reqmod)->sent_terminator = 1;
-				}
+				ICAP_STATE(service_ctx, icap_ctx->reqmod)->sent_terminator = 1;
 			}
 
 			// ATTENTION: Reset the send_terminator flag, otherwise causes infinite loops due to made_progress
