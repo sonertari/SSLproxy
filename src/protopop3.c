@@ -90,6 +90,8 @@ protopop3_validate(pxy_conn_ctx_t *ctx, char *packet, size_t packet_size)
 int NONNULL(1,2) WUNRES
 protopop3_detect_stream_end(pxy_conn_ctx_t *ctx, struct evbuffer *inbuf)
 {
+	log_finest("ENTER");
+
 	int rv = 0;
 	size_t len = evbuffer_get_length(inbuf);
 	char *data = malloc(len + 1);

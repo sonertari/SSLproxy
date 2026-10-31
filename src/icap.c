@@ -1759,7 +1759,7 @@ icap_is_nonhttp_stream_end(icap_service_ctx_t *service_ctx, struct evbuffer *buf
 	if (service_ctx->idx == 0) {
 		if (ctx->proto == PROTO_POP3 || ctx->proto == PROTO_POP3S) {
 			protopop3_ctx_t *pop3_ctx = ctx->protoctx->arg;
-			stream_end = icap_ctx->reqmod ? pop3_ctx->src_end_stream : pop3_ctx->dst_end_stream;
+			stream_end = (icap_ctx->reqmod ? pop3_ctx->src_end_stream : pop3_ctx->dst_end_stream) || protopop3_detect_stream_end(ctx, buf);
 		}
 		else {
 			stream_end = 1;
@@ -3679,8 +3679,13 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 			// We use evbuffer_pullup() here for stability, even though it is not efficient
 			evbuffer_add(chunk_buf, evbuffer_pullup(in_body, chunk_len), chunk_len);
 
-			if (ctx->spec->http && ctx->proto != PROTO_HTTP2 && ctx->proto != PROTO_HTTP3) {
-				content_complete = icap_is_http_stream_end(service_ctx, sent_body_size + chunk_len, chunk_buf);
+			if (ctx->spec->http) {
+				if (ctx->proto != PROTO_HTTP2 && ctx->proto != PROTO_HTTP3) {
+					content_complete = icap_is_http_stream_end(service_ctx, sent_body_size + chunk_len, chunk_buf);
+				}
+			}
+			else {
+				content_complete = icap_is_nonhttp_stream_end(service_ctx, chunk_buf);
 			}
 
 			// TODO: Check if service config is fail-open before copying?
@@ -3705,7 +3710,9 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 			if (ctx->proto == PROTO_HTTP2 || ctx->proto == PROTO_HTTP3) {
 				send_terminator = icap_is_httpx_send_terminator(service_ctx);
 			}
-			content_complete = icap_is_stream_end(service_ctx, *sent_body_size_new, chunk_buf);
+			if (ctx->spec->http) {
+				content_complete = icap_is_stream_end(service_ctx, *sent_body_size_new, chunk_buf);
+			}
 		}
 
 		log_finest_icap_va("Try send terminator, chunk_len=%zu, send_terminator=%d, in_body=%zu, src_send_terminator=%d, dst_send_terminator=%d, src_end_stream=%d, dst_end_stream=%d, reqmod=%d",
