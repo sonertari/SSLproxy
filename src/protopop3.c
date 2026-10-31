@@ -87,6 +87,32 @@ protopop3_validate(pxy_conn_ctx_t *ctx, char *packet, size_t packet_size)
 	return 0;
 }
 
+int NONNULL(1,2) WUNRES
+protopop3_detect_stream_end(pxy_conn_ctx_t *ctx, struct evbuffer *inbuf)
+{
+	int rv = 0;
+	size_t len = evbuffer_get_length(inbuf);
+	char *data = malloc(len + 1);
+	if (data) {
+		evbuffer_copyout(inbuf, data, len);
+		data[len] = '\0';
+
+		if (len > 2 && data[len - 3] == '.' && data[len - 2] == '\r' && data[len - 1] == '\n') {
+			log_finest_va("POP3 end_stream detected: %s", data);
+			rv = 1;
+		}
+		else {
+			char *p = NULL;
+			if (len > 1 && (p = strstr(data, "\r\n")) && (p - data == (int)len - 2)) {
+				log_finest_va("POP3 end_stream detected: %s", data);
+				rv = 1;
+			}
+		}
+		free(data);
+	}
+	return rv;
+}
+
 static void NONNULL(1,2)
 protopop3_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
@@ -116,26 +142,8 @@ protopop3_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 
 #ifndef WITHOUT_ICAP
 	if (icap_enabled(ctx->icap_ctx)) {
-		size_t len = evbuffer_get_length(inbuf);
-		char *data = malloc(len + 1);
-		if (data) {
-			evbuffer_copyout(inbuf, data, len);
-			data[len] = '\0';
-
-			protopop3_ctx_t *pop3_ctx = ctx->protoctx->arg;
-			if (len > 2 && data[len - 3] == '.' && data[len - 2] == '\r' && data[len - 1] == '\n') {
-				pop3_ctx->src_end_stream = 1;
-				log_finest_va("POP3 end_stream detected: %s", data);
-			}
-			else {
-				char *p = NULL;
-				if (len > 1 && (p = strstr(data, "\r\n")) && (p - data == (int)len - 2)) {
-					pop3_ctx->src_end_stream = 1;
-					log_finest_va("POP3 end_stream detected: %s", data);
-				}
-			}
-			free(data);
-		}
+		protopop3_ctx_t *pop3_ctx = ctx->protoctx->arg;
+		pop3_ctx->src_end_stream = protopop3_detect_stream_end(ctx, inbuf);
 	}
 #endif /* !WITHOUT_ICAP */
 
@@ -183,26 +191,8 @@ protopop3_bev_readcb_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 #ifndef WITHOUT_ICAP
 	}
 	else {
-		size_t len = evbuffer_get_length(inbuf);
-		char *data = malloc(len + 1);
-		if (data) {
-			evbuffer_copyout(inbuf, data, len);
-			data[len] = '\0';
-
-			protopop3_ctx_t *pop3_ctx = ctx->protoctx->arg;
-			if (len > 2 && data[len - 3] == '.' && data[len - 2] == '\r' && data[len - 1] == '\n') {
-				pop3_ctx->dst_end_stream = 1;
-				log_finest_va("POP3 end_stream detected: %s", data);
-			}
-			else {
-				char *p = NULL;
-				if (len > 1 && (p = strstr(data, "\r\n")) && (p - data == (int)len - 2)) {
-					pop3_ctx->dst_end_stream = 1;
-					log_finest_va("POP3 end_stream detected: %s", data);
-				}
-			}
-			free(data);
-		}
+		protopop3_ctx_t *pop3_ctx = ctx->protoctx->arg;
+		pop3_ctx->dst_end_stream = protopop3_detect_stream_end(ctx, inbuf);
 
 		ctx->icap_ctx->reqmod = 0;
 		icap_process_data(inbuf, ctx->icap_ctx);

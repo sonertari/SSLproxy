@@ -1748,10 +1748,10 @@ icap_is_httpx_stream_end(icap_service_ctx_t *service_ctx)
 }
 
 static int
-icap_is_nonhttp_stream_end(icap_service_ctx_t *service_ctx)
+icap_is_nonhttp_stream_end(icap_service_ctx_t *service_ctx, struct evbuffer *buf)
 {
 	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
-	UNUSED pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
+	pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
 
 	int stream_end = 0;
 
@@ -1767,11 +1767,15 @@ icap_is_nonhttp_stream_end(icap_service_ctx_t *service_ctx)
 	}
 	// If the previous service is bypass, get stream end from the one before that, unless nullbody
 	else if (ICAP_STATE(icap_ctx->services[service_ctx->idx - 1], icap_ctx->reqmod)->bypass) {
-		stream_end = icap_is_nonhttp_stream_end(icap_ctx->services[service_ctx->idx - 1]) || icap_is_encapsulated_nullbody(service_ctx);
+		stream_end = icap_is_nonhttp_stream_end(icap_ctx->services[service_ctx->idx - 1], buf) || icap_is_encapsulated_nullbody(service_ctx);
 	}
 	// Subsequent and fail-open services get stream end from the previous service, unless nullbody
 	else {
-		stream_end = ICAP_STATE(icap_ctx->services[service_ctx->idx - 1], icap_ctx->reqmod)->end_stream || icap_is_encapsulated_nullbody(service_ctx);
+		int detected_stream_end = 0;
+		if (ctx->proto == PROTO_POP3 || ctx->proto == PROTO_POP3S) {
+			detected_stream_end = protopop3_detect_stream_end(ctx, buf);
+		}
+		stream_end = ICAP_STATE(icap_ctx->services[service_ctx->idx - 1], icap_ctx->reqmod)->end_stream || icap_is_encapsulated_nullbody(service_ctx) || detected_stream_end;
 	}
 
 	log_finest_icap_va("Check stream end, stream_end=%d, reqmod=%d", stream_end, icap_ctx->reqmod);
@@ -1791,7 +1795,7 @@ icap_is_stream_end(icap_service_ctx_t *service_ctx, size_t sent_body_size, struc
 		return icap_is_http_stream_end(service_ctx, sent_body_size, buf);
 	}
 	else {
-		return icap_is_nonhttp_stream_end(service_ctx);
+		return icap_is_nonhttp_stream_end(service_ctx, buf);
 	}
 }
 
@@ -2155,6 +2159,36 @@ icap_service_content_complete(icap_service_ctx_t *service_ctx)
 }
 
 static void
+icap_service_reset_state_nonhttp(icap_service_ctx_t *service_ctx)
+{
+	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
+	pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
+
+	log_finest("ENTER");
+
+	if (!ctx->spec->http) {
+		if (ctx->proto == PROTO_POP3 || ctx->proto == PROTO_POP3S) {
+			protopop3_ctx_t *pop3_ctx = ctx->protoctx->arg;
+			if (icap_ctx->reqmod) {
+				pop3_ctx->src_end_stream = 0;
+			}
+			else {
+				pop3_ctx->dst_end_stream = 0;
+			}
+		}
+		// ICAP_STATE(service_ctx, icap_ctx->reqmod)->end_stream = 0;
+		ICAP_STATE(service_ctx, icap_ctx->reqmod)->received_icap_headers = 0;
+		ICAP_STATE(service_ctx, icap_ctx->reqmod)->sent_body_size = 0;
+		ICAP_STATE(service_ctx, icap_ctx->reqmod)->sent_hdr_size = 0;
+		ICAP_STATE(service_ctx, icap_ctx->reqmod)->sent_terminator = 0;
+		ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_204 = 0;
+		ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_206 = 0;
+		ICAP_STATE(service_ctx, icap_ctx->reqmod)->content_complete = 0;
+		ICAP_STATE(service_ctx, icap_ctx->reqmod)->wait_preview_continue = 0;
+	}
+}
+
+static void
 icap_service_bypass(icap_service_ctx_t *service_ctx)
 {
 	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
@@ -2210,6 +2244,7 @@ icap_service_bypass(icap_service_ctx_t *service_ctx)
 	}
 
 	icap_service_content_complete(service_ctx);
+	icap_service_reset_state_nonhttp(service_ctx);
 }
 
 static int
@@ -2763,30 +2798,6 @@ icap_parse_chunk_header(icap_service_ctx_t *service_ctx, struct evbuffer *input,
 out:
 	free(line);
 	return rv;
-}
-
-static void
-icap_service_reset_state_nonhttp(icap_service_ctx_t *service_ctx)
-{
-	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
-	pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
-
-	if (!ctx->spec->http) {
-		if (ctx->proto == PROTO_POP3 || ctx->proto == PROTO_POP3S) {
-			protopop3_ctx_t *pop3_ctx = ctx->protoctx->arg;
-			if (icap_ctx->reqmod) {
-				pop3_ctx->src_end_stream = 0;
-			}
-			else {
-				pop3_ctx->dst_end_stream = 0;
-			}
-		}
-		ICAP_STATE(service_ctx, icap_ctx->reqmod)->end_stream = 0;
-		ICAP_STATE(service_ctx, icap_ctx->reqmod)->received_icap_headers = 0;
-		ICAP_STATE(service_ctx, icap_ctx->reqmod)->sent_body_size = 0;
-		ICAP_STATE(service_ctx, icap_ctx->reqmod)->sent_hdr_size = 0;
-		ICAP_STATE(service_ctx, icap_ctx->reqmod)->sent_terminator = 0;
-	}
 }
 
 static int

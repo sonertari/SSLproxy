@@ -41,5 +41,6 @@ int protopop3_validate(pxy_conn_ctx_t *, char *, size_t) NONNULL(1,2) WUNRES;
 
 protocol_t protopop3_setup(pxy_conn_ctx_t *) NONNULL(1);
 protocol_t protopop3s_setup(pxy_conn_ctx_t *) NONNULL(1);
+int protopop3_detect_stream_end(pxy_conn_ctx_t *, struct evbuffer *) NONNULL(1,2) WUNRES;
 
 #endif /* PROTOPOP3_H */
