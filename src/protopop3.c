@@ -110,6 +110,11 @@ protopop3_detect_stream_end(pxy_conn_ctx_t *ctx, struct evbuffer *inbuf)
 				rv = 1;
 			}
 		}
+
+		if (len == 15 && strstr(data, "+OK Farewell.\r\n")) {
+			log_finest_va("POP3 end_conn detected: %s", data);
+			rv = 2;
+		}
 		free(data);
 	}
 	return rv;
@@ -145,7 +150,9 @@ protopop3_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 #ifndef WITHOUT_ICAP
 	if (icap_enabled(ctx->icap_ctx)) {
 		protopop3_ctx_t *pop3_ctx = ctx->protoctx->arg;
-		pop3_ctx->src_end_stream = protopop3_detect_stream_end(ctx, inbuf);
+		if (protopop3_detect_stream_end(ctx, inbuf) > 0) {
+			pop3_ctx->src_end_stream = 1;
+		}
 	}
 #endif /* !WITHOUT_ICAP */
 
@@ -194,7 +201,13 @@ protopop3_bev_readcb_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	}
 	else {
 		protopop3_ctx_t *pop3_ctx = ctx->protoctx->arg;
-		pop3_ctx->dst_end_stream = protopop3_detect_stream_end(ctx, inbuf);
+		int detected = protopop3_detect_stream_end(ctx, inbuf);
+		if (detected > 0) {
+			pop3_ctx->dst_end_stream = 1;
+			if (detected == 2) {
+				pop3_ctx->end_conn = 1;
+			}
+		}
 
 		ctx->icap_ctx->reqmod = 0;
 		icap_process_data(inbuf, ctx->icap_ctx);

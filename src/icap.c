@@ -3959,6 +3959,14 @@ icap_is_finished(icap_ctx_t *icap_ctx)
 
 	UNUSED pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
 
+	if (ctx->proto == PROTO_POP3 || ctx->proto == PROTO_POP3S) {
+		protopop3_ctx_t *pop3_ctx = ctx->protoctx->arg;
+		if (pop3_ctx->end_conn) {
+			log_finest("POP3 connection end");
+			return 1;
+		}
+	}
+
 	if (!icap_is_all_stream_end(icap_ctx, 1) || !icap_is_all_stream_end(icap_ctx, 0)) {
 		for (int i = 0; i < icap_ctx->service_count; i++) {
 			icap_service_ctx_t *service_ctx = icap_ctx->services[i];

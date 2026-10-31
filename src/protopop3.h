@@ -35,6 +35,7 @@ typedef struct protopop3_ctx {
 	unsigned int seen_command_count;
 	unsigned int src_end_stream : 1;
 	unsigned int dst_end_stream : 1;
+	unsigned int end_conn : 1;
 } protopop3_ctx_t;
 
 int protopop3_validate(pxy_conn_ctx_t *, char *, size_t) NONNULL(1,2) WUNRES;
