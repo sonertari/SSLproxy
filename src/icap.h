@@ -153,6 +153,7 @@ typedef struct icap_service_state {
 
 	unsigned int wait_terminator : 1;
 	unsigned int wait_xfer_terminator : 1;
+	unsigned int wait_icap_response : 1;
 
 	unsigned int failopen : 1;
 	unsigned int bypass : 1;

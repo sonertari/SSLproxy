@@ -111,7 +111,7 @@ protopop3_detect_stream_end(pxy_conn_ctx_t *ctx, struct evbuffer *inbuf)
 			}
 		}
 
-		if (len == 15 && strstr(data, "+OK Farewell.\r\n")) {
+		if (len == 6 && strstr(data, "QUIT\r\n")) {
 			log_finest_va("POP3 end_conn detected: %s", data);
 			rv = 2;
 		}
@@ -150,8 +150,12 @@ protopop3_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 #ifndef WITHOUT_ICAP
 	if (icap_enabled(ctx->icap_ctx)) {
 		protopop3_ctx_t *pop3_ctx = ctx->protoctx->arg;
-		if (protopop3_detect_stream_end(ctx, inbuf) > 0) {
+		int detected = protopop3_detect_stream_end(ctx, inbuf);
+		if (detected > 0) {
 			pop3_ctx->src_end_stream = 1;
+			if (detected == 2) {
+				pop3_ctx->end_conn = 1;
+			}
 		}
 	}
 #endif /* !WITHOUT_ICAP */

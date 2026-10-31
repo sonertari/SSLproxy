@@ -33,6 +33,7 @@
 #include "pxyconn.h"
 #include "protohttp.h"
 #include "protopop3.h"
+#include "protosmtp.h"
 #include "util.h"
 
 #include <event2/buffer.h>
@@ -1761,6 +1762,10 @@ icap_is_nonhttp_stream_end(icap_service_ctx_t *service_ctx, struct evbuffer *buf
 			protopop3_ctx_t *pop3_ctx = ctx->protoctx->arg;
 			stream_end = (icap_ctx->reqmod ? pop3_ctx->src_end_stream : pop3_ctx->dst_end_stream) || protopop3_detect_stream_end(ctx, buf);
 		}
+		else if (ctx->proto == PROTO_SMTP || ctx->proto == PROTO_SMTPS) {
+			protosmtp_ctx_t *smtp_ctx = ctx->protoctx->arg;
+			stream_end = (icap_ctx->reqmod ? smtp_ctx->src_end_stream : smtp_ctx->dst_end_stream) || protosmtp_detect_stream_end(ctx, buf);
+		}
 		else {
 			stream_end = 1;
 		}
@@ -1774,6 +1779,9 @@ icap_is_nonhttp_stream_end(icap_service_ctx_t *service_ctx, struct evbuffer *buf
 		int detected_stream_end = 0;
 		if (ctx->proto == PROTO_POP3 || ctx->proto == PROTO_POP3S) {
 			detected_stream_end = protopop3_detect_stream_end(ctx, buf);
+		}
+		else if (ctx->proto == PROTO_SMTP || ctx->proto == PROTO_SMTPS) {
+			detected_stream_end = protosmtp_detect_stream_end(ctx, buf);
 		}
 		stream_end = ICAP_STATE(icap_ctx->services[service_ctx->idx - 1], icap_ctx->reqmod)->end_stream || icap_is_encapsulated_nullbody(service_ctx) || detected_stream_end;
 	}
@@ -2159,7 +2167,7 @@ icap_service_content_complete(icap_service_ctx_t *service_ctx)
 }
 
 static void
-icap_service_reset_state_nonhttp(icap_service_ctx_t *service_ctx)
+icap_service_reset_state_nonhttp(icap_service_ctx_t *service_ctx, int reset_wait_response)
 {
 	icap_ctx_t *icap_ctx = service_ctx->icap_ctx;
 	pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
@@ -2176,6 +2184,15 @@ icap_service_reset_state_nonhttp(icap_service_ctx_t *service_ctx)
 				pop3_ctx->dst_end_stream = 0;
 			}
 		}
+		else if (ctx->proto == PROTO_SMTP || ctx->proto == PROTO_SMTPS) {
+			protosmtp_ctx_t *smtp_ctx = ctx->protoctx->arg;
+			if (icap_ctx->reqmod) {
+				smtp_ctx->src_end_stream = 0;
+			}
+			else {
+				smtp_ctx->dst_end_stream = 0;
+			}
+		}
 		// ICAP_STATE(service_ctx, icap_ctx->reqmod)->end_stream = 0;
 		ICAP_STATE(service_ctx, icap_ctx->reqmod)->received_icap_headers = 0;
 		ICAP_STATE(service_ctx, icap_ctx->reqmod)->sent_body_size = 0;
@@ -2185,6 +2202,10 @@ icap_service_reset_state_nonhttp(icap_service_ctx_t *service_ctx)
 		ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_206 = 0;
 		ICAP_STATE(service_ctx, icap_ctx->reqmod)->content_complete = 0;
 		ICAP_STATE(service_ctx, icap_ctx->reqmod)->wait_preview_continue = 0;
+		if (reset_wait_response) {
+			log_finest_icap("Reset wait for icap response");
+			ICAP_STATE(service_ctx, icap_ctx->reqmod)->wait_icap_response = 0;
+		}
 	}
 }
 
@@ -2244,7 +2265,7 @@ icap_service_bypass(icap_service_ctx_t *service_ctx)
 	}
 
 	icap_service_content_complete(service_ctx);
-	icap_service_reset_state_nonhttp(service_ctx);
+	icap_service_reset_state_nonhttp(service_ctx, 1);
 }
 
 static int
@@ -2824,7 +2845,7 @@ icap_get_chunk_header(icap_service_ctx_t *service_ctx, struct evbuffer *input, s
 		if (chrv == 1) {
 			log_finest_icap_va("FOUND chunk header terminator after 0 chunk size, discard it and set content complete, detected_206=%u", ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_206);
 			icap_service_content_complete(service_ctx);
-			icap_service_reset_state_nonhttp(service_ctx);
+			icap_service_reset_state_nonhttp(service_ctx, 1);
 		}
 		else if (chrv == 0) {
 			log_finer_icap_va("No chunk header terminator after 0 chunk size, wait for xfer terminator, detected_206=%u", ICAP_STATE(service_ctx, icap_ctx->reqmod)->detected_206);
@@ -2960,7 +2981,7 @@ icap_extract_body_chunk(icap_service_ctx_t *service_ctx, struct evbuffer *input)
 			log_finest_icap("FOUND xfer terminator while waiting, set content complete");
 			ICAP_STATE(service_ctx, icap_ctx->reqmod)->wait_xfer_terminator = 0;
 			icap_service_content_complete(service_ctx);
-			icap_service_reset_state_nonhttp(service_ctx);
+			icap_service_reset_state_nonhttp(service_ctx, 1);
 		}
 
 		icap_ctx->made_progress = 1;
@@ -3449,6 +3470,11 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 		return 1;
 	}
 
+	if (!ctx->spec->http && ICAP_STATE(service_ctx, icap_ctx->reqmod)->wait_icap_response) {
+		log_finer_icap_va("Wait for icap response, in_hdr_len=%zu, in_body_len=%zu", in_hdr_len, in_body_len);
+		return 1;
+	}
+
 	struct evbuffer *sent_hdr = ICAP_STATE(service_ctx, icap_ctx->reqmod)->sent_hdr;
 	struct evbuffer *sent_body = ICAP_STATE(service_ctx, icap_ctx->reqmod)->sent_body;
 
@@ -3626,6 +3652,11 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 		}
 
 		ICAP_STATE(service_ctx, icap_ctx->reqmod)->received_icap_headers = 0;
+
+		if (!ctx->spec->http) {
+			log_finest_icap("Set wait for icap response");
+			ICAP_STATE(service_ctx, icap_ctx->reqmod)->wait_icap_response = 1;
+		}
 	}
 	else {
 		log_finest_icap_va("Do not send ICAP header, already sent, sent_hdr_size=%zu, sent_body_size=%zu", sent_hdr_size, sent_body_size);
@@ -3726,10 +3757,15 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 				log_finer_icap_va("Terminating preview, sent_hdr=%zu, sent_body=%zu, content_complete=%d", evbuffer_get_length(sent_hdr), evbuffer_get_length(sent_body), content_complete);
 
 				// 0; ieof\r\n\r\n is a mechanism to signal the early end of a message body: preview >= in_body_len
-				evbuffer_add_printf(chunk_buf, content_complete && preview_size >= in_body_len ? "0; ieof\r\n\r\n" : "0\r\n\r\n");
+				int ieof = content_complete && preview_size >= in_body_len;
+				evbuffer_add_printf(chunk_buf, ieof ? "0; ieof\r\n\r\n" : "0\r\n\r\n");
 
-				if (content_complete && preview_size >= in_body_len) {
+				if (ieof) {
 					ICAP_STATE(service_ctx, icap_ctx->reqmod)->sent_terminator = 1;
+					if (!ctx->spec->http) {
+						log_finer_icap("Reset nonhttp conn sate with ieof");
+						icap_service_reset_state_nonhttp(service_ctx, 0);
+					}
 				}
 			}
 			else if (content_complete || (icap_max_inspection_size_enabled(service_ctx) && *sent_body_size_new > service_ctx->svc->max_inspection_size)) {
@@ -3959,11 +3995,20 @@ icap_is_finished(icap_ctx_t *icap_ctx)
 
 	UNUSED pxy_conn_ctx_t *ctx = icap_ctx->conn_ctx;
 
-	if (ctx->proto == PROTO_POP3 || ctx->proto == PROTO_POP3S) {
-		protopop3_ctx_t *pop3_ctx = ctx->protoctx->arg;
-		if (pop3_ctx->end_conn) {
-			log_finest("POP3 connection end");
-			return 1;
+	if (!ctx->spec->http) {
+		if (ctx->proto == PROTO_POP3 || ctx->proto == PROTO_POP3S) {
+			protopop3_ctx_t *pop3_ctx = ctx->protoctx->arg;
+			if (pop3_ctx->end_conn) {
+				log_finest("POP3 connection end");
+				return 1;
+			}
+		}
+		else if (ctx->proto == PROTO_SMTP || ctx->proto == PROTO_SMTPS) {
+			protosmtp_ctx_t *smtp_ctx = ctx->protoctx->arg;
+			if (smtp_ctx->end_conn) {
+				log_finest("SMTP connection end");
+				return 1;
+			}
 		}
 	}
 
