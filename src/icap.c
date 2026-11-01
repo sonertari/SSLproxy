@@ -3332,6 +3332,11 @@ icap_bev_readcb(struct bufferevent *bev, void *arg)
 			// ATTENTION: This is not the EOL when reading status_line above, 100 responses have an extra trailing CRLF
 			evbuffer_drain(input, eol_size);
 
+			if (!ctx->spec->http) {
+				log_finest_icap("Reset wait for icap response");
+				ICAP_STATE(service_ctx, icap_ctx->reqmod)->wait_icap_response = 0;
+			}
+
 			if (icap_preview_enabled(service_ctx->svc)) {
 				log_finest_icap("Reset wait for ICAP 100 preview continue");
 				ICAP_STATE(service_ctx, icap_ctx->reqmod)->wait_preview_continue = 0;
