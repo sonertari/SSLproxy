@@ -180,7 +180,7 @@ protosmtps_conn_connect(pxy_conn_ctx_t *ctx)
 }
 
 int NONNULL(1,2) WUNRES
-protosmtp_detect_stream_end(pxy_conn_ctx_t *ctx, struct evbuffer *inbuf)
+protosmtp_detect_stream_end(UNUSED pxy_conn_ctx_t *ctx, struct evbuffer *inbuf)
 {
 	log_finest("ENTER");
 

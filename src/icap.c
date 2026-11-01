@@ -1190,10 +1190,10 @@ icap_set_extended_headers(icap_ctx_t *icap_ctx, UNUSED int upgraded)
 	else if (ctx->proto == PROTO_HTTP3) proto = "http3";
 #endif /* !WITHOUT_HTTP3 */
 	else if (ctx->spec->http) proto = ctx->spec->ssl || upgraded ? "https" : "http";
-	// else if (ctx->spec->pop3) proto = ctx->spec->ssl || upgraded ? "pop3s" : "pop3";
-	// else if (ctx->spec->smtp) proto = ctx->spec->ssl || upgraded ? "smtps" : "smtp";
-	// else if (ctx->spec->upgrade) proto = upgraded ? "autossl-tls" : "autossl";
-	// else if (ctx->spec->ssl || upgraded) proto = "ssl";
+	else if (ctx->spec->pop3) proto = ctx->spec->ssl || upgraded ? "pop3s" : "pop3";
+	else if (ctx->spec->smtp) proto = ctx->spec->ssl || upgraded ? "smtps" : "smtp";
+	else if (ctx->spec->upgrade) proto = upgraded ? "autossl-tls" : "autossl";
+	else if (ctx->spec->ssl || upgraded) proto = "ssl";
 
 #ifndef WITHOUT_USERAUTH
 	#define ICAP_USER_HEADER_MAX_LEN 256
@@ -3632,10 +3632,15 @@ icap_build_request(icap_service_ctx_t *service_ctx)
 		evbuffer_add(icap_buf, icap_hdr_str, strlen(icap_hdr_str));
 
 		/* Add custom ICAP meta headers if any */
-		if (service_ctx->icap_ctx->icap_extended_headers) {
-			evbuffer_add(icap_buf, service_ctx->icap_ctx->icap_extended_headers, strlen(service_ctx->icap_ctx->icap_extended_headers));
+		if (icap_ctx->icap_extended_headers) {
+			evbuffer_add(icap_buf, icap_ctx->icap_extended_headers, strlen(icap_ctx->icap_extended_headers));
 		}
-		
+
+		if (icap_is_finished(icap_ctx)) {
+			log_fine_icap("Send X-Conn-State: finished header");
+			evbuffer_add_printf(icap_buf, "%s", "X-Conn-State: finished\r\n");
+		}
+
 		/* Final CRLF to end headers */
 		evbuffer_add(icap_buf, "\r\n", 2);
 

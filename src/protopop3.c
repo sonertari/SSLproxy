@@ -88,7 +88,7 @@ protopop3_validate(pxy_conn_ctx_t *ctx, char *packet, size_t packet_size)
 }
 
 int NONNULL(1,2) WUNRES
-protopop3_detect_stream_end(pxy_conn_ctx_t *ctx, struct evbuffer *inbuf)
+protopop3_detect_stream_end(UNUSED pxy_conn_ctx_t *ctx, struct evbuffer *inbuf)
 {
 	log_finest("ENTER");
 
