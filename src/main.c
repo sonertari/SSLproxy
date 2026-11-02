@@ -59,8 +59,10 @@
 #include <openssl/x509.h>
 #include <event2/event.h>
 #include <nghttp2/nghttp2.h>
+#ifndef WITHOUT_HTTP3
 #include <ngtcp2/ngtcp2.h>
 #include <nghttp3/nghttp3.h>
+#endif /* !WITHOUT_HTTP3 */
 #ifndef WITHOUT_MIRROR
 #include <libnet.h>
 #include <pcap.h>
