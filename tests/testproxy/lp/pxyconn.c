@@ -177,7 +177,7 @@ pxy_prepare_logging(pxy_conn_ctx_t *ctx)
 	return 0;
 }
 
-int
+static int NONNULL(1)
 pxy_log_content_inbuf(pxy_conn_ctx_t *ctx, struct evbuffer *inbuf, int req)
 {
 	if (pxy_prepare_logging(ctx) == -1) {

@@ -29,6 +29,9 @@
 
 #include "protopassthrough.h"
 #include "prototcp.h"
+#ifndef WITHOUT_ICAP
+#include "icap.h"
+#endif /* !WITHOUT_ICAP */
 
 #include <sys/param.h>
 
@@ -89,7 +92,7 @@ protopassthrough_engage(pxy_conn_ctx_t *ctx)
 	ctx->srvdst.ssl = NULL;
 	ctx->connected = 0;
 
-	// Make sure bev is not NULL, as dst may not have been initialized yet
+	// Make sure not NULL, as dst may not have been initialized yet
 	if (ctx->dst.bev) {
 		ctx->dst.free(ctx->dst.bev, ctx);
 		ctx->dst.bev = NULL;
@@ -118,6 +121,13 @@ protopassthrough_conn_connect(pxy_conn_ctx_t *ctx)
 	}
 
 	bufferevent_setcb(ctx->srvdst.bev, pxy_bev_readcb, pxy_bev_writecb, pxy_bev_eventcb, ctx);
+
+	// passthrough connects srvdst itself, contrary to other protos
+	if (bufferevent_socket_connect(ctx->srvdst.bev, (struct sockaddr *)&ctx->dstaddr, ctx->dstaddrlen) == -1) {
+		log_err_level(LOG_CRIT, "bufferevent_socket_connect for srvdst failed");
+		pxy_conn_free(ctx, ctx->term ? ctx->term_requestor : 1);
+		return -1;
+	}
 	return 0;
 }
 
@@ -430,7 +440,6 @@ protopassthrough_setup(pxy_conn_ctx_t *ctx)
 {
 	// @attention Reset all callbacks while switching to passthrough mode, because we should override any/all protocol settings of the previous protocol.
 	// This is different from initial protocol setup, which may choose to keep the default tcp settings.
-	ctx->protoctx->proto = PROTO_PASSTHROUGH;
 	ctx->protoctx->connectcb = protopassthrough_conn_connect;
 	// Never used, but set it to the correct callback anyway
 	ctx->protoctx->init_conn = prototcp_init_conn;

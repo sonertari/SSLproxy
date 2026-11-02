@@ -29,6 +29,9 @@
 
 #include "opts.h"
 #include "filter.h"
+#ifndef WITHOUT_ICAP
+#include "icap.h"
+#endif /* !WITHOUT_ICAP */
 
 #include "sys.h"
 #include "log.h"
@@ -141,11 +144,24 @@ conn_opts_new(void)
 #endif /* !HAVE_TLSV13 */
 #endif /* OPENSSL_VERSION_NUMBER >= 0x10100000L */
 	conn_opts->remove_http_referer = 1;
+	conn_opts->enable_http2 = 1;
 	conn_opts->verify_peer = 1;
 #ifndef WITHOUT_USERAUTH
 	conn_opts->user_timeout = 300;
 #endif /* !WITHOUT_USERAUTH */
 	conn_opts->max_http_header_size = 8192;
+#ifndef WITHOUT_ICAP
+	conn_opts->icap_chain = NULL;                     /* Disabled by default */
+	conn_opts->icap_preview_size = 1024;              /* 1KiB default preview */
+	conn_opts->icap_max_body_size = 4096;             /* Max body to send to ICAP service at once, 4KiB default */
+	conn_opts->icap_max_inspection_size = 16384;      /* Max inspection size for ICAP service, 16KiB default */
+	conn_opts->icap_timeout = 30;                     /* 30 seconds by default */
+	conn_opts->icap_fail_open = ICAP_FAIL_CLOSE;      /* Fail stop by default */
+	conn_opts->icap_conn_fail_open = ICAP_FAIL_CLOSE; /* Fail block by default */
+	conn_opts->icap_allow_204 = 1;                    /* Allow 204 responses from ICAP by default */
+	conn_opts->icap_allow_206 = 1;                    /* Allow 206 responses from ICAP by default */
+	conn_opts->icap_sanitize_request_line = 0;        /* Do not sanitize request line by default */
+#endif /* !WITHOUT_ICAP */
 	return conn_opts;
 }
 
@@ -248,11 +264,20 @@ conn_opts_free(conn_opts_t *conn_opts)
 	if (conn_opts->ciphersuites) {
 		free(conn_opts->ciphersuites);
 	}
+	if (conn_opts->rewrite_alt_svc_port) {
+		free(conn_opts->rewrite_alt_svc_port);
+	}
 #ifndef WITHOUT_USERAUTH
 	if (conn_opts->user_auth_url) {
 		free(conn_opts->user_auth_url);
 	}
 #endif /* !WITHOUT_USERAUTH */
+
+#ifndef WITHOUT_ICAP
+	if (conn_opts->icap_chain) {
+		icap_service_free(conn_opts->icap_chain);
+	}
+#endif /* !WITHOUT_ICAP */
 
 	memset(conn_opts, 0, sizeof(conn_opts_t));
 	free(conn_opts);
@@ -347,6 +372,12 @@ tmp_opts_free(tmp_opts_t *tmp_opts)
 		free(tmp_opts->dh_str);
 		tmp_opts->dh_str = NULL;
 	}
+#ifndef WITHOUT_ICAP
+	if (tmp_opts->icap_chain) {
+		icap_service_free(tmp_opts->icap_chain);
+		tmp_opts->icap_chain = NULL;
+	}
+#endif /* !WITHOUT_ICAP */
 	free(tmp_opts);
 }
 
@@ -517,6 +548,20 @@ global_has_cakey_spec(global_t *global)
 	return 0;
 }
 
+static int WUNRES
+opts_set_rewrite_alt_svc_port(conn_opts_t *conn_opts, const char * argv0, const char *optarg)
+{
+	if (conn_opts->rewrite_alt_svc_port)
+		free(conn_opts->rewrite_alt_svc_port);
+	conn_opts->rewrite_alt_svc_port = strdup(optarg);
+	if (!conn_opts->rewrite_alt_svc_port)
+		return oom_return(argv0);
+#ifdef DEBUG_OPTS
+	log_dbg_printf("RewriteAltSvcPort: %s\n", conn_opts->rewrite_alt_svc_port);
+#endif /* DEBUG_OPTS */
+	return 0;
+}
+
 #ifndef WITHOUT_USERAUTH
 static int WUNRES
 opts_set_user_auth_url(conn_opts_t *conn_opts, const char * argv0, const char *optarg)
@@ -555,6 +600,11 @@ tmp_opts_copy(tmp_opts_t *src_tmp_opts)
 		tmp_opts->leafcrlurl_str = strdup(src_tmp_opts->leafcrlurl_str);
 	if (src_tmp_opts->dh_str)
 		tmp_opts->dh_str = strdup(src_tmp_opts->dh_str);
+#ifndef WITHOUT_ICAP
+	if (src_tmp_opts->icap_chain) {
+		tmp_opts->icap_chain = icap_service_copy(src_tmp_opts->icap_chain);
+	}
+#endif /* !WITHOUT_ICAP */
 	tmp_opts->split = src_tmp_opts->split;
 	tmp_opts->include = src_tmp_opts->include;
 #ifdef DEBUG_PROXY
@@ -604,6 +654,7 @@ conn_opts_copy(conn_opts_t *conn_opts, const char *argv0, tmp_opts_t *tmp_opts)
 #endif /* OPENSSL_VERSION_NUMBER >= 0x10100000L */
 	cops->remove_http_accept_encoding = conn_opts->remove_http_accept_encoding;
 	cops->remove_http_referer = conn_opts->remove_http_referer;
+	cops->enable_http2 = conn_opts->enable_http2;
 	cops->verify_peer = conn_opts->verify_peer;
 	cops->allow_wrong_host = conn_opts->allow_wrong_host;
 #ifndef WITHOUT_USERAUTH
@@ -700,6 +751,16 @@ conn_opts_copy(conn_opts_t *conn_opts, const char *argv0, tmp_opts_t *tmp_opts)
 			return NULL;
 	}
 #endif /* !OPENSSL_NO_DH */
+#ifndef WITHOUT_ICAP
+	if (conn_opts->icap_chain) {
+		if ((cops->icap_chain = icap_service_copy(conn_opts->icap_chain)) == NULL)
+			return oom_return_null(argv0);
+	}
+	else if (tmp_opts && tmp_opts->icap_chain) {
+		if ((cops->icap_chain = icap_service_copy(tmp_opts->icap_chain)) == NULL)
+			return oom_return_null(argv0);
+	}
+#endif /* !WITHOUT_ICAP */
 #ifndef OPENSSL_NO_ECDH
 	if (conn_opts->ecdhcurve) {
 		if (opts_set_ecdhcurve(cops, argv0, conn_opts->ecdhcurve) == -1)
@@ -712,6 +773,10 @@ conn_opts_copy(conn_opts_t *conn_opts, const char *argv0, tmp_opts_t *tmp_opts)
 	}
 	if (conn_opts->ciphersuites) {
 		if (opts_set_ciphersuites(cops, argv0, conn_opts->ciphersuites) == -1)
+			return NULL;
+	}
+	if (conn_opts->rewrite_alt_svc_port) {
+		if (opts_set_rewrite_alt_svc_port(cops, argv0, conn_opts->rewrite_alt_svc_port) == -1)
 			return NULL;
 	}
 #ifndef WITHOUT_USERAUTH
@@ -804,8 +869,15 @@ proxyspec_set_proto(proxyspec_t *spec, const char *value)
 	} else
 	if (!strcmp(value, "smtp")) {
 		spec->smtp = 1;
-	} else
-	if (!strcmp(value, "smtps")) {
+	}
+#ifndef WITHOUT_HTTP3
+	else if (!strcmp(value, "http3")) {
+		spec->ssl = 1;
+		spec->http = 1;
+		spec->h3 = 1;
+	}
+#endif /* !WITHOUT_HTTP3 */
+	else if (!strcmp(value, "smtps")) {
 		spec->ssl = 1;
 		spec->smtp = 1;
 	} else {
@@ -1130,7 +1202,7 @@ conn_opts_str(conn_opts_t *conn_opts)
 #ifndef WITHOUT_USERAUTH
 				 "%s|%s|%d"
 #endif /* !WITHOUT_USERAUTH */
-				 "%s%s%s|%d",
+				 "%s%s%s|%s|%s|%d",
 #if (OPENSSL_VERSION_NUMBER < 0x10100000L) || (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER < 0x20702000L)
 #ifdef HAVE_SSLV2
 	               (conn_opts->sslmethod == SSLv2_method) ? "ssl2" :
@@ -1266,6 +1338,8 @@ conn_opts_str(conn_opts_t *conn_opts)
 	             (conn_opts->validate_proto ? "|validate_proto" : ""),
 	             (conn_opts->reconnect_ssl ? "|reconnect_ssl" : ""),
 	             (conn_opts->stripclienthello ? "|stripclienthello" : ""),
+	             (conn_opts->enable_http2 ? "enable_http2" : "disable_http2"),
+	             (conn_opts->rewrite_alt_svc_port ? conn_opts->rewrite_alt_svc_port : "no rewrite_alt_svc_port"),
 	             conn_opts->max_http_header_size
 	               ) < 0) {
 		return oom_return_na_null();
@@ -1412,10 +1486,22 @@ proxyspec_str(proxyspec_t *spec)
 	if (!optsstr) {
 		goto out;
 	}
-	if (asprintf(&s, "listen=[%s]:%s %s%s%s%s%s %s%s%s\n%s%s", lhbuf, lpbuf,
-	             (spec->ssl ? "ssl" : "tcp"),
+	if (asprintf(&s, "listen=[%s]:%s %s%s%s"
+#ifndef WITHOUT_HTTP3
+		"%s"
+#endif /* !WITHOUT_HTTP3 */
+		"%s%s %s%s%s\n%s%s", lhbuf, lpbuf,
+	             (spec->ssl ? "ssl" : 
+#ifndef WITHOUT_HTTP3
+	             (spec->h3 ? "udp" : "tcp")),
+#else /* WITHOUT_HTTP3 */
+	             "tcp"),
+#endif /* !WITHOUT_HTTP3 */
 	             (spec->upgrade ? "|autossl" : ""),
 	             (spec->http ? "|http" : ""),
+#ifndef WITHOUT_HTTP3
+	             (spec->h3 ? "|h3" : ""),
+#endif /* !WITHOUT_HTTP3 */
 	             (spec->pop3 ? "|pop3" : ""),
 	             (spec->smtp ? "|smtp" : ""),
 	             (spec->natengine ? spec->natengine : cbuf),
@@ -2632,12 +2718,13 @@ check_value_yesno(const char *value, const char *name, unsigned int line_num)
 
 int
 set_conn_opts_option(conn_opts_t *conn_opts, const char *argv0,
-		const char *name, char *value, unsigned int line_num, tmp_opts_t *tmp_opts)
+	const char *name, char *value, unsigned int *line_num, UNUSED FILE *f, // f is UNUSED if WITHOUT_ICAP is set
+	tmp_opts_t *tmp_opts)
 {
 	int yes;
 
 	if (!value || !strlen(value)) {
-		fprintf(stderr, "Error in conf: No value assigned for %s on line %d\n", name, line_num);
+		fprintf(stderr, "Error in conf: No value assigned for %s on line %d\n", name, *line_num);
 		return -1;
 	}
 
@@ -2674,7 +2761,7 @@ set_conn_opts_option(conn_opts_t *conn_opts, const char *argv0,
 	} else if (equal(name, "LeafCRLURL")) {
 		return opts_set_leafcrlurl(conn_opts, argv0, value, tmp_opts);
 	} else if (equal(name, "DenyOCSP")) {
-		yes = check_value_yesno(value, "DenyOCSP", line_num);
+		yes = check_value_yesno(value, "DenyOCSP", *line_num);
 		if (yes == -1)
 			return -1;
 		yes ? opts_set_deny_ocsp(conn_opts) : opts_unset_deny_ocsp(conn_opts);
@@ -2682,7 +2769,7 @@ set_conn_opts_option(conn_opts_t *conn_opts, const char *argv0,
 		log_dbg_printf("DenyOCSP: %u\n", conn_opts->deny_ocsp);
 #endif /* DEBUG_OPTS */
 	} else if (equal(name, "Passthrough")) {
-		yes = check_value_yesno(value, "Passthrough", line_num);
+		yes = check_value_yesno(value, "Passthrough", *line_num);
 		if (yes == -1)
 			return -1;
 		yes ? opts_set_passthrough(conn_opts) : opts_unset_passthrough(conn_opts);
@@ -2703,7 +2790,7 @@ set_conn_opts_option(conn_opts_t *conn_opts, const char *argv0,
 #endif /* !OPENSSL_NO_ECDH */
 #ifdef SSL_OP_NO_COMPRESSION
 	} else if (equal(name, "SSLCompression")) {
-		yes = check_value_yesno(value, "SSLCompression", line_num);
+		yes = check_value_yesno(value, "SSLCompression", *line_num);
 		if (yes == -1)
 			return -1;
 		yes ? opts_set_sslcomp(conn_opts) : opts_unset_sslcomp(conn_opts);
@@ -2725,9 +2812,11 @@ set_conn_opts_option(conn_opts_t *conn_opts, const char *argv0,
 		return opts_set_ciphers(conn_opts, argv0, value);
 	} else if (equal(name, "CipherSuites")) {
 		return opts_set_ciphersuites(conn_opts, argv0, value);
+	} else if (equal(name, "RewriteAltSvcPort")) {
+		return opts_set_rewrite_alt_svc_port(conn_opts, argv0, value);
 #ifndef WITHOUT_USERAUTH
 	} else if (equal(name, "UserAuth")) {
-		yes = check_value_yesno(value, "UserAuth", line_num);
+		yes = check_value_yesno(value, "UserAuth", *line_num);
 		if (yes == -1)
 			return -1;
 		yes ? opts_set_user_auth(conn_opts) : opts_unset_user_auth(conn_opts);
@@ -2741,7 +2830,7 @@ set_conn_opts_option(conn_opts_t *conn_opts, const char *argv0,
 		if (i <= 86400) {
 			conn_opts->user_timeout = i;
 		} else {
-			fprintf(stderr, "Invalid UserTimeout %s on line %d, use 0-86400\n", value, line_num);
+			fprintf(stderr, "Invalid UserTimeout %s on line %d, use 0-86400\n", value, *line_num);
 			return -1;
 		}
 #ifdef DEBUG_OPTS
@@ -2749,7 +2838,7 @@ set_conn_opts_option(conn_opts_t *conn_opts, const char *argv0,
 #endif /* DEBUG_OPTS */
 #endif /* !WITHOUT_USERAUTH */
 	} else if (equal(name, "ValidateProto")) {
-		yes = check_value_yesno(value, "ValidateProto", line_num);
+		yes = check_value_yesno(value, "ValidateProto", *line_num);
 		if (yes == -1)
 			return -1;
 		yes ? opts_set_validate_proto(conn_opts) : opts_unset_validate_proto(conn_opts);
@@ -2761,14 +2850,14 @@ set_conn_opts_option(conn_opts_t *conn_opts, const char *argv0,
 		if (i >= 1024 && i <= 65536) {
 			conn_opts->max_http_header_size = i;
 		} else {
-			fprintf(stderr, "Invalid MaxHTTPHeaderSize %s on line %d, use 1024-65536\n", value, line_num);
+			fprintf(stderr, "Invalid MaxHTTPHeaderSize %s on line %d, use 1024-65536\n", value, *line_num);
 			return -1;
 		}
 #ifdef DEBUG_OPTS
 		log_dbg_printf("MaxHTTPHeaderSize: %u\n", conn_opts->max_http_header_size);
 #endif /* DEBUG_OPTS */
 	} else if (equal(name, "VerifyPeer")) {
-		yes = check_value_yesno(value, "VerifyPeer", line_num);
+		yes = check_value_yesno(value, "VerifyPeer", *line_num);
 		if (yes == -1)
 			return -1;
 		yes ? opts_set_verify_peer(conn_opts) : opts_unset_verify_peer(conn_opts);
@@ -2776,7 +2865,7 @@ set_conn_opts_option(conn_opts_t *conn_opts, const char *argv0,
 		log_dbg_printf("VerifyPeer: %u\n", conn_opts->verify_peer);
 #endif /* DEBUG_OPTS */
 	} else if (equal(name, "AllowWrongHost")) {
-		yes = check_value_yesno(value, "AllowWrongHost", line_num);
+		yes = check_value_yesno(value, "AllowWrongHost", *line_num);
 		if (yes == -1)
 			return -1;
 		yes ? opts_set_allow_wrong_host(conn_opts) : opts_unset_allow_wrong_host(conn_opts);
@@ -2784,7 +2873,7 @@ set_conn_opts_option(conn_opts_t *conn_opts, const char *argv0,
 		log_dbg_printf("AllowWrongHost: %u\n", conn_opts->allow_wrong_host);
 #endif /* DEBUG_OPTS */
 	} else if (equal(name, "RemoveHTTPAcceptEncoding")) {
-		yes = check_value_yesno(value, "RemoveHTTPAcceptEncoding", line_num);
+		yes = check_value_yesno(value, "RemoveHTTPAcceptEncoding", *line_num);
 		if (yes == -1)
 			return -1;
 		yes ? opts_set_remove_http_accept_encoding(conn_opts) : opts_unset_remove_http_accept_encoding(conn_opts);
@@ -2792,21 +2881,127 @@ set_conn_opts_option(conn_opts_t *conn_opts, const char *argv0,
 		log_dbg_printf("RemoveHTTPAcceptEncoding: %u\n", conn_opts->remove_http_accept_encoding);
 #endif /* DEBUG_OPTS */
 	} else if (equal(name, "RemoveHTTPReferer")) {
-		yes = check_value_yesno(value, "RemoveHTTPReferer", line_num);
+		yes = check_value_yesno(value, "RemoveHTTPReferer", *line_num);
 		if (yes == -1)
 			return -1;
 		yes ? opts_set_remove_http_referer(conn_opts) : opts_unset_remove_http_referer(conn_opts);
 #ifdef DEBUG_OPTS
 		log_dbg_printf("RemoveHTTPReferer: %u\n", conn_opts->remove_http_referer);
 #endif /* DEBUG_OPTS */
+	} else if (equal(name, "EnableHTTP2")) {
+		yes = check_value_yesno(value, "EnableHTTP2", *line_num);
+		if (yes == -1)
+			return -1;
+		conn_opts->enable_http2 = yes;
+#ifdef DEBUG_OPTS
+		log_dbg_printf("EnableHTTP2: %u\n", conn_opts->enable_http2);
+#endif /* DEBUG_OPTS */
 	} else if (equal(name, "StripClientHello")) {
-		yes = check_value_yesno(value, "StripClientHello", line_num);
+		yes = check_value_yesno(value, "StripClientHello", *line_num);
 		if (yes == -1)
 			return -1;
 		yes ? opts_set_stripclienthello(conn_opts) : opts_unset_stripclienthello(conn_opts);
 #ifdef DEBUG_OPTS
 		log_dbg_printf("StripClientHello: %u\n", conn_opts->stripclienthello);
 #endif /* DEBUG_OPTS */
+#ifndef WITHOUT_ICAP
+	} else if (equal(name, "Icap")) {
+		if (equal(value, "{")) {
+#ifdef DEBUG_OPTS
+			log_dbg_printf("Icap { on line %d\n", *line_num);
+#endif /* DEBUG_OPTS */
+			return load_icap_struct(conn_opts, line_num, f);
+		} else {
+#ifdef DEBUG_OPTS
+			log_dbg_printf("Icap spec line: '%s'\n", value);
+#endif /* DEBUG_OPTS */
+			return load_icap_line(conn_opts, value, *line_num);
+		}
+	} else if (equal(name, "IcapMaxBodySize")) {
+		size_t i = atoi(value);
+		if (i <= 16777216) {  /* 0-16MB */
+			conn_opts->icap_max_body_size = i;
+		} else {
+			fprintf(stderr, "Invalid IcapMaxBodySize %s on line %d, use 0-16777216\n", value, *line_num);
+			return -1;
+		}
+#ifdef DEBUG_OPTS
+		log_dbg_printf("IcapMaxBodySize: %zu\n", conn_opts->icap_max_body_size);
+#endif /* DEBUG_OPTS */
+	} else if (equal(name, "IcapMaxInspectionSize")) {
+		size_t i = atoi(value);
+		if (i <= 16777216) {  /* 0-16MB */
+			conn_opts->icap_max_inspection_size = i;
+		} else {
+			fprintf(stderr, "Invalid IcapMaxInspectionSize %s on line %d, use 0-16777216\n", value, *line_num);
+			return -1;
+		}
+#ifdef DEBUG_OPTS
+		log_dbg_printf("IcapMaxInspectionSize: %zu\n", conn_opts->icap_max_inspection_size);
+#endif /* DEBUG_OPTS */
+	} else if (equal(name, "IcapTimeout")) {
+		unsigned int i = atoi(value);
+		if (i <= 60) {  /* 0-60 seconds */
+			conn_opts->icap_timeout = i;
+		} else {
+			fprintf(stderr, "Invalid IcapTimeout %s on line %d, use 0-60\n", value, *line_num);
+			return -1;
+		}
+#ifdef DEBUG_OPTS
+		log_dbg_printf("IcapTimeout: %u\n", conn_opts->icap_timeout);
+#endif /* DEBUG_OPTS */
+	} else if (equal(name, "IcapPreviewSize")) {
+		size_t i = atoi(value);
+		if (i <= 16777216) {  /* 0-16MB */
+			conn_opts->icap_preview_size = i;
+		} else {
+			fprintf(stderr, "Invalid IcapPreviewSize %s on line %d, use 0-16777216\n", value, *line_num);
+			return -1;
+		}
+#ifdef DEBUG_OPTS
+		log_dbg_printf("IcapPreviewSize: %zu\n", conn_opts->icap_preview_size);
+#endif /* DEBUG_OPTS */
+	} else if (equal(name, "IcapFailOpen")) {
+		yes = check_value_yesno(value, "IcapFailOpen", *line_num);
+		if (yes == -1)
+			return -1;
+		conn_opts->icap_fail_open = yes;
+#ifdef DEBUG_OPTS
+		log_dbg_printf("IcapFailOpen: %u\n", conn_opts->icap_fail_open);
+#endif /* DEBUG_OPTS */
+	} else if (equal(name, "IcapConnFailOpen")) {
+		yes = check_value_yesno(value, "IcapConnFailOpen", *line_num);
+		if (yes == -1)
+			return -1;
+		conn_opts->icap_conn_fail_open = yes;
+#ifdef DEBUG_OPTS
+		log_dbg_printf("IcapConnFailOpen: %u\n", conn_opts->icap_conn_fail_open);
+#endif /* DEBUG_OPTS */
+	} else if (equal(name, "IcapAllow204")) {
+		yes = check_value_yesno(value, "IcapAllow204", *line_num);
+		if (yes == -1)
+			return -1;
+		conn_opts->icap_allow_204 = yes;
+#ifdef DEBUG_OPTS
+		log_dbg_printf("IcapAllow204: %u\n", conn_opts->icap_allow_204);
+#endif /* DEBUG_OPTS */
+	} else if (equal(name, "IcapAllow206")) {
+		yes = check_value_yesno(value, "IcapAllow206", *line_num);
+		if (yes == -1)
+			return -1;
+		conn_opts->icap_allow_206 = yes;
+#ifdef DEBUG_OPTS
+		log_dbg_printf("IcapAllow206: %u\n", conn_opts->icap_allow_206);
+#endif /* DEBUG_OPTS */
+	} else if (equal(name, "IcapSanitizeRequestLine")) {
+		yes = check_value_yesno(value, "IcapSanitizeRequestLine", *line_num);
+		if (yes == -1)
+			return -1;
+		conn_opts->icap_sanitize_request_line = yes;
+#ifdef DEBUG_OPTS
+		log_dbg_printf("IcapSanitizeRequestLine: %u\n", conn_opts->icap_sanitize_request_line);
+#endif /* DEBUG_OPTS */
+#endif /* !WITHOUT_ICAP */
 	}
 	else {
 		// Unknown conn_opts option, but may not be an error, so return 1, instead of -1
@@ -2863,7 +3058,7 @@ set_option(opts_t *opts, conn_opts_t *conn_opts, const char *argv0,
 #endif /* DEBUG_OPTS */
 		return load_filterrule_struct(opts, conn_opts, argv0, line_num, f, tmp_opts);
 	} else {
-		int rv = set_conn_opts_option(conn_opts, argv0, name, value, *line_num, tmp_opts);
+		int rv = set_conn_opts_option(conn_opts, argv0, name, value, line_num, f, tmp_opts);
 		if (rv == -1) {
 			fprintf(stderr, "Error in conf: '%s' on line %d\n", name, *line_num);
 			return -1;

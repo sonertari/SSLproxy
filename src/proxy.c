@@ -31,16 +31,20 @@
 #include "privsep.h"
 #include "pxythrmgr.h"
 #include "pxyconn.h"
+#include "icap.h"
+
 #include "prototcp.h"
 #include "protossl.h"
 #include "protohttp.h"
 #include "protopop3.h"
 #include "protosmtp.h"
 #include "protoautossl.h"
+#include "protohttp3.h"
 #include "cachemgr.h"
 #include "opts.h"
 #include "log.h"
 #include "attrib.h"
+#include "sys.h"
 
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -94,6 +98,19 @@ proxy_listener_ctx_free(proxy_listener_ctx_t *ctx)
 	if (ctx->evcl) {
 		evconnlistener_free(ctx->evcl);
 	}
+#ifndef WITHOUT_HTTP3
+	if (ctx->udp_accept_ev) {
+		event_del(ctx->udp_accept_ev);
+		event_free(ctx->udp_accept_ev);
+	}
+	if (ctx->udp_fd >= 0) {
+		evutil_closesocket(ctx->udp_fd);
+	}
+	if (ctx->h3_sessions) {
+		h3_session_map_free(ctx->h3_sessions);
+		ctx->h3_sessions = NULL;
+	}
+#endif /* !WITHOUT_HTTP3 */
 	if (ctx->next) {
 		proxy_listener_ctx_free(ctx->next);
 	}
@@ -113,6 +130,11 @@ proxy_setup_proto(pxy_conn_ctx_t *ctx)
 	prototcp_setup(ctx);
 
 	protocol_t proto;
+#ifndef WITHOUT_HTTP3
+	if (ctx->spec->h3) {
+		proto = protohttp3_setup(ctx);
+	} else
+#endif /* !WITHOUT_HTTP3 */
 	if (ctx->spec->upgrade) {
 		proto = protoautossl_setup(ctx);
 	} else if (ctx->spec->http) {
@@ -149,9 +171,9 @@ pxy_conn_ctx_t *
 proxy_conn_ctx_new(evutil_socket_t fd,
                  pxy_thrmgr_ctx_t *thrmgr,
                  proxyspec_t *spec, global_t *global
-#ifndef WITHOUT_USERAUTH
+#if !defined(WITHOUT_USERAUTH) || !defined(WITHOUT_HTTP3)
                  , evutil_socket_t clisock
-#endif /* !WITHOUT_USERAUTH */
+#endif /* !WITHOUT_USERAUTH || !WITHOUT_HTTP3 */
                  )
 {
 	log_finest_main_va("ENTER, fd=%d", fd);
@@ -192,9 +214,20 @@ proxy_conn_ctx_new(evutil_socket_t fd,
 	}
 
 	ctx->global = global;
-#ifndef WITHOUT_USERAUTH
+#if !defined(WITHOUT_USERAUTH) || !defined(WITHOUT_HTTP3)
 	ctx->clisock = clisock;
-#endif /* !WITHOUT_USERAUTH */
+#endif /* !WITHOUT_USERAUTH || !WITHOUT_HTTP3 */
+
+#ifndef WITHOUT_ICAP
+	// ATTENTION: We initialize ICAP context for all connections, even if ICAP is not enabled for the proxyspec,
+	// because filter rules may enable ICAP for certain connections. We cannot continue without an ICAP context.
+	ctx->icap_ctx = icap_init(ctx, NULL, NULL, ctx->conn_opts->icap_chain);
+	if (!ctx->icap_ctx) {
+		log_finest("Failed to initialize ICAP context");
+		free(ctx);
+		return NULL;
+	}
+#endif /* !WITHOUT_ICAP */
 
 #ifdef HAVE_LOCAL_PROCINFO
 	ctx->lproc.pid = -1;
@@ -249,9 +282,9 @@ proxy_listener_acceptcb(UNUSED struct evconnlistener *listener,
 
 	/* create per connection state */
 	pxy_conn_ctx_t *ctx = proxy_conn_ctx_new(fd, lctx->thrmgr, lctx->spec, lctx->global
-#ifndef WITHOUT_USERAUTH
+#if !defined(WITHOUT_USERAUTH) || !defined(WITHOUT_HTTP3)
 			, lctx->clisock
-#endif /* !WITHOUT_USERAUTH */
+#endif /* !WITHOUT_USERAUTH || !WITHOUT_HTTP3 */
 			);
 	if (!ctx) {
 		log_err_level_printf(LOG_CRIT, "Error allocating ctx memory\n");
@@ -273,10 +306,16 @@ proxy_listener_acceptcb(UNUSED struct evconnlistener *listener,
 		log_err_level(LOG_CRIT, "Error creating initial event, aborting connection");
 		goto out;
 	}
+
+	// Do not immediately dispatch with event_active(),
+	// instead use a zero timeout to prevent reentrant callback issues
+	struct timeval tv = {0, 0};
+
 	// The only purpose of this event is to change the event base, so it is a one-shot event
-	if (event_add(ctx->ev, NULL) == -1)
+	if (event_add(ctx->ev, &tv) == -1) {
+		log_err_level(LOG_CRIT, "Error adding initial event, aborting connection");
 		goto out;
-	event_active(ctx->ev, 0, 0);
+	}
 	return;
 out:
 	evutil_closesocket(fd);
@@ -318,9 +357,220 @@ proxy_debug_base(const struct event_base *ev_base)
 	               ((f & EV_FEATURE_FDS) ? "yes" : "no"));
 }
 
+#ifndef WITHOUT_HTTP3
+/*
+ * UDP accept callback for HTTP/3.
+ *
+ * Called when a datagram arrives on the UDP listener socket.
+ *
+ * QUIC demultiplexes connections by connection ID, and we cannot use
+ * evconnlistener_new() for UDP sockets. The first datagram is consumed here 
+ * to determine the client address.  We schedule the init_conn callback on the 
+ * connection handling thread. All subsequent QUIC communication happens on 
+ * the worker thread.
+ */
+void
+proxy_listener_acceptcb_udp(evutil_socket_t fd, UNUSED short what, void *arg)
+{
+	proxy_listener_ctx_t *lctx = arg;
+
+	log_finest_main_va("ENTER, fd=%d", fd);
+
+	uint8_t buf[H3_DGRAM_BUFSZ];
+	struct sockaddr_storage peer_addr;
+	socklen_t peer_addrlen = sizeof(peer_addr);
+	struct sockaddr_storage local_addr;
+	socklen_t local_addrlen = sizeof(local_addr);
+	int ecn = 0;
+
+	ssize_t n = protohttp3_recvmsg(fd, buf, sizeof(buf), &peer_addr, &peer_addrlen, &local_addr, &local_addrlen, &ecn);
+	if (n <= 0) {
+		if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
+			log_err_level_printf(LOG_CRIT,
+				"Error reading from UDP listener: %s\n",
+				strerror(errno));
+		}
+		else {
+			log_finest_main("No data read from UDP listener");
+		}
+		return;
+	}
+
+	ngtcp2_version_cid vc;
+	int rv = ngtcp2_pkt_decode_version_cid(&vc, buf, (size_t)n, NGTCP2_MAX_CIDLEN);
+	if (rv != 0) {
+		log_finest_main_va("Not a valid QUIC packet header from fd=%d", fd);
+		return;
+	}
+
+	char scid_hex[H3_CID_KEYLEN];
+    protohttp3_cid_to_hex(scid_hex, vc.scid, vc.scidlen);
+
+	char dcid_hex[H3_CID_KEYLEN];
+    protohttp3_cid_to_hex(dcid_hex, vc.dcid, vc.dcidlen);
+
+	log_finest_main_va("Packet dcid=0x%s scid=0x%s, size=%zu, on fd=%d", dcid_hex, scid_hex, (size_t)n, fd);
+
+	pxy_conn_ctx_t *ctx = NULL;
+
+	pkt_node_t *pkt_node = malloc(sizeof(pkt_node_t));
+	if (!pkt_node) {
+		log_err_level_printf(LOG_CRIT, "Failed to allocate h3_pkt_node_t\n");
+		goto err;
+	}
+	pkt_node->buf = malloc((size_t)n);
+	if (!pkt_node->buf) {
+		log_err_level_printf(LOG_CRIT, "Failed to allocate buffer for h3_pkt_node_t\n");
+		goto err;
+	}
+
+	memcpy(pkt_node->buf, buf, (size_t)n);
+	pkt_node->len = (size_t)n;
+	pkt_node->ecn = ecn;
+	pkt_node->next = NULL;
+
+	quic_tuple_key_t key;
+	memset(&key, 0, sizeof(key));
+	memcpy(&key.src_addr, &peer_addr, peer_addrlen);
+	key.src_len = peer_addrlen;
+	memcpy(&key.dst_addr, &lctx->spec->listen_addr, lctx->spec->listen_addrlen);
+	key.dst_len = lctx->spec->listen_addrlen;
+
+	protohttp3_ctx_t *h3_ctx = h3_session_map_get(lctx->h3_sessions, &key);
+	if (h3_ctx) {
+		pxy_conn_ctx_t *ctx = h3_ctx->ctx;
+		log_finest_va("H3 session found, fd=%d", fd);
+
+		pthread_mutex_lock(&h3_ctx->pkt_queue_mutex);
+
+		log_finest_va("Append packet to queue, fd=%d", fd);
+		if (!h3_ctx->pkt_queue) {
+			h3_ctx->pkt_queue = pkt_node;
+		} else {
+			// Append to the end of the linked list
+			pkt_node_t *last = h3_ctx->pkt_queue;
+			while (last->next) {
+				last = last->next;
+			}
+			last->next = pkt_node;
+		}
+
+		if (!h3_ctx->src_process_pkt_ev && !h3_ctx->wait_server_connected) {
+			log_finest("Schedule new src_process_pkt_ev");
+
+			h3_ctx->src_process_pkt_ev = event_new(ctx->thr->evbase, ctx->fd, 0,
+										protohttp3_process_packet_cb, h3_ctx);
+			if (!h3_ctx->src_process_pkt_ev) {
+				pthread_mutex_unlock(&h3_ctx->pkt_queue_mutex);
+				goto err;
+			}
+
+			struct timeval tv = {0, 0};
+			if (event_add(h3_ctx->src_process_pkt_ev, &tv) == -1) {
+				log_finest("Error adding src_process_pkt_ev event, aborting connection");
+				event_free(h3_ctx->src_process_pkt_ev);
+				h3_ctx->src_process_pkt_ev = NULL;
+				pthread_mutex_unlock(&h3_ctx->pkt_queue_mutex);
+				goto err;
+			}
+		}
+		else {
+			log_finest_va("Will not schedule new src_process_pkt_ev, %s", h3_ctx->src_process_pkt_ev ? "already scheduled" : "waiting for server connection");
+		}
+
+		pthread_mutex_unlock(&h3_ctx->pkt_queue_mutex);
+		return;
+	}
+
+	log_finest_main_va("No existing H3 session found, creating new one, fd=%d", fd);
+
+	// We use the listener's UDP socket for sending datagrams, so we pass -1 as the fd
+	ctx = proxy_conn_ctx_new(
+		-1,
+		lctx->thrmgr, lctx->spec, lctx->global
+#if !defined(WITHOUT_USERAUTH) || !defined(WITHOUT_HTTP3)
+		, lctx->clisock
+#endif /* !WITHOUT_USERAUTH || !WITHOUT_HTTP3 */
+		);
+	if (!ctx) {
+		log_finest_main("Error allocating ctx memory");
+		return;
+	}
+
+	// Choose the conn handling thr
+	pxy_thrmgr_assign_thr(ctx);
+
+	/* prepare logging part 1 and user auth */
+	ctx->srcaddrlen = peer_addrlen;
+	memcpy(&ctx->srcaddr, &peer_addr, peer_addrlen);
+
+	ctx->orig_dstaddrlen = local_addrlen;
+	memcpy(&ctx->orig_dstaddr, &local_addr, local_addrlen);
+
+	char *dsthost_str;
+	char *dstport_str;
+	sys_sockaddr_str((struct sockaddr *)&ctx->orig_dstaddr, ctx->orig_dstaddrlen, &dsthost_str, &dstport_str);
+	log_finest_main_va("Set original dst: %s:%s", dsthost_str, dstport_str);
+	free(dsthost_str);
+	free(dstport_str);
+
+	// We cannot switch the event base before creating the h3_ctx,
+	// because the next packet for this connection may arrive before the init_conn callback finishes.
+	h3_ctx = protohttp3_new(ctx, vc);
+	if (!h3_ctx) {
+		log_finest("Failed to create protohttp3 session context");
+		goto err;
+	}
+
+	h3_ctx->clisock = lctx->clisock;
+
+    pthread_mutex_init(&h3_ctx->pkt_queue_mutex, NULL);
+
+	// No need to lock the mutex here, because we are the only thread that has access to h3_ctx at this point
+	h3_ctx->pkt_queue = pkt_node;
+
+	h3_session_map_insert(lctx->h3_sessions, &key, h3_ctx);
+
+	// ATTENTION: We should initialize h3_ctx and pkt_node at a minimum before scheduling the init_conn callback,
+	// because it will immediately fire on its connection handling thread in parallel.
+	ctx->ev = event_new(ctx->thr->evbase, -1, 0,
+	                    ctx->protoctx->init_conn, ctx);
+	if (!ctx->ev) {
+		log_err_level(LOG_CRIT,
+			"Error creating initial event, aborting connection");
+		goto err;
+	}
+
+	struct timeval tv = {0, 0};
+	if (event_add(ctx->ev, &tv) == -1) {
+		log_err_level(LOG_CRIT,
+			"Error adding initial event, aborting connection");
+		event_free(ctx->ev);
+		goto err;
+	}
+
+	log_finest("EXIT");
+	return;
+err:
+	if (pkt_node) {
+		if (pkt_node->buf) {
+			free(pkt_node->buf);
+		}
+		free(pkt_node);
+	}
+	if (ctx) {
+		proxy_conn_ctx_free(ctx);
+	}
+}
+#endif /* !WITHOUT_HTTP3 */
+
 /*
  * Set up the listener for a single proxyspec and add it to evbase.
  * Returns the proxy_listener_ctx_t pointer if successful, NULL otherwise.
+ *
+ * For TCP proxyspecs, we use evconnlistener_new().
+ * For HTTP/3 (UDP) proxyspecs, we create a raw libevent event on the
+ * UDP socket to receive incoming datagrams.
  */
 static proxy_listener_ctx_t *
 proxy_listener_setup(struct event_base *evbase, pxy_thrmgr_ctx_t *thrmgr,
@@ -342,21 +592,54 @@ proxy_listener_setup(struct event_base *evbase, pxy_thrmgr_ctx_t *thrmgr,
 		return NULL;
 	}
 
-#ifndef WITHOUT_USERAUTH
+#if !defined(WITHOUT_USERAUTH) || !defined(WITHOUT_HTTP3)
 	lctx->clisock = clisock;
-#endif /* !WITHOUT_USERAUTH */
-	
-	// @attention Do not pass NULL as user-supplied pointer
-	lctx->evcl = evconnlistener_new(evbase, proxy_listener_acceptcb,
-	                               lctx, LEV_OPT_CLOSE_ON_FREE, 1024, fd);
-	if (!lctx->evcl) {
-		log_err_level_printf(LOG_CRIT, "Error creating evconnlistener: %s\n",
-		               strerror(errno));
-		proxy_listener_ctx_free(lctx);
-		evutil_closesocket(fd);
-		return NULL;
+#endif /* !WITHOUT_USERAUTH || !WITHOUT_HTTP3 */
+
+#ifndef WITHOUT_HTTP3
+	if (spec->h3) {
+		/*
+		 * HTTP/3 over UDP: create a raw libevent event instead of
+		 * evconnlistener, because evconnlistener only supports TCP.
+		 */
+		lctx->udp_fd = fd;
+		lctx->h3_sessions = h3_session_map_new();
+
+		lctx->udp_accept_ev = event_new(evbase, fd,
+		                                EV_READ | EV_PERSIST,
+		                                proxy_listener_acceptcb_udp,
+		                                lctx);
+		if (!lctx->udp_accept_ev) {
+			log_err_level_printf(LOG_CRIT,
+				"Error creating UDP listener event\n");
+			proxy_listener_ctx_free(lctx);
+			evutil_closesocket(fd);
+			return NULL;
+		}
+		if (event_add(lctx->udp_accept_ev, NULL) != 0) {
+			log_err_level_printf(LOG_CRIT,
+				"Error adding UDP listener event\n");
+			proxy_listener_ctx_free(lctx);
+			evutil_closesocket(fd);
+			return NULL;
+		}
+		log_dbg_printf("UDP listener created on fd=%d for HTTP/3\n", fd);
+	} else {
+#endif /* !WITHOUT_HTTP3 */
+		// @attention Do not pass NULL as user-supplied pointer
+		lctx->evcl = evconnlistener_new(evbase, proxy_listener_acceptcb,
+		                               lctx, LEV_OPT_CLOSE_ON_FREE, 1024, fd);
+		if (!lctx->evcl) {
+			log_err_level_printf(LOG_CRIT, "Error creating evconnlistener: %s\n",
+			               strerror(errno));
+			proxy_listener_ctx_free(lctx);
+			evutil_closesocket(fd);
+			return NULL;
+		}
+		evconnlistener_set_error_cb(lctx->evcl, proxy_listener_errorcb);
+#ifndef WITHOUT_HTTP3
 	}
-	evconnlistener_set_error_cb(lctx->evcl, proxy_listener_errorcb);
+#endif /* !WITHOUT_HTTP3 */
 	return lctx;
 }
 

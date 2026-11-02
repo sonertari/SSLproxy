@@ -234,6 +234,32 @@ log_dbg_level_printf(int level, const char *function, int thrid, long long unsig
 	return log_dbg_print_free(logbuf);
 }
 
+int
+log_dbg_level_icap_printf(int level, const char *function, int thrid, long long unsigned int id, evutil_socket_t fd, evutil_socket_t child_fd,
+	int sid, int rqm, int64_t src_stream_id, int64_t dst_stream_id, const char *fmt, ...)
+{
+	va_list ap;
+	char *buf;
+	int rv;
+
+	if (dbg_mode == LOG_DBG_MODE_NONE || dbg_mode < level)
+		return 0;
+
+	va_start(ap, fmt);
+	rv = vasprintf(&buf, fmt, ap);
+	va_end(ap);
+	if (rv < 0)
+		return -1;
+
+	char *logbuf;
+	rv = asprintf(&logbuf, "[%s] [%d.%llu fd=%d cfd=%d sid=%d rqm=%d, ssi=%" PRId64 ", dsi=%" PRId64 "] %s: %s\n",
+		log_dbg_mode_names[level], thrid, id, fd, child_fd, sid, rqm, src_stream_id, dst_stream_id, function, buf);
+	free(buf);
+	if (rv < 0)
+		return -1;
+	return log_dbg_print_free(logbuf);
+}
+
 void
 log_dbg_mode(int mode)
 {
@@ -433,7 +459,8 @@ log_conn(const char *buf)
  */
 
 #define PREPFLAG_REQUEST 1
-#define PREPFLAG_EOF     2
+#define PREPFLAG_TCP     2
+#define PREPFLAG_EOF     4
 
 typedef struct log_content_file_ctx {
 	union {
@@ -923,7 +950,7 @@ errout:
  * On failure, lb is not freed.
  */
 int
-log_content_submit(log_content_ctx_t *ctx, logbuf_t *lb, int is_request, int log_content, int log_pcap
+log_content_submit(log_content_ctx_t *ctx, logbuf_t *lb, int is_request, int proto, int log_content, int log_pcap
 #ifndef WITHOUT_MIRROR
 	, int log_mirror
 #endif /* !WITHOUT_MIRROR */
@@ -934,6 +961,9 @@ log_content_submit(log_content_ctx_t *ctx, logbuf_t *lb, int is_request, int log
 
 	if (is_request)
 		prepflags |= PREPFLAG_REQUEST;
+
+	if (proto == IPPROTO_TCP)
+		prepflags |= PREPFLAG_TCP;
 
 	lb = logbuf_make_contiguous(lb);
 	if (!lb)
@@ -991,7 +1021,7 @@ errout:
 }
 
 int
-log_content_close(log_content_ctx_t *ctx, int by_requestor)
+log_content_close(log_content_ctx_t *ctx, int by_requestor, int proto)
 {
 	unsigned long prepflags = PREPFLAG_EOF;
 	unsigned long ctl;
@@ -1002,6 +1032,9 @@ log_content_close(log_content_ctx_t *ctx, int by_requestor)
 	} else {
 		ctl = LBFLAG_IS_RESP;
 	}
+
+	if (proto == IPPROTO_TCP)
+		prepflags |= PREPFLAG_TCP;
 
 	/* We call submit an empty log buffer in order to give the content log
 	 * a chance to insert an EOF footer to be logged before actually
@@ -1348,10 +1381,11 @@ log_content_pcap_reopencb(void) {
 static void
 log_content_pcap_closecb_base(void *fh, unsigned long ctl, int fd) {
 	log_content_pcap_ctx_t *ctx = fh;
-	int direction = (ctl & LBFLAG_IS_REQ) ? LOGPKT_REQUEST
-	                                      : LOGPKT_RESPONSE;
-
-	logpkt_write_close(&ctx->state, fd, direction);
+	if (ctl & LBFLAG_IS_TCP) {
+		int direction = (ctl & LBFLAG_IS_REQ) ? LOGPKT_REQUEST
+											: LOGPKT_RESPONSE;
+		logpkt_write_close(&ctx->state, fd, direction);
+	}
 }
 
 static void
@@ -1367,8 +1401,9 @@ log_content_pcap_writecb_base(void *fh, unsigned long ctl,
 	log_content_pcap_ctx_t *ctx = fh;
 	int direction = (ctl & LBFLAG_IS_REQ) ? LOGPKT_REQUEST
 	                                      : LOGPKT_RESPONSE;
+	int proto = (ctl & LBFLAG_IS_TCP) ? IPPROTO_TCP : IPPROTO_UDP;
 
-	if (logpkt_write_payload(&ctx->state, fd, direction, buf, sz) == -1)
+	if (logpkt_write_payload(&ctx->state, fd, direction, buf, sz, proto) == -1)
 		goto errout;
 
 	return sz;
@@ -1462,6 +1497,7 @@ log_content_pcap_prepcb(UNUSED void *fh, unsigned long prepflags,
 		return lb;
 	logbuf_ctl_set(lb, (prepflags & PREPFLAG_REQUEST) ? LBFLAG_IS_REQ
 	                                                  : LBFLAG_IS_RESP);
+	logbuf_ctl_set(lb, (prepflags & PREPFLAG_TCP) ? LBFLAG_IS_TCP : 0);
 	return lb;
 }
 
@@ -1513,10 +1549,11 @@ log_content_mirror_fini(void)
 static void
 log_content_mirror_closecb(void *fh, unsigned long ctl) {
 	log_content_mirror_ctx_t *ctx = fh;
-	int direction = (ctl & LBFLAG_IS_REQ) ? LOGPKT_REQUEST
-	                                      : LOGPKT_RESPONSE;
-
-	logpkt_write_close(&ctx->state, -1, direction);
+	if (ctl & LBFLAG_IS_TCP) {
+		int direction = (ctl & LBFLAG_IS_REQ) ? LOGPKT_REQUEST
+											: LOGPKT_RESPONSE;
+		logpkt_write_close(&ctx->state, -1, direction);
+	}
 	free(ctx);
 }
 
@@ -1526,8 +1563,9 @@ log_content_mirror_writecb(UNUSED int level, void *fh, unsigned long ctl,
 	log_content_mirror_ctx_t *ctx = fh;
 	int direction = (ctl & LBFLAG_IS_REQ) ? LOGPKT_REQUEST
 	                                      : LOGPKT_RESPONSE;
+	int proto = (ctl & LBFLAG_IS_TCP) ? IPPROTO_TCP : IPPROTO_UDP;
 
-	if (logpkt_write_payload(&ctx->state, -1, direction, buf, sz) == -1)
+	if (logpkt_write_payload(&ctx->state, -1, direction, buf, sz, proto) == -1)
 		goto errout;
 	return sz;
 
@@ -1545,6 +1583,7 @@ log_content_mirror_prepcb(UNUSED void *fh, unsigned long prepflags,
 		return lb;
 	logbuf_ctl_set(lb, (prepflags & PREPFLAG_REQUEST) ? LBFLAG_IS_REQ
 	                                                  : LBFLAG_IS_RESP);
+	logbuf_ctl_set(lb, (prepflags & PREPFLAG_TCP) ? LBFLAG_IS_TCP : 0);
 	return lb;
 }
 #endif /* !WITHOUT_MIRROR */

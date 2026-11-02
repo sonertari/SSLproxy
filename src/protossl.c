@@ -29,6 +29,10 @@
 
 #include "protossl.h"
 #include "prototcp.h"
+#include "protohttp2.h"
+#ifndef WITHOUT_ICAP
+#include "icap.h"
+#endif /* !WITHOUT_ICAP */
 #include "protopassthrough.h"
 
 #include "cachemgr.h"
@@ -126,7 +130,7 @@ protossl_log_ssl_error(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
  * upstream TLS handshake completes before protossl_apply_filter() runs).
  * Keys are logged for all connections when -M is enabled globally.
  */
-static void
+void
 protossl_keylog_callback(const SSL *ssl, const char *line)
 {
 	(void)ssl;
@@ -150,22 +154,22 @@ protossl_keylog_callback(const SSL *ssl, const char *line)
 #endif /* OPENSSL_VERSION_NUMBER >= 0x10101000L */
 
 int
-protossl_log_masterkey(pxy_conn_ctx_t *ctx, pxy_conn_desc_t *this)
+protossl_log_masterkey(pxy_conn_ctx_t *ctx, SSL *ssl)
 {
 #if OPENSSL_VERSION_NUMBER >= 0x10101000L && !defined(LIBRESSL_VERSION_NUMBER)
 	/* When the keylog callback is available, it handles all TLS versions
 	 * including TLS 1.2 CLIENT_RANDOM. Skip the legacy path to avoid
 	 * duplicate entries in the master key log. */
 	(void)ctx;
-	(void)this;
+	(void)ssl;
 	return 0;
 #else
 	// XXX: Remove ssl check? But the caller function is called by non-ssl protos.
-	if (this->ssl) {
+	if (ssl) {
 		/* log master key */
 		if (ctx->log_master && ctx->global->masterkeylog) {
 			char *keystr;
-			keystr = ssl_ssl_masterkey_to_str(this->ssl);
+			keystr = ssl_ssl_masterkey_to_str(ssl);
 			if ((keystr == NULL) ||
 				(log_masterkey_print_free(keystr) == -1)) {
 				if (errno == ENOMEM)
@@ -313,6 +317,85 @@ protossl_ossl_sessget_cb(UNUSED SSL *ssl, const unsigned char *id, int idlen, in
 	return sess;
 }
 
+#ifndef OPENSSL_NO_TLSEXT
+/*
+ * This callback is used to negotiate with the client the protocol negotiated with the server.
+ * This callback fires twice, hence idempotent.
+ */
+static int
+protossl_alpn_select_cb(UNUSED SSL *ssl, const unsigned char **out, unsigned char *outlen,
+                        const unsigned char *in, unsigned int inlen, void *arg)
+{
+	pxy_conn_ctx_t *ctx = arg;
+	log_finest("ENTER");
+
+	if (ctx->sslctx->alpn_selected) {
+		log_fine_va("ALPN proto already selected, selected proto: %.*s",
+			(int)ctx->sslctx->alpn_selected_len, ctx->sslctx->alpn_selected);
+		*out = ctx->sslctx->alpn_selected;
+        *outlen = ctx->sslctx->alpn_selected_len;
+        return SSL_TLSEXT_ERR_OK;
+	}
+
+	ctx->sslctx->h2 = 0;
+
+	log_fine_va("Will offer client the proto selected by server: %s (if non-empty), client protos: %s",
+		ssl_wire_to_printable(ctx->sslctx->alpn_protos_negotiated, ctx->sslctx->alpn_protos_negotiated_len),
+		ssl_wire_to_printable(in, inlen));
+
+	if (SSL_select_next_proto((unsigned char **)out, outlen,
+                               ctx->sslctx->alpn_protos_negotiated, ctx->sslctx->alpn_protos_negotiated_len,
+                               in, inlen) == OPENSSL_NPN_NEGOTIATED) {
+
+		log_fine_va("Selected proto via ALPN with client: %.*s", *outlen, *out);
+
+		ctx->sslctx->alpn_selected = malloc(*outlen);
+		if (!ctx->sslctx->alpn_selected)
+			return SSL_TLSEXT_ERR_NOACK;
+		memcpy(ctx->sslctx->alpn_selected, *out, *outlen);
+		ctx->sslctx->alpn_selected_len = *outlen;
+
+		if (*outlen == 2 && memcmp(*out, "h2", 2) == 0) {
+			// ATTENTION: We cannot setup HTTP/2 by protohttp2_setup() here, because the connection is not yet established.
+			// We call protohttp2_setup() in protohttps_bev_eventcb() when the connection is established. Hence, the h2 flag.
+			ctx->sslctx->h2 = 1;
+		}
+
+		return SSL_TLSEXT_ERR_OK;
+	}
+
+	return SSL_TLSEXT_ERR_NOACK;
+}
+
+/*
+ * This function is used to check if the negotiated protocol with the server is h2,
+ * and if so, set the selected proto in sslctx to offer to the client in ALPN select callback.
+ */
+void
+protossl_set_alpn_protos_negotiated(SSL *ssl, pxy_conn_ctx_t *ctx)
+{
+	const unsigned char *data = NULL;
+	unsigned int len = 0;
+
+	log_finest("ENTER");
+
+	SSL_get0_alpn_selected(ssl, &data, &len);
+
+	if (data && len > 0) {
+		ctx->sslctx->alpn_protos_negotiated = malloc(len + 1);
+		if (!ctx->sslctx->alpn_protos_negotiated)
+			return;
+		ctx->sslctx->alpn_protos_negotiated[0] = (unsigned char)len; // Pack length byte for ALPN wire format
+		memcpy(ctx->sslctx->alpn_protos_negotiated + 1, data, len);
+		ctx->sslctx->alpn_protos_negotiated_len = len + 1;
+	}
+
+	log_fine_va("Negotiated proto via ALPN with server: %s (will offer this to client, if non-empty), client protos: %s",
+		ctx->sslctx->alpn_protos_negotiated_len > 0 ? ssl_wire_to_printable(ctx->sslctx->alpn_protos_negotiated, ctx->sslctx->alpn_protos_negotiated_len) : "-",
+		ctx->sslctx->alpn_protos_len > 0 ? ssl_wire_to_printable(ctx->sslctx->alpn_protos, ctx->sslctx->alpn_protos_len) : "-");
+}
+#endif /* !OPENSSL_NO_TLSEXT */
+
 /*
  * Set SSL_CTX options that are the same for incoming and outgoing SSL_CTX.
  */
@@ -443,6 +526,14 @@ protossl_srcsslctx_create(pxy_conn_ctx_t *ctx, X509 *crt, STACK_OF(X509) *chain,
 #ifndef OPENSSL_NO_TLSEXT
 	SSL_CTX_set_tlsext_servername_callback(sslctx, protossl_ossl_servername_cb);
 	SSL_CTX_set_tlsext_servername_arg(sslctx, ctx);
+
+	if (ctx->sslctx->alpn_protos_len > 0) {
+		log_finest("Will negotiate ALPN protos with client");
+		SSL_CTX_set_alpn_select_cb(sslctx, protossl_alpn_select_cb, ctx);
+	}
+	else {
+		log_finest("Will not negotiate ALPN protos with client, since no client ALPN protocols were found in ClientHello");
+	}
 #endif /* !OPENSSL_NO_TLSEXT */
 #ifndef OPENSSL_NO_DH
 	if (ctx->conn_opts->dh) {
@@ -548,11 +639,11 @@ protossl_srccert_write_to_gendir(pxy_conn_ctx_t *ctx, X509 *crt, int is_orig)
 }
 
 void
-protossl_srccert_write(pxy_conn_ctx_t *ctx)
+protossl_srccert_write(pxy_conn_ctx_t *ctx, SSL *ssl)
 {
 	if (ctx->global->certgen_writeall || ctx->sslctx->generated_cert) {
 		if (protossl_srccert_write_to_gendir(ctx,
-		                SSL_get_certificate(ctx->src.ssl), 0) == -1) {
+		                SSL_get_certificate(ssl), 0) == -1) {
 			log_err_level_printf(LOG_CRIT, "Failed to write used certificate\n");
 		}
 	}
@@ -696,7 +787,7 @@ protossl_filter_match_sni(pxy_conn_ctx_t *ctx, filter_list_t *list)
 		log_finest_va("Match substring in sni (line=%d): %s, %s", site->action.line_num, site->site, ctx->sslctx->sni);
 #endif /* DEBUG_PROXY */
 
-	filter_action_t *port_action = pxy_conn_filter_port(ctx, site);
+	filter_action_t *port_action = pxy_conn_filter_port(ctx, NULL, site);
 	if (port_action)
 		return port_action;
 
@@ -773,7 +864,7 @@ protossl_filter_match_cn(pxy_conn_ctx_t *ctx, filter_list_t *list)
 	if (site->all_sites)
 		log_finest_va("Match all common names (line=%d): %s, %s", site->action.line_num, site->site, ctx->sslctx->ssl_names);
 
-	filter_action_t *port_action = pxy_conn_filter_port(ctx, site);
+	filter_action_t *port_action = pxy_conn_filter_port(ctx, NULL, site);
 	if (port_action)
 		return port_action;
 
@@ -781,10 +872,9 @@ protossl_filter_match_cn(pxy_conn_ctx_t *ctx, filter_list_t *list)
 }
 
 static filter_action_t * NONNULL(1,2)
-protossl_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
+protossl_sni_filter(pxy_conn_ctx_t *ctx, UNUSED protohttpx_stream_ctx_t *s, filter_list_t *list)
 {
 	filter_action_t *action_sni = NULL;
-	filter_action_t *action_cn = NULL;
 
 	if (ctx->sslctx->sni) {
 		if (!(action_sni = protossl_filter_match_sni(ctx, list))) {
@@ -800,6 +890,21 @@ protossl_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
 		}
 	}
 
+	if (action_sni)
+		return pxy_conn_set_filter_action(action_sni, NULL
+#ifdef DEBUG_PROXY
+				, ctx, ctx->sslctx->sni, NULL
+#endif /* DEBUG_PROXY */
+				);
+
+	return NULL;
+}
+
+static filter_action_t * NONNULL(1,2)
+protossl_cn_filter(pxy_conn_ctx_t *ctx, UNUSED protohttpx_stream_ctx_t *s, filter_list_t *list)
+{
+	filter_action_t *action_cn = NULL;
+
 	if (ctx->sslctx->ssl_names) {
 		if (!(action_cn = protossl_filter_match_cn(ctx, list))) {
 #ifndef WITHOUT_USERAUTH
@@ -814,10 +919,10 @@ protossl_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
 		}
 	}
 
-	if (action_sni ||  action_cn)
-		return pxy_conn_set_filter_action(action_sni, action_cn
+	if (action_cn)
+		return pxy_conn_set_filter_action(action_cn, NULL
 #ifdef DEBUG_PROXY
-				, ctx, ctx->sslctx->sni, ctx->sslctx->ssl_names
+				, ctx, ctx->sslctx->ssl_names, NULL
 #endif /* DEBUG_PROXY */
 				);
 
@@ -848,11 +953,11 @@ protossl_reconnect_srvdst(pxy_conn_ctx_t *ctx)
 }
 
 static int
-protossl_apply_filter(pxy_conn_ctx_t *ctx)
+protossl_apply_filter(pxy_conn_ctx_t *ctx, int sni)
 {
 	int rv = 0;
 	filter_action_t *a;
-	if ((a = pxy_conn_filter(ctx, protossl_filter))) {
+	if ((a = pxy_conn_filter(ctx, NULL, sni ? protossl_sni_filter : protossl_cn_filter))) {
 		unsigned int action = pxy_conn_translate_filter_action(ctx, a);
 
 		ctx->filter_precedence = action & FILTER_PRECEDENCE;
@@ -909,8 +1014,21 @@ protossl_apply_filter(pxy_conn_ctx_t *ctx)
 
 		if (a->conn_opts) {
 			ctx->conn_opts = a->conn_opts;
+#ifndef WITHOUT_ICAP
+			if (a->conn_opts->icap_chain) {
+				ctx->icap_ctx = icap_init(ctx, NULL, NULL, a->conn_opts->icap_chain);
+				if (!ctx->icap_ctx) {
+					ctx->enomem = 1;
+					return 1;
+				}
+			}
+#endif /* !WITHOUT_ICAP */
 
-			if (ctx->conn_opts->reconnect_ssl) {
+			// Filter may disable HTTP2 (EnableHTTP2 no)
+			protossl_try_remove_h2_from_alpn_protos(ctx);
+
+			// SNI rules do not need to trigger reconnect
+			if (!sni && ctx->conn_opts->reconnect_ssl) {
 				// Reconnect srvdst only once, if ReconnectSSL set in the rule
 				if (!ctx->sslctx->reconnected) {
 					protossl_reconnect_srvdst(ctx);
@@ -941,8 +1059,8 @@ protossl_apply_filter(pxy_conn_ctx_t *ctx)
  * Returns NULL if no suitable certificate could be found or the site should 
  * be passed through.
  */
-static SSL *
-protossl_srcssl_create(pxy_conn_ctx_t *ctx, SSL *origssl)
+SSL *
+protossl_srcssl_create(pxy_conn_ctx_t *ctx, SSL *origssl, SSL *src_ssl)
 {
 	cert_t *cert;
 
@@ -980,27 +1098,57 @@ protossl_srcssl_create(pxy_conn_ctx_t *ctx, SSL *origssl)
 
 	// Defers any block action until HTTP filter application
 	// or until the first src readcb of non-http protos
-	if (protossl_apply_filter(ctx)) {
+	if (protossl_apply_filter(ctx, 0)) {
 		cert_free(cert);
 		return NULL;
 	}
 
 	SSL_CTX *sslctx = protossl_srcsslctx_create(ctx, cert->crt, cert->chain,
 	                                       cert->key);
-	cert_free(cert);
-	if (!sslctx)
-		return NULL;
-	SSL *ssl = SSL_new(sslctx);
-	SSL_CTX_free(sslctx); /* SSL_new() increments refcount */
-	if (!ssl) {
-		ctx->enomem = 1;
+	if (!sslctx) {
+		cert_free(cert);
 		return NULL;
 	}
-#ifdef SSL_MODE_RELEASE_BUFFERS
-	/* lower memory footprint for idle connections */
-	SSL_set_mode(ssl, SSL_get_mode(ssl) | SSL_MODE_RELEASE_BUFFERS);
-#endif /* SSL_MODE_RELEASE_BUFFERS */
-	return ssl;
+
+	if (src_ssl) {
+		log_dbg_printf("===> Set SSL context of src_ssl\n");
+
+		// Remove any cert/key from the SSL object before setting the new SSL_CTX
+		SSL_certs_clear(src_ssl);
+
+		SSL_use_certificate(src_ssl, cert->crt);
+		SSL_use_PrivateKey(src_ssl, cert->key);
+
+		/* Attach intermediate chain if present */
+		if (cert->chain) {
+			for (int i = 0; i < sk_X509_num(cert->chain); i++) {
+				X509 *chain_crt = sk_X509_value(cert->chain, i);
+				SSL_add1_chain_cert(src_ssl, chain_crt);
+			}
+		}
+
+		SSL_set_SSL_CTX(src_ssl, sslctx);
+
+		SSL_CTX_free(sslctx); /* SSL_set_SSL_CTX increments refcount */
+		cert_free(cert);
+		return src_ssl;
+	}
+	else {
+		log_dbg_printf("===> Create new SSL\n");
+		SSL *ssl = SSL_new(sslctx);
+		SSL_CTX_free(sslctx); /* SSL_new() increments refcount */
+		if (!ssl) {
+			ctx->enomem = 1;
+			cert_free(cert);
+			return NULL;
+		}
+	#ifdef SSL_MODE_RELEASE_BUFFERS
+		/* lower memory footprint for idle connections */
+		SSL_set_mode(ssl, SSL_get_mode(ssl) | SSL_MODE_RELEASE_BUFFERS);
+	#endif /* SSL_MODE_RELEASE_BUFFERS */
+		cert_free(cert);
+		return ssl;
+	}
 }
 
 #ifndef OPENSSL_NO_TLSEXT
@@ -1115,6 +1263,58 @@ protossl_ossl_servername_cb(SSL *ssl, UNUSED int *al, void *arg)
 }
 #endif /* !OPENSSL_NO_TLSEXT */
 
+static const char *ca_bundle_paths[] = {
+	/* OpenBSD, macOS (Homebrew / Apple Default) */
+	"/etc/ssl/cert.pem",
+	/* FreeBSD */
+	"/usr/local/share/certs/ca-root-nss.crt",
+	"/etc/ssl/certs/ca-root-nss.crt",
+	/* Debian / Ubuntu / Alpine / Gentoo Linux */
+	"/etc/ssl/certs/ca-certificates.crt",
+	/* RHEL / CentOS / Fedora / Rocky Linux */
+	"/etc/pki/tls/certs/ca-bundle.crt",
+	/* SUSE / openSUSE */
+	"/etc/ssl/ca-bundle.pem",
+	/* Fallback Directory Lists */
+	"/etc/ssl/certs",
+	"/etc/pki/tls/certs",
+	"/usr/local/etc/ssl/certs",
+	NULL
+};
+
+static int
+protossl_set_verify_paths(UNUSED pxy_conn_ctx_t *ctx, SSL_CTX *sslctx)
+{
+	/* 1. Check if OpenSSL's default built-in cert file actually exists on disk
+	   Note: OpenSSL returns 1 even if the directory/file is missing,
+	   so we verify if a well-known path exists. */
+	const char *def_file = X509_get_default_cert_file();
+	if (def_file && access(def_file, R_OK) == 0) {
+		if (SSL_CTX_set_default_verify_paths(sslctx) == 1) {
+			log_finest("Set default verify paths");
+			return 1;
+		}
+	}
+	else {
+		log_fine_va("Cannot find default cert file %s", def_file);
+	}
+
+	/* 2. Check well-known OS system CA bundle paths */
+	for (int i = 0; ca_bundle_paths[i] != NULL; i++) {
+		if (access(ca_bundle_paths[i], R_OK) == 0) {
+			/* Check if it's a file or directory */
+			if (SSL_CTX_load_verify_locations(sslctx, ca_bundle_paths[i], NULL) == 1 ||
+				SSL_CTX_load_verify_locations(sslctx, NULL, ca_bundle_paths[i]) == 1) {
+				log_finest_va("Loaded system CA bundle from: %s", ca_bundle_paths[i]);
+				return 1;
+			}
+		}
+	}
+
+	log_fine("Failed to load any system CA bundle");
+	return 0;
+}
+
 /*
  * Create new SSL context for outgoing connections to the original destination.
  * If hostname sni is provided, use it for Server Name Indication.
@@ -1165,8 +1365,13 @@ protossl_dstssl_create(pxy_conn_ctx_t *ctx)
 
 	if (ctx->conn_opts->verify_peer) {
 		SSL_CTX_set_verify(sslctx, SSL_VERIFY_PEER, NULL);
-		SSL_CTX_set_default_verify_paths(sslctx);
-	} else {
+		if (!protossl_set_verify_paths(ctx, sslctx)) {
+			log_dbg_printf("failed to set verify paths\n");
+			SSL_CTX_free(sslctx);
+			return NULL;
+		}
+	}
+	else {
 		SSL_CTX_set_verify(sslctx, SSL_VERIFY_NONE, NULL);
 	}
 
@@ -1183,6 +1388,30 @@ protossl_dstssl_create(pxy_conn_ctx_t *ctx)
 		return NULL;
 	}
 
+	// ATTENTION: We call protossl_apply_filter() here for SNI filter rules, as SNI is available here from the client's ClientHello.
+	// And, we call protossl_apply_filter() for CN filter rules again in protossl_srcssl_create(), after fetching and forging the server cert.
+	if (protossl_apply_filter(ctx, 1)) {
+		SSL_CTX_free(sslctx);
+		return NULL;
+	}
+
+	if (ctx->sslctx->alpn_protos_len > 0) {
+#ifdef DEBUG_PROXY
+		log_finest_va("Will negotiate ALPN protos with server, using client protos: %s",
+			ssl_wire_to_printable(ctx->sslctx->alpn_protos, ctx->sslctx->alpn_protos_len));
+#endif /* DEBUG_PROXY */
+
+		// TODO: Should we call SSL_set_alpn_protos() instead?
+		if (SSL_CTX_set_alpn_protos(sslctx, (const unsigned char *)ctx->sslctx->alpn_protos, ctx->sslctx->alpn_protos_len) != 0) {
+			log_dbg_printf("Failed to set ALPN protos to negotiate with server\n");
+			SSL_CTX_free(sslctx);
+			return NULL;
+		}
+	}
+	else {
+		log_finest("Will not negotiate ALPN protos with server, since no client ALPN protocols were found in ClientHello");
+	}
+
 	ssl = SSL_new(sslctx);
 	SSL_CTX_free(sslctx); /* SSL_new() increments refcount */
 	if (!ssl) {
@@ -1193,6 +1422,7 @@ protossl_dstssl_create(pxy_conn_ctx_t *ctx)
 	if (ctx->sslctx->sni) {
 		SSL_set_tlsext_host_name(ssl, ctx->sslctx->sni);
 	}
+
 #endif /* !OPENSSL_NO_TLSEXT */
 
 #ifdef SSL_MODE_RELEASE_BUFFERS
@@ -1353,6 +1583,15 @@ protossl_free(pxy_conn_ctx_t *ctx)
 	if (ctx->sslctx->sni) {
 		free(ctx->sslctx->sni);
 	}
+	if (ctx->sslctx->alpn_protos) {
+		free(ctx->sslctx->alpn_protos);
+	}
+	if (ctx->sslctx->alpn_protos_negotiated) {
+		free(ctx->sslctx->alpn_protos_negotiated);
+	}
+	if (ctx->sslctx->alpn_selected) {
+		free(ctx->sslctx->alpn_selected);
+	}
 	if (ctx->sslctx->srvdst_ssl_version) {
 		free(ctx->sslctx->srvdst_ssl_version);
 	}
@@ -1389,6 +1628,53 @@ protossl_sni_resolve_cb(int errcode, struct evutil_addrinfo *ai, void *arg)
 	pxy_conn_connect(ctx);
 }
 #endif /* !OPENSSL_NO_TLSEXT */
+
+static void
+protossl_strip_h2_from_alpn_wireformat(unsigned char *in, size_t in_len, unsigned char *out, size_t *out_len)
+{
+    size_t i = 0, j = 0;
+
+    while (i < in_len) {
+        unsigned char len = in[i];
+        if (i + 1 + len > in_len) {
+            /* Malformed ALPN buffer */
+            break;
+        }
+
+        /* Check if current protocol is "h2" */
+        if (len == 2 && memcmp(&in[i + 1], "h2", 2) == 0) {
+            /* Skip "h2" */
+            i += 1 + len;
+            continue;
+        }
+
+        /* Copy non-h2 protocols */
+        out[j] = len;
+        memcpy(&out[j + 1], &in[i + 1], len);
+        j += 1 + len;
+        i += 1 + len;
+    }
+
+    *out_len = j;
+}
+
+void
+protossl_try_remove_h2_from_alpn_protos(pxy_conn_ctx_t *ctx)
+{
+	log_finest_va("ENTER, enable_http2=%d, %s", ctx->conn_opts->enable_http2,
+		ssl_wire_to_printable(ctx->sslctx->alpn_protos, ctx->sslctx->alpn_protos_len));
+
+	if (!ctx->conn_opts->enable_http2) {
+		unsigned char alpn_protos[ctx->sslctx->alpn_protos_len];
+		size_t alpn_protos_len = ctx->sslctx->alpn_protos_len;
+		memcpy(alpn_protos, ctx->sslctx->alpn_protos, ctx->sslctx->alpn_protos_len);
+
+		// The size of alpn_protos remains the same after removing h2, but that's fine
+		protossl_strip_h2_from_alpn_wireformat(alpn_protos, alpn_protos_len, ctx->sslctx->alpn_protos, &ctx->sslctx->alpn_protos_len);
+
+		log_finest_va("Removed h2 from ALPN protocols: %s", ssl_wire_to_printable(ctx->sslctx->alpn_protos, ctx->sslctx->alpn_protos_len));
+	}
+}
 
 /*
  * The src fd is readable.  This is used to sneak-preview the SNI on SSL
@@ -1427,7 +1713,7 @@ protossl_fd_readcb(evutil_socket_t fd, UNUSED short what, void *arg)
 		goto out;
 	}
 
-	rv = ssl_tls_clienthello_parse(buf, n, 0, &chello, &ctx->sslctx->sni);
+	rv = ssl_tls_clienthello_parse(buf, n, 0, &chello, &ctx->sslctx->sni, &ctx->sslctx->alpn_protos, &ctx->sslctx->alpn_protos_len);
 	if ((rv == 1) && !chello) {
 		log_err_printf("Peeking did not yield a (truncated) ClientHello message, aborting connection\n");
 		log_fine("Peeking did not yield a (truncated) ClientHello message, aborting connection");
@@ -1472,6 +1758,8 @@ protossl_fd_readcb(evutil_socket_t fd, UNUSED short what, void *arg)
 		evdns_getaddrinfo(ctx->thr->dnsbase, ctx->sslctx->sni, sniport, &hints, protossl_sni_resolve_cb, ctx);
 		return;
 	}
+
+	protossl_try_remove_h2_from_alpn_protos(ctx);
 
 	pxy_conn_connect(ctx);
 	return;
@@ -1518,31 +1806,64 @@ int
 protossl_setup_dst_ssl(pxy_conn_ctx_t *ctx)
 {
 	ctx->dst.ssl = protossl_dstssl_create(ctx);
-	if (!ctx->dst.ssl) {
-		log_err_level_printf(LOG_CRIT, "Error creating SSL for dst\n");
-		pxy_conn_term(ctx, 1);
+	if (ctx->dst.ssl) {
+		log_finest("Created new dst.ssl");
+		return 0;
+	}
+
+	if (ctx->term) {
 		return -1;
 	}
-	return 0;
+
+	if (!ctx->enomem && (ctx->pass || ctx->conn_opts->passthrough)) {
+		log_err_level_printf(LOG_WARNING, "Falling back to passthrough\n");
+		protopassthrough_engage(ctx);
+		// report protocol change by returning 1
+		return 1;
+	}
+
+	if (ctx->sslctx->reconnected) {
+		return -1;
+	}
+
+	pxy_conn_term(ctx, 1);
+	return -1;
 }
 
 int
 protossl_setup_srvdst_ssl(pxy_conn_ctx_t *ctx)
 {
 	ctx->srvdst.ssl = protossl_dstssl_create(ctx);
-	if (!ctx->srvdst.ssl) {
-		log_err_level_printf(LOG_CRIT, "Error creating SSL for srvdst\n");
-		pxy_conn_term(ctx, 1);
+	if (ctx->srvdst.ssl) {
+		log_finest("Created new srvdst.ssl");
+		return 0;
+	}
+
+	if (ctx->term) {
 		return -1;
 	}
-	return 0;
+
+	if (!ctx->enomem && (ctx->pass || ctx->conn_opts->passthrough)) {
+		log_err_level_printf(LOG_WARNING, "Falling back to passthrough\n");
+		protopassthrough_engage(ctx);
+		// report protocol change by returning 1
+		return 1;
+	}
+
+	if (ctx->sslctx->reconnected) {
+		return -1;
+	}
+
+	pxy_conn_term(ctx, 1);
+	return -1;
 }
 
 int
 protossl_setup_srvdst(pxy_conn_ctx_t *ctx)
 {
-	if (protossl_setup_srvdst_ssl(ctx) == -1) {
-		return -1;
+	int rv;
+	if ((rv = protossl_setup_srvdst_ssl(ctx)) != 0) {
+		return rv;
 	}
 
 	ctx->srvdst.bev = protossl_bufferevent_setup(ctx, -1, ctx->srvdst.ssl);
@@ -1567,8 +1888,12 @@ protossl_conn_connect(pxy_conn_ctx_t *ctx)
 		return -1;
 	}
 
-	// Disable and NULL r/w cbs, we do nothing for srvdst in r/w cbs
-	bufferevent_setcb(ctx->srvdst.bev, NULL, NULL, pxy_bev_eventcb, ctx);
+	// protossl_setup_srvdst() calls protossl_dstssl_create(), which may engage passthrough mode
+	// due to a filter rule; passthrough uses srvdst, so do not disable r/w cbs in that case
+	if (ctx->proto != PROTO_PASSTHROUGH) {
+		// Disable and NULL r/w cbs, we do nothing for srvdst in r/w cbs
+		bufferevent_setcb(ctx->srvdst.bev, NULL, NULL, pxy_bev_eventcb, ctx);
+	}
 	return 0;
 }
 
@@ -1627,21 +1952,32 @@ static int NONNULL(1)
 protossl_setup_src_ssl(pxy_conn_ctx_t *ctx)
 {
 	// @todo Make srvdst.ssl the origssl param
-	if (ctx->src.ssl || (ctx->src.ssl = protossl_srcssl_create(ctx, ctx->srvdst.ssl))) {
+	if (ctx->src.ssl) {
+		log_finest("Already have src.ssl");
 		return 0;
 	}
-	else if (ctx->term) {
+
+	ctx->src.ssl = protossl_srcssl_create(ctx, ctx->srvdst.ssl, NULL);
+	if (ctx->src.ssl) {
+		log_finest("Created new src.ssl");
+		return 0;
+	}
+
+	if (ctx->term) {
 		return -1;
 	}
-	else if (!ctx->enomem && (ctx->pass || ctx->conn_opts->passthrough)) {
+
+	if (!ctx->enomem && (ctx->pass || ctx->conn_opts->passthrough)) {
 		log_err_level_printf(LOG_WARNING, "Falling back to passthrough\n");
 		protopassthrough_engage(ctx);
 		// report protocol change by returning 1
 		return 1;
 	}
-	else if (ctx->sslctx->reconnected) {
+
+	if (ctx->sslctx->reconnected) {
 		return -1;
 	}
+
 	pxy_conn_term(ctx, 1);
 	return -1;
 }
@@ -1653,7 +1989,7 @@ protossl_setup_src_ssl_from_dst(pxy_conn_ctx_t *ctx)
 	// This function is used by protoautossl only
 	// srvdst may or may not have been xfered to child, or it may be divert or split mode
 	// so make sure dst.ssl is not NULL
-	if (ctx->src.ssl || (ctx->src.ssl = protossl_srcssl_create(ctx, ctx->srvdst.ssl ? ctx->srvdst.ssl : ctx->dst.ssl))) {
+	if (ctx->src.ssl || (ctx->src.ssl = protossl_srcssl_create(ctx, ctx->srvdst.ssl ? ctx->srvdst.ssl : ctx->dst.ssl, NULL))) {
 		return 0;
 	}
 	else if (ctx->term) {
@@ -1674,7 +2010,7 @@ protossl_setup_src_ssl_from_child_dst(pxy_conn_child_ctx_t *ctx)
 {
 	// @attention We cannot engage passthrough mode upon ssl errors on already enabled src
 	// This function is used by protoautossl only
-	if (ctx->conn->src.ssl || (ctx->conn->src.ssl = protossl_srcssl_create(ctx->conn, ctx->dst.ssl))) {
+	if (ctx->conn->src.ssl || (ctx->conn->src.ssl = protossl_srcssl_create(ctx->conn, ctx->dst.ssl, NULL))) {
 		return 0;
 	}
 	else if (ctx->conn->term) {
@@ -1764,6 +2100,15 @@ protossl_bev_eventcb_connected_srvdst(UNUSED struct bufferevent *bev, pxy_conn_c
 		return;
 	}
 
+#ifndef OPENSSL_NO_TLSEXT
+	if (ctx->sslctx->alpn_protos_len > 0) {
+		protossl_set_alpn_protos_negotiated(bufferevent_openssl_get_ssl(bev), ctx);
+	}
+	else {
+		log_finest("Will not set ALPN protocols enabled with server, client did not provide ALPN protocols to negotiate");
+	}
+#endif /* !OPENSSL_NO_TLSEXT */
+
 	// Set src ssl up early to apply SSL filter,
 	// this is the last moment we can take divert or split action
 	if (protossl_setup_src_ssl(ctx) != 0) {
@@ -1806,7 +2151,7 @@ protossl_bev_eventcb_error_srvdst(UNUSED struct bufferevent *bev, pxy_conn_ctx_t
 	}
 }
 
-static void NONNULL(1)
+void NONNULL(1)
 protossl_bev_eventcb_dst(struct bufferevent *bev, short events, pxy_conn_ctx_t *ctx)
 {
 	if (events & BEV_EVENT_CONNECTED) {
@@ -1872,7 +2217,6 @@ protossl_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 protocol_t
 protossl_setup(pxy_conn_ctx_t *ctx)
 {
-	ctx->protoctx->proto = PROTO_SSL;
 	ctx->protoctx->connectcb = protossl_conn_connect;
 	ctx->protoctx->init_conn = protossl_init_conn;
 	
@@ -1892,7 +2236,6 @@ protossl_setup(pxy_conn_ctx_t *ctx)
 protocol_t
 protossl_setup_child(pxy_conn_child_ctx_t *ctx)
 {
-	ctx->protoctx->proto = PROTO_SSL;
 	ctx->protoctx->connectcb = protossl_connect_child;
 
 	ctx->protoctx->bev_eventcb = protossl_bev_eventcb_child;

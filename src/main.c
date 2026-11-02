@@ -58,6 +58,9 @@
 #include <openssl/ssl.h>
 #include <openssl/x509.h>
 #include <event2/event.h>
+#include <nghttp2/nghttp2.h>
+#include <ngtcp2/ngtcp2.h>
+#include <nghttp3/nghttp3.h>
 #ifndef WITHOUT_MIRROR
 #include <libnet.h>
 #include <pcap.h>
@@ -120,6 +123,14 @@ main_version(void)
 	ssl_openssl_version();
 	fprintf(stderr, "compiled against libevent %s\n", LIBEVENT_VERSION);
 	fprintf(stderr, "rtlinked against libevent %s\n", event_get_version());
+	fprintf(stderr, "compiled against nghttp2 %s\n", NGHTTP2_VERSION);
+	fprintf(stderr, "rtlinked against nghttp2 %s\n", nghttp2_version(0)->version_str);
+#ifndef WITHOUT_HTTP3
+	fprintf(stderr, "compiled against nghttp3 %s\n", NGHTTP3_VERSION);
+	fprintf(stderr, "rtlinked against nghttp3 %s\n", nghttp3_version(0)->version_str);
+	fprintf(stderr, "compiled against ngtcp2 %s\n", NGTCP2_VERSION);
+	fprintf(stderr, "rtlinked against ngtcp2 %s\n", ngtcp2_version(0)->version_str);
+#endif /* !WITHOUT_HTTP3 */
 #ifndef WITHOUT_MIRROR
 	fprintf(stderr, "compiled against libnet %s\n", LIBNET_VERSION);
 #ifndef __OpenBSD__
@@ -879,6 +890,21 @@ main(int argc, char *argv[])
 			exit(EXIT_FAILURE);
 		}
 		fclose(keyf);
+	}
+
+	for (proxyspec_t *spec = global->spec; spec; spec = spec->next) {
+		if (spec->opts && spec->opts->divert) {
+#ifndef WITHOUT_HTTP3
+			if (spec->h3) {
+				fprintf(stderr, "Divert mode is not supported in HTTP/3 proxyspecs\n");
+				exit(EXIT_FAILURE);
+			}
+#endif /* !WITHOUT_HTTP3 */
+			if (spec->http && spec->ssl && spec->conn_opts && spec->conn_opts->enable_http2) {
+				fprintf(stderr, "WARNING: HTTP/2 and Divert mode are both enabled in HTTPS proxyspec. "
+				                "Split mode will be silently enabled, if ALPN upgrades connections to HTTP/2\n");
+			}
+		}
 	}
 
 	for (proxyspec_t *spec = global->spec; spec; spec = spec->next) {

@@ -2,8 +2,8 @@
 .\" SSLproxy - transparent SSL/TLS proxy for diverting packets to programs
 .\" https://github.com/sonertari/SSLproxy
 .\"
-.\" Copyright (c) 2009-2019, Daniel Roethlisberger <daniel@roe.ch>.
 .\" Copyright (c) 2017-2026, Soner Tari <sonertari@gmail.com>.
+.\" Copyright (c) 2009-2019, Daniel Roethlisberger <daniel@roe.ch>.
 .\" All rights reserved.
 .\"
 .\" Redistribution and use in source and binary forms, with or without
@@ -26,7 +26,7 @@
 .\" ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 .\" POSSIBILITY OF SUCH DAMAGE.
 .\"
-.TH "sslproxy.conf" "5" "24 Aug 2026" "v0.9.11" "SSLproxy"
+.TH "sslproxy.conf" "5" "23 Sep 2026" "v0.10.0" "SSLproxy"
 .SH "NAME"
 .LP 
 \fBsslproxy.conf\fR \- Configuration file for SSLproxy
@@ -281,13 +281,10 @@ Remove HTTP header line for Referer.
 .br
 Default: yes
 .TP
-\fBStripClientHello BOOL\fR
-Strip ClientHello messages from content, PCAP, and mirror logs during autossl mode.
-When a connection is upgraded from plain TCP to SSL/TLS in autossl mode,
-the initial cleartext ClientHello message sent by the client is stripped
-from the logs to prevent polluting them with the SSL handshake.
+\fBEnableHTTP2 BOOL\fR
+Enable HTTP/2 during ALPN negotiation.
 .br
-Default: no
+Default: yes
 .TP
 \fBVerifyPeer BOOL\fR
 Verify peer using default certificates.
@@ -298,6 +295,14 @@ Default: yes
 When disabled, never add the SNI to forged certificates, even if the SNI 
 provided by the client does not match the server certificate's CN/SAN. Helps 
 pass the wrong.host test at https://badssl.com.
+.br
+Default: no
+.TP
+\fBStripClientHello BOOL\fR
+Strip ClientHello messages from content, PCAP, and mirror logs during autossl mode.
+When a connection is upgraded from plain TCP to SSL/TLS in autossl mode,
+the initial cleartext ClientHello message sent by the client is stripped
+from the logs to prevent polluting them with the SSL handshake.
 .br
 Default: no
 .TP
@@ -368,6 +373,99 @@ Load configuration from an include file.
 
 Recursive include files are not allowed. The Include option cannot be used in 
 include files.
+
+.TP
+\fBIcapFailOpen BOOL\fR
+Set ICAP fail-open for services in ICAP chain, globally, per-proxyspec, or per-filter rule.
+.br
+Default: no
+.TP
+\fBIcapConnFailOpen BOOL\fR
+Set ICAP connection fail-open for services in ICAP chain, globally, per-proxyspec, or per-filter rule.
+.br
+Default: no
+.TP
+\fBIcapTimeout NUMBER\fR
+Set timeout in seconds for ICAP services, globally, per-proxyspec, or per-filter rule, use 0-60.
+.br
+Default: 30
+.TP
+\fBIcapPreviewSize NUMBER\fR
+Set Preview size in bytes for ICAP services, globally, per-proxyspec, or per-filter rule, use 0-16777216.
+Set to 0 to disable.
+.br
+Default: 1024
+.TP
+\fBIcapMaxBodySize NUMBER\fR
+Set max body size in bytes for ICAP services, globally, per-proxyspec, or per-filter rule, use 0-16777216.
+Set to 0 to disable.
+.br
+Default: 4096
+.TP
+\fBIcapMaxInspectionSize NUMBER\fR
+Set max inspection size in bytes for ICAP services, globally, per-proxyspec, or per-filter rule, use 0-16777216.
+Set to 0 to disable.
+.br
+Default: 4096
+.TP
+\fBIcapAllow204 BOOL\fR
+Allow 204 responses for services in ICAP chain, globally, per-proxyspec, or per-filter rule.
+.br
+Default: yes
+.TP
+\fBIcapAllow206 BOOL\fR
+Allow 206 responses for services in ICAP chain, globally, per-proxyspec, or per-filter rule.
+.br
+Default: yes
+.TP
+\fBIcapSanitizeRequestLine BOOL\fR
+Sanitize request line for services in ICAP chain, globally, per-proxyspec, or per-filter rule.
+.br
+Default: no
+
+.TP
+\fBIcap STRING\fR
+
+The syntax of one line Icap specifications is as follows:
+.br
+Icap icap://host:port,reqmod,respmod,icap_fail_open,conn_fail_open,timeout,preview_size,max_body_size,max_inspection_size,allow_204,allow_206,echo_header,sanitize_request_line
+.TP
+\fBIcap {\fR
+.br
+Proto
+.br
+Server
+.br
+Port
+.br
+Reqmod
+.br
+Respmod
+.br
+FailOpen
+.br
+ConnFailOpen
+.br
+Timeout
+.br
+PreviewSize
+.br
+MaxBodySize
+.br
+MaxInspectionSize
+.br
+Allow204
+.br
+Allow206
+.br
+EchoHeader
+.br
+SanitizeRequestLine
+.br
+\fB}\fR
+.br
+
+See sslproxy(1) for the details.
 .TP
 \fBDefine STRING\fR
 Define macro to be used in filtering rules. Macro names must start with a $ 
@@ -489,11 +587,13 @@ VerifyPeer
 .br
 AllowWrongHost
 .br
+StripClientHello
+.br
 RemoveHTTPAcceptEncoding
 .br
 RemoveHTTPReferer
 .br
-StripClientHello
+EnableHTTP2
 .br
 MaxHTTPHeaderSize
 .br
@@ -505,11 +605,34 @@ UserTimeout
 .br
 UserAuthURL
 .br
+IcapFailOpen
+.br
+IcapConnFailOpen
+.br
+IcapTimeout
+.br
+IcapPreviewSize
+.br
+IcapMaxBodySize
+.br
+IcapMaxInspectionSize
+.br
+IcapAllow204
+.br
+IcapAllow206
+.br
+IcapSanitizeRequestLine
+.br
+Icap one line Icap specifications
+.br
+Icap {...} structured Icap specifications
+.br
 \fB}\fR
 .br
-Structured filtering rules can specify connection options to be selectively 
-applied to matching connections, not just per-proxyspec or globally. One line 
-filtering rules cannot specify connection options.
+Structured filtering rules can specify connection options and Icap 
+specifications to be selectively applied to matching connections, not just per-
+proxyspec or globally. One line filtering rules cannot specify connection 
+options and Icap specifications.
 
 See sslproxy(1) for the details.
 .TP
@@ -582,11 +705,13 @@ VerifyPeer
 .br
 AllowWrongHost
 .br
+StripClientHello
+.br
 RemoveHTTPAcceptEncoding
 .br
 RemoveHTTPReferer
 .br
-StripClientHello
+EnableHTTP2
 .br
 MaxHTTPHeaderSize
 .br
@@ -603,6 +728,28 @@ DivertUsers
 PassUsers
 .br
 PassSite
+.br
+IcapFailOpen
+.br
+IcapConnFailOpen
+.br
+IcapTimeout
+.br
+IcapPreviewSize
+.br
+IcapMaxBodySize
+.br
+IcapMaxInspectionSize
+.br
+IcapAllow204
+.br
+IcapAllow206
+.br
+IcapSanitizeRequestLine
+.br
+Icap one line Icap specifications
+.br
+Icap {...} structured Icap specifications
 .br
 Define
 .br

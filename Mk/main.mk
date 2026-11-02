@@ -10,6 +10,9 @@
 # LIBPCAP_BASE	Prefix of libpcap library and headers to build against
 # LIBNET_BASE	Prefix of libnet library and headers to build against
 # SQLITE_BASE	Prefix of sqlite3 library and headers to build against
+# LIBNGHTTP2_BASE	Prefix of libnghttp2 library and headers to build against
+# LIBNGHTTP3_BASE	Prefix of libnghttp3 library and headers to build against
+# LIBNGTCP2_BASE	Prefix of libngtcp2 library and headers to build against
 # CHECK_BASE	Prefix of check library and headers to build against (optional)
 # PKGCONFIG	Name/path of pkg-config program to use for auto-detection
 # PCFLAGS	Additional pkg-config flags
@@ -88,6 +91,21 @@ FEATURES+=	-DWITHOUT_USERAUTH
 endif
 endif
 
+### ICAP Client
+
+# Define to disable support for ICAP.
+# With ICAP enabled, SSLproxy can send ICAP requests to ICAP services 
+# configured for content adaptation.
+#FEATURES+=	-DWITHOUT_ICAP
+
+### HTTP/3 (QUIC) Support
+
+# Define to disable support for HTTP/3 (QUIC).
+# With HTTP/3 enabled, SSLproxy can use QUIC for HTTP/3 connections.
+# Note that this feature requires very recent versions of OpenSSL, libnghttp3, and libngtcp2.
+# You may need to build with OPENSSL_BASE, LIBNGHTTP3_BASE, and LIBNGTCP2_BASE.
+FEATURES+=	-DWITHOUT_HTTP3
+
 ### Debugging
 
 # These flags are added to CFLAGS iff building from a git repo.
@@ -118,6 +136,9 @@ DEBUG_CFLAGS?=	-g
 
 # Define to add diagnostic output for debugging option parsing.
 #FEATURES+=	-DDEBUG_OPTS
+
+# Define to add ICAP debugging; dump ICAP state in debug mode.
+#FEATURES+=	-DDEBUG_ICAP
 
 # When debugging OpenSSL related issues, make sure you use a debug build of
 # OpenSSL and consider enabling its debugging options -DREF_PRINT -DREF_CHECK
@@ -299,6 +320,22 @@ PKGS+=		$(shell $(PKGCONFIG) $(PCFLAGS) --exists sqlite3 \
 		&& echo sqlite3)
 endif
 endif
+ifneq ($(filter -DWITHOUT_HTTP2,$(FEATURES)),-DWITHOUT_HTTP2)
+ifndef LIBNGHTTP2_BASE
+PKGS+=		$(shell $(PKGCONFIG) $(PCFLAGS) --exists libnghttp2 \
+		&& echo libnghttp2)
+endif
+endif
+ifneq ($(filter -DWITHOUT_HTTP3,$(FEATURES)),-DWITHOUT_HTTP3)
+ifndef LIBNGHTTP3_BASE
+PKGS+=		$(shell $(PKGCONFIG) $(PCFLAGS) --exists libnghttp3 \
+		&& echo libnghttp3)
+endif
+ifndef LIBNGTCP2_BASE
+PKGS+=		$(shell $(PKGCONFIG) $(PCFLAGS) --exists libngtcp2 \
+		&& echo libngtcp2)
+endif
+endif
 TPKGS:=		
 ifndef CHECK_BASE
 TPKGS+=		$(shell $(PKGCONFIG) $(PCFLAGS) --exists check \
@@ -351,6 +388,31 @@ $(error dependency 'SQLite3' not found; \
 endif
 endif
 endif
+ifneq ($(filter -DWITHOUT_HTTP2,$(FEATURES)),-DWITHOUT_HTTP2)
+ifeq (,$(filter libnghttp2,$(PKGS)))
+LIBNGHTTP2_FOUND:=$(call locate,libnghttp2,include/nghttp2/nghttp2.h,$(LIBNGHTTP2_BASE))
+ifndef LIBNGHTTP2_FOUND
+$(error dependency 'libnghttp2' not found; \
+	install it or point LIBNGHTTP2_BASE to base path)
+endif
+endif
+endif
+ifneq ($(filter -DWITHOUT_HTTP3,$(FEATURES)),-DWITHOUT_HTTP3)
+ifeq (,$(filter libnghttp3,$(PKGS)))
+LIBNGHTTP3_FOUND:=$(call locate,libnghttp3,include/nghttp3/nghttp3.h,$(LIBNGHTTP3_BASE))
+ifndef LIBNGHTTP3_FOUND
+$(error dependency 'libnghttp3' not found; \
+	install it or point LIBNGHTTP3_BASE to base path)
+endif
+endif
+ifeq (,$(filter libngtcp2,$(PKGS)))
+LIBNGTCP2_FOUND:=$(call locate,libngtcp2,include/ngtcp2/ngtcp2.h,$(LIBNGTCP2_BASE))
+ifndef LIBNGTCP2_FOUND
+$(error dependency 'libngtcp2' not found; \
+	install it or point LIBNGTCP2_BASE to base path)
+endif
+endif
+endif
 ifeq (,$(filter check,$(TPKGS)))
 CHECK_FOUND:=	$(call locate,check,include/check.h,$(CHECK_BASE))
 ifndef CHECK_FOUND
@@ -373,22 +435,60 @@ $(error dependency 'libnet' not found; \
 endif
 endif
 
+SYS_INCLUDE_DIRS := /usr/include /usr/local/include
+# Normalized system list (ensures no trailing slashes)
+SYS_INCLUDE_DIRS_NORM := $(patsubst %/,%,$(SYS_INCLUDE_DIRS))
+SYS_PKG_CPPFLAGS :=
+
+# Function: Filter out standard system paths
+define add_pkg_cppflags
+    $(eval _raw := $(patsubst -I%,%,$(patsubst -isystem%,%,$(strip $1))))
+    $(eval _dir := $(patsubst %/,%,$(_raw)))
+    ifneq ($$(filter-out $$(SYS_INCLUDE_DIRS_NORM),$(_dir)),)
+        ifneq ($$(filter-out $$(PKG_CPPFLAGS),-I$(_dir)),)
+            PKG_CPPFLAGS += -I$(_dir)
+        endif
+    else
+        ifneq ($$(filter-out $$(SYS_PKG_CPPFLAGS),-I$(_dir)),)
+            SYS_PKG_CPPFLAGS += -I$(_dir)
+        endif
+    endif
+endef
+
+SYS_LIB_DIRS := /usr/lib /usr/lib64 /usr/lib/x86_64-linux-gnu /usr/local/lib
+# Normalized system list (ensures no trailing slashes)
+SYS_LIB_DIRS_NORM := $(patsubst %/,%,$(SYS_LIB_DIRS))
+SYS_PKG_LDFLAGS :=
+
+# Function: Filter out default system library directories
+define add_pkg_ldflags
+    $(eval _raw := $(patsubst -L%,%,$(strip $1)))
+    $(eval _dir := $(patsubst %/,%,$(_raw)))
+    ifneq ($$(filter-out $$(SYS_LIB_DIRS_NORM),$(_dir)),)
+        ifneq ($$(filter-out $$(PKG_LDFLAGS),-L$(_dir)),)
+            # TODO: Use selective static linking instead of rpath
+            PKG_LDFLAGS += -L$(_dir) -Wl,-rpath,$(_dir)
+        endif
+    else
+        ifneq ($$(filter-out $$(SYS_PKG_LDFLAGS),-L$(_dir)),)
+            SYS_PKG_LDFLAGS += -L$(_dir)
+        endif
+    endif
+endef
+
 PKG_CFLAGS:=
 PKG_CPPFLAGS:=
 PKG_LDFLAGS:=
 PKG_LIBS:=
 ifdef OPENSSL_FOUND
-PKG_CPPFLAGS+=	-I$(OPENSSL_FOUND)/include
-ifneq ($(findstring openssl-3.,$(OPENSSL_FOUND)),openssl-3.)
-PKG_LDFLAGS+=	-L$(OPENSSL_FOUND)/lib
-else
-PKG_LDFLAGS+=	-L$(OPENSSL_FOUND)/lib64
-endif
+$(eval $(call add_pkg_cppflags,$(OPENSSL_FOUND)/include))
+OPENSSL_LIBDIR := $(if $(wildcard $(OPENSSL_FOUND)/lib64),lib64,lib)
+$(eval $(call add_pkg_ldflags,$(OPENSSL_FOUND)/$(OPENSSL_LIBDIR)))
 PKG_LIBS+=	-lssl -lcrypto -lz
 endif
 ifdef LIBEVENT_FOUND
-PKG_CPPFLAGS+=	-I$(LIBEVENT_FOUND)/include
-PKG_LDFLAGS+=	-L$(LIBEVENT_FOUND)/lib
+$(eval $(call add_pkg_cppflags,$(LIBEVENT_FOUND)/include))
+$(eval $(call add_pkg_ldflags,$(LIBEVENT_FOUND)/lib))
 PKG_LIBS+=	-levent
 endif
 ifeq (,$(filter libevent_openssl,$(PKGS)))
@@ -399,21 +499,40 @@ PKG_LIBS+=	-levent_pthreads
 endif
 ifneq ($(filter -DWITHOUT_MIRROR,$(FEATURES)),-DWITHOUT_MIRROR)
 ifdef LIBNET_FOUND
-PKG_CPPFLAGS+=	-I$(LIBNET_FOUND_INC)
-PKG_LDFLAGS+=	-L$(LIBNET_FOUND)/lib
+$(eval $(call add_pkg_cppflags,$(LIBNET_FOUND_INC)))
+$(eval $(call add_pkg_ldflags,$(LIBNET_FOUND)/lib))
 PKG_LIBS+=	-lnet
 endif
 ifdef LIBPCAP_FOUND
-PKG_CPPFLAGS+=	-I$(LIBPCAP_FOUND)/include
-PKG_LDFLAGS+=	-L$(LIBPCAP_FOUND)/lib
+$(eval $(call add_pkg_cppflags,$(LIBPCAP_FOUND)/include))
+$(eval $(call add_pkg_ldflags,$(LIBPCAP_FOUND)/lib))
 PKG_LIBS+=	-lpcap
 endif
 endif
 ifneq ($(filter -DWITHOUT_USERAUTH,$(FEATURES)),-DWITHOUT_USERAUTH)
 ifdef SQLITE_FOUND
-PKG_CPPFLAGS+=	-I$(SQLITE_FOUND)/include
-PKG_LDFLAGS+=	-L$(SQLITE_FOUND)/lib
+$(eval $(call add_pkg_cppflags,$(SQLITE_FOUND)/include))
+$(eval $(call add_pkg_ldflags,$(SQLITE_FOUND)/lib))
 PKG_LIBS+=	-lsqlite3
+endif
+endif
+ifneq ($(filter -DWITHOUT_HTTP2,$(FEATURES)),-DWITHOUT_HTTP2)
+ifdef LIBNGHTTP2_FOUND
+$(eval $(call add_pkg_cppflags,$(LIBNGHTTP2_FOUND)/include))
+$(eval $(call add_pkg_ldflags,$(LIBNGHTTP2_FOUND)/lib))
+PKG_LIBS+=	-lnghttp2
+endif
+endif
+ifneq ($(filter -DWITHOUT_HTTP3,$(FEATURES)),-DWITHOUT_HTTP3)
+ifdef LIBNGHTTP3_FOUND
+$(eval $(call add_pkg_cppflags,$(LIBNGHTTP3_FOUND)/include))
+$(eval $(call add_pkg_ldflags,$(LIBNGHTTP3_FOUND)/lib))
+PKG_LIBS+=	-lnghttp3
+endif
+ifdef LIBNGTCP2_FOUND
+$(eval $(call add_pkg_cppflags,$(LIBNGTCP2_FOUND)/include))
+$(eval $(call add_pkg_ldflags,$(LIBNGTCP2_FOUND)/lib))
+PKG_LIBS+=	-lngtcp2 -lngtcp2_crypto_ossl
 endif
 endif
 
@@ -446,13 +565,18 @@ CPPDEFS+=	-D_GNU_SOURCE \
 		-D"PKGLABEL=\"$(PKGLABEL)\""
 CPPCHECKFLAGS+=	$(CPPDEFS)
 
+# Add system includes and libs to the end of the list so that they are searched last,
+# and we can override them with custom includes and libs.
+PKG_CPPFLAGS+= $(SYS_PKG_CPPFLAGS)
+PKG_LDFLAGS+= $(SYS_PKG_LDFLAGS)
+
 ifneq (ccc-analyzer,$(notdir $(CC)))
 PKG_CPPFLAGS:=	$(subst -I,-isystem,$(PKG_CPPFLAGS))
 TPKG_CPPFLAGS:=	$(subst -I,-isystem,$(TPKG_CPPFLAGS))
 endif
 
 CFLAGS+=	$(PKG_CFLAGS) \
-		-std=c99 -Wall -Wextra -pedantic \
+		-std=c99 -Wall -Wextra -pedantic -fno-strict-aliasing \
 		-D_FORTIFY_SOURCE=2 -fstack-protector-all
 CPPFLAGS+=	$(PKG_CPPFLAGS) $(CPPDEFS) $(FEATURES)
 TCPPFLAGS+=	$(TPKG_CPPFLAGS)
@@ -500,6 +624,19 @@ $(info LIBNET_BASE:    $(strip $(LIBNET_FOUND)))
 endif
 ifdef SQLITE_FOUND
 $(info SQLITE_BASE:    $(strip $(SQLITE_FOUND)))
+endif
+ifneq ($(filter -DWITHOUT_HTTP2,$(FEATURES)),-DWITHOUT_HTTP2)
+ifdef LIBNGHTTP2_FOUND
+$(info LIBNGHTTP2_BASE: $(strip $(LIBNGHTTP2_FOUND)))
+endif
+endif
+ifneq ($(filter -DWITHOUT_HTTP3,$(FEATURES)),-DWITHOUT_HTTP3)
+ifdef LIBNGHTTP3_FOUND
+$(info LIBNGHTTP3_BASE: $(strip $(LIBNGHTTP3_FOUND)))
+endif
+ifdef LIBNGTCP2_FOUND
+$(info LIBNGTCP2_BASE: $(strip $(LIBNGTCP2_FOUND)))
+endif
 endif
 ifdef CHECK_FOUND
 $(info CHECK_BASE:     $(strip $(CHECK_FOUND)))

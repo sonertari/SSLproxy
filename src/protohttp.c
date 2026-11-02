@@ -1,9 +1,8 @@
 /*-
- * SSLsplit - transparent SSL/TLS interception
- * https://www.roe.ch/SSLsplit
+ * SSLproxy
  *
- * Copyright (c) 2009-2019, Daniel Roethlisberger <daniel@roe.ch>.
  * Copyright (c) 2017-2026, Soner Tari <sonertari@gmail.com>.
+ * Copyright (c) 2009-2019, Daniel Roethlisberger <daniel@roe.ch>.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -28,24 +27,37 @@
  */
 
 #include "protohttp.h"
+#include "protohttp2.h"
+#include "protohttp3.h"
 #include "prototcp.h"
 #include "protossl.h"
 #include "protopassthrough.h"
+
+#ifndef WITHOUT_ICAP
+#include "icap.h"
+#endif /* !WITHOUT_ICAP */
 
 #include "util.h"
 #include "base64.h"
 #include "url.h"
 
 #include <string.h>
+#include <ctype.h>      /* for tolower() in header filtering */
 #include <event2/bufferevent.h>
 
-static void NONNULL(1)
-protohttp_log_connect(pxy_conn_ctx_t *ctx)
+void NONNULL(1)
+protohttp_log_connect(pxy_conn_ctx_t *ctx, protohttpx_stream_ctx_t *s)
 {
-	if (!ctx->log_connect)
-		return;
-
-	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
+	protohttp_ctx_t *http_ctx = NULL;
+	int log_connect = 0;
+	if (s) {
+		log_connect = s->log_connect;
+		http_ctx = s->http_ctx;
+	}
+	else {
+		log_connect = ctx->log_connect;
+		http_ctx = ctx->protoctx->arg;
+	}
 
 	char *msg;
 #ifdef HAVE_LOCAL_PROCINFO
@@ -74,7 +86,7 @@ protohttp_log_connect(pxy_conn_ctx_t *ctx)
 	 */
 
 	if (!ctx->spec->ssl) {
-		rv = asprintf(&msg, "CONN: http %s %s %s %s %s %s %s %s %s"
+		rv = asprintf(&msg, "CONN: http %s %s %s %s %s %s %s %s %s %s"
 #ifdef HAVE_LOCAL_PROCINFO
 		              " %s"
 #endif /* HAVE_LOCAL_PROCINFO */
@@ -91,7 +103,8 @@ protohttp_log_connect(pxy_conn_ctx_t *ctx)
 		              STRORDASH(http_ctx->http_method),
 		              STRORDASH(http_ctx->http_uri),
 		              STRORDASH(http_ctx->http_status_code),
-		              STRORDASH(http_ctx->http_content_length),
+		              STRORDASH(http_ctx->src_http_content_length),
+		              STRORDASH(http_ctx->dst_http_content_length),
 #ifdef HAVE_LOCAL_PROCINFO
 		              lpi,
 #endif /* HAVE_LOCAL_PROCINFO */
@@ -101,7 +114,7 @@ protohttp_log_connect(pxy_conn_ctx_t *ctx)
 #endif /* !WITHOUT_USERAUTH */
 		              );
 	} else {
-		rv = asprintf(&msg, "CONN: https %s %s %s %s %s %s %s %s %s "
+		rv = asprintf(&msg, "%s: %s [%" PRId64 ",%" PRId64 "] %s %s %s %s %s %s %s %s %s %s "
 		              "sni:%s names:%s "
 		              "sproto:%s:%s dproto:%s:%s "
 		              "origcrt:%s usedcrt:%s"
@@ -113,6 +126,15 @@ protohttp_log_connect(pxy_conn_ctx_t *ctx)
 		              " user:%s"
 #endif /* !WITHOUT_USERAUTH */
 		              "\n",
+#ifndef WITHOUT_HTTP3
+		              ctx->sslctx->h2 || ctx->spec->h3 ? "STREAM" : "CONN",
+		              ctx->sslctx->h2 ? "h2" : (ctx->spec->h3 ? "h3" : "https"),
+#else /* WITHOUT_HTTP3 */
+		              ctx->sslctx->h2 ? "STREAM" : "CONN",
+		              ctx->sslctx->h2 ? "h2" : "https",
+#endif /* !WITHOUT_HTTP3 */
+		              s ? s->src_stream_id : 0,
+		              s ? s->dst_stream_id : 0,
 		              STRORDASH(ctx->srchost_str),
 		              STRORDASH(ctx->srcport_str),
 		              STRORDASH(ctx->dsthost_str),
@@ -121,13 +143,21 @@ protohttp_log_connect(pxy_conn_ctx_t *ctx)
 		              STRORDASH(http_ctx->http_method),
 		              STRORDASH(http_ctx->http_uri),
 		              STRORDASH(http_ctx->http_status_code),
-		              STRORDASH(http_ctx->http_content_length),
+		              STRORDASH(http_ctx->src_http_content_length),
+		              STRORDASH(http_ctx->dst_http_content_length),
 		              STRORDASH(ctx->sslctx->sni),
 		              STRORDASH(ctx->sslctx->ssl_names),
-		              SSL_get_version(ctx->src.ssl),
-		              SSL_get_cipher(ctx->src.ssl),
+#ifndef WITHOUT_HTTP3
+		              (ctx->spec->h3 ? ((protohttp3_ctx_t *)ctx->protoctx->arg)->src_ssl : ctx->src.ssl) ? SSL_get_version((ctx->spec->h3 ? ((protohttp3_ctx_t *)ctx->protoctx->arg)->src_ssl : ctx->src.ssl)) : "-",
+		              (ctx->spec->h3 ? ((protohttp3_ctx_t *)ctx->protoctx->arg)->src_ssl : ctx->src.ssl) ? SSL_get_cipher((ctx->spec->h3 ? ((protohttp3_ctx_t *)ctx->protoctx->arg)->src_ssl : ctx->src.ssl)) : "-",
+		              ctx->spec->h3 ? (((protohttp3_ctx_t *)ctx->protoctx->arg)->dst_ssl ? SSL_get_version(((protohttp3_ctx_t *)ctx->protoctx->arg)->dst_ssl) : "-") : STRORDASH(ctx->sslctx->srvdst_ssl_version),
+		              ctx->spec->h3 ? (((protohttp3_ctx_t *)ctx->protoctx->arg)->dst_ssl ? SSL_get_cipher(((protohttp3_ctx_t *)ctx->protoctx->arg)->dst_ssl) : "-") : STRORDASH(ctx->sslctx->srvdst_ssl_cipher),
+#else /* WITHOUT_HTTP3 */
+		              ctx->src.ssl ? SSL_get_version(ctx->src.ssl) : "-",
+		              ctx->src.ssl ? SSL_get_cipher(ctx->src.ssl) : "-",
 		              STRORDASH(ctx->sslctx->srvdst_ssl_version),
 		              STRORDASH(ctx->sslctx->srvdst_ssl_cipher),
+#endif /* !WITHOUT_HTTP3 */
 		              STRORDASH(ctx->sslctx->origcrtfpr),
 		              STRORDASH(ctx->sslctx->usedcrtfpr),
 #ifdef HAVE_LOCAL_PROCINFO
@@ -150,7 +180,7 @@ protohttp_log_connect(pxy_conn_ctx_t *ctx)
 			log_err_level_printf(LOG_WARNING, "Conn logging failed\n");
 		}
 	}
-	if (ctx->global->connectlog) {
+	if (ctx->global->connectlog && log_connect) {
 		if (log_connect_print_free(msg) == -1) {
 			log_err_level_printf(LOG_WARNING, "Connection logging failed\n");
 		}
@@ -315,7 +345,21 @@ protohttp_filter_request_header_line(const char *line, protohttp_ctx_t *http_ctx
 		/* not first line */
 		char *newhdr;
 
-		if (!http_ctx->http_host && !strncasecmp(line, "Host:", 5)) {
+		if (!strncasecmp(line, "Content-Length:", 15)) {
+			if (http_ctx->src_http_content_length) {
+				free(http_ctx->src_http_content_length);
+			}
+			http_ctx->src_http_content_length =
+				strdup(util_skipws(line + 15));
+			if (!http_ctx->src_http_content_length) {
+				ctx->enomem = 1;
+				return NULL;
+			}
+		} else if (!strncasecmp(line, "Transfer-Encoding:", 18)) {
+			if (strstr(line + 18, "chunked") != NULL) {
+				http_ctx->src_content_chunked = 1;
+			}
+		} else if (!http_ctx->http_host && !strncasecmp(line, "Host:", 5)) {
 			http_ctx->http_host = strdup(util_skipws(line + 5));
 			if (!http_ctx->http_host) {
 				ctx->enomem = 1;
@@ -377,9 +421,9 @@ protohttp_filter_request_header_line(const char *line, protohttp_ctx_t *http_ctx
 }
 
 static filter_action_t * NONNULL(1,2)
-protohttp_filter_match_host(pxy_conn_ctx_t *ctx, filter_list_t *list)
+protohttp_filter_match_host(protohttp_ctx_t *http_ctx, filter_list_t *list, unsigned int filter_precedence)
 {
-	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
+	pxy_conn_ctx_t *ctx = http_ctx->ctx;
 
 	filter_site_t *site = filter_site_find(list->host_btree, list->host_acm, list->host_all, http_ctx->http_host);
 	if (!site)
@@ -395,8 +439,8 @@ protohttp_filter_match_host(pxy_conn_ctx_t *ctx, filter_list_t *list)
 		STRORDASH(http_ctx->http_host));
 #endif /* WITHOUT_USERAUTH */
 
-	if (!site->port_btree && !site->port_acm && (site->action.precedence < ctx->filter_precedence)) {
-		log_finest_va("Rule precedence lower than conn filter precedence %d < %d (line=%d): %s, %s", site->action.precedence, ctx->filter_precedence, site->action.line_num, site->site, http_ctx->http_host);
+	if (!site->port_btree && !site->port_acm && (site->action.precedence < filter_precedence)) {
+		log_finest_va("Rule precedence lower than conn filter precedence %d < %d (line=%d): %s, %s", site->action.precedence, filter_precedence, site->action.line_num, site->site, http_ctx->http_host);
 		return NULL;
 	}
 
@@ -409,7 +453,8 @@ protohttp_filter_match_host(pxy_conn_ctx_t *ctx, filter_list_t *list)
 		log_finest_va("Match substring in host (line=%d): %s, %s", site->action.line_num, site->site, http_ctx->http_host);
 #endif /* DEBUG_PROXY */
 
-	filter_action_t *port_action = pxy_conn_filter_port(ctx, site);
+	// Port filter does not need stream ctx, because it is only used for connection filtering, not stream filtering
+	filter_action_t *port_action = pxy_conn_filter_port(ctx, NULL, site);
 	if (port_action)
 		return port_action;
 
@@ -417,9 +462,9 @@ protohttp_filter_match_host(pxy_conn_ctx_t *ctx, filter_list_t *list)
 }
 
 static filter_action_t * NONNULL(1,2)
-protohttp_filter_match_uri(pxy_conn_ctx_t *ctx, filter_list_t *list)
+protohttp_filter_match_uri(protohttp_ctx_t *http_ctx, filter_list_t *list, unsigned int filter_precedence)
 {
-	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
+	pxy_conn_ctx_t *ctx = http_ctx->ctx;
 
 	filter_site_t *site = filter_site_find(list->uri_btree, list->uri_acm, list->uri_all, http_ctx->http_uri);
 	if (!site)
@@ -435,8 +480,8 @@ protohttp_filter_match_uri(pxy_conn_ctx_t *ctx, filter_list_t *list)
 		STRORDASH(http_ctx->http_uri));
 #endif /* WITHOUT_USERAUTH */
 
-	if (!site->port_btree && !site->port_acm && (site->action.precedence < ctx->filter_precedence)) {
-		log_finest_va("Rule precedence lower than conn filter precedence %d < %d (line=%d): %s, %s", site->action.precedence, ctx->filter_precedence, site->action.line_num, site->site, http_ctx->http_uri);
+	if (!site->port_btree && !site->port_acm && (site->action.precedence < filter_precedence)) {
+		log_finest_va("Rule precedence lower than conn filter precedence %d < %d (line=%d): %s, %s", site->action.precedence, filter_precedence, site->action.line_num, site->site, http_ctx->http_uri);
 		return NULL;
 	}
 
@@ -449,7 +494,8 @@ protohttp_filter_match_uri(pxy_conn_ctx_t *ctx, filter_list_t *list)
 		log_finest_va("Match substring in uri (line=%d): %s, %s", site->action.line_num, site->site, http_ctx->http_uri);
 #endif /* DEBUG_PROXY */
 
-	filter_action_t *port_action = pxy_conn_filter_port(ctx, site);
+	// Port filter does not need stream ctx, because it is only used for connection filtering, not stream filtering
+	filter_action_t *port_action = pxy_conn_filter_port(ctx, NULL, site);
 	if (port_action)
 		return port_action;
 
@@ -457,15 +503,24 @@ protohttp_filter_match_uri(pxy_conn_ctx_t *ctx, filter_list_t *list)
 }
 
 static filter_action_t * NONNULL(1,2)
-protohttp_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
+protohttp_filter(pxy_conn_ctx_t *ctx, protohttpx_stream_ctx_t *s, filter_list_t *list)
 {
-	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
+	protohttp_ctx_t *http_ctx = NULL;
+	unsigned int filter_precedence = 0;
+	if (ctx->proto == PROTO_HTTP2 || ctx->proto == PROTO_HTTP3) {
+		http_ctx = s->http_ctx;
+		filter_precedence = s->filter_precedence;
+	}
+	else {
+		http_ctx = ctx->protoctx->arg;
+		filter_precedence = ctx->filter_precedence;
+	}
 
 	filter_action_t *action_host = NULL;
 	filter_action_t *action_uri = NULL;
 
 	if (http_ctx->http_host) {
-		if (!(action_host = protohttp_filter_match_host(ctx, list))) {
+		if (!(action_host = protohttp_filter_match_host(http_ctx, list, filter_precedence))) {
 #ifndef WITHOUT_USERAUTH
 			log_finest_va("No filter match with host: %s:%s, %s:%s, %s, %s, %s, %s",
 				STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
@@ -479,7 +534,7 @@ protohttp_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
 	}
 
 	if (http_ctx->http_uri) {
-		if (!(action_uri = protohttp_filter_match_uri(ctx, list))) {
+		if (!(action_uri = protohttp_filter_match_uri(http_ctx, list, filter_precedence))) {
 #ifndef WITHOUT_USERAUTH
 			log_finest_va("No filter match with uri: %s:%s, %s:%s, %s, %s, %s, %s",
 				STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
@@ -507,7 +562,8 @@ protohttp_apply_filter(pxy_conn_ctx_t *ctx)
 {
 	int rv = 0;
 	filter_action_t *a;
-	if ((a = pxy_conn_filter(ctx, protohttp_filter))) {
+	// H1 filter is a conn filter, but H2/H3 stream filter calls protohttpx_apply_filter() with stream ctx
+	if ((a = pxy_conn_filter(ctx, NULL, protohttp_filter))) {
 		unsigned int action = pxy_conn_translate_filter_action(ctx, a);
 
 		ctx->filter_precedence = action & FILTER_PRECEDENCE;
@@ -576,8 +632,18 @@ protohttp_apply_filter(pxy_conn_ctx_t *ctx)
 			ctx->log_mirror = 0;
 #endif /* !WITHOUT_MIRROR */
 
-		if (a->conn_opts)
+		if (a->conn_opts) {
 			ctx->conn_opts = a->conn_opts;
+#ifndef WITHOUT_ICAP
+			if (a->conn_opts->icap_chain) {
+				ctx->icap_ctx = icap_init(ctx, NULL, NULL, a->conn_opts->icap_chain);
+				if (!ctx->icap_ctx) {
+					ctx->enomem = 1;
+					return 1;
+				}
+			}
+#endif /* !WITHOUT_ICAP */
+		}
 	}
 
 	// Cannot defer block action any longer
@@ -588,7 +654,962 @@ protohttp_apply_filter(pxy_conn_ctx_t *ctx)
 	return rv;
 }
 
-static int WUNRES NONNULL(1,2,3,5)
+static int
+protohttpx_apply_filter(protohttpx_stream_ctx_t *s)
+{
+	pxy_conn_ctx_t *ctx = s->ctx;
+	log_finest("ENTER");
+
+	// H2/H3 filter is a stream filter
+	// Stream filters can only take block or match actions, not divert, split, or pass actions
+	int rv = 0;
+	filter_action_t *a;
+	if ((a = pxy_conn_filter(ctx, s, protohttp_filter))) {
+		unsigned int action = pxy_conn_translate_filter_action(ctx, a);
+
+		// H2/H3 stream filter_precedence is for http filters only
+		s->filter_precedence = action & FILTER_PRECEDENCE;
+
+		if (action & (FILTER_ACTION_DIVERT | FILTER_ACTION_SPLIT)) {
+			log_fine("H2/H3 filter cannot enable/disable divert or split mode");
+		}
+		else if (action & FILTER_ACTION_PASS) {
+			log_fine("H2/H3 filter cannot take pass action");
+		}
+		else if (action & FILTER_ACTION_BLOCK) {
+#ifndef WITHOUT_HTTP3
+			if (ctx->proto == PROTO_HTTP2) {
+#endif /* !WITHOUT_HTTP3 */
+				protohttp2_close_stream((protohttp2_stream_ctx_t *)s);
+#ifndef WITHOUT_HTTP3
+			}
+			else /* if (proto == PROTO_HTTP3) */ {
+				protohttp3_close_stream((protohttp3_stream_ctx_t *)s);
+			}
+#endif /* !WITHOUT_HTTP3 */
+			rv = 1;
+		}
+		//else { /* FILTER_ACTION_MATCH */ }
+
+		if (action & (FILTER_LOG_CONTENT | FILTER_LOG_PCAP
+#ifndef WITHOUT_MIRROR
+				| FILTER_LOG_MIRROR
+#endif /* !WITHOUT_MIRROR */
+				)) {
+#ifndef WITHOUT_MIRROR
+			log_fine("H2/H3 filter cannot enable content, pcap, or mirror logging");
+#else /* !WITHOUT_MIRROR */
+			log_fine("H2/H3 filter cannot enable content or pcap logging");
+#endif /* WITHOUT_MIRROR */
+		}
+
+		// Note that connect, master, and cert logs have already been written by now
+		// so enabling or disabling those logs here will not have any effect
+		if (action & FILTER_LOG_CONNECT)
+			s->log_connect = 1;
+		else if (action & FILTER_LOG_NOCONNECT)
+			s->log_connect = 0;
+
+		// Streams cannot log master or cert, because those logs are only written once per connection
+
+		// content, pcap, and mirror logging can be disabled only
+		// loggers will stop writing further contents
+		if (action & FILTER_LOG_NOCONTENT)
+			s->log_content = 0;
+		if (action & FILTER_LOG_NOPCAP)
+			s->log_pcap = 0;
+#ifndef WITHOUT_MIRROR
+		if (action & FILTER_LOG_NOMIRROR)
+			s->log_mirror = 0;
+#endif /* !WITHOUT_MIRROR */
+
+		if (a->conn_opts) {
+			s->conn_opts = a->conn_opts;
+#ifndef WITHOUT_ICAP
+			if (a->conn_opts->icap_chain) {
+				s->icap_ctx = icap_init(ctx, s, ctx->protoctx->arg, a->conn_opts->icap_chain);
+				if (!s->icap_ctx) {
+					ctx->enomem = 1;
+					return -1;
+				}
+			}
+#endif /* !WITHOUT_ICAP */
+		}
+	}
+
+	// ATTENTION: Block is a conn filter action, so streams in conn should be blocked too
+	// Cannot defer block action any longer
+	if (ctx->deferred_action & FILTER_ACTION_BLOCK) {
+		log_fine("Applying deferred block action");
+#ifndef WITHOUT_HTTP3
+		if (ctx->proto == PROTO_HTTP2) {
+#endif /* !WITHOUT_HTTP3 */
+			protohttp2_close_stream((protohttp2_stream_ctx_t *)s);
+#ifndef WITHOUT_HTTP3
+		}
+		else /* if (proto == PROTO_HTTP3) */ {
+			protohttp3_close_stream((protohttp3_stream_ctx_t *)s);
+		}
+#endif /* !WITHOUT_HTTP3 */
+		rv = 1;
+	}
+
+	return rv;
+}
+
+void
+protohttpx_free_nv_headers(protohttpx_stream_ctx_t *s)
+{
+    UNUSED pxy_conn_ctx_t *ctx = s->ctx;
+#ifndef WITHOUT_ICAP
+    log_finest_va("ENTER, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", headers count=%zu, reqmod=%d", s->src_stream_id, s->dst_stream_id, s->headers_count, s->icap_ctx ? s->icap_ctx->reqmod : -1);
+#else /* !WITHOUT_ICAP */
+    log_finest_va("ENTER, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", headers count=%zu", s->src_stream_id, s->dst_stream_id, s->headers_count);
+#endif /* !WITHOUT_ICAP */
+
+    protohttpx_nv_t **headers = NULL;
+#ifndef WITHOUT_HTTP3
+	if (ctx->proto == PROTO_HTTP2) {
+#endif /* !WITHOUT_HTTP3 */
+        headers = (protohttpx_nv_t **)&((protohttp2_stream_ctx_t *)s)->headers;
+#ifndef WITHOUT_HTTP3
+	}
+	else /* if (ctx->proto == PROTO_HTTP3) */ {
+        headers = (protohttpx_nv_t **)&((protohttp3_stream_ctx_t *)s)->headers;
+	}
+#endif /* !WITHOUT_HTTP3 */
+
+    if (!*headers) {
+        log_finest("No headers to free");
+        return;
+    }
+
+    for (size_t i = 0; i < s->headers_count; i++) {
+        if ((*headers)[i].name) {
+            free((void *)(*headers)[i].name);
+            (*headers)[i].name = NULL;
+        }
+        if ((*headers)[i].value) {
+            free((void *)(*headers)[i].value);
+            (*headers)[i].value = NULL;
+        }
+    }
+    s->headers_count = 0;
+    s->headers_capacity = 0;
+
+    free(*headers);
+    *headers = NULL;
+}
+
+static void
+protohttpx_delete_nv_header(protohttpx_stream_ctx_t *s, size_t idx)
+{
+    UNUSED pxy_conn_ctx_t *ctx = s->ctx;
+    log_finest_va("ENTER, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", remove idx=%zu", s->src_stream_id, s->dst_stream_id, idx);
+
+    if (s->headers_count == 0 || idx >= s->headers_count) {
+		log_finest_va("Invalid index or empty headers, headers_count=%zu, remove idx=%zu, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64,
+			s->headers_count, idx, s->src_stream_id, s->dst_stream_id);
+        return;
+    }
+
+    protohttpx_nv_t *headers = NULL;
+#ifndef WITHOUT_HTTP3
+	if (ctx->proto == PROTO_HTTP2) {
+#endif /* !WITHOUT_HTTP3 */
+		headers = (protohttpx_nv_t *)((protohttp2_stream_ctx_t *)s)->headers;
+#ifndef WITHOUT_HTTP3
+	}
+	else /*	if (ctx->proto == PROTO_HTTP3) */ {
+		headers = (protohttpx_nv_t *)((protohttp3_stream_ctx_t *)s)->headers;
+	}
+#endif /* !WITHOUT_HTTP3 */
+
+    // TODO: How to properly free the name and value buffers in h3? They are allocated with malloc in protohttp3_add_nv_header.
+    free((void *)headers[idx].name);
+    free((void *)headers[idx].value);
+
+    // Move the remaining headers up to fill the gap left by the removed header
+    for (size_t i = idx; i < s->headers_count - 1; i++) {
+        memcpy(&headers[i], &headers[i + 1], sizeof(protohttpx_nv_t));
+    }
+
+    memset(&headers[s->headers_count - 1], 0, sizeof(protohttpx_nv_t));
+    s->headers_count--;
+}
+
+/*
+ * Append a single name-value header pair to the stream's header array,
+ * growing the backing array by doubling as needed.
+ *
+ * Returns 0 on success, -1 on OOM.
+ */
+int
+protohttpx_add_nv_header(protohttpx_stream_ctx_t *s, const char *name, size_t namelen, const char *value, size_t valuelen)
+{
+    pxy_conn_ctx_t *ctx = s->ctx;
+    log_finest_va("%.*s: %.*s", (int)namelen, name, (int)valuelen, value);
+
+    protohttpx_nv_t **headers = NULL;
+#ifndef WITHOUT_HTTP3
+	if (ctx->proto == PROTO_HTTP2) {
+#endif /* !WITHOUT_HTTP3 */
+        headers = (protohttpx_nv_t **)&((protohttp2_stream_ctx_t *)s)->headers;
+#ifndef WITHOUT_HTTP3
+	}
+	else /* if (ctx->proto == PROTO_HTTP3) */ {
+        headers = (protohttpx_nv_t **)&((protohttp3_stream_ctx_t *)s)->headers;
+	}
+#endif /* !WITHOUT_HTTP3 */
+
+    if (s->headers_count >= s->headers_capacity) {
+        size_t new_capacity = s->headers_capacity == 0 ? 16 : s->headers_capacity * 2;
+        protohttpx_nv_t *tmp = realloc(*headers, new_capacity * sizeof(protohttpx_nv_t));
+        if (!tmp) {
+            log_fine("Failed reallocating headers");
+            return -1;
+        }
+        *headers = tmp;
+        s->headers_capacity = new_capacity;
+    }
+
+    protohttpx_nv_t *nv = &(*headers)[s->headers_count];
+
+    nv->name = malloc(namelen);
+    if (!nv->name)
+        return -1;
+
+    // H2/H3 mandates strict lowercase header names
+    // Note that nghttp3 seems to convert to lowercase automatically, but we will do it here for safety.
+    char name_lower[namelen];
+    memcpy(name_lower, name, namelen);
+    for (size_t i = 0; i < namelen; i++) {
+        name_lower[i] = tolower(name[i]);
+    }
+
+    // Cast to void* to avoid warnings about discarding const qualifier in h3
+    memcpy((void *)nv->name, name_lower, namelen);
+    nv->namelen = namelen;
+
+    nv->value = malloc(valuelen);
+    if (!nv->value) {
+        free((void *)nv->name);
+        return -1;
+    }
+    memcpy((void *)nv->value, value, valuelen);
+    nv->valuelen = valuelen;
+
+    nv->flags = (ctx->proto == PROTO_HTTP2) ? NGHTTP2_NV_FLAG_NONE :
+#ifndef WITHOUT_HTTP3
+	NGHTTP3_NV_FLAG_NONE;
+#else /* !WITHOUT_HTTP3 */
+	0;
+#endif /* !WITHOUT_HTTP3 */
+
+	s->headers_count++;
+    return 0;
+}
+
+#ifndef WITHOUT_ICAP
+// Common HTTP status codes and their standard reason phrases, sorted by code
+static const http_status_reason_t http_status_reasons[] = {
+    { 100, "Continue" },
+    { 101, "Switching Protocols" },
+    { 102, "Processing" },
+    { 103, "Early Hints" },
+    { 200, "OK" },
+    { 201, "Created" },
+    { 202, "Accepted" },
+    { 203, "Non-Authoritative Information" },
+    { 204, "No Content" },
+    { 205, "Reset Content" },
+    { 206, "Partial Content" },
+    { 207, "Multi-Status" },
+    { 208, "Already Reported" },
+    { 226, "IM Used" },
+    { 300, "Multiple Choices" },
+    { 301, "Moved Permanently" },
+    { 302, "Found" },
+    { 303, "See Other" },
+    { 304, "Not Modified" },
+    { 305, "Use Proxy" },
+    { 307, "Temporary Redirect" },
+    { 308, "Permanent Redirect" },
+    { 400, "Bad Request" },
+    { 401, "Unauthorized" },
+    { 402, "Payment Required" },
+    { 403, "Forbidden" },
+    { 404, "Not Found" },
+    { 405, "Method Not Allowed" },
+    { 406, "Not Acceptable" },
+    { 407, "Proxy Authentication Required" },
+    { 408, "Request Timeout" },
+    { 409, "Conflict" },
+    { 410, "Gone" },
+    { 411, "Length Required" },
+    { 412, "Precondition Failed" },
+    { 413, "Payload Too Large" },
+    { 414, "URI Too Long" },
+    { 415, "Unsupported Media Type" },
+    { 416, "Range Not Satisfied" },
+    { 417, "Expectation Failed" },
+    { 421, "Misdirected Request" },
+    { 422, "Unprocessable Entity" },
+    { 423, "Locked" },
+    { 424, "Failed Dependency" },
+    { 425, "Too Early" },
+    { 426, "Upgrade Required" },
+    { 428, "Precondition Required" },
+    { 429, "Too Many Requests" },
+    { 431, "Request Header Fields Too Large" },
+    { 451, "Unavailable For Legal Reasons" },
+    { 500, "Internal Server Error" },
+    { 501, "Not Implemented" },
+    { 502, "Bad Gateway" },
+    { 503, "Service Unavailable" },
+    { 504, "Gateway Timeout" },
+    { 505, "HTTP Version Not Supported" },
+    { 506, "Variant Also Negotiates" },
+    { 507, "Insufficient Storage" },
+    { 508, "Loop Detected" },
+    { 510, "Not Extended" },
+    { 511, "Network Authentication Required" }
+};
+
+#define HTTP_STATUS_REASONS_LEN (sizeof(http_status_reasons) / sizeof(http_status_reasons[0]))
+
+// Returns the standard reason phrase for a given status code.
+// If the code is not in our mapping table, falls back to a generic default
+// based on the HTTP status class (e.g., "Success", "Client Error").
+const char *
+http_get_reason_phrase(int status_code)
+{
+    int low = 0;
+    int high = HTTP_STATUS_REASONS_LEN - 1;
+
+    while (low <= high) {
+        int mid = low + (high - low) / 2;
+        if (http_status_reasons[mid].code == status_code) {
+            return http_status_reasons[mid].reason;
+        }
+        if (http_status_reasons[mid].code < status_code) {
+            low = mid + 1;
+        } else {
+            high = mid - 1;
+        }
+    }
+
+    // Fallback classes if we encounter custom/unlisted status codes
+    if (status_code >= 100 && status_code < 200) return "Informational";
+    if (status_code >= 200 && status_code < 300) return "Success";
+    if (status_code >= 300 && status_code < 400) return "Redirection";
+    if (status_code >= 400 && status_code < 500) return "Client Error";
+    if (status_code >= 500 && status_code < 600) return "Server Error";
+
+    return "Unknown Status";
+}
+
+struct evbuffer *
+protohttpx_get_h1_headers(protohttpx_stream_ctx_t *s)
+{
+    pxy_conn_ctx_t *ctx = s->ctx;
+    log_finest_va("ENTER, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, s->icap_ctx ? s->icap_ctx->reqmod : -1);
+
+    struct evbuffer *buf = evbuffer_new();
+    if (!buf) {
+        log_finest("Failed to allocate evbuffer");
+		ctx->enomem = 1;
+        return NULL;
+	}
+
+    int method_idx = -1, path_idx = -1, status_idx = -1, authority_idx = -1;
+
+	protohttpx_nv_t *headers = NULL;
+#ifndef WITHOUT_HTTP3
+	if (ctx->proto == PROTO_HTTP2) {
+#endif /* !WITHOUT_HTTP3 */
+		headers = (protohttpx_nv_t *)((protohttp2_stream_ctx_t *)s)->headers;
+#ifndef WITHOUT_HTTP3
+	}
+	else /*	if (ctx->proto == PROTO_HTTP3) */ {
+		headers = (protohttpx_nv_t *)((protohttp3_stream_ctx_t *)s)->headers;
+	}
+#endif /* !WITHOUT_HTTP3 */
+
+	size_t count = s->headers_count;
+
+    for (size_t i = 0; i < count; i++) {
+        if (headers[i].namelen == 7 && !memcmp(headers[i].name, ":method", 7))
+            method_idx = (int)i;
+        else if (headers[i].namelen == 5 && !memcmp(headers[i].name, ":path", 5))
+            path_idx = (int)i;
+        else if (headers[i].namelen == 7 && !memcmp(headers[i].name, ":status", 7))
+            status_idx = (int)i;
+        else if (headers[i].namelen == 10 && !memcmp(headers[i].name, ":authority", 10))
+            authority_idx = (int)i;
+    }
+
+    if (method_idx != -1) {
+        // log_finest_va("method_idx=%d", method_idx);
+        log_finest_va("%.*s %.*s HTTP/1.1", (int)headers[method_idx].valuelen, (char *)headers[method_idx].value,
+            (path_idx != -1) ? (int)headers[path_idx].valuelen : 1, (path_idx != -1) ? (char *)headers[path_idx].value : "/");
+
+        evbuffer_add_printf(buf, "%.*s %.*s HTTP/1.1\r\n", (int)headers[method_idx].valuelen, (char *)headers[method_idx].value,
+            (path_idx != -1) ? (int)headers[path_idx].valuelen : 1, (path_idx != -1) ? (char *)headers[path_idx].value : "/");
+
+        if (authority_idx != -1) {
+            evbuffer_add_printf(buf, "Host: %.*s\r\n", (int)headers[authority_idx].valuelen, (char *)headers[authority_idx].value);
+        }
+    }
+
+    if (status_idx != -1 && headers[status_idx].valuelen == 3) {
+        // log_finest_va("status_idx=%d", status_idx);
+        log_finest_va("HTTP/1.1 %.*s", (int)headers[status_idx].valuelen, (char *)headers[status_idx].value);
+
+        int status_code = http_parse_status_3dig(headers[status_idx].value);
+        const char *reason = http_get_reason_phrase(status_code);
+
+        // Add the correct reason phrase, otherwise E2Guardian icap service does not respond
+        evbuffer_add_printf(buf, "HTTP/1.1 %d %s\r\n", status_code, reason);
+    }
+
+    for (size_t i = 0; i < count; i++) {
+        if (headers[i].name[0] == ':')
+            continue;
+        // Skip Host to avoid duplicates
+        if (headers[i].namelen == 4 && !strncasecmp((char *)headers[i].name, "Host", 4))
+            continue;
+        log_finest_va("%.*s: %.*s", (int)headers[i].namelen, headers[i].name, (int)headers[i].valuelen, headers[i].value);
+        evbuffer_add_printf(buf, "%.*s: %.*s\r\n", (int)headers[i].namelen, headers[i].name, (int)headers[i].valuelen, headers[i].value);
+    }
+
+    // Add an extra CRLF to signal end of headers.
+    evbuffer_add_printf(buf, "\r\n");
+
+    return buf;
+}
+#endif /* !WITHOUT_ICAP */
+
+int
+protohttpx_get_hx_headers(protohttpx_stream_ctx_t *s, struct evbuffer *h1_buf, int init)
+{
+    UNUSED pxy_conn_ctx_t *ctx = s->ctx;
+#ifndef WITHOUT_ICAP
+    log_finest_va("ENTER, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", reqmod=%d", s->src_stream_id, s->dst_stream_id, s->icap_ctx ? s->icap_ctx->reqmod : -1);
+#else /* !WITHOUT_ICAP */
+    log_finest_va("ENTER, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64, s->src_stream_id, s->dst_stream_id);
+#endif /* !WITHOUT_ICAP */
+
+    // Clean slate for this stream context's header holder
+    if (init == 1) {
+        protohttpx_free_nv_headers(s);
+    }
+
+    size_t line_len;
+    char *line;
+    int is_first_line = 1;
+
+    while ((line = evbuffer_readln(h1_buf, &line_len, EVBUFFER_EOL_CRLF)) != NULL) {
+        if (line_len == 0) {
+            free(line);
+            break;
+        }
+
+        if (is_first_line) {
+            is_first_line = 0;
+
+            // Request Line
+            if (memcmp(line, "HTTP/", 5) != 0) {
+                char *method = line;
+                char *path = strchr(line, ' ');
+                if (path) {
+                    *path = '\0';
+                    path++;
+                    char *version = strchr(path, ' ');
+                    if (version) {
+                        *version = '\0';
+                    }
+
+                    // Strip absolute uri scheme and authority
+                    // If path starts with "http://" or "https://", skip to the relative path component
+                    if (strncasecmp(path, "http://", 7) == 0) {
+                        char *relative_path = strchr(path + 7, '/');
+                        if (relative_path) {
+                            path = relative_path;
+                        } else {
+                            path = "/"; // Fallback if no trailing slash was provided
+                        }
+                    } else if (strncasecmp(path, "https://", 8) == 0) {
+                        char *relative_path = strchr(path + 8, '/');
+                        if (relative_path) {
+                            path = relative_path;
+                        } else {
+                            path = "/"; // Fallback if no trailing slash was provided
+                        }
+                    }
+
+                    size_t m_len = strlen(method);
+                    size_t p_len = strlen(path);
+
+                    log_finest_va("Translate Request Line: :method=%.*s, :path=%.*s, and add :scheme=https", (int)m_len, method, (int)p_len, path);
+                    if (protohttpx_add_nv_header(s, ":method", 7, method, m_len) < 0 ||
+                        protohttpx_add_nv_header(s, ":path", 5, path, p_len) < 0 ||
+                        protohttpx_add_nv_header(s, ":scheme", 7, "https", 5) < 0) {
+                        free(line);
+                        return -1;
+                    }
+                }
+            }
+            // Status Line
+            else {
+                char *status = strchr(line, ' ');
+                if (status) {
+                    while (*status == ' ') status++; // Skip spaces
+                    char *phrase = strchr(status, ' ');
+                    if (phrase) {
+                        // We only want the status digit group (e.g. "200"), not the reason phrase (e.g. "OK")
+                        *phrase = '\0';
+                    }
+                    size_t s_len = strlen(status);
+                    log_finest_va("Translate Status Line: :status=%.*s", (int)s_len, status);
+                    if (protohttpx_add_nv_header(s, ":status", 7, status, s_len) < 0) {
+                        free(line);
+                        return -1;
+                    }
+                }
+            }
+            free(line);
+            continue;
+        }
+
+        // Process regular headers "Name: Value"
+        char *colon = strchr(line, ':');
+        if (colon) {
+            *colon = '\0';
+            char *h_name = line;
+            char *h_value = colon + 1;
+
+            size_t n_len = 0;
+            size_t v_len = 0;
+            h_name = trim_whitespace(h_name, &n_len);
+            h_value = trim_whitespace(h_value, &v_len);
+
+            if (n_len == 4 && !strncasecmp(h_name, "Host", 4)) {
+                log_finest_va("Translate Host to :authority: %.*s", (int)v_len, h_value);
+                if (protohttpx_add_nv_header(s, ":authority", 10, h_value, v_len) < 0) {
+                    free(line);
+                    return -1;
+                }
+            }
+            // Filter out Connection headers that are forbidden or invalid in H2
+            else if ((n_len == 10 && !strncasecmp(h_name, "Connection", 10)) ||
+                     (n_len == 17 && !strncasecmp(h_name, "Transfer-Encoding", 17)) ||
+                     (n_len == 10 && !strncasecmp(h_name, "Keep-Alive", 10)) ||
+                     (n_len == 5  && !strncasecmp(h_name, "Proxy", 5))) {
+                log_finest_va("Skip H1 specific connection header: %s", h_name);
+            }
+            // Regular Header Pass-through
+            else {
+                if (protohttpx_add_nv_header(s, h_name, n_len, h_value, v_len) < 0) {
+                    free(line);
+                    return -1;
+                }
+            }
+        }
+        free(line);
+    }
+
+    return 0;
+}
+
+void NONNULL(1)
+protohttpx_send_data_to_src_cb(pxy_conn_ctx_t *ctx, protohttpx_stream_ctx_t *s, struct evbuffer *hdr, struct evbuffer *body)
+{
+    log_finest_va("ENTER, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64 ", hdr=%zu, body=%zu, data_buf=%zu", s->src_stream_id, s->dst_stream_id,
+        hdr ? evbuffer_get_length(hdr) : 0, body ? evbuffer_get_length(body) : 0, evbuffer_get_length(s->data_buf));
+
+    if (hdr && protohttpx_get_hx_headers(s, hdr, 1) < 0) {
+        log_finest_va("Failed to add headers for src_stream_id=%" PRId64, s->src_stream_id);
+        return;
+    }
+
+    if (body) {
+        evbuffer_add_buffer(s->data_buf, body);
+    }
+
+    log_finest_va("Set end_stream for both sides, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64, s->src_stream_id, s->dst_stream_id);
+    s->src_end_stream = 1;
+    s->dst_end_stream = 1;
+
+    // ATTENTION: We pass 0 for reqmod because we are sending data to the src (client) side, not the dst (server) side.
+    // So, protohttp3_submit_data() will use !reqmod, when triggering the write loop.
+    // Send block page to src (client), not dst (server)
+
+	void *hx_ctx = ctx->protoctx->arg;
+
+#ifndef WITHOUT_HTTP3
+	if (ctx->proto == PROTO_HTTP2) {
+#endif /* !WITHOUT_HTTP3 */
+		if (protohttp2_submit_data(hx_ctx, (protohttp2_stream_ctx_t *)s, 0 /*respmod*/) < 0) {
+			log_finest_va("Failed to submit data for src_stream_id=%" PRId64, s->src_stream_id);
+			return;
+		}
+#ifndef WITHOUT_HTTP3
+	}
+	else /* if (ctx->proto == PROTO_HTTP3) */ {
+		if (protohttp3_submit_data(hx_ctx, (protohttp3_stream_ctx_t *)s, 0 /*respmod*/) < 0) {
+			log_finest_va("Failed to submit data for src_stream_id=%" PRId64, s->src_stream_id);
+			return;
+		}
+	}
+#endif /* !WITHOUT_HTTP3 */
+}
+
+#ifndef WITHOUT_USERAUTH
+static const char redirect[] =
+	"HTTP/1.1 302 Found\r\n"
+	"Location: %s\r\n"
+	"\r\n";
+static const char redirect_url[] =
+	"HTTP/1.1 302 Found\r\n"
+	"Location: %s?SSLproxy=%s\r\n"
+	"\r\n";
+
+static int WUNRES NONNULL(1,2)
+protohttp_inject_redirect_url(protohttp_ctx_t *http_ctx, struct evbuffer *outbuf)
+{
+    pxy_conn_ctx_t *ctx = http_ctx->ctx;
+
+	char *url = NULL;
+	if (http_ctx->http_host && http_ctx->http_uri) {
+		// strlen("https://") == 8, don't care about whether it's http or https for the length calculation
+		int url_len = 8 + strlen(http_ctx->http_host) + strlen(http_ctx->http_uri) + 1;
+
+		url = malloc(url_len);
+		if (!url) {
+			ctx->enomem = 1;
+			return -1;
+		}
+
+		// https, h2, and h3 all use SSL, so they have spec->ssl set
+		if (snprintf(url, url_len, "http%s://%s%s", ctx->spec->ssl ? "s": "", http_ctx->http_host, http_ctx->http_uri) < 0) {
+			free(url);
+			ctx->enomem = 1;
+			return -1;
+		}
+	}
+
+	log_finest_va("Add auth location=%s, redirect url=%s", STRORDASH(ctx->conn_opts->user_auth_url), STRORDASH(url));
+
+	if (url) {
+		evbuffer_add_printf(outbuf, redirect_url, ctx->conn_opts->user_auth_url, url);
+		free(url);
+	} else {
+		evbuffer_add_printf(outbuf, redirect, ctx->conn_opts->user_auth_url);
+	}
+
+	ctx->sent_userauth_msg = 1;
+	return 0;
+}
+#endif /* !WITHOUT_USERAUTH */
+
+int WUNRES NONNULL(1)
+protohttpx_filter_request_header(protohttpx_stream_ctx_t *s)
+{
+    pxy_conn_ctx_t *ctx = s->ctx;
+    log_finest_va("ENTER, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64, s->src_stream_id, s->dst_stream_id);
+
+    protohttp_ctx_t *http_ctx = s->http_ctx;
+    conn_opts_t *conn_opts = s->conn_opts ? s->conn_opts : ctx->conn_opts;
+
+	protohttpx_nv_t *headers = NULL;
+#ifndef WITHOUT_HTTP3
+	if (ctx->proto == PROTO_HTTP2) {
+#endif /* !WITHOUT_HTTP3 */
+		headers = (protohttpx_nv_t *)((protohttp2_stream_ctx_t *)s)->headers;
+#ifndef WITHOUT_HTTP3
+	}
+	else /*	if (ctx->proto == PROTO_HTTP3) */ {
+		headers = (protohttpx_nv_t *)((protohttp3_stream_ctx_t *)s)->headers;
+	}
+#endif /* !WITHOUT_HTTP3 */
+
+	size_t i = 0;
+	while (i < s->headers_count) {
+        log_finest_va("Processing header '%.*s=%.*s', idx=%zu, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64,
+            (int)headers[i].namelen, headers[i].name, (int)headers[i].valuelen, headers[i].value, i, s->src_stream_id, s->dst_stream_id);
+
+        if (headers[i].namelen == 7 && !memcmp(headers[i].name, ":method", 7)) {
+            if (http_ctx->http_method) {
+                free(http_ctx->http_method);
+            }
+            http_ctx->http_method = malloc(headers[i].valuelen + 1);
+            if (!http_ctx->http_method) {
+                ctx->enomem = 1;
+                return -1;
+            }
+            memcpy(http_ctx->http_method, headers[i].value, headers[i].valuelen);
+            http_ctx->http_method[headers[i].valuelen] = '\0';
+			http_ctx->seen_keyword_count++;
+
+            log_finest_va("Http method '%s', idx=%zu, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64,
+                http_ctx->http_method, i, s->src_stream_id, s->dst_stream_id);
+        }
+        else if (headers[i].namelen == 5 && !memcmp(headers[i].name, ":path", 5)) {
+            if (http_ctx->http_uri) {
+                free(http_ctx->http_uri);
+            }
+            http_ctx->http_uri = malloc(headers[i].valuelen + 1);
+            if (!http_ctx->http_uri) {
+                ctx->enomem = 1;
+                return -1;
+            }
+            memcpy(http_ctx->http_uri, headers[i].value, headers[i].valuelen);
+            http_ctx->http_uri[headers[i].valuelen] = '\0';
+			http_ctx->seen_keyword_count++;
+
+            log_finest_va("Http URI '%s', idx=%zu, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64,
+                http_ctx->http_uri, i, s->src_stream_id, s->dst_stream_id);
+        }
+        else if (headers[i].namelen == 10 && !memcmp(headers[i].name, ":authority", 10)) {
+            if (http_ctx->http_host) {
+                free(http_ctx->http_host);
+            }
+            http_ctx->http_host = malloc(headers[i].valuelen + 1);
+            if (!http_ctx->http_host) {
+                ctx->enomem = 1;
+                return -1;
+            }
+            memcpy(http_ctx->http_host, headers[i].value, headers[i].valuelen);
+            http_ctx->http_host[headers[i].valuelen] = '\0';
+			http_ctx->seen_keyword_count++;
+
+            log_finest_va("Http host '%s', idx=%zu, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64,
+                http_ctx->http_host, i, s->src_stream_id, s->dst_stream_id);
+        }
+        else if (headers[i].namelen == 14 && !memcmp(headers[i].name, "content-length", 14)) {
+			if (http_ctx->src_http_content_length) {
+				free(http_ctx->src_http_content_length);
+			}
+			http_ctx->src_http_content_length = malloc(headers[i].valuelen + 1);
+			if (!http_ctx->src_http_content_length) {
+				ctx->enomem = 1;
+				return -1;
+			}
+			memcpy(http_ctx->src_http_content_length, headers[i].value, headers[i].valuelen);
+			http_ctx->src_http_content_length[headers[i].valuelen] = '\0';
+			http_ctx->seen_keyword_count++;
+
+            log_finest_va("Http content-length '%s', idx=%zu, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64,
+                http_ctx->src_http_content_length, i, s->src_stream_id, s->dst_stream_id);
+		}
+        else if (headers[i].namelen == 12 && !memcmp(headers[i].name, "content-type", 12)) {
+			if (http_ctx->http_content_type) {
+				free(http_ctx->http_content_type);
+			}
+			http_ctx->http_content_type = malloc(headers[i].valuelen + 1);
+			if (!http_ctx->http_content_type) {
+				ctx->enomem = 1;
+				return -1;
+			}
+            memcpy(http_ctx->http_content_type, headers[i].value, headers[i].valuelen);
+            http_ctx->http_content_type[headers[i].valuelen] = '\0';
+			http_ctx->seen_keyword_count++;
+
+            log_finest_va("Http content-type '%s', idx=%zu, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64,
+                http_ctx->http_content_type, i, s->src_stream_id, s->dst_stream_id);
+        }
+        else if (conn_opts->remove_http_accept_encoding && (headers[i].namelen == 15 && !memcmp(headers[i].name, "accept-encoding", 15))) {
+			protohttpx_delete_nv_header(s, i);
+			http_ctx->seen_keyword_count++;
+			// ATTENTION: Do not increment i, as the next entry i+1 is in ith position now
+			continue;
+        }
+        else if (conn_opts->remove_http_referer && (headers[i].namelen == 7 && !memcmp(headers[i].name, "referer", 7))) {
+			protohttpx_delete_nv_header(s, i);
+			http_ctx->seen_keyword_count++;
+			continue;
+		}
+		         // Not possible in HTTP/2
+        else if ((headers[i].namelen == 4 && !memcmp(headers[i].name, "host", 4)) ||
+                 (headers[i].namelen == 10 && !memcmp(headers[i].name, "connection", 10)) ||
+                 (headers[i].namelen == 10 && !memcmp(headers[i].name, "keep-alive", 10)) ||
+                 (headers[i].namelen == 7 && !memcmp(headers[i].name, "upgrade", 7)) ||
+		         // ATTENTION: flickr keeps redirecting to https with 301 unless we remove the Via line of squid
+                 // Apparently flickr assumes the existence of Via header field or squid keyword a sign of plain http, even if we are using https
+		         (headers[i].namelen == 3 && !memcmp(headers[i].name, "via", 3)) ||
+				 // Also do not send the loopback address to the Internet
+		         (headers[i].namelen == 15 && !memcmp(headers[i].name, "x-forwarded-for", 15))) {
+			protohttpx_delete_nv_header(s, i);
+			continue;
+        }
+		i++;
+    }
+
+	if (http_ctx->seen_req_header) {
+#ifndef WITHOUT_USERAUTH
+		if (ctx->conn_opts->user_auth && !ctx->user) {
+			log_finest("Redirecting stream");
+			struct evbuffer *h1_hdr = evbuffer_new();
+			if (!h1_hdr) {
+				log_finest("Failed to allocate evbuffer for redirect header");
+				ctx->enomem = 1;
+				return -1;
+			}
+
+			if (protohttp_inject_redirect_url(http_ctx, h1_hdr) < 0) {
+				evbuffer_free(h1_hdr);
+				return -1;
+			}
+
+#ifndef WITHOUT_ICAP
+			// Set the veto flags to send end_stream to the client,
+			// because h2/h3 data providers call icap_is_all_stream_end() to set the EOF flag for end_stream,
+			// otherwise none of the icap services' content is complete at this point
+			if (s->icap_ctx && icap_enabled(s->icap_ctx)) {
+				s->icap_ctx->is_veto = 1;
+				s->icap_ctx->sent_veto_page = 1;
+			}
+#endif /* !WITHOUT_ICAP */
+
+			protohttpx_send_data_to_src_cb(ctx, s, h1_hdr, NULL);
+
+			evbuffer_free(h1_hdr);
+			return 0;
+		}
+#endif /* !WITHOUT_USERAUTH */
+
+		return protohttpx_apply_filter(s);
+
+        // TODO: Implement deny OCSP at TLS level in H2/H3?
+        // if (ctx->conn_opts->deny_ocsp) {
+        //     protohttp_ocsp_deny(ctx, http_ctx);
+        // }
+	}
+
+    if (ctx->enomem) {
+        return -1;
+    }
+	return 0;
+}
+
+int WUNRES NONNULL(1)
+protohttpx_filter_response_header(protohttpx_stream_ctx_t *s)
+{
+    pxy_conn_ctx_t *ctx = s->ctx;
+    log_finest_va("ENTER, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64, s->src_stream_id, s->dst_stream_id);
+
+    protohttp_ctx_t *http_ctx = s->http_ctx;
+    conn_opts_t *conn_opts = s->conn_opts ? s->conn_opts : ctx->conn_opts;
+
+	protohttpx_nv_t *headers = NULL;
+#ifndef WITHOUT_HTTP3
+	if (ctx->proto == PROTO_HTTP2) {
+#endif /* !WITHOUT_HTTP3 */
+		headers = (protohttpx_nv_t *)((protohttp2_stream_ctx_t *)s)->headers;
+#ifndef WITHOUT_HTTP3
+	}
+	else /*	if (ctx->proto == PROTO_HTTP3) */ {
+		headers = (protohttpx_nv_t *)((protohttp3_stream_ctx_t *)s)->headers;
+	}
+#endif /* !WITHOUT_HTTP3 */
+
+	size_t i = 0;
+    while (i < s->headers_count) {
+        log_finest_va("Processing header '%.*s=%.*s', idx=%zu, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64,
+            (int)headers[i].namelen, headers[i].name, (int)headers[i].valuelen, headers[i].value, i, s->src_stream_id, s->dst_stream_id);
+
+        if (headers[i].namelen == 7 && !memcmp(headers[i].name, ":status", 7)) {
+            if (http_ctx->http_status_code) {
+                free(http_ctx->http_status_code);
+            }
+            http_ctx->http_status_code = malloc(headers[i].valuelen + 1);
+            if (!http_ctx->http_status_code) {
+                ctx->enomem = 1;
+                return -1;
+            }
+            memcpy(http_ctx->http_status_code, headers[i].value, headers[i].valuelen);
+            http_ctx->http_status_code[headers[i].valuelen] = '\0';
+
+            log_finest_va("Http status '%s', idx=%zu, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64,
+                http_ctx->http_status_code, i, s->src_stream_id, s->dst_stream_id);
+        }
+        else if (headers[i].namelen == 14 && !memcmp(headers[i].name, "content-length", 14)) {
+			if (http_ctx->dst_http_content_length) {
+				free(http_ctx->dst_http_content_length);
+			}
+			http_ctx->dst_http_content_length = malloc(headers[i].valuelen + 1);
+			if (!http_ctx->dst_http_content_length) {
+				ctx->enomem = 1;
+				return -1;
+			}
+			memcpy(http_ctx->dst_http_content_length, headers[i].value, headers[i].valuelen);
+			http_ctx->dst_http_content_length[headers[i].valuelen] = '\0';
+
+            log_finest_va("Http content-length '%s', idx=%zu, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64,
+                http_ctx->dst_http_content_length, i, s->src_stream_id, s->dst_stream_id);
+		}
+        else if (headers[i].namelen == 12 && !memcmp(headers[i].name, "content-type", 12)) {
+			if (http_ctx->http_content_type) {
+				free(http_ctx->http_content_type);
+			}
+			http_ctx->http_content_type = malloc(headers[i].valuelen + 1);
+			if (!http_ctx->http_content_type) {
+				ctx->enomem = 1;
+				return -1;
+			}
+            memcpy(http_ctx->http_content_type, headers[i].value, headers[i].valuelen);
+            http_ctx->http_content_type[headers[i].valuelen] = '\0';
+
+            log_finest_va("Http content-type '%s', idx=%zu, src_stream_id=%" PRId64 ", dst_stream_id=%" PRId64,
+                http_ctx->http_content_type, i, s->src_stream_id, s->dst_stream_id);
+        }
+        // Normally not possible in response
+        else if (conn_opts->remove_http_referer && (headers[i].namelen == 7 && !memcmp(headers[i].name, "referer", 7))) {
+			protohttpx_delete_nv_header(s, i);
+			continue;
+		}
+        else if ((headers[i].namelen == 15 && !memcmp(headers[i].name, "public-key-pins", 15)) ||
+                 (headers[i].namelen == 27 && !memcmp(headers[i].name, "public-key-pins-report-only", 27)) ||
+                 (headers[i].namelen == 25 && !memcmp(headers[i].name, "strict-transport-security", 25)) ||
+                 (headers[i].namelen == 9 && !memcmp(headers[i].name, "expect-ct", 9)) ||
+                 (headers[i].namelen == 18 && !memcmp(headers[i].name, "alternate-protocol", 18)) ||
+                 (headers[i].namelen == 7 && !memcmp(headers[i].name, "upgrade", 7))) {
+			protohttpx_delete_nv_header(s, i);
+			continue;
+        }
+        // We should not receive alt-svc on an already h3 stream, but if we do, rewrite it to the configured port
+        // And h3 proxyspecs should not be configured to rewrite alt-svc anyway
+        else if (conn_opts->rewrite_alt_svc_port && !memcmp(headers[i].name, "alt-svc", 7)) {
+            // TODO: Rewrite only the port number in the alt-svc header, keep the rest
+			protohttpx_delete_nv_header(s, i);
+
+			// size_t len = strlen("h3=\":") + strlen(conn_opts->rewrite_alt_svc_port) + strlen("\"; ma=86400") + 1;
+			// 5 + rewrite_alt_svc_port + 11 + 1
+			size_t len = strlen(conn_opts->rewrite_alt_svc_port) + 17;
+			char *new_value = malloc(len);
+			if (!new_value) {
+				ctx->enomem = 1;
+				return -1;
+			}
+			snprintf(new_value, len, "h3=\":%s\"; ma=86400", conn_opts->rewrite_alt_svc_port);
+
+			// strlen("alt-svc") = 7
+            if (protohttpx_add_nv_header(s, "alt-svc", 7, new_value, strlen(new_value)) < 0) {
+				ctx->enomem = 1;
+            }
+            free(new_value);
+        }
+		i++;
+    }
+
+    if (ctx->enomem) {
+        return -1;
+    }
+	return 0;
+}
+
+int WUNRES NONNULL(1,2,3,5)
 protohttp_filter_request_header(struct evbuffer *inbuf, struct evbuffer *outbuf, protohttp_ctx_t *http_ctx, enum conn_type type, pxy_conn_ctx_t *ctx)
 {
 	char *line;
@@ -635,77 +1656,10 @@ protohttp_filter_request_header(struct evbuffer *inbuf, struct evbuffer *outbuf,
 		}
 
 		/* no data left after parsing headers? */
-		if (evbuffer_get_length(inbuf) == 0) {
-			return 0;
-		}
-		evbuffer_add_buffer(outbuf, inbuf);
+		log_finest_va("Buffer length after parsing headers: %zu", evbuffer_get_length(inbuf));
 	}
 	return 0;
 }
-
-#ifndef WITHOUT_USERAUTH
-static char * NONNULL(1,2)
-protohttp_get_url(struct evbuffer *inbuf, pxy_conn_ctx_t *ctx)
-{
-	char *line;
-	char *path = NULL;
-	char *host = NULL;
-	char *url = NULL;
-
-	while ((!host || !path) && (line = evbuffer_readln(inbuf, NULL, EVBUFFER_EOL_CRLF))) {
-		log_finest_va("%s", line);
-
-		//GET / HTTP/1.1
-		if (!path && !strncasecmp(line, "GET ", 4)) {
-			path = strdup(util_skipws(line + 4));
-			if (!path) {
-				ctx->enomem = 1;
-				free(line);
-				goto memout;
-			}
-			path = strsep(&path, " \t");
-			log_finest_va("path=%s", path);
-		//Host: example.com
-		} else if (!host && !strncasecmp(line, "Host:", 5)) {
-			host = strdup(util_skipws(line + 5));
-			if (!host) {
-				ctx->enomem = 1;
-				free(line);
-				goto memout;
-			}
-			log_finest_va("host=%s", host);
-		}
-		free(line);
-	}
-
-	if (host && path) {
-		// Assume that path will always have a leading /, so do not insert an extra / in between host and path
-		// Don't care about computing the exact url size for plain or secure http (http or https)
-		// http  s   ://  example.com  + /            + NULL
-		// 4  +  1 + 3  + strlen(host) + strlen(path) + 1
-		size_t url_size = strlen(host) + strlen(path) + 9;
-		url = malloc(url_size);
-		if (!url) {
-			ctx->enomem = 1;
-			goto memout;
-		}
-		
-		if (snprintf(url, url_size, "http%s://%s%s", ctx->spec->ssl ? "s": "", host, path) < 0) {
-			ctx->enomem = 1;
-			free(url);
-			url = NULL;
-			goto memout;
-		}
-		log_finest_va("url=%s", url);
-	}
-memout:
-	if (host)
-		free(host);
-	if (path)
-		free(path);
-	return url;
-}
-#endif /* !WITHOUT_USERAUTH */
 
 // Size = 39
 static char *http_methods[] = { "GET", "PUT", "ICY", "COPY", "HEAD", "LOCK", "MOVE", "POLL", "POST", "BCOPY", "BMOVE", "MKCOL", "TRACE", "LABEL", "MERGE", "DELETE",
@@ -771,16 +1725,6 @@ protohttp_validate(pxy_conn_ctx_t *ctx)
 static void NONNULL(1,2)
 protohttp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 {
-#ifndef WITHOUT_USERAUTH
-	static const char redirect[] =
-		"HTTP/1.1 302 Found\r\n"
-		"Location: %s\r\n"
-		"\r\n";
-	static const char redirect_url[] =
-		"HTTP/1.1 302 Found\r\n"
-		"Location: %s?SSLproxy=%s\r\n"
-		"\r\n";
-#endif /* !WITHOUT_USERAUTH */
 	static const char proto_error[] =
 		"HTTP/1.1 400 Bad request\r\n"
 		"Cache-Control: no-cache\r\n"
@@ -795,25 +1739,9 @@ protohttp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		return;
 	}
 
-	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
+	protohttp_ctx_t *http_ctx = ctx->protoctx->arg; /* h1 only */
 	struct evbuffer *inbuf = bufferevent_get_input(bev);
 	struct evbuffer *outbuf = bufferevent_get_output(ctx->dst.bev);
-
-#ifndef WITHOUT_USERAUTH
-	if (ctx->conn_opts->user_auth && !ctx->user) {
-		log_finest("Redirecting conn");
-		char *url = protohttp_get_url(inbuf, ctx);
-		ctx->protoctx->discard_inbufcb(bev);
-		if (url) {
-			evbuffer_add_printf(bufferevent_get_output(bev), redirect_url, ctx->conn_opts->user_auth_url, url);
-			free(url);
-		} else {
-			evbuffer_add_printf(bufferevent_get_output(bev), redirect, ctx->conn_opts->user_auth_url);
-		}
-		ctx->sent_userauth_msg = 1;
-		return;
-	}
-#endif /* !WITHOUT_USERAUTH */
 
 	if (ctx->conn_opts->validate_proto && !ctx->protoctx->is_valid) {
 		http_ctx->seen_bytes += evbuffer_get_length(inbuf);
@@ -830,12 +1758,55 @@ protohttp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	/* request header munging */
 	if (!http_ctx->seen_req_header) {
 		log_finest_va("HTTP Request Header, size=%zu", evbuffer_get_length(inbuf));
-		if (protohttp_filter_request_header(inbuf, outbuf, http_ctx, ctx->type, ctx) == -1) {
+
+		// Use a local pointer to the output buffer
+		struct evbuffer *outbuf_ptr = outbuf;
+#ifndef WITHOUT_ICAP
+		// ATTENTION: Filter rule application in protohttp_filter_request_header() may reinit icap_ctx and change the icap services along with their in_hdr,
+		// so we cannot use the in_hdr of first service here. This is only for http requests, not responses, because we don't apply filters to responses.
+		// outbuf_ptr = icap_get_first_service_in_hdr(ctx->icap_ctx);
+		log_finest_va("Using http_ctx->in_hdr, size=%zu", evbuffer_get_length(http_ctx->in_hdr));
+		outbuf_ptr = http_ctx->in_hdr;
+#endif /* !WITHOUT_ICAP */
+
+		if (protohttp_filter_request_header(inbuf, outbuf_ptr, http_ctx, ctx->type, ctx) == -1) {
 			return;
 		}
-	} else {
+
+		if (http_ctx->seen_req_header) {
+#ifndef WITHOUT_USERAUTH
+			if (ctx->conn_opts->user_auth && !ctx->user) {
+				log_finest("Redirecting conn");
+				if (protohttp_inject_redirect_url(http_ctx, bufferevent_get_output(bev)) < 0) {
+					return;
+				}
+				ctx->protoctx->discard_inbufcb(bev);
+				return;
+			}
+#endif /* !WITHOUT_USERAUTH */
+
+#ifndef WITHOUT_ICAP
+			ctx->icap_ctx->reqmod = 1;
+			outbuf_ptr = icap_enabled(ctx->icap_ctx) ? icap_get_first_service_in_hdr(ctx->icap_ctx) : outbuf;
+			evbuffer_add_buffer(outbuf_ptr, http_ctx->in_hdr);
+#endif /* !WITHOUT_ICAP */
+		}
+	}
+
+	// There may or may not be data left after parsing headers, but we should send ICAP requests for HTTP headers accumulated too
+	if (http_ctx->seen_req_header) {
 		log_finest_va("HTTP Request Body, size=%zu", evbuffer_get_length(inbuf));
-		evbuffer_add_buffer(outbuf, inbuf);
+#ifndef WITHOUT_ICAP
+		if (!icap_enabled(ctx->icap_ctx)) {
+#endif /* !WITHOUT_ICAP */
+			evbuffer_add_buffer(outbuf, inbuf);
+#ifndef WITHOUT_ICAP
+		}
+		else {
+			ctx->icap_ctx->reqmod = 1;
+			icap_process_data(inbuf, ctx->icap_ctx);
+		}
+#endif /* !WITHOUT_ICAP */
 	}
 
 	if (ctx->conn_opts->validate_proto && !ctx->protoctx->is_valid) {
@@ -848,6 +1819,9 @@ protohttp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		}
 	}
 
+	// TODO: Watermarking may not be needed if ICAP is enabled, because we disable reads on the source side until ICAP is done.
+	// So we should not have too much data buffered on the source side if ICAP is enabled.
+	// But we may still want to use watermarking to avoid buffering too much data on the destination side if the client is slow in receiving data.
 	ctx->protoctx->set_watermarkcb(bev, ctx, ctx->dst.bev);
 }
 
@@ -897,13 +1871,19 @@ protohttp_filter_response_header_line(const char *line, protohttp_ctx_t *http_ct
 		}
 	} else {
 		/* not first line */
-		if (!http_ctx->http_content_length &&
-		    !strncasecmp(line, "Content-Length:", 15)) {
-			http_ctx->http_content_length =
+		if (!strncasecmp(line, "Content-Length:", 15)) {
+			if (http_ctx->dst_http_content_length) {
+				free(http_ctx->dst_http_content_length);
+			}
+			http_ctx->dst_http_content_length =
 				strdup(util_skipws(line + 15));
-			if (!http_ctx->http_content_length) {
+			if (!http_ctx->dst_http_content_length) {
 				ctx->enomem = 1;
 				return NULL;
+			}
+		} else if (!strncasecmp(line, "Transfer-Encoding:", 18)) {
+			if (strstr(line + 18, "chunked") != NULL) {
+				http_ctx->dst_content_chunked = 1;
 			}
 		} else if (
 		    /* HPKP: Public Key Pinning Extension for HTTP
@@ -926,6 +1906,19 @@ protohttp_filter_response_header_line(const char *line, protohttp_ctx_t *http_ct
 		     * and more importantly, WebSockets and HTTP/2 */
 		    !strncasecmp(line, "Upgrade:", 8)) {
 			return NULL;
+		} else if (ctx->conn_opts->rewrite_alt_svc_port && !strncasecmp(line, "Alt-Svc:", 8)) {
+			// TODO: Rewrite only the port number in the Alt-Svc header, keep the rest?
+			// Alt-Svc: h3=":8443"; ma=86400
+			// size_t len = strlen("Alt-Svc: h3=\":") + strlen(ctx->conn_opts->rewrite_alt_svc_port) + strlen("\"; ma=86400") + 1;
+			// 14 + rewrite_alt_svc_port + 11 + 1
+			size_t len = strlen(ctx->conn_opts->rewrite_alt_svc_port) + 26;
+			char *new_line = malloc(len);
+			if (!new_line) {
+				ctx->enomem = 1;
+				return NULL;
+			}
+			snprintf(new_line, len, "Alt-Svc: h3=\":%s\"; ma=86400", ctx->conn_opts->rewrite_alt_svc_port);
+			return new_line;
 		} else if (line[0] == '\0') {
 			http_ctx->seen_resp_header = 1;
 		}
@@ -934,7 +1927,7 @@ protohttp_filter_response_header_line(const char *line, protohttp_ctx_t *http_ct
 	return (char*)line;
 }
 
-static void NONNULL(1,2,3,4)
+void NONNULL(1,2,3,4)
 protohttp_filter_response_header(struct evbuffer *inbuf, struct evbuffer *outbuf, protohttp_ctx_t *http_ctx, pxy_conn_ctx_t *ctx)
 {
 	char *line;
@@ -958,13 +1951,8 @@ protohttp_filter_response_header(struct evbuffer *inbuf, struct evbuffer *outbuf
 		free(line);
 	}
 
-	if (http_ctx->seen_resp_header) {
-		/* no data left after parsing headers? */
-		if (evbuffer_get_length(inbuf) == 0) {
-			return;
-		}
-		evbuffer_add_buffer(outbuf, inbuf);
-	}
+	/* no data left after parsing headers? */
+	log_finest_va("Buffer length after parsing headers: %zu", evbuffer_get_length(inbuf));
 }
 
 static void NONNULL(1)
@@ -977,20 +1965,53 @@ protohttp_bev_readcb_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		return;
 	}
 
-	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
 	struct evbuffer *inbuf = bufferevent_get_input(bev);
+
+	if (ctx->sslctx && ctx->sslctx->h2 && ctx->proto != PROTO_HTTP2) {
+		log_finest_va("H2 not setup yet, defer processing data, size=%zu", evbuffer_get_length(inbuf));
+		return;
+	}
+
+	protohttp_ctx_t *http_ctx = ctx->protoctx->arg; /* h1 only */
 	struct evbuffer *outbuf = bufferevent_get_output(ctx->src.bev);
 
 	if (!http_ctx->seen_resp_header) {
 		log_finest_va("HTTP Response Header, size=%zu", evbuffer_get_length(inbuf));
-		protohttp_filter_response_header(inbuf, outbuf, http_ctx, ctx);
+
+		// Use a local pointer to the output buffer
+		struct evbuffer *outbuf_ptr = outbuf;
+#ifndef WITHOUT_ICAP
+		if (icap_enabled(ctx->icap_ctx)) {
+			ctx->icap_ctx->reqmod = 0;
+			outbuf_ptr = icap_get_first_service_in_hdr(ctx->icap_ctx);
+		}
+#endif /* !WITHOUT_ICAP */
+
+		protohttp_filter_response_header(inbuf, outbuf_ptr, http_ctx, ctx);
 		if (ctx->enomem) {
 			return;
 		}
-	} else {
-		log_finest_va("HTTP Response Body, size=%zu", evbuffer_get_length(inbuf));
-		evbuffer_add_buffer(outbuf, inbuf);
 	}
+
+	// There may or may not be data left after parsing headers, but we should send ICAP requests for HTTP headers accumulated too
+	if (http_ctx->seen_resp_header) {
+		log_finest_va("HTTP Response Body, size=%zu", evbuffer_get_length(inbuf));
+#ifndef WITHOUT_ICAP
+		if (!icap_enabled(ctx->icap_ctx)) {
+#endif /* !WITHOUT_ICAP */
+			evbuffer_add_buffer(outbuf, inbuf);
+#ifndef WITHOUT_ICAP
+		}
+		else {
+			ctx->icap_ctx->reqmod = 0;
+			icap_process_data(inbuf, ctx->icap_ctx);
+		}
+#endif /* !WITHOUT_ICAP */
+	}
+
+	// TODO: Watermarking may not be needed if ICAP is enabled, because we disable reads on the source side until ICAP is done.
+	// So we should not have too much data buffered on the source side if ICAP is enabled.
+	// But we may still want to use watermarking to avoid buffering too much data on the destination side if the client is slow in receiving data.
 	ctx->protoctx->set_watermarkcb(bev, ctx, ctx->src.bev);
 }
 
@@ -1010,7 +2031,7 @@ protohttp_bev_readcb_src_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ct
 		return;
 	}
 
-	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
+	protohttp_ctx_t *http_ctx = ctx->protoctx->arg; /* h1 only */
 	struct evbuffer *inbuf = bufferevent_get_input(bev);
 	struct evbuffer *outbuf = bufferevent_get_output(ctx->dst.bev);
 
@@ -1020,10 +2041,13 @@ protohttp_bev_readcb_src_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ct
 		if (protohttp_filter_request_header(inbuf, outbuf, http_ctx, ctx->type, ctx->conn) == -1) {
 			return;
 		}
-	} else {
+	}
+
+	if (http_ctx->seen_req_header && evbuffer_get_length(inbuf) > 0) {
 		log_finest_va("HTTP Request Body, size=%zu", evbuffer_get_length(inbuf));
 		evbuffer_add_buffer(outbuf, inbuf);
 	}
+
 	ctx->conn->protoctx->set_watermarkcb(bev, ctx->conn, ctx->dst.bev);
 }
 
@@ -1037,7 +2061,7 @@ protohttp_bev_readcb_dst_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ct
 		return;
 	}
 
-	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
+	protohttp_ctx_t *http_ctx = ctx->protoctx->arg; /* h1 only */
 	struct evbuffer *inbuf = bufferevent_get_input(bev);
 	struct evbuffer *outbuf = bufferevent_get_output(ctx->src.bev);
 
@@ -1048,10 +2072,13 @@ protohttp_bev_readcb_dst_child(struct bufferevent *bev, pxy_conn_child_ctx_t *ct
 		if (ctx->conn->enomem) {
 			return;
 		}
-	} else {
+	}
+
+	if (http_ctx->seen_resp_header && evbuffer_get_length(inbuf) > 0) {
 		log_finest_va("HTTP Response Body, size=%zu", evbuffer_get_length(inbuf));
 		evbuffer_add_buffer(outbuf, inbuf);
 	}
+
 	ctx->conn->protoctx->set_watermarkcb(bev, ctx->conn, ctx->src.bev);
 }
 
@@ -1059,7 +2086,7 @@ static void NONNULL(1)
 protohttp_bev_readcb(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
-	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
+	protohttp_ctx_t *http_ctx = ctx->protoctx->arg; /* h1 only */
 
 	int seen_resp_header_on_entry = http_ctx->seen_resp_header;
 
@@ -1081,7 +2108,7 @@ protohttp_bev_readcb(struct bufferevent *bev, void *arg)
 	if (!seen_resp_header_on_entry && http_ctx->seen_resp_header) {
 		/* response header complete: log connection */
 		if (WANT_CONNECT_LOG(ctx->conn)) {
-			protohttp_log_connect(ctx);
+			protohttp_log_connect(ctx, NULL);
 		}
 	}
 }
@@ -1115,7 +2142,7 @@ protohttp_bev_writecb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		return;
 	}
 
-	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
+	protohttp_ctx_t *http_ctx = ctx->protoctx->arg; /* h1 only */
 	if (ctx->dst.closed || http_ctx->ocsp_denied) {
 		if (pxy_try_close_conn_end(&ctx->src, ctx) == 1) {
 			log_finest("dst.closed or ocsp_denied, terminate conn");
@@ -1123,7 +2150,18 @@ protohttp_bev_writecb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		}
 		return;
 	}
-	ctx->protoctx->unset_watermarkcb(bev, ctx, &ctx->dst);
+
+#ifndef WITHOUT_ICAP
+	// TODO: Watermarking may not be needed if ICAP is enabled, because we disable reads on the source side until ICAP is done.
+	// So we should not have too much data buffered on the source side if ICAP is enabled.
+	// But we may still want to use watermarking to avoid buffering too much data on the destination side if the client is slow in receiving data.
+	// TODO: Should we wait for both src and dst icap to be done before unsetting watermarkcb, or dst only?
+	if (!icap_enabled(ctx->icap_ctx)) {
+#endif /* !WITHOUT_ICAP */
+		ctx->protoctx->unset_watermarkcb(bev, ctx, &ctx->dst);
+#ifndef WITHOUT_ICAP
+	}
+#endif /* !WITHOUT_ICAP */
 }
 
 static void NONNULL(1)
@@ -1140,30 +2178,97 @@ protohttp_bev_writecb(struct bufferevent *bev, void *arg)
 	}
 }
 
-static void NONNULL(1)
+
+void
+protohttps_bev_eventcb(struct bufferevent *bev, short events, void *arg)
+{
+	pxy_conn_ctx_t *ctx = arg;
+	log_finest("ENTER");
+
+	if (events & BEV_EVENT_ERROR) {
+		protossl_log_ssl_error(bev, ctx);
+	}
+
+	if (bev == ctx->src.bev) {
+		prototcp_bev_eventcb_src(bev, events, ctx);
+
+		if (events & BEV_EVENT_CONNECTED) {
+			if (ctx->sslctx->h2) {
+				// We set ctx->enomem to 1 on error in protohttp2_setup(), and cannot do anything more here
+				ctx->proto = protohttp2_setup(ctx);
+			}
+		}
+	} else if (bev == ctx->dst.bev) {
+		protossl_bev_eventcb_dst(bev, events, ctx);
+	} else if (bev == ctx->srvdst.bev) {
+		protossl_bev_eventcb_srvdst(bev, events, ctx);
+	} else {
+		log_finest("protohttps_bev_eventcb: UNKWN conn end\n");
+	}
+}
+
+void
+protohttps_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
+{
+	pxy_conn_child_ctx_t *ctx = arg;
+	log_finest("ENTER");
+
+	if (events & BEV_EVENT_ERROR) {
+		protossl_log_ssl_error(bev, ctx->conn);
+	}
+
+	if (bev == ctx->src.bev) {
+		prototcp_bev_eventcb_src_child(bev, events, ctx);
+	} else if (bev == ctx->dst.bev) {
+		prototcp_bev_eventcb_dst_child(bev, events, ctx);
+	} else {
+		log_finest("protohttps_bev_eventcb_child: UNKWN conn end\n");
+	}
+}
+
+void NONNULL(1)
 protohttp_free_ctx(protohttp_ctx_t *http_ctx)
 {
+	// log_dbg_printf("protohttp_free_ctx: ENTER\n");
+
 	if (http_ctx->http_method) {
 		free(http_ctx->http_method);
+		http_ctx->http_method = NULL;
 	}
 	if (http_ctx->http_uri) {
 		free(http_ctx->http_uri);
+		http_ctx->http_uri = NULL;
 	}
 	if (http_ctx->http_host) {
 		free(http_ctx->http_host);
+		http_ctx->http_host = NULL;
 	}
 	if (http_ctx->http_content_type) {
 		free(http_ctx->http_content_type);
+		http_ctx->http_content_type = NULL;
 	}
 	if (http_ctx->http_status_code) {
 		free(http_ctx->http_status_code);
+		http_ctx->http_status_code = NULL;
 	}
 	if (http_ctx->http_status_text) {
 		free(http_ctx->http_status_text);
+		http_ctx->http_status_text = NULL;
 	}
-	if (http_ctx->http_content_length) {
-		free(http_ctx->http_content_length);
+	if (http_ctx->src_http_content_length) {
+		free(http_ctx->src_http_content_length);
+		http_ctx->src_http_content_length = NULL;
 	}
+	if (http_ctx->dst_http_content_length) {
+		free(http_ctx->dst_http_content_length);
+		http_ctx->dst_http_content_length = NULL;
+	}
+#ifndef WITHOUT_ICAP
+	if (http_ctx->in_hdr) {
+		evbuffer_free(http_ctx->in_hdr);
+		http_ctx->in_hdr = NULL;
+	}
+#endif /* !WITHOUT_ICAP */
 	free(http_ctx);
 }
 
@@ -1171,29 +2276,33 @@ static void NONNULL(1)
 protohttp_free(pxy_conn_ctx_t *ctx)
 {
 	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
-	protohttp_free_ctx(http_ctx);
+	if (http_ctx) {
+		protohttp_free_ctx(http_ctx);
+		ctx->protoctx->arg = NULL;
+	}
 }
 
-static void NONNULL(1)
+void NONNULL(1)
 protohttps_free(pxy_conn_ctx_t *ctx)
 {
 	protohttp_free(ctx);
 	protossl_free(ctx);
 }
 
-static void NONNULL(1)
+void NONNULL(1)
 protohttp_free_child(pxy_conn_child_ctx_t *ctx)
 {
 	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
-	protohttp_free_ctx(http_ctx);
+	if (http_ctx) {
+		protohttp_free_ctx(http_ctx);
+		ctx->protoctx->arg = NULL;
+	}
 }
 
 // @attention Called by thrmgr thread
 protocol_t
 protohttp_setup(pxy_conn_ctx_t *ctx)
 {
-	ctx->protoctx->proto = PROTO_HTTP;
-	
 	ctx->protoctx->bev_readcb = protohttp_bev_readcb;
 	ctx->protoctx->bev_writecb = protohttp_bev_writecb;
 	ctx->protoctx->proto_free = protohttp_free;
@@ -1204,6 +2313,17 @@ protohttp_setup(pxy_conn_ctx_t *ctx)
 	}
 	memset(ctx->protoctx->arg, 0, sizeof(protohttp_ctx_t));
 
+	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
+	http_ctx->ctx = ctx;
+
+#ifndef WITHOUT_ICAP
+	http_ctx->in_hdr = evbuffer_new();
+	if (!http_ctx->in_hdr) {
+		free(ctx->protoctx->arg);
+		return PROTO_ERROR;
+	}
+#endif /* !WITHOUT_ICAP */
+
 	return PROTO_HTTP;
 }
 
@@ -1211,13 +2331,12 @@ protohttp_setup(pxy_conn_ctx_t *ctx)
 protocol_t
 protohttps_setup(pxy_conn_ctx_t *ctx)
 {
-	ctx->protoctx->proto = PROTO_HTTPS;
 	ctx->protoctx->connectcb = protossl_conn_connect;
 	ctx->protoctx->init_conn = protossl_init_conn;
 
 	ctx->protoctx->bev_readcb = protohttp_bev_readcb;
 	ctx->protoctx->bev_writecb = protohttp_bev_writecb;
-	ctx->protoctx->bev_eventcb = protossl_bev_eventcb;
+	ctx->protoctx->bev_eventcb = protohttps_bev_eventcb;
 
 	ctx->protoctx->proto_free = protohttps_free;
 
@@ -1227,8 +2346,22 @@ protohttps_setup(pxy_conn_ctx_t *ctx)
 	}
 	memset(ctx->protoctx->arg, 0, sizeof(protohttp_ctx_t));
 
+	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
+	http_ctx->ctx = ctx;
+
+#ifndef WITHOUT_ICAP
+	http_ctx->in_hdr = evbuffer_new();
+	if (!http_ctx->in_hdr) {
+		free(ctx->protoctx->arg);
+		return PROTO_ERROR;
+	}
+#endif /* !WITHOUT_ICAP */
+
 	ctx->sslctx = malloc(sizeof(ssl_ctx_t));
 	if (!ctx->sslctx) {
+#ifndef WITHOUT_ICAP
+		evbuffer_free(http_ctx->in_hdr);
+#endif /* !WITHOUT_ICAP */
 		free(ctx->protoctx->arg);
 		return PROTO_ERROR;
 	}
@@ -1240,8 +2373,6 @@ protohttps_setup(pxy_conn_ctx_t *ctx)
 protocol_t
 protohttp_setup_child(pxy_conn_child_ctx_t *ctx)
 {
-	ctx->protoctx->proto = PROTO_HTTP;
-
 	// @todo Should HTTP child conns do any http related processing, so use tcp defaults instead?
 	ctx->protoctx->bev_readcb = protohttp_bev_readcb_child;
 	ctx->protoctx->proto_free = protohttp_free_child;
@@ -1252,17 +2383,19 @@ protohttp_setup_child(pxy_conn_child_ctx_t *ctx)
 	}
 	memset(ctx->protoctx->arg, 0, sizeof(protohttp_ctx_t));
 
+	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
+	http_ctx->ctx = ctx->conn;
+
 	return PROTO_HTTP;
 }
 
 protocol_t
 protohttps_setup_child(pxy_conn_child_ctx_t *ctx)
 {
-	ctx->protoctx->proto = PROTO_HTTPS;
 	ctx->protoctx->connectcb = protossl_connect_child;
 
 	ctx->protoctx->bev_readcb = protohttp_bev_readcb_child;
-	ctx->protoctx->bev_eventcb = protossl_bev_eventcb_child;
+	ctx->protoctx->bev_eventcb = protohttps_bev_eventcb_child;
 
 	ctx->protoctx->proto_free = protohttp_free_child;
 
@@ -1271,6 +2404,9 @@ protohttps_setup_child(pxy_conn_child_ctx_t *ctx)
 		return PROTO_ERROR;
 	}
 	memset(ctx->protoctx->arg, 0, sizeof(protohttp_ctx_t));
+
+	protohttp_ctx_t *http_ctx = ctx->protoctx->arg;
+	http_ctx->ctx = ctx->conn;
 
 	return PROTO_HTTPS;
 }

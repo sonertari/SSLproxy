@@ -26,7 +26,11 @@
  */
 
 #include "protopop3.h"
+#include "prototcp.h"
 #include "protossl.h"
+#ifndef WITHOUT_ICAP
+#include "icap.h"
+#endif /* !WITHOUT_ICAP */
 #include "util.h"
 
 #include <string.h>
@@ -83,6 +87,156 @@ protopop3_validate(pxy_conn_ctx_t *ctx, char *packet, size_t packet_size)
 	return 0;
 }
 
+int NONNULL(1,2) WUNRES
+protopop3_detect_stream_end(UNUSED pxy_conn_ctx_t *ctx, struct evbuffer *inbuf)
+{
+	log_finest("ENTER");
+
+	int rv = 0;
+	size_t len = evbuffer_get_length(inbuf);
+	char *data = malloc(len + 1);
+	if (data) {
+		evbuffer_copyout(inbuf, data, len);
+		data[len] = '\0';
+
+		if (len > 2 && data[len - 3] == '.' && data[len - 2] == '\r' && data[len - 1] == '\n') {
+			log_finest_va("POP3 end_stream detected: %s", data);
+			rv = 1;
+		}
+		else {
+			char *p = NULL;
+			if (len > 1 && (p = strstr(data, "\r\n")) && (p - data == (int)len - 2)) {
+				log_finest_va("POP3 end_stream detected: %s", data);
+				rv = 1;
+			}
+		}
+
+		if (len == 6 && strstr(data, "QUIT\r\n")) {
+			log_finest_va("POP3 end_conn detected: %s", data);
+			rv = 2;
+		}
+		free(data);
+	}
+	return rv;
+}
+
+static void NONNULL(1,2)
+protopop3_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
+{
+	log_finest_va("ENTER, size=%zu", evbuffer_get_length(bufferevent_get_input(bev)));
+
+	if (ctx->dst.closed) {
+		ctx->protoctx->discard_inbufcb(bev);
+		return;
+	}
+
+	struct evbuffer *inbuf = bufferevent_get_input(bev);
+	struct evbuffer *outbuf = bufferevent_get_output(ctx->dst.bev);
+
+#ifndef WITHOUT_USERAUTH
+	if (prototcp_try_send_userauth_msg(bev, ctx)) {
+		return;
+	}
+#endif /* !WITHOUT_USERAUTH */
+
+	if (pxy_conn_apply_deferred_block_action(ctx)) {
+		return;
+	}
+
+	if (prototcp_try_validate_proto(bev, ctx, inbuf, ctx->dst.bev) != 0) {
+		return;
+	}
+
+#ifndef WITHOUT_ICAP
+	if (icap_enabled(ctx->icap_ctx)) {
+		protopop3_ctx_t *pop3_ctx = ctx->protoctx->arg;
+		int detected = protopop3_detect_stream_end(ctx, inbuf);
+		if (detected > 0) {
+			pop3_ctx->src_end_stream = 1;
+			if (detected == 2) {
+				pop3_ctx->end_conn = 1;
+			}
+		}
+	}
+#endif /* !WITHOUT_ICAP */
+
+	struct evbuffer *tmpbuf =  evbuffer_new();
+
+	if (pxy_try_prepend_sslproxy_header(ctx, inbuf, tmpbuf) != 0) {
+		evbuffer_free(tmpbuf);
+		return;
+	}
+
+#ifndef WITHOUT_ICAP
+	if (!icap_enabled(ctx->icap_ctx)) {
+#endif /* !WITHOUT_ICAP */
+		evbuffer_add_buffer(outbuf, tmpbuf);
+#ifndef WITHOUT_ICAP
+	}
+	else {
+		ctx->icap_ctx->reqmod = 1;
+		icap_process_data(tmpbuf, ctx->icap_ctx);
+	}
+#endif /* !WITHOUT_ICAP */
+
+	evbuffer_free(tmpbuf);
+
+	ctx->protoctx->set_watermarkcb(bev, ctx, ctx->dst.bev);
+}
+
+static void NONNULL(1,2)
+protopop3_bev_readcb_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
+{
+	log_finest_va("ENTER, size=%zu", evbuffer_get_length(bufferevent_get_input(bev)));
+
+	if (ctx->src.closed) {
+		ctx->protoctx->discard_inbufcb(bev);
+		return;
+	}
+
+	struct evbuffer *inbuf = bufferevent_get_input(bev);
+	struct evbuffer *outbuf = bufferevent_get_output(ctx->src.bev);
+
+#ifndef WITHOUT_ICAP
+	if (!icap_enabled(ctx->icap_ctx)) {
+#endif /* !WITHOUT_ICAP */
+		evbuffer_add_buffer(outbuf, inbuf);
+#ifndef WITHOUT_ICAP
+	}
+	else {
+		protopop3_ctx_t *pop3_ctx = ctx->protoctx->arg;
+		int detected = protopop3_detect_stream_end(ctx, inbuf);
+		if (detected > 0) {
+			pop3_ctx->dst_end_stream = 1;
+			if (detected == 2) {
+				pop3_ctx->end_conn = 1;
+			}
+		}
+
+		ctx->icap_ctx->reqmod = 0;
+		icap_process_data(inbuf, ctx->icap_ctx);
+	}
+#endif /* !WITHOUT_ICAP */
+
+	ctx->protoctx->set_watermarkcb(bev, ctx, ctx->src.bev);
+}
+
+static void NONNULL(1)
+protopop3_bev_readcb(struct bufferevent *bev, void *arg)
+{
+	pxy_conn_ctx_t *ctx = arg;
+
+	if (bev == ctx->src.bev) {
+		protopop3_bev_readcb_src(bev, ctx);
+	} else if (bev == ctx->dst.bev) {
+		protopop3_bev_readcb_dst(bev, ctx);
+	} else if (bev == ctx->srvdst.bev) {
+		prototcp_bev_readcb_srvdst(bev, ctx);
+	} else {
+		log_err_printf("protopop3_bev_readcb: UNKWN conn end\n");
+	}
+}
+
 static void NONNULL(1)
 protopop3_free(pxy_conn_ctx_t *ctx)
 {
@@ -94,10 +248,9 @@ protopop3_free(pxy_conn_ctx_t *ctx)
 protocol_t
 protopop3_setup(pxy_conn_ctx_t *ctx)
 {
-	ctx->protoctx->proto = PROTO_POP3;
-
 	ctx->protoctx->proto_free = protopop3_free;
 	ctx->protoctx->validatecb = protopop3_validate;
+	ctx->protoctx->bev_readcb = protopop3_bev_readcb;
 
 	ctx->protoctx->arg = malloc(sizeof(protopop3_ctx_t));
 	if (!ctx->protoctx->arg) {
@@ -119,8 +272,6 @@ protopop3s_free(pxy_conn_ctx_t *ctx)
 protocol_t
 protopop3s_setup(pxy_conn_ctx_t *ctx)
 {
-	ctx->protoctx->proto = PROTO_POP3S;
-
 	ctx->protoctx->connectcb = protossl_conn_connect;
 	ctx->protoctx->init_conn = protossl_init_conn;
 	
@@ -128,6 +279,7 @@ protopop3s_setup(pxy_conn_ctx_t *ctx)
 
 	ctx->protoctx->proto_free = protopop3s_free;
 	ctx->protoctx->validatecb = protopop3_validate;
+	ctx->protoctx->bev_readcb = protopop3_bev_readcb;
 
 	ctx->protoctx->arg = malloc(sizeof(protopop3_ctx_t));
 	if (!ctx->protoctx->arg) {

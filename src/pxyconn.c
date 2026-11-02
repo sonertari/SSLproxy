@@ -29,6 +29,9 @@
 
 #include "pxyconn.h"
 
+#ifndef WITHOUT_ICAP
+#include "icap.h"
+#endif /* !WITHOUT_ICAP */
 #include "prototcp.h"
 #include "protossl.h"
 #include "protohttp.h"
@@ -70,20 +73,25 @@
 // getdtablecount() returns int, hence we don't use size_t here
 int descriptor_table_size = 0;
 
-// @attention The order of names should match the order in protocol enum
-char *protocol_names[] = {
-	// ERROR = -1
-	"PASSTHROUGH", // = 0
-	"HTTP",
-	"HTTPS",
-	"POP3",
-	"POP3S",
-	"SMTP",
-	"SMTPS",
-	"AUTOSSL",
-	"TCP",
-	"SSL",
+// Automatically generate protocol_names[] from PROTOCOL_LIST
+const char *protocol_names[] = {
+#define X_STR(name, str) str,
+    PROTOCOL_LIST(X_STR)
+#undef X_STR
 };
+
+// Safe lookup helper for debugging
+static const char *
+protocol_str(protocol_t proto)
+{
+    if (proto == PROTO_ERROR) {
+        return "ERROR";
+    }
+    if (proto >= 0 && proto < (int)(sizeof(protocol_names) / sizeof(protocol_names[0]))) {
+        return protocol_names[proto];
+    }
+    return "UNKNOWN";
+}
 
 static protocol_t NONNULL(1)
 pxy_setup_proto_child(pxy_conn_child_ctx_t *ctx)
@@ -309,7 +317,7 @@ pxy_conn_ctx_free(pxy_conn_ctx_t *ctx, int by_requestor)
 		// Always try to close log files, even if content, pcap, or mirror logging is disabled by filter rules
 		// The log files may have been initialized and opened
 		// so, do not pass down the log_content, log_pcap, and log_mirror fields of ctx
-		if (log_content_close(&ctx->logctx, by_requestor) == -1) {
+		if (log_content_close(&ctx->logctx, by_requestor, ctx->proto != PROTO_HTTP3 ? IPPROTO_TCP : IPPROTO_UDP) == -1) {
 			log_err_level_printf(LOG_WARNING, "Content log close failed\n");
 		}
 	}
@@ -340,18 +348,14 @@ pxy_conn_ctx_free(pxy_conn_ctx_t *ctx, int by_requestor)
 
 	pxy_thr_detach(ctx);
 
-	if (ctx->srchost_str) {
-		free(ctx->srchost_str);
+#ifndef WITHOUT_ICAP
+	// Do not check icap_enabled() here, because we should free it if initialized
+	if (ctx->icap_ctx) {
+		// Do not pass term_owner to icap_ctx_free() to avoid double free
+		icap_ctx_free(ctx->icap_ctx, 0);
 	}
-	if (ctx->srcport_str) {
-		free(ctx->srcport_str);
-	}
-	if (ctx->dsthost_str) {
-		free(ctx->dsthost_str);
-	}
-	if (ctx->dstport_str) {
-		free(ctx->dstport_str);
-	}
+#endif /* !WITHOUT_ICAP */
+
 #ifdef HAVE_LOCAL_PROCINFO
 	if (ctx->lproc.exec_path) {
 		free(ctx->lproc.exec_path);
@@ -375,6 +379,21 @@ pxy_conn_ctx_free(pxy_conn_ctx_t *ctx, int by_requestor)
 	}
 	free(ctx->protoctx);
 
+	// ATTENTION: Free connection-related strings after proto_free() above
+	// proto_free() may write final debug logs using connection-related strings
+	if (ctx->srchost_str) {
+		free(ctx->srchost_str);
+	}
+	if (ctx->srcport_str) {
+		free(ctx->srcport_str);
+	}
+	if (ctx->dsthost_str) {
+		free(ctx->dsthost_str);
+	}
+	if (ctx->dstport_str) {
+		free(ctx->dstport_str);
+	}
+
 #ifndef WITHOUT_USERAUTH
 	if (ctx->user) {
 		free(ctx->user);
@@ -394,14 +413,21 @@ pxy_conn_free(pxy_conn_ctx_t *ctx, int by_requestor)
 {
 	log_finest("ENTER");
 
-	// We always assign NULL to bevs after freeing them
+	// Reset term flag to avoid double free
+	ctx->term = 0;
+
+	// Always assign NULL after freeing
 	if (ctx->src.bev) {
 		ctx->src.free(ctx->src.bev, ctx);
 		ctx->src.bev = NULL;
 	} else if (!ctx->src.closed) {
-		log_fine("evutil_closesocket on NULL src.bev");
+		log_fine_va("evutil_closesocket on NULL src.bev, fd=%d", ctx->fd);
 		// @attention early in the conn setup, src fd may be open, although src.bev is NULL
-		evutil_closesocket(ctx->fd);
+		if (ctx->fd >= 0) {
+			evutil_closesocket(ctx->fd);
+			// Don't set fd to -1, protohttp3_conn_free() uses it in debug logging on close
+			// ctx->fd = -1;
+		}
 	}
 
 	if (ctx->srvdst.bev) {
@@ -431,9 +457,6 @@ pxy_conn_term(pxy_conn_ctx_t *ctx, int by_requestor)
 void
 pxy_log_connect_nonhttp(pxy_conn_ctx_t *ctx)
 {
-	if (!ctx->log_connect)
-		return;
-
 	char *msg;
 #ifdef HAVE_LOCAL_PROCINFO
 	char *lpi = NULL;
@@ -527,7 +550,7 @@ pxy_log_connect_nonhttp(pxy_conn_ctx_t *ctx)
 			log_err_level_printf(LOG_WARNING, "Conn logging failed\n");
 		}
 	}
-	if (ctx->global->connectlog) {
+	if (ctx->global->connectlog && ctx->log_connect) {
 		if (log_connect_print_free(msg) == -1) {
 			log_err_level_printf(LOG_WARNING, "Connection logging failed\n");
 		}
@@ -543,12 +566,17 @@ out:
 	return;
 }
 
-static int NONNULL(1)
-pxy_log_content_inbuf(pxy_conn_ctx_t *ctx, struct evbuffer *inbuf, int req)
-{
-	if (!ctx->log_content && !ctx->log_pcap
+int NONNULL(1)
+pxy_log_content_inbuf(pxy_conn_ctx_t *ctx, struct evbuffer *inbuf, int req, int proto,
+	unsigned int log_content, unsigned int log_pcap
 #ifndef WITHOUT_MIRROR
-		&& !ctx->log_mirror
+	, unsigned int log_mirror
+#endif /* !WITHOUT_MIRROR */
+)
+{
+	if (!log_content && !log_pcap
+#ifndef WITHOUT_MIRROR
+		&& !log_mirror
 #endif /* !WITHOUT_MIRROR */
 		) {
 		return 0;
@@ -572,9 +600,9 @@ pxy_log_content_inbuf(pxy_conn_ctx_t *ctx, struct evbuffer *inbuf, int req)
 	}
 	memcpy(lb->buf, buf, lb->sz);
 	free(buf);
-	if (log_content_submit(&ctx->logctx, lb, req, ctx->log_content, ctx->log_pcap
+	if (log_content_submit(&ctx->logctx, lb, req, proto, log_content, log_pcap
 #ifndef WITHOUT_MIRROR
-		, ctx->log_mirror
+		, log_mirror
 #endif /* !WITHOUT_MIRROR */
 		) == -1) {
 		logbuf_free(lb);
@@ -623,7 +651,7 @@ static int check_fd_usage(
 #endif /* DEBUG_PROXY */
 );
 
-static int
+int
 pxy_prepare_logging(pxy_conn_ctx_t *ctx)
 {
 	/* prepare logging, part 2 */
@@ -673,18 +701,18 @@ pxy_prepare_logging(pxy_conn_ctx_t *ctx)
 	return 0;
 }
 
-static void NONNULL(1,2)
-pxy_log_dbg_connect_type(pxy_conn_ctx_t *ctx, pxy_conn_desc_t *this)
+static void NONNULL(1)
+pxy_log_dbg_connect_type(pxy_conn_ctx_t *ctx, SSL *ssl)
 {
 	if (OPTS_DEBUG(ctx->global)) {
-		if (this->ssl) {
+		if (ssl) {
 			char *keystr;
 			/* for SSL, we get two connect events */
 			log_dbg_printf("%s connected to [%s]:%s %s %s\n",
-						   protocol_names[ctx->proto],
+						   protocol_str(ctx->proto),
 						   STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str),
-						   SSL_get_version(this->ssl), SSL_get_cipher(this->ssl));
-			keystr = ssl_ssl_masterkey_to_str(this->ssl);
+						   SSL_get_version(ssl), SSL_get_cipher(ssl));
+			keystr = ssl_ssl_masterkey_to_str(ssl);
 			if (keystr) {
 				log_dbg_print_free(keystr);
 			}
@@ -695,63 +723,45 @@ pxy_log_dbg_connect_type(pxy_conn_ctx_t *ctx, pxy_conn_desc_t *this)
 			 * in order not to confuse anyone who might be
 			 * looking closely at the output */
 			log_dbg_printf("%s connected to [%s]:%s\n",
-						   protocol_names[ctx->proto],
+						   protocol_str(ctx->proto),
 						   STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str));
 			log_dbg_printf("%s connected from [%s]:%s\n",
-						   protocol_names[ctx->proto],
+						   protocol_str(ctx->proto),
 						   STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str));
 		}
 	}
 }
 
 void
-pxy_log_connect_src(pxy_conn_ctx_t *ctx)
+pxy_log_connect(pxy_conn_ctx_t *ctx, SSL *ssl)
 {
 	/* log connection if we don't analyze any headers */
 	if (!ctx->spec->http && WANT_CONNECT_LOG(ctx)) {
 		pxy_log_connect_nonhttp(ctx);
 	}
 
-	if (ctx->src.ssl && ctx->log_cert && ctx->global->certgendir) {
+	if (ssl && ctx->log_cert && ctx->global->certgendir) {
 		/* write SSL certificates to gendir */
-		protossl_srccert_write(ctx);
+		protossl_srccert_write(ctx, ssl);
 	}
 
-	if (protossl_log_masterkey(ctx, &ctx->src) == -1) {
+	if (protossl_log_masterkey(ctx, ssl) == -1) {
 		return;
 	}
 
-	pxy_log_dbg_connect_type(ctx, &ctx->src);
+	pxy_log_dbg_connect_type(ctx, ssl);
 }
 
 void
-pxy_log_connect_srvdst(pxy_conn_ctx_t *ctx)
-{
-	// @attention srvdst.bev may be NULL, if its writecb fires first
-	if (ctx->srvdst.bev) {
-		/* log connection if we don't analyze any headers */
-		if (!ctx->srvdst.ssl && !ctx->spec->http && WANT_CONNECT_LOG(ctx)) {
-			pxy_log_connect_nonhttp(ctx);
-		}
-
-		if (protossl_log_masterkey(ctx, &ctx->srvdst) == -1) {
-			return;
-		}
-
-		pxy_log_dbg_connect_type(ctx, &ctx->srvdst);
-	}
-}
-
-static void
 pxy_log_dbg_disconnect(pxy_conn_ctx_t *ctx)
 {
 	/* we only get a single disconnect event here for both connections */
 	if (OPTS_DEBUG(ctx->global)) {
 		log_dbg_printf("%s disconnected to [%s]:%s, fd=%d\n",
-					   protocol_names[ctx->proto],
+					   protocol_str(ctx->proto),
 					   STRORDASH(ctx->dsthost_str), STRORDASH(ctx->dstport_str), ctx->fd);
 		log_dbg_printf("%s disconnected from [%s]:%s, fd=%d\n",
-					   protocol_names[ctx->proto],
+					   protocol_str(ctx->proto),
 					   STRORDASH(ctx->srchost_str), STRORDASH(ctx->srcport_str), ctx->fd);
 	}
 }
@@ -762,10 +772,10 @@ pxy_log_dbg_disconnect_child(pxy_conn_child_ctx_t *ctx)
 	/* we only get a single disconnect event here for both connections */
 	if (OPTS_DEBUG(ctx->conn->global)) {
 		log_dbg_printf("Child %s disconnected to [%s]:%s, child fd=%d, fd=%d\n",
-					   protocol_names[ctx->conn->proto],
+					   protocol_str(ctx->conn->proto),
 					   STRORDASH(ctx->conn->dsthost_str), STRORDASH(ctx->conn->dstport_str), ctx->fd, ctx->conn->fd);
 		log_dbg_printf("Child %s disconnected from [%s]:%s, child fd=%d, fd=%d\n",
-					   protocol_names[ctx->conn->proto],
+					   protocol_str(ctx->conn->proto),
 					   STRORDASH(ctx->conn->srchost_str), STRORDASH(ctx->conn->srcport_str), ctx->fd, ctx->conn->fd);
 	}
 }
@@ -797,10 +807,11 @@ pxy_insert_sslproxy_header(pxy_conn_ctx_t *ctx, unsigned char *packet, size_t *p
 #endif /* DEBUG_PROXY */
 
 int
-pxy_try_prepend_sslproxy_header(pxy_conn_ctx_t *ctx, struct evbuffer *inbuf, struct evbuffer *outbuf)
+pxy_try_prepend_sslproxy_header(pxy_conn_ctx_t *ctx, struct evbuffer *inbuf, UNUSED struct evbuffer *outbuf)
 {
 	log_finer("ENTER");
 
+	// @attention Add the modified packet back to inbuf
 	if (ctx->divert && !ctx->sent_sslproxy_header) {
 #ifdef DEBUG_PROXY
 		size_t packet_size = evbuffer_get_length(inbuf);
@@ -1172,7 +1183,11 @@ pxy_set_sslproxy_header(pxy_conn_ctx_t *ctx, int upgraded)
 	}
 	log_finer_va("sslproxy_header= %s", ctx->sslproxy_header);
 
+#ifndef WITHOUT_ICAP
+	return icap_enabled(ctx->icap_ctx) ? icap_set_extended_headers(ctx->icap_ctx, upgraded) : 0;
+#else /* WITHOUT_ICAP */
 	return 0;
+#endif /* !WITHOUT_ICAP */
 }
 
 int
@@ -1180,7 +1195,11 @@ pxy_setup_child_listener(pxy_conn_ctx_t *ctx)
 {
 	if (!ctx->divert) {
 		// split mode
+#ifndef WITHOUT_ICAP
+		return icap_enabled(ctx->icap_ctx) ? icap_set_extended_headers(ctx->icap_ctx, 0) : 0;
+#else /* WITHOUT_ICAP */
 		return 0;
+#endif /* !WITHOUT_ICAP */
 	}
 
 	// @attention Defer child setup and evcl creation until after parent init is complete, otherwise (1) causes multithreading issues (proxy_listener_acceptcb is
@@ -1323,22 +1342,28 @@ pxy_bev_readcb_preexec_logging_and_stats(struct bufferevent *bev, pxy_conn_ctx_t
 		}
 
 		if (WANT_CONTENT_LOG(ctx->conn)) {
-                        if (ctx->conn_opts->stripclienthello && ctx->proto == PROTO_AUTOSSL && bev == ctx->src.bev) {
-                                if (protoautossl_is_searching(ctx)) {
-                                        size_t inbuf_len = evbuffer_get_length(inbuf);
-                                        size_t pullup_len = inbuf_len > 4096 ? 4096 : inbuf_len;
-                                        unsigned char *data = evbuffer_pullup(inbuf, pullup_len);
-                                        if (data) {
-                                                const unsigned char *chello = NULL;
-                                                int rv = ssl_tls_clienthello_parse(data, pullup_len, 0, &chello, NULL);
-                                                if (rv == 0 || (rv == 1 && chello != NULL)) {
-                                                        return 0;
-                                                }
-                                        }
-                                }
-                        }
+			if (ctx->conn_opts->stripclienthello && ctx->proto == PROTO_AUTOSSL && bev == ctx->src.bev) {
+				if (protoautossl_is_searching(ctx)) {
+					size_t inbuf_len = evbuffer_get_length(inbuf);
+					size_t pullup_len = inbuf_len > 4096 ? 4096 : inbuf_len;
+					unsigned char *data = evbuffer_pullup(inbuf, pullup_len);
+					if (data) {
+						const unsigned char *chello = NULL;
+						int rv = ssl_tls_clienthello_parse(data, pullup_len, 0, &chello, NULL,
+							&ctx->sslctx->alpn_protos, &ctx->sslctx->alpn_protos_len);
+						if (rv == 0 || (rv == 1 && chello != NULL)) {
+							return 0;
+						}
+						protossl_try_remove_h2_from_alpn_protos(ctx);
+					}
+				}
+			}
 			// HTTP content logging at this point may record certain header lines twice, if we have not seen all headers yet
-			return pxy_log_content_inbuf(ctx, inbuf, (bev == ctx->src.bev));
+			return pxy_log_content_inbuf(ctx, inbuf, (bev == ctx->src.bev), IPPROTO_TCP, ctx->log_content, ctx->log_pcap
+#ifndef WITHOUT_MIRROR
+				, ctx->log_mirror
+#endif /* !WITHOUT_MIRROR */
+				);
 		}
 	}
 	return 0;
@@ -1385,21 +1410,11 @@ pxy_bev_readcb_preexec_logging_and_stats_child(struct bufferevent *bev, pxy_conn
 	}
 
 	if (WANT_CONTENT_LOG(ctx->conn)) {
-                if (ctx->conn->conn_opts->stripclienthello && ctx->conn->proto == PROTO_AUTOSSL && bev == ctx->src.bev) {
-                        if (protoautossl_is_searching(ctx->conn)) {
-                                size_t inbuf_len = evbuffer_get_length(inbuf);
-                                size_t pullup_len = inbuf_len > 4096 ? 4096 : inbuf_len;
-                                unsigned char *data = evbuffer_pullup(inbuf, pullup_len);
-                                if (data) {
-                                        const unsigned char *chello = NULL;
-                                        int rv = ssl_tls_clienthello_parse(data, pullup_len, 0, &chello, NULL);
-                                        if (rv == 0 || (rv == 1 && chello != NULL)) {
-                                                return 0;
-                                        }
-                                }
-                        }
-                }
-		return pxy_log_content_inbuf(ctx->conn, inbuf, (bev == ctx->src.bev));
+		return pxy_log_content_inbuf(ctx->conn, inbuf, (bev == ctx->src.bev), IPPROTO_TCP, ctx->conn->log_content, ctx->conn->log_pcap
+#ifndef WITHOUT_MIRROR
+			, ctx->conn->log_mirror
+#endif /* !WITHOUT_MIRROR */
+			);
 	}
 	return 0;
 }
@@ -1481,13 +1496,16 @@ pxy_bev_eventcb_postexec_logging_and_stats(struct bufferevent *bev, short events
 		if (ctx->proto != PROTO_PASSTHROUGH) {
 			if (bev == ctx->src.bev) {
 				// @todo When do we reach here? If proto is autossl? Otherwise, src is connected in acceptcb.
-				pxy_log_connect_src(ctx);
+				pxy_log_connect(ctx, ctx->src.ssl);
 			} else if (ctx->connected) {
 				if (pxy_prepare_logging(ctx) == -1) {
 					return;
 				}
 				// Doesn't log connect if proto is http, http proto does its own connect logging
-				pxy_log_connect_srvdst(ctx);
+				// @attention srvdst.bev may be NULL, if its writecb fires first
+				if (ctx->srvdst.bev) {
+					pxy_log_connect(ctx, ctx->srvdst.ssl);
+				}
 			}
 		}
 
@@ -1603,7 +1621,7 @@ pxy_conn_filter_match_ip(pxy_conn_ctx_t *ctx, filter_list_t *list)
 		log_finest_va("Match substring in dst (line=%d): %s, %s", site->action.line_num, site->site, ctx->dsthost_str);
 #endif /* DEBUG_PROXY */
 
-	filter_action_t *port_action = pxy_conn_filter_port(ctx, site);
+	filter_action_t *port_action = pxy_conn_filter_port(ctx, NULL, site);
 	if (port_action)
 		return port_action;
 
@@ -1611,7 +1629,7 @@ pxy_conn_filter_match_ip(pxy_conn_ctx_t *ctx, filter_list_t *list)
 }
 
 static filter_action_t * NONNULL(1,2)
-pxy_conn_dsthost_filter(pxy_conn_ctx_t *ctx, filter_list_t *list)
+pxy_conn_dsthost_filter(pxy_conn_ctx_t *ctx, UNUSED protohttpx_stream_ctx_t *s, filter_list_t *list)
 {
 	if (ctx->dsthost_str) {
 		filter_action_t *action;
@@ -1633,7 +1651,7 @@ pxy_conn_apply_filter(pxy_conn_ctx_t *ctx, unsigned int defer_action)
 {
 	int rv = 0;
 	filter_action_t *a;
-	if ((a = pxy_conn_filter(ctx, pxy_conn_dsthost_filter))) {
+	if ((a = pxy_conn_filter(ctx, NULL, pxy_conn_dsthost_filter))) {
 		unsigned int action = pxy_conn_translate_filter_action(ctx, a);
 
 		ctx->filter_precedence = action & FILTER_PRECEDENCE;
@@ -1704,8 +1722,18 @@ pxy_conn_apply_filter(pxy_conn_ctx_t *ctx, unsigned int defer_action)
 			ctx->log_mirror = 0;
 #endif /* !WITHOUT_MIRROR */
 
-		if (a->conn_opts)
+		if (a->conn_opts) {
 			ctx->conn_opts = a->conn_opts;
+#ifndef WITHOUT_ICAP
+			if (a->conn_opts->icap_chain) {
+				ctx->icap_ctx = icap_init(ctx, NULL, NULL, a->conn_opts->icap_chain);
+				if (!ctx->icap_ctx) {
+					ctx->enomem = 1;
+					return 1;
+				}
+			}
+#endif /* !WITHOUT_ICAP */
+		}
 	}
 	return rv;
 }
@@ -1754,9 +1782,12 @@ pxy_conn_connect(pxy_conn_ctx_t *ctx)
 		return;
 	}
 
-	if (bufferevent_socket_connect(ctx->srvdst.bev, (struct sockaddr *)&ctx->dstaddr, ctx->dstaddrlen) == -1) {
-		log_err_level(LOG_CRIT, "bufferevent_socket_connect for srvdst failed");
-		pxy_conn_free(ctx, ctx->term ? ctx->term_requestor : 1);
+	// passthrough mode connects srvdst itself, so do not try to reconnect it
+	if (ctx->proto != PROTO_PASSTHROUGH && ctx->proto != PROTO_HTTP3) {
+		if (bufferevent_socket_connect(ctx->srvdst.bev, (struct sockaddr *)&ctx->dstaddr, ctx->dstaddrlen) == -1) {
+			log_err_level(LOG_CRIT, "bufferevent_socket_connect for srvdst failed");
+			pxy_conn_free(ctx, ctx->term ? ctx->term_requestor : 1);
+		}
 	}
 }
 
@@ -2228,7 +2259,7 @@ pxy_conn_filter_match_port(pxy_conn_ctx_t *ctx, filter_port_t *port)
 }
 
 filter_action_t *
-pxy_conn_filter_port(pxy_conn_ctx_t *ctx, filter_site_t *site)
+pxy_conn_filter_port(pxy_conn_ctx_t *ctx, UNUSED void *stream_ctx, filter_site_t *site)
 {
 	filter_port_t *port = filter_port_find(site, ctx->dstport_str);
 	if (port) {
@@ -2246,24 +2277,23 @@ pxy_conn_filter_port(pxy_conn_ctx_t *ctx, filter_site_t *site)
 
 #ifndef WITHOUT_USERAUTH
 static filter_action_t *
-pxy_conn_filter_user(pxy_conn_ctx_t *ctx, proto_filter_func_t filtercb, filter_user_t *user)
-{
+pxy_conn_filter_user(pxy_conn_ctx_t *ctx, void *stream_ctx, proto_filter_func_t filtercb, filter_user_t *user) {
 	filter_action_t * action = NULL;
 	if (user) {
 		if (ctx->desc) {
 			log_finest_va("Searching user keyword exact: %s, %s", ctx->user, ctx->desc);
 			filter_desc_t *keyword = filter_desc_exact_match(user->desc_btree, ctx->desc);
-			if (keyword && (action = filtercb(ctx, keyword->list))) {
+			if (keyword && (action = filtercb(ctx, stream_ctx, keyword->list))) {
 				return action;
 			}
 
 			log_finest_va("Searching user keyword substring: %s, %s", ctx->user, ctx->desc);
 			keyword = filter_desc_substring_match(user->desc_acm, ctx->desc);
-			if (keyword && (action = filtercb(ctx, keyword->list))) {
+			if (keyword && (action = filtercb(ctx, stream_ctx, keyword->list))) {
 				return action;
 			}
 		}
-		if ((action = filtercb(ctx, user->list))) {
+		if ((action = filtercb(ctx, stream_ctx, user->list))) {
 			return action;
 		}
 	}
@@ -2272,7 +2302,7 @@ pxy_conn_filter_user(pxy_conn_ctx_t *ctx, proto_filter_func_t filtercb, filter_u
 #endif /* !WITHOUT_USERAUTH */
 
 filter_action_t *
-pxy_conn_filter(pxy_conn_ctx_t *ctx, proto_filter_func_t filtercb)
+pxy_conn_filter(pxy_conn_ctx_t *ctx, void *stream_ctx, proto_filter_func_t filtercb)
 {
 	filter_action_t * action = NULL;
 
@@ -2282,30 +2312,30 @@ pxy_conn_filter(pxy_conn_ctx_t *ctx, proto_filter_func_t filtercb)
 		if (ctx->user) {
 			log_finest_va("Searching user exact: %s", ctx->user);
 			filter_user_t *user = filter_user_exact_match(filter->user_btree, ctx->user);
-			if ((action = pxy_conn_filter_user(ctx, filtercb, user)))
+			if ((action = pxy_conn_filter_user(ctx, stream_ctx, filtercb, user)))
 				return action;
 
 			log_finest_va("Searching user substring: %s", ctx->user);
 			user = filter_user_substring_match(filter->user_acm, ctx->user);
-			if ((action = pxy_conn_filter_user(ctx, filtercb, user)))
+			if ((action = pxy_conn_filter_user(ctx, stream_ctx, filtercb, user)))
 				return action;
 
 			if (ctx->desc) {
 				log_finest_va("Searching keyword exact: %s", ctx->desc);
 				filter_desc_t *keyword = filter_desc_exact_match(filter->desc_btree, ctx->desc);
-				if (keyword && (action = filtercb(ctx, keyword->list))) {
+				if (keyword && (action = filtercb(ctx, stream_ctx, keyword->list))) {
 					return action;
 				}
 
 				log_finest_va("Searching keyword substring: %s, %s", ctx->user, ctx->desc);
 				keyword = filter_desc_substring_match(filter->desc_acm, ctx->desc);
-				if (keyword && (action = filtercb(ctx, keyword->list))) {
+				if (keyword && (action = filtercb(ctx, stream_ctx, keyword->list))) {
 					return action;
 				}
 			}
 
 			log_finest("Searching all_user");
-			if (filter->all_user && (action = filtercb(ctx, filter->all_user))) {
+			if (filter->all_user && (action = filtercb(ctx, stream_ctx, filter->all_user))) {
 				return action;
 			}
 		}
@@ -2313,19 +2343,19 @@ pxy_conn_filter(pxy_conn_ctx_t *ctx, proto_filter_func_t filtercb)
 		if (ctx->srchost_str) {
 			log_finest_va("Searching ip exact: %s", ctx->srchost_str);
 			filter_ip_t *ip = filter_ip_exact_match(filter->ip_btree, ctx->srchost_str);
-			if (ip && (action = filtercb(ctx, ip->list))) {
+			if (ip && (action = filtercb(ctx, stream_ctx, ip->list))) {
 				return action;
 			}
 
 			log_finest_va("Searching ip substring: %s", ctx->srchost_str);
 			ip = filter_ip_substring_match(filter->ip_acm, ctx->srchost_str);
-			if (ip && (action = filtercb(ctx, ip->list))) {
+			if (ip && (action = filtercb(ctx, stream_ctx, ip->list))) {
 				return action;
 			}
 		}
 
 		log_finest("Searching all");
-		if (filter->all && (action = filtercb(ctx, filter->all))) {
+		if (filter->all && (action = filtercb(ctx, stream_ctx, filter->all))) {
 			return action;
 		}
 	}
@@ -2380,7 +2410,9 @@ pxy_conn_init(pxy_conn_ctx_t *ctx)
 	log_finest_va("srcaddr= [%s]:%s", ctx->srchost_str, ctx->srcport_str);
 	return 0;
 out:
-	evutil_closesocket(ctx->fd);
+	if (ctx->proto != PROTO_HTTP3) {
+		evutil_closesocket(ctx->fd);
+	}
 	pxy_conn_ctx_free(ctx, 1);
 	return -1;
 }

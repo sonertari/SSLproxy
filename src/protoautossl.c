@@ -30,6 +30,9 @@
 #include "protoautossl.h"
 #include "prototcp.h"
 #include "protossl.h"
+#ifndef WITHOUT_ICAP
+#include "icap.h"
+#endif /* !WITHOUT_ICAP */
 
 #include <string.h>
 #include <sys/param.h>
@@ -270,10 +273,13 @@ protoautossl_peek_and_upgrade(pxy_conn_ctx_t *ctx)
 	/* peek the buffer */
 	inbuf = bufferevent_get_input(ctx->src.bev);
 	if (evbuffer_peek(inbuf, 4096, 0, vec_out, 1)) {
-		if (ssl_tls_clienthello_parse(vec_out[0].iov_base, vec_out[0].iov_len, 0, &chello, &ctx->sslctx->sni) == 0) {
+		if (ssl_tls_clienthello_parse(vec_out[0].iov_base, vec_out[0].iov_len, 0, &chello, &ctx->sslctx->sni,
+                                      &ctx->sslctx->alpn_protos, &ctx->sslctx->alpn_protos_len) == 0) {
 			if (OPTS_DEBUG(ctx->global)) {
 				log_dbg_printf("Peek found ClientHello\n");
 			}
+
+			protossl_try_remove_h2_from_alpn_protos(ctx);
 
 			if (ctx->divert) {
 				if (!ctx->children) {
@@ -306,6 +312,13 @@ protoautossl_peek_and_upgrade(pxy_conn_ctx_t *ctx)
 					return -1;
 				}
 			} else {
+#ifndef WITHOUT_ICAP
+				if (icap_enabled(ctx->icap_ctx) && icap_set_extended_headers(ctx->icap_ctx, 1) == -1) {
+					log_err_level(LOG_ERR, "Failed to set ICAP extended headers after ClientHello");
+					return -1;
+				}
+#endif /* !WITHOUT_ICAP */
+
 				// srvdst == dst in split mode
 				if (protoautossl_upgrade_dst(ctx) == -1) {
 					return -1;
@@ -453,6 +466,18 @@ protoautossl_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		return;
 	}
 
+#ifndef WITHOUT_ICAP
+	if (!icap_enabled(ctx->icap_ctx)) {
+#endif /* !WITHOUT_ICAP */
+		evbuffer_add_buffer(outbuf, inbuf);
+#ifndef WITHOUT_ICAP
+	}
+	else {
+		ctx->icap_ctx->reqmod = 1;
+		icap_process_data(inbuf, ctx->icap_ctx);
+	}
+#endif /* !WITHOUT_ICAP */
+
 	ctx->protoctx->set_watermarkcb(bev, ctx, ctx->dst.bev);
 }
 
@@ -475,7 +500,21 @@ protoautossl_bev_readcb_srvdst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 	}
 #endif /* !WITHOUT_USERAUTH */
 
-	evbuffer_add_buffer(bufferevent_get_output(ctx->src.bev), bufferevent_get_input(bev));
+	struct evbuffer *inbuf = bufferevent_get_input(bev);
+	struct evbuffer *outbuf = bufferevent_get_output(ctx->src.bev);
+
+#ifndef WITHOUT_ICAP
+	if (!icap_enabled(ctx->icap_ctx)) {
+#endif /* !WITHOUT_ICAP */
+		evbuffer_add_buffer(outbuf, inbuf);
+#ifndef WITHOUT_ICAP
+	}
+	else {
+		ctx->icap_ctx->reqmod = 0;
+		icap_process_data(inbuf, ctx->icap_ctx);
+	}
+#endif /* !WITHOUT_ICAP */
+
 	ctx->protoctx->set_watermarkcb(bev, ctx, ctx->src.bev);
 }
 
@@ -835,7 +874,6 @@ protoautossl_free(pxy_conn_ctx_t *ctx)
 protocol_t
 protoautossl_setup(pxy_conn_ctx_t *ctx)
 {
-	ctx->protoctx->proto = PROTO_AUTOSSL;
 	ctx->protoctx->connectcb = protoautossl_conn_connect;
 	ctx->protoctx->init_conn = prototcp_init_conn;
 
@@ -879,8 +917,6 @@ protoautossl_setup(pxy_conn_ctx_t *ctx)
 protocol_t
 protoautossl_setup_child(pxy_conn_child_ctx_t *ctx)
 {
-	ctx->protoctx->proto = PROTO_AUTOSSL;
-
 	ctx->protoctx->bev_writecb = prototcp_bev_writecb_child;
 	ctx->protoctx->bev_eventcb = protoautossl_bev_eventcb_child;
 

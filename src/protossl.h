@@ -32,11 +32,15 @@
 
 #include "pxyconn.h"
 
-int protossl_log_masterkey(pxy_conn_ctx_t *, pxy_conn_desc_t *) NONNULL(1,2);
+void protossl_keylog_callback(const SSL *, const char *);
+int protossl_log_masterkey(pxy_conn_ctx_t *, SSL *) NONNULL(1);
 void protossl_log_ssl_error(struct bufferevent *, pxy_conn_ctx_t *) NONNULL(1,2);
 
-// @todo Used externally by pxy_log_connect_src(), create tcp and ssl versions of that function instead?
-void protossl_srccert_write(pxy_conn_ctx_t *) NONNULL(1);
+void protossl_set_alpn_protos_negotiated(SSL *, pxy_conn_ctx_t *) NONNULL(1,2);
+void protossl_try_remove_h2_from_alpn_protos(pxy_conn_ctx_t *) NONNULL(1);
+
+void protossl_srccert_write(pxy_conn_ctx_t *, SSL *) NONNULL(1);
+SSL *protossl_srcssl_create(pxy_conn_ctx_t *, SSL *, SSL *) NONNULL(1);
 SSL *protossl_dstssl_create(pxy_conn_ctx_t *) NONNULL(1);
 
 void protossl_free(pxy_conn_ctx_t *) NONNULL(1);
@@ -55,10 +59,15 @@ int protossl_setup_dst_ssl_child(pxy_conn_child_ctx_t *) NONNULL(1);
 int protossl_setup_srvdst_ssl(pxy_conn_ctx_t *) NONNULL(1);
 int protossl_setup_srvdst(pxy_conn_ctx_t *) NONNULL(1);
 
+void protossl_bev_eventcb_dst(struct bufferevent *, short, pxy_conn_ctx_t *)  NONNULL(1);
 void protossl_bev_eventcb_srvdst(struct bufferevent *, short, pxy_conn_ctx_t *) NONNULL(1);
 
 void protossl_bev_eventcb(struct bufferevent *, short, void *) NONNULL(1);
 void protossl_bev_eventcb_child(struct bufferevent *, short, void *) NONNULL(1);
+
+#ifndef WITHOUT_ICAP
+void protossl_icap_resume(struct bufferevent *, void *) NONNULL(1,2);
+#endif /* !WITHOUT_ICAP */
 
 protocol_t protossl_setup(pxy_conn_ctx_t *) NONNULL(1);
 protocol_t protossl_setup_child(pxy_conn_child_ctx_t *) NONNULL(1);

@@ -29,6 +29,9 @@
 
 #include "prototcp.h"
 #include "protopassthrough.h"
+#ifndef WITHOUT_ICAP
+#include "icap.h"
+#endif /* !WITHOUT_ICAP */
 
 #include <sys/param.h>
 #include <string.h>
@@ -358,7 +361,7 @@ prototcp_try_send_userauth_msg(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 }
 #endif /* !WITHOUT_USERAUTH */
 
-static int NONNULL(1,2,3,4)
+int NONNULL(1,2,3,4)
 prototcp_try_validate_proto(struct bufferevent *bev, pxy_conn_ctx_t *ctx, struct evbuffer *inbuf, struct bufferevent *other)
 {
 	if (ctx->conn_opts->validate_proto && ctx->protoctx->validatecb && !ctx->protoctx->is_valid) {
@@ -400,6 +403,9 @@ prototcp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		return;
 	}
 
+	struct evbuffer *inbuf = bufferevent_get_input(bev);
+	struct evbuffer *outbuf = bufferevent_get_output(ctx->dst.bev);
+
 #ifndef WITHOUT_USERAUTH
 	if (prototcp_try_send_userauth_msg(bev, ctx)) {
 		return;
@@ -410,15 +416,25 @@ prototcp_bev_readcb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		return;
 	}
 
-	struct evbuffer *inbuf = bufferevent_get_input(bev);
 	if (prototcp_try_validate_proto(bev, ctx, inbuf, ctx->dst.bev) != 0) {
 		return;
 	}
 
-	struct evbuffer *outbuf = bufferevent_get_output(ctx->dst.bev);
 	if (pxy_try_prepend_sslproxy_header(ctx, inbuf, outbuf) != 0) {
 		return;
 	}
+
+#ifndef WITHOUT_ICAP
+	if (!icap_enabled(ctx->icap_ctx)) {
+#endif /* !WITHOUT_ICAP */
+		evbuffer_add_buffer(outbuf, inbuf);
+#ifndef WITHOUT_ICAP
+	}
+	else {
+		ctx->icap_ctx->reqmod = 1;
+		icap_process_data(inbuf, ctx->icap_ctx);
+	}
+#endif /* !WITHOUT_ICAP */
 
 	ctx->protoctx->set_watermarkcb(bev, ctx, ctx->dst.bev);
 }
@@ -433,11 +449,25 @@ prototcp_bev_readcb_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		return;
 	}
 
-	evbuffer_add_buffer(bufferevent_get_output(ctx->src.bev), bufferevent_get_input(bev));
+	struct evbuffer *inbuf = bufferevent_get_input(bev);
+	struct evbuffer *outbuf = bufferevent_get_output(ctx->src.bev);
+
+#ifndef WITHOUT_ICAP
+	if (!icap_enabled(ctx->icap_ctx)) {
+#endif /* !WITHOUT_ICAP */
+		evbuffer_add_buffer(outbuf, inbuf);
+#ifndef WITHOUT_ICAP
+	}
+	else {
+		ctx->icap_ctx->reqmod = 0;
+		icap_process_data(inbuf, ctx->icap_ctx);
+	}
+#endif /* !WITHOUT_ICAP */
+
 	ctx->protoctx->set_watermarkcb(bev, ctx, ctx->src.bev);
 }
 
-static void NONNULL(1)
+void NONNULL(1)
 prototcp_bev_readcb_srvdst(UNUSED struct bufferevent *bev, UNUSED pxy_conn_ctx_t *ctx)
 {
 	log_err_level(LOG_ERR, "readcb called on srvdst");
@@ -569,7 +599,13 @@ prototcp_bev_writecb_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		}
 		return;
 	}
-	ctx->protoctx->unset_watermarkcb(bev, ctx, &ctx->dst);
+#ifndef WITHOUT_ICAP
+	if (!icap_enabled(ctx->icap_ctx)) {
+#endif /* !WITHOUT_ICAP */
+		ctx->protoctx->unset_watermarkcb(bev, ctx, &ctx->dst);
+#ifndef WITHOUT_ICAP
+	}
+#endif /* !WITHOUT_ICAP */
 }
 
 void
@@ -696,6 +732,23 @@ prototcp_bev_eventcb_eof_src(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		log_err_level(LOG_WARNING, "EOF on outbound connection before connection establishment");
 		ctx->dst.closed = 1;
 	} else if (!ctx->dst.closed) {
+#ifndef WITHOUT_ICAP
+		if (ctx->proto == PROTO_HTTP2) {
+			if (protohttp2_icap_is_finished(ctx)) {
+				log_finest("ICAP finished, terminate conn");
+			}
+			else {
+				log_finest("ICAP not finished yet, do not terminate conn");
+				return;
+			}
+		}
+		else {
+			if (icap_enabled(ctx->icap_ctx) && !icap_is_finished(ctx->icap_ctx)) {
+				log_finest("ICAP not finished yet, do not terminate conn");
+				return;
+			}
+		}
+#endif /* !WITHOUT_ICAP */
 		log_finest("!dst.closed, terminate conn");
 		if (pxy_try_consume_last_input(bev, ctx) == -1) {
 			return;
@@ -718,6 +771,23 @@ prototcp_bev_eventcb_eof_dst(struct bufferevent *bev, pxy_conn_ctx_t *ctx)
 		log_err_level(LOG_WARNING, "EOF on outbound connection before connection establishment");
 		ctx->src.closed = 1;
 	} else if (!ctx->src.closed) {
+#ifndef WITHOUT_ICAP
+		if (ctx->proto == PROTO_HTTP2) {
+			if (protohttp2_icap_is_finished(ctx)) {
+				log_finest("ICAP finished, terminate conn");
+			}
+			else {
+				log_finest("ICAP not finished yet, do not terminate conn");
+				return;
+			}
+		}
+		else {
+			if (icap_enabled(ctx->icap_ctx) && !icap_is_finished(ctx->icap_ctx)) {
+				log_finest("ICAP not finished yet, do not terminate conn");
+				return;
+			}
+		}
+#endif /* !WITHOUT_ICAP */
 		log_finest("!src.closed, terminate conn");
 		if (pxy_try_consume_last_input(bev, ctx) == -1) {
 			return;
@@ -936,7 +1006,7 @@ prototcp_bev_eventcb_dst_child(struct bufferevent *bev, short events, pxy_conn_c
 	}
 }
 
-static void NONNULL(1)
+void NONNULL(1)
 prototcp_bev_readcb(struct bufferevent *bev, void *arg)
 {
 	pxy_conn_ctx_t *ctx = arg;
@@ -1028,7 +1098,6 @@ prototcp_bev_eventcb_child(struct bufferevent *bev, short events, void *arg)
 protocol_t
 prototcp_setup(pxy_conn_ctx_t *ctx)
 {
-	ctx->protoctx->proto = PROTO_TCP;
 	ctx->protoctx->connectcb = prototcp_conn_connect;
 	ctx->protoctx->init_conn = prototcp_init_conn;
 	
@@ -1055,7 +1124,6 @@ prototcp_setup(pxy_conn_ctx_t *ctx)
 protocol_t
 prototcp_setup_child(pxy_conn_child_ctx_t *ctx)
 {
-	ctx->protoctx->proto = PROTO_TCP;
 	ctx->protoctx->connectcb = prototcp_connect_child;
 
 	ctx->protoctx->bev_readcb = prototcp_bev_readcb_child;

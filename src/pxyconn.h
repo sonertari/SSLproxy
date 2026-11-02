@@ -97,7 +97,9 @@ typedef int (*outbuf_has_data_func_t)(struct bufferevent *
 typedef void (*log_dbg_evbuf_info_func_t)(pxy_conn_ctx_t *, pxy_conn_desc_t *, pxy_conn_desc_t *) NONNULL(1,2,3);
 #endif /* DEBUG_PROXY */
 
-typedef filter_action_t * (*proto_filter_func_t)(pxy_conn_ctx_t *, filter_list_t *) NONNULL(1,2) WUNRES;
+// Forward declaration
+struct protohttpx_stream_ctx;
+typedef filter_action_t * (*proto_filter_func_t)(pxy_conn_ctx_t *, struct protohttpx_stream_ctx *, filter_list_t *) NONNULL(1,3) WUNRES;
 
 /*
  * Proxy connection context state, describes a proxy connection
@@ -119,18 +121,31 @@ enum conn_type {
 	CONN_TYPE_CHILD,
 };
 
+// ATTENTION: The X-Macro solution is used to define the protocol enum and string array in a single place, ensuring consistency between the two.
+// The PROTOCOL_LIST macro defines the protocol names and their string representations,
+// which are then used to generate both the enum values and the corresponding string array.
+// Define the protocol master list once: (Enum_Name, String_Representation)
+#define PROTOCOL_LIST(X) \
+    X(HTTP,        "HTTP")        \
+    X(HTTPS,       "HTTPS")       \
+    X(HTTP2,       "HTTP/2")      \
+    X(HTTP3,       "HTTP/3")      \
+    X(POP3,        "POP3")        \
+    X(POP3S,       "POP3S")       \
+    X(SMTP,        "SMTP")        \
+    X(SMTPS,       "SMTPS")       \
+    X(AUTOSSL,     "AUTOSSL")     \
+    X(SSL,         "SSL")         \
+    X(TCP,         "TCP")         \
+    X(PASSTHROUGH, "PASSTHROUGH")
+
+// Automatically generate protocol enum values from PROTOCOL_LIST
+// We never use PROTO_ERROR with protocol_names[], hence not in PROTOCOL_LIST
 typedef enum protocol {
-	PROTO_ERROR = -1,
-	PROTO_PASSTHROUGH = 0,
-	PROTO_HTTP,
-	PROTO_HTTPS,
-	PROTO_POP3,
-	PROTO_POP3S,
-	PROTO_SMTP,
-	PROTO_SMTPS,
-	PROTO_AUTOSSL,
-	PROTO_TCP,
-	PROTO_SSL,
+    PROTO_ERROR = -1,
+#define X_ENUM(name, str) PROTO_##name,
+    PROTOCOL_LIST(X_ENUM)
+#undef X_ENUM
 } protocol_t;
 
 typedef struct ssl_ctx ssl_ctx_t;
@@ -151,9 +166,21 @@ struct ssl_ctx {
 	unsigned int have_sslerr : 1;           /* 1 if we have an ssl error */
 	// Set after reconnecting srvdst to enforce the SSL options in matching struct filtering rule
 	unsigned int reconnected : 1;     /* 1 if we have reconnected srvdst */
+	unsigned int h2 : 1;                     /* 1 if alpn upgraded to h2 */
 
 	/* server name indicated by client in SNI TLS extension */
 	char *sni;
+
+	/* protos supported by client in ALPN TLS extension */
+	unsigned char *alpn_protos;
+	size_t alpn_protos_len;
+
+	/* proto(s) negotiated with server via ALPN (using alpn_protos), in wire format */
+	unsigned char *alpn_protos_negotiated;
+	size_t alpn_protos_negotiated_len;
+	/* proto selected via ALPN, not in wire format */
+	unsigned char *alpn_selected;
+	unsigned char alpn_selected_len;
 
 	X509 *origcrt;
 
@@ -162,8 +189,6 @@ struct ssl_ctx {
 };
 
 struct proto_ctx {
-	protocol_t proto;
-
 	connect_func_t connectcb;
 	init_conn_func_t init_conn;
 
@@ -196,8 +221,6 @@ struct proto_ctx {
 };
 
 struct proto_child_ctx {
-	protocol_t proto;
-
 	child_connect_func_t connectcb;
 
 	callback_func_t bev_readcb;
@@ -232,10 +255,10 @@ typedef struct pxy_conn_lproc_desc {
 struct pxy_conn_ctx {
 	enum conn_type type;
 
-#ifdef DEBUG_PROXY
+#if defined(DEBUG_PROXY) || defined(DEBUG_ICAP)
 	// Unique id of the conn, used in debugging only
 	long long unsigned int id;
-#endif /* DEBUG_PROXY */
+#endif /* DEBUG_PROXY || DEBUG_ICAP */
 
 	pxy_conn_ctx_t *conn;                 /* parent's conn ctx is itself */
 
@@ -278,6 +301,8 @@ struct pxy_conn_ctx {
 	socklen_t srcaddrlen;
 	struct sockaddr_storage dstaddr;
 	socklen_t dstaddrlen;
+	struct sockaddr_storage orig_dstaddr;
+	socklen_t orig_dstaddrlen;
 	int af;
 
 	// Thread that the conn is attached to
@@ -293,10 +318,10 @@ struct pxy_conn_ctx {
 	evutil_socket_t dst_fd;
 	evutil_socket_t srvdst_fd;
 
-#ifndef WITHOUT_USERAUTH
-	// Privsep socket to update user atime
+#if !defined(WITHOUT_USERAUTH) || !defined(WITHOUT_HTTP3)
+	// Privsep socket to update user atime and setup h3 sockets
 	evutil_socket_t clisock;
-#endif /* !WITHOUT_USERAUTH */
+#endif /* !WITHOUT_USERAUTH || !WITHOUT_HTTP3 */
 
 	// fd of event listener for children, explicitly closed on error (not for stats only)
 	evutil_socket_t child_fd;
@@ -307,6 +332,10 @@ struct pxy_conn_ctx {
 	char *sslproxy_header;
 	size_t sslproxy_header_len;
 	unsigned int sent_sslproxy_header : 1; /* 1 to prevent inserting SSLproxy header twice */
+
+#ifndef WITHOUT_ICAP
+	icap_ctx_t *icap_ctx;
+#endif /* !WITHOUT_ICAP */
 
 #ifdef DEBUG_PROXY
 	// Listening programs may create multiple child connections, such as Squid http proxy
@@ -420,8 +449,10 @@ struct pxy_conn_child_ctx {
 int pxy_prepare_logging_local_procinfo(pxy_conn_ctx_t *) NONNULL(1);
 #endif /* HAVE_LOCAL_PROCINFO */
 
-void pxy_log_connect_src(pxy_conn_ctx_t *) NONNULL(1);
-void pxy_log_connect_srvdst(pxy_conn_ctx_t *) NONNULL(1);
+int pxy_prepare_logging(pxy_conn_ctx_t *) NONNULL(1);
+
+void pxy_log_connect(pxy_conn_ctx_t *, SSL *) NONNULL(1);
+void pxy_log_dbg_disconnect(pxy_conn_ctx_t *) NONNULL(1);
 void pxy_log_connect_nonhttp(pxy_conn_ctx_t *) NONNULL(1);
 
 unsigned char *pxy_malloc_packet(size_t, pxy_conn_ctx_t *) MALLOC NONNULL(2) WUNRES;
@@ -441,6 +472,13 @@ int pxy_conn_init(pxy_conn_ctx_t *) NONNULL(1);
 void pxy_conn_ctx_free(pxy_conn_ctx_t *, int) NONNULL(1);
 void pxy_conn_free(pxy_conn_ctx_t *, int) NONNULL(1);
 void pxy_conn_term(pxy_conn_ctx_t *, int) NONNULL(1);
+int pxy_log_content_inbuf(pxy_conn_ctx_t *, struct evbuffer *, int, int,
+	unsigned int, unsigned int
+#ifndef WITHOUT_MIRROR
+	, unsigned int
+#endif /* !WITHOUT_MIRROR */
+	) NONNULL(1,2);
+
 void pxy_conn_term_child(pxy_conn_child_ctx_t *) NONNULL(1);
 void pxy_conn_free_children(pxy_conn_ctx_t *) NONNULL(1);
 
@@ -478,8 +516,8 @@ filter_action_t *pxy_conn_set_filter_action(filter_action_t *, filter_action_t *
 	, pxy_conn_ctx_t *, char *, char *
 #endif /* DEBUG_PROXY */
 	) WUNRES;
-filter_action_t *pxy_conn_filter_port(pxy_conn_ctx_t *, filter_site_t *) NONNULL(1,2);
-filter_action_t * pxy_conn_filter(pxy_conn_ctx_t *, proto_filter_func_t) NONNULL(1) WUNRES;
+filter_action_t *pxy_conn_filter_port(pxy_conn_ctx_t *, void *, filter_site_t *) NONNULL(1,3);
+filter_action_t * pxy_conn_filter(pxy_conn_ctx_t *, void *, proto_filter_func_t) NONNULL(1) WUNRES;
 void pxy_conn_setup(evutil_socket_t, struct sockaddr *, int,
                     pxy_thrmgr_ctx_t *, proxyspec_t *, global_t *,
 					evutil_socket_t)

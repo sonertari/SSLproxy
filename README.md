@@ -22,23 +22,40 @@ Filter through those UTM software. Given that most of the Internet traffic is
 encrypted now, without SSLproxy it wouldn't be possible to deeply inspect most 
 of the network traffic passing through UTMFW.
 
-See [this presentation](https://drive.google.com/open?id=12YaGIGs0-xfpqMNAY3rzUbIyed-Tso8W) 
-for a summary of SSL interception and potential issues with middleboxes that 
-support it.
+See [this presentation](docs/RisksOfSSLInspection.pdf) for a summary of SSL 
+interception and potential issues with middleboxes that support it.
 
-### Mode of operation
+### Modes of Operation
 
 SSLproxy is designed to transparently terminate connections that are redirected
 to it using a network address translation engine. SSLproxy then terminates
 SSL/TLS and initiates a new SSL/TLS connection to the original destination
-address. Packets received on the client side are decrypted and sent to the
-program listening on a port given in the proxy specification. SSLproxy inserts
-in the first packet the address and port it is expecting to receive the packets
-back from the program. Upon receiving the packets back, SSLproxy re-encrypts
-and sends them to their original destination. The return traffic follows the
-same path back to the client in reverse order.
+address. The rest of the actions is determined by the mode of operation 
+specified in its global, proxyspec, and filter rule configuration.
 
-![Mode of Operation Diagram](https://drive.google.com/uc?id=1N_Yy5nMPDSvY8YaNFd4sHvipyLWq5zDy)
+SSLproxy supports three major modes of operation:
+
+- **Divert**
+- **Split**
+- **Icap**
+
+SSLproxy does not automagically redirect any network traffic. To actually
+implement a proxy, you also need to redirect the traffic to the system running 
+sslproxy. Your options include running sslproxy on a legitimate router, ARP 
+spoofing, ND spoofing, DNS poisoning, deploying a rogue access point (e.g. 
+using hostap mode), physical recabling, malicious VLAN reconfiguration or 
+route injection, /etc/hosts modification and so on.
+
+#### Divert
+
+In Divert mode, packets received on the client side are decrypted and sent to 
+the program listening on a port given in the proxy specification. SSLproxy 
+inserts in the first packet the address and port it is expecting to receive 
+the packets back from the program. Upon receiving the packets back, SSLproxy 
+re-encrypts and sends them to their original destination. The return traffic 
+follows the same path back to the client in reverse order.
+
+![Divert Mode Diagram](docs/DivertMode.png)
 
 This is similar in principle to [divert 
 sockets](https://man.openbsd.org/divert.4), where the packet filter diverts the 
@@ -49,25 +66,41 @@ into the kernel, the connection is effectively blocked. In the case of
 SSLproxy, SSLproxy acts as both the packet filter and the kernel, and the 
 communication occurs over networking sockets.
 
-SSLproxy supports split mode of operation similar to SSLsplit as well. In 
-split mode, packets are not diverted to listening programs, effectively making 
-SSLproxy behave similar to SSLsplit, but not exactly like it, because SSLproxy 
-has certain features nonexistent in SSLsplit, such as user authentication, 
-protocol validation, and filtering rules. Also, note that the implementation 
-of the proxy core in SSLproxy is different from the one in SSLsplit; for 
-example, the proxy core in SSLproxy runs lockless, whereas SSLsplit 
-implementation uses a thread manager level lock (which does not necessarily 
-make sslproxy run faster than sslsplit). In SSLproxy, split mode can be 
-defined globally, per-proxyspec, or per-connection using filtering rules.
+#### Split
 
-SSLproxy does not automagically redirect any network traffic.  To actually
-implement a proxy, you also need to redirect the traffic to the system running 
-sslproxy.  Your options include running sslproxy on a legitimate router, ARP 
-spoofing, ND spoofing, DNS poisoning, deploying a rogue access point (e.g. 
-using hostap mode), physical recabling, malicious VLAN reconfiguration or 
-route injection, /etc/hosts modification and so on.
+SSLproxy supports split mode of operation similar to [`SSLsplit`](https://github.com/droe/sslsplit) 
+as well. In split mode, packets are not diverted to listening programs, 
+effectively making SSLproxy behave similar to SSLsplit, but not exactly like 
+it. Because SSLproxy has certain features nonexistent in SSLsplit, such as 
+user authentication, protocol validation, and filtering rules. Also, note that 
+the implementation of the proxy core in SSLproxy is different from the one in 
+SSLsplit; for example, the proxy core in SSLproxy runs lockless, whereas 
+SSLsplit implementation uses a thread manager level lock (which does not 
+necessarily make sslproxy run faster than sslsplit). In SSLproxy, split mode 
+can be defined globally, per-proxyspec, or per-connection using filtering 
+rules.
 
-#### Proxy specifications
+#### Icap
+
+In Icap mode, SSLproxy sends decrypted contents to configured ICAP services 
+for inspection. Icap mode is not a direct alternative to the other modes of 
+operation. Instead, it should be combined with either Divert or Split mode. 
+For example, SSLproxy can send ICAP requests for the content in an HTTPS 
+connection that it also diverts to the listening program configured for it.
+
+![Icap Mode Diagram](docs/IcapMode.png)
+
+You can configure multiple ICAP services, up to a maximum of 16 services per 
+chain. But note that global services are copied into proxyspecs, and proxyspec 
+services are copied into filtering rules. So the total number of services in a 
+filter rule chain is determined by the ordering in the configuration file.
+
+SSLproxy sends the contents to all of the ICAP services in the chain. The 
+output of the current ICAP service is passed to the next service in the chain, 
+and eventually forwarded to its destination. The destination is the listening 
+program in Divert mode and the server in Split mode.
+
+### Proxy Specifications
 
 SSLproxy supports three different types of proxy specifications, or proxyspecs 
 for short, which can be in divert or split style.
@@ -78,7 +111,7 @@ for short, which can be in divert or split style.
 
 The syntax of command line proxyspecs is as follows:
 
-	(tcp|ssl|http|https|pop3|pop3s|smtp|smtps|autossl)
+	(tcp|ssl|http|https|http3|pop3|pop3s|smtp|smtps|autossl)
 	  listenaddr listenport
 	  [up:divertport [ua:divertaddr ra:returnaddr]]
 	  [(targetaddr targetport|sni sniport|natengine)]
@@ -86,7 +119,7 @@ The syntax of command line proxyspecs is as follows:
 The syntax of one line proxyspecs is the same as the syntax of command line 
 proxyspecs, except for the leading `ProxySpec` keyword:
 
-	ProxySpec (tcp|ssl|http|https|pop3|pop3s|smtp|smtps|autossl)
+	ProxySpec (tcp|ssl|http|https|http3|pop3|pop3s|smtp|smtps|autossl)
 	  listenaddr listenport
 	  [up:divertport [ua:divertaddr ra:returnaddr]]
 	  [(targetaddr targetport|sni sniport|natengine)]
@@ -95,7 +128,7 @@ The syntax of structured proxyspecs is as follows, and they can configure
 connection options too:
 
 	ProxySpec {
-	    Proto (tcp|ssl|http|https|pop3|pop3s|smtp|smtps|autossl)
+	    Proto (tcp|ssl|http|https|http3|pop3|pop3s|smtp|smtps|autossl)
 	    Addr listenaddr       # inline
 	    Port listenport       # comments
 	    DivertPort divertport # allowed
@@ -108,6 +141,35 @@ connection options too:
 
 	    # Divert or split
 	    Divert (yes|no)
+
+		IcapFailOpen (yes|no)
+		IcapConnFailOpen (yes|no)
+		IcapTimeout 30
+		IcapPreviewSize 1024
+		IcapMaxBodySize 4096
+		IcapMaxInspectionSize 16384
+		IcapAllow204 (yes|no)
+		IcapAllow206 (yes|no)
+		IcapSanitizeRequestLine (yes|no)
+
+		Icap icap://host:port,reqmod,respmod,icap_fail_open,conn_fail_open,timeout,preview_size,max_body_size,max_inspection_size,allow_204,allow_206,echo_header,sanitize_request_line
+        Icap {
+            Proto icap
+            Server host
+            Port port
+            Reqmod reqmod
+            Respmod respmod
+            FailOpen (yes|no)
+            ConnFailOpen (yes|no)
+            Timeout 30
+            PreviewSize 1024
+            MaxBodySize 4096
+            MaxInspectionSize 16384
+            Allow204 (yes|no)
+            Allow206 (yes|no)
+            EchoHeader x-header-to-echo (e.g. X-Response-Vars)
+            SanitizeRequestLine (yes|no)
+        }
 
 	    # Connection options
 	    Passthrough (yes|no)
@@ -131,12 +193,14 @@ connection options too:
 	    CipherSuites TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256
 	    VerifyPeer (yes|no)
 	    AllowWrongHost (yes|no)
+	    StripClientHello (yes|no)
 
 	    RemoveHTTPAcceptEncoding (yes|no)
 	    RemoveHTTPReferer (yes|no)
-	    StripClientHello (yes|no)
+	    EnableHTTP2 (yes|no)
 	    MaxHTTPHeaderSize 8192
 	    ValidateProto (yes|no)
+		RewriteAltSvcPort h3port
 
 	    UserAuth (yes|no)
 	    UserTimeout 300
@@ -153,7 +217,9 @@ connection options too:
 	    FilterRule {...} structured filtering rules
 	}
 
-For example, given the following command line proxyspec:
+#### Sample proxyspec
+
+Given the following command line proxyspec:
 
 	https 127.0.0.1 8443 up:8080
 
@@ -170,7 +236,7 @@ The response from the Server follows the same path back to the Client in
 reverse order.
 
 Split style proxyspecs configure for split mode of operation similar to 
-[SSLsplit](https://github.com/droe/sslsplit). See the SSLsplit documentation 
+[`SSLsplit`](https://github.com/droe/sslsplit). See the SSLsplit documentation 
 for the details of split style proxyspecs.
 
 #### SSLproxy line
@@ -228,91 +294,396 @@ So, the listening program can be running on a machine anywhere in the world.
 Since the packets between SSLproxy and the listening program are always 
 unencrypted, you should be careful while using such a setup.
 
-### Protocols
+### Filtering Rules
 
-#### Supported protocols
+SSLproxy can divert, split, pass, block, or match connections based on 
+filtering rules. Filtering rules can be defined globally and/or per-proxyspec.
 
-SSLproxy supports plain TCP, plain SSL, HTTP, HTTPS, POP3, POP3S, SMTP, and 
-SMTPS connections over both IPv4 and IPv6. It also has the ability to 
-dynamically upgrade plain TCP to SSL in order to generically support SMTP 
-STARTTLS and similar upgrade mechanisms. Depending on the version of OpenSSL, 
-SSLproxy supports SSL 3.0, TLS 1.0, TLS 1.1, TLS 1.2, and TLS 1.3, and 
-optionally SSL 2.0 as well. SSLproxy supports Server Name Indication (SNI), 
-but not Encrypted SNI in TLS 1.3. It is able to work with RSA, DSA and ECDSA 
-keys and DHE and ECDHE cipher suites.
+- `Divert` action diverts packets to the listening program, allowing SSL 
+inspection by the listening program and content logging of packets
+- `Split` action splits the connection but does not divert packets to the 
+listening program, effectively disabling SSL inspection by the listening 
+program, but allowing content logging of packets
+- `Pass` action passes the connection through by engaging passthrough mode, 
+effectively disabling SSL inspection and content logging of packets
+- `Block` action terminates the connection
+- `Match` action specifies log actions and/or connection options for the 
+connection without changing its filter action
 
-The following features of SSLproxy are IPv4 only:
+SSLproxy supports one line and structured filtering rules.
 
-- Divert addresses for listening programs in proxyspecs
-- SSLproxy return addresses dynamically assigned to connections
-- IP addresses in the ua and ra options
-- IP and ethernet addresses of clients in user authentication
-- Target IP and ethernet addresses in mirror logging
+#### One line filtering rules
 
-#### OCSP, HPKP, HSTS, Upgrade et al.
+The syntax of one line filtering rules is as follows:
 
-SSLproxy implements a number of defences against mechanisms which would
-normally prevent MitM attacks or make them more difficult. SSLproxy can deny
-OCSP requests in a generic way. For HTTP and HTTPS connections, SSLproxy
-mangles headers to prevent server-instructed public key pinning (HPKP), avoid
-strict transport security restrictions (HSTS), avoid Certificate Transparency
-enforcement (Expect-CT), and prevent switching to QUIC/SPDY, HTTP/2 or
-WebSockets (Upgrade, Alternate Protocols). HTTP compression, encodings and
-keep-alive are disabled to make the logs more readable.
+	(Divert|Split|Pass|Block|Match)
+	 ([from (
+	     user (username[*]|$macro|*) [desc (desc[*]|$macro|*)]|
+	     desc (desc[*]|$macro|*)|
+	     ip (clientip[*]|$macro|*)|
+	     *)]
+	  [to (
+	     (sni (servername[*]|$macro|*)|
+	      cn (commonname[*]|$macro|*)|
+	      host (host[*]|$macro|*)|
+	      uri (uri[*]|$macro|*)|
+	      ip (serverip[*]|$macro|*)) [port (serverport[*]|$macro|*)]|
+	     port (serverport[*]|$macro|*)|
+	     *)]
+	  [log ([[!]connect] [[!]master] [[!]cert]
+	        [[!]content] [[!]pcap] [[!]mirror] [$macro]|[!]*)]
+	  |*) [# comment]
 
-Another reason to disable persistent connections is to reduce file descriptor 
-usage. Accordingly, connections are closed if they remain idle for a certain 
-period of time. The default timeout is 120 seconds, which can be configured by 
-the ConnIdleTimeout option.
+#### Structured filtering rules
 
-#### Protocol validation
+The syntax of structured filtering rules is as follows, and they can also 
+specify connection options and ICAP services to be selectively applied to 
+matching connections, not just globally or per-proxyspec. One line filtering 
+rules cannot specify connection options or ICAP services.
 
-Protocol validation makes sure the traffic handled by a proxyspec is using the 
-protocol specified in that proxyspec. If a connection cannot pass protocol 
-validation, it is terminated. To enable protocol validation, the ValidateProto 
-option can be defined globally, per-proxyspec, or per-connection using 
-filtering rules. This feature currently supports HTTP, POP3, and SMTP 
-protocols.
+	FilterRule {
+	    Action (Divert|Split|Pass|Block|Match)
 
-SSLproxy uses only client requests for protocol validation. However, it also 
-validates SMTP responses until it starts processing the packets from the 
-client. If there is no excessive fragmentation, the first couple of packets in 
-the connection should be enough for validating protocols.
+	    # From
+	    User (username[*]|$macro|*)  # inline
+	    Desc (desc[*]|$macro|*)      # comments
+	    SrcIp (clientip[*]|$macro|*) # allowed
 
-### Certificates
+	    # To
+	    SNI (servername[*]|$macro|*)
+	    CN (commonname[*]|$macro|*)
+	    Host (host[*]|$macro|*)
+	    URI (uri[*]|$macro|*)
+	    DstIp (serverip[*]|$macro|*)
+	    DstPort (serverport[*]|$macro|*)
 
-#### Certificate forging
+		IcapFailOpen (yes|no)
+		IcapConnFailOpen (yes|no)
+		IcapTimeout 30
+		IcapPreviewSize 1024
+		IcapMaxBodySize 4096
+		IcapMaxInspectionSize 16384
+		IcapAllow204 (yes|no)
+		IcapAllow206 (yes|no)
+		IcapSanitizeRequestLine (yes|no)
 
-For SSL and HTTPS connections, SSLproxy generates and signs forged X509v3
-certificates on-the-fly, mimicking the original server certificate's subject
-DN, subjectAltName extension and other characteristics. SSLproxy has the
-ability to use existing certificates of which the private key is available,
-instead of generating forged ones. SSLproxy supports NULL-prefix CN
-certificates but otherwise does not implement exploits against specific
-certificate verification vulnerabilities in SSL/TLS stacks.
+		Icap icap://host:port,reqmod,respmod,icap_fail_open,conn_fail_open,timeout,preview_size,max_body_size,max_inspection_size,allow_204,allow_206,echo_header,sanitize_request_line
+        Icap {
+            Proto icap
+            Server host
+            Port port
+            Reqmod reqmod
+            Respmod respmod
+            FailOpen (yes|no)
+            ConnFailOpen (yes|no)
+            Timeout 30
+            PreviewSize 1024
+            MaxBodySize 4096
+            MaxInspectionSize 16384
+            Allow204 (yes|no)
+            Allow206 (yes|no)
+            EchoHeader x-header-to-echo (e.g. X-Response-Vars)
+            SanitizeRequestLine (yes|no)
+        }
 
-#### Certificate verification
+	    # Multiple Log lines allowed
+	    Log ([[!]connect] [[!]master] [[!]cert]
+	         [[!]content] [[!]pcap] [[!]mirror] [$macro]|[!]*)
 
-SSLproxy verifies upstream certificates by default. If the verification fails,
-the connection is terminated immediately. This is in contrast to SSLsplit,
-because in order to maximize the chances that a connection can be successfully
-split, SSLsplit accepts all certificates by default, including self-signed
-ones. See [The Risks of SSL Inspection](https://insights.sei.cmu.edu/cert/2015/03/the-risks-of-ssl-inspection.html)
-for the reasons for this difference. You can enable or disable this feature by 
-the VerifyPeer option, which can be defined globally, per-proxyspec, or 
-per-connection using filtering rules.
+	    ReconnectSSL (yes|no)
 
-#### Client certificates
+	    # Connection options
+	    Passthrough (yes|no)
 
-SSLproxy uses the certificate and key from the pemfiles configured by the 
-ClientCert and ClientKey options when the destination requests client 
-certificates. These options can be defined globally, per-proxyspec, or 
-per-connection using filtering rules.
+	    DenyOCSP (yes|no)
+	    CACert ca.crt
+	    CAKey ca.key
+	    ClientCert client.crt
+	    ClientKey client.key
+	    CAChain chain.crt
+	    LeafCRLURL http://example.com/example.crl
+	    DHGroupParams dh.pem
+	    ECDHCurve prime256v1
+	    SSLCompression (yes|no)
+	    ForceSSLProto (ssl2|ssl3|tls10|tls11|tls12|tls13)
+	    DisableSSLProto (ssl2|ssl3|tls10|tls11|tls12|tls13)
+	    EnableSSLProto (ssl2|ssl3|tls10|tls11|tls12|tls13)
+	    MinSSLProto (ssl2|ssl3|tls10|tls11|tls12|tls13)
+	    MaxSSLProto (ssl2|ssl3|tls10|tls11|tls12|tls13)
+	    Ciphers MEDIUM:HIGH
+	    CipherSuites TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256
+	    VerifyPeer (yes|no)
+	    AllowWrongHost (yes|no)
+	    StripClientHello (yes|no)
 
-Alternatively, you can use Pass filtering rules to pass through certain 
-destinations requesting client certificates.
+	    RemoveHTTPAcceptEncoding (yes|no)
+	    RemoveHTTPReferer (yes|no)
+	    EnableHTTP2 (yes|no)
+	    MaxHTTPHeaderSize 8192
+	    ValidateProto (yes|no)
+		RewriteAltSvcPort h3port
 
-### User authentication
+	    UserAuth (yes|no)
+	    UserTimeout 300
+	    UserAuthURL https://192.168.0.1/userdblogin.php
+	}
+
+#### Application of filter actions
+
+The specification of which connections a filtering rule will be applied to is 
+achieved by the `from` and `to` parts of the filtering rule and by the 
+proxyspec that the rule is defined for.
+
+- The `from` part of a rule defines source filter based on client IP address, 
+user and/or description, or `*` for all.
+- The `to` part defines destination filter based on server IP and/or port, SNI 
+or Common Names of SSL connections, Host or URI fields in HTTP Request 
+headers, or `*` for all.
+	+ Dst Host type of rules use the `ip` site field
+	+ SSL type of rules use the `sni` or `cn` site field
+	+ HTTP type of rules use the `host` or `uri` site field
+	+ All rule types can use the `port` field
+- The proxyspec handling the connection defines the protocol filter for the 
+connection.
+
+Filtering rules are applied based on certain precedence orders:
+
+- More specific rules have higher precedence. Log actions increase rule 
+precedence too.
+- The precedence of filter types is as HTTP > SSL > Dst Host. Because, the 
+application order of filter types is as Dst Host > SSL > HTTP, and a filter 
+type can override the actions of a preceding filter type.
+- The precedence of filter actions is as Divert > Split > Pass > Block. This is 
+only for the same type of filtering rules.
+- The precedence of site fields is as sni > cn for SSL filter and host > uri 
+for HTTP filter.
+
+For example, the pass action of a Dst Host filter rule is taken before the 
+split action of an SSL filter rule with the same from definition, due to the 
+precedence order of filter types. Or, the pass action of a rule with sni site 
+field is taken before the split action of the same rule with cn site field, due 
+to the precedence order of site fields.
+
+Pass and Block filter actions are deferred until the last moment they can be 
+applied to a connection, so that Divert and Split filter actions can override 
+them.
+
+In terms of possible filter actions,
+
+- Dst Host filtering rules can take all of the filter and log actions.
+- SSL filtering rules can take all of the filter and log actions.
+- HTTP filtering rules can take match and block filter actions, can keep 
+enabled divert and split modes, but cannot take pass action. Also, HTTP 
+filtering rules can only disable logging.
+
+#### Log actions
+
+If and how a connection should be logged is specified using the `log` or 
+`Log` part of one line or structured filtering rules, respectively:
+
+- `connect` enables logging connection information to connect log file
+- `master` enables logging of master keys
+- `cert` enables logging of generated certificates
+- `content` enables logging packet contents to content log file
+- `pcap` enables writing packets to pcap file
+- `mirror` enables mirroring packets to mirror interface or target
+
+You can add a negation prefix `!` to a log action to disable that logging.
+
+Log actions do not configure any loggers. Global loggers for respective log 
+actions should have been configured for those log actions to have any effect.
+
+If no filtering rules are defined for a proxyspec, all log actions for that 
+proxyspec are enabled. Otherwise, all log actions are disabled, and filtering 
+rules should enable them specifically.
+
+#### Rule reuse
+
+To increase rule reuse, one or more of SNI, CN, Host, URI, and DstIp site 
+fields can be specified in the same structured filtering rule.
+
+#### Application of connection options
+
+Connection options specified in a structured filtering rule can have any 
+effect only if the rule matches the connection before global or proxyspec 
+connection options are applied. Otherwise, the global or proxyspec connection 
+options already applied to a connection cannot be overriden by the connection 
+options specified in the matching structured filtering rule.
+
+For example, SSL options of a connection cannot be changed after the SSL 
+connection is established. So, normally CN filter rules cannot modify SSL 
+options of a connection, but you can use the `ReconnectSSL` option to reconnect 
+the server side of an SSL connection to enforce the SSL options in the CN 
+type of filtering rules. In other words, the `ReconnectSSL` option allows for 
+using the CN fields in stuctured filtering rules to match SSL connections and 
+change their SSL configuration.
+
+#### Macro support
+
+Macro expansion is supported:
+
+- The `Define` option can be used for defining macros to be used in filtering rules.
+- Macro names must start with a `$` sign.
+- The macro name must be followed by words separated by spaces.
+
+#### Substring matching
+
+You can append an asterisk `*` to the fields in filtering rules for substring 
+matching. Otherwise, the filter searches for an exact match with the field in 
+the rule. The filter uses B-trees for exact string matching and Aho-Corasick 
+machines for substring matching.
+
+#### Order of filtering rules
+
+- The ordering of filtering rules is important.
+- The ordering of `from`, `to`, and `log` parts of one line filtering rules is not 
+important.
+- The ordering of log actions is not important.
+
+#### UserAuth
+
+If the UserAuth option is disabled, only client IP addresses can be used in 
+the from part of filtering rules.
+
+#### Sample filtering rules
+
+If the following rules are defined in a structured HTTPS proxyspec,
+
+	Split from user soner desc notebook to sni example.com log content
+	Pass from user soner desc android to cn .fbcdn.net*
+
+The first filtering rule above splits but does not divert HTTPS connections 
+from the user `soner` who has logged in with the description `notebook` to SSL 
+sites with the SNI of `example.com`. Also, the rule specifies that the packet 
+contents of the matching connection be written to content log file configured 
+globally.
+
+The second rule passes through HTTPS connections from the user `soner` who has 
+logged in with the description `android` to SSL sites with the Common Names 
+containing the substring `.fbcdn.net` anywhere in it (notice the asterisk at 
+the end). Since connection contents cannot be written to log files in 
+passthrough mode, the rule does not specify any content log action.
+
+The default filter action is Divert. So, if those are the only filtering rules 
+in that proxyspec, the other connections are diverted to the listening program 
+specified in that proxyspec, without writing any logs.
+
+If you want to enable, say, connect logging for the other connections handled 
+by that proxyspec, without changing their default Divert filter action, you 
+can add a third filtering rule to that proxyspec:
+
+	Match * log connect
+
+Note that the second example above is a filtering rule you can use to resolve 
+one of the certificate issues preventing the Facebook application on Android 
+smartphones to connect to the Internet from behind sslproxy.
+
+If you want to inspect the contents of all the connections specified by that 
+proxyspec using the `Suricata IDS/IPS` system, you can utilize [`icapsuricata`](https://github.com/sonertari/icapsuricata) 
+in Icap mode. After configuring the `icapsuricata` module in c-icap, you can 
+add an Icap specification to the same proxyspec:
+
+	Icap icap://127.0.0.1:1344,suricata,suricata,yes,yes,10,1024,0,16384,yes,no,X-Response-Vars
+
+If you want to inspect the same contents using the `E2Guardian` web filter as 
+well, you can add another Icap specification after the one for `icapsuricata`:
+
+	Icap icap://127.0.0.1:1345,reqmod,respmod,no,no,30,4096,8192,16384,yes,no,X-ICAP-E2G,yes
+
+Due to the ordering of these Icap specifications, connection contents are 
+first sent to `icapsuricata` and then to `E2Guardian`.
+
+These Icap specifications can be used with structured filtering rules to 
+inspect the contents of certain connections selectively, not all of the 
+connections in the proxyspec.
+
+For example, the first sample filtering rule above can be written in 
+structured format, with the same Icap specification for `icapsuricata` also in 
+structured format, as follows:
+
+	FilterRule {
+		Action Split
+
+		# From
+		User soner
+		Desc notebook
+
+		# To
+		SNI example.com
+
+		Log content
+
+		Icap {
+			Proto icap
+			Server 127.0.0.1
+			Port 1344
+			Reqmod suricata
+			Respmod suricata
+			FailOpen yes
+			ConnFailOpen yes
+			Timeout 10
+			PreviewSize 1024
+			MaxBodySize 0
+            MaxInspectionSize 16384
+			Allow204 yes
+			Allow206 no
+			EchoHeader X-Response-Vars
+			SanitizeRequestLine no
+		}
+
+		# E2Guardian icap service requires SanitizeRequestLine
+		Icap icap://127.0.0.1:1345,reqmod,respmod,no,no,30,4096,8192,16384,yes,no,X-ICAP-E2G,yes
+	}
+
+This structured version of the first filtering rule above behaves the same as 
+the one line version. But, this rule also sends the contents in those 
+connections to the `icapsuricata` and `E2Guardian` ICAP services in chain for 
+inspection, in that order.
+
+#### Excluding sites from SSL inspection
+
+PassSite option is a special form of Pass filtering rule. PassSite rules can 
+be written as Pass filtering rules. The PassSite option will be deprecated in 
+favor of filtering rules in the future.
+
+PassSite option allows certain SSL sites to be excluded from SSL inspection. 
+If a PassSite rule matches the SNI or Common Names in the SSL certificate of a 
+connection, the connection is passed through the proxy without being diverted 
+to the listening program. SSLproxy engages the Passthrough mode for that 
+purpose. For example, sites requiring client authentication can be added as 
+PassSite rules.
+
+Per-site filters can be defined using client IP addresses, users, and 
+description. If the UserAuth option is disabled, only client IP addresses can 
+be used in PassSite filters. Multiple sites can be defined, one on each line. 
+PassSite rules can search for exact or substring matches, but do not support 
+macro expansion.
+
+#### User control lists
+
+User control lists can be implemented using filtering rules. The DivertUsers 
+and PassUsers options will be deprecated in favor of filtering rules in the 
+future.
+
+DivertUsers and PassUsers options can be used to divert, pass through, or 
+block users.
+
+- If neither DivertUsers nor PassUsers is defined, all users are diverted to 
+listening programs.
+- Connections from users in DivertUsers, if defined, are diverted to listening 
+programs.
+- Connections from users in PassUsers, if defined, are simply passed through 
+to their original destinations. SSLproxy engages the Passthrough mode for that 
+purpose.
+- If both DivertUsers and PassUsers are defined, users not listed in either of 
+the lists are blocked. SSLproxy simply terminates their connections.
+- If *no* DivertUsers list is defined, only users *not* listed in PassUsers 
+are diverted to listening programs.
+
+These user control lists can be defined globally or per-proxyspec. User 
+control lists do not support macro expansion.
+
+### User Authentication
 
 If the UserAuth option is enabled, SSLproxy requires network users to log in 
 to the system to establish connections to the external network.
@@ -374,277 +745,98 @@ parse and use this information in its logic and/or logging:
 The user authentication feature is currently available on OpenBSD and Linux 
 only.
 
-### Filtering rules
+### Protocols
 
-SSLproxy can divert, split, pass, block, or match connections based on 
-filtering rules. Filtering rules can be defined globally and/or per-proxyspec.
+#### Supported protocols
 
-- `Divert` action diverts packets to the listening program, allowing SSL 
-inspection by the listening program and content logging of packets
-- `Split` action splits the connection but does not divert packets to the 
-listening program, effectively disabling SSL inspection by the listening 
-program, but allowing content logging of packets
-- `Pass` action passes the connection through by engaging passthrough mode, 
-effectively disabling SSL inspection and content logging of packets
-- `Block` action terminates the connection
-- `Match` action specifies log actions and/or connection options for the 
-connection without changing its filter action
+SSLproxy supports plain TCP, plain SSL, HTTP, HTTPS, HTTP/2, HTTP/3 (QUIC), 
+POP3, POP3S, SMTP, and SMTPS connections over both IPv4 and IPv6. It also has 
+the ability to dynamically upgrade plain TCP to SSL in order to generically 
+support SMTP STARTTLS and similar upgrade mechanisms. Depending on the version 
+of OpenSSL, SSLproxy supports SSL 3.0, TLS 1.0, TLS 1.1, TLS 1.2, and TLS 1.3, 
+and optionally SSL 2.0 as well. SSLproxy supports Server Name Indication (SNI), 
+but not Encrypted SNI in TLS 1.3. It is able to work with RSA, DSA and ECDSA 
+keys and DHE and ECDHE cipher suites.
 
-SSLproxy supports one line and structured filtering rules.
+SSLproxy supports ALPN negotiation during SSL/TLS handshake to upgrade HTTPS to 
+HTTP/2 or to select HTTP/3 with QUIC.
 
-The syntax of one line filtering rules is as follows:
+UDP is supported with QUIC only. The RewriteAltSvcPort option can be used to rewrite the UDP port number advertised in Alt-Svc headers for upgrade to HTTP/3 (QUIC).
 
-	(Divert|Split|Pass|Block|Match)
-	 ([from (
-	     user (username[*]|$macro|*) [desc (desc[*]|$macro|*)]|
-	     desc (desc[*]|$macro|*)|
-	     ip (clientip[*]|$macro|*)|
-	     *)]
-	  [to (
-	     (sni (servername[*]|$macro|*)|
-	      cn (commonname[*]|$macro|*)|
-	      host (host[*]|$macro|*)|
-	      uri (uri[*]|$macro|*)|
-	      ip (serverip[*]|$macro|*)) [port (serverport[*]|$macro|*)]|
-	     port (serverport[*]|$macro|*)|
-	     *)]
-	  [log ([[!]connect] [[!]master] [[!]cert]
-	        [[!]content] [[!]pcap] [[!]mirror] [$macro]|[!]*)]
-	  |*) [# comment]
+Divert mode is not supported with HTTP/2 and HTTP/3 (QUIC).
 
-The syntax of structured filtering rules is as follows, and they can configure 
-connection options too:
+Note that HTTP/3 support in SSLproxy requires very recent versions of OpenSSL, ngtcp2, and nghttp3 libraries.
 
-	FilterRule {
-	    Action (Divert|Split|Pass|Block|Match)
+The following features of SSLproxy are IPv4 only:
 
-	    # From
-	    User (username[*]|$macro|*)  # inline
-	    Desc (desc[*]|$macro|*)      # comments
-	    SrcIp (clientip[*]|$macro|*) # allowed
+- Divert addresses for listening programs in proxyspecs
+- SSLproxy return addresses dynamically assigned to connections
+- IP addresses in the ua and ra options
+- IP and ethernet addresses of clients in user authentication
+- Target IP and ethernet addresses in mirror logging
 
-	    # To
-	    SNI (servername[*]|$macro|*)
-	    CN (commonname[*]|$macro|*)
-	    Host (host[*]|$macro|*)
-	    URI (uri[*]|$macro|*)
-	    DstIp (serverip[*]|$macro|*)
-	    DstPort (serverport[*]|$macro|*)
+#### OCSP, HPKP, HSTS, Upgrade et al.
 
-	    # Multiple Log lines allowed
-	    Log ([[!]connect] [[!]master] [[!]cert]
-	         [[!]content] [[!]pcap] [[!]mirror] [$macro]|[!]*)
+SSLproxy implements a number of defences against mechanisms which would
+normally prevent MitM attacks or make them more difficult. SSLproxy can deny
+OCSP requests in a generic way. For HTTP and HTTPS connections, SSLproxy
+mangles headers to prevent server-instructed public key pinning (HPKP), avoid
+strict transport security restrictions (HSTS), avoid Certificate Transparency
+enforcement (Expect-CT), and prevent switching to SPDY, cleartext HTTP/2 (h2c) 
+or WebSockets (Upgrade, Alternate Protocols). HTTP compression, encodings and
+keep-alive are disabled to make the logs more readable.
 
-	    ReconnectSSL (yes|no)
+Another reason to disable persistent connections is to reduce file descriptor 
+usage. Accordingly, connections are closed if they remain idle for a certain 
+period of time. The default timeout is 120 seconds, which can be configured by 
+the ConnIdleTimeout option.
 
-	    # Connection options
-	    Passthrough (yes|no)
+#### Protocol validation
 
-	    DenyOCSP (yes|no)
-	    CACert ca.crt
-	    CAKey ca.key
-	    ClientCert client.crt
-	    ClientKey client.key
-	    CAChain chain.crt
-	    LeafCRLURL http://example.com/example.crl
-	    DHGroupParams dh.pem
-	    ECDHCurve prime256v1
-	    SSLCompression (yes|no)
-	    ForceSSLProto (ssl2|ssl3|tls10|tls11|tls12|tls13)
-	    DisableSSLProto (ssl2|ssl3|tls10|tls11|tls12|tls13)
-	    EnableSSLProto (ssl2|ssl3|tls10|tls11|tls12|tls13)
-	    MinSSLProto (ssl2|ssl3|tls10|tls11|tls12|tls13)
-	    MaxSSLProto (ssl2|ssl3|tls10|tls11|tls12|tls13)
-	    Ciphers MEDIUM:HIGH
-	    CipherSuites TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256
-	    VerifyPeer (yes|no)
-	    AllowWrongHost (yes|no)
+Protocol validation makes sure the traffic handled by a proxyspec is using the 
+protocol specified in that proxyspec. If a connection cannot pass protocol 
+validation, it is terminated. To enable protocol validation, the ValidateProto 
+option can be defined globally, per-proxyspec, or per-connection using 
+filtering rules. This feature currently supports HTTP, POP3, and SMTP 
+protocols.
 
-	    RemoveHTTPAcceptEncoding (yes|no)
-	    RemoveHTTPReferer (yes|no)
-	    StripClientHello (yes|no)
-	    MaxHTTPHeaderSize 8192
-	    ValidateProto (yes|no)
+SSLproxy uses only client requests for protocol validation. However, it also 
+validates SMTP responses until it starts processing the packets from the 
+client. If there is no excessive fragmentation, the first couple of packets in 
+the connection should be enough for validating protocols.
 
-	    UserAuth (yes|no)
-	    UserTimeout 300
-	    UserAuthURL https://192.168.0.1/userdblogin.php
-	}
+### Certificates
 
-The specification of which connections a filtering rule will be applied to is 
-achieved by the `from` and `to` parts of the filtering rule and by the 
-proxyspec that the rule is defined for.
+#### Certificate forging
 
-- The `from` part of a rule defines source filter based on client IP address, 
-user and/or description, or `*` for all.
-- The `to` part defines destination filter based on server IP and/or port, SNI 
-or Common Names of SSL connections, Host or URI fields in HTTP Request 
-headers, or `*` for all.
-	+ Dst Host type of rules use the `ip` site field
-	+ SSL type of rules use the `sni` or `cn` site field
-	+ HTTP type of rules use the `host` or `uri` site field
-	+ All rule types can use the `port` field
-- The proxyspec handling the connection defines the protocol filter for the 
-connection.
+For SSL and HTTPS connections, SSLproxy generates and signs forged X509v3
+certificates on-the-fly, mimicking the original server certificate's subject
+DN, subjectAltName extension and other characteristics. SSLproxy has the
+ability to use existing certificates of which the private key is available,
+instead of generating forged ones. SSLproxy supports NULL-prefix CN
+certificates but otherwise does not implement exploits against specific
+certificate verification vulnerabilities in SSL/TLS stacks.
 
-If and how a connection should be logged is specified using the `log` or 
-`Log` part of one line or structured filtering rules, respectively:
+#### Certificate verification
 
-- `connect` enables logging connection information to connect log file
-- `master` enables logging of master keys
-- `cert` enables logging of generated certificates
-- `content` enables logging packet contents to content log file
-- `pcap` enables writing packets to pcap file
-- `mirror` enables mirroring packets to mirror interface or target
+SSLproxy verifies upstream certificates by default. If the verification fails,
+the connection is terminated immediately. This is in contrast to SSLsplit,
+because in order to maximize the chances that a connection can be successfully
+split, SSLsplit accepts all certificates by default, including self-signed
+ones. See [The Risks of SSL Inspection](https://insights.sei.cmu.edu/cert/2015/03/the-risks-of-ssl-inspection.html)
+for the reasons for this difference. You can enable or disable this feature by 
+the VerifyPeer option, which can be defined globally, per-proxyspec, or 
+per-connection using filtering rules.
 
-You can add a negation prefix `!` to a log action to disable that logging.
+#### Client certificates
 
-Structured filtering rules can also specify connection options to be 
-selectively applied to matching connections, not just globally or 
-per-proxyspec. One line filtering rules cannot specify connection options.
+SSLproxy uses the certificate and key from the pemfiles configured by the 
+ClientCert and ClientKey options when the destination requests client 
+certificates. These options can be defined globally, per-proxyspec, or 
+per-connection using filtering rules.
 
-For example, if the following rules are defined in a structured HTTPS proxyspec,
-
-	Split from user soner desc notebook to sni example.com log content
-	Pass from user soner desc android to cn .fbcdn.net*
-
-The first filtering rule above splits but does not divert HTTPS connections 
-from the user `soner` who has logged in with the description `notebook` to SSL 
-sites with the SNI of `example.com`. Also, the rule specifies that the packet 
-contents of the matching connection be written to content log file configured 
-globally.
-
-The second rule passes through HTTPS connections from the user `soner` who has 
-logged in with the description `android` to SSL sites with the Common Names 
-containing the substring `.fbcdn.net` anywhere in it (notice the asterisk at 
-the end). Since connection contents cannot be written to log files in 
-passthrough mode, the rule does not specify any content log action.
-
-The default filter action is Divert. So, if those are the only filtering rules 
-in that proxyspec, the other connections are diverted to the listening program 
-specified in that proxyspec, without writing any logs.
-
-If you want to enable, say, connect logging for the other connections handled 
-by that proxyspec, without changing their default Divert filter action, you 
-can add a third filtering rule to that proxyspec:
-
-	Match * log connect
-
-Note that the second example above is a filtering rule you can use to resolve 
-one of the certificate issues preventing the Facebook application on Android 
-smartphones to connect to the Internet from behind sslproxy.
-
-Filtering rules are applied based on certain precedence orders:
-
-- More specific rules have higher precedence. Log actions increase rule 
-precedence too.
-- The precedence of filter types is as HTTP > SSL > Dst Host. Because, the 
-application order of filter types is as Dst Host > SSL > HTTP, and a filter 
-type can override the actions of a preceding filter type.
-- The precedence of filter actions is as Divert > Split > Pass > Block. This is 
-only for the same type of filtering rules.
-- The precedence of site fields is as sni > cn for SSL filter and host > uri 
-for HTTP filter.
-
-For example, the pass action of a Dst Host filter rule is taken before the 
-split action of an SSL filter rule with the same from definition, due to the 
-precedence order of filter types. Or, the pass action of a rule with sni site 
-field is taken before the split action of the same rule with cn site field, due 
-to the precedence order of site fields.
-
-Pass and Block filter actions are deferred until the last moment they can be 
-applied to a connection, so that Divert and Split filter actions can override 
-them.
-
-In terms of possible filter actions,
-
-- Dst Host filtering rules can take all of the filter and log actions.
-- SSL filtering rules can take all of the filter and log actions.
-- HTTP filtering rules can take match and block filter actions, can keep 
-enabled divert and split modes, but cannot take pass action. Also, HTTP 
-filtering rules can only disable logging.
-
-Log actions do not configure any loggers. Global loggers for respective log 
-actions should have been configured for those log actions to have any effect.
-
-If no filtering rules are defined for a proxyspec, all log actions for that 
-proxyspec are enabled. Otherwise, all log actions are disabled, and filtering 
-rules should enable them specifically.
-
-To increase rule reuse, one or more of SNI, CN, Host, URI, and DstIp site 
-fields can be specified in the same structured filtering rule.
-
-Connection options specified in a structured filtering rule can have any 
-effect only if the rule matches the connection before global or proxyspec 
-connection options are applied. Otherwise, the global or proxyspec connection 
-options already applied to a connection cannot be overriden by the connection 
-options specified in the matching structured filtering rule. For example, SSL 
-options of a connection cannot be changed after the SSL connection is 
-established. So, normally SSL type of rules cannot modify SSL options of a 
-connection, but you can use the ReconnectSSL option to reconnect the server 
-side of an SSL connection to enforce the SSL options in the SSL type of 
-filtering rules. In other words, the ReconnectSSL option allows for using the 
-SNI and CN fields in stuctured filtering rules to match SSL connections and 
-change their SSL configuration.
-
-Macro expansion is supported. The `Define` option can be used for defining 
-macros to be used in filtering rules. Macro names must start with a `$` sign. 
-The macro name must be followed by words separated by spaces.
-
-You can append an asterisk `*` to the fields in filtering rules for substring 
-matching. Otherwise, the filter searches for an exact match with the field in 
-the rule. The filter uses B-trees for exact string matching and Aho-Corasick 
-machines for substring matching.
-
-The ordering of filtering rules is important. The ordering of from, to, and 
-log parts of one line filtering rules is not important. The ordering of log 
-actions is not important.
-
-If the UserAuth option is disabled, only client IP addresses can be used in 
-the from part of filtering rules.
-
-#### Excluding sites from SSL inspection
-
-PassSite option is a special form of Pass filtering rule. PassSite rules can 
-be written as Pass filtering rules. The PassSite option will be deprecated in 
-favor of filtering rules in the future.
-
-PassSite option allows certain SSL sites to be excluded from SSL inspection. 
-If a PassSite rule matches the SNI or Common Names in the SSL certificate of a 
-connection, the connection is passed through the proxy without being diverted 
-to the listening program. SSLproxy engages the Passthrough mode for that 
-purpose. For example, sites requiring client authentication can be added as 
-PassSite rules.
-
-Per-site filters can be defined using client IP addresses, users, and 
-description. If the UserAuth option is disabled, only client IP addresses can 
-be used in PassSite filters. Multiple sites can be defined, one on each line. 
-PassSite rules can search for exact or substring matches, but do not support 
-macro expansion.
-
-#### User control lists
-
-User control lists can be implemented using filtering rules. The DivertUsers 
-and PassUsers options will be deprecated in favor of filtering rules in the 
-future.
-
-DivertUsers and PassUsers options can be used to divert, pass through, or 
-block users.
-
-- If neither DivertUsers nor PassUsers is defined, all users are diverted to 
-listening programs.
-- Connections from users in DivertUsers, if defined, are diverted to listening 
-programs.
-- Connections from users in PassUsers, if defined, are simply passed through 
-to their original destinations. SSLproxy engages the Passthrough mode for that 
-purpose.
-- If both DivertUsers and PassUsers are defined, users not listed in either of 
-the lists are blocked. SSLproxy simply terminates their connections.
-- If *no* DivertUsers list is defined, only users *not* listed in PassUsers 
-are diverted to listening programs.
-
-These user control lists can be defined globally or per-proxyspec. User 
-control lists do not support macro expansion.
+Alternatively, you can use Pass filtering rules to pass through certain 
+destinations requesting client certificates.
 
 ### Logging
 

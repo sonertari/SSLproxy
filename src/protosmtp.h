@@ -33,6 +33,9 @@
 typedef struct protosmtp_ctx {
 	unsigned int not_valid : 1;
 	unsigned int seen_command_count;
+	unsigned int src_end_stream : 1;
+	unsigned int dst_end_stream : 1;
+	unsigned int end_conn : 1;
 } protosmtp_ctx_t;
 
 int protosmtp_validate(pxy_conn_ctx_t *, char *, size_t) NONNULL(1,2) WUNRES;
@@ -40,5 +43,6 @@ int protosmtp_validate_response(pxy_conn_ctx_t *, char *, size_t) NONNULL(1,2) W
 
 protocol_t protosmtp_setup(pxy_conn_ctx_t *) NONNULL(1);
 protocol_t protosmtps_setup(pxy_conn_ctx_t *) NONNULL(1);
+int protosmtp_detect_stream_end(pxy_conn_ctx_t *, struct evbuffer *) NONNULL(1,2) WUNRES;
 
 #endif /* PROTOSMTP_H */

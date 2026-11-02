@@ -135,8 +135,10 @@ typedef struct conn_opts {
 	char *leafcrlurl;
 	unsigned int remove_http_accept_encoding: 1;
 	unsigned int remove_http_referer: 1;
+	unsigned int enable_http2 : 1;
 	unsigned int verify_peer: 1;
 	unsigned int allow_wrong_host: 1;
+	char *rewrite_alt_svc_port;
 #ifndef WITHOUT_USERAUTH
 	unsigned int user_auth: 1;
 	char *user_auth_url;
@@ -147,6 +149,20 @@ typedef struct conn_opts {
 	unsigned int reconnect_ssl : 1;
 	unsigned int max_http_header_size;
 	unsigned int stripclienthello : 1;
+
+#ifndef WITHOUT_ICAP
+	/* ICAP configuration chain */
+	struct icap_service *icap_chain;
+	unsigned int icap_fail_open : 1;             /* 0: stop, 1: continue with next service on ICAP error */
+	unsigned int icap_conn_fail_open : 1;        /* 0: block, 1: pass through on ICAP error */
+	unsigned int icap_timeout;                   /* Timeout in seconds */
+	size_t icap_preview_size;                    /* Preview slice size in bytes; 0 = preview disabled */
+	size_t icap_max_body_size;                   /* Max body size to send to ICAP; 0 = disabled */
+	size_t icap_max_inspection_size;             /* Max inspection size to send to ICAP; 0 = disabled */
+	unsigned int icap_allow_204 : 1;             /* 0: Don't allow 204 responses from ICAP, treat as error; 1: Allow 204 responses */
+	unsigned int icap_allow_206 : 1;             /* 0: Don't allow 206 responses from ICAP, treat as error; 1: Allow 206 responses */
+	unsigned int icap_sanitize_request_line : 1; /* 0: Don't sanitize request line, 1: Sanitize request line */
+#endif /* !WITHOUT_ICAP */
 } conn_opts_t;
 
 typedef struct opts {
@@ -171,6 +187,9 @@ typedef struct opts {
 typedef struct proxyspec {
 	unsigned int ssl : 1;
 	unsigned int http : 1;
+#ifndef WITHOUT_HTTP3
+	unsigned int h3 : 1;
+#endif /* !WITHOUT_HTTP3 */
 	unsigned int upgrade: 1;
 	unsigned int pop3 : 1;
 	unsigned int smtp : 1;
@@ -218,6 +237,9 @@ typedef struct tmp_opts {
 #ifdef DEBUG_PROXY
 	unsigned int line_num;
 #endif /* DEBUG_PROXY */
+#ifndef WITHOUT_ICAP
+	struct icap_service *icap_chain;
+#endif /* !WITHOUT_ICAP */
 } tmp_opts_t;
 
 struct global {
@@ -330,7 +352,7 @@ int opts_disable_enable_proto(conn_opts_t *, const char *, const char *, int) NO
 int opts_set_ciphers(conn_opts_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;
 int opts_set_ciphersuites(conn_opts_t *, const char *, const char *) NONNULL(1,2,3) WUNRES;
 
-int set_conn_opts_option(conn_opts_t *, const char *, const char *, char *, unsigned int, tmp_opts_t *);
+int set_conn_opts_option(conn_opts_t *, const char *, const char *, char *, unsigned int *, FILE *, tmp_opts_t *);
 int load_proxyspec_struct(global_t *, const char *, char **, unsigned int *, FILE *, tmp_opts_t *) WUNRES;
 
 #define OPTS_DEBUG(global) unlikely((global)->debug)

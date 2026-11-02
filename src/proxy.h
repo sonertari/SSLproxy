@@ -34,8 +34,14 @@
 #include "pxythrmgr.h"
 
 #include <sys/syslog.h>
+#include <event2/event.h>
 
 typedef struct proxy_ctx proxy_ctx_t;
+#ifndef WITHOUT_ICAP
+typedef struct icap_ctx icap_ctx_t;
+#endif /* !WITHOUT_ICAP */
+
+struct h3_session_map;
 
 /*
  * Listener context.
@@ -44,13 +50,22 @@ typedef struct proxy_listener_ctx {
 	pxy_thrmgr_ctx_t *thrmgr;
 	proxyspec_t *spec;
 	global_t *global;
-#ifndef WITHOUT_USERAUTH
+#if !defined(WITHOUT_USERAUTH) || !defined(WITHOUT_HTTP3)
 	evutil_socket_t clisock;
-#endif /* !WITHOUT_USERAUTH */
+#endif /* !WITHOUT_USERAUTH || !WITHOUT_HTTP3 */
 	struct evconnlistener *evcl;
+
+#ifndef WITHOUT_HTTP3
+	/* UDP listener fields for HTTP/3 support */
+	int udp_fd;
+	struct event *udp_accept_ev;
+	struct h3_session_map *h3_sessions;
+#endif /* !WITHOUT_HTTP3 */
+
 	struct proxy_listener_ctx *next;
 } proxy_listener_ctx_t;
 
+void proxy_listener_acceptcb_udp(evutil_socket_t, short, void *);
 proxy_ctx_t * proxy_new(global_t *, int) NONNULL(1) MALLOC;
 int proxy_run(proxy_ctx_t *) NONNULL(1);
 void proxy_loopbreak(proxy_ctx_t *, int) NONNULL(1);
@@ -58,9 +73,9 @@ void proxy_free(proxy_ctx_t *) NONNULL(1);
 void proxy_listener_errorcb(struct evconnlistener *, UNUSED void *);
 
 pxy_conn_ctx_t *proxy_conn_ctx_new(evutil_socket_t, pxy_thrmgr_ctx_t *, proxyspec_t *, global_t *
-#ifndef WITHOUT_USERAUTH
+#if !defined(WITHOUT_USERAUTH) || !defined(WITHOUT_HTTP3)
 	, evutil_socket_t
-#endif /* !WITHOUT_USERAUTH */
+#endif /* !WITHOUT_USERAUTH || !WITHOUT_HTTP3 */
 	) MALLOC NONNULL(2,3,4);
 #endif /* !PROXY_H */
 
