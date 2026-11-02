@@ -167,7 +167,7 @@ connection options too:
             MaxInspectionSize 16384
             Allow204 (yes|no)
             Allow206 (yes|no)
-            EchoHeader x-header-to-echo (e.g. X-Response-Vars)
+            EchoHeader x-header-to-echo (e.g. X-ICAP-E2G)
             SanitizeRequestLine (yes|no)
         }
 
@@ -382,7 +382,7 @@ rules cannot specify connection options or ICAP services.
             MaxInspectionSize 16384
             Allow204 (yes|no)
             Allow206 (yes|no)
-            EchoHeader x-header-to-echo (e.g. X-Response-Vars)
+            EchoHeader x-header-to-echo (e.g. X-ICAP-E2G)
             SanitizeRequestLine (yes|no)
         }
 
@@ -583,7 +583,7 @@ proxyspec using the `Suricata IDS/IPS` system, you can utilize [`icapsuricata`](
 in Icap mode. After configuring the `icapsuricata` module in c-icap, you can 
 add an Icap specification to the same proxyspec:
 
-	Icap icap://127.0.0.1:1344,suricata,suricata,yes,yes,10,1024,0,16384,yes,no,X-Response-Vars
+	Icap icap://127.0.0.1:1344,suricata,suricata,yes,yes,10,1024,0,16384,yes,no
 
 If you want to inspect the same contents using the `E2Guardian` web filter as 
 well, you can add another Icap specification after the one for `icapsuricata`:
@@ -624,10 +624,9 @@ structured format, as follows:
 			Timeout 10
 			PreviewSize 1024
 			MaxBodySize 0
-            MaxInspectionSize 16384
+			MaxInspectionSize 16384
 			Allow204 yes
 			Allow206 no
-			EchoHeader X-Response-Vars
 			SanitizeRequestLine no
 		}
 
