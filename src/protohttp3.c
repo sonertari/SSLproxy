@@ -1730,17 +1730,20 @@ protohttp3_src_read_cb(evutil_socket_t fd, UNUSED short what, void *arg)
 	int ecn = 0;
 
 	ssize_t n = protohttp3_recvmsg(fd, buf, sizeof(buf), &peer_addr, &peer_addrlen, &local_addr, &local_addrlen, &ecn);
-	if (n <= 0) {
-		if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
-			log_err_level_printf(LOG_CRIT,
-				"Error reading from UDP listener: %s\n",
-				strerror(errno));
-		}
-		else {
-			log_finest_main("No data read from UDP listener");
-		}
-		return;
-	}
+    if (n <= 0) {
+        // Treat ECONNREFUSED on UDP listeners as a non-fatal transient ICMP error
+        // to prevent ICMP port unreachable packets from permanently poisoning the socket.
+        if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK && errno != ECONNREFUSED) {
+            log_err_level_printf(LOG_CRIT, "Error reading from UDP listener: %s\n", strerror(errno));
+        }
+        else if (n < 0 && errno == ECONNREFUSED) {
+            log_finest_main("Ignore transient ECONNREFUSED on UDP listener, ICMP port unreachable");
+        }
+        else {
+            log_finest_main("No data read from UDP listener");
+        }
+        return;
+    }
 
     log_finest_va("Read %zd bytes from client-side UDP socket", n);
     ctx->thr->intif_in_bytes += n;
@@ -1852,7 +1855,7 @@ protohttp3_dst_read_cb(evutil_socket_t fd, UNUSED short what, void *arg)
 	socklen_t local_addrlen = sizeof(local_addr);
 	int ecn = 0;
 
-    // TODO: The port in local_addr returned by protohttp3_recvmsg2() is always 0, why?
+    // TODO: The port in local_addr returned by protohttp3_recvmsg() is always 0, why?
     ssize_t n = protohttp3_recvmsg(fd, buf, sizeof(buf), &peer_addr, &peer_addrlen, &local_addr, &local_addrlen, &ecn);
 	if (n <= 0) {
 		if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
