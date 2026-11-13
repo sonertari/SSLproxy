@@ -969,7 +969,10 @@ X509 *
 ssl_x509_forge(X509 *cacrt, EVP_PKEY *cakey, X509 *origcrt, EVP_PKEY *key,
                const char *extraname, const char *crlurl)
 {
-	const X509_NAME *subject, *issuer;
+#ifndef LIBRESSL_VERSION_NUMBER
+	const
+#endif /* LIBRESSL_VERSION_NUMBER */
+	X509_NAME *subject, *issuer;
 	GENERAL_NAMES *names;
 	GENERAL_NAME *gn;
 	X509 *crt;
@@ -1465,7 +1468,11 @@ ssl_x509_subject(X509 *crt)
 }
 
 static int
-ssl_get_text_by_NID(const X509_NAME *ptr, char *buf, int len)
+ssl_get_text_by_NID(
+#ifndef LIBRESSL_VERSION_NUMBER
+	const
+#endif /* LIBRESSL_VERSION_NUMBER */
+	X509_NAME *ptr, char *buf, int len)
 {
     int sz = -1;
 
@@ -1502,7 +1509,10 @@ ssl_get_text_by_NID(const X509_NAME *ptr, char *buf, int len)
 char *
 ssl_x509_subject_cn(X509 *crt, size_t *psz)
 {
-	const X509_NAME *ptr;
+#ifndef LIBRESSL_VERSION_NUMBER
+	const
+#endif /* LIBRESSL_VERSION_NUMBER */
+	X509_NAME *ptr;
 	char *cn;
 	ssize_t sz;
 

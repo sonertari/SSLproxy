@@ -6,6 +6,7 @@
     listeners as a non-fatal transient ICMP error
 -   Fix deprecation warnings for OpenSSL 4.x
 -   Apply OpenSSL 4.x patch from Debian
+-   Fix LibreSSL build
 
 
 ### SSLproxy 0.10.0 2026-09-23

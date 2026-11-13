@@ -1113,8 +1113,10 @@ protossl_srcssl_create(pxy_conn_ctx_t *ctx, SSL *origssl, SSL *src_ssl)
 	if (src_ssl) {
 		log_dbg_printf("===> Set SSL context of src_ssl\n");
 
+#ifndef LIBRESSL_VERSION_NUMBER
 		// Remove any cert/key from the SSL object before setting the new SSL_CTX
 		SSL_certs_clear(src_ssl);
+#endif /* LIBRESSL_VERSION_NUMBER */
 
 		SSL_use_certificate(src_ssl, cert->crt);
 		SSL_use_PrivateKey(src_ssl, cert->key);
