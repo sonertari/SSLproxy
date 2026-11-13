@@ -4,6 +4,7 @@
 
 -   Fix connection refused error from UDP listener: Treat ECONNREFUSED on UDP
     listeners as a non-fatal transient ICMP error
+-   Fix deprecation warnings for OpenSSL 4.x
 -   Apply OpenSSL 4.x patch from Debian
 
 

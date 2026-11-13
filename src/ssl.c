@@ -850,6 +850,9 @@ ssl_x509_v3ext_add(X509V3_CTX *ctx, X509 *crt, char *k, char *v)
 int
 ssl_x509_v3ext_copy_by_nid(X509 *crt, X509 *origcrt, int nid)
 {
+#if defined(OPENSSL_VERSION_MAJOR) && OPENSSL_VERSION_MAJOR >= 4
+	const
+#endif /* OPENSSL_VERSION_NUMBER >= 0x40000000L */
 	X509_EXTENSION *ext;
 	int pos;
 
@@ -966,7 +969,7 @@ X509 *
 ssl_x509_forge(X509 *cacrt, EVP_PKEY *cakey, X509 *origcrt, EVP_PKEY *key,
                const char *extraname, const char *crlurl)
 {
-	X509_NAME *subject, *issuer;
+	const X509_NAME *subject, *issuer;
 	GENERAL_NAMES *names;
 	GENERAL_NAME *gn;
 	X509 *crt;
@@ -1062,9 +1065,11 @@ ssl_x509_forge(X509 *cacrt, EVP_PKEY *cakey, X509 *origcrt, EVP_PKEY *key,
 			gn->d.dNSName = ASN1_IA5STRING_new();
 			if (!gn->d.dNSName)
 				goto errout3;
-			ASN1_STRING_set(gn->d.dNSName,
-			                (unsigned char *)extraname,
-			                strlen(extraname));
+#if defined(OPENSSL_VERSION_MAJOR) && OPENSSL_VERSION_MAJOR >= 4 && defined(OPENSSL_VERSION_MINOR) && OPENSSL_VERSION_MINOR >= 1
+			ASN1_STRING_set1_data(gn->d.dNSName, (const unsigned char *)extraname, strlen(extraname));
+#else /* (OPENSSL_VERSION_MAJOR >= 4 && OPENSSL_VERSION_MINOR < 1) || OPENSSL_VERSION_NUMBER < 0x40000000L */
+			ASN1_STRING_set(gn->d.dNSName, (unsigned char *)extraname, strlen(extraname));
+#endif /* (OPENSSL_VERSION_MAJOR >= 4 && OPENSSL_VERSION_MINOR < 1) || OPENSSL_VERSION_NUMBER < 0x40000000L */
 			sk_GENERAL_NAME_push(names, gn);
 			X509_EXTENSION *ext = X509V3_EXT_i2d(
 			                      NID_subject_alt_name, 0, names);
@@ -1459,6 +1464,36 @@ ssl_x509_subject(X509 *crt)
 	return X509_NAME_oneline(X509_get_subject_name(crt), NULL, 0);
 }
 
+static int
+ssl_get_text_by_NID(const X509_NAME *ptr, char *buf, int len)
+{
+    int sz = -1;
+
+#if defined(OPENSSL_VERSION_MAJOR) && OPENSSL_VERSION_MAJOR >= 4
+    int idx = X509_NAME_get_index_by_NID(ptr, NID_commonName, -1);
+    if (idx != -1 && idx != -2) {
+        const X509_NAME_ENTRY *entry = X509_NAME_get_entry(ptr, idx);
+        if (entry != NULL) {
+            const ASN1_STRING *data = X509_NAME_ENTRY_get_data(entry);
+			unsigned char *utf8 = NULL;
+            len = ASN1_STRING_to_UTF8(&utf8, data);
+            if (len >= 0) {
+                sz = len;
+				// We call this function just to get the buf size too,
+				// hence a separate buf check
+				if (buf) {
+					memcpy(buf, utf8, sz);
+				}
+				OPENSSL_free(utf8);
+            }
+        }
+    }
+#else /* OPENSSL_VERSION_NUMBER < 0x40000000L */
+    sz = X509_NAME_get_text_by_NID(ptr, NID_commonName, buf, len);
+#endif /* OPENSSL_VERSION_NUMBER < 0x40000000L */
+    return sz;
+}
+
 /*
  * Parse the common name from the subject distinguished name.
  * Returns string allocated using malloc(), caller must free().
@@ -1467,22 +1502,23 @@ ssl_x509_subject(X509 *crt)
 char *
 ssl_x509_subject_cn(X509 *crt, size_t *psz)
 {
-	X509_NAME *ptr;
+	const X509_NAME *ptr;
 	char *cn;
-	size_t sz;
+	ssize_t sz;
 
 	ptr = X509_get_subject_name(crt); /* does not inc refcounts */
 	if (!ptr)
 		return NULL;
-	sz = X509_NAME_get_text_by_NID(ptr, NID_commonName, NULL, 0) + 1;
-	if ((sz == 0) || !(cn = malloc(sz)))
+	sz = ssl_get_text_by_NID(ptr, NULL, 0);
+	if ((sz < 0) || !(cn = malloc(sz + 1)))
 		return NULL;
-	if (X509_NAME_get_text_by_NID(ptr, NID_commonName, cn, sz) == -1) {
+	sz += 1;
+	if (ssl_get_text_by_NID(ptr, cn, sz) == -1) {
 		free(cn);
 		return NULL;
 	}
 	*psz = sz;
-	return cn;
+	return (char *)cn;
 }
 
 /*
@@ -1647,7 +1683,11 @@ ssl_x509_names_match(X509 *crt, const char *dnsname)
 			unsigned char *altname;
 			int altnamesz;
 			ASN1_STRING_to_UTF8(&altname, gn->d.dNSName);
+#if defined(OPENSSL_VERSION_MAJOR) && OPENSSL_VERSION_MAJOR >= 4 && defined(OPENSSL_VERSION_MINOR) && OPENSSL_VERSION_MINOR >= 1
+			altnamesz = ASN1_STRING_get_length(gn->d.dNSName);
+#else /* (OPENSSL_VERSION_MAJOR >= 4 && OPENSSL_VERSION_MINOR < 1) || OPENSSL_VERSION_NUMBER < 0x40000000L */
 			altnamesz = ASN1_STRING_length(gn->d.dNSName);
+#endif /* (OPENSSL_VERSION_MAJOR >= 4 && OPENSSL_VERSION_MINOR < 1) || OPENSSL_VERSION_NUMBER < 0x40000000L */
 			if (altnamesz < 0)
 				break;
 			if (ssl_dnsname_match((char *)altname,
@@ -1704,7 +1744,11 @@ ssl_x509_names(X509 *crt)
 			ASN1_STRING_to_UTF8(&altname, gn->d.dNSName);
 			if (!altname)
 				break;
+#if defined(OPENSSL_VERSION_MAJOR) && OPENSSL_VERSION_MAJOR >= 4 && defined(OPENSSL_VERSION_MINOR) && OPENSSL_VERSION_MINOR >= 1
+			altnamesz = ASN1_STRING_get_length(gn->d.dNSName);
+#else /* (OPENSSL_VERSION_MAJOR >= 4 && OPENSSL_VERSION_MINOR < 1) || OPENSSL_VERSION_NUMBER < 0x40000000L */
 			altnamesz = ASN1_STRING_length(gn->d.dNSName);
+#endif /* (OPENSSL_VERSION_MAJOR >= 4 && OPENSSL_VERSION_MINOR < 1) || OPENSSL_VERSION_NUMBER < 0x40000000L */
 			if (altnamesz < 0) {
 				OPENSSL_free((char*)altname);
 				break;
@@ -1787,7 +1831,11 @@ ssl_ia5string_strdup(ASN1_IA5STRING *ia5)
 	char *str;
 	if (!ia5)
 		return NULL;
+#if defined(OPENSSL_VERSION_MAJOR) && OPENSSL_VERSION_MAJOR >= 4 && defined(OPENSSL_VERSION_MINOR) && OPENSSL_VERSION_MINOR >= 1
+	int len = ASN1_STRING_get_length(ia5);
+#else /* (OPENSSL_VERSION_MAJOR >= 4 && OPENSSL_VERSION_MINOR < 1) || OPENSSL_VERSION_NUMBER < 0x40000000L */
 	int len = ASN1_STRING_length(ia5);
+#endif /* (OPENSSL_VERSION_MAJOR >= 4 && OPENSSL_VERSION_MINOR < 1) || OPENSSL_VERSION_NUMBER < 0x40000000L */
 	if (!len)
 		return NULL;
 	str = malloc(len + 1);
@@ -1855,11 +1903,16 @@ ssl_x509_ocsps(X509 *crt)
 int
 ssl_x509_is_valid(X509 *crt)
 {
+#if defined(OPENSSL_VERSION_MAJOR) && OPENSSL_VERSION_MAJOR >= 4
+    if (X509_check_certificate_times(NULL, crt, 0) != 0)
+        return 0;
+#else /* OPENSSL_VERSION_NUMBER < 0x40000000L */
 	if (X509_cmp_current_time(X509_get_notAfter(crt)) <= 0)
 		return 0;
 	if (X509_cmp_current_time(X509_get_notBefore(crt)) > 0)
 		return 0;
-	return 1;
+#endif /* OPENSSL_VERSION_NUMBER < 0x40000000L */
+    return 1;
 }
 
 /*
