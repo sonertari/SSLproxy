@@ -1,5 +1,12 @@
 
 
+### SSLproxy 0.10.1 2026-11-13
+
+-   Fix connection refused error from UDP listener: Treat ECONNREFUSED on UDP
+    listeners as a non-fatal transient ICMP error
+-   Apply OpenSSL 4.x patch from Debian
+
+
 ### SSLproxy 0.10.0 2026-09-23
 
 -   Add ICAP mode: ICAP architecture
