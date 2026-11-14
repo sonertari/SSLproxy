@@ -142,34 +142,34 @@ connection options too:
 	    # Divert or split
 	    Divert (yes|no)
 
-		IcapFailOpen (yes|no)
-		IcapConnFailOpen (yes|no)
-		IcapTimeout 30
-		IcapPreviewSize 1024
-		IcapMaxBodySize 4096
-		IcapMaxInspectionSize 16384
-		IcapAllow204 (yes|no)
-		IcapAllow206 (yes|no)
-		IcapSanitizeRequestLine (yes|no)
+	    IcapFailOpen (yes|no)
+	    IcapConnFailOpen (yes|no)
+	    IcapTimeout 30
+	    IcapPreviewSize 1024
+	    IcapMaxBodySize 4096
+	    IcapMaxInspectionSize 16384
+	    IcapAllow204 (yes|no)
+	    IcapAllow206 (yes|no)
+	    IcapSanitizeRequestLine (yes|no)
 
-		Icap icap://host:port,reqmod,respmod,icap_fail_open,conn_fail_open,timeout,preview_size,max_body_size,max_inspection_size,allow_204,allow_206,echo_header,sanitize_request_line
-        Icap {
-            Proto icap
-            Server host
-            Port port
-            Reqmod reqmod
-            Respmod respmod
-            FailOpen (yes|no)
-            ConnFailOpen (yes|no)
-            Timeout 30
-            PreviewSize 1024
-            MaxBodySize 4096
-            MaxInspectionSize 16384
-            Allow204 (yes|no)
-            Allow206 (yes|no)
-            EchoHeader x-header-to-echo (e.g. X-ICAP-E2G)
-            SanitizeRequestLine (yes|no)
-        }
+	    Icap icap://host:port,reqmod,respmod,icap_fail_open,conn_fail_open,timeout,preview_size,max_body_size,max_inspection_size,allow_204,allow_206,echo_header,sanitize_request_line
+	    Icap {
+	        Proto icap
+	        Server host
+	        Port port
+	        Reqmod reqmod
+	        Respmod respmod
+	        FailOpen (yes|no)
+	        ConnFailOpen (yes|no)
+	        Timeout 30
+	        PreviewSize 1024
+	        MaxBodySize 4096
+	        MaxInspectionSize 16384
+	        Allow204 (yes|no)
+	        Allow206 (yes|no)
+	        EchoHeader x-header-to-echo (e.g. X-ICAP-E2G)
+	        SanitizeRequestLine (yes|no)
+	    }
 
 	    # Connection options
 	    Passthrough (yes|no)
@@ -200,7 +200,7 @@ connection options too:
 	    EnableHTTP2 (yes|no)
 	    MaxHTTPHeaderSize 8192
 	    ValidateProto (yes|no)
-		RewriteAltSvcPort h3port
+	    RewriteAltSvcPort h3port
 
 	    UserAuth (yes|no)
 	    UserTimeout 300
@@ -357,34 +357,34 @@ rules cannot specify connection options or ICAP services.
 	    DstIp (serverip[*]|$macro|*)
 	    DstPort (serverport[*]|$macro|*)
 
-		IcapFailOpen (yes|no)
-		IcapConnFailOpen (yes|no)
-		IcapTimeout 30
-		IcapPreviewSize 1024
-		IcapMaxBodySize 4096
-		IcapMaxInspectionSize 16384
-		IcapAllow204 (yes|no)
-		IcapAllow206 (yes|no)
-		IcapSanitizeRequestLine (yes|no)
+	    IcapFailOpen (yes|no)
+	    IcapConnFailOpen (yes|no)
+	    IcapTimeout 30
+	    IcapPreviewSize 1024
+	    IcapMaxBodySize 4096
+	    IcapMaxInspectionSize 16384
+	    IcapAllow204 (yes|no)
+	    IcapAllow206 (yes|no)
+	    IcapSanitizeRequestLine (yes|no)
 
-		Icap icap://host:port,reqmod,respmod,icap_fail_open,conn_fail_open,timeout,preview_size,max_body_size,max_inspection_size,allow_204,allow_206,echo_header,sanitize_request_line
-        Icap {
-            Proto icap
-            Server host
-            Port port
-            Reqmod reqmod
-            Respmod respmod
-            FailOpen (yes|no)
-            ConnFailOpen (yes|no)
-            Timeout 30
-            PreviewSize 1024
-            MaxBodySize 4096
-            MaxInspectionSize 16384
-            Allow204 (yes|no)
-            Allow206 (yes|no)
-            EchoHeader x-header-to-echo (e.g. X-ICAP-E2G)
-            SanitizeRequestLine (yes|no)
-        }
+	    Icap icap://host:port,reqmod,respmod,icap_fail_open,conn_fail_open,timeout,preview_size,max_body_size,max_inspection_size,allow_204,allow_206,echo_header,sanitize_request_line
+	    Icap {
+	        Proto icap
+	        Server host
+	        Port port
+	        Reqmod reqmod
+	        Respmod respmod
+	        FailOpen (yes|no)
+	        ConnFailOpen (yes|no)
+	        Timeout 30
+	        PreviewSize 1024
+	        MaxBodySize 4096
+	        MaxInspectionSize 16384
+	        Allow204 (yes|no)
+	        Allow206 (yes|no)
+	        EchoHeader x-header-to-echo (e.g. X-ICAP-E2G)
+	        SanitizeRequestLine (yes|no)
+	    }
 
 	    # Multiple Log lines allowed
 	    Log ([[!]connect] [[!]master] [[!]cert]
@@ -421,7 +421,7 @@ rules cannot specify connection options or ICAP services.
 	    EnableHTTP2 (yes|no)
 	    MaxHTTPHeaderSize 8192
 	    ValidateProto (yes|no)
-		RewriteAltSvcPort h3port
+	    RewriteAltSvcPort h3port
 
 	    UserAuth (yes|no)
 	    UserTimeout 300
@@ -602,36 +602,36 @@ structured format, with the same Icap specification for `icapsuricata` also in
 structured format, as follows:
 
 	FilterRule {
-		Action Split
+	    Action Split
 
-		# From
-		User soner
-		Desc notebook
+	    # From
+	    User soner
+	    Desc notebook
 
-		# To
-		SNI example.com
+	    # To
+	    SNI example.com
 
-		Log content
+	    Log content
 
-		Icap {
-			Proto icap
-			Server 127.0.0.1
-			Port 1344
-			Reqmod suricata
-			Respmod suricata
-			FailOpen yes
-			ConnFailOpen yes
-			Timeout 10
-			PreviewSize 1024
-			MaxBodySize 0
-			MaxInspectionSize 16384
-			Allow204 yes
-			Allow206 no
-			SanitizeRequestLine no
-		}
+	    Icap {
+	        Proto icap
+	        Server 127.0.0.1
+	        Port 1344
+	        Reqmod suricata
+	        Respmod suricata
+	        FailOpen yes
+	        ConnFailOpen yes
+	        Timeout 10
+	        PreviewSize 1024
+	        MaxBodySize 0
+	        MaxInspectionSize 16384
+	        Allow204 yes
+	        Allow206 no
+	        SanitizeRequestLine no
+	    }
 
-		# E2Guardian icap service requires SanitizeRequestLine
-		Icap icap://127.0.0.1:1345,reqmod,respmod,no,no,30,4096,8192,16384,yes,no,X-ICAP-E2G,yes
+	    # E2Guardian icap service requires SanitizeRequestLine
+	    Icap icap://127.0.0.1:1345,reqmod,respmod,no,no,30,4096,8192,16384,yes,no,X-ICAP-E2G,yes
 	}
 
 This structured version of the first filtering rule above behaves the same as 
